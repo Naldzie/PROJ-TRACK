@@ -76,35 +76,39 @@
             <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 6px;">Current Month Target</div>
             <div style="font-size: 24px; font-weight: 700; color: #10b981;">
                 @php
-                    $today = now();
-                    $currentYear = $today->year;
-                    $currentMonth = $today->month;
-                    $currentMonthLabel = sprintf('%04d-%02d', $currentYear, $currentMonth);
-                    
-                    // Try to find current month's target using month_label (e.g., "2026-04")
-                    $currentMonthTarget = $project->baselineSchedules()
-                        ->where('month_label', $currentMonthLabel)
-                        ->first();
-                    
-                    // If not found, get the nearest upcoming target
-                    if (!$currentMonthTarget) {
+                    if ($project->status === 'Completed') {
+                        $latestTargetPercent = '✓ Done';
+                    } else {
+                        $today = now();
+                        $currentYear = $today->year;
+                        $currentMonth = $today->month;
+                        $currentMonthLabel = sprintf('%04d-%02d', $currentYear, $currentMonth);
+                        
+                        // Try to find current month's target using month_label (e.g., "2026-04")
                         $currentMonthTarget = $project->baselineSchedules()
-                            ->where('planned_date', '>', $today)
-                            ->orderBy('planned_date', 'asc')
+                            ->where('month_label', $currentMonthLabel)
                             ->first();
+                        
+                        // If not found, get the nearest upcoming target
+                        if (!$currentMonthTarget) {
+                            $currentMonthTarget = $project->baselineSchedules()
+                                ->where('planned_date', '>', $today)
+                                ->orderBy('planned_date', 'asc')
+                                ->first();
+                        }
+                        
+                        // If still not found, get the most recent past target
+                        if (!$currentMonthTarget) {
+                            $currentMonthTarget = $project->baselineSchedules()
+                                ->where('planned_date', '<=', $today)
+                                ->orderBy('planned_date', 'desc')
+                                ->first();
+                        }
+                        
+                        $latestTargetPercent = $currentMonthTarget?->planned_progress_percent ?? 0;
                     }
-                    
-                    // If still not found, get the most recent past target
-                    if (!$currentMonthTarget) {
-                        $currentMonthTarget = $project->baselineSchedules()
-                            ->where('planned_date', '<=', $today)
-                            ->orderBy('planned_date', 'desc')
-                            ->first();
-                    }
-                    
-                    $latestTargetPercent = $currentMonthTarget?->planned_progress_percent ?? 0;
                 @endphp
-                {{ $latestTargetPercent }}%
+                {{ $latestTargetPercent }}{{ is_numeric($latestTargetPercent) ? '%' : '' }}
             </div>
         </div>
         <div style="padding: 15px; background: white; border-radius: 8px; border: 1px solid #e5e7eb;">
@@ -127,7 +131,7 @@
             @php
                 $activitiesCount = $project->activities()->where('month_label', $plan->month_label)->count();
                 $activitiesCompleted = $project->activities()->where('month_label', $plan->month_label)->where('is_completed', true)->count();
-                $latestProgress = $plan->progressHistory()->latest('created_at')->first();
+                $latestProgress = $plan->progressHistory()->orderBy('inspection_month_date', 'desc')->first();
                 $collapseId = 'activities-' . $plan->id;
                 $carriedInCount = $project->activities()
                     ->where('month_label', $plan->month_label)
@@ -150,7 +154,7 @@
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <span style="background: #dbeafe; color: #0369a1; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700;">
-                                {{ $plan->month_label }}
+                                {{ $plan->planned_date->format('F - Y') }}
                             </span>
                             <span style="color: #6b7280; font-size: 13px; font-weight: 500;">{{ $plan->planned_date->format('F d, Y') }}</span>
                         </div>
