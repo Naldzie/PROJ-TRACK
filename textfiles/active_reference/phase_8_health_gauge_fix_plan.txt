@@ -1,0 +1,162 @@
+===============================================================================
+  PHASE 8 (POST) — PROJECT HEALTH GAUGE FIX PLAN
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Status: 🔄 PLAN APPROVED — Ready for implementation
+
+  Branch: fix/phase-8-health-gauge (from main)
+
+  Reference Documents:
+    • ai_v2_phase8_cross_project_progress_log.txt — Open Item #1
+    • ai_module_ver2_master_plan.txt — V2 master plan
+    • project_context_and_development_rules.txt — coding standards
+
+===============================================================================
+  1. PROBLEM STATEMENT
+===============================================================================
+
+  The Project Health Gauge (and the entire "Status" card in the AI Prediction
+  tab) shows "AT RISK" / "Moderate Risk" even when a project is perfectly on
+  schedule (progress gap = 0%, actual progress meets planned progress).
+
+===============================================================================
+  2. ROOT CAUSE
+===============================================================================
+
+  In AIPredictionPresenter::presentNormal(), the overall risk is calculated
+  as the MAX of TWO signals:
+
+    1. currentGapRisk  — based on actual progress gap (gap=0 → 'Low') ✓
+    2. nearTermRisk    — based on FORECAST model's predicted next-month
+                         variance (even -1% variance → 'Moderate')
+
+  When currentGapRisk='Low' and nearTermRisk='Moderate', the max is
+  'Moderate', which displays as "AT RISK" — even though the project is
+  on schedule right now.
+
+  This affects:
+    • Card header gradient and left border color (amber instead of green)
+    • Gauge center overlay text ("AT RISK" / "Moderate Risk")
+    • Schedule Status row in health overview ("AT RISK" in yellow)
+    • Completion confidence shows "Medium" from regression fit quality
+      (R²/obs), not schedule health confidence
+
+===============================================================================
+  3. CHOSEN DIRECTION
+===============================================================================
+
+  Separate concerns: health status shows CURRENT actual standing; prediction
+  data shows FUTURE outlook. Industry practice (Earned Value Management /
+  PMBOK) uses actual vs planned at current date for health, not forecasted
+  performance.
+
+  Key insight: progressGap already incorporates the time dimension naturally
+  because expectedProgress is recalculated each page load using
+  DateHelper::now(). As days pass, expected progress moves forward on the
+  baseline S-curve, and if actual stays flat, the gap grows automatically.
+
+===============================================================================
+  4. IMPLEMENTATION STEPS
+===============================================================================
+
+  Fix 1 — AIPredictionPresenter.php (Risk Logic)
+  -----------------------------------------------
+  File: app/Services/AI/AIPredictionPresenter.php
+  Location: presentNormal(), lines 475-501
+
+  Change the overall risk determination to use ONLY currentGapRisk (the
+  actual progress gap). The near-term forecast risk should NOT override
+  the current actual status.
+
+  Before:
+    $overallRisk = max(currentGapRisk, nearTermRisk)
+
+  After:
+    $overallRisk = currentGapRisk
+
+  Impact:
+    • gap=0 → ON TRACK, green card ✓
+    • gap=-8% (time passed, expected increased) → AT RISK, amber ✓
+    • gap=-15%+ → AT RISK, red ✓
+    • Forecast risk still available in assessment_data for the
+      forecast table section (separate from health status)
+
+  Fix 2 — AIPredictionPresenter.php (Confidence)
+  -----------------------------------------------
+  Location: presentNormal(), around lines 512-514 and return array
+
+  Replace completion_confidence (regression fit quality) with an
+  observation-count-based confidence metric using REAL observations only
+  (excluding synthetic points from cross-project supplement).
+
+  Logic:
+    $realObs = $statistics['observation_count'] ?? 0;
+    // Subtract synthetic points if in supplement mode
+    $syntheticCount = $regression['synthetic_points_count'] ?? 0;
+    $realObs = max(0, $realObs - $syntheticCount);
+
+    $confidence = match(true) {
+        $realObs >= 6 => 'High',
+        $realObs >= 3 => 'Medium',
+        default       => 'Low',
+    };
+
+  Impact:
+    • ≥6 real observations → High confidence
+    • 3-5 real observations → Medium confidence
+    • <3 real observations → Low confidence
+    • Hybrid data (1 real + 5 synthetic) → Low confidence (honest)
+
+  Fix 3 — Update/Add Tests (if applicable)
+  -----------------------------------------
+  • Verify presentNormal() returns 'ON TRACK' when gap=0
+  • Verify presentNormal() returns 'AT RISK' when gap > threshold
+  • Verify confidence reflects real observation count, not augmented
+
+===============================================================================
+  5. FILES TOUCHED
+===============================================================================
+
+  MODIFIED:
+    app/Services/AI/AIPredictionPresenter.php
+      — Lines 475-501: change overallRisk to use only currentGapRisk
+      — Lines 512-514 (or nearby): replace completion_confidence with
+        observation-count-based confidence using real obs count
+
+  NO NEW FILES:
+    All changes are within existing file. No migrations, models,
+    services, or Blade changes needed (status/confidence keys
+    already exist in the return array and Blade template).
+
+===============================================================================
+  6. VERIFICATION
+===============================================================================
+
+  [ ] progressGap=0% → status='ON TRACK', card green, gauge green
+  [ ] progressGap=-8% → status='AT RISK', card amber
+  [ ] progressGap=-15%+ → status='AT RISK', card red
+  [ ] confidence shows 'High' with ≥6 real obs
+  [ ] confidence shows 'Low' with 1 real obs + 5 synthetic
+  [ ] forecast assessment data still available in assessment_data
+      (not removed, just not used for health status)
+  [ ] All existing tests still pass (no regressions)
+
+===============================================================================
+  7. OPEN QUESTIONS / STILL TO RESOLVE
+===============================================================================
+
+  None — plan fully specified.
+
+===============================================================================
+  8. CONVERSATION CONTINUATION GUIDE
+===============================================================================
+
+  Next session: apply the changes in AIPredictionPresenter.php following
+  the implementation steps above. After changes, verify the gauge shows
+  ON TRACK for on-schedule projects and transitions to AT RISK as the
+  gap widens.
+
+===============================================================================
+  END OF PHASE 8 HEALTH GAUGE FIX PLAN
+===============================================================================
