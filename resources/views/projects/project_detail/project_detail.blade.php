@@ -86,8 +86,14 @@
     @endif
 @endcan
 
-<!-- Include project extension modal -->
+@php
+    $hasBaseline = $project->baselineSchedules()->exists();
+@endphp
+
+<!-- Include project extension modal (only if baseline exists) -->
+@if($hasBaseline)
 @include('projects.project_detail.components.modals.request_extension_modal')
+@endif
 
 <!-- Include issues modal -->
 @include('projects.project_detail.components.modals.issues_modal')

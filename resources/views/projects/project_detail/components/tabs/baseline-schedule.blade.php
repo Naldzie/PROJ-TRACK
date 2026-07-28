@@ -44,11 +44,10 @@
             <i class="bi bi-graph-up" style="font-size: 20px;"></i> Monthly Progress Targets
         </h3>
         <div style="display: flex; gap: 8px;">
+            @php
+                $hasBaseline = $project->baselineSchedules()->exists();
+            @endphp
             @can('update', $project)
-                @php
-                    // NEW: does this project have a baseline plan set up yet?
-                    $hasBaseline = $project->baselineSchedules()->exists();
-                @endphp
                 @if(!$hasBaseline)
                     {{-- No baseline yet: open the dedicated Set Up Baseline modal (B3.2). --}}
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
@@ -331,11 +330,13 @@
 </div>
 -->
 
-<!-- Include Project Extensions Section -->
+<!-- Include Project Extensions Section (only if baseline exists) -->
+@if($hasBaseline)
 @include('projects.project_detail.components.tabs.partials.extensions-section')
 
 <!-- Load Extensions JavaScript Utilities -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-extensions.js') }}"></script>
+@endif
 
 {{--  
 <!-- ==================== MONTHLY ACTIVITIES SECTION ==================== -->
