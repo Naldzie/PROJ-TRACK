@@ -1,6 +1,31 @@
 FIXES & IMPROVEMENTS (not part of core Phase 6)
 =================================================
-Logged: 2026-07-27
+Logged: 2026-07-28
+
+0. ALLOWED inspection dates 1 month past last scheduled month
+----------------------------------------------------------------------
+  Branch: fix/progress-date-constraint (from main, independent of Phase 8)
+  Files:
+    public/js/admin/projects/baseline-schedule-record-progress-modal.js
+    public/js/admin/projects/baseline-schedule-edit-progress-modal.js
+    resources/views/.../record_monthly_progress_modal.blade.php
+    resources/views/.../baseline-schedule.blade.php
+
+  Problem: When a project finishes past its planned end date without
+  a formal extension, the progress recording modal blocked inspection
+  dates outside the monthly target's calendar month. Users couldn't
+  record actual completion (e.g., March 10) against the last scheduled
+  target (February).
+
+  Solution: Only the last monthly target allows inspection dates up to
+  1 month after the month end. Non-last months keep strict same-month
+  constraint to prevent overlapping data. The isLastMonth flag is
+  passed via Blade's $loop->last or detected via the dropdown's last
+  option.
+
+  How It Works:
+  - Last month target:   max = last day of (target month + 1)
+  - Non-last month:      max = last day of (target month)
 
 1. RENAMED calculateProgressFromChecklist → calculateProgressFromHistory
 ----------------------------------------------------------------------
