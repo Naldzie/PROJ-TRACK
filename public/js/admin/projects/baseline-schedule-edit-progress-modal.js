@@ -26,7 +26,8 @@ function buildProgressEndpoint(recordId) {
  * Open the Edit Progress Record Modal
  * Populates form fields and loads activities for the month
  */
-function openEditProgressModal(recordId, monthLabel) {
+function openEditProgressModal(recordId, monthLabel, isLastMonth) {
+    isLastMonth = isLastMonth || false;
     clearEditProgressErrors();
 
     if (!window._progressRecordData) {
@@ -52,7 +53,9 @@ function openEditProgressModal(recordId, monthLabel) {
             var year = parseInt(parts[0]);
             var month = parseInt(parts[1]);
             var monthStart = new Date(year, month - 1, 1);
-            var monthEnd = new Date(year, month, 0);
+            var monthEnd = isLastMonth
+                ? new Date(year, month + 1, 0)
+                : new Date(year, month, 0);
             var msStr = formatDateForInput(monthStart);
             var meStr = formatDateForInput(monthEnd);
             inspectionDateInput.min = msStr;

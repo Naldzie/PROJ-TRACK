@@ -44,11 +44,10 @@
             <i class="bi bi-graph-up" style="font-size: 20px;"></i> Monthly Progress Targets
         </h3>
         <div style="display: flex; gap: 8px;">
+            @php
+                $hasBaseline = $project->baselineSchedules()->exists();
+            @endphp
             @can('update', $project)
-                @php
-                    // NEW: does this project have a baseline plan set up yet?
-                    $hasBaseline = $project->baselineSchedules()->exists();
-                @endphp
                 @if(!$hasBaseline)
                     {{-- No baseline yet: open the dedicated Set Up Baseline modal (B3.2). --}}
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
@@ -76,35 +75,39 @@
             <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 6px;">Current Month Target</div>
             <div style="font-size: 24px; font-weight: 700; color: #10b981;">
                 @php
-                    $today = now();
-                    $currentYear = $today->year;
-                    $currentMonth = $today->month;
-                    $currentMonthLabel = sprintf('%04d-%02d', $currentYear, $currentMonth);
-                    
-                    // Try to find current month's target using month_label (e.g., "2026-04")
-                    $currentMonthTarget = $project->baselineSchedules()
-                        ->where('month_label', $currentMonthLabel)
-                        ->first();
-                    
-                    // If not found, get the nearest upcoming target
-                    if (!$currentMonthTarget) {
+                    if ($project->status === 'Completed') {
+                        $latestTargetPercent = '✓ Done';
+                    } else {
+                        $today = now();
+                        $currentYear = $today->year;
+                        $currentMonth = $today->month;
+                        $currentMonthLabel = sprintf('%04d-%02d', $currentYear, $currentMonth);
+                        
+                        // Try to find current month's target using month_label (e.g., "2026-04")
                         $currentMonthTarget = $project->baselineSchedules()
-                            ->where('planned_date', '>', $today)
-                            ->orderBy('planned_date', 'asc')
+                            ->where('month_label', $currentMonthLabel)
                             ->first();
+                        
+                        // If not found, get the nearest upcoming target
+                        if (!$currentMonthTarget) {
+                            $currentMonthTarget = $project->baselineSchedules()
+                                ->where('planned_date', '>', $today)
+                                ->orderBy('planned_date', 'asc')
+                                ->first();
+                        }
+                        
+                        // If still not found, get the most recent past target
+                        if (!$currentMonthTarget) {
+                            $currentMonthTarget = $project->baselineSchedules()
+                                ->where('planned_date', '<=', $today)
+                                ->orderBy('planned_date', 'desc')
+                                ->first();
+                        }
+                        
+                        $latestTargetPercent = $currentMonthTarget?->planned_progress_percent ?? 0;
                     }
-                    
-                    // If still not found, get the most recent past target
-                    if (!$currentMonthTarget) {
-                        $currentMonthTarget = $project->baselineSchedules()
-                            ->where('planned_date', '<=', $today)
-                            ->orderBy('planned_date', 'desc')
-                            ->first();
-                    }
-                    
-                    $latestTargetPercent = $currentMonthTarget?->planned_progress_percent ?? 0;
                 @endphp
-                {{ $latestTargetPercent }}%
+                {{ $latestTargetPercent }}{{ is_numeric($latestTargetPercent) ? '%' : '' }}
             </div>
         </div>
         <div style="padding: 15px; background: white; border-radius: 8px; border: 1px solid #e5e7eb;">
@@ -127,7 +130,7 @@
             @php
                 $activitiesCount = $project->activities()->where('month_label', $plan->month_label)->count();
                 $activitiesCompleted = $project->activities()->where('month_label', $plan->month_label)->where('is_completed', true)->count();
-                $latestProgress = $plan->progressHistory()->latest('created_at')->first();
+                $latestProgress = $plan->progressHistory()->orderBy('inspection_month_date', 'desc')->first();
                 $collapseId = 'activities-' . $plan->id;
                 $carriedInCount = $project->activities()
                     ->where('month_label', $plan->month_label)
@@ -150,7 +153,7 @@
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <span style="background: #dbeafe; color: #0369a1; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700;">
-                                {{ $plan->month_label }}
+                                {{ $plan->planned_date->format('F - Y') }}
                             </span>
                             <span style="color: #6b7280; font-size: 13px; font-weight: 500;">{{ $plan->planned_date->format('F d, Y') }}</span>
                         </div>
@@ -169,6 +172,7 @@
                                 @if($latestProgress)
                                     <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.1); padding: 6px 12px; border-radius: 6px;">
                                         <span style="font-weight: 700; font-size: 15px; color: #10b981;">{{ $latestProgress->actual_progress_percent }}%</span>
+                                        <span style="font-size: 11px; color: #6b7280;">{{ \Carbon\Carbon::parse($latestProgress->inspection_month_date)->format('M d, Y') }}</span>
                                     </div>
                                 @else
                                     <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(107, 114, 128, 0.1); padding: 6px 12px; border-radius: 6px;">
@@ -252,7 +256,7 @@
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                            <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }})" 
+                            <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }}, {{ $loop->last ? '1' : '0' }})" 
                                     style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Record Monthly Progress"
                                     onmouseover="this.style.background='#c6f6d5'; this.style.borderColor='#68e6a8';"
@@ -260,7 +264,7 @@
                                 <i class="bi bi-graph-up-arrow"></i> Record Progress
                             </button>
                             @if($latestProgress)
-                            <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}')"
+                            <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}', {{ $loop->last ? '1' : '0' }})"
                                     style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Edit Latest Progress Record"
                                     onmouseover="this.style.background='#bfdbfe'; this.style.borderColor='#7dd3fc';"
@@ -326,11 +330,13 @@
 </div>
 -->
 
-<!-- Include Project Extensions Section -->
+<!-- Include Project Extensions Section (only if baseline exists) -->
+@if($hasBaseline)
 @include('projects.project_detail.components.tabs.partials.extensions-section')
 
 <!-- Load Extensions JavaScript Utilities -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-extensions.js') }}"></script>
+@endif
 
 {{--  
 <!-- ==================== MONTHLY ACTIVITIES SECTION ==================== -->
