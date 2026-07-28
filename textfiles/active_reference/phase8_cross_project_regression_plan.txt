@@ -1,0 +1,299 @@
+===============================================================================
+  PHASE 8 IMPLEMENTATION PLAN
+  Cross-Project Historical Regression
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Status: ⬜ NOT STARTED
+
+  Prerequisites
+  -------------
+  • V1 — AIPredictionService stable (generatePrediction works)
+  • V2 Phase 1+2 — Polynomial regression and model selection
+  • V2 Phase 3 — Completion estimation (reuses dataset patterns)
+
+  Reference Documents
+  -------------------
+  • ai_module_ver2_master_plan.txt — V2 master plan (Phase 8 section)
+  • project_context_and_development_rules.txt — coding standards
+  • textfiles/summary_of_next_work.txt — remaining work overview
+
+===============================================================================
+  1. OBJECTIVE
+===============================================================================
+
+  Use completed projects of the same category as a proxy to fill the gap
+  when a project has insufficient data for reliable predictions.
+
+  Two modes:
+    Mode A — Fallback: Project has 0-1 observations, use aggregate curve
+             as the sole dataset (replaces "Insufficient Data" state)
+    Mode B — Supplementary: Project has some data but less than 1/3
+             of its total planned months, prepend synthetic points from
+             the aggregate curve to stabilize the regression
+
+===============================================================================
+  2. DESIGN PHILOSOPHY
+===============================================================================
+
+  Cross-project regression asks: "what's the typical S-curve shape for
+  projects of this type?" It does NOT compare performance or rank projects.
+  It provides a prior — a statistically likely starting pattern — so the
+  regression has enough data to produce realistic curves even early on.
+
+  As real data accumulates, the synthetic points become proportionally
+  less influential, eventually reaching zero when the project has
+  sufficient observations (>= 1/3 of planned months).
+
+===============================================================================
+  3. NEW SERVICE — HistoricalSimilarityService
+===============================================================================
+
+  File: app/Services/AI/HistoricalSimilarityService.php
+
+  Public Methods:
+  -----------------
+  findSimilarProjects(Project $project): Collection
+    • Query completed projects matching:
+      - Same category_id
+      - Budget within ±20% (approved_budget range)
+      - Duration within ±30% (planned_duration_days)
+      - Estimated workers within ±40% (if both sides non-null)
+      - Same contractor (bonus weighting, not a hard filter)
+    • Return collection sorted by similarity score (highest first)
+    • Only projects with > 4 observations (need meaningful curve)
+
+  buildAggregateCurve(Collection $similarProjects): array
+    • For each similar project:
+      - Get all progress history, sorted by month_index
+      - Normalize to percentile timeline (0-100% of duration)
+      - Interpolate progress at each 5% interval (0%, 5%, ... 100%)
+    • Compute at each percentile:
+      - median_progress (P50)
+      - lower_bound (P25)
+      - upper_bound (P75)
+    • Returns: [{percentile, median, lower, upper}, ...] or empty array
+
+  generateSyntheticPoints(array $aggregateCurve, Project $project, int $targetCount): array
+    • Map aggregate percentiles to the project's timeline:
+      - project's month X corresponds to (X / total_planned_months * 100) percentile
+    • Scale aggregate curve to match project's existing trend:
+      - Compute ratio = actual_progress / aggregate_progress for each
+        existing observation, take median ratio
+      - Apply ratio to scale aggregate values (catches whether the
+        project is running ahead or behind the typical curve)
+    • Generate synthetic points at project month indices starting from
+      month 1 up to targetCount
+    • Returns: [{month_index: int, progress: float}, ...]
+
+  shouldSupplement(Project $project, int $observationCount): string
+    • Returns one of:
+      - 'none' — project has enough data (>= 1/3 of planned months)
+      - 'fallback' — observationCount < 2
+      - 'supplement' — observationCount >= 2 but < total_planned_months / 3
+    • Completed projects: always return 'none'
+
+  getSimilarProjectsCount(): int
+    • Returns how many similar projects were found (for UI display)
+
+  Private/Helper Methods:
+  -----------------------
+  computeSimilarityScore(Project $target, Project $candidate): float
+    • 0.0 to 1.0 score based on:
+      - category_id match (30 pts — must match or score = 0)
+      - approved_budget proximity within ±20% (25 pts)
+      - planned_duration_days proximity within ±30% (20 pts)
+      - contractor_id match (15 pts — bonus if same)
+      - estimated_workers proximity within ±40% if both non-null
+        (10 pts — skipped if either side is null)
+
+  normalizeToPercentile(array $progressRecords): array
+    • Convert month_index to percentile of total duration
+    • Interpolate progress at standardized intervals
+
+  interpolateLinearly(array $data, float $targetX): float
+    • Standard linear interpolation between two data points
+
+  medianOfArray(array $values): float
+    • Statistical median calculation
+
+===============================================================================
+  4. INTEGRATION WITH AIPredictionService
+===============================================================================
+
+  File: app/Services/AI/AIPredictionService.php (MODIFIED)
+
+  Changes:
+  --------
+  1. Add HistoricalSimilarityService as constructor dependency (optional)
+
+  2. In generatePrediction() (or runRegression()), after checking
+     observation_count:
+
+     A) Call $this->historicalSimilarityService->shouldSupplement()
+        - If 'fallback':
+          $aggregate = $this->historicalSimilarityService->buildAggregateCurve()
+          Generate full set of synthetic points (target = total_planned_months)
+          Set data_source = 'similar_projects'
+          Set similar_projects_count
+          Set disclaimer message
+          Use synthetic dataset AS the regression dataset
+          Skip SLR/polynomial selection — always use polynomial on
+          aggregate curves (they are inherently S-shaped)
+
+        - If 'supplement':
+          $aggregate = $this->historicalSimilarityService->buildAggregateCurve()
+          $targetObs = max(2, ceil(total_planned_months / 3))
+          $needed = $targetObs - $observationCount
+          Generate $needed synthetic points
+          Prepend to actual dataset
+          Set data_source = 'hybrid'
+          Run normal model selection on augmented dataset
+
+        - If 'none':
+          No changes — use existing logic
+
+     B) Add to regression block in Prediction Report:
+        'data_source'              => 'project_history' | 'similar_projects' | 'hybrid'
+        'similar_projects_count'   => int or null
+        'similar_projects_disclaimer' => string or null
+        'synthetic_points_count'   => int (how many points were synthetic)
+
+     C) In presentNormal() / present():
+        Pass through these keys to the presenter output
+
+===============================================================================
+  5. EDGE CASES
+===============================================================================
+
+  +----------------------------------+--------------------------------------+
+  | Case                             | Behavior                             |
+  +----------------------------------+--------------------------------------+
+  | No similar projects found        | Fall back to existing                |
+  |                                  | "Insufficient Data" behavior         |
+  +----------------------------------+--------------------------------------+
+  | Project already completed        | 'none' — don't supplement            |
+  +----------------------------------+--------------------------------------+
+  | Only 1 similar project found     | Still usable (better than nothing)   |
+  |                                  | But label as "Low confidence"        |
+  +----------------------------------+--------------------------------------+
+  | Similar project has < 4 obs      | Skip it — not enough for a curve     |
+  +----------------------------------+--------------------------------------+
+  | Project budget is 0 or null       | Exclude budget from criteria,        |
+  |                                  | use category + duration + workers    |
+  |                                  | and contractor only                  |
+  +----------------------------------+--------------------------------------+
+  | Project estimated_workers is 0   | Skip workers from criteria (treat as |
+  | or null                          | null — cannot establish proximity)   |
+  +----------------------------------+--------------------------------------+
+  | Supplement target < 2            | Clamp to minimum 2                   |
+  +----------------------------------+--------------------------------------+
+  | Aggregate curve fails to build   | Fall back to existing behavior       |
+  | (e.g., all similar projects      | (no changes needed)                  |
+  | have bad data)                   |                                      |
+  +----------------------------------+--------------------------------------+
+  | Similar project has no progress  | Skip it                              |
+  | records despite status=completed |                                      |
+  +----------------------------------+--------------------------------------+
+
+===============================================================================
+  6. OUTPUT KEYS (Prediction Report)
+===============================================================================
+
+  Added to regression section:
+    'data_source'               => 'project_history' | 'similar_projects' | 'hybrid'
+    'similar_projects_count'    => int or null
+    'similar_projects_disclaimer' => string or null
+      Examples:
+        "Based on 7 similar completed projects in this category"
+        "Based on 7 similar completed projects — supplemented with project data"
+    'synthetic_points_count'    => int or null
+
+===============================================================================
+  7. TESTING STRATEGY
+===============================================================================
+
+  NEW: tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+
+  Test Datasets:
+    • Seed 8 synthetic completed projects (same category, varying
+      budgets/durations) via ProgressHistory factory pattern
+    • Each with realistic S-curve progress data (10+ months)
+
+  Test Cases:
+    • findSimilarProjects() returns correct count with matching category
+    • findSimilarProjects() returns empty for mismatched category
+    • findSimilarProjects() returns empty when no completed projects exist
+    • findSimilarProjects() respects budget ±20% filter
+    • findSimilarProjects() respects duration ±30% filter
+    • buildAggregateCurve() returns 21 percentile points (0%, 5%, ... 100%)
+    • buildAggregateCurve() median values are within expected range
+    • buildAggregateCurve() upper >= median >= lower at all points
+    • buildAggregateCurve() returns empty array with no similar projects
+    • generateSyntheticPoints() returns correct count of points
+    • generateSyntheticPoints() points are in ascending month_index
+    • generateSyntheticPoints() progress values are within 0-100
+    • generateSyntheticPoints() scaled to match target project's trend
+    • shouldSupplement() returns 'fallback' for 0-1 observations
+    • shouldSupplement() returns 'supplement' for < 1/3 of planned months
+    • shouldSupplement() returns 'none' for >= 1/3 of planned months
+    • shouldSupplement() returns 'none' for completed projects
+    • End-to-end: AIPredictionService uses synthetic data when fallback
+    • End-to-end: data_source is correctly set in prediction report
+    • Edge: single similar project still produces usable curve
+    • Edge: similar projects with < 4 observations are excluded
+
+  Integration:
+    • AIPredictionService with HistoricalSimilarityService injected
+    • Verify prediction report contains expected keys
+    • Verify existing insufficient-data fallback still works when
+      no similar projects exist
+
+===============================================================================
+  8. BACKWARD COMPATIBILITY
+===============================================================================
+
+  • HistoricalSimilarityService is an optional dependency — if not
+    injected, AIPredictionService falls back to existing behavior
+  • New keys (data_source, etc.) are additive — existing Blade views
+    that don't check them are unaffected
+  • Existing 'is_insufficient_data' flag still works — cross-project
+    data only overrides when similar projects exist
+  • No database migrations needed — reads from existing tables
+    (projects, project_progress_history)
+
+===============================================================================
+  9. FILES TOUCHED
+===============================================================================
+
+  NEW:
+    app/Services/AI/HistoricalSimilarityService.php
+    tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+
+  MODIFIED:
+    app/Services/AI/AIPredictionService.php
+      — Add HistoricalSimilarityService dependency (optional)
+      — Add cross-project check in runRegression() / generatePrediction()
+      — Add data_source, similar_projects_count, disclaimer to report
+
+    app/Services/AI/AIPredictionPresenter.php
+      — Pass through new keys from regression section to output
+
+===============================================================================
+  10. FLAGGED FOR FUTURE
+===============================================================================
+
+  • Once real historical data is entered by the client, the aggregate
+    curves will become more accurate — no code changes needed
+  • Confidence bands (P25/P75) could be displayed on the S-Curve chart
+    as a shaded region (future UI enhancement)
+  • The similarity scoring could be extended to include:
+    - Location/geography
+    - Project complexity score
+    - Contractor experience level
+  • A recommendation to the client: prioritize digitizing historical
+    project data of projects matching categories already in the system
+
+===============================================================================
+  END OF PHASE 8 IMPLEMENTATION PLAN
+===============================================================================

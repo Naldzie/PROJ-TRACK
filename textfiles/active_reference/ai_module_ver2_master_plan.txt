@@ -645,11 +645,19 @@
   ║ PHASE 8 — Cross-Project Historical Regression                           ║
   ╚══════════════════════════════════════════════════════════════════════════╝
 
+  Plan file: active_reference/phase8_cross_project_regression_plan.txt
+
   Objective
   ---------
-  Use completed projects of the same category as a proxy for new projects
-  that have insufficient data (< 2 observations). This directly addresses
-  the "Insufficient Data" fallback state.
+  Use completed projects of the same category to supplement or replace
+  predictions for new projects with insufficient data. Not just a fallback
+  for < 2 observations — also supplements projects that have some data
+  but not yet a reliable curve.
+
+  Two modes:
+    • Fallback (< 2 obs):          aggregate curve replaces "Insufficient Data"
+    • Supplementary (< ⅓ planned): prepend synthetic points stabilize regression
+    • None (≥ ⅓ planned):          project stands entirely on own data
 
   Implementation
   -------------
@@ -660,33 +668,39 @@
        - Same category
        - Budget within ±20%
        - Duration within ±30%
+       - Estimated workers within ±40% (if both sides non-null)
        - Same contractor (bonus weighting)
-    2. Normalize their progress data to a standard timescale
-       (percentage of project duration instead of absolute months)
-    3. Compute: mean progress at each percentile, upper/lower bounds
-    4. Return aggregate trend line
+    2. Normalize each project's progress to percentile timeline (0-100%)
+    3. Compute median curve + confidence bands (P25/P75)
+    4. Scale aggregate curve to match target project's existing trend
+       (handles ahead/behind scenarios)
+    5. Generate synthetic points and prepend to real dataset
 
   Integration with AIPredictionService:
-    • If observation_count < 2 AND similar projects exist:
-      - Use aggregate trend line as the regression dataset
-      - Run regression on synthetic data
-      - Label all predictions: "Derived from similar projects"
-      - Add disclaimer to Prediction Report
-    • If no similar projects found → fall back to existing
-      insufficient-data branch
+    • shouldSupplement() returns one of: 'fallback' / 'supplement' / 'none'
+    • 'fallback': use aggregate as sole dataset → regression on synthetic data
+    • 'supplement': prepend synthetic points to reach ⅓ planned months
+    • 'none': use existing logic unchanged
+    • If no similar projects found → fall back to existing behavior
 
   Output Modifications:
     Add to Prediction Report:
     'regression' => [
       ...
-      'data_source' => 'project_history' | 'similar_projects',
-      'similar_projects_count' => int (if applicable),
-      'similar_projects_disclaimer' => 'Based on X similar completed projects',
+      'data_source'              => 'project_history' | 'similar_projects' | 'hybrid',
+      'similar_projects_count'   => int (if applicable),
+      'similar_projects_disclaimer' => string,
+      'synthetic_points_count'   => int,
     ]
 
   Testing
   -------
   NEW: tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+    • Find matching/unmatched projects
+    • Aggregate curve generation
+    • Synthetic point generation with scaling
+    • All three supplement modes
+    • Edge: no similar projects, single project, budget null
 
   ═══════════════════════════════════════════════════════════════════════════
 
@@ -989,6 +1003,7 @@
   • Cross-Project Regression: needs enough completed projects of the
     same category to form meaningful aggregates. Early in system adoption,
     this will return "no similar projects found" — acceptable fallback.
+    During development, seed synthetic completed projects for testing.
 
   • Contractor Performance Tracking: needs projects to be completed.
     Initially all contractors start with neutral/default ratings. Ratings
@@ -1014,19 +1029,23 @@
 ================================================================================
 
   V2 is considered complete when:
-    1. All 13 phases (including 3.5) are implemented and tested
-    2. Polynomial regression produces visibly better S-curve fits than SLR
-       on real project data
-    3. Completion estimation generates reasonable dates (verified against
-       known completed projects)
-    4. Dual completion estimate display shows both conservative and best-case
-       scenarios side by side with clear labeling
-    5. Forecast table displays per-month predictions that follow the
-       actual S-curve shape (not a straight line)
-    6. S-Curve chart shows regression overlay correctly
-    7. Prediction history tracks accuracy over time
-    8. All 145 V1 tests + new V2 tests pass
-    9. No V1 functionality is broken (backward compatible)
+    1. Polynomial regression produces visibly better S-curve fits than SLR
+       on real project data (✅ DONE)
+    2. Completion estimation generates reasonable dates (verified against
+       known data) (✅ DONE)
+    3. Multi-method completion shows Polnomial, Schedule-Aware, and EAC_time
+       side by side (✅ DONE)
+    4. S-Curve chart shows near-term and completion forecast overlays (✅ DONE)
+    5. Estimated Completion Gauge renders correctly in AI Prediction tab (✅ DONE)
+    6. Prediction history tracks accuracy over time (✅ DONE)
+    7. Cross-Project Historical Regression supplements or replaces
+       predictions for projects with insufficient data
+    8. Contractor performance metrics are tracked and displayed
+    9. AI-powered recommendations replace or augment rule-based system
+    10. Export/Reporting: PDF prediction reports, CSV forecast exports
+    11. Architectural: prediction caching, configurable thresholds, background jobs
+    12. All 145 V1 tests + new V2 tests pass
+    13. No V1 functionality is broken (backward compatible)
 
 ================================================================================
   CONVERSATION CONTINUATION GUIDE
@@ -1048,12 +1067,19 @@
       side by side rather than replacing the schedule-aware method.
       This demonstrates transparency and comparative analysis.
 
-    8. Phase 7 (Prediction History) is NEXT for implementation. It
-      captures every regression prediction and compares it against
-      actual recorded progress. This provides a GENUINE accuracy
-      signal that replaces the misleading use of R² as confidence.
-      After Phase 7 is complete, update AIExplanationService's prompt
-      to use accuracy stats instead of raw R².
+    8. Phase 7 (Prediction History) is COMPLETE — captures every regression
+       prediction and compares it against actual recorded progress. It provides
+       a GENUINE accuracy signal that replaces the misleading use of R² as
+       confidence. AIExplanationService prompt was updated to use accuracy stats.
+
+    9. Phase 8 (Cross-Project Historical Regression) is NEXT. See
+       active_reference/phase8_cross_project_regression_plan.txt. It uses
+       completed projects of the same category as a proxy for projects with
+       insufficient data, with two modes: fallback (< 2 obs) and supplementary
+       (< ⅓ of planned months).
+
+    10. Phase 9 (Contractor Performance Tracking) follows Phase 8. They are
+        independent — Phase 9 can proceed if Phase 8 is paused.
 
 ================================================================================
   END OF VERSION 2 MASTER PLAN

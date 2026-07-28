@@ -23,7 +23,8 @@
 
   Phase 8 — Cross-Project Historical Regression
      Use completed projects of same category as proxy for insufficient-data
-     projects. Needs enough completed projects to be useful.
+     projects. Two modes: fallback (< 2 obs) and supplementary (< ⅓ planned).
+     Plan: active_reference/phase8_cross_project_regression_plan.txt
 
   Phase 9 — Contractor Performance Tracking
      Track reliability: on-time delivery %, avg delay, performance rating
