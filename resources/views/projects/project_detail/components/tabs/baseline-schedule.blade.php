@@ -252,7 +252,7 @@
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                            <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }})" 
+                            <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }}, {{ $loop->last ? '1' : '0' }})" 
                                     style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Record Monthly Progress"
                                     onmouseover="this.style.background='#c6f6d5'; this.style.borderColor='#68e6a8';"
@@ -260,7 +260,7 @@
                                 <i class="bi bi-graph-up-arrow"></i> Record Progress
                             </button>
                             @if($latestProgress)
-                            <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}')"
+                            <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}', {{ $loop->last ? '1' : '0' }})"
                                     style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Edit Latest Progress Record"
                                     onmouseover="this.style.background='#bfdbfe'; this.style.borderColor='#7dd3fc';"

@@ -17,7 +17,7 @@
  * Open the Record Monthly Progress Modal
  * Initializes form with date constraints and loads activities for the month
  */
-function openRecordProgressModal(monthLabel, plannedPercent, plannedDate, latestActualProgress, highestOverallProgress) {
+function openRecordProgressModal(monthLabel, plannedPercent, plannedDate, latestActualProgress, highestOverallProgress, isLastMonth) {
     console.log('[openRecordProgressModal] Opening modal for month:', monthLabel);
     document.getElementById('progressMonthLabel').value = monthLabel;
     document.getElementById('progressMonthDisplay').textContent = monthLabel;
@@ -31,10 +31,11 @@ function openRecordProgressModal(monthLabel, plannedPercent, plannedDate, latest
         return `${year}-${month}-${day}`;
     }
     
-    // Calculate month boundaries WITHOUT timezone conversion
-    const planDate = new Date(plannedDate + 'T00:00:00'); // Force local time parsing
+    const planDate = new Date(plannedDate + 'T00:00:00');
     const monthStart = new Date(planDate.getFullYear(), planDate.getMonth(), 1);
-    const monthEnd = new Date(planDate.getFullYear(), planDate.getMonth() + 1, 0); // Last day of month
+    const monthEnd = isLastMonth 
+        ? new Date(planDate.getFullYear(), planDate.getMonth() + 2, 0) 
+        : new Date(planDate.getFullYear(), planDate.getMonth() + 1, 0);
     
     const monthStartStr = formatDateString(monthStart);
     const monthEndStr = formatDateString(monthEnd);

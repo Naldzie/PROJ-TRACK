@@ -193,9 +193,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const [year, month] = monthLabel.split('-');
         const monthNum = parseInt(month);
         
-        // Calculate first and last day of the month
         const firstDay = new Date(year, monthNum - 1, 1);
-        const lastDay = new Date(year, monthNum, 0);
+        const options = monthSelect.options;
+        const isLastMonth = options[options.length - 1].value === monthLabel;
+        const lastDay = isLastMonth
+            ? new Date(year, monthNum + 1, 0)
+            : new Date(year, monthNum, 0);
         
         const firstDayStr = formatDateForInput(firstDay);
         const lastDayStr = formatDateForInput(lastDay);
