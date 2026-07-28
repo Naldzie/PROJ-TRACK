@@ -138,6 +138,18 @@ Rule 10 - Every time a phase/sub phase/ sections are finsihed please inform me b
 
 Rule 11 - include recording/ updating the logs every phase completion
 
+Rule 12 — Branching workflow for new features/phases:
+   • Every new feature, phase, or significant addition MUST be done on a
+     separate Git branch (never directly on main)
+   • Name convention: phase-<number>-<short-description> (e.g., phase-8-cross-project-regression)
+   • For dependent phases: branch off the parent feature branch, not main
+     (e.g., phase-9 branches off phase-8 if Phase 9 needs Phase 8's code)
+   • After finishing work on a branch, inform me for discussion/approval
+     before merging to main
+   • Do NOT merge to main without explicit confirmation
+   • If a branch is to be abandoned/replaced, discuss first before
+     creating a replacement
+
 
 ===============================================================================
 CODING STANDARDS & COMMENT FORMAT
