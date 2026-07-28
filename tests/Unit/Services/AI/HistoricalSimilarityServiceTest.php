@@ -16,19 +16,19 @@ class HistoricalSimilarityServiceTest extends TestCase
         $this->service = new HistoricalSimilarityService();
     }
 
-    // shouldSupplement — fallback mode (0-1 observations)
-    public function test_shouldSupplement_returns_fallback_for_zero_observations(): void
+    // shouldSupplement — no supplement for 0 observations (project hasn't started)
+    public function test_shouldSupplement_returns_none_for_zero_observations(): void
     {
         $project = $this->makeProject('Ongoing', 360);
         $result = $this->invokeShouldSupplement($project, 0);
-        $this->assertSame('fallback', $result);
+        $this->assertSame('none', $result);
     }
 
-    public function test_shouldSupplement_returns_fallback_for_one_observation(): void
+    public function test_shouldSupplement_returns_supplement_for_one_observation(): void
     {
         $project = $this->makeProject('Ongoing', 360);
         $result = $this->invokeShouldSupplement($project, 1);
-        $this->assertSame('fallback', $result);
+        $this->assertSame('supplement', $result);
     }
 
     // shouldSupplement — supplement mode (some data but < 1/3 of planned months)
@@ -73,16 +73,15 @@ class HistoricalSimilarityServiceTest extends TestCase
         // 1 observation < 2 → supplement
         $project = $this->makeProject('Ongoing', 90);
         $result = $this->invokeShouldSupplement($project, 1);
-        $this->assertSame('fallback', $result);
+        $this->assertSame('supplement', $result);
     }
 
-    // shouldSupplement — returns fallback when project has no duration but < 2 obs
-    // (the < 2 check runs before the duration check)
-    public function test_shouldSupplement_returns_fallback_with_no_duration_and_zero_obs(): void
+    // shouldSupplement — returns none when no duration and zero obs (project hasn't started)
+    public function test_shouldSupplement_returns_none_with_no_duration_and_zero_obs(): void
     {
         $project = $this->makeProject('Ongoing', 0);
         $result = $this->invokeShouldSupplement($project, 0);
-        $this->assertSame('fallback', $result);
+        $this->assertSame('none', $result);
     }
 
     public function test_shouldSupplement_returns_none_when_no_duration_and_sufficient_obs(): void

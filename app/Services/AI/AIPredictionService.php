@@ -143,7 +143,7 @@ class AIPredictionService
      */
     private ?CompletionComparisonService $completionComparisonService = null;
 
-    private ?HistoricalSimilarityService $historicalSimilarityService = null;
+    private HistoricalSimilarityService $historicalSimilarityService;
 
     /**
      * ------------------------------------------------------------------------
@@ -162,7 +162,7 @@ class AIPredictionService
         ProjectAssessmentService $assessmentService,
         CompletionEstimationService $completionService,
         CompletionComparisonService $completionComparisonService,
-        ?HistoricalSimilarityService $historicalSimilarityService = null
+        HistoricalSimilarityService $historicalSimilarityService
     ) {
         $this->datasetBuilder = $datasetBuilder;
         $this->regressionService = $regressionService;
@@ -207,8 +207,6 @@ class AIPredictionService
     public function generatePrediction(Project $project): array
     {
         $dataset = $this->buildDataset($project);
-
-        $observationCount = $dataset['statistics']['observation_count'] ?? 0;
 
         // Attempt cross-project supplement/fallback when data is sparse
         $crossProjectOverride = $this->applyCrossProjectData($project, $dataset);
@@ -379,10 +377,6 @@ class AIPredictionService
     // Attempt to supplement or replace dataset with cross-project historical data
     private function applyCrossProjectData(Project $project, array $dataset): ?array
     {
-        if ($this->historicalSimilarityService === null) {
-            return null;
-        }
-
         $observationCount = $dataset['statistics']['observation_count'] ?? 0;
         $mode = $this->historicalSimilarityService->shouldSupplement($project, $observationCount);
 

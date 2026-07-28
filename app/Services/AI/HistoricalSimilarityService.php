@@ -36,8 +36,12 @@ class HistoricalSimilarityService
             return 'none';
         }
 
-        if ($observationCount < 2) {
-            return 'fallback';
+        if ($observationCount === 0) {
+            return 'none';
+        }
+
+        if ($observationCount === 1) {
+            return 'supplement';
         }
 
         $totalPlannedMonths = $this->getTotalPlannedMonths($project);
@@ -462,6 +466,8 @@ class HistoricalSimilarityService
             $y[] = $point['progress'];
         }
 
+        $similarCount = $this->findSimilarProjects($project)->count();
+
         return [
             'x' => $x,
             'y' => $y,
@@ -470,7 +476,7 @@ class HistoricalSimilarityService
                 'current_month_index' => count($x),
             ],
             'data_source'           => 'similar_projects',
-            'similar_projects_count' => $this->findSimilarProjects($project)->count(),
+            'similar_projects_count' => $similarCount,
             'synthetic_points_count' => count($x),
         ];
     }
@@ -509,13 +515,20 @@ class HistoricalSimilarityService
             $realDataset['y']
         );
 
+        $similarCount = $this->findSimilarProjects($project)->count();
+
+        $combinedCount = count($x);
+
         return [
             'x'                     => $x,
             'y'                     => $y,
             'records'               => $realDataset['records'] ?? collect(),
-            'statistics'            => $realDataset['statistics'],
+            'statistics'            => [
+                'observation_count'   => $combinedCount,
+                'current_month_index' => $realDataset['statistics']['current_month_index'],
+            ],
             'data_source'           => 'hybrid',
-            'similar_projects_count' => $this->findSimilarProjects($project)->count(),
+            'similar_projects_count' => $similarCount,
             'synthetic_points_count' => count($synthetic),
         ];
     }

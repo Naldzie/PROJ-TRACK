@@ -4,7 +4,17 @@
   CSPC PMU System — AI Module Version 2
 ===============================================================================
 
-  Status: ⬜ NOT STARTED
+   Status: ✅ IMPLEMENTED (Branch: phase-8-cross-project-regression)
+
+   Key Deviations from Plan:
+   • HistoricalSimilarityService was made a required (not optional) dependency
+     because Laravel's container uses default = null values instead of
+     attempting auto-resolution
+   • 0 observations → 'none' (no prediction, not fallback)
+   • 1 observation → 'supplement' (not fallback — keeps real data,
+     prepends synthetic points)
+   • Fallback mode (generateFallbackDataset) exists but is now unused;
+     the 1-observation case goes through supplement instead
 
   Prerequisites
   -------------
@@ -87,11 +97,13 @@
     • Returns: [{month_index: int, progress: float}, ...]
 
   shouldSupplement(Project $project, int $observationCount): string
-    • Returns one of:
-      - 'none' — project has enough data (>= 1/3 of planned months)
-      - 'fallback' — observationCount < 2
-      - 'supplement' — observationCount >= 2 but < total_planned_months / 3
-    • Completed projects: always return 'none'
+     • Returns one of:
+       - 'none' — project hasn't started (0 obs) or has enough data
+       - 'supplement' — 1 observation or < 1/3 of planned months, add
+         synthetic points from similar completed projects
+       - 'fallback' — exists but currently unused (was originally for < 2
+         obs; changed during implementation to use supplement for 1 obs
+         and none for 0 obs)
 
   getSimilarProjectsCount(): int
     • Returns how many similar projects were found (for UI display)
@@ -125,32 +137,30 @@
 
   Changes:
   --------
-  1. Add HistoricalSimilarityService as constructor dependency (optional)
+   1. Add HistoricalSimilarityService as required constructor dependency
+      (was originally optional with = null, but Laravel DI skips
+      auto-resolution when a default value is present)
 
-  2. In generatePrediction() (or runRegression()), after checking
-     observation_count:
+   2. In generatePrediction(), before the observation-count check:
 
-     A) Call $this->historicalSimilarityService->shouldSupplement()
-        - If 'fallback':
-          $aggregate = $this->historicalSimilarityService->buildAggregateCurve()
-          Generate full set of synthetic points (target = total_planned_months)
-          Set data_source = 'similar_projects'
-          Set similar_projects_count
-          Set disclaimer message
-          Use synthetic dataset AS the regression dataset
-          Skip SLR/polynomial selection — always use polynomial on
-          aggregate curves (they are inherently S-shaped)
+      A) Call $this->historicalSimilarityService->shouldSupplement()
+         - If 'supplement' (1 obs or < 1/3 of planned months):
+           $aggregate = $this->historicalSimilarityService->buildAggregateCurve()
+           $targetObs = max(2, ceil(total_planned_months / 3))
+           $needed = $targetObs - $observationCount
+           Generate $needed synthetic points
+           Prepend to actual dataset
+           $statistics.observation_count = total combined (real + synthetic)
+           $statistics.current_month_index = keep real position (not overwritten)
+           Set data_source = 'hybrid'
+           Run normal model selection on augmented dataset
 
-        - If 'supplement':
-          $aggregate = $this->historicalSimilarityService->buildAggregateCurve()
-          $targetObs = max(2, ceil(total_planned_months / 3))
-          $needed = $targetObs - $observationCount
-          Generate $needed synthetic points
-          Prepend to actual dataset
-          Set data_source = 'hybrid'
-          Run normal model selection on augmented dataset
+         - If 'none':
+           No changes — use existing logic
 
-        - If 'none':
+      Note: 'fallback' mode exists in code but is no longer reachable from
+      shouldSupplement(). 0 obs → 'none', 1 obs → 'supplement'. The
+      generateFallbackDataset() method is retained for potential future use.
           No changes — use existing logic
 
      B) Add to regression block in Prediction Report:
