@@ -103,3 +103,38 @@ Logged: 2026-07-28
     - Routes: GET /dev/date, POST /dev/date/set, POST /dev/date/clear
     - Global coverage: every now() call respects simulated date
     - Only session/XSRF cookie expiry stays on real time (middleware ordering)
+
+9. FIXED latest progress showing wrong value when multiple inspections exist
+----------------------------------------------------------------------
+  File: resources/views/.../baseline-schedule.blade.php
+  - Before: $plan->progressHistory()->latest('created_at')->first()
+  - After:  $plan->progressHistory()->orderBy('inspection_month_date', 'desc')->first()
+  - Problem: When a month has two progress records (e.g., Feb 97% and Mar 10 100%),
+    sorting by created_at is non-deterministic (same NOW() timestamp), could
+    show 97% instead of 100%.
+  - Fix: sort by inspection_month_date DESC so the latest inspection wins.
+
+10. CHANGED month label display format
+----------------------------------------------------------------------
+  File: resources/views/.../baseline-schedule.blade.php
+  - Before: {{ $plan->month_label }} → "2026-04"
+  - After:  {{ $plan->planned_date->format('F - Y') }} → "April - 2026"
+  - More readable for end users.
+
+11. ADDED completed project guard for Current Month Target
+----------------------------------------------------------------------
+  File: resources/views/.../baseline-schedule.blade.php
+  - Before: For completed projects, the fallback query still ran and
+    could show the first month's target (2%) unexpectedly.
+  - After:  If project->status === 'Completed', show "✓ Done" instead.
+  - Removes confusion of showing a monthly target for a finished project.
+
+12. ADDED inspection date next to actual progress in monthly card
+----------------------------------------------------------------------
+  File: resources/views/.../baseline-schedule.blade.php
+  - Before: "Actual: 100%" — misleading when inspection was in March
+    but the monthly target is February.
+  - After:  "Actual: 100% (Mar 10, 2026)" — shows the actual inspection
+    date alongside the value so users see when it was measured.
+  - Context: The monthly target's planned date (Feb 15) and the badge
+    label (February - 2026) remain unchanged.
