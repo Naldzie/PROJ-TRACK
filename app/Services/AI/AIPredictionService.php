@@ -240,6 +240,10 @@ class AIPredictionService
 
         $analysis = $this->runRegression($dataset);
 
+        // Pass synthetic points count through analysis so completion estimation
+        // methods can compute real-only observation count for confidence
+        $analysis['synthetic_points_count'] = $dataset['statistics']['synthetic_points_count'] ?? 0;
+
         $currentMonthIndex =
             $dataset['statistics']['current_month_index'];
 

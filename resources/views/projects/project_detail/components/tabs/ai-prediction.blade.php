@@ -567,7 +567,7 @@
             </div>
         </div>
 
-        @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['methods']['polynomial'] ?? null) !== null)
+        @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['comparison']['valid_count'] ?? 0) >= 2)
         <!-- Multi-Method Completion Card -->
         <div class="card" style="margin-bottom: 20px;">
             <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
