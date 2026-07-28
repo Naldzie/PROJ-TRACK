@@ -1,0 +1,822 @@
+<?php
+
+namespace App\Services\AI;
+
+use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
+use App\Services\AI\Regression\RegressionDatasetBuilder;
+use App\Services\AI\Regression\LinearRegressionService;
+use App\Services\AI\Regression\PolynomialRegressionService;
+use App\Services\AI\ForecastService;
+use App\Services\AI\BaselineComparisonService;
+use App\Services\AI\ProjectAssessmentService;
+use App\Services\AI\CompletionEstimationService;
+use App\Services\AI\CompletionComparisonService;
+use App\Models\PredictionHistory;
+use Carbon\Carbon;
+
+/**
+ * ============================================================================
+ * AIPredictionService
+ * ============================================================================
+ *
+ * Purpose
+ * -------
+ * Acts as the bridge between the Regression Engine and the Project Monitoring
+ * System.
+ *
+ * This service does NOT perform regression mathematics.
+ * Instead, it coordinates the regression workflow and converts the results
+ * into a structured Prediction Report.
+ *
+ * Current Phase
+ * -------------
+ * Phase 3.1 - Prediction Pipeline
+ *
+ * Current Responsibilities
+ * ------------------------
+ * • Build regression dataset
+ * • Execute regression analysis
+ * • Determine current Project Month Index
+ * • Predict the next month's cumulative progress
+ * • Return a Prediction Report
+ *
+ * Future Responsibilities
+ * -----------------------
+ * • Predict completion percentage
+ * • Predict completion month
+ * • Compare against Effective Baseline
+ * • Calculate variance
+ * • Determine risk level
+ * • Generate recommendations
+ *
+ * Used By
+ * -------
+ * ProjectDetailService (Phase 4)
+ */
+class AIPredictionService
+{
+    /**
+     * ------------------------------------------------------------------------
+     * R² Improvement Threshold
+     * ------------------------------------------------------------------------
+     *
+     * Polynomial regression is selected only when its R² exceeds SLR R²
+     * by at least this amount. Prevents over-selection when both models
+     * produce nearly identical fits.
+     */
+    private const SLR_POLYNOMIAL_R2_THRESHOLD = 0.02;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Regression Dataset Builder
+     * ------------------------------------------------------------------------
+     *
+     * Responsible for preparing normalized regression datasets.
+     */
+    private RegressionDatasetBuilder $datasetBuilder;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Linear Regression Service
+     * ------------------------------------------------------------------------
+     *
+     * Responsible only for mathematical regression calculations.
+     */
+    private LinearRegressionService $regressionService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Polynomial Regression Service
+     * ------------------------------------------------------------------------
+     *
+     * Supports non-linear S-curve patterns via degree-3 polynomial.
+     * Auto-selected when fit is significantly better than SLR.
+     */
+    private PolynomialRegressionService $polynomialService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Forecast Service
+     * ------------------------------------------------------------------------
+     *
+     * Generates future project forecasts using the regression model.
+     */
+    private ForecastService $forecastService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Baseline Comparison Service
+     * ------------------------------------------------------------------------
+     *
+     * Compares forecasted progress against the Effective Baseline.
+     */
+    private BaselineComparisonService $comparisonService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Project Assessment Service
+     * ------------------------------------------------------------------------
+     *
+     * Interprets comparison results into business-friendly assessments.
+     */
+    private ProjectAssessmentService $assessmentService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Completion Estimation Service
+     * ------------------------------------------------------------------------
+     *
+     * Estimates when a project will reach 100% cumulative progress.
+     * Uses polynomial or SLR equation to solve for the completion month.
+     */
+    private ?CompletionEstimationService $completionService = null;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Completion Comparison Service
+     * ------------------------------------------------------------------------
+     *
+     * Orchestrates all three completion estimation methods
+     * and produces a comparison summary.
+     */
+    private ?CompletionComparisonService $completionComparisonService = null;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Constructor
+     * ------------------------------------------------------------------------
+     *
+     * Inject regression-related services.
+     */
+    
+    public function __construct(
+        RegressionDatasetBuilder $datasetBuilder,
+        LinearRegressionService $regressionService,
+        PolynomialRegressionService $polynomialService,
+        ForecastService $forecastService,
+        BaselineComparisonService $comparisonService,
+        ProjectAssessmentService $assessmentService,
+        CompletionEstimationService $completionService,
+        CompletionComparisonService $completionComparisonService
+    ) {
+        $this->datasetBuilder = $datasetBuilder;
+        $this->regressionService = $regressionService;
+        $this->polynomialService = $polynomialService;
+        $this->forecastService = $forecastService;
+        $this->comparisonService = $comparisonService;
+        $this->assessmentService = $assessmentService;
+        $this->completionService = $completionService;
+        $this->completionComparisonService = $completionComparisonService;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Generate Prediction Report
+     * ------------------------------------------------------------------------
+     *
+     * Entry point of the AI Prediction Service.
+     *
+     * Workflow
+     * --------
+     * Project
+     *      ↓
+     * Build Dataset
+     *      ↓
+     * Run Regression
+     *      ↓
+     * Predict Next Month
+     *      ↓
+     * Forecast Remaining Baseline
+     *      ↓
+     * Compare Forecast vs Baseline
+     *      ↓
+     * Assess Project Risk
+     *      ↓
+     * Build Prediction Report
+     *
+     * Used By
+     * -------
+     * ProjectDetailService
+     */
+    public function generatePrediction(Project $project): array
+    {
+        $dataset = $this->buildDataset($project);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Edge Case: Insufficient Data
+        |--------------------------------------------------------------------------
+        |
+        | Linear regression requires at least two observations.
+        | When insufficient data exists, return a minimal prediction report
+        | without regression analysis, forecast, or assessment.
+        |
+        */
+
+        if ($dataset['statistics']['observation_count'] < 2) {
+
+            $currentProgress = empty($dataset['y'])
+                ? 0
+                : end($dataset['y']);
+
+            return $this->buildMinimalReport(
+                $currentProgress,
+                $dataset
+            );
+        }
+
+        $analysis = $this->runRegression($dataset);
+
+        $currentMonthIndex =
+            $dataset['statistics']['current_month_index'];
+
+        $predictedNextProgress =
+            $this->predictNextMonth(
+                $analysis,
+                $currentMonthIndex
+            );
+
+        $forecast =
+            $this->forecastService->generateFutureForecast(
+                $project,
+                $analysis,
+                $currentMonthIndex
+            );
+
+        $comparison =
+            $this->comparisonService->compare(
+                $forecast
+            );
+
+        $assessment =
+            $this->assessmentService->assess(
+                $comparison
+            );
+
+        $currentProgress = end($dataset['y']);
+
+        $completion = $this->estimateCompletion(
+            $project,
+            $analysis,
+            $currentMonthIndex,
+            $currentProgress
+        );
+
+        $completionMulti = $this->estimateAllCompletions(
+            $project,
+            $analysis,
+            $currentMonthIndex,
+            $currentProgress
+        );
+
+        $report = $this->buildPredictionReport(
+            $dataset,
+            $analysis,
+            $currentMonthIndex,
+            $predictedNextProgress,
+            $forecast,
+            $assessment,
+            $completion,
+            $completionMulti
+        );
+
+        $this->savePredictionHistory(
+            $project,
+            $analysis,
+            $currentProgress,
+            $predictedNextProgress,
+            $currentMonthIndex
+        );
+
+        return $report;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Estimate Completion
+     * ------------------------------------------------------------------------
+     *
+     * Uses CompletionEstimationService to estimate when the project
+     * will reach 100% cumulative progress. Returns null if estimation
+     * is not possible (insufficient data, low R², or already complete).
+     */
+    private function estimateCompletion(
+        Project $project,
+        array $analysis,
+        int $currentMonthIndex,
+        float $currentProgress
+    ): ?array {
+
+        if ($this->completionService === null) {
+            return null;
+        }
+
+        if (empty($project->planned_end_date)) {
+            return null;
+        }
+
+        return $this->completionService->estimate(
+            $project->planned_end_date,
+            $analysis,
+            $currentMonthIndex,
+            $project->baselineSchedules,
+            $currentProgress
+        );
+    }
+
+    
+    /**
+     * ------------------------------------------------------------------------
+     * Estimate All Completions (Multi-Method)
+     * ------------------------------------------------------------------------
+     *
+     * Runs all three completion estimation methods via
+     * CompletionComparisonService and returns a combined result
+     * for the completion_multi report section.
+     *
+     * Returns null when the comparison service is unavailable
+     * or planned_end_date is missing.
+     */
+    private function estimateAllCompletions(
+        Project $project,
+        array $analysis,
+        int $currentMonthIndex,
+        float $currentProgress
+    ): ?array {
+
+        if ($this->completionComparisonService === null) {
+            return null;
+        }
+
+        if (empty($project->planned_end_date)) {
+            return null;
+        }
+
+        return $this->completionComparisonService->estimateAll(
+            $project->planned_end_date,
+            $analysis,
+            $currentMonthIndex,
+            $currentProgress,
+            $project->baselineSchedules
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Regression Dataset
+     * ------------------------------------------------------------------------
+     *
+     * Retrieves the normalized regression dataset.
+     *
+     * Uses
+     * ----
+     * RegressionDatasetBuilder
+     */
+    private function buildDataset(Project $project): array
+    {
+        return $this->datasetBuilder->buildDataset($project);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Execute Regression Analysis
+     * ------------------------------------------------------------------------
+     *
+     * Runs SLR for all datasets.
+     * Runs polynomial regression when observation count ≥ 4.
+     * Selects the best model based on R² comparison.
+     */
+    private function runRegression(array $dataset): array
+    {
+        $observationCount =
+            $dataset['statistics']['observation_count'];
+
+        $slrAnalysis = $this->regressionService->analyzeDataset(
+            $dataset['x'],
+            $dataset['y']
+        );
+
+        $slrR2 = $slrAnalysis['r_squared'];
+
+        if ($observationCount < 4) {
+
+            $slrAnalysis['regression_method'] = 'slr';
+
+            $slrAnalysis['method_reason'] =
+                'Insufficient observations for polynomial'
+                . ' regression (need ≥ 4).';
+
+            $slrAnalysis['r_squared_slr'] = $slrR2;
+
+            $slrAnalysis['r_squared_poly'] = null;
+
+            return $slrAnalysis;
+        }
+
+        try {
+
+            $polyAnalysis =
+                $this->polynomialService->analyzeDataset(
+                    $dataset['x'],
+                    $dataset['y']
+                );
+
+        } catch (\RuntimeException $e) {
+
+            $slrAnalysis['regression_method'] = 'slr';
+
+            $slrAnalysis['method_reason'] =
+                'Polynomial regression failed; fell back to SLR.';
+
+            $slrAnalysis['r_squared_slr'] = $slrR2;
+
+            $slrAnalysis['r_squared_poly'] = null;
+
+            return $slrAnalysis;
+        }
+
+        $polyR2 = $polyAnalysis['r_squared'];
+
+        $improvement = $polyR2 - $slrR2;
+
+        if (
+            $polyR2 > $slrR2 + self::SLR_POLYNOMIAL_R2_THRESHOLD
+        ) {
+
+            $polyAnalysis['regression_method'] = 'polynomial';
+
+            $polyAnalysis['method_reason'] = sprintf(
+                'Polynomial regression selected'
+                . ' (R² = %.4f vs %.4f for SLR'
+                . ' — improvement of %.4f).',
+                $polyR2,
+                $slrR2,
+                $improvement
+            );
+
+            $polyAnalysis['r_squared_slr'] = $slrR2;
+
+            $polyAnalysis['r_squared_poly'] = $polyR2;
+
+            return $polyAnalysis;
+        }
+
+        $slrAnalysis['regression_method'] = 'slr';
+
+        $slrAnalysis['method_reason'] =
+            'Simple linear regression selected'
+            . ' (fit is comparable or better than polynomial).';
+
+        $slrAnalysis['r_squared_slr'] = $slrR2;
+
+        $slrAnalysis['r_squared_poly'] = $polyR2;
+
+        return $slrAnalysis;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Predict Next Project Month
+     * ------------------------------------------------------------------------
+     *
+     * Uses the regression model that was selected during analysis
+     * (SLR or polynomial).
+     *
+     * Example
+     *
+     * Current Month Index
+     *      10
+     *
+     * Next Month Index
+     *      11
+     */
+    private function predictNextMonth(
+        array $analysis,
+        int $currentMonthIndex
+    ): float {
+
+        $method = $analysis['regression_method'] ?? 'slr';
+
+        if ($method === 'polynomial') {
+
+            $predicted =
+                $this->polynomialService->predictUsingAnalysis(
+                    $analysis,
+                    $currentMonthIndex + 1
+                );
+
+        } else {
+
+            $predicted =
+                $this->regressionService->predictUsingAnalysis(
+                    $analysis,
+                    $currentMonthIndex + 1
+                );
+        }
+
+        return max(0, min(100, $predicted));
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Save Prediction History
+     * ------------------------------------------------------------------------
+     *
+     * Saves the current prediction to the prediction_history table for
+     * later accuracy tracking. Skips when the project is already at
+     * 100% or when a duplicate exists (same current_progress) to
+     * prevent duplicate rows on page reload.
+     *
+     * Called by: generatePrediction()
+     * Calls: PredictionHistory::create()
+     */
+    private function savePredictionHistory(
+        Project $project,
+        array $analysis,
+        float $currentProgress,
+        float $predictedNextProgress,
+        int $currentMonthIndex
+    ): void {
+
+        if ($currentProgress >= 100) {
+            return;
+        }
+
+        $exists = PredictionHistory::where('project_id', $project->id)
+            ->where('current_progress', $currentProgress)
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
+        $monthLabel = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->orderBy('planned_date')
+            ->offset($currentMonthIndex)
+            ->limit(1)
+            ->value('month_label');
+
+        // Fallback: predicted month may be beyond the last baseline schedule
+        if (!$monthLabel) {
+            $last = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->orderBy('planned_date', 'desc')
+                ->first(['month_label']);
+            if ($last) {
+                $monthLabel = Carbon::parse($last->month_label . '-01')
+                    ->addMonth()
+                    ->format('Y-m');
+            }
+        }
+
+        PredictionHistory::create([
+            'project_id'          => $project->id,
+            'month_label'         => $monthLabel,
+            'regression_method'   => $analysis['regression_method'] ?? 'slr',
+            'current_progress'    => round($currentProgress, 2),
+            'predicted_next'      => round($predictedNextProgress, 2),
+            'r_squared'           => $analysis['r_squared'] ?? 0,
+            'regression_snapshot' => $analysis,
+        ]);
+    }
+
+   /**
+     * ------------------------------------------------------------------------
+     * Build Prediction Report
+     * ------------------------------------------------------------------------
+     *
+     * Combines all AI prediction outputs into a structured Prediction Report.
+     *
+     * The report is intentionally divided into logical sections so future
+     * forecasting and business analysis can be added without restructuring
+     * the response format.
+     *
+     * Used By
+     * -------
+     * generatePrediction()
+     */
+    private function buildPredictionReport(
+        array $dataset,
+        array $analysis,
+        int $currentMonthIndex,
+        float $predictedNextProgress,
+        array $forecast,
+        array $assessment,
+        ?array $completion = null,
+        ?array $completionMulti = null
+    ): array {
+
+        /*
+        |--------------------------------------------------------------------------
+        | Current Project Progress
+        |--------------------------------------------------------------------------
+        |
+        | The regression dataset is already normalized and sorted
+        | chronologically. Therefore, the final Y value represents the
+        | project's latest cumulative actual progress.
+        |
+        */
+
+        $currentProgress = empty($dataset['y'])
+            ? 0
+            : end($dataset['y']);
+
+        return [
+
+            /*
+            |--------------------------------------------------------------------------
+            | Current Project State
+            |--------------------------------------------------------------------------
+            */
+
+            'current_state' => [
+
+                'progress' => $currentProgress,
+
+                'month_index' => $currentMonthIndex,
+
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Next Month Prediction
+            |--------------------------------------------------------------------------
+            */
+
+            'next_prediction' => [
+
+                'progress' => round(
+                    $predictedNextProgress,
+                    2
+                ),
+
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Future Forecast
+            |--------------------------------------------------------------------------
+            */
+
+            'forecast' => $forecast,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Project Assessment
+            |--------------------------------------------------------------------------
+            */
+
+            'assessment' => $assessment,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Regression Analysis
+            |--------------------------------------------------------------------------
+            */
+
+            'regression' => $analysis,
+
+            /*
+            |--------------------------------------------------------------------------
+            | Completion Estimation
+            |--------------------------------------------------------------------------
+            */
+
+            'completion' => $completion ?? [
+                'estimated_completion_index' => null,
+                'estimated_completion_date'  => null,
+                'predicted_delay_days'       => 0,
+                'completion_confidence'      => null,
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Multi-Method Completion Estimation (Phase 3.5)
+            |--------------------------------------------------------------------------
+            |
+            | Contains results from all three methods (Polynomial, Schedule-Aware,
+            | Earned Schedule EAC_time) plus a comparison summary with earliest/
+            | latest dates, spread in days, and agreement level.
+            |
+            */
+
+            'completion_multi' => $completionMulti ?? [
+                'methods'    => [
+                    'polynomial'      => null,
+                    'schedule_aware'  => null,
+                    'earned_schedule' => null,
+                ],
+                'comparison' => [
+                    'earliest_date' => null,
+                    'latest_date'   => null,
+                    'spread_days'   => 0,
+                    'agreement'     => 'N/A',
+                    'valid_count'   => 0,
+                ],
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
+            | Dataset Statistics
+            |--------------------------------------------------------------------------
+            */
+
+            'statistics' => $dataset['statistics'],
+
+        ];
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Minimal Prediction Report
+     * ------------------------------------------------------------------------
+     *
+     * Returns a prediction report with only basic state information when
+     * there is insufficient data for regression analysis.
+     *
+     * Used By
+     * -------
+     * generatePrediction()
+     */
+    private function buildMinimalReport(
+        float $currentProgress,
+        array $dataset
+    ): array {
+
+        $monthIndex = $dataset['statistics']['current_month_index'];
+
+        return [
+
+            'current_state' => [
+
+                'progress' => $currentProgress,
+
+                'month_index' => $monthIndex,
+
+            ],
+
+            'next_prediction' => [
+
+                'progress' => 0.0,
+
+            ],
+
+            'forecast' => [],
+
+            'assessment' => [],
+
+            'regression' => [
+
+                'observation_count' => $dataset['statistics']['observation_count'],
+
+                'mean_x'            => 0.0,
+
+                'mean_y'            => 0.0,
+
+                'slope'             => 0.0,
+
+                'intercept'         => 0.0,
+
+                'equation'          => 'y = 0.0000x + 0.0000',
+
+                'r_squared'         => 0.0,
+
+                'fit_quality'       => 'N/A',
+
+                'regression_method' => 'slr',
+
+                'method_reason'     => 'Insufficient data for regression analysis.',
+
+                'r_squared_slr'     => null,
+
+                'r_squared_poly'    => null,
+
+            ],
+
+            'completion' => [
+                'estimated_completion_index' => null,
+                'estimated_completion_date'  => null,
+                'predicted_delay_days'       => 0,
+                'completion_confidence'      => null,
+            ],
+
+            'completion_multi' => [
+                'methods'    => [
+                    'polynomial'      => null,
+                    'schedule_aware'  => null,
+                    'earned_schedule' => null,
+                ],
+                'comparison' => [
+                    'earliest_date' => null,
+                    'latest_date'   => null,
+                    'spread_days'   => 0,
+                    'agreement'     => 'N/A',
+                    'valid_count'   => 0,
+                ],
+            ],
+
+            'statistics' => $dataset['statistics'],
+
+        ];
+    }
+}

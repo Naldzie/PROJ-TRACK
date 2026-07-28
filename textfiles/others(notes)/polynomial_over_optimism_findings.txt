@@ -1,0 +1,244 @@
+===============================================================================
+  FINDINGS DOCUMENT
+  Polynomial Regression Completion Estimate — Over-Optimism Issue
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Purpose
+  -------
+  This document records a specific behavioral issue discovered during
+  V2 development: the polynomial (cubic) regression completion estimate
+  consistently predicts EARLY completion for projects that are actually
+  behind schedule. This finding led to a fundamental design change in
+  how the S-Curve forecast overlay (Phase 5) is implemented.
+
+  This document is structured to serve as a prompt for another AI model
+  to quickly understand the issue without needing to read the full
+  codebase.
+
+===============================================================================
+  1. THE PROBLEM IN ONE SENTENCE
+===============================================================================
+
+  When a construction project is behind schedule (actual progress below
+  planned), the polynomial regression completion estimate says the
+  project will finish EARLY — the exact opposite of what common sense
+  and the PMU would expect.
+
+===============================================================================
+  2. HOW THE SYSTEM GENERATES COMPLETION ESTIMATES
+===============================================================================
+
+  The system uses three independent methods for completion estimation:
+
+  A. Polynomial Newton-Raphson (Trend-Based)
+     ----------------------------------------
+     Uses the cubic regression equation (y = ax³ + bx² + cx + d) fitted
+     to the actual progress history. Solves ax³ + bx² + cx + (d - 100) = 0
+     using Newton-Raphson iteration to find the month index where
+     cumulative progress reaches 100%.
+
+     FILES:
+       app/Services/AI/CompletionEstimationService.php
+         → estimatePolynomial() method (lines 72-155)
+
+  B. Schedule-Aware (Constant Lag) — PRIMARY RECOMMENDATION
+     ------------------------------------------------------
+     Maps the current actual progress against the planned baseline
+     schedule to find the "effective position" (where the plan says
+     this progress should be). Computes lag = currentMonth - effectivePosition.
+     Estimated completion = planned_end + lag.
+
+     FILES:
+       app/Services/AI/CompletionEstimationService.php
+         → estimate() method (lines 28-70)
+
+  C. Earned Schedule EAC_time
+     -------------------------
+     Standard earned value formula: IEAC(t) = PD / SPI(t) = PD × AT / ES
+     Where ES = effective position, AT = actual time, PD = planned duration.
+     More conservative than Schedule-Aware when behind.
+
+     FILES:
+       app/Services/AI/CompletionEstimationService.php
+         → estimateEarnedSchedule() method (lines 157-217)
+
+===============================================================================
+  3. THE ROOT CAUSE
+===============================================================================
+
+  Why Polynomial Is Over-Optimistic
+  ----------------------------------
+  Construction projects follow an S-curve: slow start → rapid acceleration
+  in the middle → plateau at completion. The polynomial regression fits
+  this shape well (high R² in the 0.98-0.999 range).
+
+  The problem is in EXTRAPOLATION:
+    • When the project is in the acceleration phase (months 4-8 of a
+      typical 14-month project), the polynomial sees rapidly increasing
+      progress values
+    • The cubic equation extrapolates this acceleration forward
+    • It predicts that this rapid growth will continue, reaching 100%
+      earlier than the planned end date
+    • In reality, the acceleration is just the project CATCHING UP to
+      where it should have been — not a true acceleration trend
+    • The polynomial has no awareness of the planned schedule, so it
+      cannot distinguish "catching up" from "genuinely accelerating"
+
+  Concrete Example (Project 138 Simulation):
+    Planned S-curve: [0.6, 1.8, 3.8, 7, 12, 19, 28, 39, 50, 60, 72, 84, 94, 100]
+    Actual progress: [0.3, 0.8, 1.5, 3.5, 6, 10, 16, 24, 33, 42]
+      (consistently 15-30% behind plan for all 10 months)
+
+    Polynomial R²: 0.9989 (excellent fit — it captures the S-curve shape)
+    Polynomial predicts: Jul 23, 2027 (3 days AHEAD of schedule)
+    Schedule-Aware predicts: Sep 17, 2027 (53 days behind)
+    EAC_time predicts: Oct 24, 2027 (90 days behind)
+
+    The polynomial says "ahead of schedule" for a project that has NEVER
+    been on schedule in its entire history.
+
+  Another Example (8-month S-curve dataset):
+    Polynomial: Apr 06, 2027 (11 days behind)
+    Schedule-Aware: Apr 26, 2027 (31 days behind)
+    → Polynomial is 20 days too optimistic
+
+===============================================================================
+  4. WHY SCHEDULE-AWARE DOES NOT HAVE THIS PROBLEM
+===============================================================================
+
+  The Schedule-Aware method is tied to the project's own plan:
+    • It asks: "Based on your current progress, where in the planned
+      schedule should you be?"
+    • It then shifts the entire plan forward by the computed lag
+    • A project that is consistently 2 months behind gets a completion
+      date that is 2 months later than planned
+    • This is conservative but realistic
+
+  The Schedule-Aware method uses the polynomial's R² only for CONFIDENCE
+  classification, not for the actual date computation. The date comes
+  from the baseline schedules, not from the curve equation.
+
+===============================================================================
+  5. WHEN POLYNOMIAL IS CORRECT
+===============================================================================
+
+  The polynomial trend-based estimate IS useful in one scenario:
+  when the project has genuinely turned around and is accelerating
+  faster than the plan. In this case, the polynomial provides a
+  "best-case" lower bound.
+
+  This is why the multi-method comparison display (Phase 3.5) shows
+  ALL three estimates side by side:
+    • Polynomial (Best-Case) — what the curve trend says
+    • Schedule-Aware (Conservative) — primary recommendation
+    • EAC_time (Most Conservative) — what earned value says
+
+  The Schedule-Aware estimate is always the PRIMARY reference. The
+  polynomial is displayed for transparency but clearly labeled as
+  trend-based and best-case.
+
+===============================================================================
+  6. IMPACT ON S-CURVE FORECAST OVERLAY (PHASE 5)
+===============================================================================
+
+  The original V2 plan (Phase 5) proposed using the polynomial regression
+  line as the forecast overlay on the S-Curve chart. This finding
+  PROVES that approach would be misleading.
+
+  Instead, Phase 5 now uses the Schedule-Aware lag to SHIFT the planned
+  S-curve horizontally. The shifted curve:
+    • Runs parallel to the original plan
+    • Is visually intuitive ("we're on the same path, just X months behind")
+    • Naturally reaches 100% at the Schedule-Aware completion date
+    • Does not show artificial acceleration
+
+===============================================================================
+  7. VERIFICATION
+===============================================================================
+
+  The issue was verified using PHPUnit tests with synthetic datasets
+  and confirmed by real project data (Project 138).
+
+  File: tests/Unit/Services/AI/PolynomialOverOptimismTest.php
+
+  Test Results (all datasets show polynomial over-optimism):
+
+  Dataset 1 — 8-month S-curve, consistently behind:
+    Polynomial delay: 11 days
+    Schedule-Aware delay: 31 days
+    → Polynomial 20 days too optimistic
+
+  Dataset 2 — 14-month mid-project, consistently behind:
+    Polynomial delay: 32 days
+    Schedule-Aware delay: 37 days
+    → Polynomial 5 days too optimistic
+
+  Dataset 3 — Project 138 simulation, behind entire history:
+    Polynomial: 3 days AHEAD (wrong direction)
+    Schedule-Aware: 53 days behind
+    EAC_time: 90 days behind
+    → Polynomial predicts the OPPOSITE of reality
+
+===============================================================================
+  8. FILES TOUCHED BY THIS FINDING
+===============================================================================
+
+  Tests (created Jul 26, 2026):
+    tests/Unit/Services/AI/PolynomialOverOptimismTest.php
+      — 3 test datasets demonstrating the over-optimism
+
+  Plans (updated Jul 26, 2026):
+    textfiles/phase5_s_curve_shifted_forecast_plan.txt
+      — Phase 5 now uses shifted planned curve instead of polynomial
+
+    ai_module_ver2_master_plan.txt
+      — Phase 5 section updated to reflect the revised approach
+
+  This document:
+    textfiles/polynomial_over_optimism_findings.txt
+      — This file
+
+===============================================================================
+  9. KEY DATA STRUCTURES (FOR AI REFERENCE)
+===============================================================================
+
+  Standard S-Curve Planned Progress (14 months):
+  [0.6, 1.8, 3.8, 7, 12, 19, 28, 39, 50, 60, 72, 84, 94, 100]
+
+  Typical Behind-Schedule Actual Progress (10 months):
+  [0.3, 0.8, 1.5, 3.5, 6, 10, 16, 24, 33, 42]
+
+  Polynomial regression on this data produces:
+    a ≈ 0.01 (x³ coefficient, small because data is still in
+              acceleration phase)
+    b ≈ 0.18 (x² coefficient, positive — bending upward)
+    c ≈ 1.2  (x coefficient)
+    d ≈ -0.5 (intercept)
+    R² ≈ 0.9989
+
+  The critical insight: the positive x² coefficient causes the
+  polynomial to bend upward aggressively beyond the data range,
+  producing an unrealistically early 100% crossing.
+
+===============================================================================
+  10. CONCLUSION
+===============================================================================
+
+  Polynomial regression is EXCELLENT for short-range prediction
+  (next month's progress) and for identifying S-curve acceleration
+  patterns in historical data. But it should NEVER be used alone
+  for long-range completion date estimation.
+
+  The Schedule-Aware method ties estimates to the project's actual
+  plan, producing conservative but realistic dates. This aligns with
+  the system's design philosophy as a Decision Support System: it
+  provides early warnings rather than optimistic projections.
+
+  For the S-curve chart overlay, the shifted planned curve approach
+  (using Schedule-Aware lag) is the correct solution. The polynomial
+  line should not appear on the chart.
+
+===============================================================================
+  END OF FINDINGS DOCUMENT
+===============================================================================

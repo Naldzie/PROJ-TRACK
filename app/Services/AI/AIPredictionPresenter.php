@@ -1,0 +1,1178 @@
+<?php
+
+namespace App\Services\AI;
+
+use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
+use App\Models\ProjectProgressHistory;
+use App\Support\DateHelper;
+use Carbon\Carbon;
+
+/**
+ * ============================================================================
+ * AIPredictionPresenter
+ * ============================================================================
+ *
+ * Purpose
+ * -------
+ * Transforms the raw AIPredictionService output into a blade-friendly
+ * presentation format.
+ *
+ * This service handles:
+ * • Completed project detection
+ * • Insufficient data fallback
+ * • Mapping regression/forecast/assessment data to display keys
+ * • Calculating display-oriented values (expected progress, trend,
+ *   speed comparison, recommendations)
+ *
+ * Used By
+ * -------
+ * ProjectDetailService (Phase 4)
+ *
+ * Depends On
+ * ----------
+ * AIPredictionService — provides the regression prediction pipeline
+ */
+class AIPredictionPresenter
+{
+    /**
+     * ------------------------------------------------------------------------
+     * AI Prediction Service
+     * ------------------------------------------------------------------------
+     *
+     * Provides the completed regression prediction pipeline.
+     */
+    private AIPredictionService $aiPredictionService;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Recommendation Engine
+     * ------------------------------------------------------------------------
+     *
+     * Generates structured, categorized, and explainable recommendations.
+     */
+    private RecommendationEngine $recommendationEngine;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Constructor
+     * ------------------------------------------------------------------------
+     *
+     * Inject AI services used for presentation.
+     */
+    public function __construct(
+        AIPredictionService $aiPredictionService,
+        RecommendationEngine $recommendationEngine
+    ) {
+        $this->aiPredictionService = $aiPredictionService;
+        $this->recommendationEngine = $recommendationEngine;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Present Prediction Data
+     * ------------------------------------------------------------------------
+     *
+     * Main entry point.
+     *
+     * Returns a structured array compatible with the existing
+     * ai-prediction.blade.php view.
+     *
+     * Workflow
+     * --------
+     * Completed Project
+     *      ↓
+     * Return completion stats
+     *
+     * Ongoing Project
+     *      ↓
+     * Try AIPredictionService::generatePrediction()
+     *      ↓
+     * Success   → map normal prediction
+     * Exception → return insufficient-data fallback
+     *
+     * Used By
+     * -------
+     * ProjectDetailService::buildAIPredictionData()
+     */
+    public function present(Project $project): array
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | Completed Project
+        |--------------------------------------------------------------------------
+        |
+        | Skip the regression pipeline entirely for completed projects.
+        | Show actual completion statistics from the project record.
+        |
+        */
+
+        if ($project->status === 'Completed') {
+            return $this->presentCompleted($project);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Ongoing Project — Attempt Regression
+        |--------------------------------------------------------------------------
+        |
+        | Catch InvalidArgumentException (fewer than 2 observations)
+        | and return an insufficient-data response.
+        |
+        */
+
+        try {
+            $prediction = $this->aiPredictionService->generatePrediction($project);
+        } catch (\InvalidArgumentException $e) {
+            return $this->presentInsufficientData($project);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Edge Case: Insufficient Data
+        |--------------------------------------------------------------------------
+        |
+        | The prediction service may return a minimal report when there are
+        | fewer than 2 observations (instead of throwing). Route to the
+        | insufficient-data branch to show appropriate messaging.
+        |
+        */
+
+        $observationCount = (int) ($prediction['statistics']['observation_count'] ?? 0);
+
+        if ($observationCount < 2) {
+            return $this->presentInsufficientData($project);
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Normal Prediction
+        |--------------------------------------------------------------------------
+        |
+        | Map the AIPredictionService output to blade-compatible keys.
+        |
+        */
+
+        return $this->presentNormal($project, $prediction);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Present Completed Project
+     * ------------------------------------------------------------------------
+     *
+     * Returns completion statistics from the project record.
+     *
+     * Used By
+     * -------
+     * present()
+     */
+    private function presentCompleted(Project $project): array
+    {
+        return [
+            /*
+            |------------------------------------------------------------------
+            | Legacy Flags
+            |------------------------------------------------------------------
+            |
+            | is_mockup  → true preserves backward compatibility with blade
+            |              checks. The data is no longer a "mockup" but the
+            |              blade was written for this key.
+            |
+            | is_completed → true triggers the completed-project branch in
+            |               the blade view.
+            |
+            */
+
+            'is_mockup'          => true,
+            'is_completed'       => true,
+
+            /*
+            |------------------------------------------------------------------
+            | Completion Dates
+            |------------------------------------------------------------------
+            */
+
+            'actual_completion'          => $project->actual_end_date,
+            'planned_completion'         => $project->planned_end_date,
+            'completion_delay'           => $project->getCompletionDelay(),
+            'structured_recommendations' => [],
+            'prediction_history'         => [],
+            'prediction_history_summary' => [
+                'total_with_actual' => 0,
+                'accurate_count'    => 0,
+                'accuracy_percent'  => 0,
+                'avg_variance'      => 0,
+            ],
+        ];
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Present Insufficient Data
+     * ------------------------------------------------------------------------
+     *
+     * Returns a limited view when regression cannot run
+     * (fewer than 2 monthly observations).
+     *
+     * Used By
+     * -------
+     * present()
+     */
+    private function presentInsufficientData(Project $project): array
+    {
+        $currentProgress   = $project->getProgressPercentage();
+        $daysElapsed       = $this->getDaysElapsed($project);
+        $daysTotal         = $this->getDaysTotal($project);
+        $daysRemaining     = $this->calculateDaysRemaining($project);
+        $expectedProgress  = $this->calculateExpectedProgress($project, $daysElapsed, $daysTotal);
+        $progressGap       = $expectedProgress - $currentProgress;
+
+        return [
+            /*
+            |------------------------------------------------------------------
+            | Legacy Flags
+            |------------------------------------------------------------------
+            */
+
+            'is_mockup'              => true,
+            'is_completed'           => false,
+            'is_insufficient_data'   => true,
+
+            /*
+            |------------------------------------------------------------------
+            | Status
+            |------------------------------------------------------------------
+            */
+
+            'status'                 => 'INSUFFICIENT DATA',
+            'risk_level'             => 'unknown',
+            'status_color'           => 'gray',
+
+            /*
+            |------------------------------------------------------------------
+            | Progress Metrics
+            |------------------------------------------------------------------
+            */
+
+            'current_progress'       => round($currentProgress, 1),
+            'expected_progress'      => round($expectedProgress, 1),
+            'progress_gap'           => round($progressGap, 1),
+
+            /*
+            |------------------------------------------------------------------
+            | Timeline
+            |------------------------------------------------------------------
+            */
+
+            'days_elapsed'           => $daysElapsed,
+            'days_total'             => $daysTotal,
+            'days_remaining'         => max(0, $daysRemaining),
+            'estimated_completion'   => null,
+            'can_estimate_completion'=> false,
+            'planned_completion'     => $project->planned_end_date,
+            'predicted_delay_days'   => 0,
+
+            /*
+            |------------------------------------------------------------------
+            | Certainty
+            |------------------------------------------------------------------
+            */
+
+            'certainty_label'        => 'Insufficient Data',
+            'confidence_percentage'  => null,
+
+            /*
+            |------------------------------------------------------------------
+            | Trend
+            |------------------------------------------------------------------
+            */
+
+            'trend'                  => 'STABLE',
+            'trend_label'            => 'Not enough data to determine a trend',
+
+            /*
+            |------------------------------------------------------------------
+            | Milestones & Recommendations
+            |------------------------------------------------------------------
+            */
+
+            'behind_milestone'       => null,
+            'recommendations'            => [
+                'At least 2 monthly progress records are needed before the system can estimate a completion trend.',
+                'Continue regular monthly inspections to enable trend estimation.',
+            ],
+            'structured_recommendations' => [],
+
+            /*
+            |------------------------------------------------------------------
+            | Speed Comparison
+            |------------------------------------------------------------------
+            */
+
+            'early_speed'            => 0,
+            'recent_speed'           => 0,
+
+            /*
+            |------------------------------------------------------------------
+            | Analysis
+            |------------------------------------------------------------------
+            */
+
+            'analysis_text'          => 'Not enough inspection records yet to estimate a completion trend for this project.',
+
+            /*
+            |------------------------------------------------------------------
+            | New Prediction Data (empty)
+            |------------------------------------------------------------------
+            |
+            | These keys are available even in the insufficient-data state
+            | so the blade can conditionally show/hide sections.
+            |
+            */
+
+            'regression_info'        => null,
+            'forecast_data'          => [],
+            'assessment_data'        => [],
+            'completion_multi'       => [],
+            'next_prediction'        => null,
+            'next_planned_progress'  => null,
+            'next_is_current_month'  => false,
+            'current_month_index'    => 0,
+            'prediction_history'     => [],
+            'prediction_history_summary' => [
+                'total_with_actual' => 0,
+                'accurate_count'    => 0,
+                'accuracy_percent'  => 0,
+                'avg_variance'      => 0,
+            ],
+        ];
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Present Normal Prediction
+     * ------------------------------------------------------------------------
+     *
+     * Maps the AIPredictionService output to blade-compatible keys
+     * and enriches it with display-oriented calculations.
+     *
+     * Used By
+     * -------
+     * present()
+     */
+    private function presentNormal(Project $project, array $prediction): array
+    {
+        /*
+        |--------------------------------------------------------------------------
+        | Extract AIPredictionService Data
+        |--------------------------------------------------------------------------
+        */
+
+        $currentState      = $prediction['current_state'];
+        $nextPrediction    = $prediction['next_prediction'];
+        $forecast          = $prediction['forecast'];
+        $assessment        = $prediction['assessment'];
+        $regression        = $prediction['regression'];
+        $statistics        = $prediction['statistics'];
+        $completion        = $prediction['completion'] ?? [];
+        $completionMulti   = $prediction['completion_multi'] ?? [];
+
+        $currentProgress   = $currentState['progress'];
+        $currentMonthIndex = $currentState['month_index'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | Prediction History (Phase 7)
+        |--------------------------------------------------------------------------
+        |
+        | Load past predictions that have actual outcomes for accuracy
+        | display in the Blade view. Limited to 6 most recent records.
+        |
+        */
+
+        $rawHistory = $project->predictionHistory()
+            ->whereNotNull('actual_next')
+            ->take(6)
+            ->get();
+
+        $predictionHistory = $rawHistory->map(fn ($ph) => [
+            'month'     => $ph->month_label
+                ? \Carbon\Carbon::parse($ph->month_label . '-01')->format('M Y')
+                : $ph->created_at->format('M Y'),
+            'predicted' => $ph->predicted_next,
+            'actual'    => $ph->actual_next,
+            'variance'  => round($ph->actual_next - $ph->predicted_next, 2),
+            'method'    => $ph->regression_method,
+        ])->values();
+
+        $totalWithActual = $rawHistory->count();
+        $accurateCount   = $rawHistory->filter(
+            fn ($h) => abs($h->actual_next - $h->predicted_next) < 2
+        )->count();
+        $avgVariance     = $totalWithActual > 0
+            ? round($rawHistory->avg(fn ($h) => $h->actual_next - $h->predicted_next), 2)
+            : 0;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Calculate Display Values
+        |--------------------------------------------------------------------------
+        |
+        | These values are NOT part of the regression pipeline.
+        | They are derived here for UI display purposes.
+        |
+        */
+
+        $daysElapsed       = $this->getDaysElapsed($project);
+        $daysTotal         = $this->getDaysTotal($project);
+        $daysRemaining     = $this->calculateDaysRemaining($project);
+        $expectedProgress  = $this->calculateExpectedProgress($project, $daysElapsed, $daysTotal);
+        $progressGap       = $expectedProgress - $currentProgress;
+
+        /*
+        |--------------------------------------------------------------------------
+        | Detect if Next Prediction is Actually for the Current Month
+        |--------------------------------------------------------------------------
+        |
+        | The AI predicts progress for the month after the latest recorded
+        | history. If that predicted month matches the current (simulated)
+        | month, the label should read "This Month" instead of "Next Month."
+        |
+        */
+
+        $nextIsCurrentMonth = false;
+        $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
+            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if ($latestHistory && $latestHistory->inspection_month_date) {
+            $predictedMonth = $latestHistory->inspection_month_date->copy()->addMonth();
+            $nextIsCurrentMonth = $predictedMonth->format('Y-m') === DateHelper::now()->format('Y-m');
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Determine Risk Status
+        |--------------------------------------------------------------------------
+        |
+        | Combines two signals to determine overall project risk:
+        |
+        | 1. Current progress gap (actual vs planned for the current month)
+        |    — reflects the real on-the-ground situation.
+        |
+        | 2. Near-term assessment (first forecast month's projected
+        |    variance) — reflects where the model expects the project
+        |    to be next month.
+        |
+        | The more conservative (higher risk) of the two is used so
+        | that a project currently behind schedule does not show
+        | "ON TRACK" just because a far-future forecast looks rosy.
+        |
+        */
+
+        $currentGapRisk = $this->classifyRiskFromGap($progressGap);
+
+        $firstAssessment = !empty($assessment) ? $assessment[0] : null;
+        $nearTermRisk    = $firstAssessment['risk_level'] ?? null;
+
+        $riskPriority = ['Low' => 0, 'Moderate' => 1, 'High' => 2, 'Critical' => 3];
+        $overallRisk  = array_search(
+            max(
+                $riskPriority[$currentGapRisk] ?? 0,
+                $riskPriority[$nearTermRisk] ?? 0
+            ),
+            $riskPriority
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Map Risk to Status Display
+        |--------------------------------------------------------------------------
+        |
+        | Only 'Low' risk maps to ON TRACK. Everything else (Moderate,
+        | High, Critical) is AT RISK — being up to 10% behind schedule
+        | is a genuine concern, not "on track".
+        |
+        */
+
+        $statusDisplay = $overallRisk === 'Low' ? 'ON TRACK' : 'AT RISK';
+        $statusColor   = $overallRisk === 'Low' ? '#10b981' : '#f59e0b';
+
+        /*
+        |--------------------------------------------------------------------------
+        | Determine Certainty Label
+        |--------------------------------------------------------------------------
+        |
+        | Based on observation count and R².
+        |
+        */
+
+        $observationCount = (int) ($statistics['observation_count'] ?? 0);
+        $rSquared         = (float) ($regression['r_squared'] ?? 0);
+        $certaintyLabel   = $this->generateCertaintyLabel($observationCount, $rSquared);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Determine Trend
+        |--------------------------------------------------------------------------
+        |
+        | Compares the last two assessment records (variance trend)
+        | to classify the project as ACCELERATING, DECELERATING,
+        | or STABLE.
+        |
+        */
+
+        $trendResult  = $this->determineTrend($assessment);
+        $trend        = $trendResult['trend'];
+        $trendLabel   = $trendResult['label'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | Calculate Speed Comparison
+        |--------------------------------------------------------------------------
+        |
+        | Compares the average actual progress in the first half
+        | of the project history against the second half.
+        |
+        */
+
+        $speedResult  = $this->calculateSpeedComparison($project, $observationCount);
+        $earlySpeed   = $speedResult['early_speed'];
+        $recentSpeed  = $speedResult['recent_speed'];
+
+        /*
+        |--------------------------------------------------------------------------
+        | Generate Recommendations
+        |--------------------------------------------------------------------------
+        |
+        | Uses the RecommendationEngine (rule-based) to produce structured,
+        | categorized recommendations with reasons and priorities.
+        | Falls back to empty arrays when prediction data is insufficient.
+        |
+        */
+
+        $structuredRecs = $this->recommendationEngine->generate($project, $prediction);
+        $recommendations = array_column($structuredRecs, 'message');
+
+        /*
+        |--------------------------------------------------------------------------
+        | Analysis Text (AI or Static)
+        |--------------------------------------------------------------------------
+        |
+        | Use cached AI-generated text from ai_solutions table if available.
+        | Falls back to static template text when no AI solution exists.
+        |
+        | Uses: Project::aiSolutions() relationship
+        */
+
+        $latestAi = $project->aiSolutions()->first();
+        if ($latestAi && $latestAi->analysis_text) {
+            $analysisText = $latestAi->analysis_text;
+            $aiGeneratedAt = $latestAi->created_at;
+        } else {
+            $analysisText = $this->generateAnalysisText(
+                $project,
+                $currentProgress,
+                $expectedProgress,
+                $statusDisplay
+            );
+            $aiGeneratedAt = null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Build Return Array
+        |--------------------------------------------------------------------------
+        */
+
+        return [
+
+            /*
+            |------------------------------------------------------------------
+            | Legacy Flags
+            |------------------------------------------------------------------
+            */
+
+            'is_mockup'              => true,
+            'is_completed'           => false,
+            'is_insufficient_data'   => false,
+
+            /*
+            |------------------------------------------------------------------
+            | Status
+            |------------------------------------------------------------------
+            */
+
+            'status'                 => $statusDisplay,
+            'risk_level'             => $overallRisk,
+            'status_color'           => $statusColor,
+
+            /*
+            |------------------------------------------------------------------
+            | Progress Metrics
+            |------------------------------------------------------------------
+            */
+
+            'current_progress'       => round($currentProgress, 1),
+            'expected_progress'      => round($expectedProgress, 1),
+            'progress_gap'           => round($progressGap, 1),
+
+            /*
+            |------------------------------------------------------------------
+            | Timeline
+            |------------------------------------------------------------------
+            */
+
+            'days_elapsed'           => $daysElapsed,
+            'days_total'             => $daysTotal,
+            'days_remaining'         => max(0, $daysRemaining),
+
+            'estimated_completion'    => $completion['estimated_completion_date'] ?? null,
+            'can_estimate_completion' => ($completion['estimated_completion_date'] ?? null) !== null,
+            'planned_completion'    => $project->planned_end_date,
+            'predicted_delay_days'    => $completion['predicted_delay_days'] ?? 0,
+            'completion_confidence'   => $completion['completion_confidence'] ?? null,
+
+            /*
+            |------------------------------------------------------------------
+            | Certainty
+            |------------------------------------------------------------------
+            */
+
+            'certainty_label'        => $certaintyLabel,
+            'confidence_percentage'  => null,
+
+            /*
+            |------------------------------------------------------------------
+            | Trend
+            |------------------------------------------------------------------
+            */
+
+            'trend'                  => $trend,
+            'trend_label'            => $trendLabel,
+
+            /*
+            |------------------------------------------------------------------
+            | Milestones & Recommendations
+            |------------------------------------------------------------------
+            */
+
+            'behind_milestone'       => null,
+            'recommendations'            => $recommendations,
+            'structured_recommendations' => $structuredRecs,
+
+            /*
+            |------------------------------------------------------------------
+            | Speed Comparison
+            |------------------------------------------------------------------
+            */
+
+            'early_speed'            => $earlySpeed,
+            'recent_speed'           => $recentSpeed,
+
+            /*
+            |------------------------------------------------------------------
+            | Analysis
+            |------------------------------------------------------------------
+            */
+
+            'analysis_text'          => $analysisText,
+
+            /*
+            |------------------------------------------------------------------
+            | AI Metadata
+            |------------------------------------------------------------------
+            */
+
+            'ai_generated_at'        => $aiGeneratedAt,
+
+            /*
+            |------------------------------------------------------------------
+            | New Prediction Data (Phase 4)
+            |------------------------------------------------------------------
+            |
+            | These keys provide access to the full AIPredictionService
+            | output for enhanced Blade display (e.g., showing R²,
+            | regression equation, forecast breakdown).
+            |
+            | Used By
+            | -------
+            | ai-prediction.blade.php (Phase 4.5)
+            |
+            */
+
+            'regression_info'        => [
+                'equation'           => $regression['equation'],
+                'slope'              => $regression['slope'] ?? null,
+                'intercept'          => $regression['intercept'] ?? null,
+                'r_squared'          => $regression['r_squared'],
+                'fit_quality'        => $regression['fit_quality'],
+                'observation_count'  => $regression['observation_count'],
+                'regression_method'  => $regression['regression_method'] ?? 'slr',
+                'method_reason'      => $regression['method_reason'] ?? null,
+                'r_squared_slr'      => $regression['r_squared_slr'] ?? null,
+                'r_squared_poly'     => $regression['r_squared_poly'] ?? null,
+                'a'                  => $regression['a'] ?? null,
+                'b'                  => $regression['b'] ?? null,
+                'c'                  => $regression['c'] ?? null,
+                'd'                  => $regression['d'] ?? null,
+                'coefficients'       => $regression['coefficients'] ?? null,
+            ],
+
+            'completion_multi'       => $completionMulti,
+
+            /*
+            |--------------------------------------------------------------
+            | Prediction History (Phase 7)
+            |--------------------------------------------------------------
+            */
+
+            'prediction_history'         => $predictionHistory,
+            'prediction_history_summary' => [
+                'total_with_actual' => $totalWithActual,
+                'accurate_count'    => $accurateCount,
+                'accuracy_percent'  => $totalWithActual > 0
+                    ? round($accurateCount / $totalWithActual * 100, 1)
+                    : 0,
+                'avg_variance'      => $avgVariance,
+            ],
+
+            'forecast_data'          => $forecast,
+            'assessment_data'        => $assessment,
+            'next_prediction'        => $nextPrediction['progress'],
+            'next_planned_progress'  => $this->getNextPlannedProgress($project),
+            'next_is_current_month'  => $nextIsCurrentMonth,
+            'current_month_index'    => $currentMonthIndex,
+        ];
+    }
+
+    /*
+    |==========================================================================
+    | Display Calculation Helpers
+    |==========================================================================
+    */
+
+    /**
+     * ------------------------------------------------------------------------
+     * Calculate Expected Progress
+     * ------------------------------------------------------------------------
+     *
+     * Determines the expected cumulative progress from the project's
+     * Effective Baseline.
+     *
+     * Logic
+     * -----
+     * 1. Find the latest baseline schedule whose planned_date ≤ today.
+     * 2. Use its planned_progress_percent as expected progress.
+     * 3. If no baseline exists, fall back to a time-based estimate
+     *    (days elapsed / total days).
+     *
+     * Used By
+     * -------
+     * presentNormal(), presentInsufficientData()
+     */
+    private function calculateExpectedProgress(
+        Project $project,
+        int $daysElapsed,
+        int $daysTotal
+    ): float {
+        $effectiveNow = DateHelper::now();
+        $currentMonthStart = $effectiveNow->copy()->startOfMonth()->format('Y-m-d');
+        $currentMonthEnd = $effectiveNow->copy()->endOfMonth()->format('Y-m-d');
+
+        /*
+        |----------------------------------------------------------------------
+        | 1. Look for a progress history record in the current month
+        |----------------------------------------------------------------------
+        |
+        | If a record exists for this month, use its planned_progress_percent.
+        | This handles the case where the user has already recorded progress
+        | for the current month.
+        |
+        */
+
+        $currentMonthHistory = ProjectProgressHistory::where('project_id', $project->id)
+            ->where('inspection_month_date', '>=', $currentMonthStart)
+            ->where('inspection_month_date', '<=', $currentMonthEnd)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if ($currentMonthHistory && $currentMonthHistory->planned_progress_percent !== null) {
+            return (float) $currentMonthHistory->planned_progress_percent;
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | 2. Look up the baseline schedule for the current month
+        |----------------------------------------------------------------------
+        |
+        | If no progress record exists yet for this month (e.g., the user
+        | hasn't entered progress), use the planned target from the baseline
+        | schedule that falls within this month.
+        |
+        */
+
+        $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->where('planned_date', '>=', $currentMonthStart)
+            ->where('planned_date', '<=', $currentMonthEnd)
+            ->orderBy('planned_date', 'asc')
+            ->first();
+
+        if ($currentMonthBaseline) {
+            return (float) $currentMonthBaseline->planned_progress_percent;
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | 3. Fall back to the latest progress history record
+        |----------------------------------------------------------------------
+        |
+        | If no current month data exists, use the most recent recorded
+        | planned value from any past month.
+        |
+        */
+
+        $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
+            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if ($latestHistory && $latestHistory->planned_progress_percent !== null) {
+            return (float) $latestHistory->planned_progress_percent;
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | 4. Fall back to date-filtered baseline
+        |----------------------------------------------------------------------
+        |
+        | Uses the project's loaded relationship to avoid extra DB queries
+        | if the relationship is already eager-loaded.
+        |
+        */
+
+        $baselineSchedules = $project->baselineSchedules
+            ?? ProjectBaselineSchedule::where('project_id', $project->id)
+                ->orderBy('planned_date', 'asc')
+                ->get();
+
+        if ($baselineSchedules->isNotEmpty()) {
+            $currentMonthTarget = $baselineSchedules
+                ->filter(fn ($schedule) =>
+                    $schedule->planned_date && $schedule->planned_date->lte($effectiveNow)
+                )
+                ->last();
+
+            if ($currentMonthTarget) {
+                return (float) $currentMonthTarget->planned_progress_percent;
+            }
+
+            return (float) $baselineSchedules->first()->planned_progress_percent;
+        }
+
+        /*
+        |----------------------------------------------------------------------
+        | 5. Fallback: Time-Based Estimate
+        |----------------------------------------------------------------------
+        |
+        | Used when no baseline schedules exist.
+        |
+        */
+
+        if ($daysTotal > 0) {
+            return ($daysElapsed / $daysTotal) * 100;
+        }
+
+        return 0;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Get Next Planned Progress
+     * ------------------------------------------------------------------------
+     *
+     * Returns the planned_progress_percent from the baseline schedule
+     * immediately after the latest recorded progress month.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function getNextPlannedProgress(Project $project): ?float
+    {
+        $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
+            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$latestHistory || !$latestHistory->inspection_month_date) {
+            return null;
+        }
+
+        $nextBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->where('planned_date', '>', $latestHistory->inspection_month_date)
+            ->orderBy('planned_date', 'asc')
+            ->first();
+
+        return $nextBaseline ? (float) $nextBaseline->planned_progress_percent : null;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Classify Risk From Progress Gap
+     * ------------------------------------------------------------------------
+     *
+     * Fallback risk classification when no assessment data is available.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function classifyRiskFromGap(float $progressGap): string
+    {
+        if ($progressGap <= -5) {
+            return 'Low';
+        }
+        if ($progressGap <= 5) {
+            return 'Low';
+        }
+        if ($progressGap < 10) {
+            return 'Moderate';
+        }
+        if ($progressGap < 15) {
+            return 'High';
+        }
+        return 'Critical';
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Generate Certainty Label
+     * ------------------------------------------------------------------------
+     *
+     * Produces a human-readable certainty description based on
+     * observation count and R².
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function generateCertaintyLabel(
+        int $observationCount,
+        float $rSquared
+    ): string {
+        $dataCertainty = match (true) {
+            $observationCount <= 3  => 'Low data',
+            $observationCount <= 6  => 'Moderate data',
+            default                 => 'Good data',
+        };
+
+        $fitCertainty = match (true) {
+            $rSquared >= 0.9  => 'strong fit',
+            $rSquared >= 0.7  => 'good fit',
+            $rSquared >= 0.5  => 'moderate fit',
+            default           => 'weak fit',
+        };
+
+        return "{$dataCertainty}, {$fitCertainty}";
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Determine Trend
+     * ------------------------------------------------------------------------
+     *
+     * Classifies the project trend as ACCELERATING, DECELERATING,
+     * or STABLE by comparing the last two assessment records.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function determineTrend(array $assessment): array
+    {
+        if (count($assessment) < 2) {
+            return [
+                'trend' => 'STABLE',
+                'label' => 'Steady progress',
+            ];
+        }
+
+        $latestVariance   = end($assessment)['variance'];
+        $previousVariance = prev($assessment)['variance'];
+        reset($assessment);
+
+        $delta = $latestVariance - $previousVariance;
+
+        if ($delta <= -2) {
+            return [
+                'trend' => 'DECELERATING',
+                'label' => 'Falling further behind schedule compared to last month',
+            ];
+        }
+
+        if ($delta >= 2) {
+            return [
+                'trend' => 'ACCELERATING',
+                'label' => 'Catching up to baseline schedule compared to last month',
+            ];
+        }
+
+        return [
+            'trend' => 'STABLE',
+            'label' => 'Steady progress',
+        ];
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Calculate Speed Comparison
+     * ------------------------------------------------------------------------
+     *
+     * Splits the project history in half and compares the average
+     * cumulative progress of the early phase against the recent phase.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function calculateSpeedComparison(
+        Project $project,
+        int $observationCount
+    ): array {
+        /*
+        |----------------------------------------------------------------------
+        | Fetch Progress History
+        |----------------------------------------------------------------------
+        |
+        | Uses actual_progress_percent from the progress history.
+        |
+        */
+
+        $progressHistory = $project->progressHistory()
+            ->orderBy('inspection_month_date', 'asc')
+            ->get();
+
+        if ($progressHistory->isEmpty()) {
+            return [
+                'early_speed'  => 0,
+                'recent_speed' => 0,
+            ];
+        }
+
+        $half = max(1, (int) ceil($observationCount / 2));
+
+        $earlyAvg = $progressHistory->slice(0, $half)
+            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
+
+        $recentAvg = $progressHistory->slice(-$half)
+            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
+
+        return [
+            'early_speed'  => round($earlyAvg, 1),
+            'recent_speed' => round($recentAvg, 1),
+        ];
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Generate Analysis Text
+     * ------------------------------------------------------------------------
+     *
+     * Produces a human-readable summary of the project's current
+     * state based on available data.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function generateAnalysisText(
+        Project $project,
+        float $currentProgress,
+        float $expectedProgress,
+        string $statusDisplay
+    ): string {
+        $gap = round($expectedProgress - $currentProgress, 1);
+
+        if ($statusDisplay === 'ON TRACK') {
+            return "Project is progressing well. Current progress ({$currentProgress}%) "
+                 . "is close to the expected progress ({$expectedProgress}%). "
+                 . "At this rate, the project is expected to complete on schedule.";
+        }
+
+        if ($gap < 0) {
+            return "Excellent! Project is ahead of schedule. Current progress ({$currentProgress}%) "
+                 . "exceeds the expected progress ({$expectedProgress}%).";
+        }
+
+        return "Project is running behind schedule. Current progress ({$currentProgress}%) "
+             . "is {$gap}% below expected progress ({$expectedProgress}%). "
+             . "The regression model indicates variance is likely to persist "
+             . "based on historical trend analysis. Immediate action is recommended.";
+    }
+
+    /*
+    |==========================================================================
+    | Timeline Helpers
+    |==========================================================================
+    */
+
+    /**
+     * ------------------------------------------------------------------------
+     * Get Days Elapsed
+     * ------------------------------------------------------------------------
+     *
+     * Calculates the number of days since the project's planned start date.
+     *
+     * Used By
+     * -------
+     * presentNormal(), presentInsufficientData()
+     */
+    private function getDaysElapsed(Project $project): int
+    {
+        if (!$project->planned_start_date) {
+            return 0;
+        }
+        return (int) $project->planned_start_date->diffInDays(DateHelper::now(), false);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Get Days Total
+     * ------------------------------------------------------------------------
+     *
+     * Calculates the total planned duration in days.
+     *
+     * Used By
+     * -------
+     * presentNormal(), presentInsufficientData()
+     */
+    private function getDaysTotal(Project $project): int
+    {
+        if (!$project->planned_start_date || !$project->planned_end_date) {
+            return 0;
+        }
+        return (int) $project->planned_start_date->diffInDays($project->planned_end_date, false);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Calculate Days Remaining
+     * ------------------------------------------------------------------------
+     *
+     * Calculates the number of days remaining until the planned end date.
+     *
+     * Used By
+     * -------
+     * presentNormal(), presentInsufficientData()
+     */
+    private function calculateDaysRemaining(Project $project): int
+    {
+        if (!$project->planned_end_date) {
+            return 0;
+        }
+        return (int) max(0, floor(DateHelper::now()->diffInDays($project->planned_end_date, false)));
+    }
+}

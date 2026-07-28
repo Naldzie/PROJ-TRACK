@@ -1,0 +1,601 @@
+s_curve_preview_setup_modal_plan
+================================================================================
+  PLAN FILE
+  B9 Item 3 — Live S-Curve Preview in Set Up Baseline Modal
+  CSPC PMU System
+  Part of: baseline_extension_adjustment_plan__4_ (1) — Part B
+  Status: PHASES 1-4 COMPLETE + LAYOUT REDESIGN (July 13, 2026)
+================================================================================
+
+================================================================================
+  WHAT THIS PLAN COVERS
+================================================================================
+
+B9 Item 3 from the main plan: adding a live S-Curve chart preview inside the
+Set Up Baseline modal, so the user can see the cumulative progress curve build
+in real-time as months are added during initial baseline setup.
+
+This involves:
+  • Extracting the existing Chart.js chart from progress.blade.php into a
+    reusable component (Blade partial + JS function).
+  • Redesigning the Set Up Baseline modal layout to accommodate the chart
+    alongside the existing add-month form and month list.
+  • Wiring the chart to the local setupLocalMonths array so it updates live
+    on each "Add Month" click (no server calls for preview).
+
+================================================================================
+  PREREQUISITE / DEPENDENCY
+================================================================================
+
+Chart.js is already loaded via CDN on the project detail page. Since the Set Up
+Baseline modal exists on the same page, no additional library loading is needed.
+
+NO dependency on B3.1 (create-project modal integration) — this work is purely
+within the existing project-detail-page usage of the Set Up Baseline modal.
+
+================================================================================
+  LAYOUT OPTIONS (for reference — #1 is the planned first attempt)
+================================================================================
+
+The current Set Up Baseline modal uses modal-xl (~1140px) with a two-column
+grid: left = Add Month form, right = Month list.
+
+Adding a chart to this modal presents a space constraint. The following options
+were considered:
+
+────────────────────────────────────────────────────────────────────────────────
+OPTION 1 — Three-column layout (form | list | chart) — EXPLORED AND REJECTED
+────────────────────────────────────────────────────────────────────────────────
+  Layout:
+    ┌──────────┐ ┌──────────┐ ┌──────────┐
+    │  Add     │ │  Month   │ │  S-Curve │
+    │  Month   │ │  List    │ │  Preview │
+    │  Form    │ │          │ │          │
+    └──────────┘ └──────────┘ └──────────┘
+  Pros: All visible at once, no scrolling.
+  Cons: Each column ~340px — chart is too narrow for meaningful preview.
+  Verdict: REJECTED — chart width is insufficient.
+
+────────────────────────────────────────────────────────────────────────────────
+OPTION 2 — Two-column top (form | chart), full-width list below — FIRST TRY
+────────────────────────────────────────────────────────────────────────────────
+  Layout:
+    ┌────────────────────────────────────────────┐
+    │ ┌──────────────┐ ┌──────────────────────┐  │
+    │ │  Add Month   │ │  S-Curve Preview     │  │
+    │ │  Form        │ │  [chart canvas]      │  │
+    │ │  (+ compact  │ │                      │  │
+    │ │   Manage     │ │                      │  │
+    │ │   Activities)│ │                      │  │
+    │ │              │ │                      │  │
+    │ │ [+ Add Month]│ │                      │  │
+    │ └──────────────┘ └──────────────────────┘  │
+    │ ┌────────────────────────────────────────┐ │
+    │ │  Added Months (scrollable list, ~200px)  │ │
+    │ │  May 2026 — 10% — 3 activities  ✕       │ │
+    │ │  Jun 2026 — 30% — 1 activity   ✕        │ │
+    │ └────────────────────────────────────────┘ │
+    └────────────────────────────────────────────┘
+  Pros: Chart gets ~540px (good width); live preview visible while adding;
+         month list still accessible below.
+  Cons: Modal is taller; list may need scrolling if many months.
+  Status: FIRST CHOICE — will be implemented first. If user dislikes the layout
+          after testing, fall back to Option 4.
+
+────────────────────────────────────────────────────────────────────────────────
+OPTION 3 — Keep existing two-column grid, add chart as full-width row below
+────────────────────────────────────────────────────────────────────────────────
+  Layout:
+    ┌──────────────┐ ┌──────────────┐
+    │  Add Month   │ │  Month List  │
+    │  Form        │ │              │
+    └──────────────┘ └──────────────┘
+    ┌────────────────────────────────┐
+    │  S-Curve Preview (full-width)  │
+    └────────────────────────────────┘
+  Pros: Minimal change to existing layout; chart gets ~1080px — widest possible.
+  Cons: Chart is below the fold — user may not see it updating while adding
+         months. Defeats the "live preview as you build" purpose.
+  Verdict: Rejected for the same reason — not suitable for live preview.
+
+────────────────────────────────────────────────────────────────────────────────
+OPTION 4 — Tabbed modal (Add tab + Preview tab) — FALLBACK
+────────────────────────────────────────────────────────────────────────────────
+  Layout:
+    ┌──────────────────────────────────────┐
+    │  [Add Month] [Preview]               │  ← tabs
+    ├──────────────────────────────────────┤
+    │  Tab: Add Month                      │
+    │  ┌──────────────┐ ┌──────────────┐  │
+    │  │  Add Month   │ │  Month List  │   │
+    │  │  Form        │ │              │   │
+    │  └──────────────┘ └──────────────┘  │
+    │  OR                                 │
+    │  Tab: Preview                       │
+    │  ┌──────────────────────────────┐   │
+    │  │  S-Curve Preview             │   │
+    │  │  [+ monthly summary below]  │   │
+    │  └──────────────────────────────┘   │
+    └──────────────────────────────────────┘
+  Pros: Each view gets maximum space; no layout compromises.
+  Cons: Cannot see chart while adding months (less interactive); switching
+         tabs to check the curve adds friction.
+  Status: FALLBACK — implement if Option 2 is tested and user dislikes it.
+
+
+================================================================================
+  IMPLEMENTATION PHASES
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 1 — Extract reusable S-Curve chart component
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Refactor the existing chart rendering into a reusable partial + JS
+function so both the progress tab and the setup modal can use it without
+duplication.
+
+Deliverables:
+
+  1a. NEW FILE: resources/views/components/_s_curve_chart.blade.php
+      — Blade partial that renders a chart container div with a parameterized
+        ID, standard height (e.g. 300px), and placeholder text.
+      — Usage: @include('components._s_curve_chart', ['chartId' => 'someId'])
+      — The container should have position: relative and the same CDN
+        fallback/loading pattern as the original.
+
+  1b. NEW FILE OR REFACTOR: a shared JS function createSCurveChart(canvasId,
+      chartData) that creates and returns a Chart.js instance.
+      — Extracted from progress.blade.php's initSCurveChart().
+      — Accepts: canvas element ID, chart data object with labels,
+        planned_data, actual_data, extension_data.
+      — Returns the Chart.js instance (so caller can destroy it later).
+      — Should be placed in a shared JS file, e.g.
+        public/js/admin/projects/s-curve-chart.js (or appended to existing
+        baseline-schedule-utils.js which already exists for shared utils).
+      — The original progress.blade.php inline script should be updated to
+        USE this shared function instead of its own duplicate logic (no
+        visual change on the progress tab — pure refactoring).
+
+  Files touched:
+    - CREATE: resources/views/components/_s_curve_chart.blade.php
+    - CREATE or MODIFY: public/js/admin/projects/s-curve-chart.js
+    - MODIFY: resources/views/projects/project_detail/components/tabs/
+              progress.blade.php (replace inline chart JS with call to
+              shared function; keep data-loading code intact)
+    - MODIFY: web.php? (if any routes needed — likely none for this phase)
+
+  Testing:
+    - Visit progress tab → chart loads exactly as before (no regression).
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 2 — Redesign Set Up Baseline modal layout (Option 2)
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Reshuffle the modal grid to accommodate the chart alongside the form.
+
+Layout target (Option 2):
+  - Top row: Add Month form (left) | S-Curve preview (right) — two columns
+  - Bottom row (full-width): Scrollable added months list
+
+Deliverables:
+
+  2a. MODIFY: _setup_baseline_modal.blade.php
+      — Change grid-template-columns to accommodate the new layout.
+      — Add the chart container partial (@include) in the right column.
+      — Move the month list below into a full-width row with a max-height
+        and overflow-y auto for scrolling.
+      — Adjust form column to be slightly more compact (field widths,
+        margins) so the form fits well in ~400px.
+      — The Manage Activities button stays in the form column (left side).
+
+  2b. MODIFY: baseline-schedule-setup-modal.js
+      — Add chart initialization on modal open (empty/placeholder chart).
+      — On each addSetupBaselineMonth() call, update the chart with the
+        current setupLocalMonths array.
+      — On removeSetupBaselineMonth(), update the chart.
+      — On resetSetupForm() / Cancel, clear/destroy the chart.
+      — Data transformation: build a chart-compatible dataset from the
+        local array (labels = planned_date or month_label, planned_data =
+        cumulative progress % up to each month, actual_data = null for all
+        since no actual progress exists yet during setup).
+      — IMPORTANT: use a SEPARATE variable name for the modal chart instance
+        (e.g. setupSCurveChart) to avoid conflicts with the progress tab's
+        global scurveChart.
+
+  Files touched:
+    - MODIFY: resources/views/projects/project_detail/components/modals/
+              _setup_baseline_modal.blade.php
+    - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 3 — Wire live preview updates
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Ensure the chart updates in real-time as the user builds the baseline.
+
+Deliverables:
+
+  3a. Data builder function buildSetupChartData(setupLocalMonths)
+      — Converts the local array into { labels, planned_data, actual_data }.
+      — planned_data is calculated cumulatively (each month's progress % is
+        the running sum of all months up to that point — not just the delta).
+      — actual_data is all nulls (no actual progress during setup).
+      — extension_data is omitted (not relevant during initial setup).
+      — Placed in baseline-schedule-setup-modal.js.
+
+  3b. Update chart call in:
+      — addSetupBaselineMonth() → after push to local array, call chart
+        update with new data.
+      — removeSetupBaselineMonth() → after splice, call chart update.
+      — openSetupBaselineModal() → show empty placeholder chart or chart
+        with existing data if re-opening with in-memory data (B3.1 mode).
+
+  3c. Chart.js update pattern:
+      — For efficiency, use chart.data.labels = newLabels;
+        chart.data.datasets[0].data = newData; chart.update();
+        rather than destroying and recreating the entire chart on each
+        "Add Month" click.
+
+  Files touched:
+    - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+    - (None new — all within phase 2 files)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 4 — Cleanup, edge cases, and polish
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Handle boundaries, memory leaks, and ensure robust UX.
+
+Deliverables:
+
+  4a. Empty state: when setupLocalMonths is empty, show a placeholder
+      message in the chart area ("Add months to preview S-Curve") or
+      an empty chart with a zero line.
+
+  4b. Destroy chart on modal close: add a listener to the modal's hidden
+      event (Bootstrap: hidden.bs.modal) to call
+      setupSCurveChart.destroy() and prevent memory leaks.
+
+  4c. 100% cap: if the cumulative progress reaches 100%, the chart line
+      should plateau at 100 (no overshoot — the plan already enforces
+      this in validation).
+
+  4d. Responsive behavior: test chart sizing when the modal is opened at
+      different viewport sizes (modal-xl is max 1140px but may be smaller
+      on smaller screens).
+
+  Files touched:
+    - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+    - MODIFY: resources/views/projects/project_detail/components/modals/
+              _setup_baseline_modal.blade.php (if any edge state markup needed)
+
+
+================================================================================
+  FILES TOUCHED (full list)
+================================================================================
+
+  ✅ CREATE: resources/views/components/_s_curve_chart.blade.php
+  ✅ CREATE: public/js/admin/projects/s-curve-chart.js
+  ✅ MODIFY: resources/views/projects/project_detail/components/tabs/
+          progress.blade.php
+  ⬜ MODIFY: resources/views/projects/project_detail/components/modals/
+          _setup_baseline_modal.blade.php (Phase 2)
+  ⬜ MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js (Phase 2)
+
+
+================================================================================
+  OPEN QUESTIONS
+================================================================================
+
+  - Chart height in the modal: the progress tab uses 350px. In a ~540px wide
+    column, 300px is likely sufficient. Might need adjustment after testing.
+  - Month list height: if the list below needs a fixed height with overflow,
+    what max-height should be used? ~200-250px seems reasonable for 6-12
+    months.
+  - Should the chart show a "Projected" / extension line at all during setup?
+    Probably not — there are no extensions during initial setup.(no need
+    since the setup modal's purpose is to setup the planned baseline schedule)
+  - Tooltip behavior: the progress tab's chart has detailed tooltips with
+    month, planned %, actual %. For the modal, actual % will always be "N/A"
+    (no actuals during setup). Simplify tooltip to only show month + planned %?
+
+
+================================================================================
+  DECISION LOG
+================================================================================
+
+Decision 1 — Layout approach
+  Context: The Set Up Baseline modal needs to accommodate a chart but space
+  is limited.
+  Options considered: Three-column (rejected), Top form+chart + bottom list
+  (Option 2), Tabbed (Option 4).
+  Decision: Start with Option 2 (two-column top: form | chart, full-width
+  month list below). Fall back to Option 4 (tabbed) if Option 2 doesn't
+  work well in testing.
+  Rationale: Best balance of chart visibility + workflow continuity.
+
+Decision 2 — Chart component extraction approach
+  Context: The existing chart is hardcoded to the progress tab. Need
+  reusability without duplication.
+  Options considered: (a) inline chart function in modal JS (duplication),
+  (b) shared Blade partial + JS function.
+  Decision: Shared Blade partial + JS function. Both progress tab and modal
+  consume the same component.
+  Rationale: Follows existing pattern (baseline-schedule-utils.js for shared
+  JS utilities). Prevents maintenance burden of two chart implementations.
+
+Decision 3 — Chart update strategy
+  Context: Chart must re-render on each "Add Month" / remove-month action.
+  Options considered: (a) destroy + recreate on each change, (b) use
+  Chart.js's built-in data update API (chart.data.labels = ..., chart.update()).
+  Decision: Use Chart.js data update API (option b).
+  Rationale: More performant, avoids flicker, no risk of orphaned canvas
+  elements.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — Phase 1: Reusable S-Curve Chart Component
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: First implementation session for B9 Item 3. Built the reusable chart
+component as a prerequisite for embedding the S-Curve preview inside the Set
+Up Baseline modal (Phases 2-4).
+
+WHAT WAS BUILT:
+  ✅ CREATE: resources/views/components/_s_curve_chart.blade.php
+     — Reusable Blade partial. Usage:
+       @include('components._s_curve_chart', ['chartId' => 'myChart'])
+     — Parameterized $chartId, $height (default 300px), $placeholder text.
+     — Renders the container div with standard sizing and placeholder styling.
+
+  ✅ CREATE: public/js/admin/projects/s-curve-chart.js
+     — Two functions:
+       (1) createSCurveChart(canvasId, chartData, options)
+           — Extracted from progress.blade.php's initSCurveChart().
+           — Accepts target canvas ID instead of being hardcoded.
+           — Guards: returns null if canvas or Chart.js not found.
+           — Built datasets: Planned (always), Actual (if data exists),
+             Extension projection (if data exists + extensionViewMode).
+           — Returns the Chart.js instance so callers can destroy/update it.
+           — Same Chart.js options/aspect ratio as the original.
+
+       (2) buildSetupPreviewChartData(localMonths)
+           — Pre-built for Phase 2 setup modal integration.
+           — Converts { month_label, planned_progress_percent, ... } array into
+             createSCurveChart-compatible format.
+           — actual_data = all nulls (no actuals during initial setup).
+           — extension_data = empty (not relevant during setup).
+
+  ✅ MODIFY: resources/views/.../progress.blade.php
+     — initSCurveChart() body replaced with call to shared createSCurveChart().
+     — Legend visibility logic and extension toggle wrapper logic preserved
+       in initSCurveChart() (these are Progress-tab-specific).
+     — Net ~100 lines removed from the inline script.
+
+  ✅ MODIFY: resources/views/.../baseline-schedule.blade.php
+     — Added <script src="s-curve-chart.js"> loaded alongside existing
+       baseline-schedule-utils.js — ensures shared chart functions are
+       available to both the Progress tab and the setup modal.
+
+DESIGN DECISIONS:
+  - The shared createSCurveChart() does NOT handle extension view toggling.
+    That logic (destroy/recreate on toggle, button styling) stays in
+    progress.blade.php — it's specific to the Progress tab's UX.
+  - Decision 3 (chart update strategy) is deferred to Phase 3 when the
+    modal's live preview is wired. The shared function returns a Chart
+    instance, so either destroy/recreate or chart.data.update() can be used.
+
+TESTING (user-confirmed, July 13, 2026):
+  1. ✅ Visit Progress tab → chart loads and displays exactly as before.
+  2. ✅ Extension toggle still works (current/alternative views).
+  3. ✅ Legend visibility works correctly.
+  4. ✅ No console errors observed.
+  NOTE: The Progress tab chart is functionally identical — no regression.
+
+FILES TOUCHED (Phase 1):
+  - CREATE: resources/views/components/_s_curve_chart.blade.php
+  - CREATE: public/js/admin/projects/s-curve-chart.js
+  - MODIFY: resources/views/projects/project_detail/components/tabs/
+            progress.blade.php
+  - MODIFY: resources/views/projects/project_detail/components/tabs/
+            baseline-schedule.blade.php
+
+FILES TOUCHED (Phase 2):
+  - MODIFY: resources/views/projects/project_detail/components/modals/
+            _setup_baseline_modal.blade.php
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — Phase 2: Modal Layout Redesign + Live Chart Preview
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Continued B9 Item 3 after Phase 1. Redesigned the Set Up Baseline modal
+to accommodate the S-Curve preview chart (Option 2 layout) and wired the live
+preview to update on every add/remove month action.
+
+WHAT WAS BUILT:
+
+  ✅ MODIFY: _setup_baseline_modal.blade.php — Layout redesign (Option 2)
+     — Previous layout: single 2-column grid (form | month list + progress bar).
+     — New layout:
+         TOP ROW (grid 1fr 1fr): Add Month form (left) | S-Curve preview (right)
+         BOTTOM ROW (full-width): Progress bar + Month list (max-height 220px)
+     — Footer (Cancel / Done) unchanged.
+     — Chart included via reusable @include('components._s_curve_chart', ...)
+       from Phase 1 with chartId='setupSCurve', height=300px.
+
+  ✅ MODIFY: baseline-schedule-setup-modal.js — Chart lifecycle management
+     — NEW variable: setupSCurveChart (separate from progress tab's scurveChart).
+     — NEW function: updateSetupSCurvePreview()
+         - 0 months → destroys chart, shows placeholder text.
+         - 1+ months with existing chart → updates labels/datasets via
+           Chart.js data API (chart.data.labels = ..., chart.update()).
+         - 1+ months first time → creates canvas element, calls
+           createSCurveChart() from the shared Phase 1 function.
+     — Called from:
+         - openSetupBaselineModal() — resets to empty placeholder.
+         - addSetupBaselineMonth() — updates after pushing new month.
+         - removeSetupBaselineMonth() — updates after splicing month.
+     — Cleanup on modal hidden (hidden.bs.modal) — destroys chart instance to
+       prevent memory leaks across multiple opens in the same page session.
+
+DESIGN DECISIONS:
+  - Decision 3 (chart update strategy): Used Chart.js data API (chart.update())
+    instead of destroy/recreate. Only 0→1 months creates the chart; all
+    subsequent updates reuse the existing instance. Flicker-free.
+  - Modal height: chart at 300px, month list at max-height 220px. Together with
+    the form, the modal scrolls naturally for long lists rather than cramming.
+
+BUG FIXES FOUND DURING TESTING (July 13, 2026):
+  ✅ BUG #1: S-Curve preview only showed the first month's point; subsequent
+     add/remove operations did not update the chart.
+     Root cause: updateSetupSCurvePreview() tried to set
+     dataset[1].data (Actual dataset), but createSCurveChart() only creates
+     the Actual dataset when at least one value is non-null. During setup all
+     actual values are null (no actuals exist), so dataset[1] was never
+     created. The error silently aborted chart.update(), leaving the chart
+     frozen at the first render.
+     Fix: removed the datasets[1] assignment. The modal chart only needs the
+     Planned dataset (datasets[0]) — there are no actuals to plot during setup.
+
+  ✅ BUG #2: Cancel button closed modal instantly, so the incomplete warning
+     was never visible to the user (it flashed and disappeared).
+     Root cause: the Cancel button had data-bs-dismiss="modal" which fires
+     immediately after onclick, closing the modal before the warning could
+     be seen.
+     Fix: removed data-bs-dismiss from the Cancel button. Rewrote
+     onSetupBaselineCancel() with a two-click pattern:
+       - Click 1 (incomplete): shows warning in footer, modal stays open.
+       - Click 2 (or if complete): closes modal.
+       - Uses the warning display state as the confirmation flag.
+     LATER REPLACED (see Phase 4 session below): the inline warning was
+     replaced with the reusable delete-confirmation-modal for a more
+     prominent and standard UX.
+
+TESTING (user-confirmed, July 13, 2026):
+  Core functionality:
+  - ✅ Open Setup modal → chart placeholder visible on the right.
+  - ✅ Add 1 month (25%) → chart shows 1 point, list shows 1 row, bar at 25%.
+  - ✅ Add 2nd month (55%) → chart updates with 2nd connected point.
+  - ✅ Add 3rd month (80%) → chart shows 3 points progressing.
+  - ✅ Add final month to 100% → chart reaches 100, Done button enables.
+  - ✅ Remove middle month → chart re-draws, progress adjusts.
+  - ✅ Remove all months → chart returns to placeholder, bar at 0%.
+  Edge cases:
+  - ✅ Lower % than previous → error shown, chart unchanged.
+  - ✅ Duplicate month → error shown, chart unchanged.
+  - ✅ Beyond 100% → error shown.
+  - ✅ Cancel before 100% → confirmation modal shown, modal stays open.
+  - ✅ Re-open after Cancel → fresh state, no stale chart.
+  - ✅ Done at 100% → saves, page reloads on Baseline tab.
+  Chart-specific (pending — layout/design issues to be discussed first)
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — Phase 4: Confirmation Modal & Tab Switch Guard
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: User requested replacing the inline Cancel warning with the reusable
+delete-confirmation-modal, fixing the header X button (also bypassed the
+warning), and adding a guard to prevent accidental tab switching while the
+setup modal has unsaved data.
+
+WHAT WAS BUILT:
+
+  ✅ Replaced inline Cancel warning with confirmation modal:
+     - onSetupBaselineCancel() rewritten: if months.length === 0 → closes
+       immediately; if > 0 → calls showDeleteConfirmation() from the existing
+       delete-confirmation-modal component.
+     - On confirm: clears setupLocalMonths + setupCurrentMaxPercent, hides modal.
+     - On cancel (in confirmation modal): nothing happens, setup modal stays open.
+     - Removed old #setupIncompleteWarning / #setupIncompleteWarningEmpty divs
+       from the blade and their JS references in updateSetupProgress().
+
+  ✅ Fixed header X button:
+     - Removed data-bs-dismiss="modal" from the header close button.
+     - Added onclick="onSetupBaselineCancel()" so it shares the same logic as
+       Cancel (direct close if no data, confirm if has data).
+
+  ✅ Added tab-switching guard in project_detail.blade.php:
+     - Modified switchMainTab() to check: is #setupBaselineModal visible AND
+       does setupLocalMonths have items?
+     - If yes: calls showDeleteConfirmation() with a variant message
+       ("Switching tabs will discard this data.").
+     - On confirm: clears local state, hides modal, then recursively calls
+       switchMainTab(tabName) — the guard passes on re-entry since the modal
+       is now hidden and months are cleared.
+     - Guard check is robust: typeof setupLocalMonths guard prevents errors
+       on pages that don't load the setup modal JS.
+
+FILES TOUCHED THIS SESSION:
+  - MODIFY: resources/views/projects/project_detail/project_detail.blade.php
+            (switchMainTab guard added)
+  - MODIFY: resources/views/.../_setup_baseline_modal.blade.php
+            (removed inline warning divs, fixed X button, cleaned footer)
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+            (rewrote onSetupBaselineCancel, removed warning references)
+
+=────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — Layout Redesign for 1366x768 Responsiveness
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: The Option 2 layout (form|chart top, list bottom) had issues on the
+user's 1366x768 viewport: right-side space unused, form fields/buttons cut off,
+month list cut off, modal needed scrolling to reach essential controls.
+
+REQUIREMENT FROM USER:
+  "S-Curve preview at top full width, form fields below left, progress bar +
+   month list below right" — this became the new layout.
+
+WHAT WAS CHANGED:
+
+  ✅ MODIFY: _setup_baseline_modal.blade.php — Layout redesign (new grid)
+     — OLD layout (Option 2):
+         TOP ROW (grid 1fr 1fr): Add Month form | S-Curve chart
+         BOTTOM ROW (full-width): Progress bar + Month list
+     — NEW layout (full-width chart at top, two-column form|list below):
+         S-Curve chart: full-width at top, height reduced to 230px.
+         BOTTOM SECTION (grid 1fr 1fr):
+           LEFT: Add Month form with 2-column inner grid fields:
+             ┌──────────┐ ┌──────────┐
+             │ Month     │ │ Date     │  (side by side)
+             └──────────┘ └──────────┘
+             ┌──────────┐ ┌──────────┐
+             │ Progress %│ │Desc (Opt)│  (side by side)
+             └──────────┘ └──────────┘
+             Manage Activities button (full-width)
+             Add Month button (full-width)
+           RIGHT: Progress bar + Month list (max-height 280px)
+     — Description changed from <textarea> to <input type="text"> for
+       compactness (JS .value works identically — no JS change needed).
+     — General padding/spacing reductions across all elements (18-24px body
+       padding, 10-14px internal paddings, reduced font sizes 11-12px).
+     — Max-height of month list increased from 220px to 280px since right column
+       now has more vertical space.
+
+FILES TOUCHED THIS SESSION:
+   - MODIFY: resources/views/.../_setup_baseline_modal.blade.php
+             (entire modal-body replaced with new layout grid)
+
+NO JS CHANGES NEEDED:
+   - All element IDs preserved.
+   - description field changed from textarea to input (same .value API).
+   - Chart ID unchanged (setupSCurve), height passed via Blade partial param.
+   - No new functions added; existing updateSetupSCurvePreview() continues to
+     work as before.
+
+DESIGN NOTES:
+   - Full-width chart at top ensures the preview is always visible while adding
+     months, solving the "live preview" requirement.
+   - 2-column form fields reduce form height by ~40%, fitting the left column.
+   - Right column groups progress bar (compact) with the scrollable month list,
+     matching the user's original layout preference.
+   - Footer (Cancel + Done buttons) unchanged.
+   - Modal uses modal-xl with modal-dialog-scrollable as before.
+
+
+===============================================================================
+  END OF PLAN FILE
+================================================================================

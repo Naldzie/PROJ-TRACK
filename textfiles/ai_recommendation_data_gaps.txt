@@ -1,0 +1,122 @@
+===============================================================================
+  AI RECOMMENDATION — DATA GAPS & ENHANCEMENT ROADMAP
+  CSPC PMU System
+  July 16, 2026
+===============================================================================
+
+Disclaimer: This document is a thought exercise exploring what additional
+data would enable AI-powered (rather than rule-based) recommendations.
+It is NOT a committed implementation plan.
+
+===============================================================================
+  CURRENT STATE
+===============================================================================
+
+The RecommendationEngine (rule-based) consumes ~15 structured factors:
+  • risk_level, trend, progress_gap, days_remaining
+  • extension_count, open_issue_count, fit_quality, observation_count
+  • early_speed, recent_speed, current_progress, expected_progress
+  • has_baselines, carried_over_count, consecutive_carryovers
+
+These are all current-state snapshots of a single project. Rules apply
+deterministic thresholds (e.g., open_issue_count >= 3 → flag).
+
+A rule engine handles this perfectly because each factor maps to a simple
+threshold. The leap to AI-powered recommendations becomes valuable when
+data exists that rules CANNOT easily derive.
+
+===============================================================================
+  WHAT THE AI NEEDS TO OUTPERFORM RULES
+===============================================================================
+
+1. Historical Outcomes (Feedback Loop)
+   ─────────────────────────────────────
+   No record exists of whether a recommendation was followed or was correct.
+   An AI could learn from outcomes; a rule engine never does.
+   Example: if "Review contractor schedule" is ignored and the project still
+   finishes fine, that false positive should be learned and suppressed.
+   Requires: recommendation outcome logging + follow-up status tracking.
+
+2. Cross-Project Patterns (Peer Comparison)
+   ─────────────────────────────────────────
+   Rules treat each project in complete isolation. An AI could learn:
+   • "Road projects with 3+ carryovers by Month 8 have an 80% chance of
+     needing an extension."
+   • "Contractor X's projects consistently show patterns leading to Critical
+     risk — earlier intervention is warranted."
+   • "Water system projects typically recover from Moderate risk without
+     escalation; building projects don't."
+   Requires: project category, contractor ID with historical performance
+   data, and enough completed projects to train on.
+
+3. Activity-Level Critical Path Awareness
+   ──────────────────────────────────────
+   We know which activities are carried over, but not whether they matter.
+   A non-critical activity carried over 5x is less concerning than a
+   critical-path activity carried over once. Rules can't weigh this.
+   Requires: activity dependency mapping or critical path tagging.
+
+4. Issue Categorization (Qualitative Context)
+   ──────────────────────────────────────────
+   Currently: open_issue_count >= 3 → flag. An AI with categorized issues
+   could distinguish:
+   • "3 material supply issues" → procurement recommendation
+   • "3 contractor performance issues" → different recommendation
+   • "3 weather delay issues" → no action needed
+   Same count, three different correct responses. Rules can't differentiate.
+   Requires: issue_type / issue_severity fields on the Issue model.
+
+5. Temporal Patterns (Beyond Current Snapshot)
+   ────────────────────────────────────────────
+   Rules see today's snapshot. Trend (DECELERATING) is the only temporal
+   dimension. An AI could detect:
+   • "Progress is flattening — this pattern preceded the last 3 extensions."
+   • "Carryover rate is accelerating — 1 in Month 4, 3 in Month 5, 5 in Month 6."
+   Requires: time-series access to historical factor values, not just the
+   latest assessment record.
+
+6. Budget / Financial Data
+   ────────────────────────
+   No financial data flows into the engine. A project at 40% progress with
+   60% budget spent is very different from 40% progress with 30% budget
+   spent. Different recommendations entirely.
+   Requires: approved_budget, actual_disbursement (or similar burn-rate
+   tracking) integrated into the factor extraction pipeline.
+
+===============================================================================
+  PRIORITY ORDER
+===============================================================================
+
+  Priority 1 — Issue Categorization
+    Rules produce wrong recommendations for different issue types with
+    the same count. Single highest-impact fix for existing data.
+
+  Priority 2 — Cross-Project Contractor History
+    Enables pattern detection that rules fundamentally cannot do.
+    Requires completing enough projects for meaningful training data.
+
+  Priority 3 — Recommendation Outcome Logging
+    Closes the feedback loop. Without it, AI cannot learn from experience.
+
+===============================================================================
+  NOTES
+===============================================================================
+
+- The rule-based engine is actually well-suited for the current data.
+  Switching to AI before these gaps are filled would trade deterministic
+  explainability for linguistic variety — which Phase 6 (Gemini analysis
+  text) already provides.
+
+- The structured format (message + category + reason + priority) is more
+  useful for PMs than freeform AI text. AI's real value is in pattern
+  recognition rules can't express, not in phrasing.
+
+- Phase 6's architecture is provider-agnostic. When these data gaps are
+  filled, adding AI-powered recommendations requires only:
+    a. A new method in AIExplanationService or a parallel service
+    b. A structured prompt including the richer factor set
+    c. Parsing the AI response into the existing recommendation format
+
+===============================================================================
+  END OF DOCUMENT
+===============================================================================

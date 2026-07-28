@@ -1,0 +1,356 @@
+===============================================================================
+  PHASE 5 IMPLEMENTATION PLAN (V3 — REVISED)
+  Dual S-Curve: Near-Term Forecast + Completion Forecast
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Last Updated: July 26, 2026
+  Status: ✅ IMPLEMENTATION COMPLETE
+
+  Prerequisites
+  -------------
+  Phase 1 — Polynomial Regression Engine                         ✅ COMPLETE
+  Phase 2 — Model Selection & Comparison UI                      ✅ COMPLETE
+  Phase 3 — Schedule-Aware Completion Estimation                 ✅ COMPLETE
+  Phase 3.5 — Multi-Method Completion Estimation                  ✅ COMPLETE
+
+  Reference Documents
+  -------------------
+  • ai_module_ver2_master_plan.txt — V2 master plan
+  • textfiles/project_context_and_development_rules.txt — coding standards
+  • textfiles/polynomial_over_optimism_findings.txt — polynomial issue
+  • app/Services/ProjectChartService.php — existing chart data builder
+  • public/js/admin/projects/s-curve-chart.js — existing chart renderer
+  • resources/views/projects/project_detail/components/tabs/progress.blade.php
+  • app/Http/Controllers/ProjectController.php — getChartData()
+
+===============================================================================
+  1. PROBLEM STATEMENT
+===============================================================================
+
+  Current State
+  -------------
+  The Progress tab shows a single S-Curve chart with:
+    • Original Plan (frozen) — solid blue line
+    • Actual Progress — green dots connected by line
+    • Adjusted Plan (extension) — orange line (when extensions exist)
+
+  The AI Prediction module produces:
+    • A short-term forecast (4-month predicted progress via regression)
+    • Multi-method completion estimates (Polynomial, Schedule-Aware, EAC_time)
+
+  What Is Missing
+  ----------------
+  1. No near-term forecast line on the S-Curve — PMU staff can't see the
+     predicted trend for the next few months at a glance.
+  2. No visual comparison of the two reliable completion estimates
+     (Schedule-Aware vs EAC_time) on a chart — staff must read the
+     multi-method completion card numbers on the AI Prediction tab.
+
+===============================================================================
+  2. CHOSEN DIRECTION — TWO CHARTS, ONE TAB
+===============================================================================
+
+  Decision
+  --------
+  Add two visual enhancements to the Progress tab, both visible one after
+  the other — no toggle needed:
+
+  Chart 1 — Current Progress S-Curve (enhanced)
+    • Retain all existing datasets (Original Plan, Actual, Adjusted Plan)
+    • ADD: 4-month Polynomial Near-Term Forecast as a dashed purple line
+    • Only shown when regression method is 'polynomial'
+    • Labeled "Near-Term Forecast" — clarifies it's short-term only
+
+  Chart 2 — Completion Forecast S-Curve (new, below Chart 1)
+    • New Chart.js chart with:
+      - Original Plan baseline (solid blue, same data as Chart 1)
+      - Schedule-Aware shifted baseline (dashed purple)
+      - EAC_time shifted baseline (dotted orange)
+    • Shifted baselines = original planned curve displaced horizontally
+      by each method's lag (estimated_completion_index - total_months)
+    • Hidden entirely when insufficient data or project completed
+
+  Why Not Just One Combined Chart?
+  --------------------------------
+  • Chart 1 focuses on CURRENT STATUS + NEAR-TERM outlook
+  • Chart 2 focuses on LONG-TERM completion scenarios
+  • Keeping them separate avoids visual clutter (5+ datasets on one chart)
+  • Academic defensibility: two distinct analytical purposes
+
+===============================================================================
+  3. EDGE CASE HANDLING
+===============================================================================
+
+  +----------------------------------+------------------+--------------+
+  | State                            | Chart 1 Poly     | Chart 2      |
+  |                                  | Forecast         |              |
+  +----------------------------------+------------------+--------------+
+  | Normal, polynomial regression    | ✅ Show          | ✅ Show      |
+  | Normal, SLR regression           | ❌ Skip          | ✅ Show      |
+  | Insufficient data (< 2 records)  | ❌ Skip          | ❌ Hide sec  |
+  | Completed project                | ❌ Skip          | ❌ Hide sec  |
+  +----------------------------------+------------------+--------------+
+
+  Chart 2 guard logic (PHP):
+    • Only compute when:
+      - ai_prediction.is_insufficient_data is NOT true
+      - ai_prediction.is_completed is NOT true
+      - completion_multi.methods has schedule_aware or earned_schedule
+    • If no data: controller returns empty {} for completion_forecast
+    • Frontend: if completion_forecast is empty → hide section
+
+  Chart 1 poly forecast guard logic (PHP):
+    • Only compute when:
+      - ai_prediction.is_insufficient_data is NOT true
+      - ai_prediction.is_completed is NOT true
+      - regression_info.regression_method === 'polynomial'
+      - forecast_data has at least 1 entry
+    • If no data: controller returns empty [] for polynomial_forecast
+    • Frontend: if polynomial_forecast empty → skip dataset in chart
+
+===============================================================================
+  4. SHIFTED BASELINE ALGORITHM
+===============================================================================
+
+  Concept
+  -------
+  The planned S-curve represents the ideal schedule. If the project is
+  running late by `lag` months, the same planned trajectory shifted
+  right by `lag` months shows the realistic outlook.
+
+  Formula
+  -------
+    total_planned_months = count(tick_timestamps)
+    lag = estimated_completion_index - total_planned_months
+    msPerMonth = 30.44 * 86400 * 1000  (average month in ms)
+
+    for each point in frozen_planned_data:
+        shifted_point.x = point.x + (lag * msPerMonth)
+        shifted_point.y = point.y    (unchanged — same progress curve)
+
+    Schedule-Aware shifted:  lag from completion_multi.methods.schedule_aware
+    EAC_time shifted:        lag from completion_multi.methods.earned_schedule
+
+===============================================================================
+  5. FILES TOUCHED
+===============================================================================
+
+  MODIFIED:
+    app/Http/Controllers/ProjectController.php
+      — Compute polynomial_forecast + completion_forecast in getChartData()
+      — Add both to JSON response
+
+    public/js/admin/projects/s-curve-chart.js
+      — Add polynomial forecast dataset to createSCurveChart()
+      — New createCompletionForecastChart() function
+
+    resources/views/projects/project_detail/components/tabs/progress.blade.php
+      — Add Chart 2 HTML section (hidden by default)
+      — Add polynomial forecast legend item (Chart 1)
+      — Add completion forecast legend items (Chart 2)
+      — New initCompletionForecastChart() JS function
+      — Update loadProgressChartData() success handler
+
+  NO CHANGES NEEDED:
+    app/Services/AI/AIPredictionService.php
+    app/Services/AI/AIPredictionPresenter.php
+    app/Services/AI/CompletionEstimationService.php
+    app/Services/AI/CompletionComparisonService.php
+    app/Services/ProjectChartService.php
+    app/Services/ProjectDetailService.php
+    routes/web.php
+
+===============================================================================
+  6. IMPLEMENTATION STEPS
+===============================================================================
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 1 — Update ProjectController::getChartData()
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File:     app/Http/Controllers/ProjectController.php
+  Location: lines 183-205 (getChartData method)
+
+  Changes:
+    After existing $chartData, $trendData, $aiPrediction are computed,
+    add two new blocks:
+
+    A) Polynomial forecast (for Chart 1):
+       Guard: !is_insufficient_data && !is_completed
+              && regression_method === 'polynomial'
+              && forecast_data has entries
+       Slice first 4 entries, map to [{x: timestamp_ms, y: predicted_progress}]
+
+    B) Completion forecast (for Chart 2):
+       Guard: !is_insufficient_data && !is_completed
+              && completion_multi.methods has schedule_aware or earned_schedule
+       For each available method:
+         lag = estimated_completion_index - total_planned_months
+         shifted = frozen_planned_data.map(pt => {x: pt.x + lag*msPerMonth, y: pt.y})
+       Include frozen_planned_data and y_max for frontend use.
+
+    Add to response JSON:
+      'polynomial_forecast' => $polynomialForecast,
+      'completion_forecast' => $completionForecast,
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 2 — Update s-curve-chart.js (Chart 1 + Chart 2)
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File:     public/js/admin/projects/s-curve-chart.js
+
+  Changes:
+
+    A) createSCurveChart() — add polynomial forecast dataset at end:
+       Guard: chartData.polynomial_forecast && chartData.polynomial_forecast.length > 0
+       Style: borderColor '#a855f7', borderDash [5,5], order 4
+
+    B) New function createCompletionForecastChart(canvasId, chartData):
+       Similar to createSCurveChart() but:
+         - Only 3 datasets: Original Plan (solid blue),
+           Schedule-Aware (dashed #8b5cf6),
+           EAC_time (dotted #f97316)
+         - Same tooltip/callback patterns as existing chart
+         - Y-axis max uses chartData.y_max
+         - Returns null if fewer than 2 datasets (need plan + at least 1 forecast)
+         - Uses formatTimestampMonth() helper (already exists)
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 3 — Update progress.blade.php (HTML + JS)
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File:     resources/views/projects/project_detail/components/tabs/progress.blade.php
+
+  Changes:
+
+    A) Chart 1 — Add polynomial forecast legend item (after line 41):
+       <div id="legendPolyForecast" style="display:none; align-items:center; gap:6px;">
+         <div style="width:20px; height:3px; background:#a855f7; border-radius:2px;
+                     border-top:2px dashed #a855f7;"></div>
+         <span>Near-Term Forecast (Polynomial)</span>
+       </div>
+       Show/hide in initSCurveChart() based on presence of polynomial_forecast.
+
+    B) Chart 2 — New HTML section between Chart 1 card and Variance Trend card:
+       <div class="card" id="completionForecastSection" style="margin-bottom:20px;display:none;">
+         <div class="card-header">...</div>
+         <div style="padding:20px;">
+           <div id="completionForecastChartContainer" style="height:350px;"></div>
+           <div id="completionForecastLegend" style="display:flex; justify-content:center; gap:25px; margin-top:12px; flex-wrap:wrap; font-size:12px;">
+             <!-- Original Plan, Schedule-Aware, EAC_time legend items -->
+           </div>
+         </div>
+       </div>
+
+    C) Move monthly summary wrapper INSIDE Chart 1 card (currently after legend),
+       so it stays part of Chart 1's card rather than appearing between charts.
+
+       Actually — keep existing layout. Monthly summary stays in Chart 1 card.
+       Chart 2 section goes BETWEEN Chart 1 card end and Variance Trend card start.
+
+    D) JavaScript — In loadProgressChartData() success handler:
+       After initSCurveChart(charts):
+         if (response.polynomial_forecast?.length) { /* update legend, chart already rendered */ }
+
+       Actually — polynomial_forecast is passed as part of charts data.
+       Just merge it into charts object before passing to initSCurveChart:
+         charts.polynomial_forecast = response.polynomial_forecast;
+         initSCurveChart(charts);
+
+       Then after monthly summary:
+         if (response.completion_forecast && Object.keys(response.completion_forecast).length > 1) {
+           initCompletionForecastChart(response.completion_forecast);
+         }
+
+    E) New JS function:
+       let completionForecastChart = null;
+       function initCompletionForecastChart(data) {
+         if (completionForecastChart) { completionForecastChart.destroy(); }
+         var container = document.getElementById('completionForecastChartContainer');
+         if (!container) return;
+         container.innerHTML = '<canvas id="completionForecastChart"></canvas>';
+         completionForecastChart = createCompletionForecastChart('completionForecastChart', data);
+         var section = document.getElementById('completionForecastSection');
+         if (section) section.style.display = 'block';
+         // Show/hide legend items based on available data
+       }
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 4 — Verify
+  ═══════════════════════════════════════════════════════════════════════════
+
+  After all changes:
+    1. Open a project with polynomial regression → verify Chart 1 shows
+       dashed purple line (4 points), Chart 2 shows both shifted baselines
+    2. Open a project with SLR regression → verify Chart 1 has NO poly
+       line, Chart 2 still shows shifted baselines
+    3. Open a project with <2 records → verify no extra datasets, no Chart 2
+    4. Open a completed project → verify same
+    5. php -l on all modified files (syntax check)
+    6. Check browser console for JS errors when navigating Progress tab
+
+===============================================================================
+  7. PERFORMANCE & RISK ASSESSMENT
+===============================================================================
+
+  Performance Impact: NONE
+    • All new computation is array manipulation on already-computed data
+    • AIPredictionPresenter::present() already runs on every chart-data AJAX
+      call — no new DB queries or service instantiations
+    • Response size increase: ~2-5 KB (negligible)
+
+  Risk: LOW
+    • All additions are guarded by null/empty checks
+    • Existing chart renderer unchanged — new code is additive
+    • Chart 2 is hidden by default (display:none) until data confirms it should show
+    • Chart 1 poly forecast legend hidden by default
+
+===============================================================================
+  8. VISUAL DESIGN
+===============================================================================
+
+  Chart 1 — Current Progress S-Curve
+    • Original Plan:        #3b82f6  solid, width 2
+    • Actual Progress:      #10b981  solid, width 2
+    • Adjusted Plan:        #f59e0b  solid, width 2
+    • Poly Near-Term:       #a855f7  dashed [5,5], width 2, order 4
+
+  Chart 2 — Completion Forecast S-Curve
+    • Original Plan:        #3b82f6  solid, width 2
+    • Schedule-Aware:       #8b5cf6  dashed [6,3], width 2
+    • EAC_time:             #f97316  dotted  [2,4], width 2
+
+  Both charts use the same Chart.js linear X-axis with timestamp formatting,
+  and the same Y-axis (0-100+). Chart 2's Y max comes from the same source.
+
+===============================================================================
+  9. CONVERSATION CONTINUATION GUIDE
+===============================================================================
+
+  When continuing Phase 5 in a new session:
+
+  1. Read the latest versions of:
+     - app/Http/Controllers/ProjectController.php (getChartData)
+     - public/js/admin/projects/s-curve-chart.js
+     - resources/views/projects/project_detail/components/tabs/progress.blade.php
+     - This plan file
+
+  2. Check which steps are marked complete at the top of this file
+
+  3. Edge cases to verify after implementation:
+     - Projects with no baseline schedules
+     - Projects with 1 observation
+     - Projects using SLR vs polynomial
+     - Completed projects
+     - Projects where only one completion method returned a result
+
+===============================================================================
+  END OF PHASE 5 PLAN (V3)
+===============================================================================

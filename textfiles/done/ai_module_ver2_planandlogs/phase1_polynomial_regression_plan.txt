@@ -1,0 +1,726 @@
+================================================================================
+  PHASE 1 IMPLEMENTATION PLAN
+  Polynomial Regression Engine
+  CSPC PMU System — AI Module Version 2
+================================================================================
+
+  Last Updated: July 22, 2026
+  Status: 🔄 IN PROGRESS
+
+  Reference Documents:
+    • ai_module_ver2_master_plan.txt — V2 master plan
+    • regression_implementation_master_plan_ver5.txt — V1 master plan
+    • textfiles/project_context_and_development_rules.txt — coding standards
+
+
+================================================================================
+  1. PROJECT CONTEXT
+================================================================================
+
+  System Name:     Construction Project Monitoring System
+  Client:          CSPC Project Management Unit (PMU)
+  Framework:       Laravel
+  Language:        PHP
+  Database:        MySQL
+  Architecture:    Laravel Service-Oriented Architecture
+
+
+================================================================================
+  2. PROBLEM STATEMENT
+================================================================================
+
+  Current State:
+    The V1 module uses Simple Linear Regression (SLR) to predict cumulative
+    progress. SLR assumes a linear relationship: y = mx + b.
+
+  Problem:
+    Construction projects follow an S-Curve (slow start → rapid middle →
+    plateauing completion). SLR draws a straight line through this curved
+    data, producing systematic errors:
+      • Overestimates early progress (actual is below the line)
+      • Underestimates mid-project progress (actual is above the line)
+      • Overestimates late progress (actual plateaus, line keeps rising)
+
+    This makes SLR predictions unreliable for:
+      • Completion date estimation
+      • Forecast tables (month-by-month predictions show linear increments)
+      • S-Curve chart overlays (a straight line over an S-curve is misleading)
+      • Confidence in predictions (users can see the line doesn't fit)
+
+  Evidence from V1 testing:
+    Dataset "Very Good" fit (R² ≈ 0.89) uses saturating data:
+      x = [1, 2, 3, 4, 5, 6, 7, 8]
+      y = [2, 5, 10, 16, 19, 20, 21, 21]
+    SLR: slope ≈ 2.93, intercept ≈ 1.07, R² ≈ 0.89
+    Notice: actual progress flattens at months 6-8, but SLR predicts
+    continued linear growth. A polynomial would capture this plateau.
+
+
+================================================================================
+  3. CHOSEN DIRECTION
+================================================================================
+
+  Decision: Implement Polynomial Regression (degree 3 / cubic)
+    Equation: y = ax³ + bx² + cx + d
+
+  Why Degree 3:
+    • A cubic polynomial bends twice — matching S-curve shape
+      (slow start → rapid growth → plateau)
+    • Still solved via Least Squares (same mathematical family as SLR)
+    • Still transparent — coefficients a, b, c, d have intuitive meaning
+    • Does not require external libraries — pure PHP math
+    • Complements rather than replaces SLR
+
+  What It Is NOT:
+    • NOT a neural network or ML model
+    • NOT a black box — the equation is still explainable
+    • NOT a replacement for SLR — both will coexist
+
+  Architecture Decision:
+    PolynomialRegressionService is a NEW class alongside
+    LinearRegressionService. Both share the same public interface so
+    AIPredictionService can call either one interchangeably.
+
+
+================================================================================
+  4. STATUS SUMMARY
+================================================================================
+
+  ⬜ Step 1 — Create PolynomialRegressionService (pure math class)
+  ⬜ Step 2 — Write PolynomialRegressionService unit tests
+  ⬜ Step 3 — Modify AIPredictionService to accept both models
+  ⬜ Step 4 — Modify ForecastService for polynomial predictions
+  ⬜ Step 5 — Add 'regression_method' to Prediction Report
+  ⬜ Step 6 — Update AIPredictionPresenter (no breaking changes)
+  ⬜ Step 7 — Run all existing V1 tests (no regressions)
+  ⬜ Step 8 — End-to-end testing via Laravel Tinker
+  ⬜ Step 9 — Record progress log
+
+
+================================================================================
+  5. IMPLEMENTATION STEPS
+================================================================================
+
+
+  ==============================================================================
+  STEP 1 — Create PolynomialRegressionService
+  ==============================================================================
+
+  File:   app/Services/AI/Regression/PolynomialRegressionService.php
+  Status: ⬜ NOT STARTED
+
+  Purpose
+  -------
+  Perform polynomial (cubic) regression on a dataset using the Least Squares
+  method via Gaussian Elimination.
+
+  This class follows the EXACT same pattern as LinearRegressionService:
+    • Same namespace (App\Services\AI\Regression)
+    • Same public method names (analyzeDataset, predict, predictUsingAnalysis)
+    • Same return array keys (with additional coefficient keys)
+    • Same fit quality classification
+    • Zero Laravel dependencies — pure PHP math
+
+  Dependencies
+  ------------
+  None — this is a standalone math class.
+
+  Public Interface
+  ----------------
+    analyzeDataset(array $x, array $y): array
+      Returns: observation_count, coefficients [a, b, c, d],
+               equation, r_squared, fit_quality
+
+    predict(float $monthIndex, float $a, float $b, float $c, float $d): float
+      Returns: Predicted cumulative progress at the given month index
+
+    predictUsingAnalysis(array $analysis, float $monthIndex): float
+      Convenience wrapper — extracts coefficients from analysis array
+
+  Mathematical Method — Least Squares via Gaussian Elimination
+  -----------------------------------------------------------
+
+  Step 1 — Set up the normal equations for cubic regression:
+
+    We want to find coefficients a, b, c, d that minimize the sum of
+    squared errors for y = ax³ + bx² + cx + d.
+
+    The normal equations are:
+
+    [ Σx⁶   Σx⁵   Σx⁴   Σx³ ] [ a ]   [ Σx³y ]
+    [ Σx⁵   Σx⁴   Σx³   Σx² ] [ b ] = [ Σx²y ]
+    [ Σx⁴   Σx³   Σx²   Σx  ] [ c ]   [ Σxy  ]
+    [ Σx³   Σx²   Σx    n   ] [ d ]   [ Σy   ]
+
+    Where:
+      Σx⁶   = sum of x^6 for each data point
+      Σx³y  = sum of (x^3 * y) for each data point
+      n     = number of observations
+
+  Step 2 — Build the 4×4 matrix and 4×1 right-hand side vector:
+
+    private function buildNormalEquations(array $x, array $y): array
+      // Called by: analyzeDataset()
+      // Builds the augmented matrix [A | b] for the 4×4 system
+
+    For each data point (xi, yi):
+      x2 = xi²,  x3 = xi³,  x4 = xi⁴,  x5 = xi⁵,  x6 = xi⁶
+      row 0: [x6, x5, x4, x3 | x3*yi]
+      row 1: [x5, x4, x3, x2 | x2*yi]
+      row 2: [x4, x3, x2, xi | xi*yi]
+      row 3: [x3, x2, xi,  1 | yi]
+
+  Step 3 — Solve using Gaussian Elimination with Partial Pivoting:
+
+    Forward Elimination:
+      For each column k (0 to 3):
+        1. Find pivot: row with largest absolute value in column k
+        2. Swap current row with pivot row
+        3. If pivot is near-zero → the system is singular (throw exception)
+        4. For each row below pivot:
+           factor = A[row][k] / A[pivot][k]
+           Subtract factor × pivot row from this row
+
+    Back Substitution:
+      For each row from bottom to top:
+        solution[row] = (b[row] - Σ(A[row][col] × solution[col])) / A[row][row]
+
+    Returns: [a, b, c, d] coefficients
+
+  Step 4 — Calculate R²:
+
+    R² = 1 - (SSres / SStot)
+
+    Where:
+      SSres = Σ(yi - y_predicted_i)²
+      SStot = Σ(yi - y_mean)²
+
+    Same formula as SLR — measures how well the polynomial fits the data.
+
+  Step 5 — Classify Fit Quality:
+
+    Same thresholds as SLR (from LinearRegressionService):
+      R² ≥ 0.90  → Excellent
+      R² ≥ 0.80  → Very Good
+      R² ≥ 0.70  → Good
+      R² ≥ 0.50  → Moderate
+      R² < 0.50  → Weak
+
+  Step 6 — Format Equation:
+
+    Examples:
+      "y = 0.0500x³ - 1.2000x² + 10.5000x - 5.0000"
+      "y = -0.0200x³ + 0.8000x² + 2.0000x + 1.0000"
+
+  Validation Rules
+  ----------------
+    • X and Y must have the same count → InvalidArgumentException
+    • Fewer than 4 observations → InvalidArgumentException
+      (cubic needs at least 4 points to determine 4 coefficients)
+    • Identical X values → RuntimeException
+    • Singular matrix → RuntimeException
+
+  Return Array Structure
+  ----------------------
+  [
+      'observation_count' => int,
+      'coefficients' => [a, b, c, d],       // NEW — polynomial-specific
+      'a' => float,  // x³ coefficient
+      'b' => float,  // x² coefficient
+      'c' => float,  // x coefficient
+      'd' => float,  // intercept
+      'equation' => 'y = ax³ + bx² + cx + d',
+      'r_squared' => float,
+      'fit_quality' => 'Excellent|Very Good|Good|Moderate|Weak',
+  ]
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 2 — Write PolynomialRegressionService Unit Tests
+  ==============================================================================
+
+  File:   tests/Unit/Services/AI/Regression/PolynomialRegressionServiceTest.php
+  Status: ⬜ NOT STARTED
+
+  Purpose
+  -------
+  Validate every mathematical calculation using known datasets.
+
+  This is a pure Unit test (extends PHPUnit\Framework\TestCase directly,
+  no database needed) — same pattern as LinearRegressionServiceTest.
+
+  Test Datasets (pre-computed expected values)
+
+  Dataset A — Perfect Cubic (y = 1x³ + 0x² + 0x + 0)
+    x = [1, 2, 3, 4, 5]
+    y = [1, 8, 27, 64, 125]
+    Expected: a=1, b=0, c=0, d=0, R²=1.0
+
+  Dataset B — S-Curve Shape (typical construction progress)
+    x = [1, 2, 3, 4, 5, 6, 7, 8]
+    y = [2, 5, 10, 18, 28, 40, 55, 70]
+    Expected: a≈0.208, b≈-0.774, c≈5.518, d≈-2.750, R²≈0.998
+    Note: R² should be significantly higher than SLR on this dataset
+
+  Dataset C — Saturating (plateauing end, like actual S-curve)
+    x = [1, 2, 3, 4, 5, 6, 7, 8]
+    y = [2, 5, 10, 16, 19, 20, 21, 21]
+    Expected: polynomial should fit the plateau better than SLR
+    Polynomial R² should be > SLR R² on this dataset
+
+  Dataset D — Near-Linear (polynomial should approximate a line)
+    x = [1, 2, 3, 4, 5]
+    y = [3, 5, 7, 9, 11]
+    Expected: a≈0, b≈0, c≈2, d≈1, R²≈1.0
+
+  Dataset E — Minimum observations (n=4)
+    x = [1, 2, 3, 4]
+    y = [2, 6, 12, 20]
+    Expected: a≈0, b≈0.333, c≈2.667, d≈-1.0, R²=1.0
+
+  Dataset F — Negative trend
+    x = [1, 2, 3, 4, 5]
+    y = [20, 18, 14, 8, 0]
+    Expected: a≈0.333, b≈-3.0, c≈4.667, d≈18.0, R²=1.0
+
+  Test Categories
+  ---------------
+  1. Analysis tests (for each dataset A-F):
+     - observation_count correct
+     - All 4 coefficients within tolerance
+     - R² within tolerance
+     - fit_quality correct
+     - equation format correct
+
+  2. predict() tests:
+     - Predict at known x values
+     - Predict at x = 0 (returns intercept coefficient d)
+     - Predict at float month index
+
+  3. predictUsingAnalysis() tests:
+     - Matches direct predict() call
+     - Works with analyzeDataset() output
+
+  4. Validation tests:
+     - Count mismatch → InvalidArgumentException
+     - 3 observations → InvalidArgumentException (needs ≥ 4)
+     - 2 observations → InvalidArgumentException
+     - 1 observation → InvalidArgumentException
+     - Empty dataset → InvalidArgumentException
+     - Identical X values → RuntimeException
+
+  5. Fit quality classification:
+     - R² 1.0 → Excellent
+     - R² ~0.85 → Very Good
+     - R² ~0.75 → Good
+     - R² ~0.60 → Moderate
+     - R² ~0.30 → Weak
+
+  Estimated: 30-35 test methods, ~500 lines
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 3 — Modify AIPredictionService
+  ==============================================================================
+
+  File:   app/Services/AI/AIPredictionService.php
+  Status: ⬜ NOT STARTED
+
+  What Changes
+  ------------
+
+  1. ADD constructor dependency:
+     private PolynomialRegressionService $polynomialService;
+
+  2. MODIFY generatePrediction() to auto-select regression model:
+
+     // Add after the insufficient-data guard (line 164):
+     // Select regression model based on observation count
+     //   • < 4 observations → SLR (insufficient data for polynomial)
+     //   • ≥ 4 observations → try both, use the better fit
+
+     New private method: selectRegressionMethod(array $dataset): string
+       // Returns: 'slr' or 'polynomial'
+       // Logic:
+       //   1. If observation_count < 4 → return 'slr'
+       //   2. Run both SLR and Polynomial
+       //   3. If Polynomial R² > SLR R² by ≥ 0.02 → return 'polynomial'
+       //   4. Otherwise → return 'slr' (simpler is preferred when fit is similar)
+
+  3. MODIFY runRegression() to accept method parameter:
+     private function runRegression(array $dataset, string $method = 'slr'): array
+       // Calls the appropriate service based on $method
+       // Returns analysis array with additional 'regression_method' key
+
+  4. MODIFY predictNextMonth() — currently calls regressionService directly:
+     Instead, use whichever model was selected (already in analysis array)
+
+  5. MODIFY buildPredictionReport() — add regression_method to output:
+     Add 'regression_method' key to the regression section:
+     'regression' => [
+         ...existing keys...,
+         'regression_method' => 'slr' | 'polynomial',
+         'method_reason' => 'string explaining why this model was chosen',
+     ]
+
+  6. MODIFY buildMinimalReport() — add regression_method key:
+     regression_method => 'slr' (default for insufficient data)
+
+  What Does NOT Change
+  --------------------
+    • The public interface: generatePrediction(Project $project): array
+    • The Prediction Report structure (new keys are additive)
+    • Any other service that depends on AIPredictionService
+    • No database changes
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 4 — Modify ForecastService
+  ==============================================================================
+
+  File:   app/Services/AI/ForecastService.php
+  Status: ⬜ NOT STARTED
+
+  What Changes
+  ------------
+
+  1. ADD PolynomialRegressionService as optional constructor dependency:
+     Currently depends on LinearRegressionService only.
+
+     The forecast needs to call the CORRECT predict method based on
+     which regression model was used.
+
+  2. MODIFY generateFutureForecast() to accept regression method:
+
+     Currently calls:
+       $this->regressionService->predictUsingAnalysis($analysis, $monthIndex)
+
+     Change to:
+       // Check which model was used
+       $regressionMethod = $analysis['regression_method'] ?? 'slr';
+       // Call the appropriate predict method
+       if ($regressionMethod === 'polynomial') {
+           $predicted = $this->polynomialService->predictUsingAnalysis($analysis, $monthIndex);
+       } else {
+           $predicted = $this->regressionService->predictUsingAnalysis($analysis, $monthIndex);
+       }
+
+  What Does NOT Change
+  --------------------
+    • The public interface: generateFutureForecast(Project $project, array $analysis, int $currentMonthIndex): array
+    • Forecast record structure (same keys: month_index, month_label, planned_date, planned_progress, predicted_progress)
+    • Clamping logic (0-100%)
+    • Baseline horizon logic
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 5 — Add 'regression_method' to Prediction Report
+  ==============================================================================
+
+  The Prediction Report already has a 'regression' section with keys:
+    observation_count, mean_x, mean_y, slope, intercept,
+    equation, r_squared, fit_quality
+
+  For polynomial, the 'regression' section will contain:
+    observation_count, coefficients [a,b,c,d]
+    equation (polynomial format), r_squared, fit_quality
+    regression_method: 'polynomial'
+    method_reason: string
+
+  For SLR, the 'regression' section gets one new key:
+    regression_method: 'slr'
+    method_reason: string
+
+  The existing keys (slope, intercept, mean_x, mean_y) remain present
+  for SLR. For polynomial, additional coefficient keys (a, b, c, d,
+  coefficients) are added alongside the standard keys.
+
+  This is fully backward compatible:
+    • V1 blades that read 'equation', 'r_squared', 'fit_quality' still work
+    • New blades can read 'regression_method' to show model info
+    • No existing code breaks
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 6 — Update AIPredictionPresenter
+  ==============================================================================
+
+  File:   app/Services/AI/AIPredictionPresenter.php
+  Status: ⬜ NOT STARTED
+
+  What Changes
+  ------------
+    • Add 'regression_method' and 'method_reason' to the presenter output array
+      in presentNormal() — passed through from the prediction report
+    • These are additive only — no existing keys change
+
+  What Does NOT Change
+  --------------------
+    • presentCompleted() — no changes (completed projects don't run regression)
+    • presentInsufficientData() — no changes
+    • All existing blade keys remain identical
+    • The Blade view requires no changes at this stage
+      (model info display will be added in Phase 2 Model Selection)
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 7 — Run All Existing V1 Tests (No Regressions)
+  ==============================================================================
+
+  Command:
+    php artisan test --filter=LinearRegressionServiceTest
+    php artisan test --filter=RegressionDatasetBuilderTest
+    php artisan test --filter=ForecastServiceTest
+    php artisan test --filter=BaselineComparisonServiceTest
+    php artisan test --filter=ProjectAssessmentServiceTest
+    php artisan test --filter=AIPredictionServiceTest
+    php artisan test --filter=AIPredictionPresenterTest
+    php artisan test --filter=AIIntegrationTest
+
+  All 145 V1 tests must still pass. No existing test should be modified.
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 8 — End-to-End Testing via Laravel Tinker
+  ==============================================================================
+
+  Test Scenarios
+  --------------
+
+  Test 1 — Real project with ≥ 4 observations:
+    1. Create a known project with S-curve-shaped data (e.g., Project 7)
+    2. Run AIPredictionService::generatePrediction()
+    3. Verify regression_method = 'polynomial'
+    4. Verify R² > SLR R² on the same dataset
+    5. Verify forecast shows realistic S-curve-shaped predictions
+    6. Verify predictions are clamped 0-100%
+
+  Test 2 — Real project with < 4 observations:
+    1. Create a project with 2-3 observations
+    2. Run AIPredictionService::generatePrediction()
+    3. Verify regression_method = 'slr' (fallback)
+    4. Verify prediction still works (backward compatible)
+
+  Test 3 — Real project with 0-1 observations:
+    1. Existing insufficient-data fallback preserved
+    2. Regression_method = 'slr' (minimal report default)
+
+  Test 4 — Compare polynomial vs SLR on known S-curve data:
+    1. Run both models on the same dataset
+    2. Verify polynomial R² > SLR R² (model selection is working)
+    3. Equation should visibly show non-linear terms
+
+  Test 5 — Edge cases:
+    1. Exactly 4 observations → polynomial selected
+    2. All identical Y values → both models produce valid results
+    3. Very small values → no floating-point issues
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+  ==============================================================================
+  STEP 9 — Progress Log
+  ==============================================================================
+
+  After all steps pass, record completion in a progress log file:
+    ai_v2_phase1_progress_log.txt (or similar)
+
+  Include:
+    • Date of completion
+    • Files created / modified
+    • Test results (number of tests, pass rate)
+    • Any issues encountered and how they were resolved
+    • Before/after R² comparison on a real dataset (proof of improvement)
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+================================================================================
+  6. DEPENDENCY FLOW (Updated)
+================================================================================
+
+  After Phase 1, the dependency flow becomes:
+
+  RegressionDatasetBuilder
+      ↓
+  PolynomialRegressionService ← NEW — same level as LinearRegressionService
+  LinearRegressionService
+      ↓
+  AIPredictionService (selects which model to use)
+      ↓
+  ForecastService (calls the correct model's predict)
+      ↓
+  BaselineComparisonService
+      ↓
+  ProjectAssessmentService
+      ↓
+  AIPredictionPresenter
+      ↓
+  ProjectDetailService
+      ↓
+  Controller
+      ↓
+  Blade View
+
+  Key Rule: Lower-level services (math) never depend on higher-level services
+  (orchestration). PolynomialRegressionService has zero Laravel dependencies.
+
+
+================================================================================
+  7. FILES TOUCHED
+================================================================================
+
+  CREATED:
+    app/Services/AI/Regression/PolynomialRegressionService.php  — NEW math class
+    tests/Unit/Services/AI/Regression/PolynomialRegressionServiceTest.php — NEW tests
+    ai_v2_phase1_progress_log.txt — NEW progress log
+
+  MODIFIED:
+    app/Services/AI/AIPredictionService.php   — model selection logic
+    app/Services/AI/ForecastService.php        — conditional predict call
+    app/Services/AI/AIPredictionPresenter.php  — pass-through regression_method
+
+  UNCHANGED (backward compatible):
+    All other services, controllers, models, routes, blades, migrations
+    All 145 existing V1 tests
+
+
+================================================================================
+  8. TESTING STRATEGY
+================================================================================
+
+  Testing Philosophy (from project context):
+    Implement → Validate → Refine → Continue
+    Never postpone testing until an entire feature is complete.
+
+  Step-by-step testing order:
+    1. Pure unit tests first (no database) — PolynomialRegressionServiceTest
+    2. Then integration — AIPredictionService model selection
+    3. Then regression — all 145 V1 tests still pass
+    4. Then Tinker validation — real project data
+    5. Then browser verification — UI unchanged
+
+  Each step must pass before proceeding to the next.
+
+
+================================================================================
+  9. DECISION LOG
+================================================================================
+
+  Decision 1 — Polynomial vs Other Methods
+    Context: Multiple options exist for improving regression accuracy
+    Options considered: Polynomial (deg 3), Logistic (sigmoid), MLR, ARIMA
+    Decision: Polynomial Regression (degree 3)
+    Rationale:
+      • Same Least Squares math family as SLR — transparent and verifiable
+      • Degree 3 bends twice, matching S-curve shape
+      • Pure PHP — no external libraries needed
+      • Fits naturally alongside existing LinearRegressionService
+
+  Decision 2 — Separate Class vs Extending SLR
+    Context: Should polynomial logic go inside LinearRegressionService
+            or be a separate class?
+    Options: New class, or add method to existing class
+    Decision: New PolynomialRegressionService class
+    Rationale:
+      • Single Responsibility — each regression model is its own class
+      • No risk of breaking existing SLR code
+      • Clean interface — both classes share same method names
+      • Follows the existing pattern (DatasetBuilder is also a standalone class)
+
+  Decision 3 — Model Selection Logic
+    Context: Should the user choose SLR vs Polynomial, or should the system?
+    Options: User toggle, auto-select, or both
+    Decision: Auto-select with R² comparison
+    Rationale:
+      • PMU users should not need to understand regression models
+      • If polynomial fits significantly better, use it
+      • If both are similar, prefer SLR (simpler, more stable)
+      • Always fall back to SLR when data is insufficient (< 4 obs)
+
+  Decision 4 — Minimum Observations for Polynomial
+    Context: Cubic regression needs at least 4 data points
+    Options: 4 (absolute minimum) or higher
+    Decision: 4 observations minimum
+    Rationale:
+      • Mathematically required (4 coefficients to determine)
+      • With < 4 observations, SLR is the correct fallback
+      • The model selection logic handles this automatically
+
+  Decision 5 — When to Add Polynomial to the Dataset Builder
+    Context: Does RegressionDatasetBuilder need changes for polynomial?
+    Decision: No changes needed
+    Rationale:
+      • DatasetBuilder only prepares X/Y arrays — same format for any model
+      • Polynomial and SLR consume the same dataset
+      • The math difference is only in how coefficients are computed
+
+
+================================================================================
+  10. OPEN QUESTIONS
+================================================================================
+
+  • Should the Model Summary box in the Blade show which regression method
+    was used now, or wait until Phase 2?
+    → Deferred to Phase 2 (Model Selection & Comparison UI)
+
+  • Should we add a R² comparison display (SLR vs Polynomial) now?
+    → Deferred to Phase 2
+
+  • When R² values are very close (difference < 0.02), should we still
+    prefer SLR?
+    → Yes — simpler model is preferred when fit quality is equivalent
+
+
+================================================================================
+  11. FLAGGED FOR FUTURE
+================================================================================
+
+  • Phase 2 — Model Selection & Comparison UI
+    Will add Blade display of which model is active, R² comparison,
+    and model explanation text.
+
+  • Degree 5 or higher polynomial
+    May overfit to noise and diverge at extremes. Degree 3 is the
+    safe choice. Higher degrees can be added later if needed.
+
+  • Weighted regression
+    If needed, future versions could weight recent observations more
+    heavily. Not part of this phase.
+
+
+================================================================================
+  12. CONVERSATION CONTINUATION GUIDE
+================================================================================
+
+  When continuing this phase in a new session:
+
+  1. Start with Step 1 (PolynomialRegressionService) — the foundation
+  2. Test immediately with Step 2 (unit tests) before moving on
+  3. Steps 3-6 modify existing files — always read latest versions first
+  4. Steps 7-8 validate everything works end-to-end
+  5. Do NOT move to Phase 2 until Phase 1 is fully complete and tested
+
+  Files most likely to have changed:
+    • app/Services/AI/AIPredictionService.php
+    • app/Services/AI/ForecastService.php
+    • app/Services/AI/AIPredictionPresenter.php
+
+
+================================================================================
+  END OF PHASE 1 PLAN
+================================================================================

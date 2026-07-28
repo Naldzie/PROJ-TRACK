@@ -1,0 +1,50 @@
+PHASE 6 - ESTIMATED COMPLETION GAUGE
+========================================
+Implemented: 2026-07-27
+
+PURPOSE
+-------
+Add a visual speedometer/gauge to the AI Prediction tab for quick-glance
+project health assessment.
+
+FILES CHANGED
+-------------
+resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+
+CHANGES
+-------
+1. Project Health gauge card inserted at top of STATUS CARD content area
+   (between card header and Key Metrics Row).
+
+2. CSS conic-gradient semicircular gauge with 4 color zones:
+   - Green  (90-150)   = ahead of schedule
+   - Yellow (150-195)  = on track / slight delay
+   - Orange (195-225)  = behind schedule
+   - Red    (225-270)  = far behind / critical
+
+3. Needle positioned by progress_gap:
+   - formula: angle = 180 + 4.5 * gap (clamped 90-270)
+   - gap = -20 (ahead)  → 90  (far right, green)
+   - gap = 0   (on track) → 180 (center, yellow)
+   - gap = +20 (behind)  → 270 (far left, red)
+
+4. Center text shows status + risk level, color-coded.
+
+5. Info panel next to gauge shows:
+   - Progress Gap (with +/- and color)
+   - Schedule Status
+   - Completion Confidence
+
+6. Edge cases handled:
+   - Insufficient data: gray gauge, no needle, "INSUFFICIENT DATA" text
+   - Completed projects: gauge hidden (separate completed view)
+   - Responsive: flex-wrap on small screens
+
+DATA KEYS USED (from AIPredictionPresenter)
+-------------------------------------------
+  progress_gap          → needle position
+  risk_level            → gauge text color
+  status                → center status text
+  completion_confidence → confidence display
+  is_insufficient_data  → toggle insufficient data mode
+  is_completed          → toggle completed mode

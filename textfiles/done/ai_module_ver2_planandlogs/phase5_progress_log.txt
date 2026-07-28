@@ -1,0 +1,149 @@
+===============================================================================
+  PHASE 5 PROGRESS LOG
+  Dual S-Curve: Near-Term Forecast + Completion Forecast
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Status: ✅ IMPLEMENTATION COMPLETE
+  Implementation Date: July 26, 2026
+
+===============================================================================
+  STEP-BY-STEP SUMMARY
+===============================================================================
+
+  Step 1 — Add prepareForecastData() to ProjectDetailService
+    File:   app/Services/ProjectDetailService.php
+    Status: ✅ COMPLETE
+    Detail: New public method that takes already-computed $chartData and
+             $aiPrediction arrays and returns polynomial_forecast + 
+             completion_forecast. Pure array manipulation — no DB queries.
+             Guards: insufficient_data, completed, SLR-only (skip poly),
+             missing completion_multi methods.
+             Polynomial forecast slices first 4 entries from forecast_data.
+             Completion forecast generates shifted baselines by displacing
+             frozen_planned_data x-values by each method's lag.
+
+  Step 2 — Update ProjectController::getChartData()
+    File:   app/Http/Controllers/ProjectController.php
+    Status: ✅ COMPLETE
+    Detail: Calls $service->prepareForecastData($chartData, $aiPrediction)
+             and adds 'polynomial_forecast' and 'completion_forecast' keys
+             to the JSON response. No business logic in controller.
+
+  Step 3 — Update s-curve-chart.js
+    File:   public/js/admin/projects/s-curve-chart.js
+    Status: ✅ COMPLETE
+    Detail: Two changes:
+             A) createSCurveChart() — added optional Polynomial Near-Term
+                Forecast dataset (dashed purple #a855f7, order 4). Only
+                added when chartData.polynomial_forecast has entries.
+             B) New createCompletionForecastChart() — renders 3 datasets:
+                Original Plan (solid blue), Schedule-Aware (dashed #8b5cf6),
+                EAC_time (dotted #f97316). Same Chart.js config pattern as
+                existing chart. Returns null if < 2 datasets (need plan + 1 forecast).
+
+  Step 4 — Update progress.blade.php
+    File:   resources/views/projects/project_detail/components/tabs/progress.blade.php
+    Status: ✅ COMPLETE
+    Detail: 
+             A) Added polynomial forecast legend item (hidden by default,
+                shown when poly data exists)
+             B) Added Chart 2 card section between Chart 1 and Variance Trend
+                card (hidden by default via display:none, shown when completion
+                forecast exists). Includes 3 legend items (Original Plan always
+                visible, SA/EAC shown/hidden by JS).
+             C) Updated loadProgressChartData() to merge polynomial_forecast
+                into charts and call initCompletionForecastChart()
+             D) Updated initSCurveChart() to toggle poly forecast legend
+             E) New initCompletionForecastChart() — handles destroy/create,
+                renders canvas, shows section, updates legend items
+
+  Step 5 — Syntax verification
+    Status: ✅ COMPLETE
+    Detail: php -l on both modified PHP files — no syntax errors.
+             JSON serialization test — structure valid.
+
+===============================================================================
+  FILES MODIFIED
+===============================================================================
+
+  MODIFIED (4):
+    app/Services/ProjectDetailService.php
+      — Added prepareForecastData() method
+
+    app/Http/Controllers/ProjectController.php
+      — Added forecast data computation and response keys
+
+    public/js/admin/projects/s-curve-chart.js
+      — Added poly forecast dataset to createSCurveChart()
+      — New createCompletionForecastChart() function
+
+    resources/views/projects/project_detail/components/tabs/progress.blade.php
+      — Added Chart 2 HTML card
+      — Added poly forecast legend
+      — Updated JS: initSCurveChart(), loadProgressChartData()
+      — New initCompletionForecastChart() function
+
+  NO CHANGES NEEDED:
+    app/Services/AI/AIPredictionService.php
+    app/Services/AI/AIPredictionPresenter.php
+    app/Services/AI/CompletionEstimationService.php
+    app/Services/AI/CompletionComparisonService.php
+    app/Services/ProjectChartService.php
+    routes/web.php
+
+===============================================================================
+  EDGE CASES HANDLED
+===============================================================================
+
+  +----------------------------------+------------------+--------------+
+  | State                            | Chart 1 Poly     | Chart 2      |
+  |                                  | Forecast         |              |
+  +----------------------------------+------------------+--------------+
+  | Normal, polynomial regression    | ✅ Show          | ✅ Show      |
+  | Normal, SLR regression           | ❌ Skip          | ✅ Show      |
+  | Insufficient data (< 2 records)  | ❌ Skip          | ❌ Hide sec  |
+  | Completed project                | ❌ Skip          | ❌ Hide sec  |
+  +----------------------------------+------------------+--------------+
+
+===============================================================================
+  DECISIONS MADE DURING IMPLEMENTATION
+===============================================================================
+
+  1. Computation in ProjectDetailService (not controller):
+     Following the architecture rule that controllers should remain
+     lightweight, the shifted baseline computation lives in a new
+     prepareForecastData() method on ProjectDetailService rather than
+     inline in the controller.
+
+  2. Average month constant (30.44 days):
+     The shifted baseline uses msPerMonth = 30.44 * 86400 * 1000 for the
+     horizontal displacement. This is consistent across both methods and
+     avoids the complexity of variable-length month handling in the chart.
+
+  3. Chart 2 placed between Chart 1 and Variance Trend:
+     This keeps the Progress tab layout: first the current status chart,
+     then the long-term outlook, then the supporting trend charts.
+
+  4. Legend items hidden by default:
+     Both the polynomial forecast legend (Chart 1) and SA/EAC legends
+     (Chart 2) start with display:none and are shown dynamically by JS
+     based on data availability.
+
+===============================================================================
+  BACKWARD COMPATIBILITY NOTES
+===============================================================================
+
+  - Eixsting createSCurveChart() signature unchanged — polynomial_forecast
+    is an optional additional key in chartData. If absent/empty, no new
+    dataset is added.
+  - Existing AJAX response format unchanged — two new keys added
+    (polynomial_forecast, completion_forecast) without removing any
+    existing keys.
+  - Chart 2 section is hidden by default (display:none) — older pages
+    without the JS init function are unaffected.
+  - All existing Blade templates untouched.
+
+===============================================================================
+  END OF PHASE 5 PROGRESS LOG
+===============================================================================

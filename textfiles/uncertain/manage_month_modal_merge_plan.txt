@@ -1,0 +1,187 @@
+===============================================================================
+  PLAN FILE
+  Manage Month Modal — Merge Edit Target + Manage Activities
+  CSPC PMU System
+  Created: July 20, 2026
+===============================================================================
+
+===============================================================================
+  PROBLEM
+===============================================================================
+
+  Currently each month card has two separate buttons that open two separate
+  modals for related work:
+
+    "Edit" button   → add_month_target_modal.blade.php (edit mode)
+                      — changes planned_progress_percent, planned_date, description
+                      — activities section is hidden: "Activities are managed
+                        separately via the 'Manage' button."
+
+    "Manage" button → manage_activities_modal.blade.php
+                      — add/delete activities for the month
+                      — no access to target fields
+
+  The user must open two modals sequentially to do related work. Additionally,
+  when "Edit" is hidden (no extension or has progress), the target info is
+  inaccessible from the activities modal even in read-only form.
+
+===============================================================================
+  CHOSEN DIRECTION
+===============================================================================
+
+  Replace both "Edit" and "Manage" buttons with a single "Manage Month"
+  button that opens one merged modal containing:
+
+    1. Target information section (read-only or editable depending on state)
+    2. Activities management section (always interactive)
+
+  The modal determines which mode to use based on the project state:
+
+    Mode "edit"
+      — Available when: extension_count > 0 AND no progress recorded
+      — Target fields: editable
+      — Save button: PATCH target + description
+      — Activities: inline add/delete via AJAX (live CRUD, same as current
+        manage_activities_modal.js)
+
+    Mode "activities-only"
+      — Available when: no extension OR has progress
+      — Target fields: displayed as read-only summary (frozen/locked)
+      — No save button for target (just a Close/Done button)
+      — Activities: inline add/delete via AJAX (same as above)
+
+===============================================================================
+  FILES TO CREATE
+===============================================================================
+
+  1. CREATE: resources/views/projects/project_detail/components/modals/
+     _manage_month_modal.blade.php
+     — Merged modal with target info + activities sections
+     — Two display modes controlled by JS context
+
+  2. CREATE: public/js/admin/projects/
+     baseline-schedule-manage-month-modal.js
+     — openManageMonthModal() with mode awareness
+     — loadManageMonthActivities() — fetch & render activities list
+     — addManageMonthActivity() — POST new activity
+     — deleteManageMonthActivity() — DELETE activity
+     — saveManageMonthTarget() — PATCH target fields (edit mode only)
+
+===============================================================================
+  FILES TO MODIFY
+===============================================================================
+
+  3. MODIFY: resources/views/projects/project_detail/components/tabs/
+     baseline-schedule.blade.php
+     — Swap Edit Progress → Record Progress order (make Record first)
+     — Replace Edit + Manage buttons with single "Manage Month" button
+     — Include new modal + JS
+
+  4. MODIFY: public/js/admin/projects/
+     baseline-schedule-manage-activities-modal.js
+     — Update reloadInlineActivities() to find the new "Manage Month" button
+       instead of the old "Manage" button
+
+  5. MODIFY: public/js/admin/projects/
+     baseline-schedule-record-progress-modal.js
+     — Update the "No activities" link from openManageActivitiesModal()
+       to openManageMonthModal()
+
+===============================================================================
+  MODAL STRUCTURE (_manage_month_modal.blade.php)
+===============================================================================
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │ [icon] Manage Month — January 2026                        ✕ │
+  ├──────────────────────────────────────────────────────────────┤
+  │ ┌─ Target Information ─────────────────────────────────────┐ │
+  │ │  Month:         [readonly] January 2026                  │ │
+  │ │  Target Date:   [editable|readonly] 2026-01-31           │ │
+  │ │  Target %:      [editable|readonly] 45%                  │ │
+  │ │  Description:   [editable|readonly] textarea             │ │
+  │ │  (edit mode: fields editable, activities-only: frozen)   │ │
+  │ └──────────────────────────────────────────────────────────┘ │
+  │ ┌─ Activities ────────────────────────────────────────────┐ │
+  │ │  Current Activities list (with delete buttons)          │ │
+  │ │  ┌─────────────────────────────────────────────────────┐│ │
+  │ │  │ Activity 1                          ✓ Done  [✕]    ││ │
+  │ │  │ Activity 2                          Pending [✕]    ││ │
+  │ │  └─────────────────────────────────────────────────────┘│ │
+  │ │  ┌─ Add New Activity ─────────────────────────────────┐ │ │
+  │ │  │ [Activity name input ]                              │ │ │
+  │ │  │ [Description textarea ]                             │ │ │
+  │ │  │ [Add Activity button]                               │ │ │
+  │ │  └────────────────────────────────────────────────────┘ │ │
+  │ └──────────────────────────────────────────────────────────┘ │
+  ├──────────────────────────────────────────────────────────────┤
+  │  [Cancel]    [Save Changes (edit mode) | Close (act. only)]  │
+  └──────────────────────────────────────────────────────────────┘
+
+===============================================================================
+  MODAL BEHAVIOR
+===============================================================================
+
+  openManageMonthModal(scheduleId, monthLabel, plannedDate,
+                       plannedProgressPercent, description, mode)
+
+    scheduleId            — baseline schedule row ID (null for activities-only)
+    monthLabel            — e.g. "2026-01"
+    plannedDate           — e.g. "2026-01-31"
+    plannedProgressPercent — current target %
+    description           — current description text
+    mode                  — "edit" or "activities-only"
+
+  Mode "edit":
+    — Target inputs enabled, "Save Changes" button visible
+    — saveManageMonthTarget() sends PATCH to /baseline-schedules/{id}
+    — On success: close modal, reload page (follows existing pattern)
+
+  Mode "activities-only":
+    — Target inputs disabled (readonly/display only), no save button
+      → button text is "Close", onclick = close modal only
+    — Activities section always interactive in both modes
+
+  Activities (both modes):
+    — on open: fetchActivities(monthLabel) → render list with delete buttons
+    — addManageMonthActivity() → POST → re-render list
+    — deleteManageMonthActivity(id) → DELETE → re-render list
+    — After add/delete: call reloadInlineActivities(monthLabel) to sync card
+
+===============================================================================
+  BUTTON ORDER (baseline-schedule.blade.php)
+===============================================================================
+
+  Current order:
+    1st: Edit Progress    ← confusing, users click it instead of Record
+    2nd: Record Progress  ← should be first (primary action)
+    3rd: ↗ Carry Over
+    4th: Edit             ← replaced by Manage Month
+    5th: Manage           ← replaced by Manage Month
+    6th: Delete
+
+  New order:
+    1st: Record Progress  ← primary action, always visible
+    2nd: Edit Progress    ← secondary, only if progress exists
+    3rd: ↗ Carry Over
+    4th: Manage Month     ← replaces Edit + Manage
+    5th: Delete
+
+===============================================================================
+  IMPLEMENTATION STEPS
+===============================================================================
+
+  1. CREATE _manage_month_modal.blade.php  (merged modal HTML)
+  2. CREATE baseline-schedule-manage-month-modal.js  (modal logic)
+  3. MODIFY baseline-schedule.blade.php:
+     3a. Swap Edit Progress / Record Progress order
+     3b. Replace Edit + Manage buttons with Manage Month button
+     3c. Include new modal + JS
+  4. MODIFY baseline-schedule-manage-activities-modal.js:
+     4a. Update reloadInlineActivities() to find "Manage Month" button
+  5. MODIFY baseline-schedule-record-progress-modal.js:
+     5a. Update "Add activities" link to call openManageMonthModal()
+  6. PHP syntax check + verify
+
+===============================================================================
+  END OF PLAN FILE
+===============================================================================

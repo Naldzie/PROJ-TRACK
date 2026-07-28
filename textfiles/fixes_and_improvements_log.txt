@@ -1,0 +1,80 @@
+FIXES & IMPROVEMENTS (not part of core Phase 6)
+=================================================
+Logged: 2026-07-27
+
+1. RENAMED calculateProgressFromChecklist → calculateProgressFromHistory
+----------------------------------------------------------------------
+  File: app/Models/Project.php
+  - Old name was misleading (suggested activity checklist, not monthly history)
+  - Updated method definition + sole caller (getProgressPercentage)
+  - All external consumers use getProgressPercentage() — unaffected
+  - Backup files untouched
+
+2. FIXED expected_progress reading wrong month's planned value
+----------------------------------------------------------------------
+  File: app/Services/AI/AIPredictionPresenter.php
+  - Root cause: calculateExpectedProgress() filtered baselines by
+    planned_date <= now(). When July's planned_date (July 31) hadn't
+    arrived yet (July 27), it returned June's 50% instead of July's 56.22%.
+  - Meanwhile current_progress already reflected July's actual (52%).
+  - Result: progress_gap = -2% (looked ahead) instead of +4.22% (behind).
+
+3. REFINED calculateExpectedProgress with month-aware priority logic
+----------------------------------------------------------------------
+  File: app/Services/AI/AIPredictionPresenter.php
+  - New priority order:
+    1. Progress history record for current (simulated) month
+    2. Baseline schedule for current (simulated) month
+    3. Latest progress history record from any past month
+    4. Date-filtered baseline (latest passed)
+    5. Time-based estimate
+  - Uses DateHelper::now() for the effective current month.
+
+4. FIXED needle angle mapping (was backwards)
+----------------------------------------------------------------------
+  File: resources/views/.../ai-prediction.blade.php
+  - Before: gap=-20 (ahead) → 270 (red zone), gap=+10 (behind) → 90 (green)
+  - After:  gap=-20 (ahead) → 90  (green), gap=+20 (behind) → 270 (red)
+
+5. FIXED Progress Gap display color (was inverted)
+----------------------------------------------------------------------
+  File: resources/views/.../ai-prediction.blade.php
+  - Before: gap > 0 => green (behind looked ahead)
+  - After:  gap <= 0 => green, gap < 10 => yellow, gap >= 10 => red
+
+6. CHANGED Next Month Prediction subtitle
+----------------------------------------------------------------------
+  File: resources/views/.../ai-prediction.blade.php
+  - Before: "Current: 52% → Next: 60.67%"
+  - After:  "Planned Next: 63.74%" (planned from next baseline schedule)
+  - New presenter key: next_planned_progress
+
+7. ADDED next_is_current_month dynamic label
+----------------------------------------------------------------------
+  File: app/Services/AI/AIPredictionPresenter.php
+  - Detects when the AI's "next" prediction is actually for the current month
+    (when latest recorded month < current simulated month)
+  - Blade shows "This Month Prediction" vs "Next Month Prediction"
+  - Subtitle switches between "Planned This Month" / "Planned Next"
+
+8. CREATED Date Simulation System for dev/testing
+----------------------------------------------------------------------
+  New Files:
+    app/Support/DateHelper.php
+    app/Http/Middleware/SimulateDate.php
+    app/Http/Controllers/Admin/DevDateController.php
+
+  Modified Files:
+    bootstrap/app.php             - registered middleware in web group
+    routes/web.php                - dev routes (auth-protected, non-production)
+    resources/views/layouts/app.blade.php - floating widget + Ctrl+M hotkey
+    app/Services/AI/AIPredictionPresenter.php - now() → DateHelper::now()
+
+  How it works:
+    - SimulateDate middleware sets Carbon::setTestNow() from session on request
+    - Resets in middleware after-phase (before cookies are created — no logout)
+    - DateHelper::now() mirrors the same logic for non-request contexts
+    - Ctrl+M toggles floating date picker widget (dev only, APP_ENV != production)
+    - Routes: GET /dev/date, POST /dev/date/set, POST /dev/date/clear
+    - Global coverage: every now() call respects simulated date
+    - Only session/XSRF cookie expiry stays on real time (middleware ordering)

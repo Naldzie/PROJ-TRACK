@@ -1,0 +1,293 @@
+===============================================================================
+PROJECT CONTEXT & DEVELOPMENT RULES
+CSPC PMU SYSTEM
+===============================================================================
+Extracted from: regression_implementation_master_plan_ver5.txt
+Purpose: Reusable reference for any plan file in this project.
+===============================================================================
+
+
+===============================================================================
+PROJECT CONTEXT
+===============================================================================
+
+System Name
+  Construction Project Monitoring System
+
+Client
+  CSPC Project Management Unit (PMU)
+
+Framework
+  Laravel
+
+Programming Language
+  PHP
+
+Database
+  MySQL
+
+Architecture
+  Laravel Service-Oriented Architecture
+
+
+===============================================================================
+SYSTEM OVERVIEW
+===============================================================================
+
+The system is designed for the Project Management Unit (PMU) to monitor
+construction and infrastructure projects.
+
+The PMU is responsible for monitoring project implementation rather than
+executing construction work.
+
+Contractors perform the actual construction while the PMU conducts regular
+project inspections and monitors progress.
+
+The system digitalizes project monitoring, inspection history, baseline
+schedules, activity tracking, documentation, contractor management, and
+project reporting.
+
+
+===============================================================================
+CLIENT WORKFLOW
+===============================================================================
+
+The AI module must support existing PMU procedures rather than replace them.
+
+Typical workflow:
+
+  Project Approved(almost always already approved going from procurement to client)
+        ↓
+  Project Created
+        ↓
+  Baseline Schedule Prepared
+        ↓
+  Contractor Begins Work
+        ↓
+  Monthly PMU Inspection
+        ↓
+  Actual Progress Recorded
+        ↓
+  Progress Compared Against Baseline
+        ↓
+  Management Decision
+        ↓
+  Project Completion  or  Project Extension
+
+
+===============================================================================
+DESIGN PHILOSOPHY
+===============================================================================
+
+• The system is a Decision Support System.
+• Its purpose is NOT to replace project managers.
+• Its purpose is to provide early warning information.
+• Final decisions always remain with the PMU.
+
+
+===============================================================================
+DEVELOPMENT RULES
+===============================================================================
+
+Rule 1 — Always request updated source code before suggesting modifications
+whenever there is uncertainty about the current implementation. Never assume
+that previously discussed code remains unchanged.
+
+Rule 2 — When generating code, always provide complete functions or complete
+classes. Avoid partial implementations unless explicitly requested.
+
+Rule 3 — Clearly explain:
+  • where the code belongs
+  • what it replaces
+  • what depends on it
+  • why the modification is necessary
+
+Rule 4 — Every generated code block should contain descriptive comments
+explaining its purpose whenever practical.
+
+Rule 5 — Maintain clean separation of responsibilities:
+  Regression mathematics     → LinearRegressionService
+  Dataset preparation        → RegressionDatasetBuilder
+  Business interpretation    → AIPredictionService
+  Page orchestration         → ProjectDetailService
+  HTTP handling              → Controllers
+
+Rule 6 — Avoid introducing unnecessary coupling between services. Each
+service should maintain a single primary responsibility.
+
+Rule 7 — Prefer expanding existing architecture over redesigning completed
+components. Future development should build upon it rather than replacing it.
+
+Rule 8 — After each implementation step is complete, test it before
+proceeding to the next step. Testing ensures each component works correctly
+in isolation before it becomes part of a larger integrated workflow.
+for front end/browser test, no need to open the localhost, as its usually always open
+  • Services: Laravel Tinker or PHPUnit
+  • Views: Browser verification
+  • API endpoints: POST/GET request verification
+  • Fallback scenarios: Verify error handling paths
+
+Rule 9 — Every function and code block must include a descriptive comment
+label:
+  • Simple functions → one-line label describing the function's purpose.
+  • Complex functions → purpose explanation, caller annotation, dependency
+    annotation.
+  • Non-obvious code blocks → inline comment explaining why the block exists.
+
+Rule 10 - Every time a phase/sub phase/ sections are finsihed please inform me before continueing
+
+Rule 11 - include recording/ updating the logs every phase completion
+
+
+===============================================================================
+CODING STANDARDS & COMMENT FORMAT
+===============================================================================
+
+Simple functions (single responsibility, clear intent):
+  // Build and return the regression dataset
+
+Complex functions (multiple steps, business logic, state changes):
+  // Orchestrate the full prediction pipeline.
+  // Called by: SomeService::someMethod()
+  // Calls: buildDataset(), runRegression(), generateForecast()
+  // Builds the complete Prediction Report from all AI sub-services.
+
+Non-obvious code blocks (conditionals, loops, error handling):
+  // Clamp prediction to valid range (0-100%)
+  // Prevents unrealistic values with sparse datasets
+
+
+===============================================================================
+DESIGN PRINCIPLES
+===============================================================================
+
+Single Responsibility Principle
+  Every service owns one primary responsibility.
+
+Separation of Concerns
+  Mathematics      → Regression Engine
+  Business Logic   → Service Layer
+  Presentation     → Page Services
+  Controllers      → HTTP only
+
+Immutability
+  Historical records must never be modified.
+  Normalization occurs only inside analytical datasets.
+
+Extensibility
+  Future features should be added without redesigning existing services.
+
+Maintainability
+  Future services should extend the architecture rather than increase the
+  responsibilities of existing services.
+
+Backward Compatibility
+  Maintain backward compatibility whenever practical.
+
+Dependency Flow
+  Allowed dependency direction is one-way:
+    Project → DatasetBuilder → RegressionService → PredictionService
+    → PageService → Controller → View
+  Reverse dependencies should be avoided. Lower-level services should never
+  depend on higher-level services.
+
+Controllers
+  Controllers should remain extremely lightweight:
+    Receive Request → Call Service → Return Response
+  Controllers should never contain business logic, complex calculations, or
+  domain knowledge.
+
+
+===============================================================================
+DOCUMENT STRUCTURE TEMPLATE
+===============================================================================
+
+Use this format for plan files:
+
+===============================================================================
+  SECTION HEADER
+===============================================================================
+
+Sub-section Title
+-----------------
+  - Bullet items with spacing
+  - Two-line gaps between sections after blocks of text
+
+Status badges:
+  ✅ COMPLETE       — done and tested
+  ⬜ NOT STARTED    — not yet begun
+  ⚠️ BLOCKED       — waiting on dependency
+  🔄 IN PROGRESS    — actively being worked on
+  ❌ FAILED/CANCELLED
+
+===============================================================================
+  END OF SECTION
+===============================================================================
+
+
+===============================================================================
+RECOMMENDED PLAN FILE SECTIONS
+===============================================================================
+
+1. PROJECT CONTEXT — system name, client, tech stack, architecture
+2. STATUS SUMMARY — phased overview of what's done/remaining
+3. PROBLEM STATEMENT — what issue this plan addresses
+4. CHOSEN DIRECTION — architectural decision with rationale
+5. IMPLEMENTATION STEPS — ordered checklist with status badges
+6. SESSION LOGS — chronological record of what was built and bugs found
+7. OPEN QUESTIONS / STILL TO RESOLVE — unresolved items
+8. DECISION LOG — finalized decisions with reasoning (prevents rehashing)
+9. FILES TOUCHED — list of files modified/created
+10. FLAGGED FOR FUTURE — deferred items with context
+11. CONVERSATION CONTINUATION GUIDE — instructions for next session
+
+
+===============================================================================
+DECISION LOG TEMPLATE
+===============================================================================
+
+Decision N — [Title]
+  Context: [Why this decision needed to be made]
+  Options considered: [Brief list of alternatives]
+  Decision: [What was chosen]
+  Rationale: [Why this option was selected]
+  Consequences: [What this means for future work]
+
+
+===============================================================================
+TESTING PHILOSOPHY
+===============================================================================
+
+Implement → Validate → Refine → Continue
+
+Never postpone testing until an entire feature is complete.
+
+Each newly implemented feature should be validated immediately before
+continuing with the next phase.
+
+
+===============================================================================
+CONVERSATION CONTINUATION GUIDE
+===============================================================================
+
+When starting a new development session:
+
+1. Assume the following are complete and stable unless specified otherwise:
+   (list completed work here)
+
+2. Before suggesting code changes, request the latest versions of files
+   that may have changed.
+
+3. Never assume previously generated code is still current.
+
+4. Cross-reference uploaded code with this plan before making
+   recommendations.
+
+5. Do NOT redesign completed components unless a defect is discovered.
+
+6. Continue implementation from the next uncompleted step in order.
+
+
+===============================================================================
+END OF REFERENCE FILE
+===============================================================================

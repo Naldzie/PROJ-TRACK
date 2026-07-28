@@ -1,0 +1,1489 @@
+PROJ-TRACK: AN INTEGRATED MONITORING AND 
+MANAGEMENT SYSTEM FOR CSPC-PROJECT 
+MANAGEMENT UNIT 
+A Capstone Project 
+presented to the Faculty of 
+College of Computer Studies 
+Camarines Sur Polytechnic Colleges 
+In Partial Fulfillment of the Requirements 
+for the degree Bachelor of Science in Information Technology 
+By 
+Ronald Francis E. Andalis 
+Gilbert M. Baluca 
+Neil A. Inocencio 
+Dave Kale B. Oares 
+Matt Gabriel B. Villadolid 
+May, 2026
+CHAPTER 1 
+INTRODUCTION 
+This chapter presents the foundation of the study. It discusses the context of the problem, 
+the purpose and objectives of the proposed system, its significance, scope and limitations, and the 
+definition of important technical terms. This chapter establishes why the project is necessary and 
+how it will address the identified concerns of the CSPC–Project Management Unit. 
+1.1 Project Context  
+Project monitoring and management play a critical role in ensuring that development 
+initiatives are implemented efficiently, transparently, and within the approved timeline and budget. 
+Across various sectors worldwide, organizations implement infrastructure projects, system 
+upgrades, and operational improvements that require continuous monitoring to ensure that project 
+objectives are achieved. Effective project monitoring includes tracking project proposals, verifying 
+milestone completion, maintaining organized documentation, coordinating with stakeholders, and 
+generating progress reports that support managerial decision-making. In recent years, many 
+organizations have shifted from traditional monitoring practices toward digital project management 
+platforms.  
+Globally, institutions increasingly adopt integrated information systems to improve 
+transparency, reduce administrative workload, and enhance coordination between project 
+stakeholders. Traditional approaches such as spreadsheet-based tracking, paper documentation, and 
+email-based communication often lead to fragmented records, delayed updates, and difficulty in 
+consolidating project information. These limitations make it challenging for administrators to 
+monitor progress accurately and identify potential delays in a timely manner. As projects become 
+more complex and involve multiple stakeholders, the need for centralized and automated 
+monitoring systems becomes increasingly important. In the context of educational institutions, 
+1 
+infrastructure development and facility management projects are essential to support academic 
+operations and campus expansion.  
+Universities and colleges regularly undertake projects such as building construction, 
+laboratory renovation, facility upgrades, and campus maintenance. Effective monitoring of these 
+projects is necessary to ensure that resources are utilized properly and that project implementation 
+aligns with institutional development plans. Without a structured monitoring system, institutions 
+may encounter difficulties in tracking project progress, managing documentation, and maintaining 
+communication between project administrators and contractors. At the institutional level, 
+Camarines Sur Polytechnic Colleges (CSPC) manages various infrastructure and development 
+projects through its Project Management Unit (PMU).  
+The PMU is responsible for supervising the planning, documentation, monitoring, and 
+implementation of institutional development projects. This includes evaluating project proposals, 
+coordinating with contractors, ensuring compliance with design specifications, monitoring 
+milestone completion, and maintaining official project records for administrative review. The PMU 
+works closely with external contractors who are responsible for executing approved projects within 
+the campus. Contractors typically prepare and submit project proposals for review and approval by 
+the PMU.  
+Based on a preliminary consultation with PMU personnel and the supervising engineer, it 
+was identified that contractors currently submit their project proposals through email. After 
+receiving these proposals, PMU personnel manually review the documents and encode the relevant 
+information into internal records. However, the current process lacks a centralized digital system 
+that can store, organize, and monitor project proposals and progress updates in real time. Because 
+project proposals are transmitted through email and later transferred manually into records, the 
+process can result in delays in encoding information, difficulty in consolidating project documents, 
+and limited accessibility of project data for monitoring purposes.  
+Furthermore, contractors do not directly input or modify project proposals within any 
+institutional system. For confidentiality and data integrity reasons, only authorized PMU personnel 
+are allowed to encode, edit, or update official project records. Contractors are limited to viewing 
+the approved proposal details that correspond to their assigned projects. They are not allowed to 
+modify proposals or access other administrative functions of the monitoring process. This 
+restriction is implemented to ensure the protection of sensitive institutional information and 
+maintain the accuracy of official project records. Because the monitoring process relies heavily on 
+manual encoding and scattered documentation, PMU personnel must perform most monitoring 
+tasks manually. Tracking project milestones, verifying updates from contractors, and generating 
+progress summaries often require comparing multiple documents and communication records.  
+Additionally, the absence of an integrated dashboard limits the ability of administrators to 
+visualize real-time project progress. These operational conditions create several challenges for the 
+PMU, including manual encoding of contractor-submitted proposals, delayed consolidation of 
+progress reports, fragmented storage of project documents, limited real-time monitoring of project 
+milestones, and the absence of predictive tools that can estimate potential project delays. Although 
+contractors are involved in project implementation, their access to monitoring tools remains limited 
+and not systematized, which further complicates coordination between project stakeholders. 
+Without a centralized monitoring platform that clearly defines user roles and integrates project data 
+into a unified system, project monitoring becomes reactive rather than proactive. As a result, 
+administrators may encounter difficulties in identifying delays early, consolidating project 
+information efficiently, and maintaining secure access control for different stakeholders. Therefore, 
+the primary problem addressed by this capstone study is the absence of a centralized, role-based, 
+and predictive project monitoring system that can streamline proposal management, regulate 
+contractor access, and improve real-time monitoring of development projects within the CSPC 
+Project Management Unit. 
+1.2 Purpose and Description of the Project 
+The purpose of this project is to design and develop PROJ-TRACK: An Integrated Monitoring and 
+Management System for CSPC–Project Management Unit, a web-based platform intended to 
+enhance the efficiency of project monitoring and management processes within the institution. The 
+system is designed to centralize project-related information, including proposals, timelines, 
+milestone updates, and supporting documents, into a single, organized database. Through this 
+platform, authorized Project Management Unit (PMU) personnel will be able to record, update, and 
+monitor project details in real time, while contractors will be provided with controlled access to 
+view approved project proposals and monitor progress based on assigned permissions. The system 
+also automates key processes such as notification and reporting, reducing reliance on manual 
+tracking and improving overall operational workflow. 
+The project offers several advantages in terms of efficiency, organization, and accuracy. 
+By replacing manual and fragmented monitoring practices with a centralized digital system, PROJ
+TRACK minimizes delays in report consolidation, reduces the risk of data inconsistency, and 
+improves accessibility of project information. The inclusion of structured modules such as 
+milestone tracking, document archiving, automated notifications, and dashboard visualization 
+enables the PMU to efficiently manage multiple projects simultaneously. Additionally, the system 
+enforces role-based access control, ensuring that only authorized personnel can modify sensitive 
+project data while maintaining transparency for contractors through view-only access. These 
+features collectively contribute to improved accountability, streamlined communication, and better 
+coordination among stakeholders. 
+A key differentiator of the proposed system is the integration of a predictive analytics 
+module within a campus-based project monitoring platform. Unlike traditional systems that rely 
+solely on reactive monitoring, PROJ-TRACK utilizes historical and real-time project data to 
+estimate potential delays and timeline deviations. This predictive capability allows PMU personnel 
+to anticipate risks and implement corrective actions before issues escalate. The system is therefore 
+not only a monitoring tool but also a decision-support mechanism that promotes proactive project 
+management. Its relevance lies in addressing the specific operational challenges of the CSPC
+Project Management Unit, while its innovative approach demonstrates the practical application of 
+regression-based predictive analytics in institutional infrastructure management. 
+1.3 Objectives of the Project 
+The general objective of this study is to develop and implement PROJ-TRACK, an 
+integrated monitoring and management system that enhances project tracking, documentation 
+management, and predictive monitoring for the CSPC–Project Management Unit within the 
+designated academic development period. 
+1. To identify and analyze the existing challenges in the current monitoring process of 
+the CSPC–PMU, including: 
+1.1 Consolidation of contractor-submitted proposals 
+1.2 Encoding and updating of project data 
+1.3 Document storage 
+1.4 Visibility of project status 
+1.5 Delay estimation mechanisms 
+1.6 Access and permission control 
+2. To design and develop a centralized web-based integrated monitoring system that 
+includes the following modules: 
+2.1 Project Proposal Encoding and Management Module (PMU-controlled) 
+2.2 Milestone Tracking Module 
+2.3 Contractor Viewing Access Module (view-only permission) 
+2.4 Automated Notification and Reminder Module 
+2.5 Document Archiving and Retrieval Module 
+2.6 Dashboard and Reporting Module 
+2.7 Regression-Based Predictive Analytics Module 
+3. To test and validate the developed system using Black Box Testing in terms of: 
+3.1 Functional Testing 
+3.2 Security Testing 
+3.3 Performance Testing 
+3.4 Stress Testing 
+3.5 Usability Testing 
+3.6 Integration Testing 
+4. To deploy the developed PROJ-TRACK system within the CSPC-Project Management 
+Unit environment and evaluate its overall system quality based on the ISO/EIC 25010 
+software quality standards, particulary in terms of functionality, usability, reliability, 
+and performance efficiency. 
+1.4 Significance of the Study 
+This section explains how the project will benefit specific stakeholders and contribute to 
+institutional and technological advancement. 
+Project Management Unit. The PMU will directly benefit from automated monitoring tools, 
+predictive analytics, and consolidated reporting features. The system reduces manual workload, 
+minimizes errors in documentation, and supports proactive management of project timelines. 
+Camarines Sur Polytechnic Colleges. The study is significant to Camarines Sur Polytechnic 
+Colleges because it provides a structured and centralized system for monitoring campus 
+development projects. The institution will benefit from improved transparency, faster report 
+generation, organized documentation, and better project oversight. By adopting PROJ-TRACK, the 
+college strengthens accountability and enhances operational efficiency within the Project 
+Management Unit. 
+Contractors. The system provides contractors with structured and transparent access to approved 
+project proposals and milestone status. Although contractors are restricted from editing proposals 
+for confidentiality purposes, the view-only access ensures clarity regarding project expectations, 
+deadlines, and approved specifications. This improves accountability while protecting sensitive 
+institutional data. 
+Researchers. The study is significant to the researchers as it enhances their technical competencies 
+in system analysis and design, database management, role-based access control implementation, 
+predictive analytics, and software testing methodologies such as Black Box Testing. The 
+development and deployment of PROJ-TRACK provide practical experience in solving real-world 
+institutional problems using structured software engineering approaches. This project also 
+strengthens their research capability in applying ISO/IEC 25010 software quality standards for 
+system evaluation. 
+Future Researchers and the Computing Field. The study contributes to the growing body of 
+knowledge on predictive analytics and integrated monitoring systems within educational 
+infrastructure management. It demonstrates the practical application of forecasting techniques in 
+institutional project management and may serve as a reference model for future system 
+development and research in intelligent information systems. 
+1.5 Scope and Limitations of the Project 
+This study covers the identification and analysis of the existing challenges in the project 
+monitoring processes of the CSPC–Project Management Unit, including manual report 
+consolidation, delayed contractor updates, fragmented documentation storage, and the absence of 
+predictive monitoring tools. Based on the identified problems, the study includes the design and 
+development of PROJ-TRACK, a centralized web-based integrated monitoring and management 
+system. The system incorporates project registration, milestone tracking, contractor progress 
+updates, document archiving, automated notification mechanisms, dashboard visualization, and a 
+regression-based predictive analytics module for estimating potential project delays. Within the 
+system, contractors are included as registered users with restricted access privileges. Contractors 
+will submit project proposals through official email communication, and authorized PMU 
+personnel will encode and manage the approved proposals within the system. Contractors will be 
+granted view-only access to their respective approved project proposals and milestone status. They 
+will not be permitted to edit, modify, or access administrative modules of the system in order to 
+maintain confidentiality, data integrity, and institutional control over official records. The study 
+further includes functional testing of the developed system using Black Box Testing to validate that 
+all required features operate according to system specifications. Finally, the project covers the 
+deployment of the system within the CSPC–Project Management Unit environment and its 
+evaluation using ISO/IEC 25010 software quality standards. The system will be accessible only to 
+authorized PMU personnel and registered contractors during the implementation period. 
+The system is limited to project monitoring and management functions within the CSPC
+Project Management Unit and does not include financial accounting systems, procurement bidding 
+automation, or integration with external government platforms. The predictive analytics module 
+depends on the availability, volume, and quality of historical project data provided by the PMU; 
+therefore, the accuracy of delay estimation is constrained by the completeness and reliability of the 
+dataset. Contractor access is strictly limited to viewing approved proposals and monitoring project 
+status; they cannot encode, edit, or manage system records. The system evaluation focuses on 
+functional validation through Black Box Testing and quality assessment based on ISO/IEC 25010 
+standards; other testing approaches such as performance stress testing or long-term operational 
+evaluation are beyond the scope of this study. Additionally, the predictive model does not account 
+for unforeseen external factors such as natural disasters, emergency policy changes, or sudden 
+funding adjustments. All development, testing, and deployment activities are conducted within the 
+academic timeframe, which limits large-scale expansion or multi-campus implementation. 
+1.6 Project Dictionary 
+This section defines key technical terms used in the study. Each term is presented with its 
+conceptual definition based on established understanding and its operational definition as applied 
+in this project.  
+Artificial Intelligence. Artificial Intelligence refers to the capability of computer systems 
+to perform tasks that normally require human intelligence, such as learning, reasoning, and 
+prediction [7]. In this study, Artificial Intelligence specifically refers to the forecasting mechanism 
+integrated within PROJ-TRACK that utilizes historical project progress data to estimate potential 
+delays. 
+Black Box Testing. A software testing method that evaluates system functionality without 
+examining internal code structure [6]. In this study, it refers to validating whether PROJ-TRACK 
+features operate according to specified requirements. 
+Functional Testing. Functional Testing is a type of software testing that verifies whether 
+each function of a system operates in accordance with the specified requirements [1]. In this study, 
+it refers to testing core system features such as user authentication, project tracking, notification 
+triggering, contractor access, and predictive output. 
+Integrated System. An integrated system combines multiple components into a unified 
+platform that functions cohesively [2]. In this study, it refers to the centralized web-based platform 
+that connects monitoring, documentation, notifications, reporting, and predictive modules. 
+Integration Testing. Integration Testing is a testing approach where individual modules 
+are combined and tested as a group to ensure they function correctly together [9]. In this study, it 
+refers to verifying that all PROJ-TRACK modules operate seamlessly as one system. 
+Performance Testing. Performance Testing is a type of testing conducted to evaluate the 
+responsiveness, speed, and stability of a system under a given workload [4]. In this study, it refers 
+to assessing how efficiently PROJ-TRACK processes data, generates reports, and displays 
+dashboards. 
+Predictive Analytics. Predictive analytics involves the use of statistical algorithms and 
+data analysis techniques to forecast future outcomes based on historical data [11]. In this project, it 
+refers to the analysis process used by the system to estimate potential project delays and projected 
+completion timelines. 
+Project Monitoring. Project monitoring is the continuous assessment of project activities 
+to ensure alignment with planned objectives and timelines [10]. In this study, it refers to the digital 
+tracking of milestones, contractor updates, and progress reports within PROJ-TRACK. 
+Role-Based Access Control (RBAC). A security mechanism that restricts system access 
+based on user roles [12]. In this study, it ensures that contractors have view-only access while PMU 
+staff retain editing privileges. 
+Security Testing. Security Testing is a process used to identify vulnerabilities in a system 
+and ensure that data and resources are protected from unauthorized access [3]. In this study, it refers 
+to verifying that PROJ-TRACK enforces proper access control, particularly restricting contractors 
+from modifying project data. 
+Stress Testing. Stress Testing is a type of performance testing that evaluates how a system 
+behaves under extreme conditions or heavy workloads [8]. In this study, it refers to assessing the 
+system’s stability when handling large volumes of data or multiple simultaneous users. 
+Usability Testing. Usability Testing is a method used to evaluate how easy and user
+friendly a system is for its intended users [5]. In this study, it refers to assessing the interface, 
+navigation, and overall user experience of PROJ-TRACK for PMU personnel and contractors
+
+
+CHAPTER 3 
+TECHNICAL BACKGROUND 
+This chapter presents the technical foundation of the study, including the research design, 
+methodologies, system architecture, development tools, and testing procedures used in the 
+development of PROJ-TRACK: An Integrated Monitoring and Management System for CSPC
+Project Management Unit. It explains how data will be gathered, analyzed, and utilized to ensure 
+that the system meets user requirements and performs effectively. 
+3.1 Research Design and Methods 
+This section describes the overall strategy that will be followed to achieve the objectives 
+of the study. It explains how the researchers will understand the existing project monitoring process 
+of the CSPC–Project Management Unit, how system requirements will be gathered, and how the 
+developed system will be evaluated. This approach ensures that the system will be based on actual 
+user needs rather than assumptions. 
+The study will utilize a mixed-method research design, which integrates both qualitative 
+and quantitative approaches to provide a comprehensive understanding of the research problem [7]. 
+This design is appropriate for system development studies because it allows the researchers to 
+explore existing workflows in depth while also evaluating system performance using measurable 
+indicators [6]. Through this approach, both user experiences and technical performance will be 
+considered in the development of the PROJ-TRACK system. 
+For the first objective, which is to understand the current project monitoring and 
+management process, qualitative techniques such as semi-structured interviews and direct 
+observations will be employed. Interviews will be conducted with project management staff and 
+administrative personnel to identify current practices, challenges, delays in reporting, and 
+communication gaps. Direct observation will also be performed to examine how project data is 
+1 
+33 
+recorded, updated, and monitored in real-time. These methods will help uncover inefficiencies, 
+manual bottlenecks, and inconsistencies in the existing system [8]. 
+The gathered qualitative data will be analyzed using thematic analysis to identify recurring 
+issues and system requirements. These findings will serve as the basis for designing the features of 
+the PROJ-TRACK system, such as project tracking, automated notifications, reporting, and 
+predictive analysis. 
+For the system evaluation phase, quantitative methods will be applied. The developed 
+system will be assessed using structured evaluation surveys and system testing tools. Surveys using 
+Likert-scale questions will measure system quality in terms of functionality, usability, reliability, 
+and performance efficiency. In addition, testing tools will be used to evaluate system performance, 
+including response time, data processing, and handling of multiple users [11]. 
+The integration of qualitative and quantitative data ensures that the system is both user
+centered and technically reliable. This approach guarantees that PROJ-TRACK will effectively 
+address the needs of the CSPC–Project Management Unit while maintaining high system 
+performance and usability standards. 
+3.1.1 Data Sources 
+This section presents the sources of data that will be utilized in the development and 
+evaluation of the PROJ-TRACK: An Integrated Monitoring and Management System for CSPC
+Project Management Unit. The data will be obtained from both primary and secondary sources to 
+ensure that the system design reflects the actual workflow, operational challenges, and user 
+requirements within the organization. The use of multiple data sources ensures the reliability and 
+validity of the collected information, allowing the researchers to develop a system that is grounded 
+in real-world practices rather than assumptions. 
+Sampling Technique 
+The study will employ total enumeration, also known as the census method, wherein all 
+identified stakeholders involved in project monitoring and management will be included as 
+34 
+respondents [1]. This method is appropriate due to the relatively small and manageable population 
+within the CSPC–Project Management Unit. 
+By including all relevant participants, the study ensures that no critical perspectives are 
+excluded. This approach strengthens the accuracy of the gathered data, as it captures the complete 
+range of experiences, responsibilities, and challenges encountered by users of the current system. 
+It also minimizes sampling bias and enhances the credibility of the findings. 
+The sample size of twenty-five (25) respondents is based on the total number of identified 
+and available stakeholders within the CSPC–Project Management Unit during the data collection 
+period. The study employs total enumeration, meaning that all accessible participants who are 
+directly involved in project monitoring, coordination, and system evaluation are included in the 
+study to ensure complete representation of the available population. These respondents primarily 
+consist of PMU personnel and administrative staff who handle daily project monitoring tasks, as 
+well as contractors who are directly engaged in ongoing projects during the conduct of the study. 
+For external stakeholders such as contractors, only those who are actively participating in current 
+project implementations are considered, ensuring that responses reflect actual and up-to-date 
+operational experiences. Although the number of contractors may vary depending on project 
+assignments and schedules, the selected respondents collectively represent the full set of available 
+and relevant stakeholders during the data collection phase. This approach ensures that no key 
+participant is excluded within the accessible population, making the data more reliable and 
+contextually accurate. The sample size is not arbitrarily determined but is grounded on the actual 
+population available at the time of the study, ensuring that it is sufficient and appropriate to support 
+the objectives of the research. 
+Respondents 
+This section identifies the individuals who will participate in the study and provide relevant 
+data for the analysis, design, and evaluation of the proposed system. The selected respondents are 
+directly involved in project monitoring, coordination, and implementation processes within the 
+35 
+CSPC–Project Management Unit (PMU), allowing the researchers to gather both operational 
+insights and user-based feedback. 
+Table 1 presents the distribution of respondents included in the study based on their 
+respective roles. It provides a clear breakdown of participants, allowing for better understanding of 
+how each group contributes to the data collection and evaluation process. 
+Table 1: Respondents 
+RESPONDENT 
+SAMPLE 
+PMU Staff 
+8 
+PERCENTAGE 
+Administrative Personnel 
+32% 
+7 
+28% 
+Contractors 
+5 
+20% 
+IT Experts 
+5 
+20% 
+TOTAL 
+25 
+100% 
+As shown in Table 1, the respondents are composed of PMU staff, administrative 
+personnel, contractors, and IT experts who collectively contribute to the evaluation of the proposed 
+PROJ-TRACK system. 
+The PMU staff are primarily responsible for overseeing project implementation, 
+monitoring progress, and ensuring that project activities are achieved. They will provide critical 
+insights into project tracking workflows, reporting procedures, and existing challenges in 
+monitoring multiple ongoing projects. 
+The administrative personnel handle documentation, coordination, and communication 
+between stakeholders. Their input will focus on record management, report preparation, and the 
+efficiency of communication processes within the unit. 
+The contractors represent external stakeholders who are directly involved in the execution 
+of projects assigned by the PMU. The number of contractors may vary depending on the number 
+and type of projects awarded by the administration. These respondents will provide valuable 
+insights into on-ground project implementation, progress reporting, compliance with timelines, and 
+communication with the PMU. Their participation is essential in identifying gaps between planned 
+project schedules and actual execution, as well as challenges encountered during project delivery. 
+36 
+The IT experts will evaluate the system from a technical standpoint, focusing on 
+functionality, usability, system performance, and security. Their feedback ensures that the 
+developed system adheres to technical standards and best practices. 
+Including all these respondents allows for a comprehensive and balanced assessment of the 
+system, covering both internal management processes and external project execution perspectives. 
+This ensures that the PROJ-TRACK system is designed to effectively support all stakeholders 
+involved in project monitoring and management. 
+Secondary Sources 
+Since not all pertinent information may be obtained directly from respondents, the study's 
+conclusions will be supported and validated by secondary data sources. These sources include 
+existing institutional documents such as reports, records, and project-related files that provide 
+concrete evidence of how project monitoring and management processes are currently conducted 
+within the CSPC–Project Management Unit. Secondary data are valuable in identifying patterns, 
+verifying user responses, and gaining a deeper understanding of actual operational workflows and 
+system inefficiencies [2]. Specifically, the study will review documents such as project proposals, 
+approved project plans, progress reports, accomplishment reports, monitoring and evaluation 
+reports, project timelines, and internal communication records. These documents will be used to 
+analyze how projects are initiated, tracked, and evaluated over time, as well as how updates and 
+reports are communicated among stakeholders. Through these records, the researchers will be able 
+to identify delays in project execution, inconsistencies in reporting, gaps in communication, and 
+challenges in monitoring multiple ongoing projects. The use of these documentary sources 
+enhances the accuracy and reliability of the system analysis by providing factual, historical, and 
+process-based data that complement the information gathered from respondents [9]. This ensures 
+that the proposed PROJ-TRACK system is grounded in real organizational practices and addresses 
+actual operational needs. 
+37 
+3.1.2 Research Instruments 
+This section outlines the research instruments used to collect qualitative and quantitative 
+data necessary for achieving the objectives of the study, particularly in identifying existing 
+monitoring challenges, defining system requirements, and evaluating the PROJ-TRACK system 
+based on functionality, security, performance, stress handling, usability, and integration. 
+Interview Guide. Semi-structured interviews will be conducted with PMU personnel, 
+administrative staff, and contractors to support Objective 1, which is identifying and analyzing the 
+existing challenges in the current monitoring process of the CSPC–PMU. The interviews will 
+specifically gather data on; Proposal consolidation practices, Project data encoding and updating, 
+Document storage methods, Visibility of project status, Delay estimation practices, Access and 
+permission control. This ensures that the system design is grounded in actual operational issues and 
+directly supports the development of modules identified in Objective 2. 
+Observation Checklist. Direct observation will be used to validate and support Objective 
+1 by examining actual workflows in project monitoring. The researchers will observe; How project 
+data is recorded and updated, How documents are stored and retrieved, How project status is 
+monitored, How communication between PMU and contractors occurs. This helps identify 
+inefficiencies and confirms whether the observed practices align with reported processes, ensuring 
+accurate system requirement definition. 
+Test Cases. A set of structured test cases will be developed and used as an instrument to 
+systematically evaluate the system’s compliance with its functional and technical requirements, 
+supporting Objective 3, which focuses on system testing and validation. These test cases will cover 
+all major modules of the PROJ-TRACK system, including project registration, project tracking, 
+reporting, notifications, document management, and user access control. Each test case will define 
+specific inputs, expected outputs, and actual results to verify whether the system behaves as 
+intended under various scenarios, including valid, invalid, and boundary conditions. The test cases 
+will support multiple testing types such as functional, security, performance, stress, usability, and 
+38 
+integration testing, ensuring comprehensive system evaluation. This instrument provides a 
+standardized and objective basis for identifying system errors, inconsistencies, and performance 
+issues, ensuring that the system meets its intended requirements before deployment. 
+Software Tools. Software testing tools will be used to support Objective 3, which focuses 
+on system validation. Security testing will be performed following established standards such as 
+OWASP guidelines to identify potential vulnerabilities and ensure data protection [4]. In addition, 
+system performance, load handling, and response time will be evaluated using tools such as Apache 
+JMeter [12]. These tools provide objective and measurable results that assess how the system 
+performs under different usage conditions, ensuring that PROJ-TRACK is reliable, secure, and 
+capable of supporting multiple users simultaneously. 
+3.1.3 Data Gathering Procedure 
+The data gathering procedure is designed to systematically achieve the objectives of the 
+study, beginning with the identification of existing challenges and progressing to system 
+evaluation. The researchers will first conduct interviews with CSPC–Project Management Unit 
+(PMU) personnel, administrative staff, and selected contractors to gain an in-depth understanding 
+of current project monitoring and management processes. These interviews will focus on 
+workflows, reporting procedures, communication methods, and difficulties in tracking project 
+progress, including issues in proposal consolidation, project data management, document storage, 
+status visibility, delay estimation, and access control. This will be complemented by direct 
+observation of actual project monitoring activities to examine how data is recorded, updated, and 
+communicated, allowing the researchers to validate procedures and identify inefficiencies, delays, 
+and inconsistencies not fully captured through interviews. The collected data will then be analyzed 
+and used as the foundation for the design and development of the PROJ-TRACK system, where 
+identified problems are translated into system features such as project tracking, reporting, 
+notification, document management, and predictive analytics modules. After development, a 
+system demonstration will be conducted to familiarize respondents with the system’s 
+39 
+functionalities. This will be followed by an evaluation phase using structured test cases to assess 
+system functionality, usability, and overall quality, supporting the study’s evaluation objectives. In 
+addition, technical testing will be conducted using appropriate tools and standards, including 
+security testing based on OWASP guidelines and performance and load testing using tools such as 
+Apache JMeter, to measure system reliability, response time, stress handling, and integration. This 
+combined approach ensures both user-based and technical evaluations are carried out to 
+comprehensively validate the system’s effectiveness. 
+3.1.4 Data Analysis Procedure 
+Thematic Analysis. Thematic analysis will be used to analyze the qualitative data gathered 
+from interviews and observations [11]. This directly supports Objective 1 of the study. This method 
+enables the identification of recurring themes, patterns, and common issues in the current project 
+monitoring and management practices of the CSPC–Project Management Unit (PMU). Through 
+this approach, the researchers will examine key challenges such as proposal handling inefficiencies, 
+delays in updating project data, poor document management, limited project visibility, lack of delay 
+prediction mechanisms, weak access control, as well as broader concerns like delays in reporting, 
+absence of real-time monitoring, and communication gaps. The results of this analysis will allow 
+the researchers to summarize user experiences and clearly define system requirements, which will 
+serve as the foundation for the design and development of PROJ-TRACK modules in Objective 2. 
+3-Point Likert Scale. A 3-Point Likert scale will be used to quantify the data collected 
+from system evaluation, particularly in terms of functionality, security, performance, stress, 
+integration and usability supporting Objectives 3 and 4. This scale allows respondents to rate the 
+system based on their actual experience after using or observing the system demonstration. The 
+collected responses will be used to determine the overall performance and acceptance of the system. 
+Table 2 presents the scale used to evaluate the functionality of the proposed system. 
+40 
+Table 2: Scale for Functionality Evaluation 
+RANGE 
+LEVEL OF 
+FUNCTIONALITY 
+0.00 – 0.33 
+Least Functional 
+DESCRIPTION 
+Not ready for deployment; 
+several flaws and errors have 
+been discovered; additional 
+tests are required. The system 
+is 
+operational, 
+0.34 – 0.66 
+Somewhat Functional 
+but 
+its 
+functions are limited. 
+The system is operational, 
+however there are few errors 
+and bugs that requires more 
+testing. Can be used based on 
+the end user's preference 
+0.67 – 1.00 
+Completely Functional 
+There aren't many flaws or no 
+errors are found in the system; 
+it's ready for deployment. All 
+modules are operational, and 
+both incorrect and correct 
+inputs are distinguished. The 
+test scenarios get the desired 
+result. 
+As shown in Table 2, the functionality of the PROJ-TRACK system is evaluated using a 
+Likert scale that classifies system performance based on the results of comprehensive functionality 
+testing. This evaluation focuses on verifying whether all system components and features operate 
+in accordance with their defined specifications and intended purposes. It includes assessing critical 
+modules such as project proposal encoding, milestone tracking, reporting, notification mechanisms, 
+document management, and predictive analytics. Each function is examined in terms of accuracy, 
+completeness, and consistency of output when subjected to different user inputs and operational 
+scenarios.  
+Furthermore, the evaluation considers the system’s ability to handle typical user actions 
+without errors, system crashes, or unexpected behavior. By systematically validating each feature, 
+the researchers can identify functional gaps, logic errors, and inconsistencies that may affect overall 
+system performance. The results will determine whether the system meets the required operational 
+standards, ensuring that it is reliable, fully functional, and suitable for actual deployment within the 
+PMU. 
+41 
+Table 3 presents the scale used to evaluate the usability of the proposed system. 
+Table 3: Scale for Usability Evaluation 
+RANGE 
+LEVEL OF USABILITY 
+0.00 – 0.33 
+Least Usable 
+DESCRIPTION 
+The system is difficult to use, 
+with frequent errors and 
+unclear functions that prevent 
+users from completing tasks 
+efficiently 
+0.34 – 0.66 
+Somewhat Usable 
+The system can be used to 
+perform basic tasks but 
+contains usability issues that 
+slow down operations or cause 
+confusion. 
+0.67 – 1.00 
+Completely Usability 
+The system is easy to use, 
+functions 
+correctly, 
+and 
+allows users to complete tasks 
+efficiently without difficulty. 
+As presented in Table 3, usability is assessed based on the degree to which users can 
+effectively, efficiently, and satisfactorily interact with the PROJ-TRACK system to accomplish 
+their tasks. This evaluation goes beyond basic interface appearance and examines multiple 
+dimensions of user experience, including ease of navigation, clarity of layout, consistency of design 
+elements, and intuitiveness of system controls. It also evaluates how quickly new users can learn 
+the system, the level of guidance provided through prompts or instructions, and the system’s ability 
+to minimize user errors.  
+Additionally, the assessment considers task efficiency, such as the time required to 
+complete common actions like updating project statuses, retrieving documents, or generating 
+reports. User satisfaction is also measured by gathering feedback on comfort, convenience, and 
+overall interaction experience. This comprehensive evaluation ensures that the system is not only 
+functional but also user-centered, promoting productivity and reducing the cognitive load on PMU 
+personnel and other stakeholders. 
+Table 4 presents the scale used to evaluate the security of the proposed system. It defines 
+the criteria for assessing the system’s ability to protect data, enforce authentication, and control 
+42 
+user access. The scale also helps determine the level of security readiness of the system in handling 
+potential threats and vulnerabilities. 
+Table 4: Scale for Security Evaluation 
+RANGE 
+LEVEL OF SECURITY 
+0.00 – 0.33 
+Least Secure 
+DESCRIPTION 
+The system is vulnerable to 
+security threats; unauthorized 
+access and data breaches are 
+possible. 
+0.34 – 0.66 
+Somewhat Secure 
+The system has basic security 
+measures but may still have 
+minor vulnerabilities. 
+0.67 – 1.00 
+Highly Secure 
+The system implements strong 
+security controls, preventing 
+unauthorized 
+access, 
+protecting sensitive data. 
+and 
+As shown in Table 4, security evaluation examines the system’s capability to safeguard 
+sensitive information and enforce strict access control mechanisms. This includes a thorough 
+assessment of authentication processes, such as username and password validation, session 
+management, and role-based access control that restricts system functionalities based on user roles 
+(e.g., administrators, staff, contractors).  
+The evaluation also considers the system’s resilience against common security threats and 
+vulnerabilities, guided by established frameworks such as OWASP standards. Specific aspects 
+include protection against unauthorized access, data tampering, injection attacks, and improper 
+handling of user inputs.  
+Additionally, the evaluation looks into how well the system secures stored and transmitted 
+data, ensuring confidentiality and integrity of project-related information. By conducting this 
+assessment, the researchers can confirm that the system provides a secure environment for 
+managing critical project data and minimizes risks associated with data breaches and unauthorized 
+system use. 
+43 
+Table 5 presents the scale used to evaluate the performance of the proposed system. It 
+provides criteria for assessing system responsiveness, processing speed, and overall efficiency 
+during operation. 
+RANGE 
+Table 5: Scale for Performance Evaluation 
+LEVEL OF 
+PERFORMANCE 
+0.00 – 0.33 
+Low Performance 
+DESCRIPTION 
+The system responds slowly 
+and struggles to process user 
+requests efficiently. 
+The 
+0.34 – 0.66 
+Moderate Performance 
+system 
+performs 
+adequately 
+but 
+0.67 – 1.00 
+High Performance 
+may 
+experience occasional delays. 
+The system responds quickly 
+and processes tasks 
+efficiently under normal 
+conditions. 
+As presented in Table 5, performance evaluation measures the efficiency and 
+responsiveness of the PROJ-TRACK system under normal operating conditions. This involves a 
+comprehensive analysis of key performance indicators such as response time, processing speed, 
+system throughput, and resource utilization. These indicators provide a clear understanding of how 
+well the system performs when handling typical user interactions and routine operations within the 
+Project Management Unit (PMU). 
+The evaluation specifically examines how quickly the system responds to user inputs, 
+including actions such as loading dashboards, retrieving project data, updating project records, 
+generating reports, and sending automated notifications. Fast and accurate responses are critical to 
+ensuring that users can efficiently monitor project progress and make timely decisions. In addition, 
+the assessment looks into system throughput, which refers to the number of transactions or 
+processes the system can handle within a given period, especially when multiple users are accessing 
+the system simultaneously. 
+Moreover, the evaluation considers the consistency and stability of system performance 
+over extended periods of continuous use. This ensures that the system maintains its efficiency 
+44 
+without experiencing slowdowns, crashes, or degradation in service quality. Backend performance 
+is also a crucial aspect of this assessment, particularly in terms of database query optimization, data 
+retrieval speed, and server response handling. Efficient backend processes contribute significantly 
+to the overall user experience by minimizing delays and preventing bottlenecks. 
+Furthermore, resource utilization is analyzed to determine how effectively the system uses 
+available hardware and software resources, such as CPU, memory, and network bandwidth. Proper 
+resource management ensures that the system remains scalable and capable of supporting future 
+expansion or increased user demand. 
+By thoroughly measuring and analyzing these performance factors, the researchers can 
+determine whether the PROJ-TRACK system provides a smooth, reliable, and uninterrupted user 
+experience. This ultimately ensures that users can carry out essential project monitoring and 
+management tasks efficiently, without encountering delays or performance-related issues that could 
+hinder productivity. 
+Table 6 presents the scale used to evaluate the performance of the proposed system. 
+Table 6: Scale for Stress Evaluation 
+RANGE 
+LEVEL OF STRESS 
+HANDLING 
+0.00 – 0.33 
+Low Stress Handling 
+Capability 
+DESCRIPTION 
+The system fails under heavy 
+load; crashes or significant 
+performance 
+degradation 
+occur. 
+0.34 – 0.66 
+Moderate Stress Handling 
+Capability 
+The system operates under 
+load but experiences delays or 
+minor failures. 
+0.67 – 1.00 
+High Stress Handling 
+Capability 
+The system remains stable and 
+responsive even under high 
+user and data load. 
+As shown in Table 6, stress evaluation focuses on determining the system’s robustness and 
+stability when subjected to extreme operating conditions. This involves simulating scenarios where 
+a large number of concurrent users access the system simultaneously or where the system processes 
+a high volume of data within a short period. The purpose of this evaluation is to identify the 
+45 
+system’s maximum capacity and observe its behavior under heavy workloads. It examines whether 
+the system can maintain acceptable response times, prevent crashes, and ensure data integrity 
+despite increased demand. Additionally, the evaluation assesses how the system handles failures, 
+including its ability to recover gracefully without data loss or corruption. This is particularly critical 
+for the PROJ-TRACK system, as it is expected to support multiple users from the PMU and 
+contractors at the same time, requiring consistent performance and reliability even during peak 
+usage periods. 
+Table 7 presents the scale used to evaluate the integration of the proposed system. 
+Table 7: Scale for Integration Evaluation 
+RANGE 
+LEVEL OF 
+INTEGRATION 
+0.00 – 0.33 
+Poor Integration 
+DESCRIPTION 
+System modules do not 
+interact 
+properly; 
+0.34 – 0.66 
+Moderate Integration 
+data 
+inconsistencies occur. 
+Modules interact but with 
+occasional issues or delays 
+All 
+0.67 – 1.00 
+Full Integration 
+modules 
+interact 
+seamlessly with accurate and 
+consistent data flow. 
+As presented in Table 7, integration evaluation assesses how effectively the various 
+modules of the PROJ-TRACK system function together as a cohesive and interconnected platform. 
+This includes examining the interaction between key components such as project tracking, 
+reporting, notification systems, document management, user access control, and database 
+operations. The evaluation ensures that data entered or updated in one module is accurately 
+reflected across other related modules in real time, maintaining consistency and eliminating 
+redundancy. It also verifies that system workflows, such as updating project status and triggering 
+notifications, operate seamlessly without delays or synchronization issues. Furthermore, the 
+evaluation checks for compatibility between front-end interfaces, back-end processes, and external 
+tools or services used within the system. By confirming proper integration, the researchers can 
+ensure smooth data flow, reliable system communication, and a unified user experience across all 
+46 
+functionalities, which is essential for the overall effectiveness and efficiency of the PROJ-TRACK 
+system. 
+Weighted Mean. The weighted mean will be used to compute the average ratings from the 
+black-box testing in order to determine the overall level of functionality and usability of the system. 
+This statistical method provides a numerical basis for interpreting user evaluations and identifying 
+whether the system meets acceptable standards. 
+Where:  
+ 
+ ̄ = Weighted Mean  
+∑ = Summation  
+ 
+  = The Weigths 
+x = The Values 
+3.2 Theoretical or Conceptual Background 
+This section presents the theoretical and conceptual foundations that guide the design and 
+development of the PROJ-TRACK: An Integrated Monitoring and Management System for CSPC
+Project Management Unit. It highlights the software development methodology, architectural 
+design approach, and system principles applied to ensure efficiency, reliability, maintainability, 
+and scalability of the system. The development of PROJ-TRACK is grounded on established 
+software engineering practices that emphasize user-centered design, iterative development, and 
+structured system organization. These principles ensure that the system is not only technically 
+sound but also responsive to the actual needs of the users, particularly in handling project 
+monitoring, reporting, and communication processes. Furthermore, the study adopts a systematic 
+approach in developing the system by following a defined methodology and applying appropriate 
+design patterns. This ensures that the system can effectively support real-time project tracking, data 
+management, and decision-making within the CSPC–Project Management Unit. 
+47 
+3.2.1 Software Development Methodology 
+This section discusses the software development methodology adopted in designing and 
+implementing the proposed system. The study utilizes an Agile-based approach (SCRUM-inspired 
+process) to ensure flexibility, continuous improvement, and active user involvement throughout the 
+development lifecycle of the PROJ-TRACK system. This methodology allows the researchers to 
+develop the system incrementally, gather feedback from stakeholders, and refine system features 
+based on actual user requirements. It is particularly suitable for systems like PROJ-TRACK where 
+requirements may evolve as users better understand their needs during development. Figure 1 
+illustrates the SCRUM methodology utilized in the development of the proposed system. 
+Figure 1. SCRUM Agile Methodology 
+Planning. The first phase involves planning and requirement analysis. During this stage, 
+the researchers will collaborate with PMU personnel, administrative staff, and contractors to 
+identify system requirements and define project objectives. This includes gathering user stories 
+related to project tracking, reporting, monitoring, and notification processes. The collected 
+requirements will be analyzed to determine their feasibility and relevance to the system. This phase 
+ensures that the proposed system aligns with the operational goals of the CSPC–Project 
+Management Unit and addresses existing challenges such as delays in reporting, lack of centralized 
+monitoring, and inefficient communication. 
+48 
+Designing. In this phase, the overall structure and design of the system will be developed. 
+This includes designing the system architecture, database structure, and user interface. The 
+researchers will create models such as; Data models for project records, users, and reports. Process 
+models for project tracking and updates. Interface designs for dashboards, monitoring views, and 
+reporting modules. The focus of this phase is to create a user-friendly, intuitive, and efficient system 
+interface that allows users to easily monitor project progress, access reports, and receive updates. 
+Proper system design ensures that the system is organized, scalable, and easy to maintain. 
+Development. During the development phase, the system design will be translated into 
+actual program code using appropriate programming languages and frameworks. The PROJ
+TRACK system will be developed using technologies such as PHP (CodeIgniter framework), 
+MySQL for database management, and front-end tools for user interface development. System 
+modules such as; Project tracking module, reporting module, notification system, and user 
+management module will be developed and integrated during this phase. The iterative nature of the 
+methodology allows continuous refinement of the system based on feedback from users and 
+stakeholders. Any suggested improvements or changes can be incorporated, followed by re-coding 
+and re-testing of the affected modules. 
+Testing. After the system modules are developed, testing will be conducted to ensure that 
+the system functions correctly and meets user requirements. Various testing methods will be 
+applied, including functionality testing, usability testing, security testing, and performance testing. 
+Security testing will be conducted based on established standards to ensure data protection, while 
+load and stress testing will evaluate the system’s ability to handle multiple users and large volumes 
+of data. Feedback from users during testing will be used to refine the system further. The 
+development process follows an iterative cycle of design–code–test, allowing continuous 
+improvement of the system. Once the system meets the required standards and user satisfaction is 
+achieved, it will be finalized and prepared for deployment. 
+49 
+3.2.2 RESTful Architecture 
+The system follows a RESTful architecture for handling communication between the front
+end and back-end components. This approach uses standard HTTP methods such as GET, POST, 
+PUT, and DELETE to perform operations on system resources. RESTful design ensures; efficient 
+data exchange, scalability of the system, easy integration with other platforms (e.g., mobile 
+applications or external APIs) [10]. This is particularly useful for PROJ-TRACK, as it supports 
+real-time data updates and interaction between users such as PMU staff and contractors. 
+3.2.3 Predictive Analytics Algorithm 
+The PROJ-TRACK system incorporates a predictive analytics component powered by an 
+AI API, specifically n8n workflow automation to support decision-making. This module analyzes 
+historical project data such as timelines, progress rates, and completion patterns to identify potential 
+risks and delays. The algorithm may include; trend analysis of project progress, comparison of 
+planned vs actual timelines, identification of delay patterns [14]. This enables the system to provide 
+early warnings for possible project delays, assist PMU personnel in planning and resource 
+allocation, and improve overall project management efficiency. 
+3.2.4 Notification Mechanism (Event-Driven Approach) 
+The system implements an event-driven design pattern for handling notifications. When a 
+specific event occurs, such as project status updates, report submissions, or administrative actions, 
+the system automatically triggers notifications. This mechanism allows for real-time updates to 
+users, improved communication between stakeholders, and reduced delays in information 
+dissemination. The integration with the Gmail API enables automated email notifications, ensuring 
+that users are promptly informed of important project updates [3]. 
+3.3 System Architecture 
+This section describes the overall structure and organization of the proposed system, 
+including the interaction between its major components. It presents how system processes, data 
+management, and user interfaces are integrated to ensure efficient, secure, and scalable operation 
+50 
+of the PROJ-TRACK: An Integrated Monitoring and Management System for CSPC–Project 
+Management Unit. 
+Figure 2 illustrates the architectural design of the proposed system. 
+Figure 1. System Architecture 
+As shown in Figure 2, the system follows a client–server architecture that separates the 
+user interface, application logic, and database components. This architectural design enables users 
+such as PMU staff, administrative personnel, and contractors to access the system through web and 
+mobile interfaces, while core processing and data management are handled centrally. 
+The client layer consists of devices such as web browsers and mobile interfaces used by 
+system users. This layer serves as the primary point of interaction where users can perform tasks 
+such as viewing project updates, submitting reports, monitoring project status, and receiving 
+notifications. It captures user inputs and sends requests to the application server through secure 
+51 
+communication protocols. This design allows accessibility across different devices without 
+compromising system performance. 
+The application server acts as the core processing unit of the system. It handles all business 
+logic, workflows, and system operations. Key functionalities managed in this layer include user 
+authentication, project tracking, report generation, notification processing, and integration with 
+external APIs such as the Gmail API and AI-based prediction module. The application server 
+ensures that all user requests are processed consistently, validates inputs, and enforces system rules 
+to maintain data accuracy and integrity. 
+The database server, powered by MySQL, serves as the central repository of all system 
+data. It stores essential information such as user accounts, project details, progress updates, reports, 
+and system logs. The database server only responds to authorized requests from the application 
+server, ensuring controlled access and data security. Through proper database design and relational 
+structure, the system can efficiently store, retrieve, and update large volumes of project-related 
+data. 
+3.4 Software Development Stack 
+This section presents the software technologies and platforms utilized in the development 
+of the proposed system. It highlights the key components of the development environment, 
+including the programming languages, frameworks, tools, and supporting services that enable the 
+system to function effectively. Each technology is selected based on its capability to support core 
+system requirements such as functionality, performance, scalability, security, and maintainability. 
+In addition, this section provides an overview of how these technologies work together to form an 
+integrated system architecture, ensuring efficient data processing, smooth user interaction, and 
+reliable system operations. By outlining the chosen development stack, this section establishes a 
+clear foundation for understanding how the system is built, deployed, and sustained over time. 
+Table 8 presents the software development stack specification used in building the 
+proposed system. It outlines the programming languages, frameworks, tools, and platforms utilized 
+52 
+during the development process. This provides a clear overview of the technologies that support 
+system functionality, integration, and overall performance. 
+Table 8: Software Development Stack Specifications 
+COMPONENT 
+TECHNOLOGY 
+Operating System 
+VERSION 
+Windows 11 
+Web Server 
+Latest 
+Apache 
+2.4+ 
+Back-end Language 
+PHP and JavaScript 
+8+ 
+Database Server 
+MySQL 
+8+ 
+As shown in Table 8, the proposed system utilizes a structured and widely adopted software stack 
+to support the development and deployment of the PROJ-TRACK system. The system integrates 
+the operating system, web server, database, and server-side scripting language into a cohesive 
+development environment. The Windows 11 operating system provides a stable and user-friendly 
+platform for development and testing. The Apache web server handles client requests and manages 
+communication between the user interface and the server-side logic. The system’s core 
+functionality is powered by PHP and JavaScript, which processes business logic such as project 
+tracking, report generation, and notification handling. For data management, MySQL serves as the 
+relational database that stores project records, user information, progress updates, and reports. 
+These components work together to ensure efficient data processing, secure transactions, and 
+reliable system performance. The selected stack is open-source, cost-effective, and suitable for 
+developing scalable web-based systems in an academic environment. 
+3.5 Hardware Development Stack 
+This section presents the hardware components required to support the development, 
+testing, and implementation of the proposed system. It outlines the computing resources necessary 
+to ensure efficient system performance during development and deployment.  
+Table 9 presents the hardware development stack specification utilized in the system 
+development process. It identifies the physical components and devices used to support system 
+implementation and testing. This includes computing equipment and related hardware that ensure 
+the system operates efficiently and reliably during development and deployment. 
+53 
+Table 9: Hardware Development Stack Specifications 
+COMPONENT 
+TECHNOLOGY 
+Development Machine 
+VERSION 
+Intel Core i5 Processor 
+DDR4 RAM 
+Memory (RAM) 
+10th Generation 
+8 GB 
+Storage 
+Solid State Drive (SSD) 
+Network Device 
+512 GB 
+Wireless Router 
+As shown in Table 9, the hardware development stack consists of components that provide 
+300 Mbps 
+sufficient processing capability and storage to support the system development lifecycle. The 
+development machine, equipped with an Intel Core i5 (10th Generation) processor, 8 GB RAM, 
+and a 512 GB SSD, ensures smooth execution of development tools, local server environments, 
+and database operations. These specifications allow efficient multitasking during coding, 
+debugging, and system testing. The inclusion of a wireless router enables network-based testing, 
+allowing the simulation of multiple users accessing the system simultaneously. This is essential for 
+evaluating system performance, responsiveness, and reliability in a real-world environment where 
+multiple PMU personnel and stakeholders may access the system concurrently. 
+3.6 Tools and Platforms 
+This section presents the development tools, frameworks, and platforms utilized in 
+designing, implementing, and testing the proposed system. These technologies play a critical role 
+in supporting the overall development lifecycle, from initial system design and coding to 
+integration, debugging, and final deployment. The selected tools enable efficient coding practices, 
+streamline system integration, and facilitate effective database management, ensuring that data is 
+handled accurately and securely. In addition, they support version control, testing procedures, and 
+performance optimization, allowing the developers to identify and resolve issues early in the 
+process. By leveraging these technologies, the development workflow becomes more organized, 
+consistent, and scalable, ultimately contributing to the creation of a reliable, maintainable, and high
+performing system. 
+Table 10 presents the development package specifications used in the implementation of 
+the proposed system. It outlines the software packages, libraries, and dependencies required to build 
+54 
+and run the system. This provides a clear understanding of the tools that support development, 
+integration, and system functionality. 
+Table 10: Hardware Development Package Specifications 
+PACKAGE/LIBRARY 
+VERSION 
+Laravel 
+10+ 
+PURPOSE 
+PHP framework used to 
+develop the system 
+Bootstrap 
+5.3 
+CCS framework for 
+responsive UI design 
+Google (Gmail) API 
+Latest  
+AI API (e.g., OpenAI / ML 
+API) 
+Latest 
+Email notification integration 
+Prediction and analytics 
+module 
+Based on the information presented in Table 10, the proposed system utilizes modern 
+development tools and frameworks to enhance both functionality and user experience. The system 
+is developed using Laravel, a robust PHP framework that follows the Model-View-Controller 
+(MVC) architecture, enabling organized code structure, improved maintainability, and efficient 
+development of system modules. 
+For the front-end design, Bootstrap is used to create a responsive and user-friendly 
+interface, ensuring that the system is accessible across different screen sizes and devices. This is 
+important for users who need quick access to project monitoring dashboards and reports. 
+The integration of the Gmail API allows the system to send automated email notifications 
+to users, such as project updates, status changes, and alerts. This improves communication between 
+PMU personnel and contractors by providing timely and reliable notifications. Additionally, an AI 
+API is incorporated to support the system’s predictive analytics feature. This component enables 
+the system to analyze project data, identify trends, and assist in predicting potential delays or risks. 
+This enhances decision-making by providing data-driven insights to the Project Management Unit. 
+In terms of development environment, tools such as Visual Studio Code (VS Code) are 
+used for coding due to their flexibility and extensive extension support. Git is utilized for version 
+control, allowing efficient tracking of code changes and collaboration. Platforms such as XAMPP 
+are used to simulate a local server environment, while phpMyAdmin is used for database 
+55 
+management. These tools and platforms collectively ensure a structured, efficient, and scalable 
+development process, supporting the successful implementation of the PROJ-TRACK system. 
+3.7 Testing Plan 
+This section presents the testing procedures conducted to ensure that the proposed PROJ
+TRACK: An Integrated Monitoring and Management System for CSPC–Project Management Unit 
+functions correctly and meets the specified user requirements. It includes both development testing 
+activities performed during the system creation phase and system evaluation conducted after 
+implementation to assess functionality, usability, and overall system performance. Testing is 
+essential to ensure that the system operates accurately, handles user interactions properly, and 
+maintains reliability when used by multiple stakeholders such as PMU personnel, administrative 
+staff, and contractors. 
+3.7.1 Development Testing Plan 
+The development testing plan outlines the procedures carried out during the system 
+creation phase to verify that individual components and integrated modules operate according to 
+the specified requirements. 
+Figure 3 illustrates the development testing plan implemented during the system 
+development process. 
+Figure 3. Development Testing Plan 
+Based on Figure 3, the development testing plan consists of multiple structured testing 
+stages designed to ensure the reliability, security, and overall quality of the PROJ-TRACK system 
+56 
+before deployment. The process begins with unit testing, where individual modules such as user 
+authentication, project tracking, reporting, and notification functionalities are tested independently. 
+This stage focuses on identifying and resolving coding errors and ensuring that each module 
+performs according to its intended function. Following this, functional testing is conducted to verify 
+that all system features operate correctly based on the defined requirements. Each module is tested 
+using both valid and invalid inputs to ensure proper system responses and accurate outputs. At the 
+same time, security testing is performed to evaluate the system’s ability to protect data and prevent 
+unauthorized access. This includes validating login mechanisms, enforcing user roles, and ensuring 
+that sensitive project information is securely handled. Once the individual modules are verified, 
+integration testing is carried out to assess how different components of the system interact with one 
+another. This stage ensures that modules such as project tracking, reporting, and notifications work 
+together seamlessly and that data flows consistently across the system without errors or 
+inconsistencies. After successful integration, performance testing is conducted to evaluate the 
+system’s responsiveness and efficiency under normal operating conditions. This includes 
+measuring response times, processing speed, and the system’s ability to handle routine user 
+activities. In addition, stress testing is performed to determine how the system behaves under 
+extreme conditions, such as high user traffic or large volumes of data. This helps identify system 
+limitations and ensures that the system remains stable even during peak usage. Furthermore, 
+usability testing is conducted to assess how easily users can interact with the system. This involves 
+evaluating the clarity of the user interface, ease of navigation, and overall user experience. 
+Feedback gathered from users helps identify areas for improvement and ensures that the system is 
+intuitive and user-friendly for PMU personnel and contractors. After all testing stages are 
+completed, system testing is performed to evaluate the overall functionality and performance of the 
+PROJ-TRACK system in a controlled environment. Any issues identified during these stages are 
+addressed through debugging and iterative improvements. This continuous refinement process 
+ensures that the system meets all functional and non-functional requirements. Overall, these testing 
+57 
+activities ensure that the PROJ-TRACK system operates efficiently, maintains data security, 
+supports multiple users, and provides a reliable and user-friendly platform for project monitoring 
+and management prior to its full implementation. 
+3.7.2 System Evaluation 
+The system evaluation phase determines the effectiveness of the proposed system based on 
+both user experience and system performance during actual use. It focuses on assessing key aspects 
+such as functionality and usability to ensure that the system operates as intended and supports 
+efficient project monitoring and management. This phase evaluates how accurately system features 
+perform, how easily users can navigate and interact with the interface, and how well the system 
+meets the needs of its intended users. It also considers user satisfaction, task efficiency, and the 
+overall reliability of the system when handling real-world operations. The results of this evaluation 
+provide valuable insights into the system’s strengths and areas for improvement, ensuring that it is 
+practical, user-friendly, and suitable for deployment within the PMU. 
+Functional Testing. Functionality testing will be conducted to determine whether the 
+PROJ-TRACK system performs its intended operations accurately, consistently, and efficiently 
+under various conditions. This process involves verifying that all system modules, including project 
+tracking, reporting, notification, document management, and user access control, function 
+according to their defined requirements and specifications. Each feature will be tested using both 
+valid and invalid inputs to ensure that the system produces correct outputs, handles errors 
+appropriately, and prevents unexpected behavior. The testing will also examine how well the 
+system processes user requests, validates data entries, and maintains data integrity across different 
+operations. In addition, boundary conditions and possible edge cases will be considered to identify 
+potential weaknesses or logical flaws in the system. Through this comprehensive evaluation, the 
+researchers can confirm that the system operates reliably, meets user expectations, and is capable 
+of supporting real-world project monitoring and management activities within the PMU. 
+58 
+Table 11 presents the functionality test cases used to evaluate the performance of the 
+proposed system. These test cases cover various system modules and input scenarios to ensure that 
+all features operate correctly and consistently under different conditions. 
+Table 11: Functionality Testing Test Cases 
+TEST NAME 
+TEST DECRIPTION 
+User Authentication Module 
+EXPECTED OUTPUT 
+Login Validation 
+Enter valid username and 
+password 
+User successfully logs into 
+the system 
+Invalid Login Attempt 
+Enter incorrect credentials 
+System displays error 
+message 
+Project Tracking Module 
+Add Project 
+Input new project details 
+Update Project Status 
+Project is successfully saved 
+Change project status (e.g., 
+Ongoing, Completed) 
+Delete Project 
+Status is updated correctly 
+Remove selected project 
+Project is removed from 
+system 
+Reporting Module 
+Generate Report 
+Request project progress 
+report 
+View Project Details 
+System generates accurate 
+report 
+Open specific project record 
+Project information is 
+displayed correctly 
+Notification Module 
+Send Notification 
+Trigger update notification 
+Receive Notification 
+User receives system alert  
+Notifications are sent to users 
+Input Validation Module 
+Notifications appear correctly 
+Incomplete Submissions 
+Submit form with missing 
+fields 
+System prompts user to 
+complete fields 
+Security Module 
+Unauthorized Access 
+Access system without login 
+Based on Table 11, the functionality test cases evaluate key modules such as authentication, 
+Access is denied 
+project tracking, reporting, and notifications. These tests ensure that the system performs expected 
+operations accurately and handles errors appropriately, confirming that all core features of PROJ
+TRACK are working as intended. 
+Usability Testing. Usability testing will be conducted to evaluate the ease of use, user
+friendliness, and overall interaction experience of the system. This assessment focuses on how 
+effectively users can navigate the interface, understand system functions, and complete tasks with 
+59 
+minimal effort, confusion, or need for external assistance. It also examines the clarity of the layout, 
+consistency of design elements, responsiveness of controls, and the overall intuitiveness of the 
+system workflow. In addition, the testing will consider how quickly users can learn to operate the 
+system and how efficiently they can perform common tasks such as data entry, project tracking, 
+and report generation. Feedback from users will also be gathered to identify areas for improvement 
+in the interface design and interaction flow. Through this evaluation, the researchers aim to ensure 
+that the system provides a smooth, accessible, and satisfactory user experience for all intended 
+users. Table 12 presents the usability test cases used to assess the user interface and overall ease of 
+use of the proposed system. 
+TEST NAME 
+Table 12: Usability Testing Test Cases 
+TEST DECRIPTION 
+User Interface Module 
+EXPECTED OUTPUT 
+Dashboard Navigation 
+Access main dashboard 
+Dashboard is easy to 
+understand 
+Menu Accessibility  
+Navigate system menu 
+Menu options are clear and 
+accessible 
+Project Module 
+Add Project Interface 
+Input new project data 
+Edit Project Interface 
+Form is easy to use 
+Modify project details 
+Status Update Interaction 
+Update project status 
+Editing process is clear 
+Process is simple and 
+intuitive 
+Report Module 
+Report Generation Process 
+Generate project report 
+Report Viewing Layout 
+View generated report 
+Process is easy to follow 
+Notification Module 
+Layout is clear and readable 
+Notification Visibility 
+Receive system notification 
+Notification Clarity 
+Read notification content 
+Notification is clearly 
+displayed 
+Input Validation Module 
+Message is understandable 
+Form Instructions 
+Fill out required fields 
+Error Message Display 
+Instructions are clear 
+Trigger validation error 
+Security Module 
+Errors are easy to understand 
+Login Feedback 
+Attempt incorrect login 
+Session Handling 
+Stay inactive 
+Error message is clear 
+System handles session 
+properly 
+60 
+Based on Table 12, the usability test cases assess user interaction, interface clarity, and 
+navigation to determine if the system is user-friendly and efficient.. 
+Security Testing. Security testing will be conducted to evaluate the system’s ability to 
+protect data and prevent unauthorized access. This includes verifying authentication mechanisms, 
+access control, and data validation processes. The system will be tested against scenarios such as 
+invalid login attempts, unauthorized access to restricted modules, and improper input handling. The 
+objective of this testing is to ensure that sensitive project information is securely managed and that 
+only authorized users can access specific system functionalities. The results will determine whether 
+the system meets acceptable security standards and can safeguard data within the PROJ-TRACK 
+environment. Table 13 presents the security test cases used to evaluate the performance of the 
+proposed system. 
+TEST NAME 
+Table 13: Security Testing Test Cases 
+TEST DECRIPTION 
+User Authentication Module 
+EXPECTED OUTPUT 
+Valid Login 
+Enter correct username and 
+password 
+Invalid Login Attempt 
+User successfully logs into 
+the system 
+Enter incorrect credentials 
+Multiple Failed Attempts 
+Enter wrong credentials 
+repeatedly 
+System displays error 
+message 
+System restricts access or 
+prompts security action 
+Access Control Module 
+Unauthorized Access 
+Access system without login 
+Role Based Access 
+Access is Denied 
+Access restricted module 
+(e.g., Admin panel) 
+System allows only 
+authorized roles 
+Input Validation Module 
+SQL Injection Attempt 
+Enter malicious input in form 
+fields 
+Script Injection 
+System rejects input and 
+prevents execution 
+Enter script in input fields 
+System sanitizes input and 
+prevents execution 
+Session Management Module 
+Session Timeout 
+Stay inactive for a period 
+Session Hijacking Attempt 
+System logs out user 
+automatically 
+Attempt reuse of session 
+System invalidates 
+unauthorized session 
+Account Lockout Mechanism Enter incorrect password 
+multiple times consecutively 
+System temporarily locks the 
+account after maximum failed 
+attempts 
+61 
+Based on Table 13, the security test cases assess the system’s ability to prevent 
+unauthorized access and handle security threats by evaluating authentication, access control, input 
+validation, and session management. The results determine whether the system can effectively 
+protect sensitive data and ensure overall security reliability. 
+Performance Testing. Performance testing will be conducted to assess the system’s 
+responsiveness, speed, and efficiency under normal operating conditions. This includes evaluating 
+how quickly the system processes requests such as project updates, report generation, and data 
+retrieval. The results of this testing will help determine whether the system can handle routine 
+operations without delays or performance issues. This ensures that users experience smooth and 
+efficient system interaction during regular usage. Table 14 presents the performance test cases used 
+to evaluate the performance of the proposed system. 
+Table 14: Performance Testing Test Cases   
+TEST NAME 
+TEST DECRIPTION 
+Project Tracking Module 
+EXPECTED OUTPUT 
+Load Project List 
+Retrieve 
+multiple 
+project 
+records 
+Update Project Status 
+Update project progress  
+Data loads within acceptable 
+time 
+System 
+quickly 
+process 
+updates 
+Reporting Module 
+Generate Report  
+Request 
+project 
+report 
+generation 
+View Report  
+Open generated report  
+Report is generated without 
+delay 
+Dashboard Load Time 
+Report displays smoothly 
+Access dashboard after login 
+Notification Module 
+Loads within acceptable time 
+Send Notification 
+Trigger notification event 
+Receive Notification  
+User receives  
+Notification is sent without 
+delay 
+Database Module 
+Notification appears instantly 
+Data Retrieval 
+Query large dataset 
+Data Storage 
+Data is retrieved efficiently 
+Save new project record 
+Simultaneous Report 
+Generation 
+Record is stored without delay 
+Multiple users generate 
+reports 
+System handles requests 
+efficiently 
+Based on Table 14, the performance test cases evaluate the system’s responsiveness, 
+processing speed, and efficiency during normal operations. These tests measure how quickly the 
+62 
+system handles common tasks such as retrieving data, updating project status, generating reports, 
+and sending notifications. The results determine whether the PROJ-TRACK system meets the 
+required performance standards for regular use. 
+Stress Testing. Stress testing will be conducted to determine how the system performs 
+under extreme conditions, such as a high number of simultaneous users or large volumes of data. 
+This testing identifies the system’s limits and evaluates its stability when subjected to heavy 
+workloads. The objective is to ensure that the PROJ-TRACK system can maintain functionality 
+and avoid system crashes during peak usage scenarios. The results will provide insights into system 
+reliability and its ability to handle real-world operational demands. Table 15 presents the stress test 
+cases used to evaluate the performance of the proposed system. 
+Table 15: Stress Testing Test Cases   
+TEST NAME 
+TEST DECRIPTION 
+Concurrent User Test 
+EXPECTED OUTPUT 
+Multiple User Access 
+Simulate 
+multiple 
+users 
+Peak Load Test 
+accessing system 
+Increase 
+number 
+System remains stable 
+of 
+simultaneous requests 
+Extreme User Load 
+Very high user simulation 
+System continues to function 
+with minimal delay 
+System degrades gracefully if 
+needed 
+Database Stress Test 
+Large Data Input 
+Insert large volume of project 
+data 
+Rapid Transactions 
+System handles input without 
+crashing 
+Perform repeated updates 
+Continuous Data Input 
+Long continuous input 
+System process transactions 
+consistently 
+System Stability Test 
+System remains stable 
+Long Duration Usage 
+Run system continuously 
+Server Load Handling 
+Simulate heavy server load 
+Report Overload 
+Multiple report requests 
+System remains operational 
+System maintains acceptable 
+performance 
+Memory Usage Stress 
+System handles properly 
+High memory consumption 
+test 
+System remains stable 
+Based on Table 15, the stress test cases evaluate the system’s ability to maintain stability 
+and functionality under extreme conditions. These tests simulate scenarios such as multiple 
+concurrent users, high transaction volumes, and prolonged system usage. The goal is to identify 
+63 
+system limitations, potential points of failure, and performance degradation when subjected to 
+heavy workloads. The expected outputs confirm that the system remains operational, processes 
+requests consistently, and avoids crashes even under pressure. The results of these tests provide 
+insight into the robustness and reliability of the PROJ-TRACK system in real-world high-demand 
+situations. This ensures that the system can sustain peak usage without compromising performance 
+or data integrity. 
+Integration Testing. Integration testing will be conducted to evaluate how well different 
+modules of the system work together as a unified and fully functional system. This includes testing 
+the interaction between key components such as project tracking, reporting, notifications, user 
+management, and database operations to ensure that each module communicates properly with the 
+others. The purpose of this testing is to ensure seamless data flow, proper synchronization, and 
+consistent system behavior across all integrated modules when performing real-world scenarios. It 
+verifies that information is accurately transmitted, received, and processed between components 
+without errors, data loss, or inconsistencies. In addition, this phase checks whether combined 
+functionalities produce the expected outputs when multiple modules are used simultaneously, 
+helping to identify interface issues, communication failures, or integration conflicts. Through this 
+process, the reliability and stability of the overall system architecture are ensured before full 
+deployment. 
+Table 16 presents the integration test cases used to evaluate the performance of the 
+proposed system. These test cases focus on verifying the proper interaction and data exchange 
+between different system modules to ensure seamless functionality across the entire system. They 
+also assess whether combined processes, such as updating project data, generating reports, and 
+triggering notifications, operate correctly when executed across multiple components. In addition, 
+the test cases help identify any issues related to data inconsistency, communication failure, or 
+module incompatibility that may affect overall system performance. 
+64 
+Table 16: Integration Testing Test Cases   
+TEST NAME 
+TEST DECRIPTION 
+Module Integration 
+EXPECTED OUTPUT 
+Project and Notification 
+Update project status 
+Notification 
+automatically 
+Project and Reports 
+Add/update project data 
+is 
+triggered 
+User and System Interaction 
+Reports reflect updated data 
+Login and Dashboard 
+User logs in 
+Role-Based 
+Dashboard loads specific user 
+Access 
+Modules 
+and 
+Access system modules based 
+on role 
+Correct modules are displayed 
+Database Integration 
+Save and Retrieve Data 
+Store project information 
+Update and Display Data 
+Modify project record  
+Data is accurately retrieved 
+Updated data is reflected 
+across system 
+API Integration 
+Email Notification (Gmail 
+App) 
+Trigger email notification 
+AI Prediction Module 
+Email is successfully sent 
+Request prediction analysis  
+Notification Sync 
+Trigger system + email alert 
+System returns prediction 
+results 
+Database Reporting Sync 
+Both notifications sent 
+Update then generate report 
+Based on Table 16, the integration test cases assess how well different system modules 
+Report reflects latest data 
+interact and function as a unified system. These tests focus on verifying the data flow and 
+communication between components such as project tracking, reporting, notifications, database 
+operations, and external APIs. Each test case ensures that actions performed in one module are 
+accurately reflected in others, maintaining consistency and correctness of data across the system. 
+The expected outputs confirm that all modules are properly integrated and operate seamlessly 
+without errors or data inconsistencies. The results of these tests determine whether the PROJ
+TRACK system achieves full integration and supports efficient end-to-end system functionality.

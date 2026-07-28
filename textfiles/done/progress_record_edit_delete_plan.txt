@@ -1,0 +1,375 @@
+================================================================================
+  PLAN FILE
+  Progress Record Edit & Delete UI
+  CSPC PMU System
+  Last updated: July 19, 2026
+================================================================================
+
+================================================================================
+  PROBLEM STATEMENT
+================================================================================
+
+The backend for editing and deleting progress records is fully implemented
+but has no user-facing UI. Three issues exist:
+
+  1. No Edit/Delete buttons exist anywhere in the UI — the Progress Recording
+     History table (progress.blade.php) is read-only, and baseline month cards
+     have no way to edit recorded progress.
+
+  2. An editProgressModal is referenced by inline JS in project_detail.blade.php
+     (openEditProgressModal, saveProgressEdit, deleteProgressRecord) but the
+     modal HTML was never built — these functions are dead code.
+
+  3. The existing editProgressRecord() controller method does not handle
+     activity completion changes (it stores the audit trail but doesn't sync
+     which activities are marked complete for that month).
+
+================================================================================
+  CURRENT STATUS
+================================================================================
+
+  Layer               | Status | Detail
+  --------------------|--------|-----------------------------------------------
+  Database            | ✅     | original_values (JSON), edit_count, edited_by,
+                      |        | edited_at — all present in the schema.
+  Model               | ✅     | recordEdit(), storeOriginalValues(),
+  ProjectProgressHistory |    | getEditHistory(), hasBeenEdited() implemented.
+  Controller          | ✅     | editProgressRecord(PUT) and destroyProgress(DELETE)
+  ProjectProgressController | | exist, both functional with audit trail + activity log.
+  Routes              | ✅     | PUT + DELETE registered for admin AND staff roles.
+  Inline JS (orphaned)| ⚠️    | openEditProgressModal(), saveProgressEdit(),
+                      |        | deleteProgressRecord() in project_detail.blade.php
+                      |        | reference modal elements that don't exist.
+                      |        | Hardcoded to /admin/... (not role-aware).
+  View (edit modal)   | ❌     | _edit_progress_modal.blade.php does not exist.
+  View (progress tab) | ❌     | No Actions column / buttons in history table.
+  View (baseline tab) | ❌     | No Edit button on month cards with progress.
+  Controller gap      | ⚠️    | editProgressRecord() doesn't sync activity
+                      |        | completion changes from the payload.
+
+================================================================================
+  IMPLEMENTATION STEPS
+================================================================================
+
+------------------
+STEP 1 — Edit Progress Modal (blade + JS)
+------------------
+
+1a. NEW: _edit_progress_modal.blade.php
+
+    Location: resources/views/projects/project_detail/components/modals/
+    Pattern: Stacked modal (same as _carry_over_activity_modal), reuses
+             existing record_progress_modal.blade.php layout for consistency.
+
+    Header:
+      — Gradient teal header (same as record progress modal).
+      — Title: "Edit Progress Record — <Month Year>"
+      — Subtitle: "Editing record from <inspection date>"
+
+    Body — Left Form:
+      — Hidden fields: record ID, month_label, baseline_schedule_id.
+      — Read-only month info box (month label, planned %, current variance).
+      — Actual Progress % (number input, 0-100, pre-filled).
+      — Inspection Date (date picker, pre-filled).
+      — Activities Checklist (loaded dynamically via existing
+        loadActivitiesForProgressModal(), same as record progress modal).
+      — Remarks (textarea, pre-filled).
+
+    Body — Audit Trail Section (right or bottom):
+      — Shown only when record has been edited (hasBeenEdited()).
+      — Info box: "Edited N times | Last edited by User on Date"
+      — Collapsible "View Original Values" showing the original_values JSON
+        displayed as a readable table.
+
+    Footer:
+      — Cancel (data-bs-dismiss) | Save Changes (calls saveProgressEdit())
+
+1b. NEW: baseline-schedule-edit-progress-modal.js
+
+    Location: public/js/admin/projects/
+
+    Functions:
+      openEditProgressModal(recordId, monthLabel):
+        — Fetch full record data via GET endpoint (or receive from inline
+          JSON data, same pattern as progressHistoryData in project_detail).
+        — Populate form fields.
+        — If hasBeenEdited, show audit trail section.
+        — Load activities via loadActivitiesForProgressModal(monthLabel).
+        — Open the modal.
+
+      saveProgressEdit():
+        — Validate: actual % required, 0-100, inspection date required.
+        — Collect form data + checked activity IDs.
+        — PUT to .../progress/{recordId}.
+        — On success: show toast, store activeTab, reload page.
+        — On error: show inline errors.
+
+      resetEditProgressForm():
+        — Clear all fields, reset audit trail section, clear activity list.
+
+      closeEditProgressModal():
+        — Close modal, reset form, reload page if flag set.
+
+    DOMContentLoaded:
+      — Wire up form submit and validation.
+      — Clear context on modal close.
+
+------------------
+STEP 2 — Baseline tab: Edit button on month cards
+------------------
+
+2a. MODIFY: baseline-schedule.blade.php
+
+    In each month card's action buttons area (~line 249):
+      — ADD: "Edit Progress" button (pencil icon, teal outline).
+        Shown only when $latestProgress exists for that month.
+        Calls openEditProgressModal(record.id, month_label).
+      — The button opens the edit modal to edit the LATEST progress record
+        for that month (as confirmed: $latestProgress from line 125).
+      — Visibility: @can('update', $project) — same guard used for other
+        baseline action buttons.
+
+    Also include the modal + script:
+      — @include for _edit_progress_modal.blade.php (after record_progress_modal).
+      — <script> include for baseline-schedule-edit-progress-modal.js.
+
+------------------
+STEP 3 — Progress tab: Edit/Delete in history table + staff access
+------------------
+
+3a. MODIFY: progress.blade.php
+
+    Change the role guard from admin-only to admin + staff:
+      OLD: @if(auth()->check() && (auth()->user()->role === 'admin' || auth()->user()->admin))
+      NEW: @can('update', $project)
+
+    ADD: Actions column to the history table header:
+      <th>Actions</th> (after Notes, before the last one)
+
+    ADD: Per-row action buttons in the loop:
+      — Edit button (pencil icon): calls openEditProgressModal(record.id, month_label)
+      — Delete button (trash icon): calls showDeleteConfirmation()
+        then DELETE to .../progress/{recordId}
+      — Visibility: @can('update', $project)
+
+    HIDE "Recorded By" column for non-admin roles:
+      Column header: wrap in @if(auth()->user()->role === 'admin') check
+      Column data: wrap in same check
+
+    Include the edit modal + script (same as Step 2b).
+
+------------------
+STEP 4 — Fix orphaned inline JS in project_detail.blade.php
+------------------
+
+4a. MODIFY: project_detail.blade.php
+
+    Remove the orphaned inline functions (~lines 248-355):
+      — openEditProgressModal() — replaced by Step 1b's version.
+      — saveProgressEdit() — replaced by Step 1b's version.
+      — deleteProgressRecord() — moved to a cleaner standalone function
+        or kept inline with role-aware endpoint.
+
+    Replace with a role-aware deleteProgressRecord():
+      — Uses window.userRole to build the endpoint URL.
+      — Uses showDeleteConfirmation() instead of confirm().
+      — Calls DELETE .../progress/{recordId}.
+      — Reloads page on success, stores activeTab.
+
+    Also remove the progressHistoryData JSON assignment if no longer needed
+    (the new JS will fetch or receive data differently).
+
+------------------
+STEP 5 — Controller: activity completion sync
+------------------
+
+5a. MODIFY: ProjectProgressController::editProgressRecord()
+
+    After the existing audit trail logic, add:
+      — If the request has activity_ids (array):
+        — Mark those activities as is_completed = true for this month.
+        — Mark activities in the same month NOT in the array as
+          is_completed = false (user unchecked them).
+      — This mirrors the logic in recordMonthlyProgress().
+      — All inside the same DB transaction as the edit.
+
+5b. If needed: return the updated activity list in the response so the
+    frontend can refresh the month card without a full page reload.
+    (Optional — page reload already refreshes everything.)
+
+------------------
+STEP 6 — Testing
+------------------
+
+All tests to be verified before marking complete.
+
+6a — Backend / API
+
+  ✅ 6a.1 Edit progress record — PUT valid data, expect 200, record updated.
+  ✅ 6a.2 Edit with activity changes — mark an activity done, verify DB updated.
+  ✅ 6a.3 Edit with activity unchecked — verify is_completed = false in DB.
+  ✅ 6a.4 Delete progress record — DELETE, expect 200, record gone.
+  ✅ 6a.5 Edit non-existent record — expect 404.
+  ✅ 6a.6 Delete non-existent record — expect 404.
+  ✅ 6a.7 Edit with invalid data — expect 422.
+  ✅ 6a.8 Staff route — PUT /staff/.../progress/{id} works.
+  ✅ 6a.9 Admin route — PUT /admin/.../progress/{id} works.
+  ✅ 6a.10 Contractor → 403 or route not found.
+
+6b — Frontend (Manual Browser Testing)
+
+  ✅ 6b.1 Baseline tab: Edit button appears when latest progress exists.
+  ✅ 6b.2 Baseline tab: Click Edit → modal opens with correct data.
+  ✅ 6b.3 Baseline tab: Activities loaded in checklist, pre-checked correctly.
+  ✅ 6b.4 Baseline tab: Save changes → toast + reload, values updated.
+  ✅ 6b.5 Baseline tab: Audit trail shown for previously-edited records.
+  ✅ 6b.6 Progress tab: Edit button on any history record → modal opens.
+  ✅ 6b.7 Progress tab: Delete button → confirmation → record deleted.
+  ✅ 6b.8 Progress tab: "Recorded By" column hidden for staff.
+  ✅ 6b.9 Progress tab: Table visible to staff (not just admin).
+  ✅ 6b.10 Progress tab: Contractor cannot see history table at all.
+  ✅ 6b.11 Edit a record with activities → verify completion badges update.
+  ✅ 6b.12 Delete a record → page reloads, record gone from table + card.
+  ✅ 6b.13 Validation: empty % → inline error, no submit.
+  ✅ 6b.14 Validation: % out of range → inline error, no submit.
+
+================================================================================
+  FILES TO TOUCH
+================================================================================
+
+  NEW:  resources/views/projects/project_detail/components/modals/
+        _edit_progress_modal.blade.php
+  NEW:  public/js/admin/projects/baseline-schedule-edit-progress-modal.js
+
+  MODIFY: resources/views/projects/project_detail/components/tabs/
+          baseline-schedule.blade.php
+  MODIFY: resources/views/projects/project_detail/components/tabs/
+          progress.blade.php
+  MODIFY: resources/views/projects/project_detail/project_detail.blade.php
+  MODIFY: app/Http/Controllers/ProjectProgressController.php
+
+================================================================================
+  DESIGN DECISIONS
+================================================================================
+
+Decision 1 — Button visibility pattern
+  Context: Codebase uses both @can (policy-based) and direct role checks.
+  Decision: Use @can('update', $project) for all edit/delete button visibility.
+  Rationale: Editing/deleting progress is logically an "update project" action.
+             Reuses the existing ProjectPolicy without creating new methods.
+             Staff and admin both can('update') — contractor cannot.
+  Consequence: If finer-grained control is ever needed, a dedicated
+               can('editProgress') gate can be added later.
+
+Decision 2 — Staff access to history table
+  Context: Progress Recording History table is currently admin-only.
+  Decision: Open to staff (via @can('update')), but hide "Recorded By" column
+            for non-admin roles.
+  Rationale: Staff need the table for edit/delete access. Recorded By
+             is sensitive — only admin needs to see who recorded what.
+
+Decision 3 — Activities in edit modal
+  Context: Record progress modal loads activities via AJAX for the selected
+           month; edit modal should do the same.
+  Decision: Reuse loadActivitiesForProgressModal() from
+            baseline-schedule-record-progress-modal.js.
+  Rationale: Avoids duplicating the activity loading logic. The function
+             accepts a monthLabel parameter and is already modular.
+
+Decision 4 — Page reload strategy
+  Context: Most modals in this codebase reload the page after save to
+           reflect changes fully (simplest approach, avoids stale state).
+  Decision: Use the same pattern — toast + store activeTab + reload.
+  Rationale: Consistent with existing patterns (record progress, add month
+             target, carry over). Avoids complex partial-DOM updates that
+             could miss edge cases (e.g., audit trail, variance changes).
+
+================================================================================
+  FLAGGED FOR FUTURE
+================================================================================
+
+  - GET endpoint to fetch single progress record by ID: currently
+    editProgressModal relies on inline JSON data (progressHistoryData).
+    If the inline data isn't available on all pages, a GET endpoint
+    (e.g., GET .../progress/{id}) would be needed. Not needed now since
+    both tabs have access to the project's progress history.
+
+  - Notification on progress edit: currently no notification system exists
+    in the codebase. Deferred.
+
+  - Activity completion sync could be extracted to a dedicated method on
+    ProjectProgressHistory or a service class if it grows more complex.
+
+================================================================================
+  IMPLEMENTATION STATUS
+================================================================================
+
+  Step  | Status | Detail
+  ------|--------|-----------------------------------------------
+  1a    | ✅     | _edit_progress_modal.blade.php created with
+         |        | activities checklist + audit trail section.
+  1b    | ✅     | baseline-schedule-edit-progress-modal.js created
+         |        | with openEditProgressModal, saveProgressEdit,
+         |        | deleteProgressRecord, and helpers.
+  2     | ✅     | Edit Progress button added to baseline month cards
+         |        | (shown when $latestProgress exists).
+         |        | Modal + script included, _progressRecordData exposed.
+  3     | ✅     | History table guard changed to @can('update', $project)
+         |        | (admin + staff). Actions column with Edit/Delete
+         |        | buttons added. Recorded By column hidden for staff.
+         |        | Modal + script included.
+  4     | ✅     | Orphaned inline openEditProgressModal, saveProgressEdit,
+         |        | deleteProgressRecord removed from project_detail.blade.php.
+         |        | Replaced with _progressRecordData reference.
+  5     | ✅     | editProgressRecord() now accepts activity_ids, syncs
+         |        | is_completed status in DB transaction.
+         |        | 'status' field made optional (nullable in validation).
+         |        | activity_id JSON on record updated to match.
+  6     | ✅     | Testing — see test plan (Section 6a-6b).
+
+  --- POST-IMPLEMENTATION CHANGES (July 19) ---
+
+  7     | ✅     | Delete restricted to admin only:
+         |        | - Backend: destroyProgress() returns 403 if not admin
+         |        | - Frontend: Delete button wrapped in role check
+         |        |   (staff can no longer see or call delete)
+  8     | ✅     | Activity revert on delete:
+         |        | - destroyProgress() reads activity_id JSON array
+         |        | - For each activity, checks if any OTHER progress record
+         |        |   for the same month still references it
+         |        | - Only activities exclusive to the deleted record are
+         |        |   reverted to is_completed = false
+         |        | - Wrapped in DB transaction for atomicity
+
+    --- POST-IMPLEMENTATION REFINEMENTS (July 19) ---
+
+    9a    | ❌→✅  | recorded_by and activity_names referenced original_values
+           |        | JSON only, ignoring the record's appended attributes.
+           |        | Old JS: getOriginalActivityDisplay(ov) / ov.recorded_by_name
+           |        | Fix: added record parameter; fallback chain now checks
+           |        | record.recorded_by_name and record.activity_names before
+           |        | falling back to raw IDs/ID.
+           |        | Files: baseline-schedule-edit-progress-modal.js
+           |        | (getOriginalActivityDisplay, recorded_by display block)
+           |        | Verified working by user (July 19).
+
+    9b    | ✅     | Edited_at date parsing: removed erroneous + 'Z' suffix
+           |        | that produced Invalid Date for already-UTC timestamps.
+           |        | Added try/catch with 'Unknown' fallback.
+
+    10    | ✅     | Original values expanded to all columns:
+         |        | - storeOriginalValues() now captures: month_label,
+         |        |   baseline_schedule_id, inspection_date,
+         |        |   inspection_month_date, progress_percentage,
+         |        |   actual_progress_percent, planned_progress_percent,
+         |        |   variance_percent, previous_progress, month_number,
+         |        |   activity_id, actual_start_date, actual_end_date,
+         |        |   status, remarks, recorded_by (16 fields vs 6 before)
+         |        | - getEditHistory() current_values also expanded to match
+         |        | - Edit modal audit display renders all fields dynamically
+         |        |   with proper labels and formatting (% suffix, array join)
+
+================================================================================
+  END OF PLAN FILE
+  Last updated: July 19, 2026 — all changes complete
+================================================================================

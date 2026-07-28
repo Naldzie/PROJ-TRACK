@@ -1,0 +1,1279 @@
+/* ========================================== */
+/*                 PROJECTS PAGE              */
+/* ========================================== */
+
+/* ========== CSS VARIABLES & ROOT THEME ========== */
+:root {
+        --primary: #2563eb;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+        --info: #06b6d4;
+        --bg: #f4f6f9;
+        --card-bg: #ffffff;
+        --border: #e5e7eb;
+        --text-main: #1f2937;
+        --text-muted: #6b7280;
+    }
+
+    body { background: var(--bg); }
+
+    /* ========== PAGE HEADER ========== */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text-main);
+        margin: 0;
+    }
+
+    /* ========== PRIMARY BUTTON ========== */
+    .btn-primary {
+        padding: 10px 20px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: 0.3s;
+    }
+
+    .btn-primary:hover {
+        background: #1e40af;
+        transform: translateY(-2px);
+    }
+
+    /* ========== DASHBOARD METRICS SECTION ========== */
+    .dashboard-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+
+    .metric-card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--border);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .metric-card.success { border-left-color: var(--success); }
+    .metric-card.danger { border-left-color: var(--danger); }
+    .metric-card.warning { border-left-color: var(--warning); }
+
+    .metric-label {
+        font-size: 13px;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .metric-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+
+    /* ========== FILTERS SECTION ========== */
+    .filters-section {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+    }
+
+    .filter-btn {
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: 0.3s;
+        font-weight: 500;
+        color: var(--text-main);
+    }
+
+    .filter-btn.active {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+
+    .filter-btn:hover {
+        border-color: var(--primary);
+    }
+
+    /* ========== PROJECTS GRID LAYOUT ========== */
+    .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+
+    /* ========== PROJECT CARD - GRID VIEW ========== */
+    .project-card {
+        background: white;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        transition: 0.3s;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+    }
+
+    .project-card:hover {
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        transform: translateY(-4px);
+    }
+
+    /* Status indicators on top border */
+    .project-card.overdue { border-top: 4px solid var(--danger); }
+    .project-card.at-risk { border-top: 4px solid var(--warning); }
+    .project-card.on-track { border-top: 4px solid var(--success); }
+
+    /* ========== PROJECT HEADER (CARD HEADER) ========== */
+    .project-header {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
+        color: white;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .project-header-left {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .project-code {
+        font-size: 11px;
+        font-weight: 600;
+        margin-bottom: 6px;
+        letter-spacing: 0.5px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .project-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 0;
+        line-height: 1.3;
+    }
+
+    /* ========== STATUS & HEALTH BADGES ROW ========== */
+    .status-badge-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    /* ========== STATUS BADGE (Project Status) ========== */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(255,255,255,0.15);
+        color: white;
+        border: 1px solid rgba(255,255,255,0.3);
+        white-space: nowrap;
+    }
+
+    .status-badge i {
+        font-size: 13px;
+    }
+
+    .status-badge.ongoing {
+        background: rgba(16,185,129,0.25);
+        border-color: rgba(16,185,129,0.4);
+    }
+
+    .status-badge.completed {
+        background: rgba(37,99,235,0.25);
+        border-color: rgba(37,99,235,0.4);
+    }
+
+    .status-badge.planned {
+        background: rgba(245,158,11,0.25);
+        border-color: rgba(245,158,11,0.4);
+    }
+
+    .status-badge.suspended {
+        background: rgba(239,68,68,0.25);
+        border-color: rgba(239,68,68,0.4);
+    }
+
+    /* ========== HEALTH BADGE (Schedule/Progress Status) ========== */
+    .health-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(255,255,255,0.15);
+        color: white;
+        border: 1px solid rgba(255,255,255,0.3);
+        white-space: nowrap;
+    }
+
+    .health-badge i {
+        font-size: 13px;
+    }
+
+    .health-badge.on-track {
+        background: rgba(16,185,129,0.25);
+        border-color: rgba(16,185,129,0.4);
+    }
+
+    .health-badge.at-risk {
+        background: rgba(245,158,11,0.25);
+        border-color: rgba(245,158,11,0.4);
+    }
+
+    .health-badge.overdue {
+        background: rgba(239,68,68,0.25);
+        border-color: rgba(239,68,68,0.4);
+    }
+
+    .health-badge.on-schedule {
+        background: rgba(16,185,129,0.25);
+        border-color: rgba(16,185,129,0.4);
+    }
+
+    .health-badge.late {
+        background: rgba(239,68,68,0.25);
+        border-color: rgba(239,68,68,0.4);
+    }
+
+    .health-badge.early {
+        background: rgba(16,185,129,0.25);
+        border-color: rgba(16,185,129,0.4);
+    }
+
+    /* ========== PROJECT HEADER BADGES CONTAINER ========== */
+    .project-header-badges {
+        display: flex;
+        gap: 6px;
+        min-width: fit-content;
+    }
+
+    /* ========== RISK INDICATOR BADGE (Circular) ========== */
+    .risk-badge {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: help;
+        border: 1px solid rgba(255,255,255,0.3);
+    }
+
+    .risk-badge.danger { background: rgba(239,68,68,0.3); color: #fee2e2; border-color: rgba(239,68,68,0.5); }
+    .risk-badge.warning { background: rgba(245,158,11,0.3); color: #fef3c7; border-color: rgba(245,158,11,0.5); }
+    .risk-badge.success { background: rgba(16,185,129,0.3); color: #d1fae5; border-color: rgba(16,185,129,0.5); }
+
+    /* ========== PROJECT BODY (Main Content Area) ========== */
+    .project-body {
+        padding: 20px;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* ========== CONTRACTOR SECTION ========== */
+    .contractor-section {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .contractor-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+
+    .contractor-avatar i {
+        font-size: 16px;
+    }
+
+    .icon-small {
+        font-size: 13px;
+        margin-right: 4px;
+        opacity: 0.8;
+    }
+
+    .icon-medium {
+        font-size: 14px;
+        margin-right: 6px;
+    }
+
+    .contractor-details {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .contractor-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        font-weight: 600;
+        margin-bottom: 2px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .contractor-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+
+    /* ========== PROGRESS SECTION ========== */
+    .progress-section {
+        margin-bottom: 16px;
+    }
+
+    .progress-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .progress-title {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .progress-title i {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+
+    .progress-percent {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-main);
+    }
+
+    .progress-bar-container {
+        position: relative;
+        height: 8px;
+        background: var(--border);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: var(--primary);
+        transition: width 0.3s ease;
+        border-radius: 4px;
+    }
+
+    .progress-fill.healthy { background: var(--success); }
+    .progress-fill.warning { background: var(--warning); }
+    .progress-fill.danger { background: var(--danger); }
+
+    /* ========== SCHEDULE INFO BOX ========== */
+    .schedule-info {
+        background: #f9fafb;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        border: 1px solid var(--border);
+        font-size: 13px;
+    }
+
+    .schedule-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .schedule-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .schedule-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .schedule-label i {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+
+    .schedule-value {
+        color: var(--text-main);
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .schedule-value.success { color: var(--success); }
+    .schedule-value.warning { color: var(--warning); }
+    .schedule-value.danger { color: var(--danger); }
+
+    /* ========== BUDGET INFO BOX ========== */
+    .budget-info {
+        background: #f0fdf4;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        border: 1px solid #dcfce7;
+        font-size: 13px;
+    }
+
+    .budget-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .budget-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .budget-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .budget-label i {
+        font-size: 13px;
+        opacity: 0.7;
+        color: var(--success);
+    }
+
+    .budget-value {
+        color: var(--text-main);
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .budget-utilization {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #dcfce7;
+    }
+
+    .budget-util-bar {
+        height: 4px;
+        background: #dcfce7;
+        border-radius: 2px;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .budget-util-fill {
+        height: 100%;
+        background: var(--success);
+        border-radius: 2px;
+    }
+
+    .budget-util-fill.warning { background: var(--warning); }
+    .budget-util-fill.danger { background: var(--danger); }
+
+    .budget-util-text {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    /* ========== EXPANDABLE SECTIONS (Collapsible) ========== */
+    .expandable-section {
+        margin-bottom: 12px;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+    }
+
+    .expandable-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        padding: 8px 0;
+        font-weight: 600;
+        font-size: 12px;
+        color: var(--text-main);
+        transition: 0.2s;
+        user-select: none;
+    }
+
+    .expandable-header span:first-child {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .expandable-header i:first-of-type {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+
+    .expandable-header:hover {
+        color: var(--primary);
+    }
+
+    .expandable-header:hover i:first-of-type {
+        opacity: 1;
+    }
+
+    .expandable-header.active {
+        color: var(--primary);
+    }
+
+    .expandable-header.active i:first-of-type {
+        opacity: 1;
+        color: var(--primary);
+    }
+
+    .expand-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        font-size: 16px;
+        transition: transform 0.2s ease;
+        color: var(--text-muted);
+    }
+
+    .expandable-header.active .expand-icon {
+        transform: rotate(90deg);
+        color: var(--primary);
+    }
+
+    .expandable-content {
+        display: none;
+        margin-top: 12px;
+        padding-left: 8px;
+        border-left: 2px solid var(--border);
+    }
+
+    .expandable-content.show {
+        display: block;
+    }
+
+    /* ========== MILESTONE ITEMS (Inside Activities) ========== */
+    .milestone-item {
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        padding: 8px;
+        background: rgba(37,99,235,0.02);
+        border-radius: 6px;
+        border: 1px solid rgba(37,99,235,0.1);
+    }
+
+    .milestone-item:last-child {
+        margin-bottom: 0;
+        padding-bottom: 8px;
+        border-bottom: none;
+    }
+
+    .milestone-name {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-main);
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+
+
+    .milestone-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+        gap: 8px;
+    }
+
+    .milestone-meta span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .milestone-meta i {
+        font-size: 11px;
+        opacity: 0.6;
+    }
+
+    .milestone-progress-bar {
+        height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .milestone-progress-fill {
+        height: 100%;
+        background: var(--primary);
+    }
+
+    /* ========== PROJECT DETAILS GRID ========== */
+    .details-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        font-size: 12px;
+    }
+
+    .detail-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .detail-label {
+        color: var(--text-muted);
+        font-weight: 600;
+        margin-bottom: 4px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    .detail-value {
+        color: var(--text-main);
+        font-weight: 600;
+    }
+
+    /* ========== INLINE STATUS BADGE (Compact Version) ========== */
+    .status-badge-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        background: rgba(37,99,235,0.08);
+        color: var(--primary);
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .status-badge-inline.success {
+        background: rgba(16,185,129,0.08);
+        color: var(--success);
+    }
+
+    .status-badge-inline.warning {
+        background: rgba(245,158,11,0.08);
+        color: var(--warning);
+    }
+
+    .status-badge-inline.danger {
+        background: rgba(239,68,68,0.08);
+        color: var(--danger);
+    }
+
+    .status-badge-inline i {
+        font-size: 10px;
+    }
+
+    /* ========== PROJECT ACTION BUTTONS ========== */
+    .project-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: auto;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+    }
+
+    .action-btn {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid var(--border);
+        background: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-main);
+        transition: 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+    }
+
+    .action-btn i {
+        font-size: 13px;
+    }
+
+    .action-btn:hover {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+
+    .action-btn.danger:hover {
+        background: var(--danger);
+        border-color: var(--danger);
+    }
+
+    /* ========== EMPTY STATE (No Projects) ========== */
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: var(--text-muted);
+        grid-column: 1/-1;
+    }
+
+    .empty-state-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+        opacity: 0.3;
+        color: var(--text-muted);
+    }
+
+    .empty-state-icon i {
+        font-size: 64px;
+    }
+
+    .empty-state-title {
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--text-main);
+        margin-bottom: 12px;
+    }
+
+/* ========================================== */
+/*     VIEW TOGGLE & TABLE VIEW STYLES        */
+/* ========================================== */
+
+/* ========== VIEW TOGGLE BUTTONS (Grid/Table) ========== */
+    .view-toggle-group {
+        display: flex;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 2px;
+        background: white;
+    }
+
+    .view-toggle-btn {
+        padding: 8px 14px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text-main);
+        font-size: 14px;
+        border-radius: 4px;
+        transition: 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .view-toggle-btn.active {
+        background: var(--primary);
+        color: white;
+    }
+
+    .view-toggle-btn:hover:not(.active) {
+        background: rgba(37,99,235,0.05);
+    }
+
+    .view-toggle-btn i {
+        font-size: 16px;
+    }
+
+    /* ========== TABLE VIEW LAYOUT ========== */
+    .projects-table {
+        display: none !important;
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        margin-bottom: 40px;
+        min-width: 1000px;
+    }
+
+    .projects-table.show {
+        display: table !important;
+        overflow: visible !important;
+    }
+
+    .projects-table.show {
+        overflow-x: auto;
+    }
+
+    /* TABLE HEADER */
+    .projects-table thead {
+        background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
+        color: white;
+    }
+
+    .projects-table th {
+        padding: 12px 10px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        white-space: nowrap;
+    }
+
+    /* TABLE BODY */
+    .projects-table tbody tr {
+        border-bottom: 1px solid var(--border);
+        transition: 0.2s;
+    }
+
+    .projects-table tbody tr:hover {
+        background: rgba(37,99,235,0.02);
+    }
+
+    .projects-table tbody tr:last-child {
+        border-bottom: none;
+    }
+
+    .projects-table td {
+        padding: 10px 10px;
+        font-size: 12px;
+        color: var(--text-main);
+        vertical-align: middle;
+    }
+
+    /* TABLE COLUMN: PROJECT CODE */
+    .table-project-code {
+        font-weight: 600;
+        color: var(--primary);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+    }
+
+    /* TABLE COLUMN: PROJECT TITLE */
+    .table-project-title {
+        font-weight: 600;
+        color: var(--text-main);
+        max-width: 100px;
+        word-wrap: break-word;
+        word-break: break-word;
+        white-space: normal;
+        line-height: 1.3;
+        display: block;
+    }
+
+    /* TABLE COLUMN: CATEGORY */
+    .table-category {
+        color: var(--text-main);
+        font-weight: 500;
+        font-size: 10px;
+        padding: 2px 4px;
+        background: rgba(37,99,235,0.06);
+        border-radius: 4px;
+        width: fit-content;
+    }
+
+    /* TABLE COLUMN: HEALTH STATUS BADGE */
+    .table-health-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 3px 6px;
+        border-radius: 5px;
+        font-size: 10px;
+        font-weight: 600;
+        width: fit-content;
+        white-space: nowrap;
+    }
+
+    .table-health-badge.on-track {
+        background: rgba(16,185,129,0.08);
+        color: var(--success);
+    }
+
+    .table-health-badge.at-risk {
+        background: rgba(245,158,11,0.08);
+        color: var(--warning);
+    }
+
+    .table-health-badge.overdue {
+        background: rgba(239,68,68,0.08);
+        color: var(--danger);
+    }
+
+    /* TABLE COLUMN: STATUS BADGE */
+    .table-status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 8px;
+        background: rgba(37,99,235,0.08);
+        color: var(--primary);
+        border-radius: 5px;
+        font-size: 11px;
+        font-weight: 600;
+        width: fit-content;
+        white-space: nowrap;
+    }
+
+    .table-status-badge.ongoing {
+        background: rgba(16,185,129,0.08);
+        color: var(--success);
+    }
+
+    .table-status-badge.completed {
+        background: rgba(37,99,235,0.08);
+        color: var(--primary);
+    }
+
+    .table-status-badge.planned {
+        background: rgba(245,158,11,0.08);
+        color: var(--warning);
+    }
+
+    .table-status-badge.suspended {
+        background: rgba(239,68,68,0.08);
+        color: var(--danger);
+    }
+
+    .status-text {
+        white-space: nowrap;
+    }
+
+    /* TABLE COLUMN: PROGRESS BAR & PERCENTAGE */
+    .table-progress-cell {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .table-progress-bar {
+        width: 80px;
+        height: 5px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .table-progress-fill {
+        height: 100%;
+        background: var(--primary);
+        border-radius: 3px;
+    }
+
+    .table-progress-fill.healthy { background: var(--success); }
+    .table-progress-fill.warning { background: var(--warning); }
+    .table-progress-fill.danger { background: var(--danger); }
+
+    .table-progress-text {
+        font-weight: 600;
+        color: var(--text-main);
+        min-width: 30px;
+        text-align: right;
+        font-size: 11px;
+    }
+
+    /* TABLE COLUMN: DEADLINE */
+    .table-deadline {
+        color: var(--text-main);
+    }
+
+    .table-deadline.danger {
+        color: var(--danger);
+        font-weight: 600;
+    }
+
+    .table-deadline.warning {
+        color: var(--warning);
+        font-weight: 600;
+    }
+
+    .table-deadline.success {
+        color: var(--success);
+        font-weight: 600;
+    }
+
+    /* TABLE COLUMN: DAYS REMAINING */
+    .table-days-remaining {
+        font-weight: 600;
+    }
+
+    .table-days-remaining.danger {
+        color: var(--danger);
+    }
+
+    .table-days-remaining.warning {
+        color: var(--warning);
+    }
+
+    .table-days-remaining.success {
+        color: var(--success);
+    }
+
+    /* TABLE COLUMN: BUDGET */
+    .table-budget {
+        font-weight: 600;
+        color: var(--success);
+    }
+
+    /* TABLE COLUMN: START DATE */
+    .table-start-date {
+        color: var(--text-main);
+        font-weight: 500;
+        font-size: 12px;
+    }
+
+    /* TABLE COLUMN: DURATION */
+    .table-duration {
+        color: var(--text-main);
+        font-weight: 600;
+        font-size: 12px;
+    }
+
+    /* TABLE COLUMN: PROJECT MANAGER */
+    .table-manager {
+        color: var(--text-main);
+        font-weight: 500;
+        font-size: 12px;
+    }
+
+    .table-manager-empty {
+        color: var(--text-muted);
+        font-style: italic;
+        font-size: 12px;
+    }
+
+    /* TABLE COLUMN: COMPLETION STATUS */
+    .table-completion-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        width: fit-content;
+    }
+
+    .table-completion-badge.success {
+        background: rgba(16,185,129,0.08);
+        color: var(--success);
+    }
+
+    .table-completion-badge.warning {
+        background: rgba(245,158,11,0.08);
+        color: var(--warning);
+    }
+
+    .table-completion-badge.danger {
+        background: rgba(239,68,68,0.08);
+        color: var(--danger);
+    }
+
+    .table-completion-empty {
+        color: var(--text-muted);
+    }
+
+    /* TABLE COLUMN: BUDGET */
+    .table-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        align-items: center;
+    }
+
+    .table-action-btn {
+        padding: 4px 6px;
+        border: 1px solid var(--border);
+        background: white;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 0px;
+        font-weight: 600;
+        color: var(--text-main);
+        transition: 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0px;
+        white-space: nowrap;
+        position: relative;
+        width: 28px;
+        height: 28px;
+    }
+
+    .table-action-btn i {
+        font-size: 12px;
+        margin: 0;
+    }
+
+    /* Show text on hover for all action buttons */
+    .table-action-btn:hover {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+
+    /* VIEW button default style */
+    .table-action-view {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+    }
+
+    .table-action-view:hover {
+        background: #1e40af;
+        border-color: #1e40af;
+    }
+
+    .table-action-danger:hover {
+        background: var(--danger);
+        border-color: var(--danger);
+    }
+
+    /* RESPONSIVE: 1400px and below */
+    @media (max-width: 1400px) {
+        .projects-table th, .projects-table td { padding: 10px 8px; font-size: 11px; }
+        .table-project-title { max-width: 100px; }
+        .table-progress-bar { width: 70px; }
+        .table-actions { gap: 3px; }
+        .table-action-btn { width: 30px; height: 30px; }
+        .table-action-btn i { font-size: 13px; }
+    }
+
+    /* RESPONSIVE: 1368px (target resolution) */
+    @media (max-width: 1368px) {
+        .projects-table.show { display: table !important; overflow-x: auto !important; }
+        .projects-table th, .projects-table td { padding: 6px 4px; font-size: 9px; height: auto; }
+        .projects-table th { white-space: nowrap; }
+        .table-project-code { font-size: 9px; }
+        .table-project-title { max-width: 90px; font-size: 8px; }
+        .table-category { font-size: 7px; padding: 1px 3px; }
+        .table-status-badge { padding: 2px 6px; font-size: 8px; gap: 2px; }
+        .table-status-badge i { font-size: 10px; }
+        .table-health-badge { padding: 2px 4px; font-size: 8px; gap: 2px; }
+        .table-health-badge i { font-size: 10px; }
+        .table-progress-bar { width: 45px; height: 4px; }
+        .table-progress-text { font-size: 8px; min-width: 25px; }
+        .table-progress-cell { gap: 3px; }
+        .table-start-date { font-size: 8px; }
+        .table-duration { font-size: 8px; }
+        .table-deadline { font-size: 8px; }
+        .table-days-remaining { font-size: 8px; }
+        .table-manager { font-size: 8px; }
+        .table-manager-empty { font-size: 8px; }
+        .table-budget { font-size: 8px; }
+        .table-actions { gap: 2px; }
+        .table-action-btn { width: 24px; height: 24px; padding: 3px 4px; }
+        .table-action-btn i { font-size: 11px; }
+        .metric-card { padding: 10px; }
+        .metric-label { font-size: 10px; }
+        .metric-value { font-size: 18px; }
+    }
+
+    /* RESPONSIVE: 1024px and below */
+    @media (max-width: 1024px) {
+        .projects-table.show { display: table !important; overflow-x: auto !important; font-size: 10px; }
+        .projects-table th, .projects-table td { padding: 8px 6px; }
+        .table-project-title { max-width: 70px; }
+        .table-progress-bar { width: 50px; }
+        .table-actions { gap: 2px; }
+        .table-action-btn { width: 26px; height: 26px; }
+        .table-action-btn i { font-size: 12px; }
+        .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+        .filters-section { flex-direction: column; }
+        .dashboard-metrics { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* RESPONSIVE: 768px and below */
+    @media (max-width: 768px) {
+        .projects-grid { grid-template-columns: 1fr; }
+        .details-grid { grid-template-columns: 1fr; }
+        .page-header { flex-direction: column; align-items: flex-start; }
+        .project-header { flex-direction: column; align-items: flex-start; }
+        .project-header-badges { width: 100%; justify-content: flex-start; margin-top: 8px; }
+        .view-toggle-group { flex-direction: row; }
+        .projects-table.show { display: table !important; overflow-x: auto !important; font-size: 9px; }
+        .projects-table th, .projects-table td { padding: 6px 4px; }
+        .table-project-title { max-width: 50px; }
+        .table-progress-bar { width: 40px; }
+        .table-actions { gap: 2px; }
+        .table-action-btn { width: 22px; height: 22px; }
+        .table-action-btn i { font-size: 10px; }
+        .dashboard-metrics { grid-template-columns: 1fr; }
+    }

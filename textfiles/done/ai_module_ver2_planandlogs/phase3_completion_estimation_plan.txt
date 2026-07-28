@@ -1,0 +1,290 @@
+================================================================================
+  PHASE 3 — COMPLETION ESTIMATION IMPLEMENTATION PLAN
+  Status: PLAN READY FOR REVIEW
+================================================================================
+
+   Objective
+   ---------
+   Estimate when a project will reach 100% cumulative progress using a
+   schedule-aware approach: map current actual progress against the planned
+   schedule (baselines), compute the lag (behind/ahead), and project the
+   completion date by shifting the planned end by that lag.
+
+   Prerequisites (COMPLETE)
+   ------------------------
+   • Phase 1 — PolynomialRegressionService running (cubic via Gaussian elim.)
+   • Phase 2 — Model selection stores coefficients [a,b,c,d] in regression
+     block; method_reason and r_squared_slr/r_squared_poly available
+   • V1 — Baseline schedules with planned_progress_percent values
+
+================================================================================
+  FILES TO CREATE
+================================================================================
+
+  1. app/Services/AI/CompletionEstimationService.php  [NEW]
+  2. tests/Unit/Services/AI/CompletionEstimationServiceTest.php  [NEW]
+
+================================================================================
+  FILES TO MODIFY
+================================================================================
+
+  1. app/Services/AI/AIPredictionService.php
+     - Add CompletionEstimationService as optional constructor dependency
+     - Call estimate() before buildPredictionReport()
+     - Add 'completion' section to the prediction report
+
+  2. app/Services/AI/AIPredictionPresenter.php
+     - extractCompletionData() in presentNormal()
+     - Populate estimated_completion (Carbon), predicted_delay_days,
+       can_estimate_completion
+     - Pass completion_confidence to Blade
+
+  3. resources/views/.../ai-prediction.blade.php
+     - Show estimated completion date (already has conditional slot)
+     - Add confidence badge next to estimated date
+     - Show predicted delay as "X days behind" / "X days ahead"
+
+================================================================================
+  COMPLETION ESTIMATION SERVICE — DESIGN
+================================================================================
+
+  Class:        App\Services\AI\CompletionEstimationService
+  Constructor:  Project $project, array $analysis (regression block),
+                int $currentMonthIndex, Collection $baselineSchedules
+  Method:       estimate(): array|null
+
+   Algorithm (Schedule-Aware)
+   ---------
+   1. If current_progress >= 100 → return null (already complete)
+   2. If regression R² < 0.50 → return null (unreliable fit)
+   3. Find effective position on planned schedule:
+      - Interpolate current_progress against baselineSchedules[*].planned_progress_percent
+      - Returns the fractional month index where the PLAN says this progress should be
+      - e.g., 42% between baseline 8 (40%) and baseline 9 (50%) → effective = 8.2
+      - If progress ≤ first baseline → effective = 1.0
+      - If progress ≥ last baseline → effective = total_planned_months
+   4. Compute lag = currentMonthIndex - effectivePosition
+      - Positive lag = behind schedule; Negative lag = ahead of schedule
+   5. Estimated completion index = total_planned_months + lag
+   6. Validate estimated index:
+      - Must be > currentMonthIndex
+      - If <= currentMonthIndex → return null (effectively already done)
+      - If > MAX_REASONABLE_MONTHS (1000) → return null
+   7. Convert month index to date via indexToDate():
+      - If floor(index) < schedules->count():
+        - Interpolate between baseline at floor(index)-1 and next baseline
+        - partial month interpolation via fraction * days_in_month
+      - Else (past all baselines):
+        - Add extra months to last baseline's date
+        - Add fraction * 30 days
+   8. Compute predicted_delay_days:
+      estimated_date - project->planned_end_date (Carbon diff in days)
+   9. Determine confidence (same rules, uses regression R²):
+      - If R² < 0.50 → null (already filtered)
+      - High:   R² ≥ 0.85 AND obs ≥ 6 AND estimated_index ≤ 1.5 × planned_index
+      - Medium: R² ≥ 0.70 AND obs ≥ 4
+      - Low:    otherwise
+      - If estimated_index > 2 × planned_index → downgrade to Low
+      - If obs < 4 → Low
+
+   Key Design Rationale
+   --------------------
+   • Polynomial regression is used for SHORT-RANGE next-month prediction
+     (captures acceleration in recent data)
+   • Schedule-aware method is used for LONG-RANGE completion estimation
+     (conservative, tied to the project's own plan)
+   • This prevents the polynomial from extrapolating unrealistically:
+     a project consistently behind schedule will NOT get an over-optimistic
+     early completion date
+   • The regression R² is still used for confidence classification since it
+     reflects overall data quality
+
+   Return structure:
+     [
+       'estimated_completion_index' => float,
+       'estimated_completion_date'  => Carbon,
+       'predicted_delay_days'       => int,
+       'completion_confidence'      => 'High'|'Medium'|'Low'|null,
+     ]
+
+   Edge Cases
+   ----------
+   • Already ≥ 100% progress → null
+   • R² < 0.50 → null
+   • No baseline schedules → null (cannot compute effective position)
+   • Empty baseline collection → null
+   • Progress below first planned value → effective = 1.0 (assume start)
+   • Progress past last planned value → effective = total_months
+   • Estimated index <= current month → null (completion already passed)
+   • Estimated index extremely large (> 1000 months) → null
+
+================================================================================
+  INTEGRATION INTO AIPredictionService
+================================================================================
+
+   Constructor changes:
+     private CompletionEstimationService $completionService;
+
+     public function __construct(
+         RegressionDatasetBuilder $datasetBuilder,
+         LinearRegressionService $regressionService,
+         ForecastService $forecastService,
+         BaselineComparisonService $comparisonService,
+         ProjectAssessmentService $assessmentService,
+         PolynomialRegressionService $polynomialService,
+         CompletionEstimationService $completionService,
+     ) { ... }
+     Note: CompletionEstimationService is REQUIRED (not optional) to ensure
+     the container resolves it. Earlier optional?CompletionEstimationService
+     $completionService = null caused Laravel's container to skip injection.
+
+   generatePrediction() — after assessment, before buildPredictionReport():
+     $completion = $this->estimateCompletion(
+         $project,
+         $analysis,
+         $currentMonthIndex,
+         $currentProgress
+     );
+
+     Pass $completion to buildPredictionReport() as 7th parameter.
+
+   estimateCompletion():
+     private function estimateCompletion(...): ?array {
+         if (empty($project->planned_end_date)) return null;
+         return $this->completionService->estimate(
+             $project->planned_end_date,
+             $analysis,
+             $currentMonthIndex,
+             $project->baselineSchedules,
+             $currentProgress
+         );
+     }
+
+  buildPredictionReport() — add completion block:
+    'completion' => $completion ?? [
+        'estimated_completion_index' => null,
+        'estimated_completion_date'  => null,
+        'predicted_delay_days'       => 0,
+        'completion_confidence'      => null,
+    ],
+
+  buildMinimalReport() — add empty completion block (same structure, all null).
+
+================================================================================
+  INTEGRATION INTO AIPredictionPresenter
+================================================================================
+
+  presentNormal() — after extracting regression data:
+
+    $completion = $prediction['completion'] ?? [];
+
+    if ($completion && $completion['estimated_completion_date']) {
+        $estimatedCompletion = $completion['estimated_completion_date'];
+        $predictedDelayDays  = $completion['predicted_delay_days'] ?? 0;
+        $canEstimate         = true;
+        $completionConfidence = $completion['completion_confidence'] ?? null;
+    } else {
+        $estimatedCompletion = null;
+        $predictedDelayDays  = 0;
+        $canEstimate         = false;
+        $completionConfidence = null;
+    }
+
+    In the return array, replace the placeholder values:
+      'estimated_completion'    => $estimatedCompletion,   // Carbon or null
+      'can_estimate_completion' => $canEstimate,           // bool
+      'predicted_delay_days'    => $predictedDelayDays,    // int
+      Add: 'completion_confidence' => $completionConfidence,
+
+================================================================================
+  BLADE CHANGES (ai-prediction.blade.php)
+================================================================================
+
+  The "Est. Completion" card at line 390-400 already has conditional logic:
+    ~line 391: Shows "Est. Completion" label
+    ~line 392-397: Color logic based on estimated_completion and delay
+    ~line 398: Shows date or "Not enough data"
+
+  Modifications needed:
+    1. Replace the plain date text with a small wrapper that includes:
+       - Date + confidence badge next to it
+    2. Add a delay line below:
+       @if ($prediction['estimated_completion'] && $prediction['predicted_delay_days'] !== 0)
+         @if ($prediction['predicted_delay_days'] > 0)
+           <span style="color:#ef4444;">{{ $prediction['predicted_delay_days'] }} days behind</span>
+         @else
+           <span style="color:#10b981;">{{ abs($prediction['predicted_delay_days']) }} days ahead</span>
+         @endif
+       @elseif ($prediction['estimated_completion'])
+         <span style="color:#10b981;">On schedule</span>
+       @endif
+
+  Confidence badge:
+    @if ($prediction['completion_confidence'] ?? null)
+      <span style="font-size:10px;padding:2px 6px;border-radius:8px;
+        @if ($prediction['completion_confidence'] === 'High') background:#d1fae5;color:#065f46;
+        @elseif ($prediction['completion_confidence'] === 'Medium') background:#fef3c7;color:#92400e;
+        @else background:#fee2e2;color:#991b1b;
+        @endif">
+        {{ $prediction['completion_confidence'] }} confidence
+      </span>
+    @endif
+
+================================================================================
+  TESTS (CompletionEstimationServiceTest)
+================================================================================
+
+   Test Cases
+   ----------
+   1. On-schedule project → estimated completion = planned end index
+   2. Behind schedule → estimated completion > planned end index
+   3. Ahead of schedule → estimated completion < planned end index
+   4. Already >= 100% → null
+   5. R² < 0.50 → null
+   6. Empty baseline schedules → null
+   7. Estimated index <= current month → null
+   8. Predicted delay: behind-schedule project → positive delay
+   9. Predicted delay: ahead-of-schedule project → negative delay
+   10. Confidence: High (R² ≥ 0.85, obs ≥ 6, reasonable index)
+   11. Confidence: Medium (R² ≥ 0.70, obs ≥ 4)
+   12. Confidence: Low (R² < 0.70 or obs < 4)
+   13. Confidence: Low because estimated_index > 2× planned_index
+   14. High confidence requires sufficient observations (obs < 6 → not High)
+   15. Early-stage project (low progress, few months) → valid estimate
+   16. Progress below first baseline → effective position = month 1.0
+
+================================================================================
+  IMPLEMENTATION ORDER
+================================================================================
+
+  Step 1: Create CompletionEstimationService.php
+  Step 2: Create CompletionEstimationServiceTest.php → run tests
+  Step 3: Modify AIPredictionService (constructor + generatePrediction)
+  Step 4: Modify AIPredictionPresenter (extract completion data)
+  Step 5: Modify Blade (confidence badge, delay text)
+  Step 6: Run full test suite — verify no regressions
+  Step 7: Test on real projects (IDs 138, 7, 134) — validate completion dates
+
+================================================================================
+   NOTES
+   ================================================================================
+
+   • Schedule-aware approach chosen over Newton-Raphson cubic solving because:
+     - Polynomial extrapolation far beyond the data range is unreliable
+       (accelerating trend → over-optimistic completion dates)
+     - Schedule-aware ties the estimate to the project's own plan:
+       consistently behind projects get later completion dates
+     - Uses existing baselineSchedules.planned_progress_percent data
+     - No complex root-finding needed (simple interpolation)
+   • Polynomial regression is still used for NEXT-MONTH prediction and
+     the short-range forecast — only the COMPLETION ESTIMATE uses
+     schedule-aware logic
+   • All completion estimation is additive — V1 code unchanged
+   • Blade already has the Estimated Completion slot hardcoded as
+     "Not enough data" — this is the first time it will render real data
+   • If CompletionEstimationService throws or returns null, the presenter
+     simply shows "Not enough data" as before (graceful degradation)
+
+================================================================================
+  END OF PHASE 3 PLAN
+================================================================================

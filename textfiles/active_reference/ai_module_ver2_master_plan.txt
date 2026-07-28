@@ -1,0 +1,1060 @@
+================================================================================
+  CSPC PMU SYSTEM
+  AI PREDICTION MODULE — VERSION 2 MASTER PLAN
+================================================================================
+
+  Document Purpose
+  ----------------
+  This document is the successor to regression_implementation_master_plan_ver5.txt.
+  It covers all enhancements planned for Version 2 of the AI Prediction Module,
+  building on the stable V1 foundation.
+
+  V1 Status
+  ---------
+  All V1 phases (1–8) are COMPLETE and TESTED:
+    • RegressionDatasetBuilder        ✅
+    • LinearRegressionService (SLR)   ✅
+    • AIPredictionService              ✅
+    • ForecastService                  ✅
+    • BaselineComparisonService        ✅
+    • ProjectAssessmentService         ✅
+    • AIPredictionPresenter            ✅
+    • RecommendationEngine             ✅
+    • AIExplanationService (Gemini)    ✅
+    • Blade Integration                ✅
+    • 145 PHPUnit tests — ALL PASSING  ✅
+
+  V1 Limitations Addressed by V2
+  -------------------------------
+    • SLR assumes linear trend — construction follows S-Curves
+    • No completion date estimation
+    • No predicted delay in days
+    • Forecast table would mislead with SLR's linear projections
+    • Each project analysed in isolation
+    • No prediction accuracy tracking over time
+    • R² misrepresented as prediction confidence (R² only measures
+      curve fit to past data — not actual prediction reliability)
+    • Rule-based recommendations (no AI nuance)
+    • AI analysis runs synchronously
+    • No prediction caching
+    • Static risk thresholds (hardcoded)
+
+================================================================================
+  VERSION 2 OVERVIEW
+================================================================================
+
+  Core Philosophy
+  ---------------
+  V2 upgrades the regression engine while maintaining the proven architecture:
+    • Services remain isolated (single responsibility)
+    • Controllers remain thin
+    • AIPredictionService stays the public entry point
+    • Backward compatibility with existing Blade views
+
+  New/Modified Files
+  ------------------
+  All new code goes in the existing namespace structure:
+    app/Services/AI/Regression/   — new regression models
+    app/Services/AI/               — new AI services
+    app/Models/                    — new models (if needed)
+    database/migrations/           — new tables (if needed)
+    config/                        — configurable thresholds
+    resources/views/.../tabs/      — Blade updates
+    tests/                         — new test files
+
+================================================================================
+  IMPLEMENTATION PHASES
+================================================================================
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 1 — Polynomial Regression Engine (Core Math Upgrade)             ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Add polynomial (cubic) regression as an alternative to Simple Linear
+  Regression. A degree-3 polynomial (y = ax³ + bx² + cx + d) can model
+  S-curve shapes because it bends twice — slow start → rapid growth →
+  plateauing completion.
+
+  This is the FOUNDATION for most other V2 features. Without it, completion
+  estimation and forecast tables would produce misleading results.
+
+  Architecture
+  ------------
+  NEW:  app/Services/AI/Regression/PolynomialRegressionService.php
+
+  Method: Least Squares via Gaussian Elimination
+    • Set up normal equations for degree 3: Σx⁰ through Σx⁶
+    • Solve 4×4 system using Gaussian elimination with partial pivoting
+    • Return: a (x³), b (x²), c (x), d (intercept), R², fit quality
+
+  Predict Equation:
+    y = a(x³) + b(x²) + c(x) + d
+
+  R² Calculation (same as SLR):
+    R² = 1 - (SSres / SStot)
+
+  Fit Quality (same thresholds as SLR):
+    R² ≥ 0.90 → Excellent, ≥ 0.80 → Very Good, ≥ 0.70 → Good,
+    ≥ 0.50 → Moderate, < 0.50 → Weak
+
+  Service Interface (match SLR's pattern):
+    analyzeDataset(array $x, array $y): array
+      Returns: coefficients, R², equation, fit_quality
+
+    predict(float $monthIndex, float $a, float $b, float $c, float $d): float
+    predictUsingAnalysis(array $analysis, float $monthIndex): float
+
+  Dataset Requirements
+  --------------------
+  • Minimum 4 observations (SLR needs only 2 — polynomial needs more
+    data points to fit the curve meaningfully)
+  • < 4 observations → fall back to SLR automatically
+  • Edge case: nearly-linear data → R² will still be high (polynomial
+    is flexible enough to approximate a line)
+
+  MODIFIED: app/Services/AI/AIPredictionService.php
+    • Add PolynomialRegressionService as optional dependency
+    • Auto-select regression method based on observation count:
+      - < 4 obs → SLR (best for minimal data)
+      - ≥ 4 obs → Polynomial (better S-curve fit)
+    • Add 'regression_method' key to the regression block in the
+      Prediction Report: 'slr' or 'polynomial'
+
+  MODIFIED: app/Services/AI/ForecastService.php
+    • Accept polynomial coefficients in addition to slope/intercept
+    • Use the correct predict method based on regression method
+
+  Testing
+  -------
+  NEW:  tests/Unit/Services/AI/Regression/PolynomialRegressionServiceTest.php
+    • Dataset A — Perfect cubic (x³): verify coefficients exactly
+    • Dataset B — S-curve shape (slow start, fast middle, plateau)
+    • Dataset C — Near-linear (polynomial should approximate a line)
+    • Dataset D — Minimum 4 observations
+    • Dataset E — < 4 observations → expect InvalidArgumentException
+    • Edge case: All identical Y values → flat line
+    • Edge case: Negative values / decreasing progress
+    • Edge case: R² calculation matches known S-curve data
+
+  MODIFIED: tests/Unit/Services/AI/ForecastServiceTest.php
+    • Add tests for polynomial-based forecasts
+
+  Estimation:
+    • Pure math class — ~200 lines
+    • Tests: ~20-25 test methods
+    • Implementation time: 1-2 sessions
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 2 — Model Selection & Comparison                                  ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Let the system intelligently choose between SLR and Polynomial based on
+  data quality, and show the user why one was selected.
+
+  Implementation
+  -------------
+  MODIFIED: app/Services/AI/AIPredictionService.php
+    • Add selectRegressionMethod() logic:
+      1. If < 4 obs → SLR (mandatory fallback)
+      2. Run both SLR and Polynomial
+      3. Compare R² values
+      4. If Polynomial R² > SLR R² by ≥ 0.05 → use Polynomial
+      5. Otherwise → use SLR (simpler, more stable)
+    • Add selection metadata to regression block:
+      'regression_method' => 'polynomial' | 'slr'
+      'r_squared_slr'     => float (for comparison display)
+      'r_squared_poly'    => float
+      'method_reason'     => 'Polynomial selected (better fit)' |
+                             'SLR selected (simpler, comparable fit)' |
+                             'SLR selected (insufficient data for polynomial)'
+
+  MODIFIED: app/Services/AI/AIPredictionPresenter.php
+    • Add 'regression_method' and 'method_reason' to the presenter output
+    • Display method info in the Model Summary box
+
+  MODIFIED: resources/views/.../ai-prediction.blade.php
+    • Show which model was used (SLR vs Polynomial) in Model Summary
+    • Show R² comparison if both were computed
+
+  Testing
+  -------
+  • Test: < 4 obs → SLR selected
+  • Test: ≥ 4 obs, polynomial clearly better → polynomial selected
+  • Test: ≥ 4 obs, SLR comparable → SLR selected (simpler)
+  • Test: Edge case — perfect linear data → SLR selected
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 3 — Completion Estimation                                         ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+   Objective
+   ---------
+   Estimate when a project will reach 100% cumulative progress and how many
+   days it will be delayed. Uses a schedule-aware approach: map current
+   actual progress against the planned baseline schedule, compute the
+   effective lag, and project completion by shifting the planned end date.
+
+   Prerequisite
+   ------------
+   Phase 1+2 — Polynomial Regression Engine + Model Selection
+   V1 Baseline Schedules (planned_progress_percent)
+
+   Implementation
+   -------------
+   NEW:  app/Services/AI/CompletionEstimationService.php
+
+   Method (Schedule-Aware):
+     • Find effective position on planned schedule:
+       Interpolate current_progress against baseline.planned_progress_percent
+       to find where the PLAN says this progress level should be
+     • Compute lag = currentMonthIndex - effectivePosition
+       (positive = behind, negative = ahead)
+     • estimated_completion_index = total_planned_months + lag
+     • Convert index to date via indexToDate():
+       - Within baselines: interpolate between two adjacent baseline dates
+       - Past baselines: add extra months to last baseline's date
+     • Compute predicted_delay_days = estimated_date - planned_end_date
+
+   Why Schedule-Aware instead of Polynomial/SLR Solve:
+     • Polynomial extrapolation far beyond the data range is unreliable
+       (accelerating trend → over-optimistic early completion)
+     • Schedule-aware ties the estimate to the project's own plan:
+       a consistently behind project gets a LATER completion date
+     • Polynomial is still used for short-range next-month prediction —
+       only the completion estimate (long-range) uses schedule-aware
+
+   Output:
+     estimated_completion_index   — Project Month Index at 100%
+     estimated_completion_date    — Carbon date
+     predicted_delay_days         — positive = delayed, negative = ahead
+     completion_confidence        — High / Medium / Low
+       • High:   R² ≥ 0.85 AND obs ≥ 6 AND estimated_index ≤ 1.5× planned
+       • Medium: R² ≥ 0.70 AND obs ≥ 4
+       • Low:    Otherwise (display with strong disclaimer)
+
+   Confidence Rules:
+     • If R² < 0.50 → do not estimate (return null)
+     • If estimated_index is > 2× the planned end index → Low confidence
+     • If obs < 4 → Low confidence
+
+   Integration into Prediction Report:
+     AIPredictionService calls CompletionEstimationService after
+     the regular pipeline and adds a 'completion' section:
+     'completion' => [
+       'estimated_completion_index' => ... or null,
+       'estimated_completion_date'  => ... or null,
+       'predicted_delay_days'       => ... or 0,
+       'completion_confidence'      => 'High' | 'Medium' | 'Low' | null,
+    ]
+
+  MODIFIED: app/Services/AI/AIPredictionPresenter.php
+    • presentNormal(): check completion section in prediction report
+    • If completion data exists → populate the previously-deferred
+      estimated_completion and predicted_delay_days keys
+    • Add completion_confidence to the output
+
+  MODIFIED: resources/views/.../ai-prediction.blade.php
+    • Re-enable the "Estimated Completion" card (was always "N/A" in V1)
+    • Show estimated date with confidence badge
+    • Show predicted delay in days (green if ahead, red if behind)
+    • Show "N/A — insufficient data" when completion is null
+
+  Testing
+  -------
+  NEW:  tests/Unit/Services/AI/CompletionEstimationServiceTest.php
+    • Test: Perfect S-curve data → reasonable completion estimate
+    • Test: Already at 100% → return null
+    • Test: Very early in project (< 4 obs) → return null
+    • Test: R² < 0.50 → return null
+    • Test: Predicted delay matches expected for behind-schedule project
+    • Test: Predicted ahead for ahead-of-schedule project
+    • Edge: Completion index > 2× planned → Low confidence
+    • Edge: Exactly 4 obs, high R² → Medium confidence
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 3.5 — Dual Completion Estimate Display                            ║
+  ║ (Schedule-Aware vs Polynomial Newton-Raphson Comparison)                ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Re-implement the Newton-Raphson cubic solver (removed in v1.1) and show
+  BOTH completion estimates side by side in the AI Prediction tab:
+    • Schedule-Aware (Conservative)  — the current approach
+    • Polynomial Solve (Best-Case)   — what the cubic equation predicts
+
+  Rationale
+  ---------
+  The schedule-aware method is intentionally conservative — it assumes the
+  current lag stays constant. The polynomial solve represents the best-case
+  scenario if current acceleration trends continue. Showing both gives:
+    • PMU managers a range to work with, not a single number
+    • Transparency — the user sees why one is preferred
+    • Capstone demonstration value — shows comparative analysis
+
+  Status: 🔄 DISCUSSION — not yet implemented
+
+  Implementation
+  -------------
+  NEW or MODIFIED: app/Services/AI/CompletionEstimationService.php
+    • Re-add Newton-Raphson cubic solving as a separate public method:
+      estimatePolynomialSolve(array $analysis): ?array
+    • Solves ax³ + bx² + cx + (d - 100) = 0 using Newton-Raphson
+      with iterative refinement (max 100 iterations, tolerance 0.0001)
+    • Initial guess: total_planned_months + 1 (reliable starting point)
+    • Guards: return null if polynomial coefficients missing,
+      R² < 0.50, or solver fails to converge
+    • The existing estimate() method stays as-is (schedule-aware)
+
+  MODIFIED: app/Services/AI/AIPredictionService.php
+    • After calling CompletionEstimationService::estimate() (schedule-aware),
+      also call estimatePolynomialSolve() with the analysis array
+    • Add both to the prediction report under separate keys:
+      'completion' => [ ...existing schedule-aware result... ]
+      'completion_polynomial' => [ ...Newton-Raphson result... ]
+
+  MODIFIED: app/Services/AI/AIPredictionPresenter.php
+    • Add new output keys:
+      'estimated_completion_poly'       => Carbon or null
+      'predicted_delay_days_poly'       => int (positive/negative)
+      'completion_confidence_poly'      => string or null
+      'can_estimate_completion_poly'    => bool
+    • Add comparison labels:
+      'completion_method_conservative'  => 'Schedule-Aware (Conservative)'
+      'completion_method_polynomial'    => 'Polynomial Solve (Best-Case)'
+
+  MODIFIED: resources/views/.../ai-prediction.blade.php
+    • Add a second "Est. Completion (Best-Case)" card alongside the
+      existing "Est. Completion" card, displayed only when the polynomial
+      solve produces a valid estimate
+    • Layout: two-column grid on desktop, stacked on mobile:
+      ┌──────────────────────────┬──────────────────────────┐
+      │  Schedule-Aware Estimate │  Polynomial Best-Case    │
+      │  (Conservative)          │  (Optimistic)            │
+      │                          │                          │
+      │  February 26, 2026       │  November 20, 2025       │
+      │  57 days behind          │  11 days ahead           │
+      │  🟢 High confidence      │  🟡 Medium confidence     │
+      └──────────────────────────┴──────────────────────────┘
+    • Each card independently shows its confidence badge and delay text
+    • Tooltip on the Best-Case card:
+      "Based on polynomial curve extrapolation — assumes current
+      acceleration continues. Actual results may vary."
+    • If polynomial solve returns null (e.g., R² too low), hide the
+      Best-Case card entirely (no confusing half-empty display)
+    • The Conservative card remains the primary recommendation
+
+  Why Two Estimates Instead of a Toggle
+  --------------------------------------
+  • A toggle implies one is "right" and replaces the other
+  • Side-by-side shows the range of possibilities, which is more useful
+    for decision support
+  • PMU managers see both and apply their own judgment
+  • Demonstrates transparency — no hidden alternative
+
+  Confidence for Polynomial Solve
+  -------------------------------
+  The polynomial solve uses its own confidence rules:
+    • High:   R² ≥ 0.85 AND obs ≥ 6 AND estimated_index ≥ current_index
+             AND estimated_index ≤ 1.5 × planned_index
+    • Medium: R² ≥ 0.70 AND obs ≥ 4
+    • Low:    otherwise (or if solver fails to converge)
+    • Null:   R² < 0.50 or missing coefficients
+
+  Testing
+  -------
+  • Test: Known S-curve dataset → polynomial solve gives earlier date than
+          schedule-aware (demonstrates the expected gap)
+  • Test: Perfect linear data → both methods give similar results
+  • Test: R² < 0.50 → polynomial solve returns null
+  • Test: Fewer than 4 obs → polynomial solve returns null
+  • Test: Browser — both cards render correctly in two-column layout
+  • Test: Browser — polynomial solve card hidden when null
+  • Test: Browser — tooltip text displays correctly
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 4 — Forecast Table / Risk Assessment Table                        ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Display a month-by-month forecast table comparing planned vs predicted
+  progress with variance and risk level. Deferred from V1 because SLR's
+  linear increments would mislead. Polynomial regression produces more
+  realistic S-curve-shaped predictions.
+
+  Prerequisite
+  ------------
+  Phase 1+2 — Polynomial Regression (for realistic per-month predictions)
+
+  Implementation
+  -------------
+  MODIFIED: resources/views/.../ai-prediction.blade.php
+    • Add collapsible "View Forecast Details" section
+    • Table columns: Month | Planned % | Predicted % | Variance | Risk
+    • Color-coded variance (green positive, red negative)
+    • Badge for risk level per month
+    • Hidden by default (toggled via "Show Forecast Details" button)
+    • Tooltip: "Polynomial regression predictions — actual results may vary"
+
+  The data is already flowing through the existing pipeline:
+    Prediction Report → forecast section → already has all needed keys
+    Prediction Report → assessment section → already has risk_level
+
+  No backend changes needed — only Blade/JS.
+
+  Testing
+  -------
+  • Verify forecast data exists in presenter output
+  • Verify assessment data exists with risk_level per month
+  • Browser: toggle show/hide, verify monthly rows render correctly
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 5 — S-Curve Shifted Forecast Overlay                                ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Draw a dashed forecast line on the existing S-Curve chart showing
+  where the project is heading. Uses the Schedule-Aware lag to shift
+  the planned S-curve forward (or backward), producing a visually
+  intuitive forecast that runs parallel to the original plan.
+
+  Prerequisite
+  ------------
+  Phase 3 — Schedule-Aware Completion Estimation (provides the lag)
+  Phase 3.5 — Multi-Method Completion (provides schedule_aware data)
+
+  Important Design Change from Original Plan
+  -------------------------------------------
+  ORIGINAL PLAN (revised Jul 26, 2026):
+    Use polynomial regression to draw the forecast line.
+  PROBLEM DISCOVERED:
+    Polynomial consistently predicts EARLY completion for
+    behind-schedule projects (confirmed via PHPUnit tests using
+    real project data). The polynomial extrapolates the S-curve
+    acceleration phase and produces misleading optimistic forecasts.
+  REVISED APPROACH:
+    Use the Schedule-Aware lag to SHIFT the planned S-curve.
+    The shifted curve runs parallel to the plan — visually honest:
+    "you're on the same path, just X months behind."
+  See: textfiles/polynomial_over_optimism_findings.txt
+
+  Implementation
+  -------------
+  MODIFIED: app/Services/ProjectChartService.php
+    • Add method: prepareForecastChartData(Project $project)
+    • Gets Schedule-Aware completion estimate from AIPredictionService
+    • Computes lag = estimated_completion_index - total_planned_months
+    • Shifts each planned S-curve point's timestamp by lag
+    • Returns: array of {x: timestamp, y: progress} points, or null
+    • Guards: completed/insufficient-data/null-completion → null
+
+  MODIFIED: app/Http/Controllers/ProjectController.php
+    • In getChartData(): call prepareForecastChartData()
+    • Add forecast_data key to charts response
+
+  MODIFIED: public/js/admin/projects/s-curve-chart.js
+    • Add new dataset "Forecast (Schedule-Aware)"
+    • Dashed purple line (#8b5cf6), pointRadius: 0, order: 4
+    • Only added when chartData.forecast_data is present
+    • Tooltip: "Forecast: Y%"
+
+  MODIFIED: resources/views/.../progress.blade.php
+    • Add forecast legend item (purple dashed line)
+    • Show/hide logic in initSCurveChart()
+
+  Testing
+  -------
+  • Browser: forecast line appears as dashed purple line
+  • Browser: line runs parallel to plan (visually verifiable)
+  • Browser: line ends at Schedule-Aware completion date
+  • Browser: no line for completed/insufficient-data projects
+  • Browser: works for both SLR and Polynomial projects
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 6 — Estimated Completion Gauge                                     ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Add a single visual indicator of project health — a gauge or speedometer
+  complementing the numerical displays.
+
+  Prerequisite
+  ------------
+  Phase 3 — Completion Estimation (gauge needs the completion data)
+
+  Implementation
+  -------------
+  A dashboard-style gauge showing:
+    • Green/Yellow/Red/Critical zone based on risk level
+    • Needle pointing based on completion confidence or health score
+    • Quick-glance understanding before reading detailed numbers
+
+  Options:
+    Option A — Pure CSS gauge (no dependencies, simpler)
+    Option B — Chart.js gauge (already have Chart.js)
+    Option C — Third-party gauge library
+
+  Placement:
+    • In the AI Prediction tab, replacing or alongside the metric cards
+    • Or in the Project Overview tab header for at-a-glance awareness
+
+  Testing
+  -------
+  • Browser: gauge renders for normal projects
+  • Browser: gauge shows correct color based on risk level
+  • Browser: gauge hidden for completed / insufficient-data projects
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 7 — Prediction History / Trend Comparison                          ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Save historical predictions so users (and the AI) can see what the
+  regression model predicted in previous months versus what actually
+  happened. This provides a genuine accuracy signal that replaces
+  the misleading use of R² as a "confidence" metric.
+
+  Why R² Is NOT Prediction Confidence
+  ------------------------------------
+  The current system (and Gemini prompts) treat R² as a confidence
+  indicator: "R²: 0.95 — Excellent fit." This is misleading:
+
+    • R² measures how well the curve fits PAST data points.
+    • A cubic polynomial can fit 4 points perfectly (R² = 0.999)
+      yet predict the 5th month completely wrong (off by 13%).
+    • Prediction confidence should be measured by how often
+      past predictions matched actual outcomes — which is exactly
+      what Prediction History tracks.
+
+  Prediction History provides the REAL confidence metric:
+    "In the last 6 months, predictions were Accurate 3 times,
+     Close 2 times, Off 1 time."
+
+  Integration with AI (AIExplanationService)
+  ------------------------------------------
+  Once prediction history data is available, the Gemini prompt in
+  AIExplanationService should be updated to include accuracy stats:
+
+    • Replace "R²: 0.95 (Excellent fit)" with:
+      "Prediction record: Accurate 3/6, Close 2/6, Off 1/6
+      — avg variance: 2.3%"
+    • This makes Gemini's analysis text HONEST about the model's
+      real-world reliability, not just its curve-fitting ability.
+    • The AI can then produce statements like:
+      "The model has been consistently overestimating progress
+      for the past 3 months — actual results averaged 4% below
+      predictions."
+
+  This is a minor prompt update (Step 8) — not a full Phase 10
+  AI-powered recommendation change.
+
+  Implementation
+  -------------
+  NEW: database/migrations/..._create_prediction_history_table.php
+    Schema:
+      id                   BIGINT UNSIGNED AUTO_INCREMENT PK
+      project_id           BIGINT UNSIGNED NOT NULL (FK → projects)
+      regression_method    VARCHAR(10) — 'slr' | 'polynomial'
+      current_progress     DECIMAL(5,2)  — progress at time of prediction
+      predicted_next       DECIMAL(5,2)  — predicted next month progress
+      actual_next          DECIMAL(5,2)  — NULL, filled later
+      r_squared            DECIMAL(8,4)
+      regression_snapshot  JSON — full analysis at that point
+      created_at           TIMESTAMP
+
+  NEW: app/Models/PredictionHistory.php
+    • belongsTo(Project)
+    • Casts: regression_snapshot → array
+
+  MODIFIED: app/Models/Project.php
+    • Add: hasMany(PredictionHistory)
+
+  MODIFIED: app/Services/AI/AIPredictionService.php
+    • After generating a prediction report, save a record to
+      prediction_history table (only for normal predictions)
+    • If prediction already exists for this month (same current_progress),
+      skip to avoid duplicates on page reload
+
+  MODIFIED: app/Http/Controllers/ProjectProgressController.php
+    • When recording new progress, check prediction_history for the
+      previous month's prediction and update actual_next
+
+  MODIFIED: app/Services/AI/AIPredictionPresenter.php
+    • Add past accuracy data to presenter output:
+      'prediction_history' => [
+        { month, predicted, actual, variance, method }
+      ]
+
+  MODIFIED: resources/views/.../ai-prediction.blade.php
+    • Add "Prediction Accuracy" card with color-coded table
+    • Badge: "Accurate" (variance < 2%) / "Close" (variance < 5%)
+      / "Off" (variance ≥ 5%)
+    • Summary line: "Avg variance: X% — Y out of Z predictions Accurate"
+
+  MODIFIED: app/Services/AI/AIExplanationService.php
+    • Update buildPrompt() to include prediction accuracy stats
+      instead of (or in addition to) raw R²
+    • Accuracy line example:
+      "Prediction History (last N months): Accurate X, Close Y, Off Z"
+
+  Testing
+  -------
+  NEW: tests/Unit/Services/AI/PredictionHistoryServiceTest.php
+    • Test: Prediction saved after generatePrediction()
+    • Test: Duplicate prediction not saved on re-run
+    • Test: actual_next filled when new progress recorded
+    • Test: Insufficient data → no prediction saved
+    • Test: Completed project → no prediction saved
+    • Test: Prediction history appears in presenter output
+    • Test: AIExplanationService prompt includes accuracy stats
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 8 — Cross-Project Historical Regression                           ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Use completed projects of the same category as a proxy for new projects
+  that have insufficient data (< 2 observations). This directly addresses
+  the "Insufficient Data" fallback state.
+
+  Implementation
+  -------------
+  NEW: app/Services/AI/HistoricalSimilarityService.php
+
+  Method:
+    1. Find completed projects matching criteria:
+       - Same category
+       - Budget within ±20%
+       - Duration within ±30%
+       - Same contractor (bonus weighting)
+    2. Normalize their progress data to a standard timescale
+       (percentage of project duration instead of absolute months)
+    3. Compute: mean progress at each percentile, upper/lower bounds
+    4. Return aggregate trend line
+
+  Integration with AIPredictionService:
+    • If observation_count < 2 AND similar projects exist:
+      - Use aggregate trend line as the regression dataset
+      - Run regression on synthetic data
+      - Label all predictions: "Derived from similar projects"
+      - Add disclaimer to Prediction Report
+    • If no similar projects found → fall back to existing
+      insufficient-data branch
+
+  Output Modifications:
+    Add to Prediction Report:
+    'regression' => [
+      ...
+      'data_source' => 'project_history' | 'similar_projects',
+      'similar_projects_count' => int (if applicable),
+      'similar_projects_disclaimer' => 'Based on X similar completed projects',
+    ]
+
+  Testing
+  -------
+  NEW: tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 9 — Contractor Performance Tracking                               ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Track contractor reliability and performance metrics. This is a
+  prerequisite for AI-powered recommendations (Phase 10) and enables
+  cross-project pattern detection.
+
+  Implementation
+  -------------
+  NEW: database/migrations/..._add_performance_fields_to_contractors_table.php
+    Add to contractors table:
+      performance_rating          DECIMAL(3,2) — 1.00 to 5.00, computed
+      on_time_delivery_pct        DECIMAL(5,2) — % of projects completed on time
+      completed_projects_count    INT UNSIGNED DEFAULT 0
+      avg_delay_days              DECIMAL(10,2) — average delay across projects
+      last_project_completed_at   TIMESTAMP NULL
+
+  NEW OR MODIFIED: app/Services/AI/ContractorPerformanceService.php
+    • computePerformanceMetrics(Contractor $contractor): array
+      - Count completed projects
+      - Calculate on-time delivery percentage
+      - Calculate average delay days
+      - Assign performance_rating based on metrics
+    • getPerformanceSummary(Contractor $contractor): array
+
+  This service is called:
+    • When a project status changes to "Completed"
+    • On demand via AJAX for the contractor detail view
+
+  Integration with RecommendationEngine:
+    • Add contractor_performance factor to extractFactors()
+    • Adjust recommendations based on contractor history:
+      - Poor performer → stricter recommendations
+      - Good performer → lighter touch
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 10 — AI-Powered Recommendations (Phase 7.6)                        ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Replace rule-based RecommendationEngine with AI-generated recommendations
+  that leverage contractor performance history, issue severity, and
+  regression data for more nuanced suggestions.
+
+  Prerequisites
+  -------------
+  • Phase 9 — Contractor Performance Tracking (for contractor context)
+  • Issue categorization already complete (V1)
+  • Extension reasons available (from project_extensions table)
+
+  Implementation
+  -------------
+  Renamed from Phase 7.6 in the original V1 plan.
+
+  NEW: Method in AIExplanationService or new AIService
+    • Use Gemini API to generate structured recommendations
+    • Prompt includes:
+      - Full Prediction Report (regression, forecast, assessment)
+      - Open issues with type and severity
+      - Contractor performance summary
+      - Previous extension reasons
+      - Project type, location, budget utilization
+    • Parse AI response into existing recommendation format
+      (message, category, reason, priority)
+
+  MODIFIED: app/Services/AI/RecommendationEngine.php
+    • Add option: use AI when available, fall back to rules when not
+    • Call the AI generation method first
+    • If AI returns valid recommendations → use them
+    • If AI fails → fall back to current rule-based logic
+
+  MODIFIED: app/Services/AI/AIPredictionPresenter.php
+    • No changes needed — same data format from RecommendationEngine
+
+  Testing
+  -------
+  • Test with valid AI response → recommendations processed correctly
+  • Test with AI failure → fallback to rule-based recs
+  • Test with empty AI response → fallback
+  • Verify recommendation format matches existing blade expectations
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 11 — Export / Reporting                                            ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Allow users to export prediction reports and AI analysis as PDF or CSV,
+  and receive email notifications when risk levels change.
+
+  Implementation
+  -------------
+  NEW: app/Services/AI/ExportService.php (or use existing ProjectDocumentService)
+    • exportPredictionReportPdf(Project $project): export prediction data
+    • exportForecastCsv(Project $project): raw forecast data for Excel
+    • Uses: barryvdh/laravel-dompdf or Laravel's built-in PDF capabilities
+
+  NEW: resources/views/exports/ai-prediction-pdf.blade.php
+    • Print-friendly layout of the AI Prediction tab
+    • All sections: current state, forecast, assessment, recommendations
+
+  Email Notifications:
+    • Add notification when risk level changes (e.g., Low → Critical)
+    • Use Laravel's notification system
+    • Queue via jobs table (already exists)
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 12 — Architectural Enhancements                                    ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Improve performance, configurability, and maintainability.
+
+  Implementation
+  -------------
+  12.1 — Prediction Caching
+    • Cache AIPredictionService results per project
+    • TTL: 1 hour (configurable)
+    • Invalidate cache when: new progress recorded, baseline updated,
+      extension approved
+    • Use Laravel's cache facade (cache driver already configured)
+    • Reduces DB queries and regression computation for frequently
+      viewed projects
+
+  12.2 — Background Jobs for AI Analysis
+    • Move Gemini API call to a queued job
+    • Page returns stale text immediately, job generates new text
+    • Use Laravel Queue + database driver (jobs table exists)
+    • Notify user when new analysis is ready (or use polling)
+
+  12.3 — Configurable Thresholds
+    • Move risk level thresholds to config/ai.php:
+      'risk' => [
+        'low_threshold'      => 0,     // variance ≥ 0
+        'moderate_threshold' => -10,   // variance ≥ -10
+        'high_threshold'     => -25,   // variance ≥ -25
+        // below -25 = Critical
+      ]
+    • Move fit quality thresholds to config/ai.php:
+      'fit_quality' => [
+        'excellent' => 0.90,
+        'very_good' => 0.80,
+        'good'      => 0.70,
+        'moderate'  => 0.50,
+      ]
+    • Move recommendation rules to config/ai.php (optional, complex)
+    • PMU staff can adjust thresholds without code changes
+
+  NEW: config/ai.php
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 13 — Testing & Refinement                                          ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Comprehensive testing of all V2 features.
+
+  New Test Files
+  -------------
+    tests/Unit/Services/AI/Regression/PolynomialRegressionServiceTest.php
+    tests/Unit/Services/AI/CompletionEstimationServiceTest.php
+    tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+    tests/Unit/Services/AI/PredictionHistoryServiceTest.php
+    tests/Unit/Services/AI/ContractorPerformanceServiceTest.php
+    tests/Unit/Services/AI/ModelSelectionTest.php
+    tests/Feature/Services/AI/AIV2IntegrationTest.php
+
+  Verification
+  -----------
+  • All V1 tests still pass (no regressions)
+  • All new unit tests pass
+  • End-to-end: real project data through polynomial pipeline
+  • Browser: all UI changes render correctly
+  • Browser: forecast table, S-curve overlay, gauge work
+
+  Target: +150 tests across all V2 features
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
+================================================================================
+  IMPLEMENTATION ORDER & DEPENDENCIES
+================================================================================
+
+  Phase  │ Feature                          │ Depends On
+  ───────┼──────────────────────────────────┼────────────────────────────
+    1     │ Polynomial Regression Engine     │ — (foundation)
+    2     │ Model Selection & Comparison     │ Phase 1
+    3     │ Completion Estimation            │ Phase 1+2
+  3.5    │ Dual Completion Estimate Display  │ Phase 3 (both methods exist)
+    4     │ Forecast Table / Risk Table      │ Phase 1+2 (realistic preds)
+    5     │ S-Curve Regression Overlay       │ Phase 1+2
+    6     │ Estimated Completion Gauge       │ Phase 3
+    7     │ Prediction History               │ — (independent)
+    8     │ Cross-Project Regression         │ — (independent)
+    9     │ Contractor Performance           │ — (independent, new data)
+   10     │ AI-Powered Recommendations       │ Phase 9 + V1 issue cat
+   11     │ Export / Reporting               │ Phase 7 (optional)
+   12     │ Architectural Enhancements       │ — (independent)
+   13     │ Testing & Refinement             │ All phases
+
+  Recommended Order:
+    Core Math:         1 → 2
+    Prediction:        3 → 3.5 → 4 → 6
+    Visualization:     5
+    Data & Insights:   7 → 8 → 9 → 10
+    Polish:            11 → 12
+    Validation:        13
+
+================================================================================
+  ARCHITECTURAL RULES
+================================================================================
+
+  The V1 rules still apply:
+    • Single Responsibility Principle — each service owns one job
+    • Separation of Concerns — math in Regression/, orchestration in AI/
+    • Controllers remain thin — no business logic
+    • AIPredictionService stays the public entry point
+    • Immutability — historical records never modified
+    • Backward compatibility — existing Blade keys preserved
+    • Extensibility — new math classes follow SLR's interface pattern
+
+  V2-Specific Rules:
+    • New regression models go in app/Services/AI/Regression/
+    • New regression models must implement the same public interface:
+      analyzeDataset(x, y), predict(), predictUsingAnalysis()
+    • Model selection logic stays in AIPredictionService, not in the
+      individual regression services
+    • All new functionality must have PHPUnit tests
+    • Configurable thresholds go in config/ai.php, not hardcoded
+
+================================================================================
+  FILES SUMMARY
+================================================================================
+
+  NEW FILES:
+    app/Services/AI/Regression/PolynomialRegressionService.php
+    app/Services/AI/CompletionEstimationService.php
+    app/Services/AI/HistoricalSimilarityService.php
+    app/Services/AI/ContractorPerformanceService.php
+    app/Services/AI/ExportService.php
+    app/Models/PredictionHistory.php
+    config/ai.php
+    database/migrations/..._create_prediction_history_table.php
+    database/migrations/..._add_performance_fields_to_contractors_table.php
+    resources/views/exports/ai-prediction-pdf.blade.php
+    tests/Unit/Services/AI/Regression/PolynomialRegressionServiceTest.php
+    tests/Unit/Services/AI/CompletionEstimationServiceTest.php
+    tests/Unit/Services/AI/HistoricalSimilarityServiceTest.php
+    tests/Unit/Services/AI/PredictionHistoryServiceTest.php  — new model + 7 tests
+    tests/Unit/Services/AI/ContractorPerformanceServiceTest.php
+    tests/Unit/Services/AI/ModelSelectionTest.php
+    tests/Feature/Services/AI/AIV2IntegrationTest.php
+
+  MODIFIED FILES:
+    app/Services/AI/CompletionEstimationService.php  — add Newton-Raphson solver
+    app/Services/AI/AIPredictionService.php          — dual completion call + save prediction history
+    app/Services/AI/AIPredictionPresenter.php        — dual output keys
+    app/Services/AI/ForecastService.php
+    app/Services/AI/RecommendationEngine.php
+    app/Services/AI/AIExplanationService.php
+    app/Models/Project.php
+    app/Models/Contractor.php
+    app/Services/ProjectChartService.php
+    app/Http/Controllers/ProjectProgressController.php  — update actual_next on progress record
+    app/Services/AI/AIExplanationService.php             — prompt includes accuracy stats
+    public/js/admin/projects/s-curve-chart.js
+    resources/views/.../ai-prediction.blade.php          — dual card display + accuracy table
+    resources/views/.../progress.blade.php
+    routes/web.php
+
+================================================================================
+  KNOWN DATA GAPS
+================================================================================
+
+  Features that need additional data before they become useful:
+
+  • Cross-Project Regression: needs enough completed projects of the
+    same category to form meaningful aggregates. Early in system adoption,
+    this will return "no similar projects found" — acceptable fallback.
+
+  • Contractor Performance Tracking: needs projects to be completed.
+    Initially all contractors start with neutral/default ratings. Ratings
+    become meaningful as projects finish.
+
+  • AI-Powered Recommendations: depends on both contractor performance
+    data and issue severity data. Is not useful until Phase 9 is complete
+    and there is enough project history.
+
+  • Completion Estimation: polynomial regression makes this viable, but
+    very early projects (< 4 obs) will still return null — this is
+    correct behaviour.
+
+  • Prediction History: R² has been misused as a confidence metric.
+    Prediction History fixes this by tracking actual prediction outcomes.
+    However, it needs TIME to accumulate meaningful data — a brand-new
+    project with only 1 recorded prediction will show "1 prediction:
+    0 Accurate" which is expected behaviour. Accuracy stats become
+    meaningful after 3+ prediction cycles.
+
+================================================================================
+  COMPLETION CRITERIA
+================================================================================
+
+  V2 is considered complete when:
+    1. All 13 phases (including 3.5) are implemented and tested
+    2. Polynomial regression produces visibly better S-curve fits than SLR
+       on real project data
+    3. Completion estimation generates reasonable dates (verified against
+       known completed projects)
+    4. Dual completion estimate display shows both conservative and best-case
+       scenarios side by side with clear labeling
+    5. Forecast table displays per-month predictions that follow the
+       actual S-curve shape (not a straight line)
+    6. S-Curve chart shows regression overlay correctly
+    7. Prediction history tracks accuracy over time
+    8. All 145 V1 tests + new V2 tests pass
+    9. No V1 functionality is broken (backward compatible)
+
+================================================================================
+  CONVERSATION CONTINUATION GUIDE
+================================================================================
+
+   When starting a new development session for V2:
+
+   1. All V1 code is stable — do not redesign it.
+   2. Start with Phase 1 (Polynomial Regression) — everything depends on it.
+   3. Read the latest version of any file before modifying.
+   4. Test each phase independently before proceeding to the next.
+   5. Update this plan file and progress logs as phases complete.
+   6. The rule-based RecommendationEngine remains the default until
+      Phase 10 is complete — AI-powered recs are an addition, not a
+      replacement.
+    7. Phase 3.5 (Dual Completion Estimate) is a DISCUSSION PHASE — the
+      Newton-Raphson solver was removed in v1.1 because it produced
+      over-optimistic estimates. If re-implementing, show BOTH estimates
+      side by side rather than replacing the schedule-aware method.
+      This demonstrates transparency and comparative analysis.
+
+    8. Phase 7 (Prediction History) is NEXT for implementation. It
+      captures every regression prediction and compares it against
+      actual recorded progress. This provides a GENUINE accuracy
+      signal that replaces the misleading use of R² as confidence.
+      After Phase 7 is complete, update AIExplanationService's prompt
+      to use accuracy stats instead of raw R².
+
+================================================================================
+  END OF VERSION 2 MASTER PLAN
+================================================================================

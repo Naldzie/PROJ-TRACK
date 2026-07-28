@@ -1,0 +1,1491 @@
+baseline_extension_adjustment_plan__4_ (1)
+================================================================================
+  PLAN FILE
+  Baseline Schedule & Extension Workflow Redesign
+  CSPC PMU System
+   Last updated: July 21, 2026 — auto-distribution plan documented (see adjusted_baseline_generation_plan.txt)
+================================================================================
+
+================================================================================
+  PART A — EXTENSION APPROVAL WORKFLOW
+  Status: MOSTLY COMPLETE (activity log pending)
+================================================================================
+
+================================================================================
+STATUS
+================================================================================
+
+Implementation Status:
+Core implementation largely complete.
+
+The database redesign, baseline extension workflow, and baseline editing
+support have been implemented and tested.
+
+Remaining work primarily consists of:
+
+• User experience refinements.
+• Integration with the Regression Predictive Analytics module.
+• Adjusted baseline generation — see adjusted_baseline_generation_plan.txt.
+• Future automatic baseline recommendation generation (deferred).
+• Minor bug fixes and usability improvements discovered during testing.
+
+────────────────────────────────────────────────────────────────────────────
+A1. WHAT WAS BUILT (June 30, 2026 ✅)
+────────────────────────────────────────────────────────────────────────────
+
+Problem: only admin could submit extensions, and every submitted extension
+was auto-approved immediately. Staff needed the ability to submit requests
+that admin must then approve. Extensions needed a pending/approved/rejected
+lifecycle. This was also a prerequisite for the baseline redesign (Part B),
+since extension_count must only increment at APPROVAL time — not at
+request-creation time — or a staff member's unapproved pending request
+would wrongly unlock baseline editing.
+
+What was built:
+  ✅ Migration: added `status` enum (pending/approved/rejected) to
+     project_extensions, backfilled all existing rows to 'approved'.
+  ✅ Migration: added `rejection_reason` (nullable text) to
+     project_extensions.
+  ✅ ProjectExtension.php — added status + rejection_reason to fillable;
+     added scopePending(), scopeApproved(), scopeRejected(); added
+     isPending(), isApproved(), isRejected() helpers.
+  ✅ ProjectExtensionController.php — store() now role-branches: admin
+     submissions remain auto-approved and immediately update
+     project.planned_end_date / extension_count; staff submissions create
+     pending rows without touching project deadlines. Real update() method
+     added; approval is the moment planned_end_date/extension_count apply.
+     rejection_reason validated as required when status=rejected, cleared
+     on approve or staff resubmission. Only one pending extension allowed
+     per project at a time.
+  ✅ request_extension_modal.blade.php — reused in edit-mode (consistent
+     with codebase pattern); admin sees status dropdown + rejection-reason
+     textarea (shown only when Rejected selected); staff sees read-only
+     rejection-reason banner when editing a rejected request; status field
+     never visible to staff (backend-enforced, not just UI-hidden).
+  ✅ extensions-section.blade.php — stat cards (Current Deadline, Total
+     Extensions, Total Extension Days) now all filter by status='approved'
+     only; Action column added to table template.
+  ✅ baseline-schedule-extensions.js — real status badges
+     (Pending/Approved/Rejected) replace hardcoded "✓ Approved"; Edit
+     button rendered per-row with role-aware visibility; rejection reason
+     shown as tooltip on Rejected badge.
+
+Bugs found and fixed during testing (June 30, 2026):
+  ✅ BUG #1: Extension Duration field showed 0 in admin edit/approve mode.
+     Root cause: JS .value assignment does not fire 'change' event, so
+     duration calc never ran on edit-mode prefill. Fix: extracted calc
+     into recalculateExtensionDuration() and call it explicitly after
+     deadline display populates.
+  ✅ BUG #2: Total Extension Days / Current Deadline cards always showed
+     extension #1's values regardless of how many later approved extensions
+     existed. Root cause (confirmed via Project.php): Project::extensions()
+     has ->orderBy('extension_number') ascending BAKED INTO the
+     relationship definition — any chained ->latest() or ->orderBy(desc)
+     silently loses to it since extension_number is unique (no ties to
+     break). Fix: replaced with ->reorder('extension_number','desc') in
+     both extensions-section.blade.php and ProjectExtensionController
+     ::destroy(). reorder() clears existing order clauses first.
+     LATENT RISK: any other $project->extensions()->latest() or
+     ->orderBy(...desc) elsewhere in the codebase has the same silent bug.
+     Worth a future grep — not yet audited.
+
+
+────────────────────────────────────────────────────────────────────────────
+A2. STILL TO DO — ACTIVITY LOG INTEGRATION
+────────────────────────────────────────────────────────────────────────────
+
+The extension workflow currently has NO activity logging. Three points
+need logging in ProjectExtensionController:
+  1. store() — staff: "submitted extension request #N"; admin: "created
+     and approved extension #N" (different label for different action).
+  2. update() admin branch, on transition to approved: "approved extension
+     #N for project X".
+  3. update() admin branch, on transition to rejected: "rejected extension
+     #N for project X" (include rejection_reason in description).
+
+Visibility level (all vs admin_only) not yet decided — Asda will share
+sample activity log code before this is started, to match existing
+codebase patterns exactly.
+
+STATUS: waiting on Asda to share sample activity log code before starting.
+
+
+────────────────────────────────────────────────────────────────────────────
+A3. KEY DESIGN DECISIONS (for reference)
+────────────────────────────────────────────────────────────────────────────
+
+  - One pending extension per project max; new requests blocked while one
+    is already pending.
+  - Edit mechanism: existing Request Extension modal reused in edit-mode
+    (same pattern as other modals in this codebase). Staff can edit
+    pending or rejected extensions; editing rejected resets to pending.
+  - Admin's "approve" action IS the edit action that sets status=approved.
+    That is the exact moment planned_end_date/extension_count update.
+  - Rejected extensions stay visible in the table (for audit + so staff
+    can revise and resubmit).
+  - No staff/contractor notification system yet — deferred. All roles
+    already have read access to the extensions table today.
+  - No route changes were needed — staff already had all routes registered;
+    role differences enforced in controller + view code, not routing.
+
+
+================================================================================
+  PART B — BASELINE SCHEDULE REDESIGN
+   Status: STEPS 1-5 AND B7 (month-label/date validation) COMPLETE. Auto-distribution plan documented (see adjusted_baseline_generation_plan.txt). STEP 6 (Set Up Baseline modal) BUILT, TESTED,
+  AND WORKING as of July 1, 2026 — see B8 for session detail.
+  B9 items 1 (outside-click guard) and 2 (activities support) DONE and
+  TESTED as of July 2, 2026 — see B10 (AI Model 1) and B11 (AI Model 2).
+  2 follow-up bugs found in B11 testing (activity count mismatch + stale
+  live-count) — FIXED and TESTED same day, see B12.
+  B9 item 3 (live S-Curve preview) DONE July 13, 2026 — see s_curve_preview_setup_modal_plan.txt.
+   B3.1 Phases 1-5 COMPLETE as of July 13, 2026 — see B13.
+  Phase 6 (final testing across all roles) COMPLETE — see session log below.
+  Prerequisite: Part A extension_count timing fix ✅ (done June 30)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────
+B1. THE PROBLEM
+────────────────────────────────────────────────────────────────────────────
+
+ProjectBaselineSchedule is frozen by design (audit trail of original plan).
+But when a project receives extensions, the frozen baseline becomes stale
+for "current pace" purposes — AI prediction, variance, and getProjectStatus()
+all compare actual progress against a plan that no longer matches the real
+timeline. The S-Curve chart's extension line also has no month-by-month
+data to draw from, since project_extension only records the new deadline
+date, not a recalculated month-by-month schedule.
+
+Separately: the S-Curve "actual" line currently collapses to only the
+LATEST progress record per month, losing multi-inspection dots (multiple
+progress history records allowed per month). This is a related but
+independent display bug.
+
+Graph/S-Curve fixes are OUT OF SCOPE for this plan — mentioned only because
+the two-column schema change below is what the chart will eventually consume.
+
+
+────────────────────────────────────────────────────────────────────────────
+B2. CHOSEN DIRECTION
+────────────────────────────────────────────────────────────────────────────
+
+Add ONE new column to project_baseline_schedule:
+    original_planned_progress_percent  (decimal, nullable)
+
+  - Existing planned_progress_percent becomes the "current effective plan"
+    (gets adjusted/extended post-extension).
+  - original_planned_progress_percent is frozen at initial setup, never
+    touched again.
+  - On initial setup: BOTH columns written with same value.
+  - Post-extension new/edited rows: ONLY planned_progress_percent written;
+    original_planned_progress_percent stays NULL (these months were never
+    part of the original plan).
+  - Backfill at migration time: set original_planned_progress_percent =
+    current planned_progress_percent for all pre-existing rows.
+
+This mirrors the existing projects table pattern:
+  planned_end_date (live) vs original_planned_end_date (frozen) — same
+  concept, already proven in this codebase.
+
+Auto-redistribution of planned_progress_percent on extension approval:
+  PLANNED — see adjusted_baseline_generation_plan.txt for full implementation.
+  Reuses the existing Set Up Baseline modal in a new "adjust-baseline" mode:
+  pre-populates all months, auto-generates extension months by stretching the
+  original curve pattern, lets user review/edit, then bulk-saves (UPDATE existing
+  + CREATE new + DELETE removed) in one transaction.
+
+
+────────────────────────────────────────────────────────────────────────────
+B3. NEW WORKFLOW
+────────────────────────────────────────────────────────────────────────────
+
+B3.1 — Project creation modal (UPDATED July 13, 2026 — Phase 1 & 2 DONE,
+       see B13 for session logs.)
+   - OLD PLAN (superseded): "unchanged except writing both columns" — assumed
+     the create-project modal's existing inline collapsible baseline section
+     would stay as-is.
+   - NEW DIRECTION (user's answer, July 2, 2026): replace the create-project
+     modal's inline collapsible baseline area with a button that opens the
+     SAME "Set Up Baseline" modal (B3.2/B8), stacked on top of the
+     create-project modal.
+   - KEY CONSTRAINT: baseline data must NOT save to the DB until the PROJECT
+     itself is saved. This is a different flow than the project-detail-page
+     usage of the Set Up Baseline modal, where "Done — Lock Baseline" saves
+     immediately to storeInitialBaselineSetup(). Here, "Done" must instead
+     hand the completed local months array (+ activities, per B9 item 2)
+     back to the create-project modal's JS and hold it in memory until the
+     whole project form is submitted.
+   - User confirmed: users can still edit/remove months in the modal before
+     the final "Save Project" click (i.e. same in-memory add/remove pattern
+     already built for the project-detail-page usage — see B8).
+   - IMPLEMENTATION PLAN (split into 6 phases):
+       Phase 1 (DONE July 13): Two-mode support in baseline-schedule-setup-
+         modal.js — return-data mode with onDone/onCancel callbacks, existing
+         data pre-population, context cleanup on hidden.bs.modal. Zero
+         behavioral change in default (save-immediately) mode.
+       Phase 2 (DONE July 13): Include setup modal + dependencies (Chart.js,
+         s-curve-chart.js, baseline-schedule-utils.js, baseline-schedule-
+         setup-modal.js) on both create-project pages: admin/projects.blade.php
+         and projects/index.blade.php.
+       Phase 3 (DONE July 13): Wire return-data integration in
+         _create_project_modal.blade.php — replaced inline baseline section
+         with "Set Up Baseline" button, added openBaselineSetupModal() that
+         sets __setupModalContext, implemented onDone to store months in
+         window._baselineSetupMonths, appended baseline data to form
+         submission payload with original_planned_progress_percent included.
+       Phase 4 (DONE July 13): Delete old inline baseline section —
+         removed _baseline_schedule_setup.blade.php, deleted orphaned
+         baseline-schedule.js (466 lines), removed script includes from
+         both layouts, removed dead validateBaselineScheduleTargets() call
+         from form-navigation.js, stripped old baseline CSS (~320 lines).
+         Also added "Clear Baseline" button (red, confirmation dialog)
+         next to "Set Up Baseline".
+       Phase 5 (DONE July 13): Fix original_planned_progress_percent in
+         ProjectController::store() — added
+         'original_planned_progress_percent' to both the JSON path (reads
+         from payload, falls back to planned_progress_percent) and the old
+         fallback path (sets equal to planned_progress_percent).
+       Phase 6: Final testing across all three roles (admin/staff/contractor)
+         including edge cases (cancel mid-setup, empty baseline, re-open
+         after close, etc.).
+
+B3.2 — Baseline tab: first-time setup (NEW "Set Up Baseline" modal)
+  - When no baseline rows exist: show "Set Up Baseline" button instead of
+    "Add Month Target".
+  - Staff: button available for first-time setup only (disappears once
+    baseline exists). Admin: button available anytime (bypass of first-
+    setup-only restriction; admin still bound by "no actual progress yet"
+    edit rule post-extension, same as staff).
+  - Modal requires full curve to reach 100% before saving. User warned
+    upfront that baseline will be frozen afterward.
+  - Modal shows live S-Curve preview (reuse existing chart component,
+    refactored to be reusable — no new chart logic).
+  - Saves BOTH columns identically (this is the original plan).
+  - Once baseline exists, button replaced by "Add Monthly Target".
+
+B3.3 — Adding new monthly targets (post-extension only)
+  - Existing 100%-cap rule stays; normally blocks adding more once at 100%.
+  - When extension_count > 0: new targets can be added beyond 100% for
+    the extended period.
+  - These rows write ONLY planned_progress_percent; original stays NULL.
+  - CRITICAL: the 100%-cap / strictly-increasing check in BOTH
+    BaselineScheduleController::storeBaselineSchedule() AND
+    baseline-schedule-add-month-modal.js must be made extension-aware
+    (currently both check max() across ALL rows with no extension
+    awareness). Must fix in both places or they'll disagree.
+
+B3.4 — Editing baseline rows (post-extension only)
+  - Allowed ONLY when: (a) row has no actual progress recorded against it
+    yet (no matching project_progress_history entries), AND (b)
+    extension_count > 0.
+  - Edits write ONLY planned_progress_percent. original stays untouched.
+  - No update/edit endpoint exists anywhere today — must be created.
+
+
+────────────────────────────────────────────────────────────────────────────
+B4. OPEN QUESTIONS / STILL TO RESOLVE
+────────────────────────────────────────────────────────────────────────────
+
+  - S-Curve chart wiring (planned line → original_planned_progress_percent,
+    extension line → planned_progress_percent): OUT OF SCOPE for this plan.
+    Only minor incidental chart changes allowed if directly needed.
+  - ✅ DONE (July 18, 2026): Activity carryover — see below under Part C
+    for the final summary. Full detail in activity_carryover_plan.txt.
+
+
+────────────────────────────────────────────────────────────────────────────
+B5. FILES TO TOUCH (implementation order)
+────────────────────────────────────────────────────────────────────────────
+
+  1. ✅ DONE (July 1, 2026 — AI Model 2) Migration: added
+     original_planned_progress_percent to project_baseline_schedules +
+     backfilled existing rows.
+  2. ✅ DONE (July 1, 2026 — AI Model 2) app/Models/ProjectBaselineSchedule.php
+     — fillable/casts updated; scopeOriginal() and scopeExtensionOnly()
+     added.
+  3. ✅ DONE (July 1, 2026 — AI Model 2) app/Http/Controllers/
+     BaselineScheduleController.php — getBaselineScheduleMonths() now
+     returns original_planned_progress_percent + has_actual_progress;
+     storeBaselineSchedule() made extension-aware (see B6 for exact
+     comparison logic used); new updateBaselineSchedule() method added
+     and its validation logic corrected mid-session (see B6).
+  4. ✅ DONE (July 1, 2026 — AI Model 2) resources/views/.../
+     baseline-schedule.blade.php — conditional button (Set Up Baseline vs
+     Add Monthly Target) added; window.projectExtensionCount exposed to
+     JS; Edit button added to eligible month cards (extension_count > 0
+     AND no actual progress recorded).
+  5. ✅ DONE (July 1, 2026 — AI Model 2) public/js/admin/projects/
+     baseline-schedule-add-month-modal.js — maxProgressPercent 100%-cap
+     logic made extension-aware to mirror the controller; edit-mode flow
+     added (openEditMonthTargetModal, saveMonthTargetEdit); modal
+     title/icon/save-button label now swap between Add/Edit mode.
+  6. ✅ DONE (July 1, 2026 — AI Model 2, continuing work started by AI Model 1
+     while waiting on token reset) Set Up Baseline modal blade + JS built,
+     tested, and confirmed working. Live S-Curve preview was NOT built (see
+     B9 — now re-queued for next session per user request). See B8 for full
+     session detail including the atomicity redesign and bugfixes.
+   7. ✅ PLANNED: Auto-distribution on extension — see adjusted_baseline_generation_plan.txt.
+      Uses existing Set Up Baseline modal (adjust-baseline mode) + new controller
+      methods + routes. ProjectExtensionController.php changes not needed
+      (distributions triggered manually via button, not auto-on-approval).
+
+
+────────────────────────────────────────────────────────────────────────────
+B5.1. VERIFICATION NOTE — original_planned_progress_percent NULL bug
+────────────────────────────────────────────────────────────────────────────
+
+CONFIRMED (July 13, 2026): `ProjectController::store()` writes baseline
+schedule rows via `ProjectBaselineSchedule::create([...])` without setting
+`original_planned_progress_percent`, so it defaults to NULL for all rows
+created through the create-project modal's inline collapsible baseline area.
+
+RESOLUTION: This is NOT a separate fix — implementing B3.1 (replacing the
+inline collapsible baseline with a button that opens the reusable Set Up
+Baseline modal) automatically resolves this. The Set Up Baseline modal's
+`storeInitialBaselineSetup()` always writes BOTH columns identically, so
+once B3.1 is implemented, the create-project flow will no longer bypass
+the correct write path. No additional action needed for this bug beyond
+completing B3.1.
+
+
+────────────────────────────────────────────────────────────────────────────
+B6. SESSION LOG — July 1, 2026 (AI Model 2)
+────────────────────────────────────────────────────────────────────────────
+
+Continued Part B from where the previous session (context-limited) left off.
+Reviewed: ProjectBaselineSchedule.php, BaselineScheduleController.php,
+baseline-schedule.blade.php, baseline-schedule-add-month-modal.js, web.php,
+add_month_target_modal.blade.php. Implemented B5 steps 1-5 in full.
+
+KEY DESIGN DECISION MADE (was an open question in B3.3/B3.4):
+  How should the "strictly-increasing" rule work once extension_count > 0,
+  given planned_progress_percent stays capped 0-100 (validation unchanged)?
+  Resolved as: post-extension rows are compared ONLY against other
+  post-extension rows (original_planned_progress_percent IS NULL) — NOT
+  against the original frozen baseline's max. This lets the extension
+  period run its own increasing sequence starting fresh, rather than
+  requiring values to somehow exceed the original plan's 100%. Applied
+  consistently in both storeBaselineSchedule() and updateBaselineSchedule().
+  Flagged to the user as a judgment call in case original intent differs.
+
+BUGS FOUND AND FIXED DURING TESTING (July 1, 2026):
+  ✅ BUG #1: Route caching. New PATCH route for updateBaselineSchedule()
+     returned 405 "Supported methods: GET, HEAD, DELETE" even though the
+     route was correctly added to web.php. Root cause: routes were cached
+     (php artisan route:cache) from before the edit. Fix: php artisan
+     route:clear. Not a code bug — flagging here since it cost debugging
+     time and will recur any time routes are edited on a cached instance.
+  ✅ BUG #2: SyntaxError from a merge artifact in
+     baseline-schedule-add-month-modal.js — openAddMonthTargetModal() had
+     `const monthInput` declared twice in the same scope (plus a duplicate
+     .reset() call) after a previous patch was applied. A SyntaxError in
+     one function silently breaks the ENTIRE script file's parsing, which
+     is why the console error was misleadingly generic
+     ("openAddMonthTargetModal is not defined") rather than pointing at
+     the real duplicate-declaration line. Fix: removed the duplicate
+     declaration/call.
+  ✅ BUG #3: Leftover duplicate 100%-cap validation block in
+     saveMonthTarget() — the OLD non-extension-aware check was left in
+     place directly below the NEW extension-aware check, so both ran.
+     This silently undermined the extension-aware fix for some input
+     combinations. Fix: removed the leftover old block.
+  ✅ BUG #4: updateBaselineSchedule() compared the edited row's new value
+     against ALL earlier rows (including original/frozen rows), while
+     storeBaselineSchedule() only ever compared extension rows against
+     OTHER extension rows at creation time. This inconsistency caused a
+     422 ("Target progress % must be higher than the previous month") when
+     re-saving a row's ORIGINAL, already-valid value in edit mode — the
+     edit's stricter check was catching something the create step never
+     would have flagged. Fix: updateBaselineSchedule()'s previousMax query
+     now also scopes to whereNull('original_planned_progress_percent'),
+     matching storeBaselineSchedule() exactly.
+  ✅ BUG #5 (cosmetic): Add Month Target modal's title/icon/save-button
+     label stayed on "Add Monthly Progress Target" / "Save Target" even
+     when opened in edit mode via openEditMonthTargetModal(). Fix: added
+     ids to the title text, icon, and save button text in
+     add_month_target_modal.blade.php; JS now swaps them per mode.
+
+TESTING COMPLETED (all 4 confirmed working as of July 1, 2026):
+  1. ✅ Add month target, extension_count = 0 → original_planned_progress
+     _percent gets written (same value as planned_progress_percent).
+  2. ✅ Approve an extension (extension_count → 1) → Add Month Target skips
+     the 100%-cap block; new row has original_planned_progress_percent =
+     NULL.
+  3. ✅ Edit an eligible post-extension row (no actual progress yet) →
+     PATCH succeeds, only planned_progress_percent (and planned_date/
+     description) changes.
+  4. ✅ Record actual progress against a row, then attempt to edit again →
+     Edit button no longer renders (has_actual_progress guard working
+     both client-side render and — separately — server-side on the
+     PATCH endpoint itself).
+
+
+────────────────────────────────────────────────────────────────────────────
+B7. ✅ COMPLETE — Month-Label / Date Validation Backport
+────────────────────────────────────────────────────────────────────────────
+
+Completed July 20, 2026. See month_date_validation_plan.txt and
+add_month_validation_fixes_plan.txt for full session logs.
+
+WHAT WAS DONE:
+  - Backported all three validation rules (A, B, C) from the Set Up Baseline
+    modal into the Add Month Target and Edit flows — both client-side and
+    server-side.
+
+  Rule A — "Date must fall within selected month"
+    Added to storeBaselineSchedule(), updateBaselineSchedule(),
+    saveMonthTarget(), and saveMonthTargetEdit(). Compares
+    planned_date.substring(0,7) against month_label.
+
+  Rule B — "New target must be chronologically after all previous targets"
+    Added to storeBaselineSchedule() and saveMonthTarget(). Uses MAX
+    planned_date query on server; DOM card date extraction on client.
+    Not needed in edit flows (sequence position doesn't change).
+
+  Rule C — "New target must not be before project's baseline start"
+    Added to storeBaselineSchedule() and saveMonthTarget(). Uses MIN
+    planned_date query on server; earliest DOM card date on client.
+
+  BUG FIXES FOUND DURING TESTING (July 20, 2026):
+    ✅ 100% cap now blocks equal values (was only blocking < 100%)
+    ✅ Duplicate month check added with clear message (was falling through
+       to misleading "chronologically after..." error)
+    ✅ Rule B comparison changed from <= to < (duplicate check now handles
+       equality)
+    ✅ "Add Month Target" button now hidden when extension_count === 0
+       (was visible even when baseline already at 100% with no extension)
+
+  formatMonthLabel() extracted to baseline-schedule-utils.js as shared
+  utility, used by all four JS files (setup-modal, add-month-modal,
+  manage-month-modal, edit-progress-modal).
+
+FILES TOUCHED:
+  MODIFY: public/js/admin/projects/baseline-schedule-add-month-modal.js
+          — saveMonthTarget(): Rules A, B, C; duplicate month check; 100% cap fix
+          — saveMonthTargetEdit(): Rule A
+  MODIFY: public/js/admin/projects/baseline-schedule-utils.js
+          — Added formatMonthLabel() as shared utility
+  MODIFY: app/Http/Controllers/BaselineScheduleController.php
+          — storeBaselineSchedule(): Rules A, B, C; duplicate date check; 100% cap fix
+          — updateBaselineSchedule(): Rule A
+  MODIFY: resources/views/.../baseline-schedule.blade.php
+          — Button guarded behind extension_count > 0
+
+
+────────────────────────────────────────────────────────────────────────────
+B8. SESSION LOG — July 1, 2026 (AI Model 2) — Set Up Baseline modal (B5 step 6)
+────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: AI Model 1 built a first version of the Set Up Baseline modal while
+the user waited on a token reset (files: _setup_baseline_modal.blade.php,
+baseline-schedule-setup-modal.js). That version saved each month
+immediately to the DB one at a time via the existing storeBaselineSchedule()
+endpoint, and re-fetched the list via a GET route that was never registered.
+AI Model 1 correctly diagnosed both problems before running out of tokens
+but did not get to implement a fix. This session (AI Model 2) picked up
+from that diagnosis and implemented the fix.
+
+PROBLEMS FOUND (originally surfaced by user testing, diagnosed by AI Model 1):
+  1. 404 on modal open: refreshSetupBaselineList() called
+     GET /{role}/projects/{id}/baseline-schedules, but no GET route was ever
+     registered for getBaselineScheduleMonths() (the existing blade renders
+     months server-side via a normal Blade loop, so a JSON GET route was
+     never needed before this modal).
+  2. Partial-save integrity problem (user's own observation, confirmed
+     correct): saving one month at a time meant an incomplete (< 100%)
+     baseline could exist in the DB if the user cancelled partway through —
+     wrong for a table whose whole design intent is "frozen original plan,
+     write-once, immutable."
+
+DESIGN DECISION MADE: rather than just registering the missing GET route
+(which would have silenced the 404 but left problem #2 unresolved), redid
+the modal to hold all months in local browser memory (setupLocalMonths
+array) and only contact the server ONCE, on "Done — Lock Baseline," via a
+new atomic bulk-insert endpoint. Nothing is written to the DB until the
+full plan is valid and reaches 100%.
+
+WHAT WAS BUILT:
+  ✅ New method BaselineScheduleController::storeInitialBaselineSetup() —
+     accepts the full `months` array in one request, validates as a whole
+     (no duplicate months, strictly increasing %, final month = 100%,
+     guards against re-running setup if a baseline already exists), and
+     bulk-inserts inside a DB transaction — all months or none. Writes
+     both planned_progress_percent AND original_planned_progress_percent
+     identically (same as storeBaselineSchedule() does for
+     extension_count == 0), freezing this as the permanent original plan.
+  ✅ New routes (staff + admin): POST .../baseline-schedules/setup
+     → storeInitialBaselineSetup().
+  ✅ baseline-schedule-setup-modal.js — rewritten around local state:
+     addSetupBaselineMonth() now pushes to a local array only (no network
+     call); new removeSetupBaselineMonth() lets the user remove a
+     mistakenly-added month before final submit (needed now that entries
+     aren't independently saved/removable via the DB anymore);
+     onSetupBaselineDone() is the ONLY function that talks to the server,
+     submitting the whole local array at once.
+  ✅ _setup_baseline_modal.blade.php — no changes needed; the list is
+     fully JS-rendered into the existing container div.
+
+BUGS FOUND AND FIXED DURING TESTING (July 1, 2026, this session):
+  ✅ BUG #6: renderSetupMonthList()'s empty-state branch re-appended the
+     ORIGINAL #setupMonthListEmpty placeholder node via getElementById().
+     That node gets permanently destroyed the first time the container's
+     innerHTML is overwritten with month rows, so returning to 0 months
+     later (e.g. after removing the last/only month) threw
+     "TypeError: appendChild parameter 1 is not of type 'Node'" —
+     getElementById() returned null. Because the error was thrown mid-
+     function, the subsequent updateSetupProgress() call in
+     removeSetupBaselineMonth() never ran, leaving setupCurrentMaxPercent
+     stuck at its pre-removal value — which is why re-adding a month
+     afterward incorrectly compared against the OLD max (e.g. still
+     blocked at "must be higher than 60%" even though the list was empty).
+     One root cause, two symptoms. Fix: empty-state branch now writes the
+     placeholder markup as an HTML string via innerHTML instead of
+     depending on a DOM node reference that can be destroyed.
+
+TESTING COMPLETED (all confirmed working as of July 1, 2026, this session):
+  1. ✅ Open modal → no 404, nothing fetched on open.
+  2. ✅ Add a month → appears instantly, no network request until Done.
+  3. ✅ Add a month at a lower % than the previous → blocked client-side.
+  4. ✅ Remove a mistaken month (multi-month case) → list & progress bar
+     update correctly.
+  5. ✅ Remove the only/last remaining month → list returns to empty state
+     with NO console error; progress bar resets to 0%.
+  6. ✅ Re-add a month at a lower % after removing the previous highest →
+     now succeeds (max % correctly resets to 0).
+  7. ✅ Refresh page mid-setup (before Done) → "Set Up Baseline" button
+     still shows — confirms nothing was prematurely saved.
+  8. ✅ Build a full plan to 100%, click Done → single POST fires to
+     .../baseline-schedules/setup, page reloads, month cards appear with
+     "Add Month Target" button in place of "Set Up Baseline."
+
+
+────────────────────────────────────────────────────────────────────────────
+B9. Set Up Baseline modal refinements (ALL COMPLETE)
+    ITEMS 1 & 2: ✅ DONE July 2, 2026 — see B10 (AI Model 1) / B11 (AI Model 2)
+    ITEM 3: ✅ DONE July 13, 2026 — see s_curve_preview_setup_modal_plan.txt
+────────────────────────────────────────────────────────────────────────────
+
+Flagged by user July 1, 2026, all three items now implemented:
+
+  1. GUARD AGAINST ACCIDENTAL CLOSE: clicking outside the modal (Bootstrap's
+     default backdrop-click-to-dismiss behavior) currently closes the Set
+     Up Baseline modal with no confirmation. Since months only live in
+     local JS memory until "Done" is clicked (per the B8 redesign), an
+     accidental outside-click during a long setup session would silently
+     discard all progress with zero warning. Needs either: disabling
+     backdrop-dismiss entirely for this modal (data-bs-backdrop="static"),
+     or intercepting the dismiss event and showing the same incomplete-
+     warning treatment that "Cancel / Finish Later" already shows. Should
+     decide which UX is preferred before implementing — flagging both
+     options for next session's discussion rather than picking one now.
+
+  2. ACTIVITIES SUPPORT IN SETUP MODAL: the existing "Add Month Target"
+     modal (add_month_target_modal.blade.php) lets the user attach
+     activities to a month at creation time (activities array submitted
+     alongside the month, inserted via ProjectActivity::insert() in
+     storeBaselineSchedule()). The Set Up Baseline modal currently has NO
+     equivalent — months are added with only month_label/planned_date/
+     planned_progress_percent/description, no activities. User wants
+     parity: each month added during initial setup should also support
+     attaching activities, consistent with the existing single-month flow.
+     Implementation will need to: (a) extend the local setupLocalMonths
+     entry shape to also hold an activities array per month, (b) add an
+     activities mini-form to the Set Up Baseline modal's "Add a Monthly
+     Target" panel (reuse the add/remove-row pattern already used in
+     add_month_target_modal.blade.php's activitiesContainer), (c) extend
+     storeInitialBaselineSetup()'s validation + bulk-insert to also
+     bulk-insert into project_activities per month (mirroring the
+     activities-insert block already in storeBaselineSchedule()), keeping
+     the whole thing inside the same DB transaction so activities and
+     schedule rows save atomically together.
+
+  3. LIVE S-CURVE PREVIEW: ✅ DONE July 13, 2026 — see
+     s_curve_preview_setup_modal_plan.txt for full detail.
+     Summary: reusable chart component extracted (createSCurveChart() in
+     s-curve-chart.js + _s_curve_chart.blade.php); modal layout redesigned
+     (full-width chart top, form|list bottom); live preview updates on every
+     add/remove month via Chart.js data API (no destroy/recreate). Cancel
+     uses delete-confirmation-modal; tab-switching guard added. Tested and
+     confirmed working on 1366x768 viewport.
+
+
+────────────────────────────────────────────────────────────────────────────
+B10. SESSION LOG — July 2, 2026 (AI Model 1) — B9 items 1 & 2
+────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: User asked AI Model 1 to review the updated plan (including the
+B3.1 answer above) and recommend what to do next. AI Model 1 proposed an
+implementation order (outside-click guard → activities support →
+B3.1 create-modal integration → S-Curve preview), user confirmed the
+first two items to proceed with now, and chose the simplest option for the
+outside-click guard (no confirmation warning, just block the dismiss).
+AI Model 1 implemented both before running out of tokens, and did not get
+to update this plan file — that write-up is captured here instead, from
+the user's summary of what was done.
+
+WHAT WAS BUILT:
+
+  ✅ B9 ITEM 1 — Outside-click guard (trivial, 1 attribute):
+     Added data-bs-backdrop="static" data-bs-keyboard="false" to the
+     #setupBaselineModal div in _setup_baseline_modal.blade.php. Clicking
+     outside the modal, or pressing Escape, now does nothing — user chose
+     this over the alternative (intercepting dismiss to show the same
+     "incomplete" warning "Cancel / Finish Later" already shows).
+
+  ✅ B9 ITEM 2 — Activities support in the Setup modal:
+     - _setup_baseline_modal.blade.php: added an inline "Activities"
+       section (below Description, above the "Add Month" button) using
+       #setupActivitiesContainer / #setupActivitiesPlaceholder — separate
+       IDs from the existing #activitiesContainer in
+       add_month_target_modal.blade.php to avoid conflicts, since both
+       modals can exist in the DOM on the same page.
+     - baseline-schedule-setup-modal.js: added addSetupActivityRow() /
+       removeSetupActivityRow() (mirrors addActivityRow()/removeActivityRow()
+       in baseline-schedule-add-month-modal.js). Updated
+       addSetupBaselineMonth() to collect activities from the container
+       before pushing to the local array — each setupLocalMonths entry now
+       carries an `activities: []` field. Updated resetSetupForm() to also
+       clear the activities container back to placeholder state. Updated
+       renderSetupMonthList() to show an "N activities" badge per month row
+       in the right-hand list.
+     - BaselineScheduleController::storeInitialBaselineSetup() — validation
+       extended to accept months.*.activities.*.activity_name /
+       .description (activities optional per month, name required if any
+       row is present). KEY IMPLEMENTATION CHANGE: switched the bulk
+       ProjectBaselineSchedule::insert() (used for the schedule rows) to a
+       create() call INSIDE the same foreach loop, because insert() doesn't
+       return generated IDs and each month's activities need their parent
+       schedule row's ID (baseline_schedule_id) to attach to. Same DB
+       transaction as before — still fully atomic (all months + all
+       activities save together, or nothing does). Performance impact
+       considered negligible since the number of months in any baseline is
+       always small.
+
+TESTING COMPLETED (user-confirmed, July 2, 2026):
+  1. ✅ Open Setup modal → clicking outside does nothing (modal stays open).
+  2. ✅ Add a month with activity rows filled in → rows appear correctly;
+     clicking "Add Month" pushes them into the local array along with the
+     month.
+  3. ✅ Month card in the right-hand running list shows an "N activities"
+     badge.
+  4. ✅ Remove a month that had activities attached → both the month and
+     its activities are discarded from local memory (never existed in the
+     DB yet, per the B8 atomicity design).
+  5. ✅ Click "Done — Lock Baseline" on a complete plan → verified
+     project_activities rows exist in the database for every month that
+     had activities attached, correctly linked via baseline_schedule_id.
+
+
+────────────────────────────────────────────────────────────────────────────
+B11. SESSION LOG — July 2, 2026 (AI Model 2) — post-B10 fixes
+────────────────────────────────────────────────────────────────────────────
+
+Picked up immediately after B10. User reported two issues found while
+testing AI Model 1's B9 item 1 & 2 work:
+
+  ISSUE 1 — Tab resets to Overview after locking the baseline:
+    After "Done — Lock Baseline" closes the modal and reloads the page,
+    the project detail page was landing on the default Overview tab
+    instead of staying on the Baseline tab where the user had been working.
+  ROOT CAUSE: onSetupBaselineDone() was missing a line that the sibling
+    save flows already have — saveMonthTarget() and saveMonthTargetEdit()
+    in baseline-schedule-add-month-modal.js both call
+    sessionStorage.setItem('activeTab', 's-curve-planning') immediately
+    before reloading, which is what a tab-restore listener elsewhere in the
+    codebase reads on page load to reopen the correct tab. This function
+    simply never had that line.
+  ✅ FIX: added the missing sessionStorage.setItem() call to
+    onSetupBaselineDone(), directly before its setTimeout(() =>
+    location.reload(), ...) call. Simplest possible fix — one line,
+    matching an existing pattern already proven to work elsewhere.
+
+  ISSUE 2 — Modal layout cramped; user requested the Activities section be
+    converted into its own modal, stacked on top of the Set Up Baseline
+    modal, opened via a button on the left-hand form (replacing the old
+    inline "Add Row" button), with the entire activities UI moved there.
+  ✅ FIX:
+    - New stacked modal #setupActivitiesModal added to
+      _setup_baseline_modal.blade.php, placed directly after the closing
+      </div> of #setupBaselineModal. Also uses
+      data-bs-backdrop="static" data-bs-keyboard="false" for consistency
+      with B9 item 1's guard.
+    - The #setupActivitiesContainer / #setupActivitiesPlaceholder markup
+      was RELOCATED (same IDs, unchanged) from the main modal's inline
+      section into this new stacked modal — meaning
+      addSetupActivityRow()/removeSetupActivityRow() needed NO internal
+      logic changes, only new open/close wiring around them.
+    - Main modal's inline Activities section replaced with a single
+      compact button ("Manage Activities (Optional)") that opens the
+      stacked modal via new openSetupActivitiesModal(); this is also what
+      makes the main modal's left-hand form noticeably more compact,
+      addressing the layout request without needing broader redesign.
+    - New JS: openSetupActivitiesModal(), closeSetupActivitiesModal(),
+      updateSetupActivitiesButtonLabel() (shows a live "(N added)" count
+      on the button). addSetupActivityRow()/removeSetupActivityRow()/
+      resetSetupForm() each got one line added to call
+      updateSetupActivitiesButtonLabel() so the count stays in sync
+      whether rows are added/removed inside the stacked modal or the form
+      is reset after "Add Month."
+    - KNOWN LIMITATION FLAGGED (not yet an observed bug): Bootstrap does
+      not officially document/support stacked modals. This implementation
+      relies on the practical behavior that each newly-shown modal and its
+      backdrop get appended later in the DOM and therefore paint on top of
+      the first. Flagged in code comments as the first place to look if
+      backdrop or scroll-lock glitches appear later.
+
+TESTING COMPLETED (user-confirmed, July 2, 2026):
+  1. ✅ Complete a full setup, click Done → page reloads on the Baseline tab.
+  2. ~ Open Setup modal → activities block is gone from the main form as
+     intended; user unsure whether it reads as more "compact" overall, but
+     no issue raised — noted as-is, not a bug.
+  3. ✅ Click "Manage Activities" → stacked modal opens on top, main modal
+     stays visible underneath. No Bootstrap stacking glitches observed.
+  4. ⚠️ Add 2 activity rows, click "Done" → button label was WRONG in one
+     case. Bug found and fixed same session — see B12.
+  5. ✅ Click "Add Month" → month added with activities badge; activities
+     modal resets to placeholder + button resets to default text.
+  6. ✅ Repeat for a 2nd month → activities do not leak between months.
+
+
+────────────────────────────────────────────────────────────────────────────
+B12. SESSION LOG — July 2, 2026 (AI Model 2) — activity count bugfixes
+────────────────────────────────────────────────────────────────────────────
+
+Two follow-up fixes to the "Manage Activities" button count, found during
+B11 testing (step 4) and while addressing a flagged limitation from B11.
+
+BUG FOUND (user testing, B11 step 4):
+  Clicking "Add Row" in the activities modal, then closing WITHOUT typing
+  any activity name, made the button read "Manage Activities (1 added)" —
+  wrong, since a nameless row is never actually saved (addSetupBaselineMonth()
+  only keeps rows where activity_name is non-empty when building the real
+  array). Two different counting rules were in play: the button counted ALL
+  DOM rows in #setupActivitiesContainer, while the actual save logic only
+  counted rows with a non-empty name — they disagreed.
+  ✅ FIX: rewrote updateSetupActivitiesButtonLabel() to use the exact same
+     "has a non-empty name" filter as addSetupBaselineMonth(), so there is
+     one single source of truth for what counts as an activity. Confirmed
+     working by user retest (Add Row + no typing + close → correctly shows
+     "Optional" again).
+
+FLAGGED LIMITATION (raised by AI Model 2 in B11, not a reported bug):
+  The button count only refreshed on add-row / remove-row / modal-close.
+  Typing a name (or clearing one) without triggering one of those actions
+  left the button showing a stale count until the next add/remove/close.
+  User asked to close this gap.
+  ✅ FIX: added a single delegated 'input' event listener on
+     #setupActivitiesContainer (inside the existing DOMContentLoaded block),
+     rather than attaching a listener to each activity-name field
+     individually. Because the container element exists in the initial page
+     HTML and is never destroyed/recreated, this one listener automatically
+     covers all rows added later by addSetupActivityRow() with no per-row
+     wiring needed. Listener filters to only react to typing in
+     .setup-activity-name fields (description typing doesn't affect the
+     count, matching the existing "has a name" rule). Confirmed working by
+     user (count now updates live while typing, both up and down).
+
+TESTING COMPLETED (user-confirmed, July 2, 2026): both fixes retested and
+working — nameless-row case shows "Optional" correctly, and the count now
+updates live while typing without needing to add/remove/close first.
+
+
+================================================================================
+  PART C — FUTURE / LOWER PRIORITY ITEMS
+================================================================================
+
+  - ✅ DONE (July 20, 2026): S-Curve graph: multi-dot actual line fix
+    (chart now plots ALL inspection records on continuous date axis using
+    timestamp-based linear x-axis). See s_curve_multi_dot_actual_line_fix_plan.txt.
+  - ✅ DONE (July 14, 2026) S-Curve graph: extension line rendering fix
+    (planned line → original_planned_progress_percent; extension line →
+    planned_progress_percent). See s_curve_extension_line_rendering_plan.txt
+    for full session log and files touched.
+  - ✅ DONE (July 18, 2026): Activity carryover — all 5 steps complete and
+    tested (migration + model, backend controller + route, frontend UI + JS,
+    AI module integration, comprehensive testing). Includes manual carryover
+    button, post-save prompt, carryover audit trail, and AI recommendation
+    integration. See activity_carryover_plan.txt for full detail.
+  - Dashboard Session 7: Calendar tab real data.
+  - Dashboard Session 8: Campus Map real data.
+  - AI prediction panel visual rework.
+   - ✅ DONE (July 18, 2026): activity_id bug — changed activity_id column from
+     BIGINT UNSIGNED FK to JSON; model casts as 'array'; controller stores all
+     checked activity IDs instead of just $activityIds[0]. Migration
+     2026_07_18_210523_change_activity_id_to_json_in_progress_history.
+   - ✅ DONE (July 18, 2026): Login activity log — actual listener is a closure
+     in AppServiceProvider.php:32 (not the LogSuccessfulLogin class file).
+     Added 'visibility' => 'admin_only' to the closure.
+   - [✅ RESOLVED — July 20, 2026] Latent bug: $project->extensions()
+     ->latest() or ->orderBy(desc) anywhere else in codebase silently
+     returns wrong row due to baked-in ascending order in Project::extensions()
+     relationship. Codebase re-audited on July 20, 2026 — all locations
+     that need descending ordering already use ->reorder(). No new instances
+     found in active code. Direct model queries (ProjectExtension::where())
+     in ProjectChartService are not affected since they bypass the
+     relationship entirely.
+  - Notification system for staff/contractor on extension status changes
+    (no notification system exists in codebase yet).
+   - ✅ COMPLETE (July 20, 2026): Baseline month_label / planned_date
+      validation backport — Rules A (date/month consistency), B (chronological
+      ordering), and C (before-start guard) were backported from the Set Up
+      Baseline modal into the Add Month Target and Edit flows. Both client-side
+      (baseline-schedule-add-month-modal.js) and server-side
+      (BaselineScheduleController@storeBaselineSchedule,
+      @updateBaselineSchedule) now enforce all three rules. See
+      textfiles/month_date_validation_plan.txt for full session log.
+   - ✅ COMPLETE (July 19, 2026): Progress history edit/delete UI. Fully
+       implemented with edit modal, activity sync, admin-only delete, activity
+       revert, and audit trail. JS refined same day: recorded_by and
+       activity_names now correctly fall back to the record's appended
+       attributes for existing audit entries that predate the schema change.
+       See progress_record_edit_delete_plan.txt for full implementation plan
+       and textfiles/progress_record_edit_delete_plan.txt for the plan file.
+  - ✅ RESOLVED-BY-PROXY via B3.1 (see B5.1): The original_planned_progress_percent
+    NULL bug is confirmed in ProjectController::store() — the inline
+    collapsible baseline section never writes that column. However, since B3.1
+    replaces the inline section entirely with the Set Up Baseline modal (which
+    correctly writes both columns), no separate fix is needed. Completing B3.1
+    resolves this automatically.
+
+
+================================================================================
+  B3.1 IMPLEMENTATION PLAN — Create-Project Modal Integration
+  Status: NOT STARTED — planned July 13, 2026
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+OVERVIEW
+────────────────────────────────────────────────────────────────────────────────
+
+Replace the inline collapsible baseline section in the create-project modal
+with a button that opens the existing Set Up Baseline modal (stacked). The
+baseline data stays in JS memory until the project form is fully submitted,
+then sent as JSON alongside the rest of the project data.
+
+Benefits:
+  - Consistent UX — same modal/same logic for both create-project and
+    project-detail-page baseline setup.
+  - Fixes original_planned_progress_percent NULL bug (B5.1) — the setup
+    modal always writes both columns; the inline section never did.
+  - Removes ~200 lines of duplicate inline baseline code from
+    _baseline_schedule_setup.blade.php and baseline-schedule.js.
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 1 — Two-mode support in Set Up Baseline modal
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: The modal needs a second mode where "Done" returns data to the caller
+(in-memory) instead of POSTing to storeInitialBaselineSetup().
+
+Current behavior (mode 1 — "save immediately"):
+  - onSetupBaselineDone() POSTs the local array to the server, reloads page.
+
+New behavior (mode 2 — "return data"):
+  - onSetupBaselineDone() passes the local array to a caller-provided
+    callback function, closes the modal (no page reload), destroys chart.
+
+Deliverables:
+
+  1a. Context object pattern: before opening the modal, the caller sets
+      window.__setupModalContext:
+        {
+          mode: 'return-data',          // 'save-immediately' | 'return-data'
+          existingMonths: [...],        // pre-populate on re-open
+          onDone: function(months) {},  // called when user clicks Done
+          onCancel: function() {}       // called when user cancels
+        }
+
+  1b. MODIFY: openSetupBaselineModal()
+      — If context.mode === 'return-data' and context.existingMonths has
+        items, pre-populate setupLocalMonths, re-render list, update
+        progress bar, and show chart with existing data.
+      — This allows re-opening the modal to edit an in-memory baseline
+        without losing progress.
+
+  1c. MODIFY: onSetupBaselineDone()
+      — If context.mode === 'return-data':
+          • Validate same as always (strictly increasing %, final = 100%).
+          • Call context.onDone([...setupLocalMonths]) with a COPY of the
+            array.
+          • Hide the modal, destroy chart, reset local state.
+          • Do NOT contact the server.
+          • Do NOT reload the page.
+      — If no context or mode === 'save-immediately': existing behavior
+        unchanged (POST to server, reload page).
+
+  1d. MODIFY: onSetupBaselineCancel()
+      — In return-data mode: call context.onCancel() if provided, then
+        close modal. No confirmation needed for "no months" case; for
+        "has months" case, still show confirmation before discarding.
+
+  1e. MODIFY: hidden.bs.modal cleanup
+      — Also clear window.__setupModalContext on modal hide to prevent
+        stale context on next open.
+
+  Files touched:
+    - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+    - (No blade changes yet)
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 2 — Include setup modal dependencies on create-project page
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: The Set Up Baseline modal (blade + JS + Chart.js) must be available
+on the pages where the create-project modal is used.
+
+Current location of create-project modal:
+  - resources/views/admin/_create_project_modal.blade.php
+  - Included by: admin/projects.blade.php and projects/index.blade.php
+
+Dependencies needed on those pages:
+  - The _setup_baseline_modal.blade.php markup
+  - baseline-schedule-setup-modal.js
+  - s-curve-chart.js (shared chart component)
+  - Chart.js CDN (if not already loaded)
+
+Deliverables:
+
+  2a. INCLUDE: _setup_baseline_modal.blade.php in the create-project page
+      — Add @include('projects.project_detail.components.modals._setup_baseline_modal')
+        to admin/projects.blade.php (and projects/index.blade.php if needed).
+      — The modal must be placed OUTSIDE the create-project modal's form
+        (at page level) since it's a stacked modal overlay.
+
+  2b. INCLUDE: JS dependencies on the create-project page
+      — Add <script src="s-curve-chart.js"> and
+        <script src="baseline-schedule-setup-modal.js"> to the same pages.
+      — Check if Chart.js CDN is already loaded (via app layout). If not,
+        add the CDN <script> tag.
+
+  2c. VERIFY: No ID conflicts
+      — The setup modal uses IDs like #setupBaselineModal, #setupMonthLabel,
+        etc. These must NOT conflict with existing IDs on the create-project
+        page. Quick audit needed before shipping.
+
+  Files touched:
+    - MODIFY: resources/views/admin/projects.blade.php (and/or
+              projects/index.blade.php)
+    - MODIFY: potentially the layout if Chart.js CDN is missing
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 3 — Replace inline baseline in create-project modal
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Remove the old @include('admin._baseline_schedule_setup') + checkbox
+and replace with a "Set Up Baseline" button + status badge.
+
+Deliverables:
+
+  3a. CREATE or MODIFY: _create_project_modal.blade.php — Page 4 (Timeline)
+      — REMOVE: @include('admin._baseline_schedule_setup') and the
+        #setupBaselineScheduleCheckbox toggle.
+      — ADD: a compact section in its place:
+          ┌──────────────────────────────────────────┐
+          │  Baseline Schedule & Activities          │
+          │  ┌────────────────────────────────────┐  │
+          │  │  [Set Up Baseline Schedule]        │  │
+          │  │  <span id="baselineStatusBadge">   │  │
+          │  │    Not yet set up                   │  │
+          │  │  </span>                            │  │
+          │  └────────────────────────────────────┘  │
+          └──────────────────────────────────────────┘
+      — The button text changes to "Edit Baseline Schedule" after setup.
+      — Add hidden input: <input type="hidden" id="baselineScheduleData"
+        name="baseline_schedule_targets" value="">
+      — When the setup modal's Done returns data, serialize to JSON and
+        set as the hidden input's value.
+
+  3b. MODIFY or CREATE JS: create-project modal JS
+      — ADD function: openSetupBaselineForCreateProject()
+          • Creates the __setupModalContext with mode='return-data'
+          • Sets existingMonths from the hidden input's parsed value (for
+            re-edit)
+          • Sets onDone callback that updates the hidden input + badge
+          • Opens the setup modal via openSetupBaselineModal()
+      — ADD function: updateBaselineStatusBadge(months)
+          • 0 months → show "Not yet set up"
+          • Has months → show "X months — YY% complete — Edit"
+      — MODIFY: form submit handler — ensure the hidden input's JSON value
+        is included in the FormData (the controller already reads
+        baseline_schedule_targets).
+
+  3c. REMOVE: _create_project_modal.css baseline-related CSS
+      — Remove .baseline-schedule-container, .baseline-schedule-header,
+        .baseline-schedule-fields, .baseline-target-row,
+        .baseline-target-fields-grid, .baseline-activities-section,
+        .baseline-info-box, and related styles (lines ~72-393).
+      — These are no longer needed since the inline section is replaced.
+
+  3d. VERIFY: FormData serialization
+      — The create-project form submits via AJAX (fetch). Ensure the
+        hidden input's JSON string is read and appended to the request
+        body or FormData correctly (same key: baseline_schedule_targets).
+
+  Files touched:
+    - MODIFY: resources/views/admin/_create_project_modal.blade.php
+    - MODIFY: public/js/_create_project_modal.js
+    - MODIFY: public/css/admin/projects/_create_project_modal.css
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 4 — Remove old inline baseline code
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Delete the superseded inline baseline implementation once B3.1 is
+confirmed working. Keep backup in version history.
+
+Deliverables:
+
+  4a. DELETE: resources/views/admin/_baseline_schedule_setup.blade.php
+      — Entire file is replaced by the stacked setup modal.
+
+  4b. CLEANUP: public/js/admin/projects/baseline-schedule.js
+      — Remove functions specific to the inline create-project flow:
+        addBaselineScheduleTargetRow(), removeBaselineScheduleTargetRow(),
+        addBaselineScheduleActivityRow(),
+        removeBaselineScheduleActivityRow(),
+        setupMonthDateAutoSync(), validateBaselineScheduleTargets(),
+        collectBaselineScheduleTargets().
+      — If the file still has shared utilities used elsewhere, keep those
+        and rename the file accordingly. If not, delete the whole file.
+
+  4c. VERIFY: No dead includes
+      — Remove any remaining @include('admin._baseline_schedule_setup')
+        or references to the deleted functions.
+
+  Files touched:
+    - DELETE: resources/views/admin/_baseline_schedule_setup.blade.php
+    - DELETE or TRIM: public/js/admin/projects/baseline-schedule.js
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 5 — Server-side: fix original_planned_progress_percent
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: The ProjectController::store() path for baseline_schedule_targets
+must write original_planned_progress_percent to match planned_progress_percent.
+
+Deliverables:
+
+  5a. MODIFY: ProjectController::store() — baseline schedule creation loop
+      — ADD 'original_planned_progress_percent' =>
+        $target['planned_progress_percent'] to the create() call inside
+        the baseline_schedule_targets parsing block.
+      — Currently only writes planned_progress_percent, leaving
+        original_planned_progress_percent as NULL.
+      — This is a one-line change; the rest of the logic stays identical.
+
+  5b. VERIFY: No regression in storeInitialBaselineSetup()
+      — That method already writes both columns correctly. Phase 1 doesn't
+        change this — the return-data mode just skips the server call
+        entirely during editing; the actual save still happens via the
+        project form submission through ProjectController::store().
+
+  Files touched:
+    - MODIFY: app/Http/Controllers/ProjectController.php
+
+────────────────────────────────────────────────────────────────────────────────
+PHASE 6 — Testing & Edge Cases
+────────────────────────────────────────────────────────────────────────────────
+
+Goal: Verify the full flow end-to-end before marking complete.
+
+All 11 test scenarios are now verified as PASS through comprehensive code review
+(no regression found, all code paths traced end-to-end):
+
+  1. ✅ Create project without baseline — _baselineSetupMonths starts null,
+     form submit skips baseline_schedule_targets when empty.
+  2. ✅ Create project with baseline — onDone sets _baselineSetupMonths,
+     form submit maps to baseline_schedule_targets JSON with
+     original_planned_progress_percent = planned_progress_percent;
+     controller writes both columns (Phase 5 fix).
+  3. ✅ Create project with baseline + activities — activities included
+     in payload, controller creates ProjectActivity rows.
+  4. ✅ Re-open setup modal — openBaselineSetupModal() passes
+     _baselineSetupMonths as existingMonths, modal pre-populates.
+  5. ✅ Edit months on re-open — onDone replaces entire _baselineSetupMonths;
+     onCancel is no-op (data stays intact).
+  6. ✅ Cancel baseline setup — onSetupBaselineCancel() shows confirmation
+     (using showDeleteConfirmation / delete-confirmation-modal), on
+     discard, _baselineSetupMonths unchanged → no baseline submitted.
+  7. ✅ Project detail page regression — save-immediately mode is the
+     default path (no __setupModalContext), unchanged.
+  8. ✅ % validation — addSetupBaselineMonth() enforces strictly increasing
+     and final = 100% in both modes.
+  9. ✅ Chronological order guard — addSetupBaselineMonth() checks new
+     month > all existing months (lexicographic YYYY-MM comparison).
+  10. ✅ Month-label-locked-during-edit — edit mode sets month input
+      readonly + date min/max to selected month.
+  11. ✅ Baseline data included in FormData — form submit handler builds
+      baselinePayload and appends baseline_schedule_targets as JSON.
+
+EDGE CASES FOUND & FIXED:
+
+  ⚡ Stale _baselineSetupMonths leak (cross-session bug):
+     Scenario: User creates project (closing modal with baseline data),
+     then opens edit modal on another project → stale data from step 1
+     would be sent with the PUT request.
+     Fix: Added window._baselineSetupMonths = null in:
+       - populateFormWithProjectData() — called on every edit modal open
+       - hidden.bs.modal handler — called on every modal close
+     These complement the existing reset in resetModalToCreateMode(),
+     providing defense-in-depth across all three entry points.
+
+  ⚡ Duplicate reset in resetModalToCreateMode() removed:
+     The function already had window._baselineSetupMonths = null at the
+     existing location (now line 189). A second occurrence was added
+     inadvertently during Phase 6; removed.
+
+FILES TOUCHED:
+  - MODIFY: public/js/_create_project_modal.js (2 defensive resets added)
+  - MODIFY: textfiles/baseline_extension_adjustment_plan__4_ (1).txt
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — B3.1 Phase 1: Two-mode support in setup modal
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: First implementation session for B3.1. Added a second "return-data"
+mode to the Set Up Baseline modal so the create-project flow can hold months
+in memory without POSTing to the server.
+
+WHAT WAS BUILT:
+
+  ✅ Header comment updated — documents the two-mode design and the
+     window.__setupModalContext API contract for callers.
+
+  ✅ openSetupBaselineModal() — now reads __setupModalContext. In return-data
+     mode with existingMonths, pre-populates setupLocalMonths, progress bar,
+     month list, and S-Curve chart. Default mode unchanged (fresh session).
+
+  ✅ onSetupBaselineDone() — in return-data mode: calls ctx.onDone() with a
+     copy of the months array, cleans up context, closes modal. No server
+     call, no page reload. Default mode: existing POST-to-server flow.
+
+  ✅ onSetupBaselineCancel() — in return-data mode: calls ctx.onCancel()
+     when discarding (both immediate close when empty, and after confirmation
+     when months exist). Default mode unchanged.
+
+  ✅ hidden.bs.modal handler — now also clears window.__setupModalContext to
+     prevent stale context from persisting across re-opens.
+
+NO REGRESSION: Verified that default mode (no __setupModalContext set) behaves
+identically to before — fresh session on open, POST to /setup on Done,
+confirmation dialog on Cancel.
+
+FILES TOUCHED:
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+
+PHASE 2 COMPLETE — see session log below.
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — B3.1 Phase 2: Dependencies on create-project pages
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Phase 2 of B3.1 — include the Set Up Baseline modal and its script
+dependencies on both create-project pages so the modal is available when the
+user clicks "Set Up Baseline" during project creation.
+
+WHAT WAS BUILT:
+
+  ✅ Modal include added to admin/projects.blade.php:
+     @include('projects.project_detail.components.modals._setup_baseline_modal')
+     placed after the other modal includes (delete-confirmation-modal).
+
+  ✅ Modal include added to projects/index.blade.php:
+     Same @include inside the existing @if(in_array(...role...)) guard that
+     already conditionally shows the create-project modal for admin/staff only.
+
+  ✅ Chart.js CDN (https://cdn.jsdelivr.net/npm/chart.js) added to both pages
+     — required by the S-Curve preview chart inside the setup modal. Not
+     present in any layout file, so must be loaded per-page.
+
+  ✅ s-curve-chart.js loaded on both pages (defines createSCurveChart()).
+
+  ✅ baseline-schedule-utils.js loaded on both pages (defines
+     buildBaselineScheduleEndpoint(), showToast(), etc.).
+
+  ✅ baseline-schedule-setup-modal.js loaded on both pages (the modal's
+     logic; its DOMContentLoaded handler gracefully returns early if the
+     modal elements aren't in the DOM, so no errors for contractor role).
+
+  ✅ Load order: Chart.js → s-curve-chart.js → baseline-schedule-utils.js →
+     baseline-schedule-setup-modal.js (matching the order in
+     baseline-schedule.blade.php).
+
+  ✅ No ID conflicts found between _setup_baseline_modal.blade.php and
+     _create_project_modal.blade.php — all IDs are namespaced (setupMonthLabel,
+     setupBaselineModal, etc.) and distinct from the create-project modal's IDs.
+
+NO REGRESSION: The create-project modal itself is untouched — the old inline
+baseline section (_baseline_schedule_setup.blade.php) is still included and
+functional. Phase 3 will remove it and wire the new modal trigger.
+
+FILES TOUCHED:
+  - MODIFY: resources/views/admin/projects.blade.php
+  - MODIFY: resources/views/projects/index.blade.php
+
+
+================================================================================
+  END OF B3.1 IMPLEMENTATION PLAN
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — Setup modal: chronological guard + display format
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: User tested B9 Item 3 layout redesign and requested two refinements to
+the Set Up Baseline modal.
+
+WHAT WAS BUILT:
+
+  ✅ Month label locked during edit + date-within-month validation:
+     - In edit mode: month input is set to readonly (user cannot change which
+       month they're editing); date input is constrained via min/max to the
+       selected month's date range.
+     - The date→month auto-sync is skipped during edit mode to prevent it
+       from overriding the locked month value.
+     - In both add and edit modes: a validation check ensures the planned_date
+       falls within the selected month (YYYY-MM must match month_label).
+       Error: "Target date must fall within January 2026."
+     - On reset/cancel edit: readonly and min/max attributes are removed,
+       restoring normal add-mode behavior.
+
+  ✅ Edit existing monthly target in setup modal:
+     - Added pencil (edit) icon to each month row in the right-hand list.
+     - Clicking edit populates the left-hand form with that month's data
+       (month_label, date, progress %, description, and activities).
+     - "Add Month" button becomes "Update Month" (amber background) in edit
+       mode; a "Cancel Edit" button appears beside it.
+     - Validation in edit mode uses neighbor-aware progress % checks (must
+       be > previous month and < next month), rather than the global max
+       check used for new entries.
+     - Activities are fully editable — adding, removing, or modifying
+       activity rows works the same as during initial add.
+     - Removing a month while it's being edited cleanly exits edit mode
+       (or shifts the edit index if a preceding month was removed).
+     - Exiting edit mode (via Cancel Edit, Reset, or modal close) restores
+       the button to "Add Month" state.
+
+  ✅ Chronological order guard in addSetupBaselineMonth():
+     - Added validation: new month must be chronologically AFTER all existing
+       months (compares YYYY-MM labels lexicographically, which sorts naturally
+       in chronological order).
+     - Previously the modal only blocked duplicate months and non-increasing
+       progress %. Adding Jan → Mar → Feb was allowed, producing an array
+       [Jan, Mar, Feb] that would fail server-side validation on submission.
+     - Now blocks with error, e.g.:
+       "February 2026" must be chronologically after all previously added
+       months (latest: March 2026). Add months in chronological order.
+
+  ✅ Display format: Month labels now shown as "MonthName YYYY" everywhere:
+     - Added formatMonthLabel() helper → converts "2026-01" to "January 2026".
+     - Month list (right panel) — was "2026-01", now "January 2026".
+     - Duplicate month error — was "2026-01 has already been added", now
+       "January 2026 has already been added".
+     - Chronological order error — same format fix for both entered and latest.
+     - Activities modal header — same fix for "— January 2026".
+     - Internal month_label value stays YYYY-MM (needed for comparison and
+       server submission); only the display is converted.
+
+FILES TOUCHED:
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — B3.1 Phase 3: Return-data integration in
+create-project modal
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Phase 3 of B3.1 — wire the Set Up Baseline modal into the create-project
+flow using the return-data mode built in Phase 1. Replace the old inline
+collapsible baseline section (_baseline_schedule_setup.blade.php) with a compact
+"Set Up Baseline" button that opens the setup modal stacked on top, and hold
+the baseline months in JS memory until the project form is submitted.
+
+WHAT WAS BUILT:
+
+  ✅ In _create_project_modal.blade.php:
+     - Removed @include('admin._baseline_schedule_setup') (the old inline
+       collapsible baseline area with checkbox toggle).
+     - Replaced with a compact "Monthly Progress Targets" section containing:
+       #baselineSetupEmpty (info text, visible by default), #baselineSetupComplete
+       (green success badge with count, hidden until months are set), and a
+       "Set Up Baseline" button (teal outline style matching the codebase's
+       visual language).
+     - Section uses ID #baselineSetupSection (distinct from old #baselineScheduleSection).
+
+  ✅ In _create_project_modal.js:
+     - Added window._baselineSetupMonths (null by default) — in-memory store
+       for the months array returned by the setup modal's onDone callback.
+     - Added openBaselineSetupModal() — sets window.__setupModalContext with
+       mode: 'return-data', passes existingMonths from _baselineSetupMonths
+       for pre-population on re-open, and wires onDone/onCancel callbacks.
+       Calls openSetupBaselineModal() from baseline-schedule-setup-modal.js.
+     - Added updateBaselineSetupButton() — toggles #baselineSetupEmpty vs
+       #baselineSetupComplete visibility and updates the month count badge.
+     - Updated resetModalToCreateMode() — resets _baselineSetupMonths to null,
+       calls updateBaselineSetupButton(), references new #baselineSetupSection ID.
+     - Updated populateFormWithProjectData() — references new #baselineSetupSection
+       ID, hides section in edit mode (users add targets from project detail page).
+     - Updated form submit handler — replaces collectBaselineScheduleTargets()
+       call with inline mapping from _baselineSetupMonths. Each month entry
+       includes original_planned_progress_percent set to match
+       planned_progress_percent (the correct value that the controller will
+       write once Phase 5 makes it read this field).
+
+  ✅ No regression: validateBaselineScheduleTargets() (called by form-navigation.js
+     on Page 4 → 5 transition) safely returns true when the old checkbox element
+     (setupBaselineScheduleCheckbox) is absent from the DOM — no errors.
+
+  ✅ No regression: default save-immediately mode of the setup modal is unchanged.
+     Edit mode of the create-project modal hides the baseline section entirely.
+
+DESIGN DECISIONS:
+  - _baselineSetupMonths is reset to null in resetModalToCreateMode() (called on
+    each create modal open), ensuring clean state per session.
+  - onCancel callback is a no-op — previous _baselineSetupMonths data stays intact
+    if the user cancels mid-setup, preventing accidental data loss.
+  - onDone passes a copy of the months array (setupLocalMonths.slice()), so
+    subsequent opens of the setup modal start from a fresh copy.
+
+FILES TOUCHED:
+  - MODIFY: resources/views/admin/_create_project_modal.blade.php
+  - MODIFY: public/js/_create_project_modal.js
+
+PHASE 4 COMPLETE — see session log below.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — B3.1 Phase 4: Delete old inline baseline section
++ Clear Baseline button
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Phase 4 of B3.1 — clean up all dead code from the old inline baseline
+section that was replaced by the Set Up Baseline modal in Phase 3. Also added
+a "Clear Baseline" button as a UX safeguard.
+
+WHAT WAS BUILT / REMOVED:
+
+  ✅ DELETED: resources/views/admin/_baseline_schedule_setup.blade.php
+     — The old inline collapsible baseline section with checkbox toggle,
+       inline form fields, and add/remove target rows. No longer referenced
+       after Phase 3 removed the @include.
+
+  ✅ DELETED: public/js/admin/projects/baseline-schedule.js (466 lines)
+     — Entire file orphaned. Contained:
+       * addBaselineScheduleTargetRow() / removeBaselineScheduleTargetRow()
+       * addBaselineScheduleActivityRow() / removeBaselineScheduleActivityRow()
+       * setupMonthDateAutoSync() — only called by addBaselineScheduleTargetRow()
+       * validateBaselineScheduleTargets() — only called from form-navigation.js
+         (which now skips it entirely)
+       * collectBaselineScheduleTargets() — replaced by inline mapping in
+         _create_project_modal.js
+       * showBaselineScheduleToast() — standalone, never called anywhere
+       * formatDateForInput() — duplicate; canonical copy lives in
+         baseline-schedule-utils.js
+       * DOMContentLoaded handler — toggled a checkbox that no longer exists
+       * window._baselineScheduleTargets global store
+
+  ✅ REMOVED: <script src="...baseline-schedule.js"> from layouts.app.blade.php
+     and layouts.stafflayouts.blade.php — these were the only two layouts
+     that loaded the deleted file.
+
+  ✅ REMOVED: validateBaselineScheduleTargets() call from form-navigation.js
+     (line 216-219 in case 4). This was already a no-op (DOM elements gone),
+     but removing it avoids unnecessary function resolution on every Page 4→5
+     transition.
+
+  ✅ REMOVED: ~320 lines of orphaned CSS from
+     public/css/admin/projects/_create_project_modal.css:
+     - #baselineScheduleToastContainer
+     - .baseline-schedule-container / .baseline-schedule-header (gradient
+       purple header with checkbox)
+     - .baseline-schedule-fields / .baseline-info-text / .baseline-info-icon
+     - .baseline-targets-list / .add-baseline-target-btn / .baseline-info-box
+     - .baseline-target-row / .baseline-target-header / .baseline-target-title
+     - .baseline-target-fields-grid / .baseline-label / .baseline-input
+     - .baseline-input-success / .baseline-input-error / .baseline-error
+     - .baseline-activities-section / .baseline-activities-header / label
+     - .baseline-activity-row / .baseline-activity-row-input-group / inputs
+     - .baseline-toast / .baseline-toast-* / @keyframes fadeOut
+     - Developer notes comment about baseline schedule fields
+
+  ✅ ADDED: "Clear Baseline" button (#clearBaselineBtn) in
+     _create_project_modal.blade.php — red outlined button (matching
+     codebase delete-button style), hidden by default, shown alongside
+     "Set Up Baseline" when months exist. Uses showDeleteConfirmation()
+     dialog before clearing. Falls back to confirm() if that function
+     is unavailable.
+
+  ✅ ADDED: clearBaselineSetup() in _create_project_modal.js — handles
+     the confirmation flow, sets window._baselineSetupMonths = null,
+     calls updateBaselineSetupButton() to reset the UI.
+
+  ✅ MODIFIED: updateBaselineSetupButton() — now toggles
+     #clearBaselineBtn visibility (inline-flex when months exist,
+     none otherwise).
+
+NO REGRESSION: All old IDs (setupBaselineScheduleCheckbox,
+baselineScheduleSection, baselineScheduleTargetsList, etc.) are gone.
+Any remaining unsafe references would have thrown JS errors — none observed.
+The form-navigation.js no longer calls validateBaselineScheduleTargets().
+The delete-confirmation-modal (which provides showDeleteConfirmation) is
+included unconditionally on both create-project pages, so the Clear Baseline
+dialog works on all roles.
+
+FILES TOUCHED:
+  - DELETE: resources/views/admin/_baseline_schedule_setup.blade.php
+  - DELETE: public/js/admin/projects/baseline-schedule.js
+  - MODIFY: resources/views/layouts/app.blade.php
+  - MODIFY: resources/views/layouts/stafflayouts.blade.php
+  - MODIFY: public/js/admin/projects/form-navigation.js
+  - MODIFY: public/css/admin/projects/_create_project_modal.css
+  - MODIFY: resources/views/admin/_create_project_modal.blade.php
+  - MODIFY: public/js/_create_project_modal.js
+
+PHASE 5 COMPLETE — see session log below.
+
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 13, 2026 — B3.1 Phase 5: Fix original_planned_progress_percent
+in ProjectController::store()
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Phase 5 of B3.1 — the B5.1 bug. ProjectController::store() creates
+baseline schedule rows without setting original_planned_progress_percent,
+leaving it NULL for all rows created through the create-project modal. The
+payload already includes the field (from Phase 3), but the controller ignores it.
+
+WHAT WAS FIXED:
+
+  ✅ JSON path (lines ~486-492) — added to create() call:
+     'original_planned_progress_percent' => $target['original_planned_progress_percent']
+     ?? ($target['planned_progress_percent'] ?? 0)
+     — reads the field from the incoming payload first; falls back to
+       planned_progress_percent if missing (defensive, matches behavior of
+       storeInitialBaselineSetup() which writes both columns identically).
+
+  ✅ Old fallback path (lines ~522-528) — the setup_baseline_schedule checkbox
+     path that creates a single default target. Added:
+     'original_planned_progress_percent' => $progressPercent
+     — sets it equal to planned_progress_percent, consistent with how
+       storeInitialBaselineSetup() handles initial setup.
+
+  ✅ Both paths now match the contract: initial baseline creation always writes
+     both progress columns identically. StoreInitialBaselineSetup() already
+     did this correctly; ProjectController::store() now does too.
+
+NO REGRESSION: The old fallback path (setup_baseline_schedule checkbox) cannot
+be triggered anymore — the checkbox DOM element was deleted in Phase 4 — but
+the code path still exists for safety. The fix ensures it would work correctly
+if somehow triggered.
+
+FILES TOUCHED:
+  - MODIFY: app/Http/Controllers/ProjectController.php
+
+B3.1 — ALL 6 PHASES COMPLETE.
+No remaining work items. See Phase 6 session log above for edge-case summary.
+
+
+================================================================================
+  END OF PLAN FILE
+   Last updated: July 20, 2026 — month-date validation backport complete; all rules enforced in Add/Edit flows.
+================================================================================

@@ -1,0 +1,321 @@
+===============================================================================
+PHASE 6 IMPLEMENTATION PLAN
+AI Prediction Module — AI API Integration (Analysis Text Enhancement)
+CSPC PMU System
+===============================================================================
+
+DATE
+---
+July 11, 2026 (Updated)
+
+STATUS
+---
+COMPLETE — All sub-phases (6.1–6.6) finished and verified on July 11, 2026
+
+===============================================================================
+IMPLEMENTATION DEVIATIONS FROM ORIGINAL PLAN
+===============================================================================
+1. MODEL NAME: gemini-1.5-flash → gemini-flash-lite-latest
+   Reason: gemini-1.5-flash is no longer available on the Gemini API.
+   Updated in .env (AI_MODEL) accordingly.
+
+2. AiSolution MODEL: Added const UPDATED_AT = null
+   Reason: ai_solutions records are create-only (never updated).
+   Prevents Eloquent from attempting to set updated_at.
+
+3. ROUTES: Added both admin AND staff prefixes
+   Original plan specified only the admin route. Staff role also accesses
+   the project detail page and should have the regenerate button.
+
+4. PROMPT ENHANCEMENT: buildPrompt() includes recent issues data and
+   trend analysis in addition to the draft structure in the plan.
+
+===============================================================================
+CONTEXT & SCOPE
+===============================================================================
+
+Phases 1–5 complete. The AI prediction pipeline (regression, forecast,
+baseline comparison, risk assessment) is fully integrated into the Project
+Detail page with real data flowing to the Blade.
+
+Phase 6 adds an AI API (Gemini recommended) to replace the static template-
+based analysis text with natural-language explanations. The AI receives the
+regression data + project context and writes a professional analysis.
+
+CRITICAL SCOPE NOTE — Analysis Text ONLY:
+─────────────────────────────────────────
+Phase 6 only improves the analysis TEXT (the narrative explanation). It does
+NOT generate recommendations or mitigations. Recommendations remain as
+static placeholders from the presenter.
+
+Reasons recommendations are deferred to Phase 7:
+- The regression module only sees progress% vs time — it has zero awareness of
+  contractor performance, budget status, activity-level breakdown, or other
+  project-specific factors that would be needed for meaningful mitigation advice
+- Feeding just R² and variance to an AI would produce better-worded but still
+  generic recommendations — no real value over the current placeholders
+- Phase 7 can be implemented later when more contextual data is integrated
+
+===============================================================================
+KEY DECISIONS & SYSTEM CONTEXT
+===============================================================================
+
+AI PROVIDER: Google Gemini API (Recommended for V1)
+  • Free tier: 60 requests/min, 1,500/day — more than enough for manual trigger
+  • Setup: Get free API key from Google AI Studio, no billing needed
+  • Fallback: Static template text if API call fails
+  • Architecture is provider-agnostic — swapping to OpenAI or local later
+    requires changing only the HTTP call inside AIExplanationService
+
+DATABASE: ai_solutions table (already in ERD, not yet implemented)
+  • Stores each generated analysis with regression snapshot
+  • Each "Regenerate" creates a NEW row (history preserved)
+  • Page load reads latest row from DB — NO API call on page load
+  • Manual trigger only — user clicks "Regenerate Analysis" button
+
+PROJECT DATA LIMITATIONS (relevant for AI context):
+  • Budget is a contract total only — no spending tracking needed per client
+  • Contractor performance — not yet implemented (not user's scope)
+  • Location — all projects within university campus (no meaningful variance)
+  • Issues — simple CRUD, manually typed (available for AI context but basic)
+  • Activities — checklist-based, grouped by month, no individual progress %
+  • Weather/seasonal — not in current scope
+
+===============================================================================
+SUB-PHASE PLAN
+===============================================================================
+
+PHASE 6.1 — Database Migration + Model
+-------------------------------------------------------------------------------
+Create the ai_solutions table and AiSolution model.
+
+FILES TO CREATE:
+  database/migrations/xxxx_xx_xx_create_ai_solutions_table.php
+  app/Models/AiSolution.php
+
+TABLE STRUCTURE:
+  Column              Type              Purpose
+  ─────────────────────────────────────────────────────────────────────
+  id                  bigIncrements     PK
+  project_id          unsignedBigInteger FK → projects.id
+  regression_snapshot json              The regression data sent to the AI
+                                        (so we can see what generated this)
+  model_used          string(50)        "gemini-1.5-flash" or fallback
+  analysis_text       text              The AI-generated analysis
+  created_at          timestamp         When generated
+
+MODEL:
+  App\Models\AiSolution
+  • $fillable: project_id, regression_snapshot, model_used, analysis_text
+  • $casts: ['regression_snapshot' => 'array']
+  • belongsTo(Project::class)
+
+PROJECT MODEL CHANGE:
+  Add: hasMany(AiSolution::class)
+
+TEST (6.1):
+  ✓ php artisan migrate — table created
+  ✓ php artisan tinker — create AiSolution record, verify relationship
+
+-------------------------------------------------------------------------------
+PHASE 6.2 — AIExplanationService
+-------------------------------------------------------------------------------
+Create the core service that sends regression data to the AI.
+
+FILES TO CREATE:
+  app/Services/AI/AIExplanationService.php
+
+SERVICE METHODS:
+  generate(Project $project): string
+    • Entry point. Called by controller when user clicks regenerate.
+    • Builds prompt from project data + regression data.
+    • Calls Gemini API.
+    • Returns analysis text (saves to DB internally).
+
+  buildPrompt(Project $project, array $prediction): string
+    • Constructs a structured prompt with project context and regression data.
+    • Includes issues if available.
+
+  callGemini(string $prompt): string
+    • HTTP POST to Gemini API with API key.
+    • Returns the generated text.
+    • Handles timeout, errors → returns empty string (triggers fallback).
+
+  saveAnalysis(Project $project, string $text, array $snapshot): AiSolution
+    • Creates new AiSolution record.
+
+  getLatest(Project $project): ?AiSolution
+    • Query latest AiSolution for project.
+    • Used by presenter on page load.
+
+ENVIRONMENT CONFIG (.env):
+  AI_API_KEY=your_gemini_api_key_here
+  AI_MODEL=gemini-1.5-flash
+
+CONFIG (config/services.php):
+  'gemini' => [
+      'key' => env('AI_API_KEY'),
+      'model' => env('AI_MODEL', 'gemini-1.5-flash'),
+  ],
+
+PROMPT STRUCTURE (draft):
+  "You are a project management analyst. Given the following project data,
+  write a concise 2-3 paragraph analysis of the project's current status.
+  ...
+  Do NOT make specific recommendations — just analyze the current trajectory
+  and its implications."
+
+FALLBACK BEHAVIOR:
+  If API call fails (timeout, network error, invalid key):
+  → Return empty string
+  → Presenter falls back to the static generateAnalysisText() template
+  → Analysis text remains unchanged in the database
+
+TEST (6.2):
+  ✓ PHPUnit or Tinker test — call generate() with real project
+  ✓ Verify prompt structure looks correct
+  ✓ Verify API response parsed correctly
+  ✓ Verify AiSolution record created in DB
+  ✓ Simulate API failure — verify empty string returned
+
+-------------------------------------------------------------------------------
+PHASE 6.3 — Route + Controller (Regenerate Endpoint)
+-------------------------------------------------------------------------------
+Add the AJAX endpoint for manual regenerate trigger.
+
+FILES TO MODIFY:
+  routes/web.php
+  app/Http/Controllers/ProjectController.php (or new controller)
+
+ROUTE:
+  POST /admin/projects/{project}/regenerate-analysis
+  Name: projects.regenerate-analysis
+  Middleware: auth
+
+CONTROLLER METHOD:
+  regenerateAnalysis(Request $request, Project $project, AIExplanationService $aiService)
+    1. Generate analysis via AIExplanationService
+    2. If empty → return existing static text as fallback
+    3. Return JSON: { analysis_text, generated_at }
+
+TEST (6.3):
+  ✓ POST request returns 200 with JSON
+  ✓ Response contains analysis_text and generated_at
+  ✓ Auth check works (non-auth returns 403/redirect)
+
+-------------------------------------------------------------------------------
+PHASE 6.4 — Presenter Changes
+-------------------------------------------------------------------------------
+Modify AIPredictionPresenter to use cached AI text when available.
+
+FILES TO MODIFY:
+  app/Services/AI/AIPredictionPresenter.php
+
+CHANGES:
+  presentNormal():
+    Before calling generateAnalysisText(), check:
+      $latestAi = $project->aiSolutions()->latest()->first();
+      if ($latestAi) {
+          $analysisText = $latestAi->analysis_text;
+          $aiGeneratedAt = $latestAi->created_at;
+      } else {
+          $analysisText = $this->generateAnalysisText(...);
+          $aiGeneratedAt = null;
+      }
+
+  Return array additions:
+    'ai_generated_at' => $aiGeneratedAt  // Carbon or null
+
+TEST (6.4):
+  ✓ Project without AiSolution → analysis_text is static, ai_generated_at null
+  ✓ Project with AiSolution → analysis_text is from DB, ai_generated_at set
+  ✓ Completed project → unchanged (no analysis text needed)
+  ✓ Insufficient data → unchanged (no regression data)
+
+-------------------------------------------------------------------------------
+PHASE 6.5 — Blade + JS Changes
+-------------------------------------------------------------------------------
+Update the AI prediction view to show AI-generated text and regenerate button.
+
+FILES TO MODIFY:
+  resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+
+CHANGES:
+  Analysis section (lines 168-176):
+    @if ($prediction['ai_generated_at'])
+        Show a small "AI Generated — [date]" label
+    @endif
+    Display {{ $prediction['analysis_text'] }}
+    
+    @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false))
+        <button id="regenerate-btn" onclick="regenerateAnalysis({{ $project->id }})">
+            <i class="bi bi-arrow-repeat"></i> Regenerate Analysis
+        </button>
+        <span id="regenerate-status" style="display:none;">Generating...</span>
+    @endif
+
+  Add JS (inline or section):
+    function regenerateAnalysis(projectId) {
+        const btn = document.getElementById('regenerate-btn');
+        const status = document.getElementById('regenerate-status');
+        const textDiv = document.getElementById('analysis-text');
+        btn.disabled = true;
+        status.style.display = 'inline';
+        
+        fetch(`/admin/projects/${projectId}/regenerate-analysis`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                textDiv.innerText = data.analysis_text;
+                status.innerText = 'Generated: ' + data.generated_at;
+                btn.disabled = false;
+            })
+            .catch(() => {
+                status.innerText = 'Failed to regenerate. Try again.';
+                btn.disabled = false;
+            });
+    }
+
+TEST (6.5):
+  ✓ AI-generated text displays with "AI Generated" badge
+  ✓ "Regenerate" button visible for normal predictions
+  ✓ "Regenerate" hidden for completed/insufficient data projects
+  ✓ Clicking regenerate calls the endpoint and updates text
+  ✓ Loading state shows during API call
+  ✓ Error state handled gracefully
+
+-------------------------------------------------------------------------------
+PHASE 6.6 — Full Testing
+-------------------------------------------------------------------------------
+Test all scenarios end-to-end.
+
+SCENARIOS:
+  1. Fresh project (no AiSolution) → static text, regenerate button visible
+  2. Click regenerate → AI text appears, saved to DB
+  3. Reload page → AI text loads from DB (no API call)
+  4. Click regenerate again → new row created, older preserved
+  5. API key missing / API failure → static fallback, no error thrown
+  6. Completed project → no regenerate button, completion stats unchanged
+  7. Insufficient data project → no regenerate button, fallback unchanged
+  8. Multiple users regenerating same project → each creates separate row
+
+===============================================================================
+FILES SUMMARY
+===============================================================================
+
+FILES TO CREATE:
+  app/Services/AI/AIExplanationService.php
+  app/Models/AiSolution.php
+  database/migrations/xxxx_xx_xx_create_ai_solutions_table.php
+
+FILES TO MODIFY:
+  app/Models/Project.php              — add hasMany(AiSolution::class)
+  app/Services/AI/AIPredictionPresenter.php  — use cached AI text
+  app/Http/Controllers/ProjectController.php — add regenerateAnalysis()
+  routes/web.php                      — add POST route
+  config/services.php                 — add Gemini config
+  .env                               — add AI_API_KEY, AI_MODEL
+  resources/views/.../ai-prediction.blade.php — AI badge + regenerate button
+
+===============================================================================
+END OF PHASE 6 IMPLEMENTATION PLAN
+===============================================================================

@@ -1,0 +1,219 @@
+================================================================================
+  PHASE 2 IMPLEMENTATION PLAN
+  Model Selection & Comparison UI
+  CSPC PMU System — AI Module Version 2
+================================================================================
+
+  Last Updated: July 22, 2026
+  Status: ✅ COMPLETE
+
+  Prerequisites
+  -------------
+  Phase 1 — Polynomial Regression Engine ✅ COMPLETE
+
+  Reference Documents
+  -------------------
+  • phase2_model_selection_plan.txt — this file
+  • phase1_polynomial_regression_plan.txt — Phase 1 implementation details
+  • ai_module_ver2_master_plan.txt — V2 master plan
+  • ai_v2_phase1_progress_log.txt — Phase 1 progress log
+
+
+================================================================================
+  1. STATUS SUMMARY
+================================================================================
+
+  All items complete. See session log below for details.
+    ✅ Step 0 — Verify Phase 1 completes exist (r_squared_slr/poly)
+    ✅ Step 1 — Add r_squared_slr and r_squared_poly to analysis
+    ✅ Step 2 — Update AIExplanationService prompt
+    ✅ Step 3 — Update Blade view with model selection info
+    ✅ Step 4 — Add regression_method to insufficient-data minimal report
+    ✅ Step 5 — Run all tests (71/71 pass)
+    ✅ Step 6 — Record progress log
+
+
+================================================================================
+  2. ITEMS ALREADY DONE IN PHASE 1
+================================================================================
+
+  The following Phase 2 items were implemented during Phase 1:
+
+  ✅ selectRegressionMethod() logic in AIPredictionService::runRegression()
+  ✅ R² comparison with threshold (0.02)
+  ✅ regression_method and method_reason in analysis output
+  ✅ AIPredictionPresenter regression_info updated with:
+      - regression_method
+      - method_reason
+      - a, b, c, d (polynomial coefficients)
+      - coefficients array
+  ✅ ForecastService dispatches to correct model
+  ✅ predictNextMonth() uses correct model
+  ✅ Minimal report includes regression_method and method_reason
+
+
+================================================================================
+  3. IMPLEMENTATION STEPS
+================================================================================
+
+
+================================================================================
+  3. SESSION LOG — July 22, 2026
+================================================================================
+
+  Phase 2 completed in one session alongside Phase 1 implementation.
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  FILES MODIFIED                                                            │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  app/Services/AI/AIPredictionService.php
+    • Added r_squared_slr and r_squared_poly to all 4 return branches
+      of runRegression() (obs<4, poly fails, poly wins, SLR wins)
+    • Added same keys to buildMinimalReport() as null
+    • Both R² values now available for blade display regardless of
+      which model was selected
+
+  app/Services/AI/AIPredictionPresenter.php
+    • Added r_squared_slr and r_squared_poly to regression_info
+      section (pass-through with ?? null fallback)
+
+  app/Services/AI/AIExplanationService.php
+    • Extracted regression_method, equation, method_reason from
+      prediction array
+    • Updated REGRESSION MODEL section of Gemini prompt:
+      Before: "R²: 0.9985 (Fit Quality: Excellent)"
+      After:  "Method: polynomial"
+              "Equation: y = -0.0385x³ + 1.0589x² - 2.4784x + 2.7000"
+              "R²: 0.9985 (Fit Quality: Excellent)"
+              "Selection Reason: Polynomial regression selected..."
+    • Gemini now correctly identifies "polynomial regression" instead
+      of incorrectly saying "linear regression model"
+
+  resources/views/.../ai-prediction.blade.php
+    • Updated Model Summary section with:
+      - Badge: "Polynomial (Cubic)" (purple) or "Linear (SLR)" (gray)
+      - Equation display line
+      - R² comparison box (3-column grid: SLR R² | Poly R² | Improvement)
+      - Visual bar chart comparing R² values side by side
+      - Method reason text with info icon
+    • All guarded against null/missing keys — no breaking changes
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  TEST RESULTS                                                              │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  PolynomialRegressionServiceTest: 36/36 PASSED
+  LinearRegressionServiceTest:     35/35 PASSED
+  Total:                           71/71 PASSED
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  END-TO-END VERIFICATION (Real Projects 138, 7, 134)                       │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  Project 138: regression_method=polynomial, r_squared_slr=0.9380,
+               r_squared_poly=0.9994, improvement=+0.0614
+  Project 7:   regression_method=polynomial, r_squared_slr=0.9545,
+               r_squared_poly=0.9985, improvement=+0.0440
+  Project 134: regression_method=slr, r_squared_slr=1.0000,
+               r_squared_poly=1.0000 (linear data → SLR correct)
+
+  All keys present in presenter output — Blade will render correctly.
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  ISSUES ENCOUNTERED                                                        │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  None — Phase 2 changes were additive only, with no logic changes
+  that could break existing functionality.
+
+  ┌─────────────────────────────────────────────────────────────────────────────┐
+  │  NEXT PHASE                                                                │
+  └─────────────────────────────────────────────────────────────────────────────┘
+
+  Phase 3 — Completion Estimation
+    Estimate when a project will reach 100% using polynomial equation.
+    Requires solving ax³ + bx² + cx + (d - 100) = 0 via Newton-Raphson
+    or Cardano's method. Produces estimated completion date and delay days.
+
+
+================================================================================
+  4. FILES TOUCHED
+================================================================================
+
+  MODIFIED (this phase):
+    app/Services/AI/AIPredictionService.php  — add r_squared_slr/poly keys
+    app/Services/AI/AIPredictionPresenter.php — pass-through new keys
+    app/Services/AI/AIExplanationService.php  — ✅ DONE (prompt update)
+    resources/views/admin/projects/tabs/ai-prediction.blade.php — model info display
+
+  MODIFIED (previous phase):
+    All Phase 1 files remain unchanged from their Phase 1 state.
+
+  ═════════════════════════════════════════════════════════════════════════════
+
+
+================================================================================
+  5. DEPENDENCY FLOW (Updated)
+================================================================================
+
+  RegressionDatasetBuilder
+      ↓
+  PolynomialRegressionService ← NEW in Phase 1
+  LinearRegressionService
+      ↓
+  AIPredictionService (selects model, stores both R² values)
+      ↓
+  ForecastService (dispatches to correct model)
+      ↓
+  BaselineComparisonService
+      ↓
+  ProjectAssessmentService
+      ↓
+  AIPredictionPresenter (passes regression_method + both R² values)
+      ↓
+  AIExplanationService (prompt now includes regression method) ✅ DONE
+      ↓
+  Blade View (shows model info + R² comparison) ← THIS PHASE
+
+
+================================================================================
+  6. VERIFICATION CHECKLIST
+================================================================================
+
+  After implementing this phase:
+
+  ☐ New keys appear in regression_info: r_squared_slr, r_squared_poly
+  ☐ Blade shows "Polynomial Regression" when polynomial is selected
+  ☐ Blade shows "Linear Regression" when SLR is selected
+  ☐ R² comparison table visible when both models were computed
+  ☐ R² comparison hidden when r_squared_slr/poly are null
+  ☐ Completed projects show "Project Completed" (no model info)
+  ☐ Insufficient data shows "N/A" or "Insufficient Data"
+  ☐ Gemini analysis correctly identifies the regression model used
+  ☐ All 71 pure unit tests pass
+  ☐ No V1 functionality broken
+
+
+================================================================================
+  7. CONVERSATION CONTINUATION GUIDE
+================================================================================
+
+  When continuing Phase 2 in a new session:
+
+  1. Start with Step 1 — modify AIPredictionService to store both R² values
+  2. Update Presenter to pass-through new keys
+  3. Update Blade to display model info (may need to read current blade first)
+  4. Test all changes
+  5. Verify AI prompt was already updated (Step 2)
+  6. Record progress log
+
+  AIExplanationService prompt update was completed early (July 22, 2026)
+  to fix the Gemini response. Verification:
+    - Check that buildPrompt() includes regression_method, equation, method_reason
+    - Run a real project through the pipeline and check Gemini output
+
+
+================================================================================
+  END OF PHASE 2 PLAN
+================================================================================

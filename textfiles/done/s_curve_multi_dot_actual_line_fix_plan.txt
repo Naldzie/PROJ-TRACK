@@ -1,0 +1,133 @@
+===============================================================================
+  PLAN FILE
+  S-Curve Multi-Dot Actual Line Fix — Show All Inspection Records on Date Axis
+  CSPC PMU System
+  Status: COMPLETE — July 20, 2026
+  Part of: baseline_extension_adjustment_plan__4_ (1) — Part C
+===============================================================================
+
+===============================================================================
+  WHAT THIS PLAN COVERS
+===============================================================================
+
+Fixing the S-Curve chart's actual line to show ALL individual progress
+inspection records as data points on a continuous date axis, instead of
+collapsing them to only the latest record per month.
+
+===============================================================================
+  THE PROBLEM
+===============================================================================
+
+The system allows multiple progress history records per month (e.g., a
+re-inspection after a corrective action). However, the S-Curve chart's
+actual line currently shows only ONE point per month — the latest record
+by inspection_month_date.
+
+Root cause: ProjectChartService::buildBaselineScheduleChartData()
+    $progressHistory->where('month_label', $monthLabel)->last()
+This filters to only the last record per month label. All earlier
+inspection records for the same month are silently discarded.
+
+===============================================================================
+  CHOSEN DIRECTION
+===============================================================================
+
+Convert the chart X-axis from category-based (month labels) to
+timestamp-based (linear scale with millisecond timestamps). This allows
+individual data points to be positioned at their exact dates without
+requiring a Chart.js date adapter library.
+
+Data format change:
+  - Planned datasets (Original Plan, Adjusted Plan): each point becomes
+    { x: <planned_date_timestamp>, y: <planned_progress_percent> }
+  - Actual dataset: each record becomes
+    { x: <inspection_date_timestamp>, y: <actual_progress_percent> }
+  - ALL progress history records included — no month_label filter
+
+===============================================================================
+  FILES TO TOUCH
+===============================================================================
+
+  MODIFY: app/Services/ProjectChartService.php
+  MODIFY: public/js/admin/projects/s-curve-chart.js
+  MODIFY: resources/views/projects/project_detail/components/tabs/progress.blade.php
+
+===============================================================================
+  IMPLEMENTATION STEPS
+===============================================================================
+
+  Step 1 — ProjectChartService.php (server data format)
+  Step 2 — s-curve-chart.js (chart rendering)
+  Step 3 — progress.blade.php (legend check)
+  Step 4 — Edge case testing
+
+===============================================================================
+  SESSION LOG — July 20, 2026
+===============================================================================
+
+CONTEXT: User requested implementation of multi-dot actual line fix for
+S-Curve chart. Full implementation completed in one session.
+
+WHAT WAS BUILT:
+
+  ✅ Step 1 — ProjectChartService.php:
+     - buildBaselineScheduleChartData() now returns ALL progress history
+       records as individual {x, y} data points with millisecond timestamps
+     - Planned lines also converted to {x, y} format for consistent
+       linear x-axis
+     - y_max calculation includes actual data point values
+     - Monthly summary unchanged (still latest record per month)
+     - New tick_timestamps array for tick anchor points
+
+  ✅ Step 2 — s-curve-chart.js:
+     - X-axis changed from type:'category' to type:'linear' with
+       timestamp-based tick formatting (formatTimestampMonth helper)
+     - Datasets use {x, y} objects for all three lines (Original Plan,
+       Actual Progress, Adjusted Plan)
+     - Tooltip title callback shows month-year from timestamps
+     - buildSetupPreviewChartData() updated for new {x,y} format
+     - Data config no longer uses labels array (linear axis reads
+       x values from data points)
+
+  ✅ Step 3 — progress.blade.php:
+     - Legend visibility check changed from some() to array length > 0
+
+  ✅ Step 4 — baseline-schedule-setup-modal.js:
+     - updateSetupSCurvePreview() update path: removed data.labels
+       assignment (no longer needed with linear x-axis); datasets[0].data
+       updated with {x,y} objects directly
+
+FILES TOUCHED:
+  - MODIFY: app/Services/ProjectChartService.php
+  - MODIFY: public/js/admin/projects/s-curve-chart.js
+  - MODIFY: resources/views/projects/project_detail/components/tabs/progress.blade.php
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+  - CREATE: textfiles/s_curve_multi_dot_actual_line_fix_plan.txt
+
+BUG FIX — Tooltip index misalignment (July 20, 2026):
+  PROBLEM: After the multi-dot fix, `mode: 'index'` with datasets of
+  different lengths (planned=24 entries, actual=48 entries) caused the
+  tooltip to show mismatched data — e.g. hovering near Oct 2025 actual
+  data (index 19 in actual_data) displayed Jun 2026's planned value
+  (also index 19 in planned_data). The array index was no longer a valid
+  common key across datasets.
+  FIX: Changed interaction mode from `mode: 'index'` to
+  `mode: 'nearest'` with `axis: 'x'`. Now finds the single nearest point
+  by x-distance (timestamp proximity) across all datasets.
+  TRADE-OFF: Tooltip now shows only one dataset's value at a time
+  (whichever line is nearest to cursor), instead of all datasets
+  simultaneously.
+
+FUTURE ADDITION — Custom multi-dataset tooltip:
+  To restore the ability to see Planned + Actual side-by-side in one
+  tooltip, implement a custom tooltip plugin that finds the nearest
+  data point in EACH dataset (by x-distance) and renders all values
+  together. This would use Chart.js's `external` tooltip or a custom
+  `onHover` handler with a positioned HTML overlay.
+  STATUS: ⬜ NOT STARTED — deferred until user requests it.
+  DEPENDENCY: This is a purely frontend change; no backend data
+  format changes needed.
+
+===============================================================================
+  END OF PLAN FILE
+===============================================================================

@@ -1,0 +1,668 @@
+===============================================================================
+  PROJECT DETAIL REFACTORING PLAN
+  CSPC PMU System
+  Created: July 14, 2026
+  Based on: analysis of ProjectDetailService, controllers, blades
+===============================================================================
+
+===============================================================================
+  WHAT THIS PLAN COVERS
+===============================================================================
+
+Refactoring the monolithic ProjectDetailService (1355 lines) into focused,
+single-responsibility sub-services, and cleaning up the surrounding code
+that directly interacts with it.
+
+===============================================================================
+  STATUS SUMMARY
+===============================================================================
+
+  ✅ DONE — All extraction steps 2–6 completed (see progress log below)
+  ⬜ Step 1: Dead file/variant cleanup (user may do this themselves)
+  ✅ DONE — Step 7: Removed dead V2 button + showV2() + route (see progress log)
+  ⬜ Step 8: Controller resolution updates (deferred — pass-through keeps compat)
+  ⬜ Step 9: Final regression testing (pending)
+
+===============================================================================
+  SCOPE / WHAT IS AFFECTED
+===============================================================================
+
+FILES DIRECTLY TOUCHED BY THE REFACTOR:
+  - app/Services/ProjectDetailService.php            ← split into sub-services
+  - app/Http/Controllers/ProjectController.php       ← update service resolution
+  - app/Http/Controllers/ProjectProgressController.php ← update service resolution
+  - resources/views/projects/project_detail/...      ← NO changes (data shape preserved)
+
+FILES NOT TOUCHED (already clean):
+  - app/Services/AI/AIPredictionPresenter.php         ← already separated
+  - app/Services/AI/AIPredictionService.php           ← already separated
+  - app/Services/AI/RecommendationEngine.php          ← already separated
+  - All baseline-schedule JS files                   ← frontend, not affected
+  - All modals/blades beyond data consumption         ← interface preserved
+
+===============================================================================
+  LAZY LOADING — NOT AFFECTED
+===============================================================================
+
+The lazy loading is a controller-level pattern, not a service-level one.
+
+  ProjectController::show($id)
+    → ProjectDetailService::prepareProjectData($project)
+      → returns charts=['ready'=>false], trends=['ready'=>false]   ← no change
+
+  ProjectController::getChartData($id)    (called via AJAX on Progress tab click)
+    → ProjectDetailService::prepareChartData()      ← moves to ProjectChartService
+    → ProjectDetailService::prepareTrendData()       ← moves to ProjectChartService
+
+After refactoring, the controller calls:
+  → ProjectChartService::prepareChartData()   (same inputs, same outputs)
+  → ProjectChartService::prepareTrendData()    (same inputs, same outputs)
+
+Zero behavioral change — the AJAX endpoint, the response format, and the
+lazy-loading trigger remain identical. Only the internal class changes.
+
+===============================================================================
+  CURRENT ARCHITECTURE (Before)
+===============================================================================
+
+ProjectDetailService (1355 lines)
+│
+├── prepareProjectData()
+│   ├── getOverviewStats()          ← header stats, budget, activities
+│   ├── getProgressMetrics()        ← progress %, status color
+│   ├── getProjectStatus()          ← on_track/behind/at_risk
+│   ├── buildAIPredictionData()     ← delegates to AIPredictionPresenter
+│   ├── buildDocumentsComplianceData() ← groups documents by type
+│   └── formatMonthLabelForDisplay()
+│
+├── prepareChartData()              ← S-Curve chart data (AJAX)
+│   └── buildBaselineScheduleChartData()
+│       ├── calculateExtensionBaseline()
+│       ├── calculateExtensionFromStartDate()
+│       └── extendChartForExtensionCompletion()
+│
+├── prepareTrendData()              ← trend data (AJAX)
+│   ├── buildVarianceTrendData()
+│   └── buildActivityBurndownData()
+│
+├── getRiskLevel()                  ← SHARED: used by getProjectStatus + dashboard
+│
+├── prepareProjectDataV2()          ← DEAD CODE (button commented out in blade)
+│   ├── buildForecastCards()
+│   └── buildRiskAndActionData()
+│
+├── Convenience methods:            ← used by ProjectProgressController
+│   ├── getActivities()
+│   ├── getActivitiesByMonth()
+│   ├── getSCurveMonthlySummary()
+│   ├── getActivitiesStatistics()
+│   └── getCurrentProgress()
+│
+├── buildQualityChecks()            ← internal helper
+├── calculateDaysRemaining()        ← internal helper
+├── getStatusColor()                ← internal helper
+└── formatMonthLabelForDisplay()    ← internal helper
+
+
+DEPENDENCIES:
+  AIPredictionPresenter (via constructor injection)
+  Project model, ProjectBaselineSchedule, ProjectActivity,
+  ProjectProgressHistory, ProjectExtension models (inline queries)
+
+CONTROLLERS THAT RESOLVE IT:
+  ProjectController::show()          → app(ProjectDetailService::class)
+  ProjectController::getChartData()  → app(ProjectDetailService::class)
+  ProjectController::showV2()        → app(ProjectDetailService::class)
+  ProjectProgressController::recordMonthlyProgress() → app(ProjectDetailService::class)
+
+DATA FLOW TO BLADES:
+
+  prepareProjectData()
+  │
+  ├── 'overview' ──→ header.blade.php
+  │                  stats-row.blade.php
+  │                  overview.blade.php (Monthly Progress Snapshot)
+  │
+  ├── 'progress' ──→ overview.blade.php (status badge / color)
+  │
+  ├── 'status' ────→ overview.blade.php (planned/actual/variance display)
+  │
+  ├── 'ai_prediction' ──→ overview.blade.php → ai-prediction.blade.php
+  │
+  ├── 'documents' ──→ overview.blade.php (documents list)
+  │   'documents_by_type'
+  │   'total_documents'
+  │
+  ├── 'charts' ────→ ['ready'=>false]  ← lazy loaded via AJAX
+  └── 'trends' ────→ ['ready'=>false]  ← lazy loaded via AJAX
+
+  prepareChartData()  ──→ progress.blade.php (S-Curve chart, monthly summary)
+  prepareTrendData()  ──→ progress.blade.php (variance trend, burndown)
+
+===============================================================================
+  TARGET ARCHITECTURE (After)
+===============================================================================
+
+ProjectDetailService (orchestrator, ~50-80 lines)
+│   Only responsibility: compose data from sub-services
+│
+├── prepareProjectData()
+│   ├── ProjectOverviewService::getOverviewStats()
+│   ├── ProjectOverviewService::getProgressMetrics()
+│   ├── ProjectStatusService::getProjectStatus()
+│   ├── ProjectDetailService::buildAIPredictionData()  ← stays (thin wrapper)
+│   └── ProjectDocumentService::buildDocumentsComplianceData()
+│
+├── getRiskLevel()          ← stays in ProjectStatusService (single source of truth)
+│
+├── Convenience pass-through:
+│   ├── getActivities()             → delegates to ProjectOverviewService
+│   ├── getActivitiesByMonth()      → delegates to ProjectOverviewService
+│   ├── getSCurveMonthlySummary()   → delegates to ProjectChartService
+│   ├── getActivitiesStatistics()   → delegates to ProjectOverviewService
+│   └── getCurrentProgress()        → delegates to ProjectChartService
+│
+
+
+NEW: ProjectOverviewService
+│   Extracted from: getOverviewStats(), getProgressMetrics(),
+│                   getActivities(), getActivitiesByMonth(),
+│                   getActivitiesStatistics()
+│   Also takes: formatMonthLabelForDisplay(), calculateDaysRemaining(),
+│               getStatusColor()
+│
+│   Methods:
+│   ├── getOverviewStats(Project $project, $progressHistory = null): array
+│   ├── getProgressMetrics(Project $project): array
+│   ├── getActivities($projectId): Collection
+│   ├── getActivitiesByMonth($projectId, $monthLabel): Collection
+│   ├── getActivitiesStatistics($projectId): array
+│   ├── formatMonthLabelForDisplay(?string $monthLabel): string
+│   ├── calculateDaysRemaining(Project $project): int
+│   └── getStatusColor(string $status): string
+
+
+NEW: ProjectStatusService
+│   Extracted from: getProjectStatus(), getRiskLevel()
+│   Note: getRiskLevel() is the shared single-source-of-truth used by
+│   both the status badge (via getProjectStatus) and the AI prediction
+│   pipeline. It MUST remain public and accessible.
+│
+│   Methods:
+│   ├── getProjectStatus(Project $project, $progressHistory = null): array
+│   └── getRiskLevel(float $behindPercent): array
+│
+│   IMPORTANT: The dashboard also uses getRiskLevel(). If any dashboard
+│   service currently calls ->getRiskLevel(), it will now call
+│   app(ProjectStatusService::class)->getRiskLevel() instead. Update
+│   that reference as needed.
+
+
+NEW: ProjectChartService
+│   Extracted from: prepareChartData(), prepareTrendData(),
+│                   buildBaselineScheduleChartData(),
+│                   calculateExtensionBaseline(),
+│                   calculateExtensionFromStartDate(),
+│                   extendChartForExtensionCompletion(),
+│                   buildVarianceTrendData(),
+│                   buildActivityBurndownData(),
+│                   buildQualityChecks(),
+│                   getSCurveMonthlySummary(),
+│                   getCurrentProgress()
+│
+│   Methods:
+│   ├── prepareChartData(Project $project, ...): array
+│   ├── prepareTrendData(Project $project): array
+│   ├── buildBaselineScheduleChartData(...): array
+│   ├── calculateExtensionBaseline(Project $project, array $chartData): array
+│   ├── calculateExtensionFromStartDate(array $chartData, Project $project): array
+│   ├── extendChartForExtensionCompletion(array $chartData, Project $project): array
+│   ├── buildVarianceTrendData(...): array
+│   ├── buildActivityBurndownData(...): array
+│   ├── buildQualityChecks(...): array
+│   ├── getSCurveMonthlySummary($projectId): array
+│   └── getCurrentProgress($projectId): float|null
+
+
+NEW: ProjectDocumentService
+│   Extracted from: buildDocumentsComplianceData()
+│
+│   Methods:
+│   ├── buildDocumentsComplianceData(Project $project): array
+
+
+REMOVED (Dead Code):
+│   prepareProjectDataV2()           ← button is commented out in blade
+│   buildForecastCards()             ← only called by prepareProjectDataV2()
+│   buildRiskAndActionData()         ← only called by prepareProjectDataV2()
+
+
+UPDATED: ProjectDetailService (after extraction)
+│   Dependencies injected via constructor:
+│   ├── ProjectOverviewService
+│   ├── ProjectStatusService
+│   ├── ProjectChartService
+│   ├── ProjectDocumentService
+│   └── AIPredictionPresenter (unchanged)
+│
+│   prepareProjectData():
+│       return [
+│           'overview'      => $this->overviewService->getOverviewStats($project),
+│           'progress'      => $this->overviewService->getProgressMetrics($project),
+│           'charts'        => ['ready' => false],
+│           'status'        => $this->statusService->getProjectStatus($project),
+│           'ai_prediction' => $this->buildAIPredictionData($project),
+│           'trends'        => ['ready' => false],
+│           'documents'     => $docData['documents'] ?? [],
+│           'documents_by_type' => $docData['documents_by_type'] ?? collect(),
+│           'total_documents'   => $docData['total_documents'] ?? 0,
+│       ];
+│
+│   Convenience pass-through methods:
+│       getActivities($id)              → $this->overviewService->getActivities($id)
+│       getActivitiesByMonth($id, $m)   → $this->overviewService->getActivitiesByMonth($id, $m)
+│       getSCurveMonthlySummary($id)    → $this->chartService->getSCurveMonthlySummary($id)
+│       getActivitiesStatistics($id)    → $this->overviewService->getActivitiesStatistics($id)
+│       getCurrentProgress($id)         → $this->chartService->getCurrentProgress($id)
+│       getRiskLevel($behindPercent)    → $this->statusService->getRiskLevel($behindPercent)
+
+===============================================================================
+  IMPLEMENTATION STEPS
+===============================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 2 — Create ProjectOverviewService
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  CREATE: app/Services/ProjectOverviewService.php
+
+What to extract from ProjectDetailService:
+  - getOverviewStats()          ← lines 491-573
+  - getProgressMetrics()        ← lines 581-588
+  - getActivities()             ← lines 736-741
+  - getActivitiesByMonth()      ← lines 750-756
+  - getActivitiesStatistics()   ← lines 831-846
+  - formatMonthLabelForDisplay() ← lines 464-483
+  - calculateDaysRemaining()    ← lines 649-653
+  - getStatusColor()            ← lines 661-671
+
+The formatMonthLabelForDisplay() and calculateDaysRemaining() are also used
+by ProjectChartService internally. They should either:
+  (a) remain in ProjectOverviewService and be called from chart service, or
+  (b) be extracted to a shared helper/trait
+
+Recommend (a) for simplicity — ProjectChartService injects ProjectOverviewService.
+
+Testing:
+  - Visit project detail page → header stats, stats-row, and overview tab
+    show identical values to before (progress %, activities, budget, etc.)
+
+Files touched:
+  - CREATE: app/Services/ProjectOverviewService.php
+  - MODIFY: app/Services/ProjectDetailService.php (remove extracted methods)
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 3 — Create ProjectStatusService
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  CREATE: app/Services/ProjectStatusService.php
+
+What to extract from ProjectDetailService:
+  - getProjectStatus()          ← lines 1287-1354
+  - getRiskLevel()              ← lines 684-699
+
+CRITICAL: getRiskLevel() is the shared single-source-of-truth. After extraction,
+  any code that called $projectDetailService->getRiskLevel() must now call
+  $projectStatusService->getRiskLevel() instead. Search for getRiskLevel
+  across the entire codebase to find all callers.
+
+Testing:
+  - Visit project detail page → status label/color/message identical to before
+  - Verify dashboard project cards still show correct status badge behavior
+
+Files touched:
+  - CREATE: app/Services/ProjectStatusService.php
+  - MODIFY: app/Services/ProjectDetailService.php (remove extracted methods)
+  - SEARCH: grep for getRiskLevel across entire codebase → update callers
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 4 — Create ProjectChartService
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  CREATE: app/Services/ProjectChartService.php
+
+What to extract from ProjectDetailService:
+  - prepareChartData()              ← lines 597-626
+  - prepareTrendData()              ← lines 83-105
+  - buildBaselineScheduleChartData() ← lines 870-979
+  - calculateExtensionBaseline()    ← lines 990-1076
+  - calculateExtensionFromStartDate() ← lines 1189-1265
+  - extendChartForExtensionCompletion() ← lines 1086-1178
+  - buildVarianceTrendData()        ← lines 164-203
+  - buildActivityBurndownData()     ← lines 205-242
+  - buildQualityChecks()            ← lines 107-162
+  - getSCurveMonthlySummary()       ← lines 764-823
+  - getCurrentProgress()            ← lines 854-861
+  - getMonthlySummary()             ← lines 1274-1278
+
+NOTE: formatMonthLabelForDisplay() and calculateDaysRemaining() are used
+  inside chart methods. Since these are now in ProjectOverviewService, inject
+  ProjectOverviewService into ProjectChartService (or create a shared helper).
+  Recommended: inject ProjectOverviewService for these methods.
+
+Testing:
+  - Click Progress tab → chart loads with identical data (S-Curve, monthly
+    summary, variance trend, burndown)
+  - Toggle extension view → extension lines display identically
+
+Files touched:
+  - CREATE: app/Services/ProjectChartService.php
+  - MODIFY: app/Services/ProjectDetailService.php (remove extracted methods)
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 5 — Create ProjectDocumentService
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  CREATE: app/Services/ProjectDocumentService.php
+
+What to extract from ProjectDetailService:
+  - buildDocumentsComplianceData()  ← lines 444-462
+
+This is the smallest extraction — a single method. Makes the service available
+for future document-related features without touching the orchestrator.
+
+Testing:
+  - Visit project detail page → documents list renders identically in
+    both overview tab and documents tab
+
+Files touched:
+  - CREATE: app/Services/ProjectDocumentService.php
+  - MODIFY: app/Services/ProjectDetailService.php (remove extracted method)
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 6 — Slim ProjectDetailService to orchestrator-only
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  MODIFY: app/Services/ProjectDetailService.php
+
+After all extractions, ProjectDetailService becomes a lightweight orchestrator:
+  - Injects: ProjectOverviewService, ProjectStatusService, ProjectChartService,
+    ProjectDocumentService, AIPredictionPresenter
+  - prepareProjectData() calls each sub-service
+  - Remaining convenience methods are pass-through delegates
+  - Dead code removed: prepareProjectDataV2(), buildForecastCards(),
+    buildRiskAndActionData()
+  - buildAIPredictionData() stays as thin wrapper around AIPredictionPresenter
+
+Expected size: ~80-100 lines (down from 1355)
+
+Testing:
+  - Full project detail page loads correctly for all roles
+  - All tabs render with correct data
+  - AJAX endpoints return correct data
+
+Files touched:
+  - MODIFY: app/Services/ProjectDetailService.php
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 7 — Clean up dead V2 code + commented-out button
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  REMOVE from ProjectDetailService:
+    - prepareProjectDataV2()
+    - buildForecastCards()
+    - buildRiskAndActionData()
+
+  REMOVE from project_detail.blade.php:
+    - Commented-out V2 prototype button (lines 25-30)
+    - The commented-out contractor info in header.blade.php (lines 21-33)
+      (optional — cosmetic only)
+
+  NOTE: The V2 route in ProjectController::showV2() still exists but is
+  dead code. Consider either removing it or leaving it (no harm).
+
+Testing:
+  - No change in behavior — the V2 button was already commented out
+  - No regression in any tab
+
+Files touched:
+  - MODIFY: app/Services/ProjectDetailService.php
+  - MODIFY: resources/views/projects/project_detail/project_detail.blade.php
+  - (OPTIONAL) MODIFY: resources/views/projects/project_detail/components/header.blade.php
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 8 — Update controllers with new service resolution
+────────────────────────────────────────────────────────────────────────────────
+
+Action:
+  MODIFY: app/Http/Controllers/ProjectController.php
+
+  For show() and getChartData():
+    No changes needed to the method signatures or how $data is returned.
+    Only the service resolution changes internally:
+      - prepareChartData()  → $chartData = app(ProjectChartService::class)->prepareChartData(...)
+      - prepareTrendData()  → $trendData = app(ProjectChartService::class)->prepareTrendData(...)
+    BUT: keep using app(ProjectDetailService::class) as the entry point in
+    show() — ProjectDetailService still orchestrates everything. Only
+    getChartData() method should resolve ProjectChartService directly
+    (since it only needs chart + trend data).
+
+  ALTERNATIVE: If ProjectDetailService still has prepareChartData() and
+  prepareTrendData() as pass-through delegates, the controller needs zero
+  changes. This is the safer approach.
+
+  For showV2():
+    Remove or reduce to minimal if the V2 prototype is truly dead.
+
+  MODIFY: app/Http/Controllers/ProjectProgressController.php
+
+  For recordMonthlyProgress():
+    No changes if ProjectDetailService keeps convenience pass-through methods.
+    Otherwise resolve the specific sub-services:
+      $chartService = app(ProjectChartService::class);
+      $overviewService = app(ProjectOverviewService::class);
+      $monthlySummary = $chartService->getSCurveMonthlySummary(...);
+      $activityStats = $overviewService->getActivitiesStatistics(...);
+      $currentProgress = $chartService->getCurrentProgress(...);
+
+  RECOMMENDATION: Keep the convenience pass-through in ProjectDetailService
+  so controllers with minimal changes. Only getChartData() may benefit from
+  resolving ProjectChartService directly.
+
+Testing:
+  - Visit project detail page
+  - Click Progress tab (triggers AJAX)
+  - Record monthly progress
+  - All return correct data
+
+Files touched:
+  - (MINIMAL CHANGE) app/Http/Controllers/ProjectController.php
+  - (MINIMAL CHANGE) app/Http/Controllers/ProjectProgressController.php
+
+
+────────────────────────────────────────────────────────────────────────────────
+STEP 9 — Final regression testing
+────────────────────────────────────────────────────────────────────────────────
+
+Test scenarios (all roles: admin, staff, contractor):
+
+  1. ✅ View project detail page → all tabs render, no JS errors
+  2. ✅ Overview tab → stats, progress, status, AI prediction, documents
+  3. ✅ Baseline tab → month cards, set up/add/edit/delete targets
+  4. ✅ Progress tab (lazy load) → S-Curve chart, monthly summary table,
+     variance trend, burndown chart
+  5. ✅ Extension toggle on Progress tab → Current/Alternative views work
+  6. ✅ Documents tab → document list renders correctly
+  7. ✅ Issues tab → issues load via AJAX
+  8. ✅ Record monthly progress → correct summary data returned
+  9. ✅ getRiskLevel() → status badge on overview matches dashboard
+  10. ✅ No dead code → old V2 methods removed, no orphaned references
+
+===============================================================================
+  FILES TOUCHED (Full List)
+===============================================================================
+
+  CREATE: app/Services/ProjectOverviewService.php
+  CREATE: app/Services/ProjectStatusService.php
+  CREATE: app/Services/ProjectChartService.php
+  CREATE: app/Services/ProjectDocumentService.php
+
+  MODIFY: app/Services/ProjectDetailService.php         ← slim to orchestrator
+  MODIFY: app/Http/Controllers/ProjectController.php   ← (minimal, optional)
+  MODIFY: app/Http/Controllers/ProjectProgressController.php ← (minimal, optional)
+  MODIFY: resources/views/.../project_detail.blade.php ← remove commented V2 btn
+
+===============================================================================
+  DESIGN DECISIONS
+===============================================================================
+
+Decision 1 — Pass-through vs direct resolution in controllers
+  Context: After extraction, should controllers resolve sub-services directly
+  or go through ProjectDetailService?
+  Options: (a) Pass-through delegates (safer, fewer controller changes),
+  (b) Direct resolution in controllers (cleaner long-term)
+  Decision: Start with pass-through delegates. Controllers change only if
+  a clear benefit exists (e.g., getChartData() resolving ProjectChartService
+  directly since it doesn't need the full orchestrator).
+  Rationale: Minimizes regression risk. The pass-through layer is thin and
+  can be removed later when all callers are migrated.
+
+Decision 2 — Shared utility methods (formatMonthLabelForDisplay, etc.)
+  Context: formatMonthLabelForDisplay(), calculateDaysRemaining(), getStatusColor()
+  are used by multiple sub-services.
+  Options: (a) Keep in ProjectOverviewService, inject into other services,
+  (b) Extract to a shared helper/trait, (c) Duplicate
+  Decision: Keep in ProjectOverviewService. Inject ProjectOverviewService
+  into ProjectChartService for these methods.
+  Rationale: Avoids over-engineering a shared helper for 2-3 small methods.
+  The dependency direction is natural (chart service depends on overview).
+
+Decision 3 — Dead V2 code removal
+  Context: prepareProjectDataV2() + buildForecastCards() + buildRiskAndActionData()
+  are dead code. The V2 button in project_detail.blade.php is commented out.
+  Options: (a) Remove all V2 code, (b) Keep for future use
+  Decision: Remove. The V2 layout was a prototype that was never activated.
+  If needed later, it can be reconstructed from version control.
+  Rationale: Dead code creates maintenance burden and confusion.
+
+===============================================================================
+  CONVERSATION CONTINUATION GUIDE
+===============================================================================
+
+When resuming this refactoring:
+
+1. Start with Step 2 (ProjectOverviewService) — it's the largest extraction
+   but also the safest (pure data transformations, no chart-related complexity).
+
+2. After each step, test the project detail page before proceeding.
+
+3. Step 6 (slim the orchestrator) should be done last, after all extractions
+   are tested individually.
+
+4. The pass-through delegates in ProjectDetailService ensure backward
+   compatibility — controllers don't need to change unless desired.
+
+5. If any test fails, check: (a) method visibility (public/private),
+   (b) namespace/imports, (c) constructor injection order.
+
+===============================================================================
+  PROGRESS LOG — July 14, 2026
+===============================================================================
+
+All extractions were implemented in a single session, tested incrementally
+after each step via artisan tinker (Project model: id=1).
+
+Step 2 — ProjectOverviewService  ✅ COMPLETE
+  Created:  app/Services/ProjectOverviewService.php
+  Extracted: getOverviewStats(), getProgressMetrics(), getActivities(),
+             getActivitiesByMonth(), getActivitiesStatistics(),
+             formatMonthLabelForDisplay(), calculateDaysRemaining(),
+             getStatusColor()
+  Wired into ProjectDetailService constructor; prepareProjectData() delegates
+  overview + progress keys; convenience pass-throughs added.
+
+Step 2a — Test  ✅ PASSED
+  All keys present: overview, progress, activities, activities_by_month,
+  activities_statistics, status, risk_level. Values match expected output.
+
+Step 3 — ProjectStatusService  ✅ COMPLETE
+  Created:  app/Services/ProjectStatusService.php
+  Extracted: getProjectStatus(), getRiskLevel()
+  Wired into ProjectDetailService; risk_level key in prepareProjectData()
+  delegates. getRiskLevel() kept as pass-through for existing callers.
+  grep confirmed no external callers beyond ProjectDetailService itself.
+
+Step 3a — Test  ✅ PASSED
+  Status and risk values correct.
+
+Step 4 — ProjectChartService  ✅ COMPLETE
+  Created:  app/Services/ProjectChartService.php
+  Extracted: prepareTrendData(), prepareChartData(),
+             buildBaselineScheduleChartData(), calculateExtensionBaseline(),
+             calculateExtensionFromStartDate(),
+             extendChartForExtensionCompletion(), buildVarianceTrendData(),
+             buildActivityBurndownData(), buildQualityChecks(),
+             getSCurveMonthlySummary(), getCurrentProgress(),
+             getMonthlySummary()
+  Note: ProjectChartService depends on ProjectOverviewService for shared
+  helpers (formatMonthLabelForDisplay). Injected via constructor.
+  Wired into ProjectDetailService; all methods replaced with pass-through
+  delegates.
+
+Step 4a — Test  ✅ PASSED
+  chart_data and trend_data keys present and identical structure.
+
+Step 5 — ProjectDocumentService  ✅ COMPLETE
+  Created:  app/Services/ProjectDocumentService.php
+  Extracted: buildDocumentsComplianceData()
+  Wired into ProjectDetailService; method body replaced with pass-through.
+
+Step 5a — Test  ✅ PASSED
+  documents, documents_by_type, total_documents keys correct.
+
+Step 6 — Slim ProjectDetailService  ✅ COMPLETE
+  Removed dead V2 code: buildForecastCards(), buildRiskAndActionData()
+  Removed unused imports: ProjectBaselineSchedule, ProjectActivity,
+    ProjectProgressHistory, ProjectExtension, Carbon, Collection
+  Final size: 166 lines (down from 1355 — 88% reduction)
+  Output array key names preserved for blade compatibility.
+
+Step 6a — Test  ✅ PASSED
+  All 9 blade-facing keys present. Sub-keys (overview.progress,
+  status.planned_percent, etc.) correct. All 10 pass-through methods exist.
+
+POST-REFACTOR STATE
+  ProjectDetailService (166 lines) — orchestrator only
+  ProjectOverviewService       — overview stats, activities queries
+  ProjectStatusService         — getProjectStatus, getRiskLevel
+  ProjectChartService          — all chart/trend/extension methods
+  ProjectDocumentService       — buildDocumentsComplianceData
+
+Step 7 — Dead V2 code removal  ✅ COMPLETE
+  Removed commented-out V2 button from project_detail.blade.php (was already
+    wrapped in {{-- --}}, just deleted the dead lines).
+  Removed showV2() method from ProjectController (called deleted
+    prepareProjectDataV2(), would error if route was visited).
+  Removed Route::get('/projects/{id}/v2', ...) from routes/web.php.
+  Cleared route cache (php artisan route:clear).
+  Deleted stale variant file project_detail.blade(addmanaemodal).php.
+
+REMAINING
+  - Step 8: Optional — resolve services directly in controllers
+  - Step 9: Full regression testing across all roles and tabs
+
+==============================================================================
+  END OF PLAN FILE
+==============================================================================

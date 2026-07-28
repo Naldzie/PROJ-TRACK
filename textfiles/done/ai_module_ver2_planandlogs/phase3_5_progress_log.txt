@@ -1,0 +1,144 @@
+===============================================================================
+  PHASE 3.5 PROGRESS LOG
+  Multi-Method Completion Estimation
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Status: ✅ COMPLETE
+  Implementation Date: July 25, 2026
+  Total Tests: 197 all pass (556 assertions, 0 errors, 0 failures)
+
+===============================================================================
+  STEP-BY-STEP SUMMARY
+===============================================================================
+
+  Step 1 — Add estimatePolynomial() to CompletionEstimationService
+    File:   app/Services/AI/CompletionEstimationService.php
+    Status: ✅ COMPLETE
+    Detail: Newton-Raphson cubic solver extracting a,b,c,d from analysis.
+             Guards: regression_method !== 'polynomial' → null,
+             R² < 0.50 → null, |f'(x)| < 1e-12 → null,
+             estimated_index > MAX_REASONABLE_MONTHS → null.
+             Converts index to date via indexToDate() or baseline interpolation.
+             Classifies confidence via classifyConfidence().
+
+  Step 2 — Add estimateEarnedSchedule() to CompletionEstimationService
+    File:   app/Services/AI/CompletionEstimationService.php
+    Status: ✅ COMPLETE
+    Detail: Standard ES formula: ES from findEffectivePosition(),
+             SPI(t) = ES/AT, IEAC(t) = PD/SPI(t) = PD×AT/ES.
+             Guards: progress >= 100% → null, R² < 0.50 → null,
+             empty baselines → null, ES === null → null,
+             AT ≤ 0 or ES ≤ 0 → null, SPI ≤ 0 → null,
+             IEAC_index ≤ currentMonthIndex → null,
+             IEAC_index > MAX_REASONABLE_MONTHS → null.
+
+  Step 3 — Create CompletionComparisonService
+    File:   app/Services/AI/CompletionComparisonService.php (NEW)
+    Status: ✅ COMPLETE
+    Detail: Orchestrates all 3 methods via estimateAll().
+             Calls CompletionEstimationService for each method.
+             Adds label/label_short to each result.
+             Computes comparison summary (earliest/latest/spread/agreement).
+
+  Step 4 — Modify AIPredictionService
+    File:   app/Services/AI/AIPredictionService.php
+    Status: ✅ COMPLETE
+    Detail: — Added CompletionComparisonService constructor dependency
+             — Added estimateAllCompletions() private method
+             — Added completion_multi section to buildPredictionReport()
+             — Added completion_multi section to buildMinimalReport()
+             — Existing completion key preserved for backward compatibility
+
+  Step 5 — Modify AIPredictionPresenter
+    File:   app/Services/AI/AIPredictionPresenter.php
+    Status: ✅ COMPLETE
+    Detail: — Extract completion_multi from prediction
+             — Pass through to return array
+             — All existing keys unchanged
+
+  Step 6 — Update Blade (add multi-method comparison card)
+    File:   resources/views/.../tabs/ai-prediction.blade.php
+    Status: ✅ COMPLETE
+    Detail: Added card with:
+             — 3-column grid of method cards (Polynomial, Schedule-Aware,
+               Earned Schedule)
+             — Each card shows: label, date, delay badge, confidence badge
+             — Comparison summary row with earliest/latest/spread/agreement
+             — Card appears only for ongoing projects with valid multi-method data
+
+  Step 7 — Update AIExplanationService prompt
+    File:   app/Services/AI/AIExplanationService.php
+    Status: ✅ COMPLETE
+    Detail: Added COMPLETION ESTIMATES section with all 3 methods,
+             including dates, delays, confidence, and comparison summary.
+
+  Step 8 — Write unit tests
+    File:   tests/Unit/Services/AI/CompletionComparisonServiceTest.php (NEW)
+    Status: ✅ COMPLETE
+    Detail: 9 tests covering:
+             — Structure: methods + comparison keys present
+             — Each method returns completion data with proper keys
+             — Comparison summary has valid_count ≥ 2 when applicable
+             — High agreement when spread is small
+             — All null when baselines empty
+             — Labels and short labels present and correct
+
+  Step 9 — Run existing tests
+    Status: ✅ COMPLETE
+    Detail: All 197 tests pass (556 assertions, 0 errors, 0 failures)
+             Fixed AIPredictionServiceTest and AIPredictionPresenterTest
+             to pass the new CompletionComparisonService constructor dependency.
+
+  Step 10 — Record progress log
+    Status: ✅ COMPLETE (this file)
+
+===============================================================================
+  FILES MODIFIED/CREATED
+===============================================================================
+
+  CREATED (2):
+    app/Services/AI/CompletionComparisonService.php
+    tests/Unit/Services/AI/CompletionComparisonServiceTest.php
+
+  MODIFIED (5):
+    app/Services/AI/CompletionEstimationService.php
+    app/Services/AI/AIPredictionService.php
+    app/Services/AI/AIPredictionPresenter.php
+    app/Services/AI/AIExplanationService.php
+    resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+
+===============================================================================
+  BACKWARD COMPATIBILITY NOTES
+===============================================================================
+
+  - The existing completion key is PRESERVED unchanged.
+    The single-estimate timeline card continues to work.
+  - The completion_multi key is ADDED alongside completion.
+    A new multi-method comparison card reads from completion_multi.
+  - Both keys coexist. No existing blades or tests need modification
+    (other than the new constructor parameter for AIPredictionService).
+  - AIPredictionPresenterTest and AIPredictionServiceTest were updated
+    to inject CompletionComparisonService.
+
+===============================================================================
+  DECISIONS MADE DURING IMPLEMENTATION
+===============================================================================
+
+  1. Polynomial method checks regression_method === 'polynomial':
+     The estimatePolynomial() method returns null when the regression
+     method is not polynomial, because it needs cubic coefficients.
+     This means on typical linear/SLR data, the polynomial slot shows "N/A".
+     This is correct behavior — the method only activates when polynomial
+     regression was selected by the model selection logic.
+
+  2. Blade card placement:
+     The multi-method card is placed AFTER the timeline card but WITHIN the
+     collapsible "Detailed Analysis" section, rather than between the status
+     card and the collapsible as the plan originally suggested. This keeps
+     the initial view clean while still showing the comparison to users who
+     expand details.
+
+===============================================================================
+  END OF PHASE 3.5 PROGRESS LOG
+===============================================================================

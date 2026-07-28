@@ -1,0 +1,478 @@
+================================================================================
+  PLAN FILE
+  Month-Label / Date Validation — Backport to Add Month Target Flow
+  CSPC PMU System
+  Created: July 19, 2026
+  Based on: baseline_extension_adjustment_plan.txt Section B7
+================================================================================
+
+================================================================================
+  PROBLEM
+================================================================================
+
+The Set Up Baseline modal already validates that:
+  1) planned_date falls within the month_label's calendar month
+  2) New months are added in chronological order
+  3) (Partially) Dates respect chronological sequencing
+
+But these same validations are MISSING from the Add Month Target and Edit
+flows — both client-side (baseline-schedule-add-month-modal.js) and
+server-side (BaselineScheduleController@storeBaselineSchedule,
+@updateBaselineSchedule). This means a user can:
+
+  a) Pick month_label = "June" but planned_date = a January date — no
+     cross-validation catches it in the Add Month flow.
+
+  b) Add a target chronologically BEFORE an existing target — e.g., add
+     a January target after a May target already exists. The only
+     enforcement today is progress % ordering, not date ordering.
+
+  c) Add a target with a date BEFORE the project's very first baseline
+     start date — e.g., the project starts March 2026, but the user
+     adds a January 2026 target.
+
+================================================================================
+  CHOSEN DIRECTION
+================================================================================
+
+Backport the three validation rules from the Set Up Baseline modal's
+addSetupBaselineMonth() + storeInitialBaselineSetup() into every other
+add/edit code path. The rules themselves are proven — only the
+placement is missing.
+
+The three rules:
+
+  Rule A — "Date must fall within selected month"
+    Compare planned_date.substring(0,7) against month_label.
+    If mismatch → reject with message.
+
+  Rule B — "New target must be chronologically after all previous targets"
+    Compare planned_date against the max planned_date of existing targets.
+    If new target <= max existing → reject with message.
+
+  Rule C — "New target must not be before project's baseline start date"
+    Compare planned_date against the earliest planned_date in the project.
+    If new target < earliest existing → reject with message.
+
+================================================================================
+  FILES TO TOUCH
+================================================================================
+
+  1. MODIFY: public/js/admin/projects/baseline-schedule-add-month-modal.js
+     — saveMonthTarget(): Add Rules A, B, C client-side
+     — saveMonthTargetEdit(): Add Rules A, B, C client-side
+
+  2. MODIFY: app/Http/Controllers/BaselineScheduleController.php
+     — storeBaselineSchedule(): Add Rules A, B, C server-side
+     — updateBaselineSchedule(): Add Rules A, B, C server-side
+
+  3. (No blade changes — validation is logic-only, no UI needed)
+
+================================================================================
+  IMPLEMENTATION STEPS
+================================================================================
+
+------------------
+STEP 1 — Client-side: saveMonthTarget()
+------------------
+
+File: public/js/admin/projects/baseline-schedule-add-month-modal.js
+Function: saveMonthTarget() (~lines 303-447)
+
+1a. Add Rule A — Date/month consistency
+
+    After line 326 (monthLabel validation) and line 325 (plannedDate validation),
+    add a cross-check:
+
+    // Rule A: target date must fall within the selected calendar month
+    if (monthLabel && plannedDate) {
+        var dateMonth = plannedDate.substring(0, 7);
+        if (dateMonth !== monthLabel) {
+            errors.push('Target date must fall within ' +
+                formatMonthLabel(monthLabel) + '.');
+        }
+    }
+
+    (Format: use the same formatMonthLabel() that already exists in the setup
+     modal's JS. The add-month JS file doesn't have it — either import the
+     utility function or inline a simpler helper.)
+
+1b. Add Rule B — Chronological ordering
+
+    After the progress % checks (~line 361), add:
+
+    // Rule B: new target must be chronologically after all existing targets
+    var existingDates = [];
+    document.querySelectorAll(
+        '#sCurvePlanTableBody > div[style*="background: white"]'
+    ).forEach(function (card) {
+        // Extract month_label from the card's badge text
+        var monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
+        if (monthBadge) {
+            var match = monthBadge.textContent.match(/\d{4}-\d{2}/);
+            if (match) existingDates.push(match[0]);
+        }
+    });
+    if (existingDates.length > 0) {
+        existingDates.sort();
+        var latest = existingDates[existingDates.length - 1];
+        if (monthLabel && monthLabel <= latest) {
+            errors.push('"' + formatMonthLabel(monthLabel) +
+                '" must be chronologically after all previously added months ' +
+                '(latest: "' + formatMonthLabel(latest) + '"). ' +
+                'Add months in chronological order.');
+        }
+    }
+
+1c. Add Rule C — Before-start guard
+
+    // Rule C: new target must not be before the project's first baseline target
+    if (existingDates.length > 0) {
+        existingDates.sort();
+        var earliest = existingDates[0];
+        if (monthLabel && monthLabel < earliest) {
+            errors.push('"' + formatMonthLabel(monthLabel) +
+                '" cannot be earlier than the project\'s first baseline target ' +
+                '(' + formatMonthLabel(earliest) + ').');
+        }
+    }
+
+    NOTE: The same DOM query used for Rule B can be reused for Rule C — just
+    read existingDates[0] instead of the last element. Consider extracting
+    the query loop to a shared helper to avoid duplication.
+
+------------------
+STEP 2 — Client-side: saveMonthTargetEdit()
+------------------
+
+File: public/js/admin/projects/baseline-schedule-add-month-modal.js
+Function: saveMonthTargetEdit() (~lines 454-519)
+
+The edit flow is simpler because the month_label is LOCKED (readonly during
+edit — see line 175: monthInput.disabled = true). So:
+
+  Rule A — Not needed in edit mode. The month cannot change, and the date
+           was already validated when the row was first created. The user
+           can edit the date but the month stays the same → if they pick a
+           date outside the month, Rule A should still apply since they
+           could manually type a different date.
+
+  Rule B — Not applicable during edit. The row already exists in the
+           sequence; only its progress % and date within the same month
+           can change.
+
+  Rule C — Not needed (same reasoning as B).
+
+Therefore: only add Rule A to saveMonthTargetEdit(), to catch cases where
+the user types a planned_date that doesn't match the locked month_label.
+
+    // Rule A: edited date must still fall within the month
+    var editMonth = document.getElementById('monthLabel').value;  // locked
+    if (editMonth && plannedDate) {
+        var dateMonth = plannedDate.substring(0, 7);
+        if (dateMonth !== editMonth) {
+            errors.push('Target date must fall within ' +
+                formatMonthLabel(editMonth) + '.');
+        }
+    }
+
+------------------
+STEP 3 — Server-side: storeBaselineSchedule()
+------------------
+
+File: app/Http/Controllers/BaselineScheduleController.php
+Method: storeBaselineSchedule() (~lines 70-204)
+
+3a. Rule A — Date/month consistency
+
+    After the existing duplicate-month check (~line 93), add:
+
+    // Rule A: target date must fall within the selected calendar month
+    $dateMonth = substr($validated['planned_date'], 0, 7);
+    if ($dateMonth !== $validated['month_label']) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Target date must fall within ' . $validated['month_label']
+        ], 422);
+    }
+
+3b. Rule B — Chronological ordering
+
+    Before the existing progress validation block (~line 99), determine the
+    latest existing planned_date:
+
+    // Rule B: new target must be chronologically after existing targets
+    $latestDate = ProjectBaselineSchedule::where('project_id', $project->id)
+        ->max('planned_date');
+    if ($latestDate && $validated['planned_date'] <= $latestDate) {
+        return response()->json([
+            'success' => false,
+            'message' => 'New target must be chronologically after the latest existing target (' . $latestDate . ').'
+        ], 422);
+    }
+
+3c. Rule C — Before-start guard
+
+    // Rule C: new target must not be before the project's first baseline date
+    $earliestDate = ProjectBaselineSchedule::where('project_id', $project->id)
+        ->min('planned_date');
+    if ($earliestDate && $validated['planned_date'] < $earliestDate) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Target date cannot be before the project\'s first baseline target (' . $earliestDate . ').'
+        ], 422);
+    }
+
+    PLACEMENT NOTE: If $latestDate and $earliestDate are both queried, they
+    can be combined into a single DB query to the same table. Consider:
+
+        $dateRange = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->selectRaw('MIN(planned_date) as earliest, MAX(planned_date) as latest')
+            ->first();
+
+    Then check $dateRange->latest and $dateRange->earliest. Reduces 2 queries
+    to 1.
+
+------------------
+STEP 4 — Server-side: updateBaselineSchedule()
+------------------
+
+File: app/Http/Controllers/BaselineScheduleController.php
+Method: updateBaselineSchedule() (~lines 378-456)
+
+4a. Rule A — Date/month consistency
+
+    The schedule's month_label is available from $schedule->month_label.
+    Add after the existing guards (~line 405):
+
+    // Rule A: edited date must still fall within the schedule's month
+    $dateMonth = substr($validated['planned_date'], 0, 7);
+    if ($dateMonth !== $schedule->month_label) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Target date must fall within ' . $schedule->month_label
+        ], 422);
+    }
+
+    Rule B and Rule C are NOT needed in the edit flow because:
+      - The row already exists and is part of the established sequence.
+      - The month_label is locked — only planned_date within that same
+        month can change.
+      - Progress % ordering is already enforced against sibling extension rows.
+
+------------------
+STEP 5 — Shared utility function
+------------------
+
+Recommended: extract formatMonthLabel() (the "2026-01" → "January 2026"
+helper) into baseline-schedule-utils.js so both the setup modal and the
+add-month modal can share it without duplication.
+
+  File: public/js/admin/projects/baseline-schedule-utils.js
+  Action: Add or ensure formatMonthLabel(val) exists here.
+
+  The add-month modal's saveMonthTarget() will then call:
+    formatMonthLabel(monthLabel)
+  instead of inlining a duplicate conversion.
+
+  CONSEQUENCE: If formatMonthLabel() is already in the setup modal's file
+  but NOT in the utils file, it needs to be moved or aliased. Check before
+  implementing.
+
+================================================================================
+  TESTING
+================================================================================
+
+6a — Client-side (Manual browser testing on the Add Month Target modal)
+
+  ✅ 6a.1 Add target with matching month and date → success
+  ✅ 6a.2 Pick "June 2026" but set planned_date to "2026-01-15" → error:
+         "Target date must fall within June 2026."
+  ✅ 6a.3 After existing targets exist, pick a month_label BEFORE the latest
+         → error: "must be chronologically after..."
+  ✅ 6a.4 Pick a month_label earlier than the project's first baseline month
+         → error: "cannot be earlier than..."
+  ✅ 6a.5 Valid target saves successfully (no regression)
+
+6b — Edit flow (Client-side)
+
+  ✅ 6b.1 Open edit, change planned_date to a date outside the locked month
+         → error: "Target date must fall within..."
+  ✅ 6b.2 Open edit, valid date → saves successfully
+
+6c — Server-side (via Tinker or direct POST/PATCH)
+
+  ✅ 6c.1 POST storeBaselineSchedule with mismatched month/date → 422 error
+  ✅ 6c.2 POST storeBaselineSchedule with date before existing targets → 422
+  ✅ 6c.3 POST storeBaselineSchedule with valid data → 200
+  ✅ 6c.4 PATCH updateBaselineSchedule with mismatched month/date → 422
+  ✅ 6c.5 PATCH updateBaselineSchedule with valid data → 200
+
+================================================================================
+  DESIGN DECISIONS
+================================================================================
+
+Decision 1 — Server-side is authoritative; client-side is for UX
+  All three rules are enforced on the SERVER (controller) as the single
+  source of truth. The client-side checks in JS exist only to give the user
+  immediate feedback without a round-trip. If there is any discrepancy, the
+  server's response wins.
+
+Decision 2 — Edit flow only needs Rule A
+  During edit, the month_label is locked (readonly/disabled). The user
+  cannot change which month the row belongs to. Rule B (ordering) is not
+  needed because the row's position in the sequence doesn't change. Only
+  Rule A matters — to prevent the user from picking a planned_date that
+  falls outside the row's month.
+
+Decision 3 — Rules A, B, C apply to both pre-extension and post-extension
+  These are not extension-aware rules. They enforce valid data structure
+  regardless of extension_count. The extension-awareness for progress %
+  validation (B6) is separate and already implemented.
+
+Decision 4 — Earliest-date reference (Rule C)
+  For Rule C, the "project's baseline start" is defined as the earliest
+  planned_date across ALL baseline schedule rows for the project. This is
+  the simplest and most consistent definition — it doesn't require knowing
+  the project's official start date from a separate field.
+
+================================================================================
+  FILES TOUCHED (Summary)
+================================================================================
+
+  MODIFY: public/js/admin/projects/baseline-schedule-add-month-modal.js
+          — saveMonthTarget(): add Rules A, B, C
+          — saveMonthTargetEdit(): add Rule A
+          — add formatMonthLabel() helper (or import from utils)
+
+  MODIFY: public/js/admin/projects/baseline-schedule-utils.js
+          — (if needed) add formatMonthLabel() as shared utility
+
+  MODIFY: app/Http/Controllers/BaselineScheduleController.php
+          — storeBaselineSchedule(): add Rules A, B, C
+          — updateBaselineSchedule(): add Rule A
+
+================================================================================
+  END OF PLAN FILE
+  Last updated: July 20, 2026 — all steps complete and tested
+
+================================================================================
+  FILES TOUCHED (Actual — July 20, 2026)
+================================================================================
+
+  MODIFY: public/js/admin/projects/baseline-schedule-utils.js
+          — Added formatMonthLabel() as shared utility
+
+  MODIFY: public/js/admin/projects/baseline-schedule-add-month-modal.js
+          — saveMonthTarget(): added Rules A, B, C
+          — saveMonthTargetEdit(): added Rule A
+
+  MODIFY: app/Http/Controllers/BaselineScheduleController.php
+          — storeBaselineSchedule(): added Rules A, B, C
+          — updateBaselineSchedule(): added Rule A
+
+===============================================================================
+  SESSION LOG — July 20, 2026 — Month-date validation backport complete
+===============================================================================
+
+  All 5 implementation steps completed. Rules A (date/month consistency), B
+  (chronological ordering), and C (before-start guard) were backported from
+  the Set Up Baseline modal into the Add Month Target and Edit flows.
+
+  CLIENT-SIDE:
+    - saveMonthTarget() validates that planned_date's YYYY-MM matches
+      month_label (Rule A), that the new month is chronologically after all
+      existing targets (Rule B), and not before the earliest existing target
+      (Rule C). Uses formatMonthLabel() from shared utils.
+    - saveMonthTargetEdit() validates that the edited planned_date still
+      matches the locked month_label (Rule A). Rules B/C not needed since the
+      row's sequence position doesn't change during edit.
+
+  SERVER-SIDE:
+    - storeBaselineSchedule() checks Rule A via substr comparison, and Rules
+      B/C via a single combined MIN/MAX planned_date query.
+    - updateBaselineSchedule() validates Rule A using $schedule->month_label.
+
+  SHARED UTILITY:
+    - formatMonthLabel() added to baseline-schedule-utils.js as the canonical
+      shared version (was previously duplicated in two other JS files).
+
+  PHP syntax check passed. No regressions in any existing save path.
+
+===============================================================================
+  SESSION LOG — July 20, 2026 (continued) — Bug fixes + Merged modal
+===============================================================================
+
+  == BUG FIXES (from test feedback) ==
+
+  Bug 1 — 100% cap not blocking equal values
+    Changed `else if (maxProgressPercent === 100 && newProgressPercent < 100)`
+    → `else if (maxProgressPercent === 100)` in both JS (add-month-modal.js)
+    and PHP (BaselineScheduleController.php). Equal values are now blocked.
+
+  Bug 2 — Same-month error message confusing
+    Added separate duplicate-month check before Rule B messaging. Changed
+    comparator from `<=` to `<` in both JS and PHP. Added duplicate
+    planned_date query in PHP controller.
+
+  UX — Add Month Target button visibility
+    Changed `@else` → `@elseif($project->extension_count > 0)` in
+    baseline-schedule.blade.php. Button now hidden when no extension exists.
+
+  == MERGED MODAL (Edit Target + Manage Activities) ==
+
+  Goal: Combine the separate "Edit Monthly Target" and "Manage Activities"
+  modals into a single "Manage Month" modal to reduce clutter and improve UX.
+
+  Files created:
+    - resources/views/projects/project_detail/components/modals/_manage_month_modal.blade.php
+      Two-section layout: Target Information (date, %, description) + Activities
+      (list + add form). Footer has Save Changes (hidden in activities-only
+      mode) and Close/Cancel button.
+
+    - public/js/admin/projects/baseline-schedule-manage-month-modal.js
+      openManageMonthModal() — two modes:
+        "edit" mode (extension exists, no progress recorded): target fields
+        editable, Save Changes visible, PATCH endpoint on save.
+        "activities-only" mode (no extension || has progress): target fields
+        locked, only Close button, activities always interactive.
+      loadManageMonthActivities() — fetches and renders activities.
+      addManageMonthActivity() — POST new activity, refreshes list + inline.
+      deleteManageMonthActivity() — uses reusable delete confirmation modal.
+      saveManageMonthTarget() — PATCH target info, reloads page on success.
+      escapeHtml() — utility.
+
+  Files modified:
+    - baseline-schedule.blade.php:
+      - Swapped button order: Record Progress now before Edit Progress.
+      - Replaced separate "Edit" + "Manage" buttons with single "Manage Month"
+        button calling openManageMonthModal() with appropriate mode.
+      - Added @include for new modal + JS.
+
+    - baseline-schedule-manage-activities-modal.js:
+      - reloadInlineActivities() updated to find buttons by
+        openManageMonthModal instead of openManageActivitiesModal.
+
+    - baseline-schedule-record-progress-modal.js:
+      - "No activities" link now opens openManageMonthModal() in
+        activities-only mode instead of openManageActivitiesModal().
+
+  Bugs fixed during development:
+    - Removed duplicate Cancel button in modal footer (two cancel/close
+      buttons were shown in activities-only mode).
+    - Fixed "HTTP 500" error when adding activity: month_label was being sent
+      as "July 2024" (formatted) instead of "2024-07" (raw). Added hidden
+      input manageMonthRawLabel to store the raw value; improved fetch error
+      handling to surface server error messages.
+    - Replaced browser confirm() with reusable delete confirmation modal
+      (showDeleteConfirmation from components/delete-confirmation-modal).
+    - Added guard preventing deletion of completed activities (both
+      client-side showToast warning and server-side 422 response in
+      ProjectActivityController).
+    - Replaced alert() with showToast() for input validation messages
+      ("Please enter an activity name.").
+
+  ===============================================================================
+  END OF PLAN FILE
+  Last updated: July 20, 2026 — all work complete
+================================================================================

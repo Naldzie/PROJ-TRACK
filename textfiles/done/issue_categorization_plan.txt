@@ -1,0 +1,500 @@
+===============================================================================
+  ENHANCEMENT PLAN
+  Issue Categorization for Smarter Recommendations
+  CSPC PMU System
+  Last updated: July 18, 2026
+===============================================================================
+
+===============================================================================
+  PROBLEM
+===============================================================================
+
+Currently the RecommendationEngine counts unresolved issues:
+  open_issue_count >= 3 → "Resolve open issues before they further
+  impact progress"
+
+This treats ALL issues identically. Three material-supply issues should
+trigger a procurement recommendation. Three weather-delay issues should
+trigger no action at all. The rule engine cannot distinguish them.
+
+Additionally, the engine has no concept of issue aging — an issue that has
+been open for 60 days is treated the same as one opened yesterday. There is
+no resolution velocity tracking, so the system cannot tell if the team is
+actively closing issues or letting them pile up.
+
+===============================================================================
+  GOAL
+===============================================================================
+
+Replace the single issue-count heuristic with categorized, severity-weighted,
+and age-aware issue intelligence so that the RecommendationEngine can produce
+targeted, context-sensitive recommendations.
+
+===============================================================================
+  SCOPE
+===============================================================================
+
+IN SCOPE (this session) — ✅ COMPLETE:
+  • issue_type     — VARCHAR, nullable (categorizes the issue domain)
+  • severity       — VARCHAR, nullable (Low / Medium / High / Critical)
+  • resolved_at    — TIMESTAMP, nullable (auto-set when status→Resolved/Closed)
+  • AI rule updates — type-aware, severity-weighted, age-aware rules
+
+DEFERRED (future consideration):
+  • solution / resolution_notes — text field documenting how the issue was
+    resolved (what the contractor/engineers did). Useful for audit trail and
+    future AI learning (which solutions work per issue type), but adds UI
+    complexity. Deferred to keep this session focused.
+
+===============================================================================
+  STEP 1 — Database Migration ✅ COMPLETE
+===============================================================================
+
+2026_07_18_172127_add_issue_type_severity_resolved_at_to_issues_table.php
+
+Added three columns to the existing issues table:
+
+  up():
+    Schema::table('issues', function (Blueprint $table) {
+        $table->string('issue_type', 50)->nullable()->after('status');
+        $table->string('severity', 20)->nullable()->after('issue_type');
+        $table->timestamp('resolved_at')->nullable()->after('severity');
+    });
+
+  down():
+    Schema::table('issues', function (Blueprint $table) {
+        $table->dropColumn(['issue_type', 'severity', 'resolved_at']);
+    });
+
+Seed default types: material, contractor, weather, design, regulatory,
+financial, other.
+
+resolved_at is NOT user-facing — it is set automatically by the controller
+whenever status is updated to 'Resolved' or 'Closed'. If status moves back
+to 'Open' or 'In Progress', resolved_at is cleared.
+
+===============================================================================
+  STEP 2 — Model Constants + Scopes ✅ COMPLETE
+===============================================================================
+
+In the Issue model (app/Models/Issue.php):
+
+    const TYPES = [
+        'material', 'contractor', 'weather', 'design',
+        'regulatory', 'financial', 'other',
+    ];
+
+    const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
+
+    // Cast resolved_at to a Carbon instance
+    protected $casts = [
+        'resolved_at' => 'datetime',
+    ];
+
+    // Scope: issues currently open or in progress (not yet resolved)
+    public function scopeUnresolved($query)
+    {
+        return $query->whereIn('status', ['Open', 'In Progress']);
+    }
+
+    // Scope: issues that have been open beyond a given number of days
+    public function scopeAging($query, $days = 30)
+    {
+        return $query->unresolved()
+            ->where('created_at', '<=', now()->subDays($days));
+    }
+
+    // Scope: open issues of a specific type
+    public function scopeOfType($query, $type)
+    {
+        return $query->where('issue_type', $type)->unresolved();
+    }
+
+===============================================================================
+  STEP 3 — Issue Forms (Create + Edit) ✅ COMPLETE
+===============================================================================
+
+Added dropdown fields for issue_type and severity in:
+
+  1. issues_modal.blade.php — both the add form and edit modal:
+       • issue_type: <select> populated from Issue::TYPES
+         (default: "-- Select Type --" / optional)
+       • severity: <select> populated from Issue::SEVERITIES
+         (default: "-- Select Severity --" / optional)
+
+  2. issues.blade.php (tab view) — the edit modal fields (same as above)
+
+  3. Validation rules in both store() and update():
+       'issue_type' => 'nullable|string|in:material,contractor,weather,design,regulatory,financial,other',
+       'severity'   => 'nullable|string|in:Low,Medium,High, Critical',
+
+  4. The list/table display should show issue_type and severity as badges:
+       • issue_type badge: subtle colored badge (e.g., blue for material,
+         orange for contractor)
+       • severity badge: color-coded (green=Low, yellow=Medium, orange=High,
+         red=Critical)
+       • resolved_at is NOT shown in the UI (auto-managed)
+
+===============================================================================
+  STEP 4 — Controller Updates (resolved_at auto-management) ✅ COMPLETE
+===============================================================================
+
+In IssueController@update() (app/Http/Controllers/IssueController.php):
+
+    // After validation, before $issue->update():
+    $data = $validated;
+
+    // Auto-set resolved_at when status moves to Resolved or Closed
+    if (in_array($data['status'], ['Resolved', 'Closed'])) {
+        // Only set if not already resolved (preserve original resolution date)
+        if (!in_array($issue->status, ['Resolved', 'Closed'])) {
+            $data['resolved_at'] = now();
+        }
+    } elseif (in_array($issue->status, ['Resolved', 'Closed'])) {
+        // Moving back to Open/In Progress — clear the resolution date
+        $data['resolved_at'] = null;
+    }
+
+    $issue->update($data);
+
+In IssueController@store():
+
+    // When creating an issue with status Resolved/Closed, set resolved_at
+    $data = $validated;
+    if (in_array($data['status'], ['Resolved', 'Closed'])) {
+        $data['resolved_at'] = now();
+    }
+    $issue = Issue::create(array_merge($data, ['project_id' => $project->id]));
+
+===============================================================================
+  STEP 5 — RecommendationEngine Changes ✅ COMPLETE
+===============================================================================
+
+In extractFactors() (app/Services/AI/RecommendationEngine.php):
+
+    // ---- Replace the old single count ----
+
+    // Keep total open count for backward compatibility
+    $openIssueCount = $project->issues()
+        ->where('status', 'Open')
+        ->count();
+
+    // Per-type breakdown of open issues
+    $issuesByType = $project->issues()
+        ->where('status', 'Open')
+        ->selectRaw('issue_type, COUNT(*) as count')
+        ->groupBy('issue_type')
+        ->pluck('count', 'issue_type');
+
+    // Severity-weighted count (Critical=3, High=2, Medium=1, Low=0.5)
+    $severityWeights = ['Critical' => 3, 'High' => 2, 'Medium' => 1, 'Low' => 0.5];
+    $severityScore = $project->issues()
+        ->where('status', 'Open')
+        ->get()
+        ->sum(fn ($i) => $severityWeights[$i->severity] ?? 0);
+
+    // High/Critical severity count
+    $highSeverityCount = $project->issues()
+        ->where('status', 'Open')
+        ->whereIn('severity', ['High', 'Critical'])
+        ->count();
+
+    // Aging: issues open for 30+ days
+    $agingIssueCount = $project->issues()
+        ->whereIn('status', ['Open', 'In Progress'])
+        ->where('created_at', '<=', now()->subDays(30))
+        ->count();
+
+    // Resolution velocity: issues resolved in last 30 days
+    $resolvedLast30 = $project->issues()
+        ->whereIn('status', ['Resolved', 'Closed'])
+        ->where('resolved_at', '>=', now()->subDays(30))
+        ->count();
+
+    // New factors in the return array:
+    'open_issue_count'     => $openIssueCount,       // kept for backward compat
+    'issues_material'      => (int) ($issuesByType['material'] ?? 0),
+    'issues_contractor'    => (int) ($issuesByType['contractor'] ?? 0),
+    'issues_weather'       => (int) ($issuesByType['weather'] ?? 0),
+    'issues_design'        => (int) ($issuesByType['design'] ?? 0),
+    'issues_regulatory'    => (int) ($issuesByType['regulatory'] ?? 0),
+    'issues_financial'     => (int) ($issuesByType['financial'] ?? 0),
+    'issues_other'         => (int) ($issuesByType['other'] ?? 0),
+    'issues_high_severity' => $highSeverityCount,
+    'issues_severity_score' => $severityScore,
+    'issues_aging_count'   => $agingIssueCount,
+    'issues_resolved_30d'  => $resolvedLast30,
+
+In assessCorrective():
+
+    // ---- Replace the old generic rule with type-aware rules ----
+
+    // Material issues >= 3 → supply chain problem
+    if (($factors['issues_material'] ?? 0) >= 3) {
+        $recommendations[] = [
+            'message'  => $factors['issues_material']
+                . ' material issues unresolved — review supply chain',
+            'category' => 'corrective',
+            'reason'   => $factors['issues_material']
+                . ' material-related issues may be blocking progress',
+            'priority' => 3,
+        ];
+    }
+
+    // Contractor issues >= 2 → performance concern
+    if (($factors['issues_contractor'] ?? 0) >= 2) {
+        $recommendations[] = [
+            'message'  => $factors['issues_contractor']
+                . ' contractor issues unresolved — address performance',
+            'category' => 'corrective',
+            'reason'   => $factors['issues_contractor']
+                . ' contractor-related issues may indicate performance problems',
+            'priority' => 2,
+        ];
+    }
+
+    // Design issues >= 2 →可能需要设计审查
+    if (($factors['issues_design'] ?? 0) >= 2) {
+        $recommendations[] = [
+            'message'  => $factors['issues_design']
+                . ' design issues unresolved — consider design review',
+            'category' => 'corrective',
+            'reason'   => $factors['issues_design']
+                . ' design-related issues may require consultant input',
+            'priority' => 3,
+        ];
+    }
+
+    // Aging issues >= 2 → issues piling up without resolution
+    if (($factors['issues_aging_count'] ?? 0) >= 2) {
+        $recommendations[] = [
+            'message'  => $factors['issues_aging_count']
+                . ' issues unresolved for 30+ days — prioritize resolution',
+            'category' => 'corrective',
+            'reason'   => $factors['issues_aging_count']
+                . ' issues have been open for over a month',
+            'priority' => 2,
+        ];
+    }
+
+    // Removed: the old generic 'open_issue_count >= 3' rule
+    // It is superseded by the more specific rules above.
+
+In assessEscalation():
+
+    // High-severity issue(s) with High/Critical risk
+    if (($factors['issues_high_severity'] ?? 0) >= 1
+        && in_array($factors['risk_level'], ['High', 'Critical'], true)
+    ) {
+        $recommendations[] = [
+            'message'  => 'Resolve high-severity issue(s) requiring immediate attention',
+            'category' => 'escalation',
+            'reason'   => $factors['issues_high_severity']
+                . ' high-severity issue(s) with ' . $factors['risk_level'] . ' project risk',
+            'priority' => 1,
+        ];
+    }
+
+    // Aging issues >= 5 — systemic failure to close issues
+    if (($factors['issues_aging_count'] ?? 0) >= 5) {
+        $recommendations[] = [
+            'message'  => $factors['issues_aging_count']
+                . ' issues unresolved for 30+ days — escalation recommended',
+            'category' => 'escalation',
+            'reason'   => 'Systemic failure to resolve issues — '
+                . $factors['issues_aging_count'] . ' issues have been open for over a month',
+            'priority' => 2,
+        ];
+    }
+
+In assessMonitoring():
+
+    // Low resolution velocity compared to open rate
+    $openCount = $factors['open_issue_count'] ?? 0;
+    $resolved30d = $factors['issues_resolved_30d'] ?? 0;
+    if ($openCount >= 3 && $resolved30d < $openCount / 3) {
+        $recommendations[] = [
+            'message'  => 'Issue resolution rate is low — review issue management process',
+            'category' => 'monitoring',
+            'reason'   => $resolved30d . ' issues resolved in last 30 days vs '
+                . $openCount . ' currently open',
+            'priority' => 3,
+        ];
+    }
+
+===============================================================================
+  SUMMARY OF NEW vs REPLACED RULES
+===============================================================================
+
+OLD (removed):
+  • open_issue_count >= 3 → "Resolve open issues" (corrective, P3)
+
+NEW (added):
+  • issues_material >= 3        → "Review supply chain"          (corrective, P3)
+  • issues_contractor >= 2      → "Address contractor perf"     (corrective, P2)
+  • issues_design >= 2          → "Consider design review"      (corrective, P3)
+  • issues_aging_count >= 2     → "Prioritize aging issues"     (corrective, P2)
+  • issues_high_severity >= 1   → "Resolve high-severity"       (escalation, P1)
+    AND risk High/Critical
+  • issues_aging_count >= 5     → "Systemic escalation"         (escalation, P2)
+  • low resolution velocity     → "Review issue management"     (monitoring,  P3)
+
+===============================================================================
+  DEFERRED: Solution / Resolution Notes Field
+===============================================================================
+
+A text field for recording what the contractor/engineers did to resolve the
+issue (e.g., "Replaced defective piping section", "Revised foundation design").
+Useful for:
+
+  • Audit trail — documentation of corrective actions taken
+  • Future AI learning — correlation between issue types and effective
+    solutions (e.g., "material issues are most often resolved by X")
+  • Knowledge base — PMU can reference past solutions for similar issues
+
+Why deferred:
+  • Adds UI complexity (textarea in create/edit forms, display in list)
+  • Adds a dedicated section in the issue modal for resolution history
+  • No immediate AI benefit without a corpus of historical solution data
+  • Best implemented as a separate follow-up session once the core
+    categorization is stable
+
+===============================================================================
+  IMPACT ON FUTURE AI RECOMMENDATIONS
+===============================================================================
+
+Issue categorization is the single most impactful data gap to close
+because:
+
+1. It's immediately usable by the rule engine — no AI required to see
+   improvement in recommendation relevance.
+
+2. Issue type + severity are structured categorical features — any ML
+   model (regression, random forest, future neural network) consumes
+   them natively as one-hot encoded dimensions.
+
+3. resolved_at enables velocity and aging metrics — turning static
+   issue snapshots into trend analysis.
+
+4. It creates the foundation for outcome tracking: if an issue is
+   closed and progress improves afterward, that's a signal an AI can
+   learn from.
+
+Without categorization, all issue-related recommendations are
+noise. With it, they become the most actionable recs in the system.
+
+===============================================================================
+  ESTIMATED EFFORT
+===============================================================================
+
+  Step 1 — Migration:                  ~15 min
+  Step 2 — Model constants + scopes:   ~15 min
+  Step 3 — Blade form additions:       ~30 min
+  Step 4 — Controller updates:         ~15 min
+  Step 5 — AI Engine changes:          ~30 min
+  Testing:                             ~30 min
+
+  Total:                               ~2.25 hours
+
+===============================================================================
+  FILES TO TOUCH
+===============================================================================
+
+  NEW:     database/migrations/xxxx_add_issue_type_severity_resolved_at.php
+  MODIFY:  app/Models/Issue.php
+  MODIFY:  app/Http/Controllers/IssueController.php
+  MODIFY:  app/Services/AI/RecommendationEngine.php
+  MODIFY:  resources/views/projects/project_detail/components/modals/issues_modal.blade.php
+  MODIFY:  resources/views/projects/project_detail/components/tabs/issues.blade.php
+
+────────────────────────────────────────────────────────────────────────────────
+SESSION LOG — July 18, 2026 — Full Implementation
+────────────────────────────────────────────────────────────────────────────────
+
+CONTEXT: Full implementation of issue categorization across all 5 steps.
+Migration, model, controller, blade views, and AI engine all updated and
+tested in a single session.
+
+WHAT WAS BUILT:
+
+  ✅ Step 1 — Migration
+     2026_07_18_172127_add_issue_type_severity_resolved_at_to_issues_table.php
+     Added: issue_type (VARCHAR 50, nullable), severity (VARCHAR 20, nullable),
+            resolved_at (TIMESTAMP, nullable).
+     Migrated successfully.
+
+  ✅ Step 2 — Issue Model (app/Models/Issue.php)
+     - TYPES constant: material, contractor, weather, design, regulatory,
+       financial, other
+     - SEVERITIES constant: Low, Medium, High, Critical
+     - resolved_at added to $casts as 'datetime'
+     - issue_type, severity, resolved_at added to $fillable
+     - scopeUnresolved(): filters Open + In Progress
+     - scopeAging($days): unresolved issues older than $days
+     - scopeOfType($type): unresolved issues of a specific type
+
+  ✅ Step 3 — Issue Forms
+     - issues_modal.blade.php: Added issue_type + severity dropdowns to both
+       the Add form and Edit modal. displayIssues() now shows type/severity
+       as colored badges. editIssue() updated to handle new fields.
+     - issues.blade.php (tab view): Added Type and Severity columns to the
+       issues table. openEditIssueModal() updated. edit form JSON data now
+       includes issue_type and severity. severityTabStyle() helper added.
+
+  ✅ Step 4 — IssueController (app/Http/Controllers/IssueController.php)
+     - getIssues(): response now includes issue_type and severity
+     - store(): validation for issue_type (nullable|in:material,...) and
+       severity (nullable|in:Low,...); auto-sets resolved_at = now() when
+       status is Resolved or Closed
+     - update(): same validation; auto-manages resolved_at:
+       → status → Resolved/Closed and wasn't before → set resolved_at
+       → status → Open/In Progress and was Resolved/Closed → clear resolved_at
+
+  ✅ Step 5 — RecommendationEngine (app/Services/AI/RecommendationEngine.php)
+     extractFactors() additions:
+       - Per-type counts: issues_material, issues_contractor, issues_weather,
+         issues_design, issues_regulatory, issues_financial, issues_other
+       - issues_high_severity: count of Open issues with High/Critical severity
+       - issues_severity_score: weighted score (Critical=3, High=2, Medium=1,
+         Low=0.5)
+       - issues_aging_count: Open/In Progress issues created 30+ days ago
+       - issues_resolved_30d: Resolved/Closed issues in last 30 days
+
+     assessCorrective() — replaced old single rule with:
+       - issues_material >= 3 → "Review supply chain" (P3)
+       - issues_contractor >= 2 → "Address contractor perf" (P2)
+       - issues_design >= 2 → "Consider design review" (P3)
+       - issues_aging_count >= 2 → "Prioritize aging issues" (P2)
+
+     assessEscalation() — added:
+       - issues_high_severity >= 1 AND risk High/Critical → "Resolve
+         high-severity issues" (P1)
+       - issues_aging_count >= 5 → "Systemic escalation" (P2)
+
+     assessMonitoring() — added:
+       - Low resolution velocity (open >= 3 AND resolved < open/3) →
+         "Review issue management process" (P3)
+
+VERIFIED (7 tests, all passing):
+   1. ✅ Model constants — TYPES and SEVERITIES correctly defined
+   2. ✅ Fillable fields — all 7 expected fields, no extras
+   3. ✅ resolved_at cast — datetime cast confirmed
+   4. ✅ Database columns — issue_type, severity, resolved_at all exist
+   5. ✅ Scopes — scopeUnresolved, scopeAging, scopeOfType resolve without error
+   6. ✅ Controller — resolved_at auto-sets on Resolved/Closed, clears on Open;
+       issue_type and severity saved and returned correctly
+   7. ✅ All 7 new factors present in extractFactors() output
+
+FILES MODIFIED:
+   NEW:  database/migrations/2026_07_18_172127_add_issue_type_severity_resolved_at_to_issues_table.php
+   MOD:  app/Models/Issue.php
+   MOD:  app/Http/Controllers/IssueController.php
+   MOD:  app/Services/AI/RecommendationEngine.php
+   MOD:  resources/views/projects/project_detail/components/modals/issues_modal.blade.php
+   MOD:  resources/views/projects/project_detail/components/tabs/issues.blade.php
+
+===============================================================================
+  END OF PLAN
+  All implementation complete. Tested and verified July 18, 2026.
+  Last updated: July 18, 2026
+===============================================================================

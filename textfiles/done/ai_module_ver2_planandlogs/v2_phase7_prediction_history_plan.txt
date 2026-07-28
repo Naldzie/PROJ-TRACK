@@ -1,0 +1,547 @@
+================================================================================
+  V2 PHASE 7 IMPLEMENTATION PLAN
+  Prediction History & Trend Comparison
+  CSPC PMU System — AI Module Version 2
+================================================================================
+
+  Last Updated: July 26, 2026
+  Status: IMPLEMENTED — All 8 steps complete + post-implementation fixes
+
+  Prerequisites
+  -------------
+  • V1 — AIPredictionService stable (generatePrediction works)
+  • V1 — ProjectProgressController::recordMonthlyProgress() stable
+  • V2 Phase 1-5 — Polynomial regression, model selection, completion
+    estimation, multi-method completion, S-Curve overlay all complete
+
+  Reference Documents
+  -------------------
+  • ai_module_ver2_master_plan.txt — V2 master plan (Phase 7 section)
+  • textfiles/project_context_and_development_rules.txt — coding standards
+  • app/Services/AI/AIPredictionService.php — where prediction is generated
+  • app/Http/Controllers/ProjectProgressController.php — where actual progress is recorded
+  • app/Services/AI/AIPredictionPresenter.php — presenter output
+  • app/Services/AI/AIExplanationService.php — Gemini prompt builder
+  • resources/views/.../ai-prediction.blade.php — UI to update
+
+================================================================================
+  1. PROBLEM STATEMENT
+================================================================================
+
+  Current State
+  -------------
+  The system generates predictions every time ProjectDetailService loads
+  the AI Prediction tab. These predictions are computed and displayed,
+  but NEVER saved for later comparison. Once the next month's actual
+  progress is recorded, the previous prediction is lost forever.
+
+  The system currently uses R² as a proxy for "prediction confidence":
+    "R²: 0.95 (Excellent fit)" — shown in the UI and sent to Gemini.
+
+  This is mathematically incorrect:
+    • R² measures how well the regression curve fits PAST data points.
+    • A degree-3 polynomial can fit 4 points with R² = 0.999 yet the
+      5th prediction can be off by 10+ percent.
+    • R² says nothing about whether the NEXT prediction will be accurate.
+
+  What Is Missing
+  ---------------
+  1. No record of what was predicted in previous months
+  2. No comparison between predicted vs actual progress
+  3. No way to calculate real prediction accuracy over time
+  4. Gemini's analysis text uses R² as "confidence" — misleading
+
+  What This Phase Builds
+  ----------------------
+  A prediction_history table that captures every prediction at generation
+  time, then back-fills actual_next when new progress is recorded. The
+  presenter exposes historical accuracy data, the Blade shows it in a
+  color-coded table, and Gemini's prompt is updated to use actual
+  accuracy stats instead of raw R².
+
+================================================================================
+  2. CHOSEN DIRECTION
+================================================================================
+
+  Decision 1 — Append-Only History
+    Each prediction creates a new row. The actual_next column starts
+    NULL and is filled later when the corresponding progress is recorded.
+    No records are ever modified or deleted (immutability).
+
+  Decision 2 — Dedup by current_progress
+    When a page reload triggers generatePrediction() again with the
+    same current_progress, the duplicate save is skipped. This prevents
+    flood from F5 refreshes while still allowing real updates when new
+    progress is recorded.
+
+  Decision 3 — Accuracy Badges
+    Three tiers based on |predicted - actual|:
+      • Accurate: variance < 2%
+      • Close:    variance < 5%
+      • Off:      variance >= 5%
+
+  Decision 4 — Gemini Prompt Enhancement
+    Instead of "R²: 0.95 (Excellent fit)", the prompt should include:
+      "Prediction accuracy (last N months):
+       Accurate X, Close Y, Off Z — avg variance: W%"
+    This replaces a misleading metric with an honest one.
+
+================================================================================
+  3. IMPLEMENTATION STEPS
+================================================================================
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 1 — Create Migration + Model
+  ═══════════════════════════════════════════════════════════════════════════
+
+  Migration: database/migrations/2026_07_26_000000_create_prediction_history_table.php
+  Additional: database/migrations/2026_07_26_000001_add_month_label_to_prediction_history.php
+
+  Schema:
+    id                   BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
+    project_id           BIGINT UNSIGNED NOT NULL
+    month_label          VARCHAR(10) NULL                  — predicted target month (e.g. "2026-01")
+    regression_method    VARCHAR(10) NOT NULL              — 'slr' | 'polynomial'
+    current_progress     DECIMAL(5,2) NOT NULL             — progress when predicted
+    predicted_next       DECIMAL(5,2) NOT NULL             — predicted next %
+    actual_next          DECIMAL(5,2) NULL                 — filled later after recordMonthlyProgress
+    r_squared            DECIMAL(8,4) NOT NULL
+    regression_snapshot  JSON NOT NULL                     — full analysis at time
+    created_at           TIMESTAMP NULL                    — no updated_at (UPDATED_AT = null)
+
+    INDEX: (project_id, month_label), (project_id, created_at DESC)
+    FK: project_id → projects.id ON DELETE CASCADE
+
+  File: app/Models/PredictionHistory.php
+
+    namespace App\Models;
+
+    protected $table = 'prediction_history';       // singular (not prediction_histories)
+
+    protected $fillable = [
+        'project_id', 'month_label', 'regression_method', 'current_progress',
+        'predicted_next', 'actual_next', 'r_squared', 'regression_snapshot',
+    ];
+
+    protected $casts = [
+        'current_progress'    => 'float',
+        'predicted_next'      => 'float',
+        'actual_next'         => 'float',
+        'r_squared'           => 'float',
+        'regression_snapshot' => 'array',
+    ];
+
+    public const UPDATED_AT = null;  // append-only
+
+    // Relationships
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 2 — Add Relationship to Project Model
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: app/Models/Project.php
+
+    // After aiSolutions() relationship (~line 122)
+    public function predictionHistory()
+    {
+        return $this->hasMany(PredictionHistory::class)
+                    ->orderBy('created_at', 'desc');
+    }
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 3 — Save Prediction in AIPredictionService
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: app/Services/AI/AIPredictionService.php
+
+  In generatePrediction(), AFTER buildPredictionReport() is complete
+  but BEFORE the return, add:
+
+    $this->savePredictionHistory(
+        $project,
+        $analysis,
+        $currentProgress,
+        $predictedNextProgress,
+        $currentMonthIndex
+    );
+
+  New private method:
+
+    private function savePredictionHistory(
+        Project $project,
+        array $analysis,
+        float $currentProgress,
+        float $predictedNextProgress,
+        int $currentMonthIndex
+    ): void {
+        // Skip for insufficient data or completed projects
+        if ($currentProgress >= 100) return;
+
+        // Skip duplicate: same project + same current_progress
+        $exists = PredictionHistory::where('project_id', $project->id)
+            ->where('current_progress', $currentProgress)
+            ->exists();
+        if ($exists) return;
+
+        // Fetch month_label for the PREDICTED month (not current month)
+        // offset($currentMonthIndex) vs offset($currentMonthIndex - 1)
+        $monthLabel = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->orderBy('planned_date')
+            ->offset($currentMonthIndex)
+            ->limit(1)
+            ->value('month_label');
+
+        // Fallback: predicted month may be beyond the last baseline schedule
+        if (!$monthLabel) {
+            $last = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->orderBy('planned_date', 'desc')
+                ->first(['month_label']);
+            if ($last) {
+                $monthLabel = Carbon::parse($last->month_label . '-01')
+                    ->addMonth()->format('Y-m');
+            }
+        }
+
+        PredictionHistory::create([
+            'project_id'          => $project->id,
+            'month_label'         => $monthLabel,
+            'regression_method'   => $analysis['regression_method'] ?? 'slr',
+            'current_progress'    => round($currentProgress, 2),
+            'predicted_next'      => round($predictedNextProgress, 2),
+            'r_squared'           => $analysis['r_squared'] ?? 0,
+            'regression_snapshot' => $analysis,
+        ]);
+    }
+
+  Edge Cases:
+    • < 2 observations → skip (minimal report, no analysis)
+    • current_progress >= 100 → skip (project complete)
+    • Duplicate current_progress → skip (page reload guard)
+    • No baseline schedule for predicted month → fallback calculates
+      next month label from last schedule + 1 month
+    • Throws on DB failure → caught by existing try/catch in caller
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 4 — Update actual_next in ProjectProgressController
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: app/Http/Controllers/ProjectProgressController.php
+
+  In recordMonthlyProgress(), AFTER DB::commit() (~line 338)
+  and BEFORE return response(), add:
+
+    // Check if there's a pending prediction to update
+    try {
+        $pending = PredictionHistory::where('project_id', $project->id)
+            ->whereNull('actual_next')
+            ->latest('created_at')
+            ->first();
+
+        if ($pending) {
+            $pending->actual_next = $actualProgressPercent;
+            $pending->save();
+        }
+    } catch (\Exception $e) {
+        // Non-blocking — prediction history update failure should
+        // not prevent the progress record from being created
+        Log::warning('Failed to update prediction history', [
+            'project_id' => $project->id,
+            'error' => $e->getMessage(),
+        ]);
+    }
+
+  Edge Cases:
+    • No pending prediction → skip gracefully
+    • DB write fails → caught by try/catch, progress record still saved
+    • Multiple pending predictions → only latest is updated (oldest
+      stays NULL — acceptable, we only track the most recent cycle)
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 5 — Add Prediction History to Presenter Output
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: app/Services/AI/AIPredictionPresenter.php
+
+  In presentNormal(), after extracting prediction sections (~line 361),
+  add a new extraction block:
+
+    $rawHistory = $project->predictionHistory()
+        ->whereNotNull('actual_next')
+        ->take(6)
+        ->get();
+
+    $predictionHistory = $rawHistory->map(fn ($ph) => [
+        'month'     => $ph->month_label
+            ? \Carbon\Carbon::parse($ph->month_label . '-01')->format('M Y')
+            : $ph->created_at->format('M Y'),
+        'predicted' => $ph->predicted_next,
+        'actual'    => $ph->actual_next,
+        'variance'  => round($ph->actual_next - $ph->predicted_next, 2),
+        'method'    => $ph->regression_method,
+    ])->values();
+
+    $totalWithActual = $rawHistory->count();
+    $accurateCount   = $rawHistory->filter(
+        fn ($h) => abs($h->actual_next - $h->predicted_next) < 2
+    )->count();
+    $avgVariance     = $totalWithActual > 0
+        ? round($rawHistory->avg(fn ($h) => $h->actual_next - $h->predicted_next), 2)
+        : 0;
+
+  Add to the return array (after 'completion_multi' ~line 650):
+
+    'prediction_history' => $predictionHistory,
+    'prediction_history_summary' => [
+        'total_with_actual' => $totalWithActual,
+        'accurate_count'    => $accurateCount,
+        'accuracy_percent'  => $totalWithActual > 0
+            ? round($accurateCount / $totalWithActual * 100, 1) : 0,
+        'avg_variance'      => $avgVariance,
+    ],
+
+  Also add empty values to presentCompleted() and presentInsufficientData():
+    'prediction_history' => [],
+    'prediction_history_summary' => [
+        'total_with_actual' => 0,
+        'accurate_count'    => 0,
+        'accuracy_percent'  => 0,
+        'avg_variance'      => 0,
+    ],
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 6 — Add Accuracy Table to Blade
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: resources/views/.../ai-prediction.blade.php
+
+  Add a new card between the Recommendations section (line ~362) and
+  the Timeline Visualization (line ~366):
+
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  Prediction Accuracy                                                 │
+  │                                                                      │
+  │  (only shown when prediction_history is non-empty)                   │
+  │                                                                      │
+  │  Month        Predicted   Actual   Variance   Method   Accuracy      │
+  │  ──────────   ─────────   ──────   ────────   ──────   ──────────    │
+  │  Jul 2026      46.33%     42.0%    -4.33%     poly     🟡 Close     │
+  │  Jun 2026      41.20%     40.5%    -0.70%     poly     🟢 Accurate  │
+  │  May 2026      35.10%     28.0%    -7.10%     poly     🔴 Off       │
+  │                                                                      │
+  │  ────────────────────────────────────────────────────────────        │
+  │  Avg variance: 4.0% — 1 of 3 predictions Accurate                    │
+  └──────────────────────────────────────────────────────────────────────┘
+
+  Badge styles:
+    • Accurate: background #d1fae5, color #065f46
+    • Close:    background #fef3c7, color #92400e
+    • Off:      background #fee2e2, color #991b1b
+
+  The entire card is wrapped in:
+    @if (!empty($prediction['prediction_history']))
+      ... show card ...
+    @endif
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 7 — Tests
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: tests/Unit/Services/AI/PredictionHistoryServiceTest.php
+
+  Test cases:
+    1. Prediction saved after generatePrediction() for normal project
+    2. No prediction saved for insufficient-data project (< 2 obs)
+    3. No prediction saved for completed project (progress >= 100)
+    4. Duplicate prediction NOT saved on re-run (same current_progress)
+    5. actual_next filled when new progress recorded
+    6. actual_next remains null for most recent prediction (no data yet)
+    7. Presenter returns prediction_history with correct structure
+    8. Prediction history summary stats computed correctly
+    9. Total with actual, accurate count, avg variance match expected
+    10. Blade conditional: card hidden when prediction_history empty
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+  STEP 8 — Update AIExplanationService Prompt (AI Integration)
+  ═══════════════════════════════════════════════════════════════════════════
+
+  File: app/Services/AI/AIExplanationService.php
+
+  In buildPrompt(), locate the REGRESSION MODEL section.
+  Currently it includes:
+    "R²: {r_squared} (Fit Quality: {fit_quality})"
+
+  Change to INCLUDE prediction accuracy stats when available:
+
+    // After regression method block, add:
+    $history = $project->predictionHistory()
+        ->whereNotNull('actual_next')
+        ->take(6)
+        ->get();
+
+    $total = $history->count();
+    $accurate = $history->filter(fn ($h) =>
+        abs($h->actual_next - $h->predicted_next) < 2
+    )->count();
+    $close = $history->filter(fn ($h) =>
+        abs($h->actual_next - $h->predicted_next) >= 2
+        && abs($h->actual_next - $h->predicted_next) < 5
+    )->count();
+    $off = $total - $accurate - $close;
+    $avgVariance = $total > 0
+        ? round($history->avg(fn ($h) => $h->actual_next - $h->predicted_next), 2)
+        : 0;
+
+    if ($total > 0) {
+        $accuracyLine = "Prediction Accuracy (last {$total} months): "
+            . "Accurate {$accurate}, Close {$close}, Off {$off}"
+            . " — Avg variance: {$avgVariance}%";
+        // Replace or supplement the R² line
+    }
+
+  The R² line can be kept as supplementary info but the accuracy stats
+  become the PRIMARY reliability indicator in the prompt. This makes
+  Gemini's analysis honest: "The model has been overestimating by
+  an average of 4% over the last 3 months" instead of "R² is Excellent."
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+================================================================================
+  4. EDGE CASES
+================================================================================
+
+  +----------------------------------+------------------+------------------+
+  | State                            | Prediction Saved | actual_next      |
+  |                                  |                  | filled           |
+  +----------------------------------+------------------+------------------+
+  | Normal prediction, ≥2 obs        | ✅ Yes           | Later, on record |
+  | Insufficient data, <2 obs        | ❌ No            | N/A              |
+  | Already 100% complete            | ❌ No            | N/A              |
+  | Page reload (same progress)      | ❌ Skipped       | N/A (duplicate)  |
+  | New progress recorded            | N/A              | ✅ Yes (pending) |
+  | Multiple predictions, no record  | ✅ Yes (each)    | ❌ Stays NULL    |
+  +----------------------------------+------------------+------------------+
+
+================================================================================
+  5. FILES TOUCHED
+================================================================================
+
+  CREATED (3):
+    database/migrations/2026_07_26_000000_create_prediction_history_table.php
+    app/Models/PredictionHistory.php
+    tests/Unit/Services/AI/PredictionHistoryServiceTest.php
+
+  MODIFIED (6):
+    app/Models/Project.php                         — add predictionHistory()
+    app/Services/AI/AIPredictionService.php         — save prediction history
+    app/Http/Controllers/ProjectProgressController.php — update actual_next
+    app/Services/AI/AIPredictionPresenter.php       — add history to output
+    app/Services/AI/AIExplanationService.php        — prompt includes accuracy
+    resources/views/.../ai-prediction.blade.php     — accuracy table card
+
+================================================================================
+  6. IMPLEMENTATION ORDER
+================================================================================
+
+  Step 1 — Create migration + PredictionHistory model
+  Step 2 — Add relationship to Project model
+  Step 3 — Save prediction in AIPredictionService
+  Step 4 — Update actual_next in ProjectProgressController
+  Step 5 — Add prediction_history to Presenter output
+  Step 6 — Add accuracy table Blade card
+  Step 7 — Run tests + verify in browser
+  Step 8 — Update AIExplanationService prompt
+
+================================================================================
+  END OF V2 PHASE 7 PLAN
+================================================================================
+
+===============================================================================
+   POST-IMPLEMENTATION FIXES
+===============================================================================
+
+  FIX 1 � month_label column (added via second migration)
+  ------
+  Discovered during testing: the Month column in the history table showed
+  created_at (the date the prediction was MADE) instead of the target
+  month (the month the prediction was FOR).
+  
+  Solution:
+    � New migration 2026_07_26_000001_add_month_label_to_prediction_history.php
+      adds a VARCHAR(10) month_label column
+    � Presenter displays month_label parsed as 'M Y' (e.g. "Jan 2026")
+      via Carbon::parse(->month_label . '-01')->format('M Y')
+    � Falls back to created_at->format('M Y') for records without month_label
+
+  FIX 2 � month_label offset bug (points to predicted month, not current)
+  ------
+  savePredictionHistory() used offset( - 1) which
+  fetched the CURRENT month's baseline schedule. But predicted_next is
+  for the NEXT month, so the month_label should be the predicted month.
+  
+  Solution: Changed to offset(). If no baseline
+  exists at that position (prediction beyond last schedule), fallback
+  calculates next month_label from the last schedule + 1 month.
+
+  FIX 3 � Risk status uses current gap + near-term forecast (not far-future)
+  ------
+  The status (ON TRACK / AT RISK) was determined by the LAST assessment
+  record (furthest forecast month). A project could be -8% behind now
+  but show "ON TRACK" because the model predicted it would catch up
+  months in the future.
+  
+  Additionally, Moderate risk (-10% to 0% variance) mapped to "ON TRACK",
+  but being up to 10% behind schedule is a genuine concern.
+  
+  Solution (AIPredictionPresenter.php):
+    � Now combines two signals: current progress gap (actual vs planned)
+      and near-term assessment (first forecast month)
+    � Picks the more conservative (higher risk) of the two
+    � Only 'Low' risk maps to ON TRACK; 'Moderate', 'High', 'Critical'
+      all map to AT RISK
+
+===============================================================================
+  FILES TOUCHED (AFTER FIXES)
+===============================================================================
+
+  CREATED (4):
+    database/migrations/2026_07_26_000000_create_prediction_history_table.php
+    database/migrations/2026_07_26_000001_add_month_label_to_prediction_history.php
+    app/Models/PredictionHistory.php
+    tests/Unit/Services/AI/PredictionHistoryServiceTest.php  (4 new tests)
+
+  MODIFIED (6):
+    app/Models/Project.php                         � add predictionHistory()
+    app/Services/AI/AIPredictionService.php         � save prediction history
+    app/Http/Controllers/ProjectProgressController.php � update actual_next
+    app/Services/AI/AIPredictionPresenter.php       � add history + risk fix
+    app/Services/AI/AIExplanationService.php        � prompt includes accuracy
+    resources/views/.../ai-prediction.blade.php     � accuracy table card
+
+===============================================================================
+  TEST RESULTS
+===============================================================================
+
+  AIPredictionServiceTest:  16 passed (46 assertions) � all green
+  AIPredictionPresenterTest: 21 passed (88 assertions) � all green
+
+===============================================================================
+  END OF V2 PHASE 7 PLAN
+===============================================================================

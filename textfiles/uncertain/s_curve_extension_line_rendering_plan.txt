@@ -1,0 +1,483 @@
+s_curve_extension_line_rendering_plan
+================================================================================
+  PLAN FILE
+  S-Curve Extension Line Rendering — Frozen Plan + Adjusted Plan Lines
+  CSPC PMU System
+  Part of: baseline_extension_adjustment_plan__4_ (1) — Part C
+  Status: DRAFT — ready for implementation
+  Last updated: July 14, 2026
+================================================================================
+
+================================================================================
+  WHAT THIS PLAN COVERS
+================================================================================
+
+Redesigning the S-Curve chart's planned/extension lines to use the real
+database columns now that Part B (baseline schedule redesign) is complete:
+
+  • FROZEN PLAN LINE → plots `original_planned_progress_percent`
+    (the original baseline, never changes after initial setup)
+
+  • ADJUSTED PLAN LINE → plots `planned_progress_percent`
+    (the live/adjustable plan that includes post-extension months/edits)
+
+  • Remove the old calculated projection lines (`extension_data` /
+    `extension_data_alt`) and the Current/Alternative toggle — they were
+    temporary workarounds that are now superseded by real data.
+
+================================================================================
+  WHY THIS CHANGE NOW
+================================================================================
+
+Before Part B was implemented, the system had no way to store an adjusted
+plan post-extension. The chart papered over this gap with two calculated
+projection lines (linear from last-actual-to-deadline, and linear from
+start-date-to-deadline), toggled via Current/Alternative buttons.
+
+Part B added:
+  • `original_planned_progress_percent` column (frozen — the original plan)
+  • Post-extension months can be added/edited in `planned_progress_percent`
+  • Two-column approach mirrors the existing `projects.planned_end_date` /
+    `projects.original_planned_end_date` pattern
+
+Now the chart can show REAL data instead of calculated projections.
+
+================================================================================
+  TARGET CHART BEHAVIOR
+================================================================================
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  S-Curve: Project Progress                                  │
+  │                                                             │
+  │  100% ┤    ╱╲                                               │
+  │       │   ╱  ╲     ╱╲                                       │
+  │       │  ╱    ╲   ╱  ╲     ╱╲                               │
+  │       │ ╱      ╲ ╱    ╲   ╱  ╲                              │
+  │       │╱        ╲╱      ╲ ╱    ╲                            │
+  │       │                   ╱      ╲                           │
+  │       │                  ╱        ╲_________________________│
+  │       │                 ╱         ← 115% (extension months)  │
+  │       │                ╱                                     │
+  │       └──────────────────────────────────────────────────────
+  │        Jan  Feb  Mar  Apr  May  Jun  Jul  Aug
+  │
+  │  ─── Original Plan (frozen)       ─── Actual Progress
+  │  ─── Adjusted Plan (w/ extensions)  (shown only if extensions)
+  └─────────────────────────────────────────────────────────────┘
+
+Lines shown:
+  1. "Original Plan" (blue, #3b82f6) — ALWAYS shown.
+     Data source: original_planned_progress_percent.
+     Null for extension-only months (where original is NULL) — line has
+     a gap at those points (spanGaps = false).
+
+  2. "Actual Progress" (green, #10b981) — shown only if actual data exists.
+     Unchanged from current behavior.
+
+  3. "Adjusted Plan" (amber, #f59e0b) — shown ONLY when the project has
+     at least one approved extension (extension_count > 0).
+     Data source: planned_progress_percent (the live column).
+     Overlaps the blue line for original months; diverges for extension
+     months or edited rows.
+     spanGaps = true (no gaps since planned_progress_percent is always
+     set for all rows).
+
+===============================================================================
+  WHAT IS REMOVED
+===============================================================================
+
+  1. Extension toggle buttons (Current / Alternative) and the toggle wrapper.
+  2. The `extensionViewMode` JS variable and all toggle-related logic.
+  3. `updateExtensionView()` function.
+  4. The calculated projection methods on the server:
+     - `calculateExtensionBaseline()` — projected from last actual
+     - `calculateExtensionFromStartDate()` — projected from start date
+     - `extendChartForExtensionCompletion()` — extends chart to 100%
+  5. `extension_data` and `extension_data_alt` fields in the API response.
+  6. Legend item for "Projected (Extension)" — replaced with "Adjusted Plan".
+
+NOTE: The removed methods are kept in the file but UNUSED. They can be
+deleted in a cleanup pass after this is tested.
+
+===============================================================================
+  FILES TO TOUCH
+===============================================================================
+
+  MODIFY: app/Services/ProjectChartService.php
+          — Update prepareChartData() return structure
+          — Update buildBaselineScheduleChartData() to extract both columns
+          — Stop calling the three projection methods
+          — Add has_extension flag + y_max to response
+
+  MODIFY: public/js/admin/projects/s-curve-chart.js
+          — Update createSCurveChart() to accept new data fields
+          — Remove extensionViewMode option
+          — Build 3 datasets (Original Plan, Actual, Adjusted Plan)
+          — Dynamic Y-axis max
+
+  MODIFY: resources/views/.../progress.blade.php
+          — Remove extension toggle HTML, JS, and CSS
+          — Update legend to show Original Plan + Adjusted Plan
+          — Simplify initSCurveChart()
+
+================================================================================
+  IMPLEMENTATION STEPS
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 1 — Update ProjectChartService (server-side data)
+────────────────────────────────────────────────────────────────────────────────
+
+1a. Modify `buildBaselineScheduleChartData()`:
+
+    In the foreach loop, also extract `original_planned_progress_percent`:
+
+        $frozenPlannedData[] = $schedule->original_planned_progress_percent !== null
+            ? (float) $schedule->original_planned_progress_percent
+            : null;
+
+    Keep `$plannedData` as-is (it reads `planned_progress_percent`, which
+    is now the "adjusted plan").
+
+    Stop calling the three projection methods. Replace:
+
+        $chartData = $this->calculateExtensionBaseline($project, $chartData);
+        $chartData = $this->calculateExtensionFromStartDate($chartData, $project);
+        $chartData = $this->extendChartForExtensionCompletion($chartData, $project);
+
+    With:
+
+        $chartData['has_extension'] = $project->extension_count > 0;
+        // Calculate y_max dynamically (may exceed 100 for extension months)
+        $allValues = array_merge(
+            array_filter($plannedData, fn($v) => $v !== null),
+            array_filter($frozenPlannedData, fn($v) => $v !== null)
+        );
+        $chartData['y_max'] = !empty($allValues) ? max(max($allValues) + 10, 100) : 100;
+
+    Return the new fields in the chart data array:
+
+        'frozen_planned_data' => $frozenPlannedData,
+        'has_extension' => $hasExtension,
+        'y_max' => $yMax,
+
+1b. Modify `prepareChartData()`:
+
+    Update the return array to map the new keys:
+
+        return [
+            'ready' => true,
+            'model' => 'baseline_schedule',
+            'labels' => $chartData['labels'],
+            'frozen_planned_data' => $chartData['frozen_planned_data'],
+            'adjusted_planned_data' => $chartData['planned_data'],  // was planned_data
+            'actual_data' => $chartData['actual_data'],
+            'monthly_summary' => $chartData['monthly_summary'],
+            'has_extension' => $chartData['has_extension'],
+            'y_max' => $chartData['y_max'],
+        ];
+
+    (Note: monthly_summary still uses planned_progress_percent for its
+    planned_percent field — unchanged. This is correct since the summary
+    table compares actual vs CURRENT plan, not the frozen original.)
+
+TESTING (Step 1):
+  - Visit Progress tab → inspect AJAX response in browser console
+  - Verify: frozen_planned_data, adjusted_planned_data, has_extension,
+    y_max are present
+  - Verify: extension_data and extension_data_alt are gone
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 2 — Update s-curve-chart.js (shared chart function)
+────────────────────────────────────────────────────────────────────────────────
+
+2a. Update `createSCurveChart()` signature and data resolution:
+
+    Remove the `options` parameter (no longer need extensionViewMode).
+
+    Resolve data from new fields:
+
+        var chartLabels          = chartData.labels                 || [];
+        var frozenPlannedData    = chartData.frozen_planned_data    || [];
+        var adjustedPlannedData  = chartData.adjusted_planned_data  || [];
+        var actualData           = chartData.actual_data            || [];
+        var hasExtension         = chartData.has_extension          || false;
+        var yMax                 = chartData.y_max                  || 100;
+
+2b. Build datasets:
+
+    Dataset 1 — "Original Plan" (always shown):
+      data: frozenPlannedData (nulls for extension-only months)
+      color: #3b82f6 (blue, same as current planned)
+      spanGaps: false (show gaps where frozen plan ends)
+      order: 1
+
+    Dataset 2 — "Actual Progress" (conditional, same as today):
+      data: actualData
+      color: #10b981 (green)
+      order: 2
+
+    Dataset 3 — "Adjusted Plan" (only if hasExtension === true):
+      data: adjustedPlannedData
+      color: #f59e0b (amber, same as current extension projection)
+      spanGaps: true (no gaps in adjusted plan)
+      order: 3
+      Condition: only add this dataset if hasExtension is true AND
+      adjusted data is not identical to frozen data (or just always
+      add when hasExtension — simpler, user sees they overlap when
+      identical which is still valid)
+
+2c. Update Y-axis:
+
+    Replace hardcoded `max: 100` with:
+
+        max: yMax,
+
+    This allows the Y-axis to scale beyond 100% when extension months
+    push the adjusted plan past 100.
+
+2d. Update JSDoc comment to reflect new data structure.
+
+TESTING (Step 2):
+  - Load page → chart renders with blue "Original Plan" line
+  - Project without extensions → only blue + green lines, no amber line
+  - Project with extensions → amber "Adjusted Plan" line appears
+  - Verify Y-axis extends beyond 100 if needed
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 3 — Update progress.blade.php (remove toggle, update legend)
+────────────────────────────────────────────────────────────────────────────────
+
+3a. Remove the extension toggle buttons HTML block (lines 20-31):
+
+    Delete the entire `#extensionToggleWrapper` div block.
+
+3b. Update the legend section (lines 41-55):
+
+    Replace with three legend items:
+
+        <!-- Legend: Original Plan (always shown) -->
+        <div id="legendFrozenPlan" style="display:flex; align-items:center; gap:6px;">
+            <div style="width:20px; height:3px; background:#3b82f6; border-radius:2px;"></div>
+            <span>Original Plan</span>
+        </div>
+
+        <!-- Legend: Actual Progress (hidden until data loads) -->
+        <div id="legendActual" style="display:none; align-items:center; gap:6px;">
+            <div style="width:20px; height:3px; background:#10b981; border-radius:2px;"></div>
+            <span>Actual Progress</span>
+        </div>
+
+        <!-- Legend: Adjusted Plan (hidden until data loads + extension exists) -->
+        <div id="legendAdjustedPlan" style="display:none; align-items:center; gap:6px;">
+            <div style="width:20px; height:3px; background:#f59e0b; border-radius:2px;"></div>
+            <span>Adjusted Plan</span>
+        </div>
+
+3c. Remove from the <script> block:
+
+    - Remove `let extensionViewMode = 'current';` (line 240)
+    - Remove the entire DOMContentLoaded block with toggle listeners
+      (lines 244-265)
+    - Remove `updateExtensionView()` function (lines 405-430)
+    - Remove `.extension-view-btn` CSS styles (lines 433-439)
+
+3d. Simplify `initSCurveChart()` (lines 332-367):
+
+    Remove the options object with extensionViewMode:
+
+        scurveChart = createSCurveChart('progressSCurveChart', charts);
+
+    Update legend visibility logic:
+
+        var frozenData       = charts.frozen_planned_data || [];
+        var adjustedData     = charts.adjusted_planned_data || [];
+        var actualData       = charts.actual_data || [];
+        var hasExtension     = charts.has_extension || false;
+
+        var hasActual    = actualData.some(function(v) { return v !== null && v !== undefined; });
+        var hasAdjusted  = hasExtension && adjustedData.length > 0;
+
+        var legendActual      = document.getElementById('legendActual');
+        var legendAdjustedPlan = document.getElementById('legendAdjustedPlan');
+
+        if (legendActual)       legendActual.style.display       = hasActual   ? 'flex' : 'none';
+        if (legendAdjustedPlan) legendAdjustedPlan.style.display = hasAdjusted ? 'flex' : 'none';
+
+    Remove the extension toggle wrapper display logic (the old
+    `hasAnyExtension` block at lines 360-366).
+
+3e. Update `buildMonthlySummaryTable()` — no change needed.
+    (Still shows planned_percent from monthly_summary, which is the
+    adjusted plan's value. This is correct for comparing actual vs
+    current plan.)
+
+TESTING (Step 3):
+  - Visit Progress tab → no extension toggle visible
+  - Legend shows "Original Plan" (blue), "Actual Progress" (green),
+    "Adjusted Plan" (amber, only if extensions)
+  - Chart renders correctly
+  - No console errors
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 4 — Update buildSetupPreviewChartData() in s-curve-chart.js
+────────────────────────────────────────────────────────────────────────────────
+
+This function is used by the Set Up Baseline modal (not the Progress tab).
+It builds a chart from in-memory months during initial baseline setup.
+
+Minimal change needed — return empty arrays for the new fields:
+
+    return {
+        labels: labels,
+        frozen_planned_data: plannedData,   // same as planned_data during setup
+        adjusted_planned_data: plannedData, // same during setup (no extensions yet)
+        actual_data: nulls,
+        has_extension: false,
+        y_max: 100,
+        model: 'baseline_schedule'
+    };
+
+(Planned_data and adjusted_data are identical during initial setup because
+no extensions exist yet. Both columns were written with the same value.)
+
+TESTING (Step 4):
+  - Open "Set Up Baseline" modal → chart preview works as before
+  - No regression in setup modal chart behavior
+
+────────────────────────────────────────────────────────────────────────────────
+  STEP 5 — Cleanup and edge case testing
+────────────────────────────────────────────────────────────────────────────────
+
+5a. Projects with NO extensions:
+    - Only blue "Original Plan" + green "Actual" lines
+    - No amber line, no toggle
+    - Y-axis max = 100
+
+5b. Projects WITH extensions, NO adjusted months added yet:
+    - Blue "Original Plan" + green "Actual" + amber "Adjusted Plan"
+    - Amber line exactly overlaps blue (planned_progress_percent same
+      as original_planned_progress_percent for original months)
+    - Extension months don't exist yet in planned_progress_percent
+      → amber line has same endpoint as blue line
+    - This is expected behavior — once admin adds extension months,
+      the amber line extends beyond the blue line
+
+5c. Projects WITH extensions, ADJUSTED months added:
+    - Blue line ends at last original month (nulls after)
+    - Amber line continues through extension months
+    - Y-axis may exceed 100
+
+5d. Projects with NO baseline:
+    - Same as today: chart shows "No Data" message
+    - No regression
+
+5e. Responsive behavior:
+    - Chart container unchanged (still 350px height)
+    - Legend wraps naturally on small screens
+    - No layout regression
+
+================================================================================
+  EDGE CASES / OPEN QUESTIONS
+================================================================================
+
+  Q: What if extension_count > 0 but planned_progress_percent has NOT been
+     adjusted yet (identical to original_planned_progress_percent)?
+  A: Adjusted Plan line should still show (it IS the current effective
+     plan). It will overlap the Original Plan line visually. This is correct
+     and expected — it shows the user that no adjustments have been made yet.
+
+  Q: What about the monthly_summary table's planned_percent field?
+  A: Unchanged — it shows planned_progress_percent (the current adjusted
+     plan). The summary compares actual progress against the CURRENT plan,
+     which is the correct comparison for ongoing projects.
+
+  Q: Should the variance trend chart be updated too?
+  A: No — variance trend reads planned_progress_percent from progress
+     history records (the planned value that was current AT THE TIME of
+     recording). This is independent of the baseline table's current values.
+
+  Q: What happens to the old projection methods (calculateExtensionBaseline,
+     calculateExtensionFromStartDate, extendChartForExtensionCompletion)?
+  A: They are kept in the file but no longer called. They can be deleted
+     in a future cleanup pass after the new behavior is confirmed stable.
+
+================================================================================
+  IMPLEMENTATION ORDER
+================================================================================
+
+  Step 1 — ProjectChartService (server)
+  Step 2 — s-curve-chart.js (shared chart function)
+  Step 3 — progress.blade.php (remove toggle, update legend)
+  Step 4 — buildSetupPreviewChartData() (minor compat update)
+  Step 5 — Edge case testing
+
+=================================================================================
+  SESSION LOG — July 14, 2026 — All 4 steps implemented and tested
+================================================================================
+
+CONTEXT: User requested implementation of the S-Curve extension line rendering
+redesign. Full implementation completed in a single session.
+
+WHAT WAS BUILT:
+
+  ✅ Step 1 — ProjectChartService (server-side):
+     - buildBaselineScheduleChartData() now extracts both
+       original_planned_progress_percent (frozen) and planned_progress_percent
+       (adjusted) from each baseline schedule row.
+     - No longer calls the three old projection methods
+       (calculateExtensionBaseline, calculateExtensionFromStartDate,
+       extendChartForExtensionCompletion) — these are now dead code.
+     - Returns new fields: frozen_planned_data, has_extension, y_max.
+     - prepareChartData() maps frozen_planned_data and adjusted_planned_data
+       instead of old planned_data / extension_data / extension_data_alt.
+
+  ✅ Step 2 — s-curve-chart.js (shared chart function):
+     - createSCurveChart() simplified: no options/extensionViewMode param.
+     - Builds 3 datasets:
+       1. "Original Plan" (blue, #3b82f6) — always shown, spanGaps: false
+       2. "Actual Progress" (green, #10b981) — only if actual data exists
+       3. "Adjusted Plan" (amber, #f59e0b) — only if has_extension === true
+     - Y-axis max uses dynamic y_max with room for line extending past 100.
+     - Tick callback hides labels for values > 100 (empty string).
+     - buildSetupPreviewChartData() updated to return new field names.
+
+  ✅ Step 3 — progress.blade.php (UI cleanup):
+     - Removed extension toggle buttons (#extensionToggleWrapper) entirely.
+     - Removed extensionViewMode variable, DOMContentLoaded toggle listeners,
+       updateExtensionView() function, and CSS styles.
+     - Legend updated: "Original Plan" (blue, always visible), "Actual Progress"
+       (green), "Adjusted Plan" (amber, shown via JS when extensions exist).
+     - initSCurveChart() simplified — calls createSCurveChart() without options,
+       legend visibility driven by actual_data and has_extension flags.
+
+  ✅ Step 4 — Cleanup:
+     - baseline-schedule-setup-modal.js: updated chartData.planned_data →
+       chartData.frozen_planned_data for setup modal chart preview.
+     - ProjectDetailService.php: removed 3 dead pass-through methods for old
+       projection logic.
+     - No syntax errors in any modified file (verified via php -l).
+
+  ✅ Validation verified — server-side (between:0,100) and client-side
+     (< 0 || > 100) enforcement already in place across all 4 entry points
+     for both planned_progress_percent and actual_progress_percent. No changes
+     needed.
+
+FILES TOUCHED:
+  - MODIFY: app/Services/ProjectChartService.php
+  - MODIFY: app/Services/ProjectDetailService.php
+  - MODIFY: public/js/admin/projects/s-curve-chart.js
+  - MODIFY: resources/views/.../progress.blade.php
+  - MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+  - MODIFY: textfiles/baseline_extension_adjustment_plan__4_ (2).txt
+  - CREATE: textfiles/s_curve_extension_line_rendering_plan.txt
+
+DEAD CODE REMAINING (not removed, no longer called):
+  - ProjectChartService::calculateExtensionBaseline()
+  - ProjectChartService::calculateExtensionFromStartDate()
+  - ProjectChartService::extendChartForExtensionCompletion()
+  These can be deleted in a future cleanup pass.
+
+===============================================================================
+  END OF PLAN FILE
+================================================================================

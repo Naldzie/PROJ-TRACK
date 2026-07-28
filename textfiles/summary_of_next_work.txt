@@ -1,0 +1,182 @@
+================================================================================
+  SUMMARY OF NEXT / FUTURE WORK
+  CSPC PMU System
+  Last Updated: July 27, 2026
+================================================================================
+
+  Purpose: Single reference of remaining work items. Detailed descriptions
+  in referenced plan files under textfiles/.
+
+================================================================================
+  SECTION 1 — AI MODULE V2 REMAINING PHASES
+================================================================================
+
+  Plan: active_reference/ai_module_ver2_master_plan.txt
+  Recommended Order: 8 → 9 → 10 → 11 → 12 → 13
+
+  NOTE: Phases 6 (Estimated Completion Gauge) and 7 (Prediction History)
+        are COMPLETE — verified in codebase.
+
+  NOTE: Phase 4 (Forecast Table) is intentionally omitted — low priority,
+        may not implement. The Prediction History & Accuracy table (Phase 7)
+        already provides prediction tracking in the UI.
+
+  Phase 8 — Cross-Project Historical Regression
+     Use completed projects of same category as proxy for insufficient-data
+     projects. Needs enough completed projects to be useful.
+
+  Phase 9 — Contractor Performance Tracking
+     Track reliability: on-time delivery %, avg delay, performance rating
+     Prerequisite for AI-powered recommendations (Phase 10)
+
+  Phase 10 — AI-Powered Recommendations
+     Replace rule-based RecommendationEngine with Gemini-generated recs
+     Falls back to rule-based on API failure
+     Depends on: Phase 9 contractor data
+
+  Phase 11 — Export / Reporting
+     PDF export of prediction reports, CSV export of forecast data
+     Email notifications on risk level changes
+
+  Phase 12 — Architectural Enhancements
+     Prediction caching, background jobs for AI analysis,
+     configurable thresholds in config/ai.php
+
+  Phase 13 — Testing & Refinement
+     ~150 new V2 tests; no V1 regressions
+
+================================================================================
+  SECTION 2 — AI-RELATED ENHANCEMENT IDEAS (DEFERRED / NOT PLANNED)
+================================================================================
+
+  Sources: gaps_and_features_missing.txt, ai_recommendation_data_gaps.txt
+
+  Multiple Linear Regression (MLR)
+     Additional variables: issue density, contractor experience,
+     seasonality, extension count
+     NOTE: budget utilization excluded per client decision
+           (contract total only, no spending tracking)
+     Self-selecting between SLR/Polynomial/MLR based on data depth
+     Higher capstone value but data maturity needed
+
+  Recommendation Outcome Feedback Loop
+     No record of whether recommendations were followed or correct
+     AI-powered recs need this to learn from outcomes
+     Requires: recommendation outcome logging + follow-up status
+
+  Activity-Level Critical Path Awareness
+     Flags carried-over activities but cannot weigh importance
+     Non-critical activity carried 5× is fine; critical-path one is not
+     Requires: activity dependency mapping or critical path tagging
+
+================================================================================
+  SECTION 3 — NON-AI FUTURE WORK (GAPS & FEATURES)
+================================================================================
+
+  Sources: gaps_and_features_missing.txt, project_gaps_and_future_roadmap.mmd
+
+  Report Generation
+     PDF of S-Curve chart, Excel of progress history,
+     project summary doc, extension history report
+
+  In-App Notification System
+     Deadline reminders, overdue inspection alerts,
+     extension approval/rejection notices, issue assignments
+     jobs table exists but unused
+
+  Activity Log UI for Staff
+     activity_logs table exists — admin-only currently
+     Staff have no visibility into who changed what
+
+  Project Comparison
+     Side-by-side multi-project comparison
+     Progress %, budget, timeline, risk levels
+
+  Bulk Operations
+     Batch archive, batch status update, batch progress recording
+
+  User Activity Summary
+     Per-user work statistics (inspections, issues closed, etc.)
+
+  Project Templates
+     Reusable baseline schedule templates for similar project types
+
+  Data Export/Import
+     CSV/Excel export of records; bulk project import for migration
+
+  Job Queue Utilization
+     jobs table exists but unused
+     Could async: email sending, report generation, data exports
+
+  Dead Code Cleanup
+     backup/ directory with old service file variants
+     backup/resources/views/ with obsolete blades
+     3 dead methods in ProjectChartService.php (unused)
+
+================================================================================
+  SECTION 4 — CLIENT-EXCLUDED (WILL NOT BUILD)
+================================================================================
+
+  Source: gaps_and_features_missing.txt
+
+  Budget burn-rate tracking              — client only needs contract total
+  Baseline approval workflow             — entered = approved
+  Contractor self-reporting              — contractors are read-only by design
+  Formal REST API                        — web-only system
+  S-Curve Polynomial Overlay (original)  — replaced by Phase 5 Schedule-Aware
+                                           shift; polynomial gave over-optimistic
+                                           forecasts even for behind-schedule projects
+
+================================================================================
+  SECTION 5 — EXTENSION APPROVAL ACTIVITY LOGGING (PENDING)
+================================================================================
+
+  File: app/Http/Controllers/Admin/ProjectExtensionController.php
+  Issue: Missing ActivityLog::create() calls in store() and update()
+  No audit trail for submissions, approvals, or rejections
+  Plan ref: uncertain/baseline_extension_adjustment_plan__4_ (2).txt Part A
+
+================================================================================
+  SECTION 6 — ORGANIZATION STATUS NOTES
+================================================================================
+
+  Items in uncertain/ that are verified done in codebase:
+    • s_curve_extension_line_rendering_plan.txt   ✅ adjusted_planned_data renders on S-Curve
+    • manage_month_modal_merge_plan.txt           ✅ merged modal exists
+    • adjusted_baseline_generation_plan.txt       ✅ auto-distribution works
+  These can be moved to done/ when convenient.
+
+  ✅ Completed (but not yet reflected in this file's structure):
+    • Phase 6 — Estimated Completion Gauge
+    • Phase 7 — Prediction History & Accuracy
+
+================================================================================
+  KEY FILE LOCATIONS (current organization)
+================================================================================
+
+  Active Plans:
+    active_reference/ai_module_ver2_master_plan.txt
+    active_reference/ai_v2_phase1_progress_log.txt
+    active_reference/project_context_and_development_rules.txt
+
+  Future / Feature Ideas:
+    gaps_and_features_missing.txt
+    ai_recommendation_data_gaps.txt
+    project_gaps_and_future_roadmap.mmd
+
+  Done (V2):
+    done/ai_module_ver2_planandlogs/
+
+  Done (V1):
+    done/ai_module_ver1_plansandlogs/
+    done/*.txt (various completed feature plans)
+
+  Uncertain (should verify):
+    uncertain/
+
+  Notes:
+    others(notes)/
+
+================================================================================
+  END OF SUMMARY
+================================================================================

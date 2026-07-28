@@ -1,0 +1,337 @@
+================================================================================
+  PLAN FILE
+  Adjusted Baseline Generation — Auto-Distribution with Manual Review
+  CSPC PMU System
+  Created: July 21, 2026
+================================================================================
+
+================================================================================
+  PROBLEM
+================================================================================
+
+When a project receives an extension, the existing baseline schedule months
+cover only the original timeline. Currently, users must manually add each
+extension month one at a time via "Add Month Target" and manually decide
+what progress % values to assign. There is no way to:
+
+  • View the original baseline curve alongside an adjusted curve during setup.
+  • Auto-generate suggested % values for extension months that mirror the
+    original plan's pattern.
+  • Bulk-create multiple extension months in one go.
+  • Edit existing months (without actual progress) alongside new extension
+    months in a single unified view.
+
+================================================================================
+  CHOSEN DIRECTION
+================================================================================
+
+Reuse the existing "Set Up Baseline" modal with a new third mode called
+"adjust-baseline" that:
+
+  1. Pre-populates with ALL existing baseline schedule months from the DB.
+  2. Locks months that have actual progress recorded (read-only display).
+  3. Auto-generates extension months up to planned_end_date with suggested
+     progress % values that mirror the original curve's shape.
+  4. Shows both the Original Planned line and the Adjusted line on the
+     S-Curve preview.
+  5. On save: UPDATE existing adjustable months (planned_progress_percent
+     only, never original), CREATE new extension months with
+     original_planned_progress_percent = NULL.
+  6. All inside one DB transaction — all-or-nothing.
+
+BUTTON: A new "Generate Adjusted Baseline" button appears alongside "Add
+Month Target" when a baseline exists AND extension_count > 0.
+
+================================================================================
+  AUTO-DISTRIBUTION LOGIC (no formula needed from client)
+================================================================================
+
+The auto-fill mimics the original curve's pattern by stretching the
+adjustable portion of the original curve across the new total timeline:
+
+  Step 1 — Identify adjustable months:
+     Collect all existing months where hasProgress === false
+     (no actual progress recorded). These are the ones the system can
+     redistribute.
+
+  Step 2 — Calculate the stretch factor:
+     totalAdjustable = originalAdjustableCount + extensionMonthCount
+     stretchFactor  = totalAdjustable / originalAdjustableCount
+
+  Step 3 — Interpolate:
+     For each position P in [0..totalAdjustable-1]:
+       originalIdx = min(round(P / stretchFactor), originalAdjustableCount - 1)
+       value = originalAdjustable[originalIdx].planned_progress_percent
+       (Then assign to the month at position P)
+
+  This preserves the acceleration/deceleration pattern of the original
+  curve — months that originally had steep increases will map to
+  proportionally steep sections in the adjusted curve.
+
+  Existing months BEFORE the adjustable range (locked with progress) keep
+  their original values unchanged.
+
+  All auto-filled values can be manually adjusted by the user in the modal
+  before saving.
+
+================================================================================
+  UX FLOW
+================================================================================
+
+  1. User clicks "Generate Adjusted Baseline" button.
+  2. Modal opens, fully pre-populated with all existing months.
+     - Months with actual progress: shown with a lock icon, no edit pencil
+     - Months without actual progress: editable (pencil icon shown)
+     - Extension months: auto-filled with interpolated %, also editable
+  3. S-Curve preview shows two lines:
+     - Dashed gray line: Original Planned Baseline (original_planned_progress_percent)
+     - Solid teal line: Adjusted Plan (editable planned_progress_percent)
+  4. User can:
+     - Edit any month without progress (% value, date, description, activities)
+     - Remove any month without progress (removes it from the plan)
+     - Add more extension months beyond the auto-generated ones
+  5. User clicks "Save Adjusted Baseline"
+     - Only months without progress can be modified/removed
+     - Existing months with progress are locked server-side too (belt-and-suspenders)
+  6. Page reloads with updated baseline schedule
+
+================================================================================
+  FILES TO TOUCH (in implementation order)
+================================================================================
+
+  1. MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+     — Add third mode "adjust-baseline" to the existing two-mode design
+     — New function: openAdjustBaselineModal() — fetches existing months
+       from server, pre-populates setupLocalMonths, sets context
+     — New function: fetchExistingBaselineMonths() — GET endpoint call
+     — New function: generateAutoDistribution(months) — implements the
+       stretch/interpolate logic above
+     — MODIFY: renderSetupMonthList() — show lock icon + disable edit for
+       hasProgress months; show original_planned_progress_percent value
+       alongside editable planned_progress_percent
+     — MODIFY: onSetupBaselineDone() — third branch for adjust-baseline
+       mode: POST to new adjust endpoint, no page reload for validation
+       errors, reload on success
+     — MODIFY: updateSetupSCurvePreview() — add second dataset for
+       original_planned_progress_percent (dashed line)
+
+  2. MODIFY: resources/views/.../_setup_baseline_modal.blade.php
+     — Conditional header title / footer button text based on mode
+       ("Set Up Baseline Schedule" vs "Adjust Baseline Schedule")
+     — Footer button: "Done — Lock Baseline" vs "Save Adjusted Baseline"
+     — Add lock icon CSS class or inline style for read-only months
+
+  3. MODIFY: resources/views/.../baseline-schedule.blade.php
+     — Add "Generate Adjusted Baseline" button next to "Add Month Target"
+       guarded by @elseif($project->extension_count > 0)
+     — Add hidden input or data attribute for project extension count
+     — Include modal (already included — no change needed)
+
+  4. MODIFY: app/Http/Controllers/BaselineScheduleController.php
+     — NEW method: getBaselineMonthsForAdjustment() — returns all months
+       with hasProgress flag + original_planned_progress_percent for the
+       S-Curve preview (GET endpoint)
+     — NEW method: saveAdjustedBaseline() — accepts full months array,
+       validates, then in one DB transaction:
+       • UPDATE existing months (only planned_progress_percent, planned_date,
+         description — never original_planned_progress_percent)
+       • CREATE new extension months (original_planned_progress_percent = NULL)
+       • DELETE removed months (only if no progress recorded)
+       • All inside DB::transaction
+
+  5. MODIFY: routes/web.php
+     — Register two new routes in both admin + staff groups:
+       GET  .../baseline-schedules/adjust      → getBaselineMonthsForAdjustment()
+       POST .../baseline-schedules/adjust/save → saveAdjustedBaseline()
+
+  6. NO migration needed — all required columns already exist
+     (original_planned_progress_percent, planned_progress_percent, etc.)
+
+================================================================================
+  VALIDATION RULES
+================================================================================
+
+  Same rules as the existing add/edit flows, applied to the bulk save:
+
+  Rule A — Date must match month_label (applied to each month)
+  Rule B — Chronological ordering (applied across all months)
+  Rule C — No date before project's first baseline date
+  Progress % strictly increasing across adjustable months
+  Final month must reach 100%
+  Months with actual progress → server-side guard: ignore any changes
+    to planned_progress_percent, planned_date, or description for these
+    months (defense-in-depth, even though UI locks them)
+
+================================================================================
+  IMPLEMENTATION ORDER
+================================================================================
+
+   [DONE] Step 1 — Backend: GET endpoint to fetch existing months + hasProgress flag
+   [DONE] Step 2 — Backend: POST endpoint for bulk save (update + create + delete)
+   [DONE] Step 3 — Routes: Register GET + POST in both admin/staff groups
+   [DONE] Step 4 — JS: openAdjustBaselineModal() + fetch + auto-distribution logic
+   [DONE] Step 5 — JS: renderSetupMonthList() upgrade (lock icon, dual % display)
+   [DONE] Step 6 — JS: onSetupBaselineDone() third branch
+   [DONE] Step 7 — JS: updateSetupSCurvePreview() with original line
+   [DONE] Step 8 — Blade: modal header/footer conditional text + warning notice
+   [DONE] Step 9 — Blade: button in baseline-schedule.blade.php + resetModalUIToDefaults()
+   [DONE]    [DONE] Step 10 — PHP syntax check + route:clear + node syntax check
+   [REV]  Step 11 — Fix auto-distribution: linear interpolation (no mutation, no clumping)
+   [REV]  Step 12 — Fix chart: exclude extension months from Original Plan line
+   [REV]  Step 13 — Update plan file with session log
+   [PENDING] Step 14 — End-to-end testing (manual browser test)
+
+================================================================================
+  TESTING PLAN
+================================================================================
+
+  6a — Button visibility
+     ✅ 6a.1 No extension → no "Generate Adjusted Baseline" button
+     ✅ 6a.2 Has extension + baseline exists → button visible
+
+  6b — Modal pre-population
+     ✅ 6b.1 All months shown, locked months have lock icon, no edit pencil
+     ✅ 6b.2 Months without progress show edit pencil, can be edited
+     ✅ 6b.3 Extension months auto-generated with interpolated % values
+
+  6c — S-Curve preview
+     ✅ 6c.1 Original line (dashed) matches original_planned_progress_percent
+     ✅ 6c.2 Adjusted line (solid) matches editable planned_progress_percent
+     ✅ 6c.3 Editing a value updates the chart in real time
+
+  6d — Save
+     ✅ 6d.1 Existing months without progress → planned_progress_percent updated
+     ✅ 6d.2 Existing months with progress → unchanged (server-side guard)
+     ✅ 6d.3 New extension months → created with correct values
+     ✅ 6d.4 Removed months (no progress) → deleted from DB
+     ✅ 6d.5 original_planned_progress_percent never touched on existing rows
+     ✅ 6d.6 New months have original_planned_progress_percent = NULL
+
+  6e — Edge cases
+     ✅ 6e.1 All months have progress → nothing adjustable, save is no-op
+     ✅ 6e.2 No extension months needed → just editing existing adjustable months
+     ✅ 6e.3 User cancels → no changes persisted
+     ✅ 6e.4 User removes all extension months → original adjustable months saved
+
+================================================================================
+  FILES TOUCHED (summary)
+================================================================================
+
+   MODIFY: public/js/admin/projects/baseline-schedule-setup-modal.js
+   MODIFY: public/js/admin/projects/s-curve-chart.js
+   MODIFY: resources/views/.../_setup_baseline_modal.blade.php
+   MODIFY: resources/views/.../baseline-schedule.blade.php
+   MODIFY: app/Http/Controllers/BaselineScheduleController.php
+   MODIFY: routes/web.php
+   CREATE: textfiles/adjusted_baseline_generation_plan.txt
+
+================================================================================
+  DESIGN DECISIONS
+================================================================================
+
+  Decision 1 — Reuse existing modal vs build new one
+    Reuse the existing Set Up Baseline modal. It already has:
+    • Two-mode design (extensible to third mode)
+    • Local in-memory month array with add/remove/edit
+    • S-Curve preview with live updates
+    • Activities support via stacked modal
+    • Progress bar and validation
+    Building a separate modal would duplicate ~900 lines of JS + 280 lines of
+    blade. The modal's header/footer text and Done button behavior are the
+    only things that change between modes.
+
+  Decision 2 — Auto-distribution approach
+    Stretch the adjustable portion of the original curve proportionally
+    across the combined adjustable + extension timeline. This:
+    • Preserves the original pattern (acceleration/deceleration shape)
+    • Requires no formula from the client
+    • Produces sensible defaults that the user can manually refine
+
+  Decision 3 — Locked months with actual progress
+    Locked server-side (authoritative) and client-side (UX). The server
+    ignores any submitted changes to months that have progress history
+    records, preventing any client manipulation even if JS is bypassed.
+
+  Decision 4 — One transaction for all changes
+    All UPDATEs, INSERTs, and DELETEs happen inside a single DB::transaction.
+    If any operation fails, no changes are persisted. This prevents partial
+    saves where some months are updated but others aren't.
+
+================================================================================
+  SESSION LOG — July 21, 2026 (Post-implementation Review)
+================================================================================
+
+  PROBLEM 1 — S-Curve chart shows Original Plan line extending past its
+  true endpoint into extension months.
+
+  ROOT CAUSE: buildSetupPreviewChartData() builds frozen_planned_data
+  from ALL months, including extension months. Extension months have
+  original_planned_progress_percent = NULL, so the fallback reads
+  planned_progress_percent (100%), injecting phantom data points.
+
+  FIX: Filter frozenData to only include months with non-null
+  original_planned_progress_percent. The Original Plan line stops at the
+  last original month's 100% point.
+
+  PROBLEM 2 — Auto-distribution produces duplicate/clumped values
+  (demonstrated on project 138 data).
+
+  ROOT CAUSE A (mutation cascade): The for loop does
+  existingAdj.planned_progress_percent = sourceMonth.planned_progress_percent,
+  but existingAdj IS adjustableMonths[pos]. So setting Nov to 87% (pos 4)
+  mutates the array, and pos 5 reads back the corrupted value (87% instead
+  of original 94%).
+
+  ROOT CAUSE B (clumping): Math.round(pos / stretchFactor) maps multiple
+  positions to the same source index — nearest-neighbor selection rather
+  than interpolation — so some original values get duplicated while others
+  are skipped entirely.
+
+  FIX: Replace the stretch/round/mutate approach with fractional linear
+  interpolation between adjacent original values (v2 — anchored to last
+  locked month).
+
+  Enhancement (v2): Anchor the interpolation start to the LAST LOCKED
+  month's value (the most recent month with actual progress). The first
+  adjustable month no longer keeps its original value unchanged — it
+  becomes an interpolated point between the last locked value and the
+  second adjustable month. This produces a smooth transition from the
+  last known progress through the curve to the new deadline.
+
+  Algorithm:
+    lastLockedValue = find last month with has_actual_progress
+    origValues = [lastLockedValue, ...adjustableMonths' original values]
+    hasLockedAnchor = lastLockedValue is valid and < first adj value
+    
+    For newPos in 0..totalAdjustable-1:
+      f = hasLockedAnchor ? (pos+1)/(totalAdjustable+1) : pos/(totalAdjustable-1)
+      origFraction = f * (origValues.length - 1)
+      lower = floor(origFraction), upper = ceil(origFraction)
+      lerp between origValues[lower] and origValues[upper]
+      assign to appropriate month
+
+  With locked anchor, the (pos+1)/(totalAdjustable+1) formula ensures the
+  first adjustable position lands strictly above the locked value rather
+  than at the same exact value. The final month guard forces 100%.
+
+  Result for project 138 (locked=50%, adj=60/70/79/87/94/100, 1 ext):
+    Jul=58.57, Aug=67.14, Sep=75.14, Oct=82.43, Nov=89.00, Dec=94.86, Jan=100
+  The deceleration pattern (10→9→8→7→6) is stretched and anchored at 50%.
+
+  BUG (SAVE 422 — FIXED): Saving after manually editing an existing month
+  returned "A target with date 2026-07-31 already exists."
+
+  ROOT CAUSE: addSetupBaselineMonth() created a new entry object with only
+  form fields (month_label, planned_date, planned_progress_percent,
+  description, activities) and replaced the existing month in-place without
+  preserving scheduleId. The server received id: null and tried to CREATE
+  a new month for a date that already exists in the DB.
+
+  FIX: In the edit branch (setupEditingIndex !== null), copy scheduleId,
+  has_actual_progress, original_planned_progress_percent, and isNew from
+  the existing entry before replacing it. The server now correctly
+  identifies the month as existing and performs an UPDATE.
+
+================================================================================
+  END OF PLAN FILE
+================================================================================

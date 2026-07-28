@@ -1,0 +1,184 @@
+================================================================================
+  GAPS & MISSING FEATURES — CSPC PMU SYSTEM
+  Last updated: July 22, 2026
+================================================================================
+
+  Purpose: Document features that are not yet implemented but may be
+  considered for future development. Organized by category.
+
+  Legend:
+    [V2]     — Deferred to Version 2 in the master implementation plan
+    [PLAN]   — Has an existing plan file but not yet started
+    [GAP]    — Genuinely missing, no plan file exists
+
+
+================================================================================
+  VERSION 2 DEFERRED ITEMS (from Master Plan)
+================================================================================
+
+  These were intentionally deferred during V1 development and have
+  existing documentation in the master plan. Start here if you want
+  to extend the AI module.
+
+  1. [V2] COMPLETION ESTIMATION
+     - estimated_completion_date (projected completion date)
+     - predicted_delay_days (estimated days beyond planned end date)
+     - completion_confidence (derived from R² + remaining months ratio)
+     - Solve regression equation for x when y = 100%
+     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+
+  2. [V2] CROSS-PROJECT HISTORICAL REGRESSION
+     - Use similar completed projects' progress as proxy for new projects
+     - Addresses "Insufficient Data" fallback for projects with <2 observations
+     - Similarity criteria: category, budget range, duration, contractor
+     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+
+  3. [V2] MULTIPLE LINEAR REGRESSION (MLR)
+     - Additional independent variables: budget utilization, issue density,
+       contractor experience, seasonality, extension count
+     - Matrix operations (Gaussian elimination or gradient descent)
+     - AIPredictionService would auto-select SLR vs MLR based on data depth
+     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+
+  4. [V2] S-CURVE REGRESSION OVERLAY
+     - Overlay regression line (dashed) on the existing S-Curve chart
+     - Forecast extension (dotted) continuing from current month to end
+     - Highlighted variance region between predicted and planned
+     - Tooltip: month, predicted %, planned %, variance
+     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+
+  5. [V2] AI-POWERED RECOMMENDATIONS (Phase 7.6)
+     - Replace rule-based RecommendationEngine with AI-generated recs
+     - Prerequisites: issue severity field, contractor performance tracking
+     - Same pattern as AIExplanationService (AI + static fallback)
+     - See: phase7_implementation_plan.txt, ai_recommendation_data_gaps.txt
+
+  6. [V2] FORECAST TABLE / RISK ASSESSMENT TABLE IN UI
+     - Month-by-month forecast table (collapsible, hidden by default)
+     - Or bandwidth/range forecasts (45-48% instead of 46.33%)
+     - Deferred because linear increments mislead vs actual S-Curve
+     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+
+
+================================================================================
+  CONTRACTOR MANAGEMENT GAPS
+================================================================================
+
+  7. [GAP] CONTRACTOR PERFORMANCE TRACKING
+     - No rating system, on-time delivery %, or quality score for contractors
+     - Needed for: smarter AI recommendations, contractor evaluation,
+       cross-project pattern detection
+     - Potential fields: performance_rating, on_time_delivery_percentage,
+       completed_projects_count, average_delay_days
+     - Referenced as prerequisite in: ai_recommendation_data_gaps.txt
+
+  8. [GAP] CONTRACTOR ANALYTICS DASHBOARD
+     - Contractors currently see only a project list
+     - No summary of all their projects: deadlines, compliance rate,
+       upcoming inspections, completed vs ongoing
+     - Could mirror admin dashboard but scoped to their assigned projects
+
+
+================================================================================
+  REPORTING & DATA EXPORT GAPS
+================================================================================
+
+  9. [GAP] REPORT GENERATION (PDF/EXCEL)
+     - No way to export project reports for stakeholders
+     - Missing: PDF of S-Curve chart, Excel of progress history,
+       project summary document, extension history report
+     - Common in PMU systems for official documentation
+
+  10. [GAP] DATA EXPORT/IMPORT
+      - No CSV/Excel import for bulk project creation
+      - No export of progress records, baseline schedules, or issues
+      - No way to migrate data between systems
+
+
+================================================================================
+  NOTIFICATION & COMMUNICATION GAPS
+================================================================================
+
+  11. [GAP] IN-APP NOTIFICATION SYSTEM
+      - Email notifications exist (welcome emails) but no in-app alerts
+      - Missing: deadline reminders, overdue inspection alerts,
+        extension approval/rejection notices, issue assignments
+      - jobs table exists but nothing uses it yet
+
+  12. [GAP] AUDIT LOG UI FOR NON-ADMINS
+      - activity_logs table exists and logs all actions
+      - Only admin can view — staff have no visibility into who changed what
+
+
+================================================================================
+  WORKFLOW & PRODUCTIVITY GAPS
+================================================================================
+
+  13. [GAP] PROJECT COMPARISON
+      - No side-by-side comparison of multiple projects
+      - Cannot compare: progress %, budget, timeline, risk levels
+      - Useful for management reviews and portfolio oversight
+
+  14. [GAP] BULK OPERATIONS
+      - No batch archive, batch status update, or bulk progress recording
+      - Each action is per-project, time-consuming for large portfolios
+
+  15. [GAP] USER ACTIVITY SUMMARY
+      - No per-user work statistics
+      - Missing: how many inspections recorded, issues closed,
+        extensions processed, documents uploaded by each user
+
+  16. [GAP] PROJECT TEMPLATES
+      - No reusable baseline schedule templates
+      - Similar project types (e.g., classroom buildings) must
+        re-enter the same S-Curve targets manually every time
+
+
+================================================================================
+  TECHNICAL DEBT / HOUSEKEEPING
+================================================================================
+
+  17. [GAP] DEAD CODE CLEANUP
+      - backup/ directory still contains old service files:
+        backup/app/Services/ProjectDetailService.php (multiple variants)
+        backup/app/Services/AI/AIPredictionService.php
+        resources(backup)/views/.../ai-prediction.blade.php
+      - The backup files are no longer needed now that all phases are done
+      - Also: any unused routes, dead JS functions, orphaned views
+
+  18. [GAP] JOB QUEUE UTILIZATION
+      - jobs table and queue infrastructure exist
+      - Not used by any feature yet
+      - Could async: email sending, report generation, data exports
+
+
+================================================================================
+  INTENTIONALLY EXCLUDED (Client Decision — Not Missing)
+================================================================================
+
+  These were suggested but the client confirmed they are NOT needed:
+
+  - Budget burn-rate tracking — client only needs contract budget recording
+  - Baseline approval workflow — baselines entered = already the approved plan
+  - Contractor self-reporting — contractors are read-only by design
+  - Formal REST API — web-only system, no external integration required
+
+
+================================================================================
+  PRIORITY RECOMMENDATION
+================================================================================
+
+  Immediate / Low Effort:
+    1. Dead code cleanup (backup/ directory) — quick win, reduces confusion
+
+  Short-term / Existing Plan:
+    2. Contractor performance tracking — unlocks smarter AI recommendations
+    3. Report generation (PDF export) — useful for PMU documentation needs
+
+  Medium-term / V2 Features:
+    4. S-Curve regression overlay — visual enhancement for AI Prediction tab
+    5. Cross-project historical regression — solves insufficient-data problem
+
+================================================================================
+  END OF FILE
+================================================================================

@@ -1,0 +1,191 @@
+===============================================================================
+  PLAN FILE
+  Add Month Target Validation Fixes
+  CSPC PMU System
+  Created: July 20, 2026
+  Based on: User testing results from month_date_validation_backport
+===============================================================================
+
+===============================================================================
+  PROBLEM SUMMARY
+===============================================================================
+
+  Two bugs and one UX issue found after testing the month-date validation
+  backport:
+
+  BUG 1 — 100% cap does not block equal value (pre-extension)
+    Scenario: Project has December 2026 at 100%. No extension exists.
+    User can still save "January 2027" at 100% — the validation falls
+    through because the third condition only catches < 100%, not == 100%.
+    Affects both client-side (saveMonthTarget) and server-side
+    (storeBaselineSchedule).
+
+  BUG 2 — Same-month error message is misleading
+    Scenario: User tries to add a month that already exists in the plan
+    (e.g., December 2026 when December 2026 already exists).
+    Rule B uses <= comparison, so same-month triggers "must be
+    chronologically after all previously added months (latest: December 2026)"
+    instead of a clear "already exists" message. Missing separate duplicate
+    month check.
+
+  UX — "Add Month Target" button appears when no extension exists
+    The button is shown as long as a baseline exists, even when the baseline
+    already reaches 100%. Since storeInitialBaselineSetup() requires 100%
+    completion, there is nothing to add post-setup without an extension.
+    Button should only appear when extension_count > 0.
+
+===============================================================================
+  FILES TO TOUCH
+===============================================================================
+
+  1. MODIFY: public/js/admin/projects/baseline-schedule-add-month-modal.js
+     — saveMonthTarget(): fix 100% cap, add duplicate check, fix Rule B
+
+  2. MODIFY: app/Http/Controllers/BaselineScheduleController.php
+     — storeBaselineSchedule(): fix 100% cap, add duplicate check, fix
+       Rule B comparison
+
+  3. MODIFY: resources/views/projects/project_detail/components/tabs/
+     baseline-schedule.blade.php
+     — Guard "Add Month Target" button behind extension_count > 0
+
+===============================================================================
+  FIX DETAILS
+===============================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────────
+  │ FIX 1 — Client-side validation (baseline-schedule-add-month-modal.js)
+  └─────────────────────────────────────────────────────────────────────────
+
+  Fix 1a — 100% cap (Bug 1)
+    Current (line 359):
+      } else if (maxProgressPercent === 100 && newProgressPercent < 100) {
+    Problem: newProgressPercent = 100 passes because 100 < 100 is false.
+    Fix:
+      } else if (maxProgressPercent === 100) {
+    Rationale: If any existing target is already at 100% and there is no
+    extension, no additional targets are needed. The extension-aware first
+    branch (line 355) already skips this for projects with extensions.
+
+  Fix 1b — Duplicate month check (Bug 2)
+    Add before Rule B (after the existingMonthLabels sort, around line 382):
+
+    // Reject duplicate month
+    if (monthLabel) {
+        var isDuplicate = existingMonthLabels.some(function (m) { return m === monthLabel; });
+        if (isDuplicate) {
+            errors.push('"' + formatMonthLabel(monthLabel) + '" has already been added to this plan.');
+        }
+    }
+
+  Fix 1c — Rule B comparison (Bug 2)
+    Current (line 386):
+      if (monthLabel && monthLabel <= latestMonth) {
+    Fix:
+      if (monthLabel && monthLabel < latestMonth) {
+    Rationale: The duplicate check now handles same-month. Rule B only needs
+    to catch months that are strictly earlier than the latest.
+
+  ┌─────────────────────────────────────────────────────────────────────────
+  │ FIX 2 — Server-side validation (BaselineScheduleController.php)
+  └─────────────────────────────────────────────────────────────────────────
+
+  Fix 2a — 100% cap (Bug 1)
+    Current (line 139):
+      } else if ($previousMax === 100 && $validated['planned_progress_percent'] < 100) {
+    Fix:
+      } else if ($previousMax === 100) {
+
+  Fix 2b — Duplicate planned_date check (Bug 2)
+    Add after Rule A (line 102), before Rules B/C:
+
+      // Duplicate check: same planned_date not allowed
+      $existingDate = ProjectBaselineSchedule::where('project_id', $project->id)
+          ->where('planned_date', $validated['planned_date'])
+          ->exists();
+      if ($existingDate) {
+          return response()->json([
+              'success' => false,
+              'message' => 'A target with this date already exists for this project.'
+          ], 422);
+      }
+
+  Fix 2c — Rule B comparison (Bug 2)
+    Current (line 110):
+      if ($dateRange && $dateRange->latest && $validated['planned_date'] <= $dateRange->latest) {
+    Fix:
+      if ($dateRange && $dateRange->latest && $validated['planned_date'] < $dateRange->latest) {
+    Rationale: The duplicate date check now catches same-date. Rule B only
+    catches strictly earlier dates.
+
+  ┌─────────────────────────────────────────────────────────────────────────
+  │ FIX 3 — Button visibility (UX)
+  └─────────────────────────────────────────────────────────────────────────
+
+  Current (baseline-schedule.blade.php, lines 57-61):
+      @else
+          <button class="btn-primary" onclick="openAddMonthTargetModal()" ...>
+              <i class="bi bi-plus-circle"></i> Add Month Target
+          </button>
+      @endif
+
+  Fix — Wrap with extension_count guard:
+      @elseif($project->extension_count > 0)
+          <button class="btn-primary" onclick="openAddMonthTargetModal()" ...>
+              <i class="bi bi-plus-circle"></i> Add Month Target
+          </button>
+      @else
+          {{-- Baseline set, no extension yet — no new targets needed --}}
+      @endif
+
+  This means:
+    - No baseline exists → "Set Up Baseline" button
+    - Baseline exists + has extensions → "Add Month Target" button
+    - Baseline exists + no extensions → no button (baseline already at 100%)
+
+  Alternative: Show a disabled/explanation state so the user knows why
+  the button is missing. Can be added later if UX feedback requests it.
+
+===============================================================================
+  IMPLEMENTATION ORDER
+===============================================================================
+
+  1. Fix 1a + 1b + 1c — Client-side (JS)
+  2. Fix 2a + 2b + 2c — Server-side (PHP)
+  3. Fix 3 — Blade visibility
+  4. PHP syntax check
+  5. Plan file updates and logging
+
+===============================================================================
+  IMPLEMENTATION LOG — July 20, 2026
+===============================================================================
+
+  All three fixes implemented and verified:
+
+  FIX 1 — Client-side (baseline-schedule-add-month-modal.js):
+    1a: Changed } else if (maxProgressPercent === 100 && newProgressPercent < 100)
+        → } else if (maxProgressPercent === 100)
+        Catches any new target when max is already 100% pre-extension.
+    1b: Added duplicate month check before Rule B (some() on existingMonthLabels).
+    1c: Changed Rule B comparison from <= to < (duplicate check now handles equality).
+
+  FIX 2 — Server-side (BaselineScheduleController.php):
+    2a: Same 100% cap fix — } else if ($previousMax === 100)
+    2b: Added duplicate planned_date query check before Rules B/C.
+    2c: Changed Rule B comparison from <= to <.
+
+  FIX 3 — Blade (baseline-schedule.blade.php):
+    Changed @else to @elseif($project->extension_count > 0) so "Add Month Target"
+    button only appears after at least one approved extension.
+
+  PHP syntax check: PASSED.
+
+===============================================================================
+  DEPENDENCIES
+===============================================================================
+
+  None. All fixes are self-contained within the three files listed above.
+
+===============================================================================
+  END OF PLAN FILE
+===============================================================================

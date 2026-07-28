@@ -1,0 +1,495 @@
+===============================================================================
+PHASE 7 IMPLEMENTATION PLAN
+AI Prediction Module — Recommendation Engine
+CSPC PMU System
+(done outdated draft)
+===============================================================================
+
+DATE
+---
+July 11, 2026
+
+STATUS
+---
+Plan created — not yet started
+
+===============================================================================
+CONTEXT & SCOPE
+===============================================================================
+
+Phases 1–6 complete. The AI prediction pipeline now delivers regression-based
+forecasts, baseline comparison, risk assessment, and AI-generated analysis
+text to the Project Detail page.
+
+Phase 7 replaces the static if/else recommendations in AIPredictionPresenter
+with a dedicated RecommendationEngine service that generates structured,
+categorized, explainable recommendations based on multiple project factors.
+
+SCOPE NOTE — Rule-Based vs AI-Powered:
+───────────────────────────────────────
+Phase 7 implements a rule-based recommendation engine. This is intentional:
+
+• The regression module only sees progress% vs time — it has no awareness of
+  contractor performance, budget status, or activity-level breakdown
+• Current system limitations (by client design):
+  - Activities are checklist-based (binary complete/incomplete, no progress %)
+  - Budget is a contract total only (no spending tracking)
+  - Contractor performance tracking not yet implemented
+• Feeding just R² and variance to an AI would produce better-worded but still
+  generic recommendations — no real value over rule-based logic
+
+AI-powered recommendations (Phase 7.6) are planned for when additional
+project context data becomes available, particularly contractor performance.
+
+===============================================================================
+KEY DESIGN DECISIONS
+===============================================================================
+
+Decision 1
+Each recommendation has a structured format:
+  message    — The actionable suggestion
+  category   — escalation | corrective | monitoring | administrative
+  reason     — Explanation of why this recommendation is being made
+  priority   — 1 (highest) to 5 (lowest)
+
+Decision 2
+Recommendations are generated from multiple project factors, not just risk
+level + trend:
+  • risk_level, trend, progress_gap
+  • days_remaining, extension_count
+  • open_issue_count
+  • regression fit_quality, observation_count
+
+Decision 3
+The existing flat array of strings (backward compatibility) is preserved.
+A new structured_recommendations array is added for enhanced Blade display.
+
+Decision 4
+The RecommendationEngine is a dedicated service with single responsibility.
+It is injected into AIPredictionPresenter like all other AI services.
+
+===============================================================================
+SUB-PHASE PLAN
+===============================================================================
+
+PHASE 7.1 — Create RecommendationEngine Service
+-------------------------------------------------------------------------------
+Create the core service with structured recommendation generation.
+
+FILES TO CREATE:
+  app/Services/AI/RecommendationEngine.php
+
+SERVICE STRUCTURE:
+  generate(Project $project, array $prediction): array
+    • Entry point. Returns array of structured recommendation objects.
+    • Calls internal rule methods for each category.
+
+  getCategoryColor(string $category): string
+    • Returns hex color for each category.
+
+  assessEscalation(array $factors): array
+    • Critical risk OR gap < -20% with < 30 days left → escalation
+
+  assessCorrective(array $factors): array
+    • High risk OR Declining trend with moderate gap → corrective
+
+  assessMonitoring(array $factors): array
+    • Moderate risk with declining/stable trend → monitoring
+
+  assessAdministrative(array $factors): array
+    • All projects — periodic review reminders, schedule checks
+
+RECOMMENDATION STRUCTURE:
+  [
+    'message'  => 'string',
+    'category' => 'escalation|corrective|monitoring|administrative',
+    'reason'   => 'string explaining why',
+    'priority' => int 1-5,
+  ]
+
+FACTORS EXTRACTED FROM PREDICTION:
+  • risk_level        — Low, Moderate, High, Critical
+  • trend             — ACCELERATING, DECELERATING, STABLE
+  • progress_gap      — expected - current progress
+  • days_remaining    — until planned end date
+  • extension_count   — number of past extensions
+  • open_issue_count  — unresolved issues count
+  • fit_quality       — Excellent, Good, Moderate, Weak
+  • observation_count — number of data points
+  • early_speed, recent_speed — progress velocity comparison
+  • current_progress, expected_progress — absolute progress values
+
+RULE LOGIC (details):
+
+  // Escalation rules (highest priority)
+  if risk_level === 'Critical':
+    → Escalate project for management review
+    → Reason: Critical risk classification from regression assessment
+
+  if progress_gap < -20 AND days_remaining < 30:
+    → Urgent corrective action needed — project unlikely to finish on time
+    → Reason: Progress gap of X% with only Y days remaining
+
+  // Corrective rules
+  if risk_level === 'High' OR (risk_level === 'Moderate' AND trend === 'DECELERATING'):
+    → Review contractor schedule to identify delays and bottlenecks
+    → Reason: [risk_level] risk with [trend] trend
+
+  if progress_gap < -10 AND extension_count > 0:
+    → Consider additional resources on critical path items
+    → Reason: Project has had [N] extensions and is still behind
+
+  if open_issue_count >= 3:
+    → Resolve open issues before they further impact progress
+    → Reason: [N] unresolved issues currently logged
+
+  // Monitoring rules
+  if risk_level === 'Moderate' AND trend === 'STABLE':
+    → Monitor progress closely over the next inspection cycle
+    → Reason: Moderate risk with stable trend — could improve or decline
+
+  if trend === 'DECELERATING' AND recent_speed < early_speed:
+    → Conduct additional site inspection to verify progress data
+    → Reason: Recent progress velocity ([recent]) is below early phase ([early])
+
+  if risk_level === 'Low' AND trend === 'DECELERATING':
+    → Keep an eye on next inspection — early warning sign detected
+    → Reason: Low risk but declining trend needs monitoring
+
+  // Administrative rules
+  if TRUE (always at least one admin recommendation):
+    → Continue regular monthly progress inspections
+    → Reason: Standard procedure for all active projects
+
+  if days_remaining < 15 AND current_progress < 90:
+    → Project nearing deadline with incomplete progress — prepare extension evaluation
+    → Reason: Only [N] days remain with [progress]% completion
+
+  if fit_quality === 'Weak' AND observation_count < 6:
+    → More progress records needed to improve prediction accuracy
+    → Reason: Only [N] observations — more data improves reliability
+
+TEST (7.1):
+  ✓ Tinker — call generate() on Project 7, verify structure
+  ✓ Verify all 4 categories can appear
+  ✓ Verify escalation appears for critical risk
+  ✓ Verify empty array on insufficient data
+
+-------------------------------------------------------------------------------
+PHASE 7.2 — Recommendation Categories & Logic Refinement
+-------------------------------------------------------------------------------
+Refine and expand the rule logic with edge case handling.
+
+FILES TO MODIFY:
+  app/Services/AI/RecommendationEngine.php (already created in 7.1)
+
+REFINEMENTS:
+  • Ensure no duplicate messages for the same project
+  • Cap recommendations at 8 maximum (avoid overwhelming users)
+  • Sort by priority (1 = highest first)
+  • Handle edge cases:
+    - Completed project → empty array
+    - Insufficient data → empty array
+    - No baseline schedules → limited recommendations
+    - Very new projects (1-2 obs) → data-focused recommendations only
+
+TEST (7.2):
+  ✓ Verify max 8 recommendations enforced
+  ✓ Verify priority sorting works
+  ✓ Verify no duplicate messages
+  ✓ Verify edge cases (completed, insufficient data, new projects)
+
+-------------------------------------------------------------------------------
+PHASE 7.3 — Presenter Integration
+-------------------------------------------------------------------------------
+Inject RecommendationEngine into AIPredictionPresenter and wire it up.
+
+FILES TO MODIFY:
+  app/Services/AI/AIPredictionPresenter.php
+
+CHANGES:
+  Constructor — add RecommendationEngine parameter:
+    public function __construct(
+        AIPredictionService $aiPredictionService,
+        RecommendationEngine $recommendationEngine
+    )
+
+  presentNormal() — replace generateRecommendations() call:
+    $recommendations = $this->recommendationEngine->generate($project, $prediction);
+
+  presentNormal() — map structured recommendations:
+    'recommendations'           => array_column($recommendations, 'message'),
+    'structured_recommendations' => $recommendations,
+
+  Remove:
+    • generateRecommendations() method entirely
+    • Its helper methods (if any)
+
+TEST (7.3):
+  ✓ Normal prediction → flat array in 'recommendations', structured in
+    'structured_recommendations'
+  ✓ Insufficient data → empty array in both
+  ✓ Completed project → empty array in both
+  ✓ Backward compatibility: blade still renders from 'recommendations' key
+
+-------------------------------------------------------------------------------
+PHASE 7.4 — Blade Enhancement
+-------------------------------------------------------------------------------
+Update ai-prediction.blade.php to display recommendation categories.
+
+FILES TO MODIFY:
+  resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+
+CHANGES:
+  Replace the recommendations list block to show category badges:
+
+  Current:
+    <ul>
+      @foreach ($prediction['recommendations'] as $recommendation)
+        <li>{{ $recommendation }}</li>
+      @endforeach
+    </ul>
+
+  After (enhanced, falls back if structured data not available):
+    @if (!empty($prediction['structured_recommendations']))
+      @foreach ($prediction['structured_recommendations'] as $rec)
+        <div style="margin-bottom: 10px;">
+          <span style="display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; color: white;
+            background: {{ $rec['category'] === 'escalation' ? '#ef4444' :
+                        ($rec['category'] === 'corrective' ? '#f59e0b' :
+                        ($rec['category'] === 'monitoring' ? '#eab308' : '#3b82f6')) }};">
+            {{ ucfirst($rec['category']) }}
+          </span>
+          <span style="font-size: 14px; color: #166534; margin-left: 6px;">
+            {{ $rec['message'] }}
+          </span>
+          @if ($rec['reason'] ?? null)
+            <div style="font-size: 12px; color: #6b7280; margin-top: 2px; margin-left: 4px;">
+              {{ $rec['reason'] }}
+            </div>
+          @endif
+        </div>
+      @endforeach
+    @else
+      {{-- Fallback to flat strings --}}
+      <ul>
+        @foreach ($prediction['recommendations'] as $recommendation)
+          <li>{{ $recommendation }}</li>
+        @endforeach
+      </ul>
+    @endif
+
+CATEGORY COLORS:
+  escalation    → #ef4444 (red)
+  corrective    → #f59e0b (orange)
+  monitoring    → #eab308 (yellow)
+  administrative → #3b82f6 (blue)
+
+TEST (7.4):
+  ✓ Browser: escalation shows red badge
+  ✓ Browser: corrective shows orange badge
+  ✓ Browser: reason text visible below message
+  ✓ Browser: multiple recommendations with mixed categories display correctly
+  ✓ Browser: completed/insufficient data shows no recommendation section
+  ✓ Browser: backward compatible if structured_recommendations is missing
+
+-------------------------------------------------------------------------------
+PHASE 7.5 — Full Testing
+-------------------------------------------------------------------------------
+Test all recommendation scenarios end-to-end.
+
+SCENARIOS:
+  1. Project 7 (Critical risk, Declining trend):
+     → Should include escalation + corrective recommendations
+     → At least 4-6 recommendations total
+     → Categories: escalation, corrective, monitoring/administrative
+
+  2. Low risk project with stable trend:
+     → Only monitoring + administrative recommendations
+     → No escalation or corrective
+
+  3. High risk project with accelerating trend:
+     → Corrective + monitoring recommendations
+     → No escalation
+
+  4. Completed project:
+     → Empty recommendations array
+     → No structured_recommendations
+
+  5. Insufficient data project:
+     → Empty recommendations array
+     → No structured_recommendations
+
+  6. Project with many open issues:
+     → Should include issue-resolution recommendation
+
+  7. Project with extensions and behind schedule:
+     → Should include extension-specific recommendations
+
+  8. Browser: verify colored badges show correctly
+  9. Browser: verify reason text shows below each recommendation
+  10. Browser: verify fallback works for old data (no structured_rec)
+
+===============================================================================
+FILES SUMMARY
+===============================================================================
+
+FILES TO CREATE:
+  app/Services/AI/RecommendationEngine.php
+
+FILES TO MODIFY:
+  app/Services/AI/AIPredictionPresenter.php  — inject engine, remove old method
+  resources/views/.../ai-prediction.blade.php — category badges + reason text
+
+===============================================================================
+FUTURE ENHANCEMENT (Phase 7.6) — AI-Powered Recommendations
+===============================================================================
+
+The rule-based Recommendation Engine (Phase 7.1–7.5) is the current approach.
+AI-powered recommendations would require additional project context data so
+the AI can distinguish between projects beyond what the rule engine already
+uses. Below are the prerequisite improvements needed, ordered by effort.
+
+===============================================================================
+PREREQUISITE 1 — Issue Severity Field (Small effort)
+===============================================================================
+
+Current state: Issues only have name, description, and status (Open/In
+Progress/Resolved/Closed). No severity means the AI cannot distinguish a
+minor paperwork issue from a critical structural defect.
+
+Changes needed:
+
+  1. Migration: Add `severity` enum column to the `issues` table
+     Values: 'low', 'medium', 'high', 'critical' (default: 'medium')
+
+  2. Model: Add 'severity' to Issue::$fillable and Issue::$casts
+
+  3. Controller validation: Add 'severity' => 'required|in:low,medium,high,critical'
+     to both store() and update() in IssueController.php
+
+  4. Blade form: Add a severity select dropdown in issues_modal.blade.php
+
+  5. Blade display: Show severity badge (color-coded) in issues tab
+
+Why this helps AI:
+  • "3 open issues, all severity 'low'" → project is fine
+  • "1 open issue, severity 'critical'" → project has a major blocker
+  • The AI can tailor recommendations based on the most severe unresolved
+    issues rather than just counting them
+
+===============================================================================
+PREREQUISITE 2 — Contractor Performance Tracking (Medium effort)
+===============================================================================
+
+Current state: The Contractor model stores only contact/identity info
+(company_name, contractor_name, contact_number, company_address). No
+performance metrics exist anywhere in the system.
+
+Changes needed:
+
+  1. Migration: Create `contractor_performances` table
+     Columns:
+       id                    bigIncrements PK
+       project_id            FK → projects.id
+       contractor_id         FK → contractors.id
+       rating                tinyInteger (1-5)
+       evaluation_date       date
+       evaluated_by          FK → users.id
+       comments              text (nullable)
+       created_at            timestamp
+       updated_at            timestamp
+
+  2. Model: Create ContractorPerformance model
+     Relationships: belongsTo(Project), belongsTo(Contractor), belongsTo(User)
+
+  3. Contractor model: Add hasMany(ContractorPerformance) relationship
+     Add helper: getAverageRatingAttribute(), getProjectCountAttribute()
+
+  4. Controller: Create ContractorPerformanceController with store() and index()
+     Routes: POST and GET under admin prefix
+
+  5. Views: Add performance rating form on contractor profile or project page
+
+Why this helps AI:
+  • "Contractor X averages 4.8/5 across 10 projects" → reliable performer
+  • "Contractor Y averages 2.1/5 across 3 projects, all overdue" → risky
+  • The AI can factor contractor reliability into recommendations:
+    "Contractor has poor track record — consider more frequent inspections"
+
+===============================================================================
+PREREQUISITE 3 — Leverage Existing Data (Zero code changes)
+===============================================================================
+
+The following data already exists and requires no schema changes. It should
+be included in the AI prompt immediately when Phase 7.6 begins:
+
+  • Extension.reason — Why past extensions were granted (e.g., "weather
+    delay", "material shortage", "contractor underperforming")
+    Already available via: $project->extensions->pluck('reason')
+
+  • Issue.description — Free-text description of each issue
+    Already available via: $project->issues->pluck('description')
+
+  • Activity completion rate — % of checklist items completed per month
+    Already computable via: $project->activities()
+    ->groupBy('month_label')->map(fn($g) => $g->where('is_completed', true)->count() / $g->count())
+
+These three data points can be added to the AIExplanationService prompt
+immediately (see Phase 6.2 buildPrompt()) with zero database changes.
+
+===============================================================================
+PHASE 7.6 IMPLEMENTATION — AI-Powered Recommendations
+===============================================================================
+
+Step 1 — Complete Prerequisites
+  • Add issue severity field (Prerequisite 1)
+  • Build contractor performance tracking (Prerequisite 2)
+
+Step 2 — Enhance the Prompt
+  Modify AIExplanationService::buildPrompt() to include:
+  • Issue details with severity: "Issues: [3 Open — 1 critical, 2 low]"
+  • Extension reasons: "Past extensions due to: weather delay, material shortage"
+  • Activity completion rate: "Monthly checklist completion: 80%, 75%, 90%"
+  • Contractor performance: "Contractor rating: 4.2/5 (8 projects)"
+
+Step 3 — Create AI Recommendation Prompt Template
+  Unlike Phase 6 (analysis text), this prompt instructs the AI to generate
+  structured recommendations in a parseable format. Example:
+
+  "Given the following project data, generate 3-5 specific recommendations.
+  For each recommendation, provide:
+  1. The actionable message
+  2. A category (escalation, corrective, monitoring, or administrative)
+  3. A brief reason explaining why this recommendation applies
+
+  Return as a JSON array of objects with keys: message, category, reason."
+
+Step 4 — Parse AI Response
+  • Parse the JSON response from Gemini
+  • Merge or replace rule-based recommendations with AI-generated ones
+  • Fall back to rule-based if AI response is unparseable or empty
+  • Save to ai_solutions or a new recommendations table for caching
+
+Step 5 — Caching
+  • Cache AI recommendations in a new column or table to avoid API calls
+    on every page load
+  • Same pattern as Phase 6: save to DB on generate, read cached on load
+
+===============================================================================
+PHASE 7.6 TESTING SCENARIOS
+===============================================================================
+
+  1. AI generates 3-5 recommendations with valid JSON structure
+  2. Recommendations reflect issue severity (critical → escalation)
+  3. Recommendations reflect contractor performance (low rating → monitor)
+  4. Recommendations reflect extension history (multiple → schedule review)
+  5. Unparseable AI response → fallback to rule-based recommendations
+  6. API failure → fallback to rule-based recommendations
+  7. Multiple regenerations create separate cached records
+  8. Browser: AI recommendations display with category badges
+
+===============================================================================
+END OF PHASE 7 IMPLEMENTATION PLAN
+===============================================================================
