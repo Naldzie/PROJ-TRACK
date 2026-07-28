@@ -9,6 +9,7 @@ use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
 use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
+use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\Regression\LinearRegressionService;
 use App\Services\AI\Regression\PolynomialRegressionService;
@@ -70,7 +71,8 @@ class AIPredictionServiceTest extends TestCase
             $comparisonService,
             $assessmentService,
             $completionService,
-            $completionComparisonService
+            $completionComparisonService,
+            new HistoricalSimilarityService()
         );
     }
 

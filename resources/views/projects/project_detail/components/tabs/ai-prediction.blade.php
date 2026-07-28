@@ -244,6 +244,9 @@
                             </div>
                             <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
                                 {{ $prediction['regression_info']['fit_quality'] }} — based on {{ $prediction['regression_info']['observation_count'] }} progress records
+                                @if (($prediction['regression_info']['data_source'] ?? 'actual') !== 'actual')
+                                    <br><span style="color: #f59e0b;">{{ $prediction['regression_info']['similar_projects_disclaimer'] ?? '' }}</span>
+                                @endif
                             </div>
                         @else
                             <div style="font-size: 18px; color: #9ca3af; font-weight: 600;">
@@ -327,6 +330,12 @@
                                     <i class="bi bi-bar-chart" style="margin-right: 4px;"></i>Linear (SLR)
                                 </span>
                             @endif
+                            @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
+                                <span style="font-size: 11px; background: #f59e0b; color: white; padding: 3px 10px; border-radius: 12px; font-weight: 600;">
+                                    <i class="bi bi-diagram-3" style="margin-right: 4px;"></i>
+                                    {{ $regInfo['data_source'] === 'cross_project_fallback' ? 'Cross-Project Fallback' : 'Cross-Project Supplement' }}
+                                </span>
+                            @endif
                         </span>
                     </div>
 
@@ -337,7 +346,10 @@
 
                     {{-- Fit Quality --}}
                     <div style="font-size: 14px; color: #3730a3; line-height: 1.6; margin-bottom: 10px;">
-                        Based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records, 
+                        Based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records
+                        @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
+                            from <strong>{{ $regInfo['similar_projects_count'] ?? 0 }}</strong> similar historical projects,
+                        @endif
                         the model explains <strong>{{ round($regInfo['r_squared'] * 100, 1) }}%</strong> 
                         of the observed progress trend (<strong>R² = {{ number_format($regInfo['r_squared'], 3) }}</strong>), 
                         indicating a <strong>{{ $regInfo['fit_quality'] }}</strong> fit.
@@ -401,6 +413,16 @@
                     @if ($regInfo['method_reason'] ?? null)
                     <div style="font-size: 12px; color: #6b7280; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #c7d2fe;">
                         <i class="bi bi-info-circle" style="margin-right: 4px;"></i>{{ $regInfo['method_reason'] }}
+                    </div>
+                    @endif
+
+                    @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
+                    <div style="font-size: 12px; color: #92400e; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #fcd34d; background: #fffbeb; padding: 10px 12px; border-radius: 6px;">
+                        <i class="bi bi-diagram-3" style="margin-right: 4px;"></i>
+                        {{ $regInfo['similar_projects_disclaimer'] ?? '' }}
+                        @if (($regInfo['synthetic_points_count'] ?? 0) > 0)
+                            <br><small>Includes {{ $regInfo['synthetic_points_count'] }} synthetic data point(s) to supplement the project's limited history.</small>
+                        @endif
                     </div>
                     @endif
                 </div>
@@ -762,6 +784,8 @@ function regenerateAnalysis(projectId) {
         btn.style.opacity = '1';
     });
 }
+
+console.log('[Phase 8] Prediction regression_info:', @json($prediction['regression_info'] ?? null));
 </script>
 
 <style>

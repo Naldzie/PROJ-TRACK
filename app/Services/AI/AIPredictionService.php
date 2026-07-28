@@ -12,6 +12,7 @@ use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\CompletionComparisonService;
+use App\Services\AI\HistoricalSimilarityService;
 use App\Models\PredictionHistory;
 use Carbon\Carbon;
 
@@ -142,6 +143,8 @@ class AIPredictionService
      */
     private ?CompletionComparisonService $completionComparisonService = null;
 
+    private HistoricalSimilarityService $historicalSimilarityService;
+
     /**
      * ------------------------------------------------------------------------
      * Constructor
@@ -158,7 +161,8 @@ class AIPredictionService
         BaselineComparisonService $comparisonService,
         ProjectAssessmentService $assessmentService,
         CompletionEstimationService $completionService,
-        CompletionComparisonService $completionComparisonService
+        CompletionComparisonService $completionComparisonService,
+        HistoricalSimilarityService $historicalSimilarityService
     ) {
         $this->datasetBuilder = $datasetBuilder;
         $this->regressionService = $regressionService;
@@ -168,6 +172,7 @@ class AIPredictionService
         $this->assessmentService = $assessmentService;
         $this->completionService = $completionService;
         $this->completionComparisonService = $completionComparisonService;
+        $this->historicalSimilarityService = $historicalSimilarityService;
     }
 
     /**
@@ -202,6 +207,13 @@ class AIPredictionService
     public function generatePrediction(Project $project): array
     {
         $dataset = $this->buildDataset($project);
+
+        // Attempt cross-project supplement/fallback when data is sparse
+        $crossProjectOverride = $this->applyCrossProjectData($project, $dataset);
+
+        if ($crossProjectOverride !== null) {
+            $dataset = $crossProjectOverride;
+        }
 
         /*
         |--------------------------------------------------------------------------
@@ -360,6 +372,36 @@ class AIPredictionService
             $currentProgress,
             $project->baselineSchedules
         );
+    }
+
+    // Attempt to supplement or replace dataset with cross-project historical data
+    private function applyCrossProjectData(Project $project, array $dataset): ?array
+    {
+        $observationCount = $dataset['statistics']['observation_count'] ?? 0;
+        $mode = $this->historicalSimilarityService->shouldSupplement($project, $observationCount);
+
+        if ($mode === 'none') {
+            return null;
+        }
+
+        if ($mode === 'fallback') {
+            $fallback = $this->historicalSimilarityService->generateFallbackDataset($project);
+
+            if ($fallback === null) {
+                return null;
+            }
+
+            return $fallback;
+        }
+
+        // Mode: supplement
+        $supplement = $this->historicalSimilarityService->generateSupplementDataset($project, $dataset);
+
+        if ($supplement === null) {
+            return null;
+        }
+
+        return $supplement;
     }
 
     /**
@@ -674,7 +716,7 @@ class AIPredictionService
             |--------------------------------------------------------------------------
             */
 
-            'regression' => $analysis,
+            'regression' => $this->enrichRegressionWithCrossProjectMeta($analysis, $dataset),
 
             /*
             |--------------------------------------------------------------------------
@@ -765,8 +807,7 @@ class AIPredictionService
 
             'assessment' => [],
 
-            'regression' => [
-
+            'regression' => $this->enrichRegressionWithCrossProjectMeta([
                 'observation_count' => $dataset['statistics']['observation_count'],
 
                 'mean_x'            => 0.0,
@@ -791,7 +832,7 @@ class AIPredictionService
 
                 'r_squared_poly'    => null,
 
-            ],
+            ], $dataset),
 
             'completion' => [
                 'estimated_completion_index' => null,
@@ -818,5 +859,37 @@ class AIPredictionService
             'statistics' => $dataset['statistics'],
 
         ];
+    }
+
+    // Merge cross-project metadata into the regression block if present
+    private function enrichRegressionWithCrossProjectMeta(array $regression, array $dataset): array
+    {
+        if (isset($dataset['data_source'])) {
+            $regression['data_source'] = $dataset['data_source'];
+        }
+
+        if (isset($dataset['similar_projects_count'])) {
+            $regression['similar_projects_count'] = $dataset['similar_projects_count'];
+        }
+
+        if (isset($dataset['synthetic_points_count'])) {
+            $regression['synthetic_points_count'] = $dataset['synthetic_points_count'];
+        }
+
+        if (isset($regression['data_source']) && $regression['data_source'] !== 'project_history') {
+            $count = $regression['similar_projects_count'] ?? 0;
+            if ($regression['data_source'] === 'similar_projects') {
+                $regression['similar_projects_disclaimer'] =
+                    'Prediction based entirely on ' . $count
+                    . ' similar completed project(s) in this category.';
+            } elseif ($regression['data_source'] === 'hybrid') {
+                $synthCount = $regression['synthetic_points_count'] ?? 0;
+                $regression['similar_projects_disclaimer'] =
+                    'Prediction supplemented with data from ' . $count
+                    . ' similar completed project(s) (' . $synthCount . ' additional data point(s)).';
+            }
+        }
+
+        return $regression;
     }
 }
