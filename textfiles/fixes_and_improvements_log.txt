@@ -138,3 +138,16 @@ Logged: 2026-07-28
     date alongside the value so users see when it was measured.
   - Context: The monthly target's planned date (Feb 15) and the badge
     label (February - 2026) remain unchanged.
+
+13. HIDDEN extensions section when project has no baseline
+----------------------------------------------------------------------
+  Files:
+    resources/views/.../baseline-schedule.blade.php
+    resources/views/project_detail.blade.php
+  - Before: Extension section and "Request Extension" modal were always
+    visible, even for projects with no baseline schedule yet.
+  - After:  Extensions section hidden when $hasBaseline is false.
+    $hasBaseline is now defined outside @can scope so it's always set.
+  - Also hides the request_extension_modal on project_detail page.
+  - Prevents users from requesting/approving extensions on projects
+    that haven't even set up their baseline schedule.
