@@ -2,7 +2,10 @@
 
 namespace Tests\Unit\Services\AI;
 
+use App\Models\PredictionHistory;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
+use App\Models\ProjectProgressHistory;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
@@ -15,6 +18,7 @@ use App\Services\AI\RecommendationEngine;
 use App\Services\AI\Regression\LinearRegressionService;
 use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
 use Tests\TestCase;
@@ -502,5 +506,64 @@ class AIPredictionPresenterTest extends TestCase
         $result = $this->presenter->present($project);
 
         $this->assertContains($result['status'], ['ON TRACK', 'AT RISK']);
+    }
+
+    /*
+    |==========================================================================
+    | Prediction History Output (Phase 7 fix)
+    |==========================================================================
+    */
+
+    /**
+     * ------------------------------------------------------------------------
+     * Prediction history shows the correct predicted month's actual
+     * ------------------------------------------------------------------------
+     *
+     * After the fix, a second inspection in the same month overrides that
+     * month's actual_next instead of corrupting the next month's prediction.
+     * The presenter therefore lists May (pred 4.72 / actual 4.5) and not a
+     * bogus June row carrying May's actual.
+     */
+    public function test_prediction_history_shows_correct_month_actual(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        foreach (['2026-02', '2026-03', '2026-04', '2026-05', '2026-06'] as $i => $month) {
+            ProjectBaselineSchedule::create([
+                'project_id'                       => $project->id,
+                'month_label'                      => $month,
+                'planned_date'                     => Carbon::parse($month . '-01')->endOfMonth()->format('Y-m-d'),
+                'planned_progress_percent'         => ($i + 1) * 5,
+                'original_planned_progress_percent'=> ($i + 1) * 5,
+            ]);
+        }
+
+        foreach (['2026-02' => 1.0, '2026-03' => 1.5, '2026-04' => 2.0] as $month => $pct) {
+            ProjectProgressHistory::create([
+                'project_id'              => $project->id,
+                'month_label'             => $month,
+                'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
+                'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+                'actual_progress_percent' => $pct,
+                'progress_percentage'     => $pct,
+            ]);
+        }
+
+        // April 2% → prediction FOR May
+        app(AIPredictionService::class)->generatePrediction($project);
+
+        // Simulate the controller sync: May's actual is 4.5
+        PredictionHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-05')
+            ->update(['actual_next' => 4.5]);
+
+        $result = $this->presenter->present($project);
+
+        $history = $result['prediction_history'];
+
+        $this->assertCount(1, $history);
+        $this->assertEquals('May 2026', $history[0]['month']);
+        $this->assertEquals(4.5, $history[0]['actual']);
+        $this->assertFalse($history->contains(fn ($h) => $h['month'] === 'Jun 2026'));
     }
 }

@@ -2,7 +2,10 @@
 
 namespace Tests\Unit\Services\AI;
 
+use App\Models\PredictionHistory;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
+use App\Models\ProjectProgressHistory;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
@@ -13,6 +16,7 @@ use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\Regression\LinearRegressionService;
 use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
 use Tests\TestCase;
@@ -342,5 +346,118 @@ class AIPredictionServiceTest extends TestCase
         $this->assertCount(0, $report['forecast']);
         $this->assertCount(0, $report['assessment']);
         $this->assertEquals(0, $report['statistics']['observation_count']);
+    }
+
+    /*
+    |==========================================================================
+    | Prediction History Auto-Save (Phase 7 fix)
+    |==========================================================================
+    */
+
+    /**
+     * Create a project with baseline schedules for Feb..Jun 2026 and progress
+     * records for Feb, Mar, Apr — so April is the latest observation and the
+     * prediction generated from it is FOR May.
+     */
+    private function createMonthAlignedProject(): Project
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        foreach (['2026-02', '2026-03', '2026-04', '2026-05', '2026-06'] as $i => $month) {
+            ProjectBaselineSchedule::create([
+                'project_id'                       => $project->id,
+                'month_label'                      => $month,
+                'planned_date'                     => Carbon::parse($month . '-01')->endOfMonth()->format('Y-m-d'),
+                'planned_progress_percent'         => ($i + 1) * 5,
+                'original_planned_progress_percent'=> ($i + 1) * 5,
+            ]);
+        }
+
+        $progress = ['2026-02' => 1.0, '2026-03' => 1.5, '2026-04' => 2.0];
+        foreach ($progress as $month => $pct) {
+            $this->createProgressRecord($project, $month, $pct);
+        }
+
+        return $project;
+    }
+
+    /**
+     * Create a single progress record for a month.
+     */
+    private function createProgressRecord(Project $project, string $month, float $pct): ProjectProgressHistory
+    {
+        return ProjectProgressHistory::create([
+            'project_id'              => $project->id,
+            'month_label'             => $month,
+            'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
+            'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+            'actual_progress_percent' => $pct,
+            'progress_percentage'     => $pct,
+        ]);
+    }
+
+    /**
+     * April 2% → prediction saved FOR May, linked to the May baseline.
+     */
+    public function test_prediction_saves_predicted_month_label_and_baseline_id(): void
+    {
+        $project = $this->createMonthAlignedProject();
+
+        $this->predictionService->generatePrediction($project);
+
+        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $this->assertCount(1, $rows);
+
+        $mayBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->where('month_label', '2026-05')
+            ->first();
+
+        $this->assertEquals('2026-05', $rows[0]->month_label);
+        $this->assertEquals($mayBaseline->id, $rows[0]->baseline_schedule_id);
+        $this->assertEquals(2.0, $rows[0]->current_progress);
+        $this->assertNotNull($rows[0]->predicted_next);
+    }
+
+    /**
+     * Re-running the prediction for the same project month does not create a
+     * second row for the same predicted month.
+     */
+    public function test_prediction_does_not_duplicate_on_repeated_generation(): void
+    {
+        $project = $this->createMonthAlignedProject();
+
+        $this->predictionService->generatePrediction($project);
+        $this->predictionService->generatePrediction($project);
+        $this->predictionService->generatePrediction($project);
+
+        $this->assertCount(1, PredictionHistory::where('project_id', $project->id)->get());
+    }
+
+    /**
+     * A second inspection in the same month must not create a duplicate row
+     * for the next predicted month (Bug B scenario).
+     */
+    public function test_second_inspection_does_not_create_duplicate_next_month_prediction(): void
+    {
+        $project = $this->createMonthAlignedProject();
+
+        // April → May prediction saved
+        $this->predictionService->generatePrediction($project);
+
+        // May 15 (4%) → prediction for June saved
+        $this->createProgressRecord($project, '2026-05', 4.0);
+        $this->predictionService->generatePrediction($project);
+        $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
+
+        // May 22 (4.5%) → June prediction must NOT be duplicated
+        $this->createProgressRecord($project, '2026-05', 4.5);
+        $this->predictionService->generatePrediction($project);
+
+        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $this->assertCount(2, $rows);
+        $this->assertEquals(
+            ['2026-05', '2026-06'],
+            $rows->pluck('month_label')->sort()->values()->all()
+        );
     }
 }
