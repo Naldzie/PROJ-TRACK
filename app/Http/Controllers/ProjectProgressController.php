@@ -185,6 +185,11 @@ class ProjectProgressController extends Controller
 
             DB::commit();
 
+            // Sync prediction history actual_next with the edited value
+            if ($isMonthlyRecord && !empty($record->month_label)) {
+                $this->syncPredictionHistoryActual($project, $record->month_label);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Progress record updated successfully',
@@ -256,6 +261,11 @@ class ProjectProgressController extends Controller
             ]);
 
             DB::commit();
+
+            // Recompute prediction history actual_next from remaining records;
+            // reverts to null when no progress record remains for the month
+            // (e.g. a record that was entered under the wrong month).
+            $this->syncPredictionHistoryActual($project, $record->month_label);
 
             return response()->json([
                 'success' => true,
@@ -346,23 +356,11 @@ class ProjectProgressController extends Controller
                 'visibility' => 'all',
             ]);
 
-            // Update prediction history with actual outcome (non-blocking)
-            try {
-                $pending = PredictionHistory::where('project_id', $project->id)
-                    ->whereNull('actual_next')
-                    ->latest('created_at')
-                    ->first();
-
-                if ($pending) {
-                    $pending->actual_next = $actualProgressPercent;
-                    $pending->save();
-                }
-            } catch (\Exception $e) {
-                Log::warning('Failed to update prediction history', [
-                    'project_id' => $project->id,
-                    'error'      => $e->getMessage(),
-                ]);
-            }
+            // Sync prediction history actual_next with the latest recorded
+            // progress for this month (non-blocking). Matches by month_label,
+            // so a second inspection in the same month overrides the prior value
+            // instead of corrupting the next month's prediction row.
+            $this->syncPredictionHistoryActual($project, $validated['month_label']);
 
             // Step 5: Get updated summary data
             $service = app(ProjectDetailService::class);
@@ -417,5 +415,45 @@ class ProjectProgressController extends Controller
             return 'Ahead';
         }
         return 'OnTrack';
+    }
+
+    /**
+     * Recompute prediction_history.actual_next from the source of truth
+     * (project_progress_history) for a given month.
+     *
+     * Called by: recordMonthlyProgress(), editProgressRecord(), destroyProgress()
+     * Calls: PredictionHistory::where(), project_progress_history lookup
+     *
+     * Behavior:
+     *   - add/ edit: sets actual_next to the LATEST recorded progress for the month
+     *   - delete: recomputes from remaining records; reverts to null when no
+     *     progress record remains for the month
+     *
+     * Non-blocking: failures are logged, never break the main operation.
+     */
+    private function syncPredictionHistoryActual(Project $project, string $monthLabel): void
+    {
+        try {
+            $latestRecord = ProjectProgressHistory::where('project_id', $project->id)
+                ->where('month_label', $monthLabel)
+                ->orderBy('inspection_month_date', 'desc')
+                ->orderBy('inspection_date', 'desc')
+                ->orderBy('id', 'desc')
+                ->first();
+
+            $actual = $latestRecord
+                ? (float) ($latestRecord->actual_progress_percent ?? $latestRecord->progress_percentage ?? 0)
+                : null;
+
+            PredictionHistory::where('project_id', $project->id)
+                ->where('month_label', $monthLabel)
+                ->update(['actual_next' => $actual]);
+        } catch (\Exception $e) {
+            Log::warning('Failed to sync prediction history actual_next', [
+                'project_id' => $project->id,
+                'month_label' => $monthLabel,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 }

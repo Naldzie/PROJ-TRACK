@@ -571,8 +571,9 @@ class AIPredictionService
      *
      * Saves the current prediction to the prediction_history table for
      * later accuracy tracking. Skips when the project is already at
-     * 100% or when a duplicate exists (same current_progress) to
-     * prevent duplicate rows on page reload.
+     * 100% or when a prediction already exists for the same predicted
+     * month (one row per predicted month — keeps the first prediction)
+     * to prevent duplicate rows on page reload.
      *
      * Called by: generatePrediction()
      * Calls: PredictionHistory::create()
@@ -589,19 +590,17 @@ class AIPredictionService
             return;
         }
 
-        $exists = PredictionHistory::where('project_id', $project->id)
-            ->where('current_progress', $currentProgress)
-            ->exists();
-
-        if ($exists) {
-            return;
-        }
-
-        $monthLabel = ProjectBaselineSchedule::where('project_id', $project->id)
+        // Resolve the PREDICTED month's baseline schedule (the month this
+        // prediction is FOR). Capture both its id and month_label so the row
+        // can be matched precisely when backfilling actual_next.
+        $baseline = ProjectBaselineSchedule::where('project_id', $project->id)
             ->orderBy('planned_date')
             ->offset($currentMonthIndex)
             ->limit(1)
-            ->value('month_label');
+            ->first(['id', 'month_label']);
+
+        $monthLabel = $baseline->month_label ?? null;
+        $baselineScheduleId = $baseline->id ?? null;
 
         // Fallback: predicted month may be beyond the last baseline schedule
         if (!$monthLabel) {
@@ -615,14 +614,38 @@ class AIPredictionService
             }
         }
 
+        // Dedupe by predicted month (not current_progress): allow only ONE
+        // prediction per (project, predicted month). Keep the first prediction
+        // for honest accuracy tracking; actual_next is maintained separately.
+        $duplicateQuery = PredictionHistory::where('project_id', $project->id);
+
+        if ($monthLabel && $baselineScheduleId) {
+            $duplicateQuery->where(function ($q) use ($monthLabel, $baselineScheduleId) {
+                $q->where('month_label', $monthLabel)
+                    ->orWhere('baseline_schedule_id', $baselineScheduleId);
+            });
+        } elseif ($monthLabel) {
+            $duplicateQuery->where('month_label', $monthLabel);
+        } elseif ($baselineScheduleId) {
+            $duplicateQuery->where('baseline_schedule_id', $baselineScheduleId);
+        } else {
+            // No month or baseline resolved — fall back to the legacy guard
+            $duplicateQuery->where('current_progress', $currentProgress);
+        }
+
+        if ($duplicateQuery->exists()) {
+            return;
+        }
+
         PredictionHistory::create([
-            'project_id'          => $project->id,
-            'month_label'         => $monthLabel,
-            'regression_method'   => $analysis['regression_method'] ?? 'slr',
-            'current_progress'    => round($currentProgress, 2),
-            'predicted_next'      => round($predictedNextProgress, 2),
-            'r_squared'           => $analysis['r_squared'] ?? 0,
-            'regression_snapshot' => $analysis,
+            'project_id'           => $project->id,
+            'month_label'          => $monthLabel,
+            'baseline_schedule_id' => $baselineScheduleId,
+            'regression_method'    => $analysis['regression_method'] ?? 'slr',
+            'current_progress'     => round($currentProgress, 2),
+            'predicted_next'       => round($predictedNextProgress, 2),
+            'r_squared'            => $analysis['r_squared'] ?? 0,
+            'regression_snapshot'  => $analysis,
         ]);
     }
 

@@ -16,6 +16,7 @@ class PredictionHistory extends Model
     protected $fillable = [
         'project_id',
         'month_label',
+        'baseline_schedule_id',
         'regression_method',
         'current_progress',
         'predicted_next',
@@ -35,5 +36,10 @@ class PredictionHistory extends Model
     public function project()
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function baselineSchedule()
+    {
+        return $this->belongsTo(ProjectBaselineSchedule::class, 'baseline_schedule_id');
     }
 }
