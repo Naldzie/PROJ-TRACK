@@ -3,9 +3,9 @@
   CSPC PMU System — AI Module Version 2
 ===============================================================================
 
-  Status: 🔄 IMPLEMENTING
+  Status: ✅ COMPLETE — all fixes implemented and merged into main (merge commit 5d8dfc3)
 
-  Branch: fix/phase-8-health-gauge (from main)
+  Branch: fix/phase-8-health-gauge (from main) — MERGED into main (Jul 31, 2026)
 
   Reference Documents:
     • ai_v2_phase8_cross_project_progress_log.txt — Open Items #1 and #2
@@ -32,7 +32,7 @@
   polynomial — the entire card hides even though Schedule-Aware and
   EAC_time may have valid estimates.
 
-  Status: 🔄 TO FIX
+  Status: ✅ FIXED (committed: 3cb0fbd — merged to main)
 
   Problem C — Completion Confidence Inflated by Synthetic Data
   --------------------------------------------------------------
@@ -41,7 +41,7 @@
   calculation. A project with 1 real + 3 synthetic observations shows
   "Medium" confidence instead of "Low", overstating reliability.
 
-  Status: 🔄 TO FIX
+  Status: ✅ FIXED (committed: 3cb0fbd — merged to main)
 
 ===============================================================================
   2. ROOT CAUSES
@@ -152,21 +152,27 @@
   6. VERIFICATION
 ===============================================================================
 
-  [ ] Three-method card visible when polynomial=null but 2 other methods valid
-  [ ] Three-method card hidden when only 0-1 methods have data
-  [ ] Schedule-Aware and EAC_time card sections show correctly
-  [ ] Comparison summary renders with valid_count >= 2
-  [ ] Completion badges show correct confidence (Low for mostly synthetic data)
-  [ ] All existing tests still pass (no regressions)
+  [x] Three-method card visible when polynomial=null but 2 other methods valid
+  [x] Three-method card hidden when only 0-1 methods have data
+  [x] Schedule-Aware and EAC_time card sections show correctly
+  [x] Comparison summary renders with valid_count >= 2
+  [x] Completion badges show correct confidence (Low for mostly synthetic data)
+  [x] All existing tests still pass (no regressions)
+
+  Verified in code on main (Jul 31, 2026):
+    • ai-prediction.blade.php:570 gate now uses comparison.valid_count >= 2
+    • AIPredictionService.php:245 injects synthetic_points_count into analysis
+    • CompletionEstimationService.php:370 classifyConfidence subtracts synthetic
+      count (realObsCount) before confidence thresholds
 
 ===============================================================================
   7. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  Next session: apply changes in order:
-    1. Update blade gate condition (Fix B)
-    2. Inject synthetic_points_count into analysis array (Fix C)
-    3. Update classifyConfidence to use real-only count (Fix C)
+  Next session: all items in this plan are COMPLETE and merged into main.
+  No further action required. If revisiting, confirm the fixes remain in
+  app/Services/AI/AIPredictionService.php, app/Services/AI/CompletionEstimationService.php,
+  and resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php.
 
 ===============================================================================
   END OF PHASE 8 HEALTH GAUGE & COMPLETION DISPLAY FIX PLAN
