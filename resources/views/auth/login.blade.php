@@ -536,7 +536,7 @@ body {
         </p>
 
         <ul class="feature-list">
-            <li><i class="bi bi-graph-up-arrow"></i> Real-time project &amp; S-curve tracking</li>
+            <li><i class="bi bi-graph-up-arrow"></i>S-curve tracking</li>
             <li><i class="bi bi-people-fill"></i> Built for admins, staff &amp; contractors</li>
             <li><i class="bi bi-shield-lock-fill"></i> Secured with Google sign-in</li>
         </ul>

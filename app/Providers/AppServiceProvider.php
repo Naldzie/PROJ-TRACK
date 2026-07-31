@@ -32,10 +32,10 @@ class AppServiceProvider extends ServiceProvider
         Event::listen(Login::class, function ($event) {
             ActivityLog::create([
                 'user_id' => $event->user->id,
-                'action' => 'login',
-                'visibility' => 'admin_only',
-                'performed_at' => Carbon::now('Asia/Manila'),
+                'action' => 'Login',
+                'description' => $event->user->name . ' logged in',
                 'ip_address' => request()->ip(),
+                'visibility' => 'all',
             ]);
         });
     }

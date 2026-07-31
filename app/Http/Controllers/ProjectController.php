@@ -34,6 +34,7 @@ use App\Models\ProjectActivity;
 use App\Models\ProjectProgressHistory;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIExplanationService;
+use App\Services\AIReportSendingService;
 use App\Services\ProjectDetailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -889,9 +890,11 @@ class ProjectController extends Controller
     public function regenerateAnalysis(
         Request $request,
         Project $project,
-        AIExplanationService $aiService
+        AIExplanationService $aiService,
+        AIReportSendingService $emailService
     ) {
         $analysisText = $aiService->generate($project);
+        $emailStatus = null;
 
         // Fallback to static template text if AI returned empty
         if (empty($analysisText)) {
@@ -902,11 +905,18 @@ class ProjectController extends Controller
         } else {
             $latest = $aiService->getLatest($project);
             $generatedAt = $latest ? $latest->created_at->toDateTimeString() : null;
+
+            $result = $emailService->sendForProject($project);
+            $emailStatus = [
+                'success' => $result['success'],
+                'message' => $result['message'],
+            ];
         }
 
         return response()->json([
             'analysis_text' => $analysisText,
             'generated_at'  => $generatedAt,
+            'email'         => $emailStatus,
         ]);
     }
 

@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\User;
 use App\Http\Controllers\Controller;
+use App\Traits\LogsActivity;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\Request;
 
 class UserManagementController extends Controller
 {
+    use LogsActivity;
     public function index()
     {
         $staffs = User::where('role', 'staff')->get();
@@ -24,7 +26,7 @@ class UserManagementController extends Controller
     {
         $staffId = 'STF-' . rand(1000,9999);
 
-        User::create([
+        $user = User::create([
             'role' => 'staff',
             'staff_id' => $staffId,
             'first_name' => $request->first_name,
@@ -38,12 +40,16 @@ class UserManagementController extends Controller
             'address' => $request->address,
         ]);
 
+        $this->logActivity('Create User', "Created staff user: {$user->email}");
+
         return redirect()->route('admin.users.index');
     }
 
     public function destroy($id)
     {
-        User::findOrFail($id)->delete();
+        $user = User::findOrFail($id);
+        $this->logActivity('Delete User', "Deleted user: {$user->email} ({$user->role})");
+        $user->delete();
         return back();
     }
 }

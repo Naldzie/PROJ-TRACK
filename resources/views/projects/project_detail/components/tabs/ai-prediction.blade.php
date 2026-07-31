@@ -133,9 +133,9 @@
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
                                     <span style="font-size: 12px; color: #6b7280;">Confidence</span>
-                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_insufficient ? '#9ca3af' : ($prediction['completion_confidence'] === 'High' ? '#10b981' : ($prediction['completion_confidence'] === 'Medium' ? '#eab308' : ($prediction['completion_confidence'] === 'Low' ? '#ef4444' : '#6b7280'))) }};">
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_insufficient ? '#9ca3af' : ($prediction['health_confidence'] === 'High' ? '#10b981' : ($prediction['health_confidence'] === 'Medium' ? '#eab308' : ($prediction['health_confidence'] === 'Low' ? '#ef4444' : '#6b7280'))) }};">
                                         @if ($_insufficient) N/A
-                                        @elseif ($prediction['completion_confidence']) {{ $prediction['completion_confidence'] }}
+                                        @elseif ($prediction['health_confidence']) {{ $prediction['health_confidence'] }}
                                         @else N/A
                                         @endif
                                     </span>
@@ -567,7 +567,7 @@
             </div>
         </div>
 
-        @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['methods']['polynomial'] ?? null) !== null)
+        @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['comparison']['valid_count'] ?? 0) >= 2)
         <!-- Multi-Method Completion Card -->
         <div class="card" style="margin-bottom: 20px;">
             <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">

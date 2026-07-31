@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Contractor;
@@ -22,7 +23,12 @@ class ContractorController extends Controller
             ->latest()
             ->get();
 
-        return view('admin.contractormanagement', compact('contractors'));
+        $recentActivity = ActivityLog::with('user')
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get();
+
+        return view('admin.contractormanagement', compact('contractors', 'recentActivity'));
     }
 
     // ✅ Add contractor (email only)
@@ -57,6 +63,14 @@ class ContractorController extends Controller
 
             DB::commit();
 
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'contractor_created',
+                'description' => 'Added new contractor — ' . $user->email,
+                'ip_address' => $request->ip(),
+                'visibility' => 'admin_only',
+            ]);
+
             return back()->with('success', 'Contractor added successfully and email sent!');
 
         } catch (\Exception $e) {
@@ -76,19 +90,41 @@ class ContractorController extends Controller
             ], 403);
         }
 
-        $user = User::findOrFail($id);
+        DB::beginTransaction();
 
-        $user->update([
-            'is_active' => !$user->is_active,
-        ]);
+        try {
+            $user = User::findOrFail($id);
 
-        return response()->json([
-            'success' => true,
-            'is_active' => $user->is_active,
-            'message' => $user->is_active
-                ? 'Contractor account enabled.'
-                : 'Contractor account disabled.'
-        ]);
+            $user->update([
+                'is_active' => !$user->is_active,
+            ]);
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'contractor_' . ($user->is_active ? 'enabled' : 'disabled'),
+                'description' => ($user->is_active ? 'Enabled' : 'Disabled') . ' contractor account — ' . ($user->name ?? $user->email),
+                'ip_address' => $request->ip(),
+                'visibility' => 'admin_only',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'is_active' => $user->is_active,
+                'message' => $user->is_active
+                    ? 'Contractor account enabled.'
+                    : 'Contractor account disabled.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to toggle contractor status. Please try again.'
+            ], 500);
+        }
     }
 
     // ✅ View contractor (WITH GOOGLE NAME + PHOTO SUPPORT)

@@ -8,10 +8,6 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (DB::connection()->getDriverName() !== 'mysql') {
-            return;
-        }
-
         $fkExists = !empty(DB::select("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_progress_history' AND COLUMN_NAME = 'activity_id' AND CONSTRAINT_NAME = 'project_progress_history_activity_id_foreign'"));
 
         $indexExists = !empty(DB::select("SHOW INDEX FROM project_progress_history WHERE Key_name = 'project_progress_history_activity_id_foreign'"));
@@ -41,10 +37,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (DB::connection()->getDriverName() !== 'mysql') {
-            return;
-        }
-
         $isJson = DB::select("SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_progress_history' AND COLUMN_NAME = 'activity_id'")[0]->DATA_TYPE ?? '';
 
         if ($isJson === 'json') {

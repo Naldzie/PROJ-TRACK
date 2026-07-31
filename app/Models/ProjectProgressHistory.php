@@ -63,7 +63,11 @@ class ProjectProgressHistory extends Model
 
     public function activities()
     {
-        return ProjectActivity::whereIn('id', $this->activity_id ?? []);
+        $ids = $this->activity_id;
+        if (is_string($ids)) {
+            $ids = json_decode($ids, true) ?? [];
+        }
+        return ProjectActivity::whereIn('id', $ids ?? []);
     }
 
     public function baselineSchedule()
@@ -102,7 +106,11 @@ class ProjectProgressHistory extends Model
      */
     public function getActivityNamesAttribute()
     {
-        $ids = $this->activity_id ?? [];
+        $ids = $this->activity_id;
+        if (is_string($ids)) {
+            $ids = json_decode($ids, true) ?? [];
+        }
+        $ids = $ids ?? [];
         if (empty($ids)) {
             return [];
         }

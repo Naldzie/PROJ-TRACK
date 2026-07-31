@@ -247,7 +247,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 .table tbody tr:nth-child(5)  { animation-delay: 0.20s; }
 .table tbody tr:nth-child(6)  { animation-delay: 0.24s; }
 .table tbody tr:nth-child(7)  { animation-delay: 0.28s; }
-.table tbody tr:nth-child(😎  { animation-delay: 0.32s; }
+.table tbody tr:nth-child(8)  { animation-delay: 0.32s; }
 .table tbody tr:nth-child(9)  { animation-delay: 0.36s; }
 .table tbody tr:nth-child(10) { animation-delay: 0.40s; }
 
@@ -350,6 +350,9 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 
 .action-delete          { background: #FCEBEB; color: #A32D2D; }
 .action-delete::before  { background: #E24B4A; }
+
+.action-logout          { background: #f3f4f6; color: #6b7280; }
+.action-logout::before  { background: #9ca3af; }
 
 .action-other          { background: #f3f4f6; color: #6b7280; }
 .action-other::before  { background: #9ca3af; }
@@ -582,9 +585,9 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                    id="dateInput" onchange="triggerAutoSubmit()">
 
             <div class="select-wrap">
-                <select name="action" class="form-select" style="width:160px" id="actionSelect" onchange="triggerAutoSubmit(this)">
+                <select name="action" class="form-select" style="width:170px" id="actionSelect" onchange="triggerAutoSubmit(this)">
                     <option value="">All actions</option>
-                    @foreach(['Login','Create Project','Update Project','Delete Project'] as $act)
+                    @foreach(['Login','Logout','Create Project','Update Project','Delete Project','Create Category','Update Category','Delete Category','Create User','Delete User'] as $act)
                         <option value="{{ $act }}" {{ request('action') == $act ? 'selected' : '' }}>{{ $act }}</option>
                     @endforeach
                 </select>
@@ -661,10 +664,11 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                         $description = $description ?: 'No description available.';
 
                         $actionClass = match(true) {
-                            $log->action === 'Login'          => 'action-login',
-                            $log->action === 'Create Project' => 'action-create',
-                            $log->action === 'Update Project' => 'action-update',
-                            $log->action === 'Delete Project' => 'action-delete',
+                            $log->action === 'Login' => 'action-login',
+                            $log->action === 'Logout' => 'action-logout',
+                            str_starts_with($log->action, 'Create') => 'action-create',
+                            str_starts_with($log->action, 'Update') => 'action-update',
+                            str_starts_with($log->action, 'Delete') => 'action-delete',
                             default                           => 'action-other',
                         };
 

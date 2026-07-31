@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Staff;
@@ -22,7 +23,12 @@ class StaffController extends Controller
             ->latest()
             ->get();
 
-        return view('admin.staffmanagement', compact('staffs'));
+        $recentActivity = ActivityLog::with('user')
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get();
+
+        return view('admin.staffmanagement', compact('staffs', 'recentActivity'));
     }
 
     // ✅ Add staff via Google account only (restricted domain)
@@ -77,6 +83,14 @@ class StaffController extends Controller
 
             DB::commit();
 
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'staff_created',
+                'description' => 'Added new staff member — ' . $user->email,
+                'ip_address' => $request->ip(),
+                'visibility' => 'admin_only',
+            ]);
+
             return back()->with('success', 'Staff added successfully and email sent!');
 
         } catch (\Exception $e) {
@@ -107,6 +121,14 @@ class StaffController extends Controller
             'role' => $request->role,
         ]);
 
+        ActivityLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'role_changed',
+            'description' => 'Changed ' . ($user->name ?? $user->email) . "'s role to " . $request->role,
+            'ip_address' => $request->ip(),
+            'visibility' => 'admin_only',
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => 'Role updated successfully'
@@ -124,19 +146,41 @@ class StaffController extends Controller
             ], 403);
         }
 
-        $user = User::findOrFail($id);
+        DB::beginTransaction();
 
-        $user->update([
-            'is_active' => !$user->is_active,
-        ]);
+        try {
+            $user = User::findOrFail($id);
 
-        return response()->json([
-            'success' => true,
-            'is_active' => $user->is_active,
-            'message' => $user->is_active
-                ? 'Staff account enabled.'
-                : 'Staff account disabled.'
-        ]);
+            $user->update([
+                'is_active' => !$user->is_active,
+            ]);
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'staff_' . ($user->is_active ? 'enabled' : 'disabled'),
+                'description' => ($user->is_active ? 'Enabled' : 'Disabled') . ' staff account — ' . ($user->name ?? $user->email),
+                'ip_address' => $request->ip(),
+                'visibility' => 'admin_only',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'is_active' => $user->is_active,
+                'message' => $user->is_active
+                    ? 'Staff account enabled.'
+                    : 'Staff account disabled.'
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to toggle staff status. Please try again.'
+            ], 500);
+        }
     }
 
     // ✅ View details

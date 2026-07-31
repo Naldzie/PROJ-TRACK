@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Staff;
 use App\Models\Admin;
 use App\Models\Contractor;
+use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 
 class AuthController extends Controller
@@ -162,6 +163,16 @@ class AuthController extends Controller
     // ================= LOGOUT =================
     public function logout(Request $request)
     {
+        if (Auth::check()) {
+            ActivityLog::create([
+                'user_id' => Auth::id(),
+                'action' => 'Logout',
+                'description' => Auth::user()->name . ' logged out',
+                'ip_address' => $request->ip(),
+                'visibility' => 'all',
+            ]);
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();

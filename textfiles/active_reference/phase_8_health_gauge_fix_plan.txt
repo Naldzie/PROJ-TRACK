@@ -1,0 +1,173 @@
+===============================================================================
+  PHASE 8 (POST) — PROJECT HEALTH GAUGE & COMPLETION DISPLAY FIX PLAN
+  CSPC PMU System — AI Module Version 2
+===============================================================================
+
+  Status: 🔄 IMPLEMENTING
+
+  Branch: fix/phase-8-health-gauge (from main)
+
+  Reference Documents:
+    • ai_v2_phase8_cross_project_progress_log.txt — Open Items #1 and #2
+    • ai_module_ver2_master_plan.txt — V2 master plan
+    • project_context_and_development_rules.txt — coding standards
+
+===============================================================================
+  1. PROBLEM STATEMENTS
+===============================================================================
+
+  Problem A — Health Gauge Shows AT RISK When On Schedule
+  --------------------------------------------------------
+  The Project Health Gauge (and entire "Status" card in the AI Prediction
+  tab) shows "AT RISK" / "Moderate Risk" even when a project is perfectly
+  on schedule (progress gap = 0%, actual progress meets planned progress).
+
+  Status: ✅ FIXED (committed: b3a0eb7)
+
+  Problem B — Three-Method Completion Card Not Visible
+  -----------------------------------------------------
+  The "Completion Estimation Comparison (3 Methods)" card is not rendered
+  when the polynomial solve method returns null. This happens in supplement
+  mode (Phase 8 cross-project) when model selection chooses SLR over
+  polynomial — the entire card hides even though Schedule-Aware and
+  EAC_time may have valid estimates.
+
+  Status: 🔄 TO FIX
+
+  Problem C — Completion Confidence Inflated by Synthetic Data
+  --------------------------------------------------------------
+  The completion estimation methods (schedule-aware, polynomial, EAC_time)
+  use combined observation count (real + synthetic) in their confidence
+  calculation. A project with 1 real + 3 synthetic observations shows
+  "Medium" confidence instead of "Low", overstating reliability.
+
+  Status: 🔄 TO FIX
+
+===============================================================================
+  2. ROOT CAUSES
+===============================================================================
+
+  Problem B — Blade Gate Too Strict
+  ----------------------------------
+  Resources/views/.../ai-prediction.blade.php line 570:
+    ($prediction['completion_multi']['methods']['polynomial'] ?? null) !== null
+
+  The outer condition requires polynomial to have a valid result. If
+  polynomial returns null (e.g., regression_method = 'slr' due to
+  insufficient polynomial improvement), the entire card is hidden.
+
+  Problem C — Confidence Uses Combined Count
+  -------------------------------------------
+  CompletionEstimationService::classifyConfidence() uses
+  $analysis['observation_count'] which is the combined total (real +
+  synthetic). The synthetic_points_count is not tracked in the analysis
+  array — it's only in the prediction report's regression block.
+
+  Schedule-aware and EAC_time methods primarily use real data (actual
+  progress, actual month index, actual baselines) for their core
+  calculation, so their estimates are reasonably reliable. But the
+  confidence badge overstates reliability by counting synthetic points.
+
+===============================================================================
+  3. CHOSEN DIRECTION
+===============================================================================
+
+  Problem B — Show Card When ≥2 Methods Have Valid Data
+  --------------------------------------------------------
+  Change the gate condition from requiring polynomial !== null to
+  requiring comparison.valid_count >= 2. Methods with null results
+  already display "N/A — Could not estimate" in the template.
+
+  Problem C — Pass Real Observation Count Through Pipeline
+  ---------------------------------------------------------
+  Inject synthetic_points_count into the analysis array before calling
+  completion estimation methods. Then subtract it from observation_count
+  before classifyConfidence(). This matches the same approach used for
+  health_confidence.
+
+===============================================================================
+  4. IMPLEMENTATION STEPS
+===============================================================================
+
+  Fix B — Blade Gate Condition
+  -------------------------------
+  File: resources/views/.../ai-prediction.blade.php
+  Location: Line 570
+
+  Before:
+    @if (!($prediction['is_insufficient_data'] ?? false) &&
+          !($prediction['is_completed'] ?? false) &&
+          ($prediction['completion_multi']['methods']['polynomial'] ?? null) !== null)
+
+  After:
+    @if (!($prediction['is_insufficient_data'] ?? false) &&
+          !($prediction['is_completed'] ?? false) &&
+          ($prediction['completion_multi']['comparison']['valid_count'] ?? 0) >= 2)
+
+  Impact:
+    • Card shows when at least 2 of 3 methods return valid results ✓
+    • Card hides when only 0-1 methods have data ✓
+    • Methods with null show "N/A — Could not estimate" ✓
+    • Comparison summary renders when valid_count >= 2 ✓
+
+  Fix C — Analysis Synthetic Count Pass-Through
+  ------------------------------------------------
+  File: app/Services/AI/AIPredictionService.php
+  Location: generatePrediction(), around line 240, before estimateCompletion()
+
+  After cross-project override and before completion estimation, inject
+  synthetic_points_count from dataset statistics into analysis:
+
+    $analysis['synthetic_points_count'] = $dataset['statistics']['synthetic_points_count'] ?? 0;
+
+  File: app/Services/AI/CompletionEstimationService.php
+  Location: classifyConfidence() — compute real obs count
+
+  Before:
+    $observationCount = $analysis['observation_count'] ?? 0;
+
+  After:
+    $syntheticCount = $analysis['synthetic_points_count'] ?? 0;
+    $realObsCount = max(0, ($analysis['observation_count'] ?? 0) - $syntheticCount);
+
+  And use $realObsCount in the confidence thresholds.
+
+===============================================================================
+  5. FILES TOUCHED
+===============================================================================
+
+  MODIFIED:
+    resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+      — Line 570: change gate from polynomial !== null to valid_count >= 2
+
+    app/Services/AI/AIPredictionService.php
+      — Line ~241: inject synthetic_points_count into analysis array
+
+    app/Services/AI/CompletionEstimationService.php
+      — classifyConfidence(): compute real obs count by subtracting synthetic
+      — Also update the three call sites (estimate, estimatePolynomial, estimateEarnedSchedule)
+        to pass synthetic_points_count or use the updated classifyConfidence
+
+===============================================================================
+  6. VERIFICATION
+===============================================================================
+
+  [ ] Three-method card visible when polynomial=null but 2 other methods valid
+  [ ] Three-method card hidden when only 0-1 methods have data
+  [ ] Schedule-Aware and EAC_time card sections show correctly
+  [ ] Comparison summary renders with valid_count >= 2
+  [ ] Completion badges show correct confidence (Low for mostly synthetic data)
+  [ ] All existing tests still pass (no regressions)
+
+===============================================================================
+  7. CONVERSATION CONTINUATION GUIDE
+===============================================================================
+
+  Next session: apply changes in order:
+    1. Update blade gate condition (Fix B)
+    2. Inject synthetic_points_count into analysis array (Fix C)
+    3. Update classifyConfidence to use real-only count (Fix C)
+
+===============================================================================
+  END OF PHASE 8 HEALTH GAUGE & COMPLETION DISPLAY FIX PLAN
+===============================================================================

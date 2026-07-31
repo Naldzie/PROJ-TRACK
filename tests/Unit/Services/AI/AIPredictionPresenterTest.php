@@ -6,14 +6,10 @@ use App\Models\Project;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
-use App\Services\AI\CompletionComparisonService;
-use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
-use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\RecommendationEngine;
 use App\Services\AI\Regression\LinearRegressionService;
-use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -52,26 +48,16 @@ class AIPredictionPresenterTest extends TestCase
 
         $datasetBuilder = new RegressionDatasetBuilder();
         $regressionService = new LinearRegressionService();
-        $polynomialService = new PolynomialRegressionService();
-        $forecastService = new ForecastService(
-            $regressionService,
-            $polynomialService
-        );
+        $forecastService = new ForecastService($regressionService);
         $comparisonService = new BaselineComparisonService();
         $assessmentService = new ProjectAssessmentService();
-        $completionService = new CompletionEstimationService();
-        $completionComparisonService = new CompletionComparisonService($completionService);
 
         $predictionService = new AIPredictionService(
             $datasetBuilder,
             $regressionService,
-            $polynomialService,
             $forecastService,
             $comparisonService,
-            $assessmentService,
-            $completionService,
-            $completionComparisonService,
-            new HistoricalSimilarityService()
+            $assessmentService
         );
 
         $recommendationEngine = new RecommendationEngine();

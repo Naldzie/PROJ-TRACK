@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
  
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Traits\LogsActivity;
 use Illuminate\Http\Request;
  
 class CategoryController extends Controller
 {
+    use LogsActivity;
     /**
      * Get all categories (for dropdown and management)
      */
@@ -35,7 +37,9 @@ class CategoryController extends Controller
         ]);
  
         $category = Category::create($validated);
- 
+
+        $this->logActivity('Create Category', "Created category: {$category->name}");
+
         return response()->json([
             'success' => true,
             'message' => 'Category created successfully',
@@ -59,7 +63,9 @@ class CategoryController extends Controller
         ]);
  
         $category->update($validated);
- 
+
+        $this->logActivity('Update Category', "Updated category: {$category->name}");
+
         return response()->json([
             'success' => true,
             'message' => 'Category updated successfully',
@@ -86,8 +92,10 @@ class CategoryController extends Controller
         // forceDelete() permanently removes the row from the DB instead of
         // soft-deleting it, so the unique index on 'name' is fully released
         // and the same name can be reused immediately after deletion.
+        $this->logActivity('Delete Category', "Deleted category: {$category->name}");
+
         $category->forceDelete();
- 
+
         return response()->json([
             'success' => true,
             'message' => 'Category deleted successfully'

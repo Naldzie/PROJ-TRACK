@@ -6,12 +6,10 @@ use App\Models\Project;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
-use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\RecommendationEngine;
 use App\Services\AI\Regression\LinearRegressionService;
-use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -45,7 +43,6 @@ class AIIntegrationTest extends TestCase
 
     private RegressionDatasetBuilder $datasetBuilder;
     private LinearRegressionService $regressionService;
-    private PolynomialRegressionService $polynomialService;
     private ForecastService $forecastService;
     private BaselineComparisonService $comparisonService;
     private ProjectAssessmentService $assessmentService;
@@ -58,22 +55,15 @@ class AIIntegrationTest extends TestCase
 
         $this->datasetBuilder = new RegressionDatasetBuilder();
         $this->regressionService = new LinearRegressionService();
-        $this->polynomialService = new PolynomialRegressionService();
-        $this->forecastService = new ForecastService(
-            $this->regressionService,
-            $this->polynomialService
-        );
+        $this->forecastService = new ForecastService($this->regressionService);
         $this->comparisonService = new BaselineComparisonService();
         $this->assessmentService = new ProjectAssessmentService();
-        $this->completionService = new CompletionEstimationService();
         $this->predictionService = new AIPredictionService(
             $this->datasetBuilder,
             $this->regressionService,
-            $this->polynomialService,
             $this->forecastService,
             $this->comparisonService,
-            $this->assessmentService,
-            $this->completionService
+            $this->assessmentService
         );
         $this->presenter = new AIPredictionPresenter(
             $this->predictionService,

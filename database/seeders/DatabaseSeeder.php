@@ -22,6 +22,8 @@ class DatabaseSeeder extends Seeder
             AdminSeeder::class,
             StaffSeeder::class,
             ContractorSeeder::class,
+            ProjectSeeder::class,
+            SampleAiDataSeeder::class,
         ]);
         
     }

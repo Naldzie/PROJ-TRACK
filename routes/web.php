@@ -26,6 +26,10 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Admin\EmailController as AdminEmailController;
+use App\Http\Controllers\Admin\RatingController;
+use App\Http\Controllers\Staff\EmailController as StaffEmailController;
+use App\Http\Controllers\Contractor\EmailController as ContractorEmailController;
 /*
 |--------------------------------------------------------------------------
 | Public Routes
@@ -65,9 +69,8 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/warranty', [StaffWarrantyController::class, 'store'])
         ->name('staff.warranty.store');
 
-    Route::get('/email', function () {
-        return view('staff.email');
-    })->name('staff.email');
+    Route::get('/email', [StaffEmailController::class, 'index'])->name('staff.email');
+    Route::get('/emails/{email}', [StaffEmailController::class, 'show'])->name('staff.emails.show');
 
     
     Route::get('/profile', [ProfileStaffController::class, 'index'])
@@ -129,7 +132,7 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/contractors', [ContractorController::class, 'index'])->name('staff.contractors.index');
     Route::post('/contractors', [ContractorController::class, 'store'])->name('staff.contractors.store');
     Route::get('/contractors/{id}', [ContractorController::class, 'show'])->name('staff.contractors.show');
-    Route::patch('/contractors/{id}/toggle-status', [ContractorController::class, 'toggleStatus'])->name('staff.contractors.toggleStatus');
+    Route::post('/contractors/{id}/toggle-status', [ContractorController::class, 'toggleStatus'])->name('staff.contractors.toggleStatus');
 
     // === PROGRESS HISTORY ROUTES ===
     Route::post('/projects/{project}/progress', [ProjectProgressController::class, 'storeProgress'])
@@ -230,9 +233,8 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
         return view('contractor.dashboard');
     })->name('contractor.dashboard');
 
-    Route::get('/contractor/email', function () {
-        return view('contractor.email');
-    })->name('contractor.email');
+    Route::get('/email', [ContractorEmailController::class, 'index'])->name('contractor.email');
+    Route::get('/emails/{email}', [ContractorEmailController::class, 'show'])->name('contractor.emails.show');
     /*
     Route::get('/contractor/project', function () {
         return view('contractor.project');
@@ -367,7 +369,7 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::get('/contractors', [ContractorController::class, 'index'])->name('contractors.index');
     Route::post('/contractors', [ContractorController::class, 'store'])->name('contractors.store');
     Route::get('/contractors/{id}', [ContractorController::class, 'show'])->name('admin.contractors.show');
-    Route::patch('/contractors/{id}/toggle-status', [ContractorController::class, 'toggleStatus'])->name('admin.contractors.toggleStatus');
+    Route::post('/contractors/{id}/toggle-status', [ContractorController::class, 'toggleStatus'])->name('admin.contractors.toggleStatus');
 
     // === PROGRESS HISTORY ROUTES ===
     Route::post('/projects/{project}/progress', [ProjectProgressController::class, 'storeProgress'])
@@ -534,13 +536,17 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::post('/warranty', [WarrantyController::class, 'store'])
         ->name('admin.warranty.store');
 
-    Route::get('/rating', function () {
-        return view('admin.rating');
-    })->name('admin.rating');
+    Route::get('/rating', [RatingController::class, 'index'])->name('admin.rating');
+    Route::post('/rating/suggest', [RatingController::class, 'suggest'])->name('admin.rating.suggest');
+    Route::post('/rating/store', [RatingController::class, 'store'])->name('admin.rating.store');
+    Route::post('/rating/auto-rate-all', [RatingController::class, 'autoRateAll'])->name('admin.rating.auto-rate-all');
     
-    Route::get('/email', function () {
-        return view('admin.email');
-    })->name('admin.email');
+    Route::get('/email', [AdminEmailController::class, 'index'])->name('admin.email');
+    Route::get('/emails/{email}', [AdminEmailController::class, 'show'])->name('admin.emails.show');
+    Route::post('/emails/{email}/mark-read', [AdminEmailController::class, 'markAsRead'])->name('admin.emails.mark-read');
+    Route::post('/email/send-now', [AdminEmailController::class, 'sendNow'])->name('admin.email.send-now');
+    Route::post('/email/send-one', [AdminEmailController::class, 'sendOne'])->name('admin.email.send-one');
+    Route::post('/email/toggle-auto-send', [AdminEmailController::class, 'toggleAutoSend'])->name('admin.email.toggle-auto-send');
 
     Route::get('/activity-logs',
         [ActivityLogController::class, 'index']
@@ -560,7 +566,7 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::get('/staff', [StaffController::class, 'index'])->name('admin.staff.index');
     Route::post('/staff', [StaffController::class, 'store'])->name('admin.staff.store');
     Route::put('/staff/{id}', [StaffController::class, 'update'])->name('admin.staff.update');
-    Route::patch('/staff/{id}/toggle-status', [StaffController::class, 'toggleStatus'])->name('admin.staff.toggleStatus');
+    Route::post('/staff/{id}/toggle-status', [StaffController::class, 'toggleStatus'])->name('admin.staff.toggleStatus');
 
     Route::view('/project-view', 'project-view');
 });
@@ -573,6 +579,36 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 | Logout Route
 |--------------------------------------------------------------------------
 */
+
+/*
+|--------------------------------------------------------------------------
+| Email Tracking Pixel (Public — no auth)
+|--------------------------------------------------------------------------
+*/
+Route::get('/track/{token}', function (string $token) {
+    $tracking = App\Models\EmailTracking::where('tracking_token', $token)->first();
+    if ($tracking) {
+        if (!$tracking->sent_at) {
+            $tracking->update(['sent_at' => now()]);
+        }
+        if (!$tracking->delivered_at) {
+            $tracking->update(['delivered_at' => now()]);
+        }
+        if (!$tracking->opened_at) {
+            $tracking->update([
+                'opened_at' => now(),
+                'is_read' => true,
+                'open_count' => $tracking->open_count + 1,
+            ]);
+        } else {
+            $tracking->increment('open_count');
+        }
+    }
+
+    return response(base64_decode(
+        'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+    ))->header('Content-Type', 'image/gif');
+})->name('tracking.open');
 
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
@@ -594,16 +630,9 @@ Route::middleware(['auth'])->delete('/projects/{id}', [ProjectController::class,
 
 /*
 |--------------------------------------------------------------------------
-| ERROR PAGES
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
 | DEV TOOLS (non-production only)
 |--------------------------------------------------------------------------
 */
-
 if (app()->environment() !== 'production') {
     Route::prefix('dev')->middleware('auth')->name('dev.')->group(function () {
         Route::get('/date', [App\Http\Controllers\Admin\DevDateController::class, 'get'])->name('date.get');
@@ -611,6 +640,12 @@ if (app()->environment() !== 'production') {
         Route::post('/date/clear', [App\Http\Controllers\Admin\DevDateController::class, 'clear'])->name('date.clear');
     });
 }
+
+/*
+|--------------------------------------------------------------------------
+| ERROR PAGES
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/unauthorized', fn() => response()->view('errors.unauthorized', [], 403))->name('unauthorized');
 

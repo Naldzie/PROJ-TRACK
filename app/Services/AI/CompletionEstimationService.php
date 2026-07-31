@@ -92,7 +92,8 @@ class CompletionEstimationService
             $rSquared,
             $analysis['observation_count'] ?? 0,
             $estimationIndex,
-            $plannedEndIndex
+            $plannedEndIndex,
+            $analysis['synthetic_points_count'] ?? 0
         );
 
         return [
@@ -185,7 +186,8 @@ class CompletionEstimationService
             $rSquared,
             $analysis['observation_count'] ?? 0,
             $estimationIndex,
-            $plannedEndIndex
+            $plannedEndIndex,
+            $analysis['synthetic_points_count'] ?? 0
         );
 
         return [
@@ -274,7 +276,8 @@ class CompletionEstimationService
             $rSquared,
             $analysis['observation_count'] ?? 0,
             $estimationIndex,
-            $plannedEndIndex
+            $plannedEndIndex,
+            $analysis['synthetic_points_count'] ?? 0
         );
 
         return [
@@ -359,8 +362,12 @@ class CompletionEstimationService
         float $rSquared,
         int $observationCount,
         float $estimationIndex,
-        int $plannedEndIndex
+        int $plannedEndIndex,
+        int $syntheticCount = 0
     ): string {
+
+        // Use only real observations (exclude synthetic points from cross-project)
+        $realObsCount = max(0, $observationCount - $syntheticCount);
 
         if ($estimationIndex > self::LOW_CONFIDENCE_INDEX_RATIO * $plannedEndIndex) {
             return 'Low';
@@ -368,7 +375,7 @@ class CompletionEstimationService
 
         if (
             $rSquared >= self::HIGH_CONFIDENCE_R2
-            && $observationCount >= self::HIGH_CONFIDENCE_OBS
+            && $realObsCount >= self::HIGH_CONFIDENCE_OBS
             && $estimationIndex <= self::HIGH_CONFIDENCE_INDEX_RATIO * $plannedEndIndex
         ) {
             return 'High';
@@ -376,7 +383,7 @@ class CompletionEstimationService
 
         if (
             $rSquared >= self::MEDIUM_CONFIDENCE_R2
-            && $observationCount >= self::MEDIUM_CONFIDENCE_OBS
+            && $realObsCount >= self::MEDIUM_CONFIDENCE_OBS
         ) {
             return 'Medium';
         }

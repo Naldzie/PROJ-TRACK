@@ -140,10 +140,10 @@ class Project extends Model
 
 
     /**
-     * Get the latest cumulative actual progress percentage from
-     * the monthly progress history records.
+     * Calculate overall progress from the checklist-based progress history.
+     * Falls back to the legacy milestone model when no monthly record exists.
      */
-    public function calculateProgressFromHistory()
+    public function calculateProgressFromChecklist()
     {
         $latestProgress = ProjectProgressHistory::where('project_id', $this->id)
             ->orderBy('inspection_month_date', 'desc')
@@ -164,11 +164,11 @@ class Project extends Model
     }
 
     /**
-     * Get calculated progress from monthly progress history records
+     * Get calculated progress from checklist-based progress history
      */
     public function getProgressPercentage()
     {
-        return $this->calculateProgressFromHistory() ?? 0;
+        return $this->calculateProgressFromChecklist() ?? 0;
     }
 
     // === HELPER METHODS ===

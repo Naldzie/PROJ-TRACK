@@ -457,34 +457,22 @@ class AIPredictionPresenter
         | Determine Risk Status
         |--------------------------------------------------------------------------
         |
-        | Combines two signals to determine overall project risk:
+        | Risk is based solely on the current progress gap (actual vs planned
+        | at today's date). This reflects the real on-the-ground situation.
         |
-        | 1. Current progress gap (actual vs planned for the current month)
-        |    — reflects the real on-the-ground situation.
+        | The gap naturally incorporates time: expectedProgress is recalculated
+        | each page load using DateHelper::now(), so as days pass without
+        | progress updates, the gap widens and risk escalates automatically.
         |
-        | 2. Near-term assessment (first forecast month's projected
-        |    variance) — reflects where the model expects the project
-        |    to be next month.
-        |
-        | The more conservative (higher risk) of the two is used so
-        | that a project currently behind schedule does not show
-        | "ON TRACK" just because a far-future forecast looks rosy.
+        | Forecast/prediction data is NOT mixed into health status — it
+        | remains available separately in assessment_data for the forecast
+        | table and analysis sections.
         |
         */
 
         $currentGapRisk = $this->classifyRiskFromGap($progressGap);
 
-        $firstAssessment = !empty($assessment) ? $assessment[0] : null;
-        $nearTermRisk    = $firstAssessment['risk_level'] ?? null;
-
-        $riskPriority = ['Low' => 0, 'Moderate' => 1, 'High' => 2, 'Critical' => 3];
-        $overallRisk  = array_search(
-            max(
-                $riskPriority[$currentGapRisk] ?? 0,
-                $riskPriority[$nearTermRisk] ?? 0
-            ),
-            $riskPriority
-        );
+        $overallRisk = $currentGapRisk;
 
         /*
         |--------------------------------------------------------------------------
@@ -512,6 +500,25 @@ class AIPredictionPresenter
         $observationCount = (int) ($statistics['observation_count'] ?? 0);
         $rSquared         = (float) ($regression['r_squared'] ?? 0);
         $certaintyLabel   = $this->generateCertaintyLabel($observationCount, $rSquared);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Health Confidence (Observation-Based)
+        |--------------------------------------------------------------------------
+        |
+        | Uses real observation count only (excluding synthetic points from
+        | cross-project supplement). This measures how much REAL data supports
+        | the health assessment — not regression fit quality.
+        |
+        */
+
+        $syntheticCount = (int) ($regression['synthetic_points_count'] ?? 0);
+        $realObsCount   = max(0, $observationCount - $syntheticCount);
+        $healthConfidence = match (true) {
+            $realObsCount >= 6 => 'High',
+            $realObsCount >= 3 => 'Medium',
+            default            => 'Low',
+        };
 
         /*
         |--------------------------------------------------------------------------
@@ -634,6 +641,7 @@ class AIPredictionPresenter
             'planned_completion'    => $project->planned_end_date,
             'predicted_delay_days'    => $completion['predicted_delay_days'] ?? 0,
             'completion_confidence'   => $completion['completion_confidence'] ?? null,
+            'health_confidence'      => $healthConfidence,
 
             /*
             |------------------------------------------------------------------

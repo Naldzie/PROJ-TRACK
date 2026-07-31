@@ -2,17 +2,12 @@
 
 namespace Tests\Unit\Services\AI;
 
-use App\Models\PredictionHistory;
 use App\Models\Project;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
-use App\Services\AI\CompletionComparisonService;
-use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
-use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\Regression\LinearRegressionService;
-use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -53,26 +48,16 @@ class AIPredictionServiceTest extends TestCase
 
         $datasetBuilder = new RegressionDatasetBuilder();
         $regressionService = new LinearRegressionService();
-        $polynomialService = new PolynomialRegressionService();
-        $forecastService = new ForecastService(
-            $regressionService,
-            $polynomialService
-        );
+        $forecastService = new ForecastService($regressionService);
         $comparisonService = new BaselineComparisonService();
         $assessmentService = new ProjectAssessmentService();
-        $completionService = new CompletionEstimationService();
-        $completionComparisonService = new CompletionComparisonService($completionService);
 
         $this->predictionService = new AIPredictionService(
             $datasetBuilder,
             $regressionService,
-            $polynomialService,
             $forecastService,
             $comparisonService,
-            $assessmentService,
-            $completionService,
-            $completionComparisonService,
-            new HistoricalSimilarityService()
+            $assessmentService
         );
     }
 
@@ -102,7 +87,6 @@ class AIPredictionServiceTest extends TestCase
             'forecast',
             'assessment',
             'regression',
-            'completion',
             'statistics',
         ];
 
@@ -311,8 +295,9 @@ class AIPredictionServiceTest extends TestCase
         $this->assertEquals(10, $report['current_state']['month_index']);
         $this->assertEquals(45.0, $report['current_state']['progress']);
 
-        // Next prediction (Polynomial selected)
-        $this->assertEquals(50.77, $report['next_prediction']['progress']);
+        // Next prediction
+        $expectedNext = round((5.2121212121212 * 11) - 10.0666666666667, 2);
+        $this->assertEquals($expectedNext, $report['next_prediction']['progress']);
 
         // Regression
         $this->assertEquals(10, $report['regression']['observation_count']);
@@ -343,94 +328,5 @@ class AIPredictionServiceTest extends TestCase
         $this->assertCount(0, $report['forecast']);
         $this->assertCount(0, $report['assessment']);
         $this->assertEquals(0, $report['statistics']['observation_count']);
-    }
-
-    /*
-    |==========================================================================
-    | Prediction History (Phase 7)
-    |==========================================================================
-    */
-
-    /**
-     * ------------------------------------------------------------------------
-     * Prediction history is saved after generatePrediction()
-     * ------------------------------------------------------------------------
-     *
-     * Ensures that a PredictionHistory row is created with the correct
-     * fields (project_id, regression_method, current_progress,
-     * predicted_next, r_squared) and that actual_next remains null.
-     */
-    public function test_prediction_history_is_saved(): void
-    {
-        $project = $this->createProjectWithKnownDataset();
-
-        $historyBefore = PredictionHistory::where('project_id', $project->id)->count();
-        $this->assertEquals(0, $historyBefore);
-
-        $this->predictionService->generatePrediction($project);
-
-        $historyAfter = PredictionHistory::where('project_id', $project->id)->get();
-        $this->assertCount(1, $historyAfter);
-
-        $record = $historyAfter->first();
-        $this->assertEquals($project->id, $record->project_id);
-        $this->assertEquals('polynomial', $record->regression_method);
-        $this->assertEquals(45.0, $record->current_progress);
-        $this->assertEquals(50.77, $record->predicted_next);
-        $this->assertNotNull($record->r_squared);
-        $this->assertNull($record->actual_next);
-        $this->assertNotNull($record->regression_snapshot);
-    }
-
-    /**
-     * ------------------------------------------------------------------------
-     * Duplicate predictions are not saved (idempotency)
-     * ------------------------------------------------------------------------
-     *
-     * Calling generatePrediction() twice with the same progress data
-     * should not create a duplicate PredictionHistory row.
-     */
-    public function test_prediction_history_dedup(): void
-    {
-        $project = $this->createProjectWithKnownDataset();
-
-        $this->predictionService->generatePrediction($project);
-        $this->predictionService->generatePrediction($project);
-
-        $count = PredictionHistory::where('project_id', $project->id)->count();
-        $this->assertEquals(1, $count);
-    }
-
-    /**
-     * ------------------------------------------------------------------------
-     * Prediction history is NOT saved for completed projects
-     * ------------------------------------------------------------------------
-     *
-     * When current_progress >= 100, the service should skip saving
-     * a prediction history record.
-     */
-    public function test_prediction_history_skipped_at_100_percent(): void
-    {
-        $project = $this->createCompletedProject();
-
-        $this->predictionService->generatePrediction($project);
-
-        $count = PredictionHistory::where('project_id', $project->id)->count();
-        $this->assertEquals(0, $count);
-    }
-
-    /**
-     * ------------------------------------------------------------------------
-     * Prediction history is NOT saved for insufficient data
-     * ------------------------------------------------------------------------
-     */
-    public function test_prediction_history_skipped_for_insufficient_data(): void
-    {
-        $project = $this->createProjectWithInsufficientData(observations: 0);
-
-        $this->predictionService->generatePrediction($project);
-
-        $count = PredictionHistory::where('project_id', $project->id)->count();
-        $this->assertEquals(0, $count);
     }
 }
