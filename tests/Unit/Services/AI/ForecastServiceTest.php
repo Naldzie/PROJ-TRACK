@@ -5,6 +5,7 @@ namespace Tests\Unit\Services\AI;
 use App\Models\Project;
 use App\Services\AI\ForecastService;
 use App\Services\AI\Regression\LinearRegressionService;
+use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -53,7 +54,8 @@ class ForecastServiceTest extends TestCase
         $this->regressionService = new LinearRegressionService();
         $this->datasetBuilder = new RegressionDatasetBuilder();
         $this->forecastService = new ForecastService(
-            $this->regressionService
+            $this->regressionService,
+            new PolynomialRegressionService()
         );
     }
 

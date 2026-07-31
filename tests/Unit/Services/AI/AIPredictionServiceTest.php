@@ -5,9 +5,13 @@ namespace Tests\Unit\Services\AI;
 use App\Models\Project;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
+use App\Services\AI\CompletionComparisonService;
+use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
+use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\Regression\LinearRegressionService;
+use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -48,16 +52,24 @@ class AIPredictionServiceTest extends TestCase
 
         $datasetBuilder = new RegressionDatasetBuilder();
         $regressionService = new LinearRegressionService();
-        $forecastService = new ForecastService($regressionService);
+        $polynomialService = new PolynomialRegressionService();
+        $forecastService = new ForecastService($regressionService, $polynomialService);
         $comparisonService = new BaselineComparisonService();
         $assessmentService = new ProjectAssessmentService();
+        $completionService = new CompletionEstimationService();
+        $completionComparisonService = new CompletionComparisonService($completionService);
+        $historicalSimilarityService = new HistoricalSimilarityService();
 
         $this->predictionService = new AIPredictionService(
             $datasetBuilder,
             $regressionService,
+            $polynomialService,
             $forecastService,
             $comparisonService,
-            $assessmentService
+            $assessmentService,
+            $completionService,
+            $completionComparisonService,
+            $historicalSimilarityService
         );
     }
 
@@ -283,7 +295,10 @@ class AIPredictionServiceTest extends TestCase
      * Prediction with known Project 7 dataset
      * ------------------------------------------------------------------------
      *
-     * 10-month project, current progress = 45.00, next predicted = 48.27
+     * 10-month project, current progress = 45.00, next predicted = 50.77
+     *
+     * The dataset curves upward, so polynomial regression is selected
+     * (R² 0.9991 vs 0.9584 for SLR) and predicts 50.77 for month 11.
      */
     public function test_prediction_with_known_dataset(): void
     {
@@ -295,9 +310,8 @@ class AIPredictionServiceTest extends TestCase
         $this->assertEquals(10, $report['current_state']['month_index']);
         $this->assertEquals(45.0, $report['current_state']['progress']);
 
-        // Next prediction
-        $expectedNext = round((5.2121212121212 * 11) - 10.0666666666667, 2);
-        $this->assertEquals($expectedNext, $report['next_prediction']['progress']);
+        // Next prediction (polynomial: -0.0612(11³) + 1.4073(11²) - 3.8193(11) + 3.9333)
+        $this->assertEquals(50.77, $report['next_prediction']['progress']);
 
         // Regression
         $this->assertEquals(10, $report['regression']['observation_count']);

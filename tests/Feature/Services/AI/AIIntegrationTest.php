@@ -6,10 +6,14 @@ use App\Models\Project;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
+use App\Services\AI\CompletionComparisonService;
+use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\ForecastService;
+use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\RecommendationEngine;
 use App\Services\AI\Regression\LinearRegressionService;
+use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -55,15 +59,23 @@ class AIIntegrationTest extends TestCase
 
         $this->datasetBuilder = new RegressionDatasetBuilder();
         $this->regressionService = new LinearRegressionService();
-        $this->forecastService = new ForecastService($this->regressionService);
+        $polynomialService = new PolynomialRegressionService();
+        $this->forecastService = new ForecastService($this->regressionService, $polynomialService);
         $this->comparisonService = new BaselineComparisonService();
         $this->assessmentService = new ProjectAssessmentService();
+        $completionService = new CompletionEstimationService();
+        $completionComparisonService = new CompletionComparisonService($completionService);
+        $historicalSimilarityService = new HistoricalSimilarityService();
         $this->predictionService = new AIPredictionService(
             $this->datasetBuilder,
             $this->regressionService,
+            $polynomialService,
             $this->forecastService,
             $this->comparisonService,
-            $this->assessmentService
+            $this->assessmentService,
+            $completionService,
+            $completionComparisonService,
+            $historicalSimilarityService
         );
         $this->presenter = new AIPredictionPresenter(
             $this->predictionService,
