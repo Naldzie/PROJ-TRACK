@@ -4,7 +4,7 @@ CSPC PMU System — AI Module Version 2 (Phase 7 follow-up)
 
 Status: ✅ COMPLETE — v1 fix implemented & verified (commits 238f8ee, 6911f13, 98e62e0); see CHANGES LOG (§9).
         ✅ REVISION v2 (record-all) implemented, then REVERTED after project 142 testing.
-        🔄 REVISION v3 — Keep-latest prediction per month; see §10.
+        ✅ REVISION v3 (keep-latest) IMPLEMENTED & VERIFIED 2026-07-31 — commit 07c89fa; plan §10.
 
 Date: July 31, 2026
 
