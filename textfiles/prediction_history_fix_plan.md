@@ -3,7 +3,8 @@
 CSPC PMU System — AI Module Version 2 (Phase 7 follow-up)
 
 Status: ✅ COMPLETE — v1 fix implemented & verified (commits 238f8ee, 6911f13, 98e62e0); see CHANGES LOG (§9).
-        🔄 REVISION v2 OPEN — Record all predictions (evolution history); see §10.
+        ✅ REVISION v2 (record-all) implemented, then REVERTED after project 142 testing.
+        🔄 REVISION v3 — Keep-latest prediction per month; see §10.
 
 Date: July 31, 2026
 
@@ -292,136 +293,137 @@ Logged: 2026-07-31
 
 ---
 
-## 10. REVISION v2 PLAN — RECORD ALL PREDICTIONS (EVOLUTION HISTORY)
+## 10. REVISION v3 PLAN — KEEP-LATEST PREDICTION (UPDATE IN PLACE)
 
-Status: 🔄 OPEN — decided 2026-07-31; not yet implemented.
+Status: 🔄 IMPLEMENTED 2026-07-31 (commit pending). Rev 2 (record-all) was
+        implemented, then REVERTED after real-world testing on project 142.
 
 ### 10.1 Problem
 
-Under v1, only the FIRST prediction per predicted month is recorded
-(keep-first). When a month's data is updated, the AI's live prediction
-changes but the recorded history does not — so what the user SAW and what
-the history records diverge.
+Under v1 only the FIRST prediction per predicted month was recorded, so the
+recorded history diverged from the forecast the user last saw. Rev 2 fixed
+that by recording EVERY distinct forecast (evolution history).
 
-Example (confirmed with the real module):
+Real-world testing on project 142 exposed a problem with record-all:
 
-1. First May inspection 4.0% → June predicted 5.13% (recorded).
-2. Second May inspection 4.5% → AI now shows June ≈ 5.30% (live panel).
-3. Under v1, only 5.13% is recorded. When June's actual arrives, accuracy
-   compares against 5.13% — not the 5.30% the user last saw.
+- May 15 inspection 4.0% → June predicted 6.13% (id 39).
+- A second inspection 4.5% was added but its inspection date was LEFT at
+  May 15. The dataset's "latest observation" momentarily flip-flopped and a
+  DIFFERENT prediction (6.05%, id 40) was saved — a spurious row caused by
+  the date mistake.
+- Editing the record's inspection date to May 22 then produced the correct
+  6.55% forecast — as ANOTHER new row (id 41).
 
-Result: the recorded history and the "next prediction" panel disagree, and
-the accuracy/evolution story is incomplete.
+Result: the predicted month had 3 rows, one of which (id 40) was pure noise,
+and fixing the mistake added yet more clutter. Record-all preserves mistakes
+and rewards correcting them with more rows.
 
-### 10.2 Chosen Direction
+### 10.2 Chosen Direction — Keep-Latest
 
-1. **Record all distinct predictions.** `savePredictionHistory()` creates a
-   new row whenever the forecast changes. Dedupe key:
-   `(project_id, month_label, current_progress, predicted_next)`. Identical
-   re-generation (page re-view / repeated call with same data) is skipped,
-   so no refresh duplicates — while every genuinely different forecast is
-   preserved.
-2. **actual_next → latest row per month only.** When a month's actual is
-   recorded, write it to the NEWEST prediction row for that month and
-   explicitly null older rows (superseded). Accuracy stats stay
-   one-per-month and reflect the forecast the user most recently relied on.
-3. **Collapsed per-month display.** The history table shows ONE row per
-   month. Multiple forecasts render as an evolution, e.g. `5.13 → 5.30`,
-   with actual/variance shown for the final forecast; pending rows (no
-   actual yet) show `—` and are dimmed.
-4. **Append-only, never forecast after the outcome is known.** Once a
-   predicted month is fulfilled (a row for it has `actual_next`), no NEW
-   prediction row may be created for it. This prevents "hindsight" rows
-   (e.g., an edit to May after June's actual was recorded would otherwise
-   spawn a fresh June row that becomes the "latest" and orphans the real
-   `actual_next` on an older row). It also keeps the invariant that the
-   latest row per month always carries the actual, so the collapsed
-   display and accuracy stats stay consistent.
+1. **One prediction row per (project, predicted month), refreshed in place.**
+   `savePredictionHistory()` UPDATES the pending row whenever the forecast
+   changes (new `current_progress` / `predicted_next`); identical
+   re-generation (page re-view) is skipped; only a brand-new month gets a
+   CREATE. This keeps the history equal to the forecast the user last saw —
+   the ORIGINAL v1 complaint — without accumulating noise.
+2. **Fulfilled-month guard (unchanged from rev 2).** Once a month has an
+   actual, no create or update for it (no hindsight forecasts).
+3. **actual_next → newest row only (unchanged from rev 2).** With one row per
+   month this is trivially the single row; the "null superseded rows" step
+   self-heals any pre-rev3 duplicate rows in existing data.
+4. **Display: one row per month, single forecast value.** The history table
+   shows the latest forecast only; pending (no actual) rows show `—` and are
+   dimmed. No evolution arrow. Even if legacy duplicate rows exist in the DB,
+   the presenter collapses them to the newest one.
 
-No migration / schema change — existing rows stay valid (they are the first
-forecasts of their months).
+No migration / schema change.
 
 ### 10.3 Implementation Steps
 
-### Step 1 — Dedupe → create-on-change (AIPredictionService)
+### Step 1 — Update-in-place (AIPredictionService)
 
-File (MOD): `app/Services/AI/AIPredictionService.php` — `savePredictionHistory()` (lines ~581-649)
+File (MOD): `app/Services/AI/AIPredictionService.php` — `savePredictionHistory()` (lines ~581-665)
 
-- Replace the "first per predicted month" exists-check with:
-  `where(project_id)->where(month_label, $monthLabel)->where(current_progress, round($currentProgress,2))->where(predicted_next, round($predictedNextProgress,2))`
-  → skip only when an identical forecast already exists; otherwise CREATE a new row.
-- **Fulfilled-month guard:** additionally skip when the predicted month is
-  already fulfilled — `PredictionHistory::where(project_id)->where(month_label, $monthLabel)->whereNotNull('actual_next')->exists()`.
-  A month whose outcome is known must never get a new forecast row.
-- Keep the `>= 100` guard, the predicted-month baseline resolution, and the
-  no-month legacy fallback.
-- Update the method docblock to describe the evolution + fulfilled-guard
-  semantics.
+- Keep the `>= 100` guard and the predicted-month baseline resolution.
+- Fulfilled-month guard (unchanged): skip when a row for the predicted month
+  already has `actual_next`.
+- Replace the rev-2 "create on change" dedupe with keep-latest:
+  - Find the existing row for `(project_id, month_label)`.
+  - If found and `current_progress` / `predicted_next` are identical → skip
+    (no write on page re-view).
+  - If found and different → UPDATE the row in place (`regression_method`,
+    `current_progress`, `predicted_next`, `r_squared`, `regression_snapshot`).
+  - If not found → CREATE.
+- Legacy fallback (no predicted month resolvable): keep the old
+  `current_progress + predicted_next` dedupe + create.
+- Update the method docblock (rev 3 semantics).
 
-### Step 2 — actual_next on latest row only (ProjectProgressController)
+### Step 2 — actual_next on newest row only (ProjectProgressController)
 
 File (MOD): `app/Http/Controllers/ProjectProgressController.php` — `syncPredictionHistoryActual()` (line ~434)
 
-- Find the newest row for `(project_id, month_label)` via `orderByDesc('id')->first()`.
-- Set `actual_next = $actual` on it; null any other rows for the month
-  (self-heals rows that received actual under v1).
-- If no row exists for the month, no-op (same non-blocking try/catch as today).
+Unchanged from rev 2 (already correct): write `actual_next` to the newest row
+for the month; null any other rows (self-heals legacy duplicates).
 
-### Step 3 — Collapsed per-month history (AIPredictionPresenter)
+### Step 3 — Latest-row-per-month history (AIPredictionPresenter)
 
-File (MOD): `app/Services/AI/AIPredictionPresenter.php` — history build (lines ~394-415)
+File (MOD): `app/Services/AI/AIPredictionPresenter.php` — history build (lines ~394-437)
 
-- Query the 6 most recent distinct `month_label`s, fetch their rows ordered by
-  `month_label` asc, `id` asc, then group by `month_label` in PHP.
-- Each collapsed entry: `month`, `predicted` (latest row), `predicted_evolution`
-  (all values, ordered), `prediction_count`, `actual` (latest row's, else null),
-  `variance` (or null), `method` (latest row), `pending` (true when no actual yet).
-- Compute the summary (`total_with_actual`, `accurate_count`, `accuracy_percent`,
-  `avg_variance`) from the collapsed months that HAVE an actual — same meaning
-  as v1.
+- Keep the 6 most recent distinct months query; fetch rows ordered by
+  `month_label` asc, `id` desc.
+- Group by `month_label` and take ONLY the newest row per month (drops the
+  rev-2 `predicted_evolution` / `prediction_count` keys).
+- Each entry: `month`, `predicted`, `actual` (or null), `variance` (or null),
+  `method`, `pending`.
+- Summary unchanged (months with actual).
 
-### Step 4 — Blade evolution display
+### Step 4 — Blade single-value display
 
-File (MOD): `resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php` (lines ~716-733)
+File (MOD): `resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php` (lines ~716-745)
 
-- Predicted cell: when `prediction_count > 1`, render `5.13 → 5.30` (final value
-  bold); otherwise the single value.
-- Actual / Variance cells: `—` when `pending`; keep the existing variance color
-  logic for filled rows; dim pending rows.
-- Summary stats row unchanged.
+- Predicted cell back to a single value (remove the evolution arrow block).
+- Keep `—` + dim + "pending" badge for rows without an actual.
+- Revert the accuracy hint to the v1 wording.
 
 ### Step 5 — AIExplanationService
 
-No change expected: it already filters `whereNotNull('actual_next')`, which under
-v2 yields exactly the latest (accuracy-relevant) row per month. Verify only.
+No change expected: `whereNotNull('actual_next')` already yields one row per
+fulfilled month. Verify only.
 
 ### Step 6 — Tests
 
 - MOD `tests/Unit/Services/AI/AIPredictionServiceTest.php`:
-  rewrite `test_second_inspection_does_not_create_duplicate_next_month_prediction`
-  → `test_second_inspection_records_evolved_prediction_for_next_month` (May 4% and
-  May 4.5% now yield TWO June rows; identical same-data re-generation still adds none).
-  Keep the other two history tests.
+  `test_second_inspection_records_evolved_prediction_for_next_month`
+  → `test_second_inspection_updates_prediction_in_place` (May 4.5% UPDATES the
+  single June row; count stays 2, `current_progress` becomes 4.5). Keep the
+  other two history tests.
 - MOD `tests/Feature/Services/AI/PredictionHistorySyncTest.php`:
-  update `test_same_month_re_inspection_updates_the_correct_actual` (counts become
-  3 after May 4.5% + generate); add `test_actual_next_is_written_only_to_latest_prediction_row`;
-  add `test_no_prediction_row_created_after_month_is_fulfilled` (once June's actual
-  is recorded, re-running the model after an edit to May must NOT create a new June row).
+  update `test_same_month_re_inspection_updates_the_correct_actual` (count stays
+  2; June row refreshed, not duplicated); replace
+  `test_actual_next_is_written_only_to_latest_prediction_row` with
+  `test_sync_attributes_actual_to_latest_row_even_with_legacy_duplicates`;
+  keep `test_no_prediction_row_created_after_month_is_fulfilled`.
 - MOD `tests/Unit/Services/AI/AIPredictionPresenterTest.php`:
-  update `test_prediction_history_shows_correct_month_actual` for the collapsed
-  format; add `test_history_collapses_multiple_predictions_per_month`.
+  update `test_prediction_history_shows_correct_month_actual`; replace
+  `test_history_collapses_multiple_predictions_per_month` with
+  `test_history_shows_only_latest_prediction_per_month`.
 
 ### Step 7 — Verify
 
 - `php artisan test --filter=AIPredictionServiceTest`
 - `php artisan test --filter=PredictionHistorySyncTest`
 - `php artisan test --filter=AIPredictionPresenterTest`
-- Full suite `php artisan test` (baseline: 173 green).
+- Full suite `php artisan test`.
+
+### Step 8 — Clean up project 142
+
+- Delete the spurious June rows (prediction_history ids 39, 40), keeping 41
+  (6.55). One-time data cleanup.
 
 ### 10.4 Files Touched
 
 - MOD `app/Services/AI/AIPredictionService.php`
-- MOD `app/Http/Controllers/ProjectProgressController.php`
+- MOD `app/Http/Controllers/ProjectProgressController.php` (unchanged from rev 2)
 - MOD `app/Services/AI/AIPredictionPresenter.php`
 - MOD `resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php`
 - MOD `tests/Unit/Services/AI/AIPredictionServiceTest.php`
@@ -430,23 +432,24 @@ v2 yields exactly the latest (accuracy-relevant) row per month. Verify only.
 - (verify only) `app/Services/AI/AIExplanationService.php`
 - No migration / schema change.
 
-### 10.5 Decision Log (v2)
+### 10.5 Decision Log (v3)
 
-1. **Record-all vs keep-first / keep-latest** — record-all. Every forecast
-   shown to the user is preserved and the recorded history always matches
-   what the user saw. Rationale: transparency over minimalism.
-2. **actual_next target** — latest row per month only. Keeps accuracy stats
-   one-per-month and compares against the forecast the user most recently
-   relied on. Superseded rows stay as history without an actual.
-3. **Display** — collapsed per month with an evolution arrow. Compact table
-   while still surfacing forecast changes.
-4. **Dedupe key** — `(project_id, month_label, current_progress, predicted_next)`.
-   Captures every distinct forecast, prevents page-refresh duplicates, and
-   also catches forecast changes that occur without the latest observation
-   changing (e.g., an earlier month edited).
-5. **Fulfilled-month guard** — no new forecast row for a month once it has
-   an actual. History is append-only for predictions made BEFORE the outcome;
-   edits/deletes never spawn hindsight rows and never orphan an `actual_next`.
+1. **Keep-latest vs record-all (rev 2) vs keep-first (v1)** — keep-latest.
+   Record-all was tried (commit-set above) and reverted after project 142:
+   it preserved a data-entry mistake as a permanent row (id 40) and rewarded
+   fixing it with yet another row (id 41). Keep-latest gives the clean,
+   correct history the user wants AND still fixes the original v1 mismatch
+   (history == forecast last seen).
+2. **Forecast refresh signal** — `current_progress` / `predicted_next` change.
+   A pending row is updated whenever the forecast genuinely differs; identical
+   re-generation is a no-op.
+3. **actual_next target** — newest row only (inherited from rev 2). With
+   keep-latest this is the single row; the "null the others" step self-heals
+   legacy duplicates.
+4. **Fulfilled-month guard** — kept from rev 2: never create or refresh a row
+   for a month whose outcome is known.
+5. **Display** — single latest value per month (no evolution arrow). Legacy
+   duplicates, if any, are collapsed by the presenter to the newest row.
 
 ---
-END OF PLAN (rev 2)
+END OF PLAN (rev 3)
