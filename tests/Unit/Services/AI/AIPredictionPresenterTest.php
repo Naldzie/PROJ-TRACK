@@ -564,6 +564,81 @@ class AIPredictionPresenterTest extends TestCase
         $this->assertCount(1, $history);
         $this->assertEquals('May 2026', $history[0]['month']);
         $this->assertEquals(4.5, $history[0]['actual']);
+        $this->assertFalse($history[0]['pending']);
+        $this->assertArrayNotHasKey('predicted_evolution', $history[0]);
+        $this->assertArrayNotHasKey('prediction_count', $history[0]);
         $this->assertFalse($history->contains(fn ($h) => $h['month'] === 'Jun 2026'));
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * The history shows ONLY the latest prediction per month (rev 3 keep-latest)
+     * ------------------------------------------------------------------------
+     *
+     * A refreshed forecast updates the month's single row in place. Even when
+     * legacy duplicate rows exist in the DB, the presenter groups by month and
+     * surfaces only the newest row — the one carrying the actual.
+     */
+    public function test_history_shows_only_latest_prediction_per_month(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        foreach (['2026-02', '2026-03', '2026-04', '2026-05', '2026-06'] as $i => $month) {
+            ProjectBaselineSchedule::create([
+                'project_id'                       => $project->id,
+                'month_label'                      => $month,
+                'planned_date'                     => Carbon::parse($month . '-01')->endOfMonth()->format('Y-m-d'),
+                'planned_progress_percent'         => ($i + 1) * 5,
+                'original_planned_progress_percent'=> ($i + 1) * 5,
+            ]);
+        }
+
+        foreach (['2026-02' => 1.0, '2026-03' => 1.5, '2026-04' => 2.0] as $month => $pct) {
+            ProjectProgressHistory::create([
+                'project_id'              => $project->id,
+                'month_label'             => $month,
+                'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
+                'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+                'actual_progress_percent' => $pct,
+                'progress_percentage'     => $pct,
+            ]);
+        }
+
+        // First forecast FOR May (based on April 2.0%)
+        app(AIPredictionService::class)->generatePrediction($project);
+
+        $firstMayRow = PredictionHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-05')
+            ->first();
+
+        // Simulate a legacy superseded May row (rev 1/rev 2 data).
+        $legacyDuplicate = PredictionHistory::create([
+            'project_id'           => $project->id,
+            'month_label'          => '2026-05',
+            'baseline_schedule_id' => $firstMayRow->baseline_schedule_id,
+            'regression_method'    => $firstMayRow->regression_method,
+            'current_progress'     => 2.0,
+            'predicted_next'       => 5.13,
+            'r_squared'            => $firstMayRow->r_squared,
+            'regression_snapshot'  => $firstMayRow->regression_snapshot,
+        ]);
+
+        // Simulate the controller sync: only the NEWEST May row receives the actual.
+        $legacyDuplicate->update(['actual_next' => 5.8]);
+
+        $result = $this->presenter->present($project);
+
+        $history = $result['prediction_history'];
+
+        $this->assertCount(1, $history);
+        $this->assertEquals('May 2026', $history[0]['month']);
+        $this->assertEquals($legacyDuplicate->predicted_next, $history[0]['predicted']);
+        $this->assertEquals(5.8, $history[0]['actual']);
+        $this->assertFalse($history[0]['pending']);
+        $this->assertArrayNotHasKey('predicted_evolution', $history[0]);
+        $this->assertArrayNotHasKey('prediction_count', $history[0]);
+
+        $summary = $result['prediction_history_summary'];
+        $this->assertEquals(1, $summary['total_with_actual']);
     }
 }

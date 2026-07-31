@@ -384,13 +384,13 @@ class AIPredictionServiceTest extends TestCase
     /**
      * Create a single progress record for a month.
      */
-    private function createProgressRecord(Project $project, string $month, float $pct): ProjectProgressHistory
+    private function createProgressRecord(Project $project, string $month, float $pct, ?string $inspectionDate = null): ProjectProgressHistory
     {
         return ProjectProgressHistory::create([
             'project_id'              => $project->id,
             'month_label'             => $month,
             'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
-            'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+            'inspection_date'         => $inspectionDate ?? Carbon::parse($month . '-25')->format('Y-m-d'),
             'actual_progress_percent' => $pct,
             'progress_percentage'     => $pct,
         ]);
@@ -434,10 +434,12 @@ class AIPredictionServiceTest extends TestCase
     }
 
     /**
-     * A second inspection in the same month must not create a duplicate row
-     * for the next predicted month (Bug B scenario).
+     * A second inspection in the same month UPDATES the forecast row for the
+     * next predicted month in place (keep-latest). Identical same-data
+     * re-generation stays a no-op; no duplicate rows are ever created for a
+     * month whose forecast already exists.
      */
-    public function test_second_inspection_does_not_create_duplicate_next_month_prediction(): void
+    public function test_second_inspection_updates_prediction_in_place(): void
     {
         $project = $this->createMonthAlignedProject();
 
@@ -445,19 +447,25 @@ class AIPredictionServiceTest extends TestCase
         $this->predictionService->generatePrediction($project);
 
         // May 15 (4%) → prediction for June saved
-        $this->createProgressRecord($project, '2026-05', 4.0);
+        $this->createProgressRecord($project, '2026-05', 4.0, '2026-05-15');
         $this->predictionService->generatePrediction($project);
         $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
 
-        // May 22 (4.5%) → June prediction must NOT be duplicated
-        $this->createProgressRecord($project, '2026-05', 4.5);
+        // May 22 (4.5%) → the June forecast changes: the SAME June row is
+        // refreshed in place (keep-latest), not duplicated.
+        $this->createProgressRecord($project, '2026-05', 4.5, '2026-05-22');
         $this->predictionService->generatePrediction($project);
 
-        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $rows = PredictionHistory::where('project_id', $project->id)->orderBy('id')->get();
         $this->assertCount(2, $rows);
-        $this->assertEquals(
-            ['2026-05', '2026-06'],
-            $rows->pluck('month_label')->sort()->values()->all()
-        );
+
+        $juneRows = $rows->where('month_label', '2026-06')->values();
+        $this->assertCount(1, $juneRows);
+        $this->assertEquals(4.5, $juneRows[0]->current_progress);
+        $this->assertNotNull($juneRows[0]->predicted_next);
+
+        // Identical same-data re-generation adds nothing more.
+        $this->predictionService->generatePrediction($project);
+        $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
     }
 }

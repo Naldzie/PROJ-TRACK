@@ -391,27 +391,47 @@ class AIPredictionPresenter
         |
         */
 
-        $rawHistory = $project->predictionHistory()
-            ->whereNotNull('actual_next')
+        // Rev 3 (keep-latest): show ONE entry per month — the newest forecast
+        // row for each of the 6 most recent distinct months. Rows are fetched
+        // newest-first so the grouped entry always reflects the latest forecast.
+        $recentMonths = $project->predictionHistory()
+            ->whereNotNull('month_label')
+            ->select('month_label')
+            ->distinct()
+            ->orderByDesc('month_label')
             ->take(6)
+            ->pluck('month_label');
+
+        $rawHistory = $project->predictionHistory()
+            ->whereIn('month_label', $recentMonths)
+            ->orderBy('month_label')
+            ->orderByDesc('id')
             ->get();
 
-        $predictionHistory = $rawHistory->map(fn ($ph) => [
-            'month'     => $ph->month_label
-                ? \Carbon\Carbon::parse($ph->month_label . '-01')->format('M Y')
-                : $ph->created_at->format('M Y'),
-            'predicted' => $ph->predicted_next,
-            'actual'    => $ph->actual_next,
-            'variance'  => round($ph->actual_next - $ph->predicted_next, 2),
-            'method'    => $ph->regression_method,
-        ])->values();
+        $predictionHistory = $rawHistory
+            ->groupBy('month_label')
+            ->map(function ($group) {
+                $latest    = $group->first(); // ordered id desc → first = newest forecast
+                $hasActual = $latest->actual_next !== null;
 
-        $totalWithActual = $rawHistory->count();
-        $accurateCount   = $rawHistory->filter(
-            fn ($h) => abs($h->actual_next - $h->predicted_next) < 2
+                return [
+                    'month'     => \Carbon\Carbon::parse($latest->month_label . '-01')->format('M Y'),
+                    'predicted' => $latest->predicted_next,
+                    'actual'    => $hasActual ? $latest->actual_next : null,
+                    'variance'  => $hasActual ? round($latest->actual_next - $latest->predicted_next, 2) : null,
+                    'method'    => $latest->regression_method,
+                    'pending'   => !$hasActual,
+                ];
+            })
+            ->values();
+
+        $withActual      = $predictionHistory->filter(fn ($h) => !$h['pending']);
+        $totalWithActual = $withActual->count();
+        $accurateCount   = $withActual->filter(
+            fn ($h) => abs($h['variance']) < 2
         )->count();
         $avgVariance     = $totalWithActual > 0
-            ? round($rawHistory->avg(fn ($h) => $h->actual_next - $h->predicted_next), 2)
+            ? round($withActual->avg('variance'), 2)
             : 0;
 
         /*

@@ -74,10 +74,10 @@ class PredictionHistorySyncTest extends TestCase
     /**
      * Record monthly progress through the controller (the same path the app uses).
      */
-    private function recordMonthlyProgress(Project $project, string $month, float $pct): void
+    private function recordMonthlyProgress(Project $project, string $month, float $pct, ?string $inspectionDate = null): void
     {
         $request = Request::create('/progress', 'POST', [
-            'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
+            'inspection_month_date'   => $inspectionDate ?? Carbon::parse($month . '-01')->format('Y-m-d'),
             'month_label'             => $month,
             'actual_progress_percent' => $pct,
             'remarks'                 => null,
@@ -124,7 +124,8 @@ class PredictionHistorySyncTest extends TestCase
 
     /**
      * May 15 (4%) fills May's actual; May 22 (4.5%) overrides it and leaves
-     * the June prediction untouched — and never creates a duplicate June row.
+     * the June prediction untouched. Re-running the prediction then REFRESHES
+     * the single June row in place (keep-latest) instead of duplicating it.
      */
     public function test_same_month_re_inspection_updates_the_correct_actual(): void
     {
@@ -136,7 +137,7 @@ class PredictionHistorySyncTest extends TestCase
         $service->generatePrediction($project);
 
         // May 15 (4%) → May actual = 4.0, then June prediction saved
-        $this->recordMonthlyProgress($project, '2026-05', 4.0);
+        $this->recordMonthlyProgress($project, '2026-05', 4.0, '2026-05-15');
 
         $mayPrediction = PredictionHistory::where('project_id', $project->id)
             ->where('month_label', '2026-05')
@@ -151,9 +152,8 @@ class PredictionHistorySyncTest extends TestCase
             ->first();
         $this->assertNotNull($junePrediction);
 
-        // May 22 (4.5%) → May actual becomes 4.5, June actual stays null,
-        // and no duplicate June row is created.
-        $this->recordMonthlyProgress($project, '2026-05', 4.5);
+        // May 22 (4.5%) → May actual becomes 4.5, June actual stays null.
+        $this->recordMonthlyProgress($project, '2026-05', 4.5, '2026-05-22');
 
         $mayPrediction->refresh();
         $junePrediction->refresh();
@@ -162,7 +162,15 @@ class PredictionHistorySyncTest extends TestCase
         $this->assertNull($junePrediction->actual_next);
         $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
 
-        // Re-running the prediction still does not duplicate June.
+        // Re-running the prediction REFRESHES the single June row in place
+        // (data state changed 4.0 → 4.5) — keep-latest, no duplicate.
+        $service->generatePrediction($project);
+        $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
+
+        $junePrediction->refresh();
+        $this->assertEquals(4.5, $junePrediction->current_progress);
+
+        // Identical same-data re-generation adds nothing more.
         $service->generatePrediction($project);
         $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
     }
@@ -228,5 +236,90 @@ class PredictionHistorySyncTest extends TestCase
 
         $mayPrediction->refresh();
         $this->assertEquals(4.0, $mayPrediction->actual_next);
+    }
+
+    /**
+     * Under keep-latest the service never creates duplicate rows, but legacy
+     * data (pre-v3) may contain multiple rows for one month. Recording the
+     * month's actual must still write it to the NEWEST prediction row only,
+     * nulling any superseded rows (self-healing).
+     */
+    public function test_sync_attributes_actual_to_latest_row_even_with_legacy_duplicates(): void
+    {
+        $project = $this->makeProject();
+        $this->seedBaselineObservations($project);
+        $service = app(AIPredictionService::class);
+
+        // April 2% → May prediction
+        $service->generatePrediction($project);
+
+        // May 4.0 → June forecast saved
+        $this->recordMonthlyProgress($project, '2026-05', 4.0, '2026-05-15');
+        $service->generatePrediction($project);
+
+        $juneRow = PredictionHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-06')
+            ->first();
+
+        // Simulate a legacy superseded duplicate (rev 1/rev 2 data).
+        $legacyDuplicate = PredictionHistory::create([
+            'project_id'           => $project->id,
+            'month_label'          => '2026-06',
+            'baseline_schedule_id' => $juneRow->baseline_schedule_id,
+            'regression_method'    => $juneRow->regression_method,
+            'current_progress'     => 4.0,
+            'predicted_next'       => $juneRow->predicted_next,
+            'r_squared'            => $juneRow->r_squared,
+            'regression_snapshot'  => $juneRow->regression_snapshot,
+        ]);
+
+        $juneRow->refresh();
+        $this->assertNull($juneRow->actual_next);
+        $this->assertNull($legacyDuplicate->actual_next);
+
+        // June is inspected → actual goes ONLY to the newest June row.
+        $this->recordMonthlyProgress($project, '2026-06', 6.0, '2026-06-15');
+
+        $juneRow->refresh();
+        $legacyDuplicate->refresh();
+        $this->assertNull($juneRow->actual_next);
+        $this->assertEquals(6.0, $legacyDuplicate->actual_next);
+    }
+
+    /**
+     * Once a predicted month is fulfilled (has an actual), no NEW forecast
+     * row may be created for it — even if the data changes and the model's
+     * "next month" still points at it (observations not aligned to the
+     * baseline start). Prevents hindsight rows.
+     */
+    public function test_no_prediction_row_created_after_month_is_fulfilled(): void
+    {
+        $project = $this->makeProject();
+
+        // Observations start at March (skip February) → the model's "next
+        // month" (baseline offset by observation count) points BACK at the
+        // last observed month instead of a future month.
+        $this->recordMonthlyProgress($project, '2026-03', 1.5);
+        $this->recordMonthlyProgress($project, '2026-04', 2.0);
+        $this->recordMonthlyProgress($project, '2026-05', 4.0, '2026-05-15');
+
+        $service = app(AIPredictionService::class);
+        $service->generatePrediction($project);
+
+        // One prediction row FOR May is saved (the target month), pending.
+        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $this->assertCount(1, $rows);
+        $this->assertEquals('2026-05', $rows[0]->month_label);
+        $this->assertNull($rows[0]->actual_next);
+
+        // A second inspection of May fulfills that row (actual = 4.5).
+        $this->recordMonthlyProgress($project, '2026-05', 4.5, '2026-05-22');
+
+        $rows[0]->refresh();
+        $this->assertEquals(4.5, $rows[0]->actual_next);
+
+        // Regenerating now must NOT create a new (hindsight) row for May.
+        $service->generatePrediction($project);
+        $this->assertCount(1, PredictionHistory::where('project_id', $project->id)->get());
     }
 }

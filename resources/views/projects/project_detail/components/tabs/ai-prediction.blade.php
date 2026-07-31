@@ -715,19 +715,32 @@
                         <tbody>
                             @foreach ($prediction['prediction_history'] as $row)
                                 @php
-                                    $varColor = abs($row['variance']) < 2 ? '#10b981' : (abs($row['variance']) < 5 ? '#f59e0b' : '#ef4444');
+                                    $varColor = $row['pending'] ? '#9ca3af' : (abs($row['variance']) < 2 ? '#10b981' : (abs($row['variance']) < 5 ? '#f59e0b' : '#ef4444'));
                                 @endphp
-                                <tr style="border-bottom: 1px solid #f3f4f6;">
-                                    <td style="padding: 8px 12px; color: #374151;">{{ $row['month'] }}</td>
+                                <tr style="border-bottom: 1px solid #f3f4f6; @if ($row['pending']) opacity: 0.6; @endif">
+                                    <td style="padding: 8px 12px; color: #374151;">
+                                        {{ $row['month'] }}
+                                        @if ($row['pending'])
+                                            <span style="font-size: 10px; background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 8px; margin-left: 4px;">pending</span>
+                                        @endif
+                                    </td>
                                     <td style="padding: 8px 12px; color: #6b7280;">
                                         <span style="font-size: 11px; background: #e5e7eb; padding: 2px 8px; border-radius: 8px;">
                                             {{ $row['method'] === 'polynomial' ? 'Poly' : 'SLR' }}
                                         </span>
                                     </td>
-                                    <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">{{ $row['predicted'] }}%</td>
-                                    <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">{{ $row['actual'] }}%</td>
+                                    <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
+                                        {{ $row['predicted'] }}%
+                                    </td>
+                                    <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
+                                        {{ $row['pending'] ? '—' : $row['actual'] . '%' }}
+                                    </td>
                                     <td style="padding: 8px 12px; text-align: right; color: {{ $varColor }}; font-weight: 600;">
-                                        @if ($row['variance'] > 0)+@endif{{ $row['variance'] }}%
+                                        @if ($row['pending'])
+                                            —
+                                        @else
+                                            @if ($row['variance'] > 0)+@endif{{ $row['variance'] }}%
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach
@@ -739,8 +752,9 @@
                 {{-- Accuracy hint --}}
                 <div style="margin-top: 12px; font-size: 12px; color: #6b7280; background: #f9fafb; padding: 10px; border-radius: 6px;">
                     <i class="bi bi-info-circle" style="margin-right: 4px;"></i>
-                    Accuracy is measured as actual vs. predicted progress within ±1%. 
+                    Accuracy is measured as actual vs. predicted progress within ±1%.
                     Variance is (actual - predicted). Updated after each monthly progress recording.
+                    Each month shows the latest forecast, refreshed as data is updated.
                 </div>
             </div>
         </div>

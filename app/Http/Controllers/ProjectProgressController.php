@@ -429,6 +429,11 @@ class ProjectProgressController extends Controller
      *   - delete: recomputes from remaining records; reverts to null when no
      *     progress record remains for the month
      *
+     * Rev 2 (evolution history): actual_next is written to the NEWEST
+     * prediction row for the month only; older rows are explicitly nulled
+     * (superseded forecasts stay as history without an actual), keeping the
+     * accuracy stats one-per-month.
+     *
      * Non-blocking: failures are logged, never break the main operation.
      */
     private function syncPredictionHistoryActual(Project $project, string $monthLabel): void
@@ -445,9 +450,24 @@ class ProjectProgressController extends Controller
                 ? (float) ($latestRecord->actual_progress_percent ?? $latestRecord->progress_percentage ?? 0)
                 : null;
 
+            $latestPrediction = PredictionHistory::where('project_id', $project->id)
+                ->where('month_label', $monthLabel)
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$latestPrediction) {
+                return;
+            }
+
+            // Null any superseded rows first (self-heals rows that received
+            // an actual under the pre-rev2 code), then attribute the actual
+            // to the newest forecast for the month.
             PredictionHistory::where('project_id', $project->id)
                 ->where('month_label', $monthLabel)
-                ->update(['actual_next' => $actual]);
+                ->where('id', '!=', $latestPrediction->id)
+                ->update(['actual_next' => null]);
+
+            $latestPrediction->update(['actual_next' => $actual]);
         } catch (\Exception $e) {
             Log::warning('Failed to sync prediction history actual_next', [
                 'project_id' => $project->id,

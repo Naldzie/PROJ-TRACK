@@ -570,13 +570,20 @@ class AIPredictionService
      * ------------------------------------------------------------------------
      *
      * Saves the current prediction to the prediction_history table for
-     * later accuracy tracking. Skips when the project is already at
-     * 100% or when a prediction already exists for the same predicted
-     * month (one row per predicted month — keeps the first prediction)
-     * to prevent duplicate rows on page reload.
+     * later accuracy tracking (rev 3 — keep-latest).
+     *
+     * One prediction row per (project, predicted month). A pending row is
+     * refreshed IN PLACE with the newest forecast whenever the data changes;
+     * identical re-generation (page re-view / repeated call) is skipped. This
+     * keeps the history equal to the forecast the user last saw and avoids
+     * spurious rows from data-entry corrections.
+     *
+     * No row is created or refreshed once the predicted month is fulfilled
+     * (a row for it already has actual_next) — history never records a
+     * forecast made after the outcome is known.
      *
      * Called by: generatePrediction()
-     * Calls: PredictionHistory::create()
+     * Calls: PredictionHistory::first(), PredictionHistory::create()
      */
     private function savePredictionHistory(
         Project $project,
@@ -614,26 +621,50 @@ class AIPredictionService
             }
         }
 
-        // Dedupe by predicted month (not current_progress): allow only ONE
-        // prediction per (project, predicted month). Keep the first prediction
-        // for honest accuracy tracking; actual_next is maintained separately.
-        $duplicateQuery = PredictionHistory::where('project_id', $project->id);
+        // Fulfilled-month guard: once the predicted month's outcome is known,
+        // never create a new forecast row for it (prevents hindsight rows
+        // after the actual is recorded).
+        if ($monthLabel) {
+            $fulfilled = PredictionHistory::where('project_id', $project->id)
+                ->where('month_label', $monthLabel)
+                ->whereNotNull('actual_next')
+                ->exists();
 
-        if ($monthLabel && $baselineScheduleId) {
-            $duplicateQuery->where(function ($q) use ($monthLabel, $baselineScheduleId) {
-                $q->where('month_label', $monthLabel)
-                    ->orWhere('baseline_schedule_id', $baselineScheduleId);
-            });
-        } elseif ($monthLabel) {
-            $duplicateQuery->where('month_label', $monthLabel);
-        } elseif ($baselineScheduleId) {
-            $duplicateQuery->where('baseline_schedule_id', $baselineScheduleId);
-        } else {
-            // No month or baseline resolved — fall back to the legacy guard
-            $duplicateQuery->where('current_progress', $currentProgress);
+            if ($fulfilled) {
+                return;
+            }
         }
 
-        if ($duplicateQuery->exists()) {
+        // Keep-latest: locate the existing row for (project, predicted month).
+        // If present, refresh it in place with the newest forecast when the
+        // data state changes; identical re-generation is skipped. If absent,
+        // create the month's first row.
+        $existingQuery = PredictionHistory::where('project_id', $project->id);
+
+        if ($monthLabel) {
+            $existingQuery->where('month_label', $monthLabel);
+        } else {
+            $existingQuery->whereNull('month_label');
+        }
+
+        $existing = $existingQuery->orderByDesc('id')->first();
+
+        if ($existing) {
+            if (
+                round($existing->current_progress, 2) === round($currentProgress, 2)
+                && round($existing->predicted_next, 2) === round($predictedNextProgress, 2)
+            ) {
+                return;
+            }
+
+            $existing->update([
+                'regression_method'   => $analysis['regression_method'] ?? 'slr',
+                'current_progress'    => round($currentProgress, 2),
+                'predicted_next'      => round($predictedNextProgress, 2),
+                'r_squared'           => $analysis['r_squared'] ?? 0,
+                'regression_snapshot' => $analysis,
+            ]);
+
             return;
         }
 
