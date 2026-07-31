@@ -329,6 +329,14 @@ the accuracy/evolution story is incomplete.
    month. Multiple forecasts render as an evolution, e.g. `5.13 → 5.30`,
    with actual/variance shown for the final forecast; pending rows (no
    actual yet) show `—` and are dimmed.
+4. **Append-only, never forecast after the outcome is known.** Once a
+   predicted month is fulfilled (a row for it has `actual_next`), no NEW
+   prediction row may be created for it. This prevents "hindsight" rows
+   (e.g., an edit to May after June's actual was recorded would otherwise
+   spawn a fresh June row that becomes the "latest" and orphans the real
+   `actual_next` on an older row). It also keeps the invariant that the
+   latest row per month always carries the actual, so the collapsed
+   display and accuracy stats stay consistent.
 
 No migration / schema change — existing rows stay valid (they are the first
 forecasts of their months).
@@ -342,9 +350,13 @@ File (MOD): `app/Services/AI/AIPredictionService.php` — `savePredictionHistory
 - Replace the "first per predicted month" exists-check with:
   `where(project_id)->where(month_label, $monthLabel)->where(current_progress, round($currentProgress,2))->where(predicted_next, round($predictedNextProgress,2))`
   → skip only when an identical forecast already exists; otherwise CREATE a new row.
+- **Fulfilled-month guard:** additionally skip when the predicted month is
+  already fulfilled — `PredictionHistory::where(project_id)->where(month_label, $monthLabel)->whereNotNull('actual_next')->exists()`.
+  A month whose outcome is known must never get a new forecast row.
 - Keep the `>= 100` guard, the predicted-month baseline resolution, and the
   no-month legacy fallback.
-- Update the method docblock to describe the evolution semantics.
+- Update the method docblock to describe the evolution + fulfilled-guard
+  semantics.
 
 ### Step 2 — actual_next on latest row only (ProjectProgressController)
 
@@ -392,7 +404,9 @@ v2 yields exactly the latest (accuracy-relevant) row per month. Verify only.
   Keep the other two history tests.
 - MOD `tests/Feature/Services/AI/PredictionHistorySyncTest.php`:
   update `test_same_month_re_inspection_updates_the_correct_actual` (counts become
-  3 after May 4.5% + generate); add `test_actual_next_is_written_only_to_latest_prediction_row`.
+  3 after May 4.5% + generate); add `test_actual_next_is_written_only_to_latest_prediction_row`;
+  add `test_no_prediction_row_created_after_month_is_fulfilled` (once June's actual
+  is recorded, re-running the model after an edit to May must NOT create a new June row).
 - MOD `tests/Unit/Services/AI/AIPredictionPresenterTest.php`:
   update `test_prediction_history_shows_correct_month_actual` for the collapsed
   format; add `test_history_collapses_multiple_predictions_per_month`.
@@ -430,6 +444,9 @@ v2 yields exactly the latest (accuracy-relevant) row per month. Verify only.
    Captures every distinct forecast, prevents page-refresh duplicates, and
    also catches forecast changes that occur without the latest observation
    changing (e.g., an earlier month edited).
+5. **Fulfilled-month guard** — no new forecast row for a month once it has
+   an actual. History is append-only for predictions made BEFORE the outcome;
+   edits/deletes never spawn hindsight rows and never orphan an `actual_next`.
 
 ---
 END OF PLAN (rev 2)
