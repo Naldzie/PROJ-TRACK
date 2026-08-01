@@ -391,38 +391,31 @@ class AIPredictionPresenter
         |
         */
 
-        // Rev 3 (keep-latest): show ONE entry per month — the newest forecast
-        // row for each of the 6 most recent distinct months. Rows are fetched
-        // newest-first so the grouped entry always reflects the latest forecast.
-        $recentMonths = $project->predictionHistory()
+        // Rev 4 (keep-latest): show ONE entry per month — the newest forecast
+        // row for EVERY distinct month (no cap). Rows are fetched newest-first
+        // so the grouped entry always reflects the latest forecast, then sorted
+        // explicitly oldest → newest by month_label.
+        $predictionHistory = $project->predictionHistory()
             ->whereNotNull('month_label')
-            ->select('month_label')
-            ->distinct()
-            ->orderByDesc('month_label')
-            ->take(6)
-            ->pluck('month_label');
-
-        $rawHistory = $project->predictionHistory()
-            ->whereIn('month_label', $recentMonths)
             ->orderBy('month_label')
             ->orderByDesc('id')
-            ->get();
-
-        $predictionHistory = $rawHistory
+            ->get()
             ->groupBy('month_label')
             ->map(function ($group) {
                 $latest    = $group->first(); // ordered id desc → first = newest forecast
                 $hasActual = $latest->actual_next !== null;
 
                 return [
-                    'month'     => \Carbon\Carbon::parse($latest->month_label . '-01')->format('M Y'),
-                    'predicted' => $latest->predicted_next,
-                    'actual'    => $hasActual ? $latest->actual_next : null,
-                    'variance'  => $hasActual ? round($latest->actual_next - $latest->predicted_next, 2) : null,
-                    'method'    => $latest->regression_method,
-                    'pending'   => !$hasActual,
+                    'month_label' => $latest->month_label,
+                    'month'       => \Carbon\Carbon::parse($latest->month_label . '-01')->format('M Y'),
+                    'predicted'   => $latest->predicted_next,
+                    'actual'      => $hasActual ? $latest->actual_next : null,
+                    'variance'    => $hasActual ? round($latest->actual_next - $latest->predicted_next, 2) : null,
+                    'method'      => $latest->regression_method,
+                    'pending'     => !$hasActual,
                 ];
             })
+            ->sortBy('month_label')
             ->values();
 
         $withActual      = $predictionHistory->filter(fn ($h) => !$h['pending']);

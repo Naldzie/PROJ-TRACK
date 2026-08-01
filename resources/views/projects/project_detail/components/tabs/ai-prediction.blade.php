@@ -701,10 +701,10 @@
 
                 {{-- History table --}}
                 @if (count($prediction['prediction_history']) > 0)
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <div style="overflow-x: auto; overflow-y: auto; max-height: 320px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;" class="ai-history-table">
                         <thead>
-                            <tr style="background: #f3f4f6;">
+                            <tr style="background: #f3f4f6; position: sticky; top: 0; z-index: 10;">
                                 <th style="padding: 8px 12px; text-align: left; color: #6b7280; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Month</th>
                                 <th style="padding: 8px 12px; text-align: left; color: #6b7280; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Method</th>
                                 <th style="padding: 8px 12px; text-align: right; color: #6b7280; font-weight: 600; border-bottom: 2px solid #e5e7eb;">Predicted</th>

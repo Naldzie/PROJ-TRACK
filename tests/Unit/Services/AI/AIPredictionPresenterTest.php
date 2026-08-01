@@ -639,4 +639,104 @@ class AIPredictionPresenterTest extends TestCase
         $summary = $result['prediction_history_summary'];
         $this->assertEquals(1, $summary['total_with_actual']);
     }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Prediction history is NOT capped at 6 months (Fix D)
+     * ------------------------------------------------------------------------
+     *
+     * A project with more than six months of prediction rows must surface ALL
+     * of them — the old take(6) cap hid earlier months permanently.
+     */
+    public function test_prediction_history_is_not_capped_at_six(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $start = now()->subMonths(8)->startOfMonth();
+
+        for ($i = 0; $i < 8; $i++) {
+            $month = (clone $start)->addMonths($i)->format('Y-m');
+
+            ProjectBaselineSchedule::create([
+                'project_id'                       => $project->id,
+                'month_label'                      => $month,
+                'planned_date'                     => Carbon::parse($month . '-01')->endOfMonth()->format('Y-m-d'),
+                'planned_progress_percent'         => ($i + 1) * 5,
+                'original_planned_progress_percent'=> ($i + 1) * 5,
+            ]);
+
+            ProjectProgressHistory::create([
+                'project_id'              => $project->id,
+                'month_label'             => $month,
+                'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+                'actual_progress_percent' => ($i + 1) * 2.0,
+                'progress_percentage'     => ($i + 1) * 2.0,
+            ]);
+
+            PredictionHistory::create([
+                'project_id'          => $project->id,
+                'month_label'         => $month,
+                'regression_method'   => 'linear',
+                'current_progress'    => ($i + 1) * 2.0,
+                'predicted_next'      => 2.0 + $i,
+                'r_squared'           => 0.95,
+                'regression_snapshot' => [],
+            ]);
+        }
+
+        $result = $this->presenter->present($project);
+
+        $this->assertGreaterThan(6, count($result['prediction_history']));
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Prediction history is explicitly ordered oldest → newest by month (Fix E)
+     * ------------------------------------------------------------------------
+     *
+     * Even when prediction rows are inserted out of chronological order, the
+     * presenter must render the history sorted by month_label ascending.
+     */
+    public function test_prediction_history_is_sorted_by_month_ascending(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $months = ['2026-08', '2026-06', '2026-07', '2026-04', '2026-05'];
+
+        foreach ($months as $i => $month) {
+            ProjectBaselineSchedule::create([
+                'project_id'                       => $project->id,
+                'month_label'                      => $month,
+                'planned_date'                     => Carbon::parse($month . '-01')->endOfMonth()->format('Y-m-d'),
+                'planned_progress_percent'         => ($i + 1) * 5,
+                'original_planned_progress_percent'=> ($i + 1) * 5,
+            ]);
+
+            ProjectProgressHistory::create([
+                'project_id'              => $project->id,
+                'month_label'             => $month,
+                'inspection_date'         => Carbon::parse($month . '-25')->format('Y-m-d'),
+                'actual_progress_percent' => ($i + 1) * 2.0,
+                'progress_percentage'     => ($i + 1) * 2.0,
+            ]);
+
+            PredictionHistory::create([
+                'project_id'          => $project->id,
+                'month_label'         => $month,
+                'regression_method'   => 'linear',
+                'current_progress'    => ($i + 1) * 2.0,
+                'predicted_next'      => 2.0 + $i,
+                'r_squared'           => 0.95,
+                'regression_snapshot' => [],
+            ]);
+        }
+
+        $result = $this->presenter->present($project);
+
+        $monthLabels = $result['prediction_history']->pluck('month_label')->all();
+        $expected = $monthLabels;
+        sort($expected);
+
+        $this->assertSame($expected, $monthLabels);
+    }
 }
