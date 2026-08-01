@@ -302,6 +302,12 @@ Open questions:
 - Should a non-monotonic tail disqualify polynomial from being "selected" (R²
   comparison) in the first place?
 
+Cross-project tie-in: Option A2 of
+`textfiles/regression_v2_5_cross_project_expansion_plan.md` is the
+cross-project flavored version of item 3 above (fall back to the aggregate
+category curve when the own-model completion is implausible). Implement A2
+together with Fix H so the two paths don't conflict.
+
 ---
 
 ## 4. DECISION LOG
