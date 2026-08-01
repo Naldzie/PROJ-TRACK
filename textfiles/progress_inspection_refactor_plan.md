@@ -4,9 +4,10 @@ CSPC PMU System — AI Module Version 2 (follow-up to prediction_history_fix_pla
 
 Status: ✅ REFACTOR IMPLEMENTED & VERIFIED — 2026-08-01 (Option A: stop-using, no
         column drop; request key renamed to inspection_date; month-label validation
-        added). Full suite 181 passed / 626 assertions. Fixes A–G still open
+        added). Full suite 181 passed / 626 assertions. Fixes A–H still open
         (Fix B confirmed still unfixed; Fix G = the last-month 1-month grace window
-        that the new month-match guard could break). See §3, §4, §6.
+        that the new month-match guard could break; Fix H = prediction can drop
+        below current progress). See §3, §4, §6.
 
 Date: August 1, 2026
 
@@ -253,6 +254,54 @@ Open questions:
 - The record itself is keyed by `month_label`, so this is purely a validation-window
   change — ordering/sync/display are unaffected.
 
+### Fix H — Next-month prediction can be LOWER than current actual progress (non-monotonic polynomial)
+
+Where:
+- `app/Services/AI/AIPredictionService.php` — `predictNextMonth()` (~540-565)
+  clamps only to `max(0, min(100, $predicted))`, NOT to ≥ current progress.
+- `app/Services/AI/ForecastService.php` (~155-161) — same clamp pattern; forecast
+  months can decrease month-over-month.
+- `app/Services/AI/CompletionEstimationService.php` — `estimatePolynomial()` (113)
+  can solve the downward curve to 100% at a NEGATIVE index → past completion date.
+
+Observed (2026-08-01, project 142 — "Construction of Barangay Evacuation Center"):
+- Last baseline month = March 2027 (planned 100%), actual = 92%, extension_count = 0.
+- Dataset: x=[1..12], y=[2,4,8,15,24,35,49,63,77,86,89,92] (May has 2 records → latest).
+- SLR: `y = 9.5874x − 16.9848`, R²=0.9716 → next (x=13) = 107.65 (→ clamped 100).
+- Poly (SELECTED — R² improvement 0.0267 > 0.02 threshold):
+  `y = −0.1699x³ + 3.4535x² − 10.1622x + 10.4646`, R²=0.9983 → next (x=13) = 88.72.
+- Result: predicted next month 88.72 < current actual 92 — cumulative progress
+  "decreases", contradicting the app's own invariant (the controller rejects any
+  recorded actual below the max recorded; Step 0 of recordMonthlyProgress).
+- Collateral damage: `completion_multi.polynomial` estimated completion at
+  index −3.6064 → April 2026 (a PAST date), causing a 408-day spread and
+  agreement "Low" across the three methods.
+
+Root cause: the cubic polynomial fit (degree 3, least squares) can be
+non-monotonic BEYOND the observed range. Here the negative leading coefficient
+(a = −0.1699) fits the recent slowdown (77→86→89→92) so tightly that the curve
+peaks near the last point and turns downward past x=12. The prediction clamp
+ignores the non-decreasing nature of cumulative progress.
+
+Desired behavior:
+1. `predictNextMonth()`: clamp to `max(floor, min(100, $predicted))` where the
+   floor = current/latest actual progress — the next-month prediction must never
+   drop below what is already achieved.
+2. `ForecastService`: enforce a non-decreasing forecast month-over-month.
+3. `CompletionEstimationService::estimatePolynomial()`: if the polynomial never
+   reaches 100% monotonically after the current index (or solves at a negative /
+   past index), fall back to the schedule-aware/SLR estimate or return null —
+   never emit a past completion date.
+
+Open questions:
+- Floor for the clamp: latest actual (92) vs. max recorded actual across all
+  history (safe floor — mirrors the controller's Step 0 guard)?
+- When polynomial is selected but its extrapolation is decreasing, should we fall
+  back to SLR for the next prediction instead of clamping (clamping alone can
+  flatten the forecast to a plateau)?
+- Should a non-monotonic tail disqualify polynomial from being "selected" (R²
+  comparison) in the first place?
+
 ---
 
 ## 4. DECISION LOG
@@ -309,6 +358,9 @@ Open questions:
   (sort by month_label), tests.
 - Fix G: app/Http/Controllers/ProjectProgressController.php (last-month grace
   exception to the month-match guard), tests.
+- Fix H: app/Services/AI/AIPredictionService.php (non-decreasing clamp),
+  app/Services/AI/ForecastService.php (non-decreasing forecast),
+  app/Services/AI/CompletionEstimationService.php (polynomial fallback), tests.
 
 ---
 
@@ -382,8 +434,9 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
   still unfixed 2026-08-01), Fix C (record/carry-over button restrictions), plus
   new Fix D (history cap + vertical scroll), Fix E (prediction-table order guard),
   Fix F (progress-tab order guard), Fix G (last-month 1-month grace vs. the new
-  month-match guard) — all still 🔄 OPEN, see §3.
+  month-match guard), Fix H (next-month prediction can drop below current
+  progress; also breaks completion estimation) — all still 🔄 OPEN, see §3.
 
 ---
 
-END OF PLAN (refactor implemented 2026-08-01; fixes A–G still open)
+END OF PLAN (refactor implemented 2026-08-01; fixes A–H still open)
