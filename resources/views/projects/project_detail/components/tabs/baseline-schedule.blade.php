@@ -144,6 +144,13 @@
                 $hasFutureMonths = $project->baselineSchedules()
                     ->where('planned_date', '>', $plan->planned_date)
                     ->exists();
+                // The "next pending" month = the FIRST chronological month with
+                // no progress record yet. Record Progress is offered only there.
+                $nextPendingAssigned = $nextPendingAssigned ?? false;
+                $isNextPendingMonth = !$nextPendingAssigned && !$latestProgress;
+                if ($isNextPendingMonth) {
+                    $nextPendingAssigned = true;
+                }
             @endphp
             <!-- Month Card -->
             <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.3s;">
@@ -260,6 +267,7 @@
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                            @if($isNextPendingMonth)
                             <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }}, {{ $loop->last ? '1' : '0' }})" 
                                     style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Record Monthly Progress"
@@ -267,6 +275,7 @@
                                     onmouseout="this.style.background='#dcfce7'; this.style.borderColor='#86efac';">
                                 <i class="bi bi-graph-up-arrow"></i> Record Progress
                             </button>
+                            @endif
                             @if($latestProgress)
                             <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}', {{ $loop->last ? '1' : '0' }})"
                                     style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
@@ -276,7 +285,7 @@
                                 <i class="bi bi-pencil"></i> Edit Progress
                             </button>
                             @endif
-                            @if($incompleteCount > 0 && $hasFutureMonths)
+                            @if($latestProgress && $incompleteCount > 0 && $hasFutureMonths)
                             <button onclick="openCarryOverForMonth('{{ $plan->month_label }}')"
                                     style="flex: 1; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Carry Over Incomplete Activities"
