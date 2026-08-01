@@ -4,8 +4,9 @@ CSPC PMU System — AI Module Version 2 (follow-up to prediction_history_fix_pla
 
 Status: ✅ REFACTOR IMPLEMENTED & VERIFIED — 2026-08-01 (Option A: stop-using, no
         column drop; request key renamed to inspection_date; month-label validation
-        added). Full suite 181 passed / 626 assertions. Fixes A/B/C still open.
-        See §6 CHANGES LOG. See §4 decision log.
+        added). Full suite 181 passed / 626 assertions. Fixes A–G still open
+        (Fix B confirmed still unfixed; Fix G = the last-month 1-month grace window
+        that the new month-match guard could break). See §3, §4, §6.
 
 Date: August 1, 2026
 
@@ -131,10 +132,11 @@ inspections and the latest one was accidentally saved with the SAME inspection
 date as the first, `sortByDesc('inspection_date')` is non-deterministic and can
 return the FIRST inspection, so the status card shows the older value.
 
-Note: not yet confirmed whether the refactor (§2) fixes this. If not, add the
-tiebreaker (`id` desc) to `normalizeMonthlyRecords()` — the same pattern used in
-the baseline fix (`inspection_date desc, id desc`). Listed so it is not
-forgotten.
+Note: ✅ CONFIRMED 2026-08-01 — the refactor (§2) did NOT fix this. The "current
+progress" status card can still show the older inspection when a month has two
+inspections saved with the SAME inspection date (non-deterministic sort). Fix: add
+the tiebreaker (`id` desc) to `normalizeMonthlyRecords()` — the same pattern used in
+the baseline fix (`inspection_date desc, id desc`).
 
 ### Fix C — Baseline tab: restrict Record / Carry Over buttons to valid months
 
@@ -158,6 +160,99 @@ Open questions:
 - With this restriction, can a user still correct a wrong month? They would use
   Edit on the wrong month's card instead of recording a duplicate.
 
+### Fix D — Prediction History table: remove the 6-month cap and make it vertically scrollable
+
+Where:
+- `app/Services/AI/AIPredictionPresenter.php` ~397-403 — `->take(6)` caps the
+  history to the 6 most recent distinct months.
+- `resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php`
+  ~704 — the table wrapper only has `overflow-x: auto` (no vertical scroll).
+
+Confirmed (2026-08-01): the Prediction History & Accuracy table IS limited to the
+6 most recent months (`take(6)` in the presenter). Earlier predictions become
+unreachable once a project has more than 6 monthly predictions — this is why rows
+"disappear" as the project grows.
+
+Desired behavior: show the full prediction history (or a larger cap) and wrap the
+table in a vertically scrollable container (max-height ~320px, `overflow-y: auto`,
+sticky `<thead>` — matching the progress-tab history table at
+progress.blade.php:86/105) so earlier months remain visible and reachable.
+
+Open questions:
+- Remove the cap entirely vs. a generous fixed cap (e.g. 12/24)? Removing it has
+  no logic impact — the summary stats already recompute over `$predictionHistory`
+  (lines 428-435).
+
+### Fix E — Prediction History table: enforce chronological month order
+
+Where: `app/Services/AI/AIPredictionPresenter.php` ~397-426 (prediction_history build).
+
+Observed (2026-08-01): a project's history showed the latest month (August) with a
+"September — pending" row directly below it, while the other pending months appeared
+at the very top — i.e. rows were not in clean chronological-by-month order. Believed
+trigger: editing progress for September (or similar out-of-order writes/edits).
+
+Root cause (current logic): `$recentMonths` = 6 most recent distinct months;
+`$rawHistory` is ordered `month_label ASC, id DESC`; then `groupBy('month_label')`
+→ `map()` → `values()`. There is NO explicit final sort, so any grouping/order
+anomaly passes straight through to the view.
+
+Desired behavior / guard: after building `$predictionHistory`, sort explicitly by
+the raw month key — include `month_label` in each row and apply
+`sortBy('month_label')->values()` — guaranteeing oldest → newest regardless of
+query/insertion/editing order.
+
+### Fix F — Progress Recording History table: chronological month guard
+
+Where: `resources/views/projects/project_detail/components/tabs/progress.blade.php`
+line 77 — `$progressHistoryRecords = $project->progressHistory->sortByDesc('created_at');`
+
+Confirmed (2026-08-01): the progress-tab history table is ordered by recording time
+(`created_at` desc), NOT by month — there is no month-chronological guard. No
+out-of-order issue seen yet, but add the guard for consistency (and because the
+delete/order assumptions in Fix A depend on it).
+
+Desired behavior / guard: order rows chronologically by month — `sortBy('month_label')`
+ascending, with `inspection_date` asc + `id` asc as intra-month tiebreakers — so the
+table reads oldest → newest month regardless of when records were created or edited.
+The existing vertical scroll + sticky header (lines 86/105) already handle long lists.
+
+Open questions:
+- Ascending (oldest first, matching the prediction table) vs. descending (keeps the
+  current newest-first feel)?
+
+### Fix G — Preserve the "last month target + 1 month grace" recording window
+
+Where:
+- Frontend (feature confirmed present, 2026-08-01):
+  - `baseline-schedule.blade.php` lines 263/271 pass `$loop->last ? '1' : '0'`
+    (isLastMonth) into the record/edit modals.
+  - `baseline-schedule-record-progress-modal.js` lines 36-38 and
+    `baseline-schedule-edit-progress-modal.js` lines 56-58 extend the
+    inspection-date picker's max to the end of the month AFTER the target month.
+- Backend conflict: `ProjectProgressController::recordMonthlyProgress()` line 305
+  (added by the refactor, decision #4) returns 422 whenever `inspection_date`'s
+  `Y-m !== month_label` — this BREAKS the grace scenario below.
+
+Purpose (from the user): when the last monthly target is nearly complete and the
+final actual progress is only reached a few days into the following month (e.g. 99%
+in March, 100% in early April), and no extension is granted because the remaining
+work is minimal, the user must still be able to record that final inspection for the
+last target month — with an inspection date up to 1 month after the target month.
+
+Desired behavior: the backend month-match guard must make an exception for the LAST
+monthly target — allow `inspection_date` up to 1 month after its `month_label`
+(mirroring the frontend isLastMonth window) — while keeping the strict month-match
+guard for all earlier months.
+
+Open questions:
+- Compute "last month" as the max `month_label` in the project's
+  `ProjectBaselineSchedule` (same source as `$loop->last`).
+- Should the grace also apply to editing the last month's record
+  (`editProgressRecord`)? The frontend edit modal already allows it (isLastMonth).
+- The record itself is keyed by `month_label`, so this is purely a validation-window
+  change — ordering/sync/display are unaffected.
+
 ---
 
 ## 4. DECISION LOG
@@ -175,6 +270,9 @@ Open questions:
 4. **Month-label validation** — ✅ DECIDED: `recordMonthlyProgress()` rejects a
    submission where `month_label !== inspection_date`'s `Y-m` (422). Prevents
    the out-of-order "Jan, Feb, Mar, Apr, Mar" data-entry scenario (Fix C).
+   ⚠️ Caveat (2026-08-01): must NOT apply to the LAST monthly target — the
+   frontend intentionally allows its inspection_date up to 1 month after the
+   target month (Fix G). Without an exception this guard breaks that grace window.
 5. **Delete rule (Fix A)** — 🔄 OPEN: UI-only vs. backend-enforced
    `destroyProgress` guard.
 6. **Edit button (Fix A)** — 🔄 OPEN: restrict edit as well, or leave on all rows?
@@ -203,6 +301,14 @@ Open questions:
   not fixed by refactor), tests.
 - Fix C: resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php,
   tests.
+- Fix D: app/Services/AI/AIPredictionPresenter.php (take(6) cap),
+  resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+  (scrollable wrapper), tests.
+- Fix E: app/Services/AI/AIPredictionPresenter.php (explicit month sort), tests.
+- Fix F: resources/views/projects/project_detail/components/tabs/progress.blade.php
+  (sort by month_label), tests.
+- Fix G: app/Http/Controllers/ProjectProgressController.php (last-month grace
+  exception to the month-match guard), tests.
 
 ---
 
@@ -272,9 +378,12 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
   and schema migrations remain — by design).
 
 ### Remaining (unchanged)
-- Fix A (delete latest-only), Fix B (normalize tiebreaker `id` desc), Fix C
-  (record/carry-over button restrictions) — still 🔄 OPEN, see §3.
+- Fix A (delete latest-only), Fix B (normalize tiebreaker `id` desc — CONFIRMED
+  still unfixed 2026-08-01), Fix C (record/carry-over button restrictions), plus
+  new Fix D (history cap + vertical scroll), Fix E (prediction-table order guard),
+  Fix F (progress-tab order guard), Fix G (last-month 1-month grace vs. the new
+  month-match guard) — all still 🔄 OPEN, see §3.
 
 ---
 
-END OF PLAN (refactor implemented 2026-08-01; fixes A/B/C still open)
+END OF PLAN (refactor implemented 2026-08-01; fixes A–G still open)
