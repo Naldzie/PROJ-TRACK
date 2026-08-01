@@ -101,6 +101,19 @@ pattern). No schema change; column left in place for later optional removal.
 
 ## 3. OTHER POSSIBLE ADJUSTMENTS / FIXES AFTER THE REFACTOR
 
+Status (2026-08-01, after §7 implementation):
+
+| Fix | Status | Where |
+|-----|--------|-------|
+| A — delete latest-only | ✅ DONE (UI + backend guard) | progress.blade.php, ProjectProgressController::destroyProgress |
+| B — current-progress tiebreaker | ✅ DONE (`inspection_date desc, id desc`) | RegressionDatasetBuilder::normalizeMonthlyRecords |
+| C — record/carry-over restrictions | ✅ DONE (manual verify) | baseline-schedule.blade.php |
+| D — prediction-history cap + scroll | ✅ DONE | AIPredictionPresenter, ai-prediction.blade.php |
+| E — prediction-history month order | ✅ DONE | AIPredictionPresenter |
+| F — progress-history month order | ✅ DONE | progress.blade.php |
+| G — last-month 1-month grace | ✅ DONE | ProjectProgressController::recordMonthlyProgress |
+| H — non-monotonic polynomial | 🔄 OPEN (deferred, see §3 + v2.5 A2) | — |
+
 ### Fix A — Restrict the delete button to the LATEST progress record only
 
 Where: `resources/views/projects/project_detail/components/tabs/progress.blade.php`
@@ -454,13 +467,60 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
   Fix F (progress-tab order guard), Fix G (last-month 1-month grace vs. the new
   month-match guard), Fix H (next-month prediction can drop below current
   progress; also breaks completion estimation).
-- ✅ 2026-08-01: Fixes **A–G** now have an approved implementation plan — see §7
-  (branch `fix/progress-additional-fixes`). Only **Fix H** remains fully OPEN
-  (deferred; see §3 + the v2.5 plan Option A2).
+- ✅ 2026-08-01: Fixes **A–G** IMPLEMENTED — see the log below (branch
+  `fix/progress-additional-fixes`). Only **Fix H** remains fully OPEN (deferred;
+  see §3 + the v2.5 plan Option A2).
+
+### ADDITIONAL FIXES A–G IMPLEMENTED (2026-08-01)
+
+Branch: `fix/progress-additional-fixes` (from main `9d32392`). Five bundles,
+committed incrementally; full suite green after each. Final suite: **195 passed /
+669 assertions** (baseline for this branch 186/641).
+
+1. **Fix B** (`9576dbf`) — `RegressionDatasetBuilder::normalizeMonthlyRecords()`:
+   `sortByDesc('inspection_date')` → multi-key `sortByDesc(['inspection_date',
+   'id'])` (chained sortByDesc is stable, so it had to be a single multi-key
+   sort; string keys — closures break Laravel's `sortByMany`, and Carbon values
+   compare fine under SORT_REGULAR). Test:
+   `test_build_dataset_picks_latest_id_when_same_month_and_same_inspection_date`.
+2. **Fix F + A** (`81e72c6`) —
+   - `progress.blade.php`: history sort `sortByDesc('created_at')` →
+     newest-first by `month_label|inspection_date|id` composite; admin Delete
+     button only on the latest row (`$loop->first`).
+   - `ProjectProgressController::destroyProgress()`: rejects any deletion that is
+     NOT the latest remaining record (month_label desc, COALESCE inspection_date
+     desc, id desc) — 422.
+   - New `tests/Feature/Services/AI/ProgressDeleteGuardTest.php` (3 tests); the
+     four `PredictionHistorySyncTest` delete scenarios updated to delete
+     latest-first (they previously deleted out of order, which the new guard
+     correctly blocks).
+3. **Fix D + E** (`d6b9db2`) — `AIPredictionPresenter.php`: removed the
+   `take(6)` cap and the `$recentMonths`/`$rawHistory` split (history now covers
+   every distinct month), each row carries `month_label`, and the result is
+   explicitly `sortBy('month_label')` (oldest → newest). `ai-prediction.blade.php`:
+   history table gets `max-height:320px; overflow-y:auto` + sticky `<thead>`.
+   Tests: `test_prediction_history_is_not_capped_at_six`,
+   `test_prediction_history_is_sorted_by_month_ascending`.
+4. **Fix G** (`386c304`) — `recordMonthlyProgress()` month-match guard now allows
+   the LAST target month (`baselineSchedules()->max('month_label')`) an
+   inspection date up to one month AFTER its month (mirrors the frontend
+   `isLastMonth` window); all earlier months keep the strict match. Tests:
+   `test_record_allows_last_month_inspection_one_month_after`,
+   `test_record_rejects_last_month_inspection_beyond_one_month_grace`,
+   `test_record_rejects_non_last_month_inspection_outside_its_month`. Note: the
+   edit path has no backend month-match guard, so the grace already applies there.
+5. **Fix C** (`60a16c7`) — `baseline-schedule.blade.php`: Record Progress renders
+   only on the FIRST chronological month with no progress (`$isNextPendingMonth`,
+   via a `$nextPendingAssigned` flag); Carry Over additionally requires
+   `$latestProgress`. Edit/Manage/Delete unchanged. Manual verification pending
+   (blade-only). `php artisan view:cache` passes.
 
 ---
 
 ## 7. IMPLEMENTATION PLAN — ADDITIONAL FIXES A–G (2026-08-01)
+
+> ✅ IMPLEMENTED — see §6 "ADDITIONAL FIXES A–G IMPLEMENTED" log and §3 status
+> table. This section is retained as the record of the approved plan.
 
 Branch: `fix/progress-additional-fixes` (from `refactor/inspection-date-consolidation`,
 which == `main` at `9d32392`). Five self-contained bundles; full suite run
@@ -524,4 +584,4 @@ assertions.
 
 ---
 
-END OF PLAN (refactor implemented 2026-08-01; fixes A–G planned §7 / Fix H open)
+END OF PLAN (refactor implemented 2026-08-01; fixes A–G implemented §6 / Fix H open)
