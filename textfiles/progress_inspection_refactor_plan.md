@@ -347,9 +347,14 @@ together with Fix H so the two paths don't conflict.
    is NOT the latest remaining record (422). Prevents out-of-order deletion.
 6. **Edit button (Fix A)** — ✅ DECIDED: **leave Edit on all rows** (Edit is the
    sanctioned out-of-order-correction path; Delete is the destructive one).
-7. **Record button rule (Fix C)** — ✅ DECIDED: "next pending month" = the FIRST
-   baseline month (chronological / `planned_date` asc) that has NO progress
-   record yet. The `Record Progress` button shows only on that one month card.
+7. **Record button rule (Fix C)** — ✅ DECIDED (2026-08-01, REVISED per user
+   feedback): `Record Progress` shows on exactly TWO monthly targets — the
+   CURRENT/latest month that has progress (so the user can add another
+   inspection report; multiple inspections per month are supported) and the
+   NEXT PENDING month (the first baseline month, `planned_date` asc, with no
+   progress yet). All other months use Edit instead. Original one-month-only
+   rule was corrected because it blocked adding a second inspection to the
+   current month.
 8. **Carry Over rule (Fix C)** — ✅ DECIDED: Carry Over shows only on months that
    ALREADY have actual progress (`$latestProgress` exists), in addition to the
    existing `$incompleteCount > 0 && $hasFutureMonths` condition.
@@ -509,11 +514,15 @@ committed incrementally; full suite green after each. Final suite: **195 passed 
    `test_record_rejects_last_month_inspection_beyond_one_month_grace`,
    `test_record_rejects_non_last_month_inspection_outside_its_month`. Note: the
    edit path has no backend month-match guard, so the grace already applies there.
-5. **Fix C** (`60a16c7`) — `baseline-schedule.blade.php`: Record Progress renders
-   only on the FIRST chronological month with no progress (`$isNextPendingMonth`,
-   via a `$nextPendingAssigned` flag); Carry Over additionally requires
-   `$latestProgress`. Edit/Manage/Delete unchanged. Manual verification pending
-   (blade-only). `php artisan view:cache` passes.
+5. **Fix C** (`60a16c7`, corrected 2026-08-01) — `baseline-schedule.blade.php`:
+   Record Progress renders on exactly TWO monthly targets — the CURRENT/latest
+   month with progress (`month_label === max` of recorded progress months) and
+   the NEXT PENDING month (first baseline month with no progress), precomputed
+   before the loop; Carry Over additionally requires `$latestProgress`.
+   Edit/Manage/Delete unchanged. Manual verification pending (blade-only).
+   `php artisan view:cache` passes. (First version showed Record only on the
+   single next-pending month — corrected because that prevented a second
+   inspection report on the current month.)
 
 ---
 
@@ -570,10 +579,15 @@ assertions.
   (Jun) + 2026-07-15 → 422.
 
 ### Bundle 5 — Fix C: baseline-tab button restrictions
-- `resources/views/.../tabs/baseline-schedule.blade.php`: loop is already
-  `planned_date` asc (129); add a `$nextPendingAssigned` flag so:
-  - Record Progress (263) renders only on the FIRST month with no progress
-    (`$isNextPendingMonth`).
+- `resources/views/.../tabs/baseline-schedule.blade.php`: Record Progress is
+  offered on exactly TWO monthly targets — the CURRENT/latest month with
+  progress (to add another inspection report) and the NEXT PENDING month (the
+  first `planned_date`-asc month with no progress). Precomputed before the
+  loop (`$latestProgressMonth` = max recorded progress month,
+  `$nextPendingMonth` = first unrecorded baseline month):
+  - `@if($showRecordButton)` wraps the Record button (263), where
+    `$showRecordButton = $plan->month_label === $latestProgressMonth ||
+    $plan->month_label === $nextPendingMonth`.
   - Carry Over (279) additionally requires `$latestProgress`.
   - Edit / Manage / Delete unchanged.
 - Verification: manual (blade-only button visibility).

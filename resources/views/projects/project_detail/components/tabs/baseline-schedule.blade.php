@@ -125,6 +125,25 @@
         @php
             // Calculate highest overall actual progress across all months
             $highestActualProgress = $project->progressHistory()->max('actual_progress_percent') ?? 0;
+
+            // Fix C: Record Progress is available on exactly TWO monthly
+            // targets — the CURRENT/latest month with progress (so the user can
+            // add another inspection report) and the NEXT PENDING month (the
+            // first one with no progress yet). All other months must use Edit.
+            $progressMonths = $project->progressHistory()
+                ->whereNotNull('month_label')
+                ->pluck('month_label')
+                ->unique()
+                ->values()
+                ->all();
+            $latestProgressMonth = !empty($progressMonths) ? max($progressMonths) : null;
+            $nextPendingMonth = null;
+            foreach ($project->baselineSchedules()->orderBy('planned_date', 'asc')->pluck('month_label') as $baselineMonth) {
+                if (!in_array($baselineMonth, $progressMonths, true)) {
+                    $nextPendingMonth = $baselineMonth;
+                    break;
+                }
+            }
         @endphp
         @forelse($project->baselineSchedules()->orderBy('planned_date', 'asc')->get() as $plan)
             @php
@@ -144,13 +163,10 @@
                 $hasFutureMonths = $project->baselineSchedules()
                     ->where('planned_date', '>', $plan->planned_date)
                     ->exists();
-                // The "next pending" month = the FIRST chronological month with
-                // no progress record yet. Record Progress is offered only there.
-                $nextPendingAssigned = $nextPendingAssigned ?? false;
-                $isNextPendingMonth = !$nextPendingAssigned && !$latestProgress;
-                if ($isNextPendingMonth) {
-                    $nextPendingAssigned = true;
-                }
+                // Record Progress shows on the current/latest month (extra
+                // inspection) and on the next pending month (first with none).
+                $showRecordButton = $plan->month_label === $latestProgressMonth
+                    || $plan->month_label === $nextPendingMonth;
             @endphp
             <!-- Month Card -->
             <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.3s;">
@@ -267,7 +283,7 @@
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                            @if($isNextPendingMonth)
+                            @if($showRecordButton)
                             <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }}, {{ $loop->last ? '1' : '0' }})" 
                                     style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Record Monthly Progress"
