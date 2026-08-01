@@ -34,7 +34,7 @@
                             </div>
                             <small style="color: #6b7280; white-space: nowrap;">Select from planned schedule</small>
                         </div>
-                        <input type="hidden" id="actualInspectionDate" name="inspection_month_date" value="">
+                        <input type="hidden" id="actualInspectionDate" name="inspection_date" value="">
                         <small id="monthError" style="display: none; color: #ef4444; margin-top: 4px;"></small>
                     </div>
 
@@ -380,7 +380,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    inspection_month_date: inspectionDate,
+                    inspection_date: inspectionDate,
                     month_label: monthLabel,
                     activity_ids: activityIds,
                     actual_progress_percent: actualProgress,

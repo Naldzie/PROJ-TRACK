@@ -113,7 +113,6 @@ class ProjectProgressController extends Controller
             // Build update payload
             $updatePayload = [
                 'inspection_date' => $request->inspection_date,
-                'inspection_month_date' => $request->inspection_date,
                 'progress_percentage' => $request->progress_percentage,
                 'actual_start_date' => $request->actual_start_date,
                 'actual_end_date' => $request->actual_end_date,
@@ -293,13 +292,22 @@ class ProjectProgressController extends Controller
     {
         // Validate input
         $validated = $request->validate([
-            'inspection_month_date' => 'required|date',
+            'inspection_date' => 'required|date',
             'month_label' => 'required|string',
             'activity_ids' => 'nullable|array',
             'activity_ids.*' => 'integer|exists:project_activities,id',
             'actual_progress_percent' => 'required|numeric|between:0,100',
             'remarks' => 'nullable|string'
         ]);
+
+        // The inspection date must fall within the selected month, otherwise a
+        // record could be attributed to the wrong month (out-of-order history).
+        if (\Illuminate\Support\Carbon::parse($validated['inspection_date'])->format('Y-m') !== $validated['month_label']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Inspection date does not match the selected month.'
+            ], 422);
+        }
 
         DB::beginTransaction();
 
@@ -338,7 +346,6 @@ class ProjectProgressController extends Controller
             // Step 4: Create PROJECT_PROGRESS_HISTORY record
             $progressRecord = $project->progressHistory()->create([
                 'baseline_schedule_id' => $baselineSchedule?->id, // Link to baseline schedule for cascade delete
-                'inspection_month_date' => $validated['inspection_month_date'],
                 'month_label' => $validated['month_label'],
                 'actual_progress_percent' => $actualProgressPercent,
                 'planned_progress_percent' => $plannedProgressPercent,
@@ -350,7 +357,7 @@ class ProjectProgressController extends Controller
                 // Backward compatibility fields
                 'progress_percentage' => $actualProgressPercent,
                 'status' => $this->getProgressStatus($variancePercent),
-                'inspection_date' => $validated['inspection_month_date']
+                'inspection_date' => $validated['inspection_date']
             ]);
 
             DB::commit();
@@ -448,7 +455,6 @@ class ProjectProgressController extends Controller
         try {
             $latestRecord = ProjectProgressHistory::where('project_id', $project->id)
                 ->where('month_label', $monthLabel)
-                ->orderBy('inspection_month_date', 'desc')
                 ->orderBy('inspection_date', 'desc')
                 ->orderBy('id', 'desc')
                 ->first();

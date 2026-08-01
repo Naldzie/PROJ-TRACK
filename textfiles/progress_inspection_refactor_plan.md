@@ -2,9 +2,10 @@
 
 CSPC PMU System — AI Module Version 2 (follow-up to prediction_history_fix_plan.md)
 
-Status: 📋 DECIDED — scope confirmed 2026-08-01 (Option A: stop-using, no column
-        drop; request key renamed to inspection_date; add month-label validation).
-        NOT yet implemented — plan committed as reference. See §4 decision log.
+Status: ✅ REFACTOR IMPLEMENTED & VERIFIED — 2026-08-01 (Option A: stop-using, no
+        column drop; request key renamed to inspection_date; month-label validation
+        added). Full suite 181 passed / 626 assertions. Fixes A/B/C still open.
+        See §6 CHANGES LOG. See §4 decision log.
 
 Date: August 1, 2026
 
@@ -205,4 +206,75 @@ Open questions:
 
 ---
 
-END OF PLAN (draft — refactor scope decided, fixes A/B/C still open)
+## 6. CHANGES LOG — REFACTOR IMPLEMENTED (2026-08-01)
+
+Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
+
+### Step 1 — Controller (ProjectProgressController)
+- `recordMonthlyProgress()`: validation key `inspection_month_date` →
+  `inspection_date`; added guard returning 422 JSON when
+  `Carbon::parse($validated['inspection_date'])->format('Y-m') !== month_label`;
+  create payload uses `inspection_date` only (no inspection_month_date write).
+- `editProgressRecord()`: removed the Fix B line that wrote `inspection_month_date`.
+- `syncPredictionHistoryActual()`: `orderBy('inspection_month_date desc')` →
+  `orderBy('inspection_date desc')` + `orderByDesc('id')`.
+
+### Step 2 — Modals/JS
+- `record_monthly_progress_modal.blade.php`: hidden input name + body key →
+  `inspection_date`.
+- `record_progress_modal.blade.php`: date input name → `inspection_date`.
+- `baseline-schedule-record-progress-modal.js`: body key → `inspection_date`.
+- `baseline-schedule-edit-progress-modal.js`: display fallback simplified to
+  `record.inspection_date`.
+
+### Step 3 — Order-by → month_label (12 sites)
+- `ProjectChartService.php` (30, 90, 613, 660; sorts/fallbacks 142/176/566),
+  `ProjectStatusService.php` (35, 75), `ProjectOverviewService.php` (25, 34),
+  `Project.php` (149), `RecommendationEngine.php` (839),
+  `HistoricalSimilarityService.php` (182, 303), `baseline-schedule.blade.php`
+  (134), `overview.blade.php` (8), `AIPredictionPresenter.php` (466, 870, 938,
+  1087).
+
+### Step 4 — Date-range filter → month_label equality
+- `AIPredictionPresenter.php` ~829-830: month-start/end range →
+  `where('month_label', DateHelper::now()->format('Y-m'))`.
+
+### Step 5 — Date math via month_label
+- `AIPredictionPresenter.php` ~471: `addMonth()` on a date →
+  `Carbon::parse($month_label . '-01')->addMonth()`.
+
+### Step 6 — RegressionDatasetBuilder
+- Order/group/sort by `month_label` (line 20, 104, 115).
+- `first_month`/`last_month` statistics now use `inspection_date` (85/87).
+
+### Step 7 — Display fallbacks
+- Dropped `?? inspection_month_date` in `progress.blade.php` (139),
+  `ProjectOverviewService.php` (34), `baseline-schedule.blade.php` (179).
+
+### Step 8 — Model
+- `ProjectProgressHistory.php`: `inspection_month_date` removed from
+  `$fillable` and casts (column stays in DB, unmanaged).
+
+### Step 9 — Seeder/factory/tests
+- `ProjectSeeder.php` (363) and `ProjectProgressHistoryFactory.php`
+  (definition, `forMonth()`, `sameMonth()`) stop writing the column.
+- `CreatesProjectWithHistory.php`: all 10 `inspection_month_date` writes removed.
+- `PredictionHistorySyncTest.php`: helper key → `inspection_date`; the Fix B edit
+  test → `test_edit_updates_inspection_date`; added
+  `test_record_rejects_inspection_date_mismatching_month` (422).
+- `RegressionDatasetBuilderTest.php`, `AIPredictionPresenterTest.php`,
+  `AIPredictionServiceTest.php`: order assertions / writes updated.
+
+### Step 10 — Verify
+- Full suite: **181 passed / 626 assertions** (baseline 180/623).
+- Repo-wide grep: no remaining `inspection_month_date` reads/writes in app/,
+  tests/, resources/, public/ (only comments, `merging/` untracked copy, docs,
+  and schema migrations remain — by design).
+
+### Remaining (unchanged)
+- Fix A (delete latest-only), Fix B (normalize tiebreaker `id` desc), Fix C
+  (record/carry-over button restrictions) — still 🔄 OPEN, see §3.
+
+---
+
+END OF PLAN (refactor implemented 2026-08-01; fixes A/B/C still open)

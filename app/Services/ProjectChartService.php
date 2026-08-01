@@ -27,7 +27,7 @@ class ProjectChartService
             ->get();
 
         $progressHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->orderByDesc('inspection_month_date')
+            ->orderByDesc('month_label')
             ->orderByDesc('inspection_date')
             ->orderByDesc('created_at')
             ->get();
@@ -87,7 +87,7 @@ class ProjectChartService
 
             $allProgressRecords = $progressHistory
                 ?? ProjectProgressHistory::where('project_id', $project->id)
-                    ->orderBy('inspection_month_date', 'asc')
+                    ->orderBy('month_label', 'asc')
                     ->orderBy('inspection_date', 'asc')
                     ->orderBy('created_at', 'asc')
                     ->get();
@@ -139,7 +139,7 @@ class ProjectChartService
                 // Monthly summary still uses the latest record per month (unchanged)
                 $latestRecord = $allProgressRecords
                     ->where('month_label', $monthLabel)
-                    ->sortByDesc(fn ($r) => $r->inspection_month_date?->timestamp ?? 0)
+                    ->sortByDesc(fn ($r) => $r->inspection_date?->timestamp ?? 0)
                     ->sortByDesc(fn ($r) => $r->created_at?->timestamp ?? 0)
                     ->first();
                 $actualPercentDisplay = $latestRecord ? $latestRecord->actual_progress_percent : 0;
@@ -173,7 +173,7 @@ class ProjectChartService
 
             // Build actual_data_points from ALL individual progress records
             foreach ($allProgressRecords as $record) {
-                $recordDate = $record->inspection_month_date ?? $record->inspection_date ?? $record->created_at;
+                $recordDate = $record->inspection_date ?? $record->created_at;
                 if ($recordDate && $record->actual_progress_percent !== null) {
                     $recordTs = $recordDate instanceof \Carbon\Carbon
                         ? $recordDate->timestamp * 1000
@@ -563,8 +563,7 @@ class ProjectChartService
 
         $chronological = $progressHistory
             ->sortBy(function ($record) {
-                $monthTs = $record->inspection_month_date?->timestamp
-                    ?? $record->inspection_date?->timestamp
+                $monthTs = $record->inspection_date?->timestamp
                     ?? 0;
 
                 return ($monthTs * 100000) + ($record->created_at?->timestamp ?? 0);
@@ -610,7 +609,7 @@ class ProjectChartService
             ->get();
 
         $progressHistory = ProjectProgressHistory::where('project_id', $projectId)
-            ->orderBy('inspection_month_date')
+            ->orderBy('month_label')
             ->get();
 
         $extensions = ProjectExtension::where('project_id', $projectId)
@@ -657,7 +656,7 @@ class ProjectChartService
     public function getCurrentProgress($projectId)
     {
         $latest = ProjectProgressHistory::where('project_id', $projectId)
-            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('month_label', 'desc')
             ->first();
 
         return $latest ? $latest->actual_progress_percent : 0;

@@ -16,7 +16,6 @@ class ProjectProgressHistory extends Model
         'baseline_schedule_id',
         'activity_id',
         'inspection_date',
-        'inspection_month_date',
         'month_label',
         'progress_percentage',
         'planned_progress_percent',
@@ -37,7 +36,6 @@ class ProjectProgressHistory extends Model
 
     protected $casts = [
         'inspection_date' => 'date:Y-m-d',
-        'inspection_month_date' => 'date:Y-m-d',
         'actual_start_date' => 'date:Y-m-d',
         'actual_end_date' => 'date:Y-m-d',
         'progress_percentage' => 'decimal:2',

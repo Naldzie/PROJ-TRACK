@@ -136,7 +136,7 @@
                                     </td>
                                     <td style="padding: 12px 15px; color: #374151; font-weight: 500;">
                                         @php
-                                            $inspDate = $history->inspection_date ?? $history->inspection_month_date ?? null;
+                                            $inspDate = $history->inspection_date ?? null;
                                         @endphp
                                         @if($inspDate)
                                             <div>{{ \Carbon\Carbon::parse($inspDate)->format('M d, Y') }}</div>

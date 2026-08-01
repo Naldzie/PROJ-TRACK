@@ -18,8 +18,8 @@ class ProjectProgressHistoryFactory extends Factory
      * Define the model's default state
      * ------------------------------------------------------------------------
      *
-     * Note: RegressionDatasetBuilder uses inspection_month_date for monthly
-     * grouping and inspection_date for intra-month sorting.
+     * Note: RegressionDatasetBuilder uses month_label for monthly grouping and
+     * inspection_date for intra-month sorting.
      */
     public function definition(): array
     {
@@ -28,7 +28,6 @@ class ProjectProgressHistoryFactory extends Factory
         return [
             'project_id'              => Project::factory(),
             'inspection_date'         => $inspectionDate,
-            'inspection_month_date'   => (clone $inspectionDate)->modify('first day of this month'),
             'month_label'             => $inspectionDate->format('Y-m'),
             'progress_percentage'     => fake()->randomFloat(2, 0, 100),
             'actual_progress_percent' => fake()->randomFloat(2, 0, 100),
@@ -52,14 +51,12 @@ class ProjectProgressHistoryFactory extends Factory
     public function forMonth(
         int $monthNumber,
         string $monthLabel,
-        string $inspectionMonthDate,
         string $inspectionDate,
         float $actualProgress
     ): static {
         return $this->state(fn () => [
             'month_number'            => $monthNumber,
             'month_label'             => $monthLabel,
-            'inspection_month_date'   => $inspectionMonthDate,
             'inspection_date'         => $inspectionDate,
             'actual_progress_percent' => $actualProgress,
             'progress_percentage'     => $actualProgress,
@@ -80,7 +77,6 @@ class ProjectProgressHistoryFactory extends Factory
             'actual_progress_percent' => $actualProgress,
             'progress_percentage'     => $actualProgress,
             'inspection_date'         => $inspectionDate,
-            'inspection_month_date'   => $base['inspection_month_date'] ?? now()->startOfMonth(),
             'month_label'             => $base['month_label'] ?? now()->format('Y-m'),
         ]);
     }

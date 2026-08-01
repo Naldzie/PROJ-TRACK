@@ -32,7 +32,7 @@ class ProjectStatusService
             $latestProgress = $progressHistory
                 ? $progressHistory->first()
                 : \App\Models\ProjectProgressHistory::where('project_id', $project->id)
-                    ->orderBy('inspection_month_date', 'desc')
+                    ->orderBy('month_label', 'desc')
                     ->first();
 
             if (!$latestProgress) {
@@ -72,7 +72,7 @@ class ProjectStatusService
                 'planned_percent' => $plannedPercent,
                 'actual_percent' => $actualPercent,
                 'message' => $mapped['message'],
-                'last_inspection_date' => ($latestProgress->inspection_month_date ?? $latestProgress->inspection_date)?->format('M d, Y'),
+                'last_inspection_date' => $latestProgress->inspection_date?->format('M d, Y'),
             ];
         } catch (\Exception $e) {
             \Log::error('Error getting project status: ' . $e->getMessage());

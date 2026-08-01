@@ -53,7 +53,7 @@
                         <label for="inspectionDate" style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">
                             Inspection Date <span style="color: #ef4444;">*</span>
                         </label>
-                        <input type="date" id="inspectionDate" name="inspection_month_date" class="form-control" required
+                        <input type="date" id="inspectionDate" name="inspection_date" class="form-control" required
                                style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;">
                     </div>
 

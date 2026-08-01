@@ -199,7 +199,7 @@ class RegressionDatasetBuilderTest extends TestCase
      * Statistics first_month is a Carbon instance
      * ------------------------------------------------------------------------
      *
-     * inspection_month_date is an Eloquent date column, so it returns
+     * inspection_date is an Eloquent date column, so it returns
      * a Carbon instance from the model accessor.
      */
     public function test_build_dataset_first_month_is_carbon_instance(): void
@@ -325,8 +325,8 @@ class RegressionDatasetBuilderTest extends TestCase
 
         // Verify ascending order
         for ($i = 1; $i < $records->count(); $i++) {
-            $prev = $records[$i - 1]->inspection_month_date;
-            $curr = $records[$i]->inspection_month_date;
+            $prev = $records[$i - 1]->month_label;
+            $curr = $records[$i]->month_label;
             $this->assertLessThanOrEqual($curr, $prev);
         }
     }

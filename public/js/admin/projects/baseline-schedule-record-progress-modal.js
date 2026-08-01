@@ -217,7 +217,7 @@ function saveMonthlyProgress() {
         },
         body: JSON.stringify({
             month_label: monthLabel,
-            inspection_month_date: inspectionDate,
+            inspection_date: inspectionDate,
             actual_progress_percent: actualProgress,
             activity_ids: checkedActivities.length > 0 ? checkedActivities : [],
             remarks: remarks

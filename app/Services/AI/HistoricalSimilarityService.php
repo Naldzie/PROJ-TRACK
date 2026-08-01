@@ -179,7 +179,7 @@ class HistoricalSimilarityService
         // Accept pre-built x/y arrays, or query from the project
         if (empty($actualX) || empty($actualY)) {
             $history = $project->progressHistory()
-                ->orderBy('inspection_month_date')
+                ->orderBy('month_label')
                 ->get();
 
             foreach ($history->values() as $index => $record) {
@@ -300,7 +300,7 @@ class HistoricalSimilarityService
     private function normalizeToPercentile(Project $project, array $percentiles): array
     {
         $records = $project->progressHistory()
-            ->orderBy('inspection_month_date')
+            ->orderBy('month_label')
             ->get();
 
         if ($records->isEmpty()) {

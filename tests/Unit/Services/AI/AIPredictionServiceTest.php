@@ -389,7 +389,6 @@ class AIPredictionServiceTest extends TestCase
         return ProjectProgressHistory::create([
             'project_id'              => $project->id,
             'month_label'             => $month,
-            'inspection_month_date'   => Carbon::parse($month . '-01')->format('Y-m-d'),
             'inspection_date'         => $inspectionDate ?? Carbon::parse($month . '-25')->format('Y-m-d'),
             'actual_progress_percent' => $pct,
             'progress_percentage'     => $pct,

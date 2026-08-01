@@ -836,7 +836,7 @@ class RecommendationEngine
         int $observationCount
     ): array {
         $progressHistory = $project->progressHistory()
-            ->orderBy('inspection_month_date', 'asc')
+            ->orderBy('month_label', 'asc')
             ->get();
 
         if ($progressHistory->isEmpty()) {

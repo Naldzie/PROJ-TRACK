@@ -463,12 +463,12 @@ class AIPredictionPresenter
 
         $nextIsCurrentMonth = false;
         $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('month_label', 'desc')
             ->orderBy('created_at', 'desc')
             ->first();
 
-        if ($latestHistory && $latestHistory->inspection_month_date) {
-            $predictedMonth = $latestHistory->inspection_month_date->copy()->addMonth();
+        if ($latestHistory && $latestHistory->month_label) {
+            $predictedMonth = \Illuminate\Support\Carbon::parse($latestHistory->month_label . '-01')->addMonth();
             $nextIsCurrentMonth = $predictedMonth->format('Y-m') === DateHelper::now()->format('Y-m');
         }
 
@@ -826,8 +826,7 @@ class AIPredictionPresenter
         */
 
         $currentMonthHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->where('inspection_month_date', '>=', $currentMonthStart)
-            ->where('inspection_month_date', '<=', $currentMonthEnd)
+            ->where('month_label', DateHelper::now()->format('Y-m'))
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -867,7 +866,7 @@ class AIPredictionPresenter
         */
 
         $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('month_label', 'desc')
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -935,7 +934,7 @@ class AIPredictionPresenter
     private function getNextPlannedProgress(Project $project): ?float
     {
         $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('month_label', 'desc')
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -1084,7 +1083,7 @@ class AIPredictionPresenter
         */
 
         $progressHistory = $project->progressHistory()
-            ->orderBy('inspection_month_date', 'asc')
+            ->orderBy('month_label', 'asc')
             ->get();
 
         if ($progressHistory->isEmpty()) {

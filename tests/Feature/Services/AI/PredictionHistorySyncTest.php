@@ -77,7 +77,7 @@ class PredictionHistorySyncTest extends TestCase
     private function recordMonthlyProgress(Project $project, string $month, float $pct, ?string $inspectionDate = null): void
     {
         $request = Request::create('/progress', 'POST', [
-            'inspection_month_date'   => $inspectionDate ?? Carbon::parse($month . '-01')->format('Y-m-d'),
+            'inspection_date'         => $inspectionDate ?? Carbon::parse($month . '-01')->format('Y-m-d'),
             'month_label'             => $month,
             'actual_progress_percent' => $pct,
             'remarks'                 => null,
@@ -324,12 +324,11 @@ class PredictionHistorySyncTest extends TestCase
     }
 
     /**
-     * Editing a progress record keeps inspection_month_date in sync with the
-     * new inspection_date (Fix B). They diverge only if an edit updates one
-     * but not the other, which breaks the "latest inspection" ordering on the
-     * baseline tab.
+     * Editing a progress record updates inspection_date (the canonical actual
+     * inspection date). The record keeps its month_label bucket; there is no
+     * inspection_month_date to stay in sync anymore (refactor).
      */
-    public function test_edit_syncs_inspection_month_date_to_inspection_date(): void
+    public function test_edit_updates_inspection_date(): void
     {
         $project = $this->makeProject();
         $this->seedBaselineObservations($project);
@@ -348,7 +347,29 @@ class PredictionHistorySyncTest extends TestCase
 
         $record->refresh();
         $this->assertEquals('2026-04-18', $record->inspection_date->format('Y-m-d'));
-        $this->assertEquals('2026-04-18', $record->inspection_month_date->format('Y-m-d'));
+        $this->assertEquals('2026-04', $record->month_label);
+    }
+
+    /**
+     * A monthly progress record whose inspection date falls in a DIFFERENT
+     * month than the selected month_label must be rejected — otherwise the
+     * history would contain out-of-order months (e.g. Jan, Feb, Mar, Apr, Mar).
+     */
+    public function test_record_rejects_inspection_date_mismatching_month(): void
+    {
+        $project = $this->makeProject();
+
+        $request = Request::create('/progress', 'POST', [
+            'inspection_date'         => '2026-03-25', // March date
+            'month_label'             => '2026-04',   // but April month selected
+            'actual_progress_percent' => 2.0,
+            'remarks'                 => null,
+        ]);
+
+        $response = app(ProjectProgressController::class)->recordMonthlyProgress($request, $project);
+        $this->assertFalse($response->getData()->success);
+        $this->assertEquals(422, $response->getStatusCode());
+        $this->assertEmpty(ProjectProgressHistory::where('project_id', $project->id)->get());
     }
 
     /**

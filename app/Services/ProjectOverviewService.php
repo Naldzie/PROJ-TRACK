@@ -22,7 +22,7 @@ class ProjectOverviewService
         $latestProgress = $progressHistory
             ? $progressHistory->first()
             : $project->progressHistory()
-                ->orderByDesc('inspection_month_date')
+                ->orderByDesc('month_label')
                 ->orderByDesc('inspection_date')
                 ->orderByDesc('created_at')
                 ->first();
@@ -31,8 +31,7 @@ class ProjectOverviewService
 
         if ($latestProgress) {
             $latestProgressValue = $latestProgress->actual_progress_percent ?? $latestProgress->progress_percentage ?? null;
-            $latestProgressDate = $latestProgress->inspection_month_date
-                ?? $latestProgress->inspection_date
+            $latestProgressDate = $latestProgress->inspection_date
                 ?? $latestProgress->created_at;
         }
         $isCompleted = $project->status === 'Completed';

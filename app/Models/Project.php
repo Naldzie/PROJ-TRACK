@@ -146,7 +146,7 @@ class Project extends Model
     public function calculateProgressFromHistory()
     {
         $latestProgress = ProjectProgressHistory::where('project_id', $this->id)
-            ->orderBy('inspection_month_date', 'desc')
+            ->orderBy('month_label', 'desc')
             ->orderBy('inspection_date', 'desc')
             ->orderBy('created_at', 'desc')
             ->first();

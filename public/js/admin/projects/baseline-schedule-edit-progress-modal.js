@@ -79,7 +79,7 @@ function openEditProgressModal(recordId, monthLabel, isLastMonth) {
 
     document.getElementById('editProgressPercent').value = record.actual_progress_percent || record.progress_percentage || 0;
 
-    var inspDate = record.inspection_date || record.inspection_month_date || '';
+    var inspDate = record.inspection_date || '';
     // Format date for input
     if (inspDate && typeof inspDate === 'string') {
         var d = new Date(inspDate + 'T00:00:00');

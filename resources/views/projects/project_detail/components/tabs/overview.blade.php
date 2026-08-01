@@ -5,7 +5,7 @@
     $baselineSchedules = $project->baselineSchedules()->orderBy('planned_date')->get();
     $activities = $project->activities()->orderBy('month_label')->get();
     $latestProgressHistory = $project->progressHistory()
-        ->orderByDesc('inspection_month_date')
+        ->orderByDesc('month_label')
         ->orderByDesc('inspection_date')
         ->orderByDesc('created_at')
         ->first();

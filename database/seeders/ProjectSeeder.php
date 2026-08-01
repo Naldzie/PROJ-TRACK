@@ -360,7 +360,6 @@ class ProjectSeeder extends Seeder
                 'project_id' => $project->id,
                 'baseline_schedule_id' => $baseline?->id,
                 'activity_id' => $activityId,
-                'inspection_month_date' => $monthDate->format('Y-m-d'),
                 'month_label' => $monthLabel,
                 'inspection_date' => $inspectionDate->format('Y-m-d'),
                 'progress_percentage' => $progress,

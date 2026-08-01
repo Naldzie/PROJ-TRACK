@@ -17,7 +17,7 @@ class RegressionDatasetBuilder
     {
         $records = $this->normalizeMonthlyRecords(
             $project->progressHistory()
-                ->orderBy('inspection_month_date')
+                ->orderBy('month_label')
                 ->orderBy('inspection_date')
                 ->get()
         );
@@ -82,9 +82,9 @@ class RegressionDatasetBuilder
 
                 'current_month_index' => count($x),
 
-                'first_month' => optional($records->first())->inspection_month_date,
+                'first_month' => optional($records->first())->inspection_date,
 
-                'last_month' => optional($records->last())->inspection_month_date,
+                'last_month' => optional($records->last())->inspection_date,
 
             ]
 
@@ -101,9 +101,7 @@ class RegressionDatasetBuilder
     {
         return $records
             ->groupBy(function ($record) {
-                return \Carbon\Carbon::parse(
-                    $record->inspection_month_date
-                )->format('Y-m');
+                return $record->month_label;
             })
             ->map(function ($monthRecords) {
 
@@ -112,7 +110,7 @@ class RegressionDatasetBuilder
                     ->first();
 
             })
-            ->sortBy('inspection_month_date')
+            ->sortBy('month_label')
             ->values();
     }
 }
