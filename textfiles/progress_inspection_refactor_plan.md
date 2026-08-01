@@ -328,13 +328,25 @@ together with Fix H so the two paths don't conflict.
    ⚠️ Caveat (2026-08-01): must NOT apply to the LAST monthly target — the
    frontend intentionally allows its inspection_date up to 1 month after the
    target month (Fix G). Without an exception this guard breaks that grace window.
-5. **Delete rule (Fix A)** — 🔄 OPEN: UI-only vs. backend-enforced
-   `destroyProgress` guard.
-6. **Edit button (Fix A)** — 🔄 OPEN: restrict edit as well, or leave on all rows?
-7. **Record button rule (Fix C)** — 🔄 OPEN: exact definition of "next pending
-   month".
-8. **Carry Over rule (Fix C)** — 🔄 OPEN: visible on ALL months with progress, or
-   only the latest month with incomplete activities?
+5. **Delete rule (Fix A)** — ✅ DECIDED (2026-08-01): **UI + backend guard.**
+   Delete button rendered only on the latest remaining record (`$loop->first`
+   after the newest-first sort) AND `destroyProgress()` rejects any deletion that
+   is NOT the latest remaining record (422). Prevents out-of-order deletion.
+6. **Edit button (Fix A)** — ✅ DECIDED: **leave Edit on all rows** (Edit is the
+   sanctioned out-of-order-correction path; Delete is the destructive one).
+7. **Record button rule (Fix C)** — ✅ DECIDED: "next pending month" = the FIRST
+   baseline month (chronological / `planned_date` asc) that has NO progress
+   record yet. The `Record Progress` button shows only on that one month card.
+8. **Carry Over rule (Fix C)** — ✅ DECIDED: Carry Over shows only on months that
+   ALREADY have actual progress (`$latestProgress` exists), in addition to the
+   existing `$incompleteCount > 0 && $hasFutureMonths` condition.
+9. **Progress-history order (Fix F)** — ✅ DECIDED (2026-08-01): **descending
+   (newest first)** but ordered by `month_label` (then `inspection_date`, then
+   `id`), not by `created_at`. Keeps the current newest-first feel while fixing
+   the month ordering.
+10. **Prediction-history cap (Fix D)** — ✅ DECIDED: **remove the `take(6)` cap
+    entirely** — full history shown, scrollable. Summary stats (accuracy %,
+    avg variance) then span ALL months with actuals (intended).
 
 ## 5. FILES TOUCHED (preliminary)
 
@@ -441,8 +453,75 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
   new Fix D (history cap + vertical scroll), Fix E (prediction-table order guard),
   Fix F (progress-tab order guard), Fix G (last-month 1-month grace vs. the new
   month-match guard), Fix H (next-month prediction can drop below current
-  progress; also breaks completion estimation) — all still 🔄 OPEN, see §3.
+  progress; also breaks completion estimation).
+- ✅ 2026-08-01: Fixes **A–G** now have an approved implementation plan — see §7
+  (branch `fix/progress-additional-fixes`). Only **Fix H** remains fully OPEN
+  (deferred; see §3 + the v2.5 plan Option A2).
 
 ---
 
-END OF PLAN (refactor implemented 2026-08-01; fixes A–H still open)
+## 7. IMPLEMENTATION PLAN — ADDITIONAL FIXES A–G (2026-08-01)
+
+Branch: `fix/progress-additional-fixes` (from `refactor/inspection-date-consolidation`,
+which == `main` at `9d32392`). Five self-contained bundles; full suite run
+after each; merge to `main` on approval. Full suite baseline: 186 passed / 641
+assertions.
+
+### Bundle 1 — Fix B: current-progress status-card tiebreaker
+- `app/Services/AI/Regression/RegressionDatasetBuilder.php` `normalizeMonthlyRecords()`
+  (~109): `->sortByDesc('inspection_date')->first()` → real multi-key sort
+  `->sortByDesc([fn ($r) => $r->inspection_date, fn ($r) => $r->id])->first()`
+  (chaining two `sortByDesc` is stable so the second would override the first).
+  Picks the highest-id inspection when two share the same inspection date.
+- Test: public `buildDataset()` — two records same month + same `inspection_date`,
+  different `actual_progress_percent` → last `y` = the higher-id record.
+
+### Bundle 2 — Fix F + Fix A: progress-history order + latest-only delete
+- `resources/views/.../tabs/progress.blade.php` (77): replace
+  `sortByDesc('created_at')` with month-first newest-first, null-safe:
+  `sortByDesc(fn($h) => $h->month_label.'|'.($h->inspection_date ?? '0000-00-00').'|'.str_pad($h->id, 12, '0', STR_PAD_LEFT))`.
+- `progress.blade.php` (189-195): admin Delete button only on the latest row
+  (`@if(auth()->user()->role === 'admin' && $loop->first)`). Edit stays on all rows.
+- `app/Http/Controllers/ProjectProgressController.php` `destroyProgress()` (after ~222):
+  reject deletion of any record that is NOT the latest remaining — latest =
+  `orderByDesc('month_label')`, `orderByRaw('COALESCE(inspection_date,"0000-00-00") DESC')`,
+  `orderByDesc('id')` first row; else 422.
+- Tests: Jan/Feb/Mar → delete Mar 200; delete Feb 422; delete sole record 200.
+
+### Bundle 3 — Fix D + Fix E: prediction history (cap + order + scroll)
+- `app/Services/AI/AIPredictionPresenter.php` (402): remove `->take(6)` and the
+  stale "Limited to 6" comment.
+- `AIPredictionPresenter.php` (411-426): add `'month_label' => $latest->month_label`
+  to each history row, then `->sortBy('month_label')->values()` (oldest → newest).
+- `resources/views/.../tabs/ai-prediction.blade.php` (704-713): wrapper →
+  `overflow-x:auto; overflow-y:auto; max-height:320px`; sticky `<thead>`
+  (`position:sticky; top:0`), mirroring the progress-tab history table.
+- Tests: 8 distinct months → history count = 8 (not 6); out-of-order inserts →
+  output ascending by `month_label`.
+
+### Bundle 4 — Fix G: last-month 1-month grace vs. the month-match guard
+- `ProjectProgressController::recordMonthlyProgress()` (305-310): keep strict
+  month-match for all months EXCEPT the last target month (`max('month_label')`
+  in `ProjectBaselineSchedule`), which also accepts the month AFTER its
+  `month_label` (mirrors the frontend `isLastMonth` window).
+- Note: `editProgressRecord()` has no backend month-match guard today — grace
+  already applies there via the frontend; leave as-is.
+- Tests: last target (Jul) + date 2026-08-15 → 200; + 2026-09-01 → 422; non-last
+  (Jun) + 2026-07-15 → 422.
+
+### Bundle 5 — Fix C: baseline-tab button restrictions
+- `resources/views/.../tabs/baseline-schedule.blade.php`: loop is already
+  `planned_date` asc (129); add a `$nextPendingAssigned` flag so:
+  - Record Progress (263) renders only on the FIRST month with no progress
+    (`$isNextPendingMonth`).
+  - Carry Over (279) additionally requires `$latestProgress`.
+  - Edit / Manage / Delete unchanged.
+- Verification: manual (blade-only button visibility).
+
+### Docs
+- §6 CHANGES LOG updated as each bundle lands (sub-steps + suite counts); §3
+  fix statuses → DONE / MANUAL-VERIFIED; Fix H stays OPEN.
+
+---
+
+END OF PLAN (refactor implemented 2026-08-01; fixes A–G planned §7 / Fix H open)
