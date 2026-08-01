@@ -3,6 +3,8 @@
 namespace Tests\Unit\Services\AI\Regression;
 
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
+use App\Models\ProjectProgressHistory;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
@@ -492,6 +494,54 @@ class RegressionDatasetBuilderTest extends TestCase
                 $record
             );
         }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Same month + same inspection_date → highest id wins (Fix B)
+     * ------------------------------------------------------------------------
+     *
+     * When two inspections share the same month AND the same inspection date,
+     * the `inspection_date` sort is non-deterministic. The highest-id record
+     * (the later write) must be retained so the "current progress" status card
+     * never shows the older value.
+     */
+    public function test_build_dataset_picks_latest_id_when_same_month_and_same_inspection_date(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+        $monthLabel = now()->subMonth()->format('Y-m');
+        $inspectionDate = now()->subMonth()->endOfMonth()->subDays(2)->format('Y-m-d');
+
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'                       => $project->id,
+            'month_label'                      => $monthLabel,
+            'planned_date'                     => now()->subMonth()->endOfMonth()->format('Y-m-d'),
+            'planned_progress_percent'         => 20.00,
+            'original_planned_progress_percent'=> 20.00,
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $project->id,
+            'month_number'            => 1,
+            'month_label'             => $monthLabel,
+            'inspection_date'         => $inspectionDate,
+            'actual_progress_percent' => 10.00,
+            'progress_percentage'     => 10.00,
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $project->id,
+            'month_number'            => 1,
+            'month_label'             => $monthLabel,
+            'inspection_date'         => $inspectionDate,
+            'actual_progress_percent' => 60.00,
+            'progress_percentage'     => 60.00,
+        ]);
+
+        $dataset = $this->datasetBuilder->buildDataset($project);
+
+        $this->assertCount(1, $dataset['y']);
+        $this->assertEquals(60.00, $dataset['y'][0]);
     }
 
     /**

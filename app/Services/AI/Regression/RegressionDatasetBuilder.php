@@ -106,7 +106,7 @@ class RegressionDatasetBuilder
             ->map(function ($monthRecords) {
 
                 return $monthRecords
-                    ->sortByDesc('inspection_date')
+                    ->sortByDesc(['inspection_date', 'id'])
                     ->first();
 
             })
