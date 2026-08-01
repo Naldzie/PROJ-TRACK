@@ -5,6 +5,11 @@ CSPC PMU System — AI Module Version 2 (Phase 7 follow-up)
 Status: ✅ COMPLETE — v1 fix implemented & verified (commits 238f8ee, 6911f13, 98e62e0); see CHANGES LOG (§9).
         ✅ REVISION v2 (record-all) implemented, then REVERTED after project 142 testing.
         ✅ REVISION v3 (keep-latest) IMPLEMENTED & VERIFIED 2026-07-31 — commit 07c89fa; plan §10.
+        ✅ BASELINE TAB latest-inspection fix (working tree) — see CHANGES LOG §9 item 6.
+        ✅ REVISION v4 IMPLEMENTED & VERIFIED 2026-07-31 — delete prediction rows on
+           FULL progress wipe only; plan §11, CHANGES LOG §9 item 7. Pending commit & review.
+        ✅ FIX B (edit syncs inspection_month_date) + getNextPlannedProgress month-aware
+           follow-up — CHANGES LOG §9 item 8.
 
 Date: July 31, 2026
 
@@ -291,6 +296,85 @@ Logged: 2026-07-31
   controller), and a presenter history test (commit 98e62e0). Full suite
   green: 173 tests / 555 assertions.
 
+5. REVISED prediction history to keep-latest (rev 3)
+----------------------------------------------------------------------
+  Branch: fix/prediction-history-month-linking
+  Files:
+    app/Services/AI/AIPredictionService.php
+    app/Services/AI/AIPredictionPresenter.php
+    resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+    tests/Unit/Services/AI/AIPredictionServiceTest.php
+    tests/Feature/Services/AI/PredictionHistorySyncTest.php
+    tests/Unit/Services/AI/AIPredictionPresenterTest.php
+
+  Problem: Rev 2 (record-all) was reverted after real-world testing on
+  project 142 — it preserved a data-entry mistake as a permanent row
+  (id 40) and rewarded correcting it with yet another row (id 41).
+
+  Solution: One prediction row per (project, predicted month), refreshed
+  in place when the forecast changes (current_progress / predicted_next
+  differ); identical re-generation is a no-op; no create/refresh once a
+  month is fulfilled (commit 07c89fa). Presenter shows the newest row per
+  month only; blade shows a single forecast value. Full suite green:
+  176 tests / 589 assertions. Also cleaned up project 142's spurious June
+  rows (ids 39, 40).
+
+6. FIXED baseline tab showing the wrong inspection as "actual"
+----------------------------------------------------------------------
+  Branch: fix/prediction-history-month-linking (working tree, uncommitted)
+  Files:
+    resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php
+
+  Problem: Monthly target cards picked the "latest" progress record
+  ordering ONLY by inspection_month_date — which is the same (month-target
+  date) for every inspection of a month. With two inspections in May (15th
+  3%, 22nd 4%) the query non-deterministically returned the OLDER record,
+  and the card displayed inspection_month_date (target date) instead of
+  the actual inspection date.
+
+  Solution: Order by inspection_month_date desc, inspection_date desc,
+  id desc (same tiebreaker as syncPredictionHistoryActual) and display
+  inspection_date, falling back to inspection_month_date. Verified on
+  project 142: the May card now resolves to 4.00% @ May 22, 2026.
+
+7. IMPLEMENTED v4 — prune prediction rows on FULL progress wipe only
+----------------------------------------------------------------------
+  Branch: fix/prediction-history-month-linking (uncommitted)
+  Files:
+    app/Http/Controllers/ProjectProgressController.php
+    tests/Feature/Services/AI/PredictionHistorySyncTest.php
+
+  Problem: When ALL progress records for a project are deleted, every
+  prediction_history row becomes a misleading "pending" forecast with no
+  data basis and no future actual.
+
+  Solution: New private helper prunePredictionHistoryOnEmpty() deletes all
+  prediction rows only when the project's progress history is completely
+  empty (last record deleted). Partial deletes never prune — that would
+  permanently orphan the month's forecast-vs-actual accuracy link. Re-
+  entering progress rebuilds rows on the next generation. Tests added:
+  deleting-last-removes-all, deleting-partial-keeps, reentering-recreates.
+
+8. FIXED stale inspection_month_date on edit (Fix B) + month-aware follow-up
+----------------------------------------------------------------------
+  Branch: fix/prediction-history-month-linking (uncommitted)
+  Files:
+    app/Http/Controllers/ProjectProgressController.php
+    app/Services/AI/AIPredictionPresenter.php
+    tests/Feature/Services/AI/PredictionHistorySyncTest.php
+
+  Problem: editProgressRecord() updated only inspection_date, leaving
+  inspection_month_date stale — the root cause of the baseline tab
+  resolving the wrong "latest inspection". Also getNextPlannedProgress()
+  compared planned_date against the (now mid-month) inspection_month_date,
+  which could shift the next-baseline lookup after an edit.
+
+  Solution: editProgressRecord() now writes inspection_month_date =
+  inspection_date (keeps the record-time invariant both-equal true).
+  getNextPlannedProgress() now resolves the next baseline by month_label
+  (> latest month_label) instead of date comparison, matching the rest of
+  the system's month keying. Full suite green: 180 tests / 623 assertions.
+
 ---
 
 ## 10. REVISION v3 PLAN — KEEP-LATEST PREDICTION (UPDATE IN PLACE)
@@ -452,4 +536,84 @@ fulfilled month. Verify only.
    duplicates, if any, are collapsed by the presenter to the newest row.
 
 ---
-END OF PLAN (rev 3)
+## 11. REVISION v4 PLAN — DELETE PREDICTION ROWS ON FULL PROGRESS WIPE
+
+Status: ✅ IMPLEMENTED & VERIFIED 2026-07-31 — CHANGES LOG §9 item 7;
+        pending commit & review.
+
+### 11.1 Problem
+
+When ALL progress records for a project are deleted, every
+`prediction_history` row becomes a misleading "pending" forecast with no
+data basis and no future actual. The rows linger in the AI history table
+as pending months that will never be observed.
+
+Individual/partial deletes are NOT a problem: rev 3 keep-latest refreshes
+the current predicted month's row in place, dormant future rows get
+refreshed when the model reaches them, and fulfilled rows are re-filled
+with the actual when a record is re-added.
+
+### 11.2 Chosen Direction — Full Wipe Only
+
+1. **Delete ALL prediction_history rows for a project only when its
+   progress history becomes completely empty** (the LAST progress record
+   is deleted).
+2. **Never delete rows on individual/partial record deletes.** Deleting
+   them there would permanently break accuracy: `syncPredictionHistoryActual`
+   writes actuals only to EXISTING rows (no-op if missing), and
+   regeneration never re-creates a row for an already-observed month —
+   so the forecast-vs-actual link for a re-observed month would be lost.
+3. **Re-entering progress rebuilds rows naturally** — the model predicts
+   the first unobserved baseline month on the next page view.
+4. Project deletion already cascades prediction rows via the DB FK
+   (`onDelete('cascade')`) — no change needed there.
+
+### 11.3 Implementation Steps
+
+### Step 1 — Prune on empty (ProjectProgressController)
+
+File (MOD): `app/Http/Controllers/ProjectProgressController.php` — `destroyProgress()` (line ~268)
+
+- Add private helper `prunePredictionHistoryOnEmpty(Project $project)`:
+  - Non-blocking (try/catch + `Log::warning`, mirroring
+    `syncPredictionHistoryActual`).
+  - If `ProjectProgressHistory::where('project_id', $project->id)->exists()`
+    is false → `PredictionHistory::where('project_id', $project->id)->delete()`.
+- Call it right after the existing `syncPredictionHistoryActual(...)` call
+  (post-commit, keeps the main delete resilient).
+
+### Step 2 — Tests (PredictionHistorySyncTest)
+
+File (MOD): `tests/Feature/Services/AI/PredictionHistorySyncTest.php`
+
+- ADD `test_deleting_last_progress_record_removes_all_prediction_rows`
+  (seed observations → generate → delete records one by one → after the
+  last, PredictionHistory for the project is empty).
+- ADD `test_reentering_progress_recreates_prediction_rows` (after the wipe,
+  re-add observations → generate → a fresh row exists for the correct
+  predicted month).
+- ADD `test_deleting_partial_progress_keeps_prediction_rows` (delete one of
+  several records → rows intact — guards against the accuracy-loss trap).
+
+### Step 3 — Verify
+
+- `php artisan test --filter=PredictionHistorySyncTest`
+- Full suite `php artisan test` (baseline: 176).
+
+### 11.4 Files Touched
+
+- MOD `app/Http/Controllers/ProjectProgressController.php`
+- MOD `tests/Feature/Services/AI/PredictionHistorySyncTest.php`
+- No migration / schema change.
+
+### 11.5 Decision Log (v4)
+
+1. **Full-wipe-only vs per-delete pruning** — full-wipe-only. Partial
+   deletes self-heal under rev 3; deleting rows on a partial delete
+   permanently orphans the month's forecast-vs-actual accuracy link.
+2. **Full wipe = zero progress records** — the global check (no progress
+   records remain for the project), regardless of which record was last
+   deleted.
+
+---
+END OF PLAN (rev 4)

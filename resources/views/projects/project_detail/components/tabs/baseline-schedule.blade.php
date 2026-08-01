@@ -130,7 +130,11 @@
             @php
                 $activitiesCount = $project->activities()->where('month_label', $plan->month_label)->count();
                 $activitiesCompleted = $project->activities()->where('month_label', $plan->month_label)->where('is_completed', true)->count();
-                $latestProgress = $plan->progressHistory()->orderBy('inspection_month_date', 'desc')->first();
+                $latestProgress = $plan->progressHistory()
+                    ->orderBy('inspection_month_date', 'desc')
+                    ->orderBy('inspection_date', 'desc')
+                    ->orderBy('id', 'desc')
+                    ->first();
                 $collapseId = 'activities-' . $plan->id;
                 $carriedInCount = $project->activities()
                     ->where('month_label', $plan->month_label)
@@ -172,7 +176,7 @@
                                 @if($latestProgress)
                                     <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.1); padding: 6px 12px; border-radius: 6px;">
                                         <span style="font-weight: 700; font-size: 15px; color: #10b981;">{{ $latestProgress->actual_progress_percent }}%</span>
-                                        <span style="font-size: 11px; color: #6b7280;">{{ \Carbon\Carbon::parse($latestProgress->inspection_month_date)->format('M d, Y') }}</span>
+                                        <span style="font-size: 11px; color: #6b7280;">{{ \Carbon\Carbon::parse($latestProgress->inspection_date ?? $latestProgress->inspection_month_date)->format('M d, Y') }}</span>
                                     </div>
                                 @else
                                     <div style="display: inline-flex; align-items: center; gap: 6px; background: rgba(107, 114, 128, 0.1); padding: 6px 12px; border-radius: 6px;">

@@ -113,6 +113,7 @@ class ProjectProgressController extends Controller
             // Build update payload
             $updatePayload = [
                 'inspection_date' => $request->inspection_date,
+                'inspection_month_date' => $request->inspection_date,
                 'progress_percentage' => $request->progress_percentage,
                 'actual_start_date' => $request->actual_start_date,
                 'actual_end_date' => $request->actual_end_date,
@@ -266,6 +267,12 @@ class ProjectProgressController extends Controller
             // reverts to null when no progress record remains for the month
             // (e.g. a record that was entered under the wrong month).
             $this->syncPredictionHistoryActual($project, $record->month_label);
+
+            // When the LAST progress record for the project is deleted, remove
+            // every prediction row too (they become pending months that will
+            // never be observed). Partial deletes must NOT prune — that would
+            // permanently orphan the month's forecast-vs-actual accuracy link.
+            $this->prunePredictionHistoryOnEmpty($project);
 
             return response()->json([
                 'success' => true,
@@ -472,6 +479,34 @@ class ProjectProgressController extends Controller
             Log::warning('Failed to sync prediction history actual_next', [
                 'project_id' => $project->id,
                 'month_label' => $monthLabel,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Remove all prediction_history rows for a project when its progress
+     * history becomes completely empty (the LAST progress record is deleted).
+     *
+     * Never called on partial deletes — deleting rows there would permanently
+     * break accuracy: syncPredictionHistoryActual only writes actuals to
+     * EXISTING rows, and regeneration never re-creates a row for an
+     * already-observed month.
+     *
+     * Re-entering progress rebuilds rows naturally: the model predicts the
+     * first unobserved baseline month on the next page view.
+     */
+    private function prunePredictionHistoryOnEmpty(Project $project): void
+    {
+        try {
+            if (ProjectProgressHistory::where('project_id', $project->id)->exists()) {
+                return;
+            }
+
+            PredictionHistory::where('project_id', $project->id)->delete();
+        } catch (\Exception $e) {
+            Log::warning('Failed to prune prediction history on empty progress', [
+                'project_id' => $project->id,
                 'error'      => $e->getMessage(),
             ]);
         }

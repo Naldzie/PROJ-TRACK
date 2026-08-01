@@ -939,13 +939,13 @@ class AIPredictionPresenter
             ->orderBy('created_at', 'desc')
             ->first();
 
-        if (!$latestHistory || !$latestHistory->inspection_month_date) {
+        if (!$latestHistory || !$latestHistory->month_label) {
             return null;
         }
 
         $nextBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
-            ->where('planned_date', '>', $latestHistory->inspection_month_date)
-            ->orderBy('planned_date', 'asc')
+            ->where('month_label', '>', $latestHistory->month_label)
+            ->orderBy('month_label', 'asc')
             ->first();
 
         return $nextBaseline ? (float) $nextBaseline->planned_progress_percent : null;

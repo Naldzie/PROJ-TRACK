@@ -322,4 +322,117 @@ class PredictionHistorySyncTest extends TestCase
         $service->generatePrediction($project);
         $this->assertCount(1, PredictionHistory::where('project_id', $project->id)->get());
     }
+
+    /**
+     * Editing a progress record keeps inspection_month_date in sync with the
+     * new inspection_date (Fix B). They diverge only if an edit updates one
+     * but not the other, which breaks the "latest inspection" ordering on the
+     * baseline tab.
+     */
+    public function test_edit_syncs_inspection_month_date_to_inspection_date(): void
+    {
+        $project = $this->makeProject();
+        $this->seedBaselineObservations($project);
+
+        $record = ProjectProgressHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-04')
+            ->first();
+        $this->assertNotNull($record);
+
+        $editRequest = Request::create('/progress/' . $record->id, 'PUT', [
+            'inspection_date'     => '2026-04-18',
+            'progress_percentage' => 2.5,
+        ]);
+        $editResponse = app(ProjectProgressController::class)->editProgressRecord($editRequest, $project, $record->id);
+        $this->assertTrue($editResponse->getData()->success);
+
+        $record->refresh();
+        $this->assertEquals('2026-04-18', $record->inspection_date->format('Y-m-d'));
+        $this->assertEquals('2026-04-18', $record->inspection_month_date->format('Y-m-d'));
+    }
+
+    /**
+     * Deleting the LAST progress record for a project removes ALL prediction
+     * rows — they become pending months that will never be observed.
+     * (v4 fix — full wipe only.)
+     */
+    public function test_deleting_last_progress_record_removes_all_prediction_rows(): void
+    {
+        $project = $this->makeProject();
+        $this->seedBaselineObservations($project);
+        app(AIPredictionService::class)->generatePrediction($project);
+
+        $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
+
+        // Delete the first two of three records — prediction rows must remain.
+        foreach (ProjectProgressHistory::where('project_id', $project->id)->orderBy('id')->get()->take(2) as $record) {
+            $response = app(ProjectProgressController::class)->destroyProgress($project, $record->id);
+            $this->assertTrue($response->getData()->success);
+        }
+
+        $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
+
+        // Delete the LAST remaining record → full wipe → all rows pruned.
+        $last = ProjectProgressHistory::where('project_id', $project->id)->first();
+        $this->assertNotNull($last);
+
+        $response = app(ProjectProgressController::class)->destroyProgress($project, $last->id);
+        $this->assertTrue($response->getData()->success);
+
+        $this->assertEmpty(PredictionHistory::where('project_id', $project->id)->get());
+    }
+
+    /**
+     * Deleting an individual/partial progress record must NEVER prune
+     * prediction rows — that would permanently orphan the month's
+     * forecast-vs-actual accuracy link (v4 guard).
+     */
+    public function test_deleting_partial_progress_keeps_prediction_rows(): void
+    {
+        $project = $this->makeProject();
+        $this->seedBaselineObservations($project);
+        $service = app(AIPredictionService::class);
+        $service->generatePrediction($project);
+        $this->recordMonthlyProgress($project, '2026-05', 4.0, '2026-05-15');
+        $service->generatePrediction($project);
+
+        $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
+
+        // Delete one of several records → prediction rows stay intact.
+        $oneRecord = ProjectProgressHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-04')
+            ->first();
+
+        $response = app(ProjectProgressController::class)->destroyProgress($project, $oneRecord->id);
+        $this->assertTrue($response->getData()->success);
+
+        $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
+    }
+
+    /**
+     * After a full wipe, re-entering progress rebuilds prediction rows
+     * naturally on the next generation (v4 behavior).
+     */
+    public function test_reentering_progress_recreates_prediction_rows(): void
+    {
+        $project = $this->makeProject();
+        $this->seedBaselineObservations($project);
+        $service = app(AIPredictionService::class);
+        $service->generatePrediction($project);
+        $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
+
+        // Full wipe.
+        foreach (ProjectProgressHistory::where('project_id', $project->id)->get() as $record) {
+            app(ProjectProgressController::class)->destroyProgress($project, $record->id);
+        }
+
+        $this->assertEmpty(ProjectProgressHistory::where('project_id', $project->id)->get());
+        $this->assertEmpty(PredictionHistory::where('project_id', $project->id)->get());
+
+        // Re-enter observations → a fresh row is created on generation.
+        $this->seedBaselineObservations($project);
+        $service->generatePrediction($project);
+
+        $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
+    }
 }
