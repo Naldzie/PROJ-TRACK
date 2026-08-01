@@ -375,6 +375,69 @@ class PredictionHistorySyncTest extends TestCase
     }
 
     /**
+     * The LAST monthly target keeps a 1-month grace window (Fix G): its
+     * inspection may land up to one month AFTER the target month — the final
+     * inspection often only reaches 100% a few days into the next month.
+     */
+    public function test_record_allows_last_month_inspection_one_month_after(): void
+    {
+        $project = $this->makeProject(); // last target = 2026-07
+
+        $request = Request::create('/progress', 'POST', [
+            'inspection_date'         => '2026-08-15', // one month after July
+            'month_label'             => '2026-07',
+            'actual_progress_percent' => 99.0,
+            'remarks'                 => null,
+        ]);
+
+        $response = app(ProjectProgressController::class)->recordMonthlyProgress($request, $project);
+        $this->assertTrue($response->getData()->success);
+        $this->assertEquals(1, ProjectProgressHistory::where('project_id', $project->id)->count());
+    }
+
+    /**
+     * The last-month grace is exactly ONE month — a date beyond that is still
+     * rejected.
+     */
+    public function test_record_rejects_last_month_inspection_beyond_one_month_grace(): void
+    {
+        $project = $this->makeProject(); // last target = 2026-07
+
+        $request = Request::create('/progress', 'POST', [
+            'inspection_date'         => '2026-09-01', // two months after July
+            'month_label'             => '2026-07',
+            'actual_progress_percent' => 99.0,
+            'remarks'                 => null,
+        ]);
+
+        $response = app(ProjectProgressController::class)->recordMonthlyProgress($request, $project);
+        $this->assertFalse($response->getData()->success);
+        $this->assertEquals(422, $response->getStatusCode());
+        $this->assertEmpty(ProjectProgressHistory::where('project_id', $project->id)->get());
+    }
+
+    /**
+     * The grace applies ONLY to the last target — an earlier month is still
+     * strictly bound to its own month.
+     */
+    public function test_record_rejects_non_last_month_inspection_outside_its_month(): void
+    {
+        $project = $this->makeProject(); // last target = 2026-07
+
+        $request = Request::create('/progress', 'POST', [
+            'inspection_date'         => '2026-07-15', // one month after June
+            'month_label'             => '2026-06',
+            'actual_progress_percent' => 30.0,
+            'remarks'                 => null,
+        ]);
+
+        $response = app(ProjectProgressController::class)->recordMonthlyProgress($request, $project);
+        $this->assertFalse($response->getData()->success);
+        $this->assertEquals(422, $response->getStatusCode());
+        $this->assertEmpty(ProjectProgressHistory::where('project_id', $project->id)->get());
+    }
+
+    /**
      * Deleting the LAST progress record for a project removes ALL prediction
      * rows — they become pending months that will never be observed.
      * (v4 fix — full wipe only.)

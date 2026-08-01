@@ -318,7 +318,20 @@ class ProjectProgressController extends Controller
 
         // The inspection date must fall within the selected month, otherwise a
         // record could be attributed to the wrong month (out-of-order history).
-        if (\Illuminate\Support\Carbon::parse($validated['inspection_date'])->format('Y-m') !== $validated['month_label']) {
+        // EXCEPTION: the LAST monthly target may use an inspection date up to
+        // one month AFTER its month (mirrors the frontend isLastMonth grace
+        // window) — the final inspection often lands a few days into the
+        // following month.
+        $inspectionMonth = \Illuminate\Support\Carbon::parse($validated['inspection_date'])->format('Y-m');
+        $allowedMonths = [$validated['month_label']];
+
+        if ($project->baselineSchedules()->max('month_label') === $validated['month_label']) {
+            $allowedMonths[] = \Illuminate\Support\Carbon::parse($validated['month_label'] . '-01')
+                ->addMonth()
+                ->format('Y-m');
+        }
+
+        if (!in_array($inspectionMonth, $allowedMonths, true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Inspection date does not match the selected month.'
