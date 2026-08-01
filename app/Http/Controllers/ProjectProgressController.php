@@ -221,6 +221,22 @@ class ProjectProgressController extends Controller
             ->where('id', $progressId)
             ->firstOrFail();
 
+        // Only the LATEST remaining progress record can be deleted. This
+        // mirrors the UI (delete button only on the newest row) and prevents
+        // out-of-order deletion that would leave month gaps in the history.
+        $latest = ProjectProgressHistory::where('project_id', $project->id)
+            ->orderByDesc('month_label')
+            ->orderByRaw('COALESCE(inspection_date, "0000-00-00") DESC')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$latest || $latest->id !== $record->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only the latest progress record can be deleted.'
+            ], 422);
+        }
+
         DB::beginTransaction();
 
         try {

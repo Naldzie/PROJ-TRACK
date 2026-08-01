@@ -74,7 +74,7 @@
         </div>
 
         <!-- ==================== PROGRESS RECORDING HISTORY ==================== -->
-        @php $progressHistoryRecords = $project->progressHistory->sortByDesc('created_at'); @endphp
+        @php $progressHistoryRecords = $project->progressHistory->sortByDesc(fn($h) => $h->month_label . '|' . ($h->inspection_date ?? '0000-00-00') . '|' . str_pad($h->id, 12, '0', STR_PAD_LEFT)); @endphp
         @can('update', $project)
         <div style="margin-top: 40px;">
             <div style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color: white; padding: 15px 20px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
@@ -186,10 +186,10 @@
                                                 title="Edit Record">
                                             <i class="bi bi-pencil"></i>
                                         </button>
-                                        @if(auth()->user()->role === 'admin')
+                                        @if(auth()->user()->role === 'admin' && $loop->first)
                                         <button onclick="deleteProgressRecord({{ $history->id }})"
                                                 style="background: #fee2e2; color: #dc2626; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"
-                                                title="Delete Record">
+                                                title="Delete Record (only the latest record can be deleted)">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                         @endif

@@ -217,15 +217,17 @@ class PredictionHistorySyncTest extends TestCase
         $mayPrediction->refresh();
         $this->assertEquals(5.0, $mayPrediction->actual_next);
 
-        // Delete the older May record (4.0) → actual_next = 5.0 (latest remaining)
-        $deleteResponse = app(ProjectProgressController::class)->destroyProgress($project, $older->id);
+        // Delete the newest (latest) May record → actual_next reverts to the
+        // remaining older record's value (4.0). Only the latest record may be
+        // deleted (Fix A), so we must remove it before the older one.
+        $deleteResponse = app(ProjectProgressController::class)->destroyProgress($project, $newer->id);
         $this->assertTrue($deleteResponse->getData()->success);
 
         $mayPrediction->refresh();
-        $this->assertEquals(5.0, $mayPrediction->actual_next);
+        $this->assertEquals(4.0, $mayPrediction->actual_next);
 
-        // Delete the last May record → actual_next reverts to null
-        $lastResponse = app(ProjectProgressController::class)->destroyProgress($project, $newer->id);
+        // Delete the last remaining May record → actual_next reverts to null
+        $lastResponse = app(ProjectProgressController::class)->destroyProgress($project, $older->id);
         $this->assertTrue($lastResponse->getData()->success);
 
         $mayPrediction->refresh();
@@ -385,8 +387,9 @@ class PredictionHistorySyncTest extends TestCase
 
         $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
 
-        // Delete the first two of three records — prediction rows must remain.
-        foreach (ProjectProgressHistory::where('project_id', $project->id)->orderBy('id')->get()->take(2) as $record) {
+        // Delete two of three records (latest first — Fix A delete guard) —
+        // prediction rows must remain.
+        foreach (ProjectProgressHistory::where('project_id', $project->id)->orderByDesc('id')->get()->take(2) as $record) {
             $response = app(ProjectProgressController::class)->destroyProgress($project, $record->id);
             $this->assertTrue($response->getData()->success);
         }
@@ -419,9 +422,10 @@ class PredictionHistorySyncTest extends TestCase
 
         $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
 
-        // Delete one of several records → prediction rows stay intact.
+        // Delete one of several records (the latest — Fix A delete guard) →
+        // prediction rows stay intact.
         $oneRecord = ProjectProgressHistory::where('project_id', $project->id)
-            ->where('month_label', '2026-04')
+            ->where('month_label', '2026-05')
             ->first();
 
         $response = app(ProjectProgressController::class)->destroyProgress($project, $oneRecord->id);
@@ -442,8 +446,8 @@ class PredictionHistorySyncTest extends TestCase
         $service->generatePrediction($project);
         $this->assertNotEmpty(PredictionHistory::where('project_id', $project->id)->get());
 
-        // Full wipe.
-        foreach (ProjectProgressHistory::where('project_id', $project->id)->get() as $record) {
+        // Full wipe (delete latest-first to satisfy the Fix A delete guard).
+        foreach (ProjectProgressHistory::where('project_id', $project->id)->orderByDesc('id')->get() as $record) {
             app(ProjectProgressController::class)->destroyProgress($project, $record->id);
         }
 
