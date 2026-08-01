@@ -391,10 +391,9 @@ class AIPredictionPresenter
         |
         */
 
-        // Rev 4 (keep-latest): show ONE entry per month — the newest forecast
-        // row for EVERY distinct month (no cap). Rows are fetched newest-first
-        // so the grouped entry always reflects the latest forecast, then sorted
-        // explicitly oldest → newest by month_label.
+        // Rev 5 (keep-latest): show ONE entry per month — the newest forecast
+        // row for EVERY distinct month (no cap), sorted newest → oldest so the
+        // table matches the progress-history table (newest on top).
         $predictionHistory = $project->predictionHistory()
             ->whereNotNull('month_label')
             ->orderBy('month_label')
@@ -415,7 +414,7 @@ class AIPredictionPresenter
                     'pending'     => !$hasActual,
                 ];
             })
-            ->sortBy('month_label')
+            ->sortByDesc('month_label')
             ->values();
 
         $withActual      = $predictionHistory->filter(fn ($h) => !$h['pending']);

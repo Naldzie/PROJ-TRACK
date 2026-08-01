@@ -691,13 +691,13 @@ class AIPredictionPresenterTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
-     * Prediction history is explicitly ordered oldest → newest by month (Fix E)
+     * Prediction history is explicitly ordered newest → oldest by month (Fix E)
      * ------------------------------------------------------------------------
      *
-     * Even when prediction rows are inserted out of chronological order, the
-     * presenter must render the history sorted by month_label ascending.
+     * The table matches the progress-history table: the newest month appears
+     * on top, regardless of query/insertion/editing order.
      */
-    public function test_prediction_history_is_sorted_by_month_ascending(): void
+    public function test_prediction_history_is_sorted_by_month_descending(): void
     {
         $project = Project::factory()->create(['status' => 'Ongoing']);
 
@@ -735,7 +735,7 @@ class AIPredictionPresenterTest extends TestCase
 
         $monthLabels = $result['prediction_history']->pluck('month_label')->all();
         $expected = $monthLabels;
-        sort($expected);
+        rsort($expected);
 
         $this->assertSame($expected, $monthLabels);
     }

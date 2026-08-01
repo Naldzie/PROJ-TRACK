@@ -112,6 +112,7 @@ Status (2026-08-01, after §7 implementation):
 | E — prediction-history month order | ✅ DONE | AIPredictionPresenter |
 | F — progress-history month order | ✅ DONE | progress.blade.php |
 | G — last-month 1-month grace | ✅ DONE | ProjectProgressController::recordMonthlyProgress |
+| Auto-complete at 100% actual | ✅ DONE (new feature) | ProjectProgressController::autoCompleteOnFullProgress |
 | H — non-monotonic polynomial | 🔄 OPEN (deferred, see §3 + v2.5 A2) | — |
 
 ### Fix A — Restrict the delete button to the LATEST progress record only
@@ -479,8 +480,25 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
 ### ADDITIONAL FIXES A–G IMPLEMENTED (2026-08-01)
 
 Branch: `fix/progress-additional-fixes` (from main `9d32392`). Five bundles,
-committed incrementally; full suite green after each. Final suite: **195 passed /
-669 assertions** (baseline for this branch 186/641).
+committed incrementally; full suite green after each. Final suite: **198 passed /
+692 assertions** (baseline for this branch 186/641).
+
+### AUTO-COMPLETE ON 100% ACTUAL PROGRESS (2026-08-01)
+
+New feature (user request): a project is automatically set to **Completed** when
+its actual progress reaches **100%**.
+- `ProjectProgressController::autoCompleteOnFullProgress()`: recomputes max
+  `actual_progress_percent` for the project; if ≥ 100 and not already Completed,
+  sets `status = 'Completed'` and stamps `actual_end_date` with the inspection
+  date (unless already set). Non-blocking (failures logged).
+- Called from `recordMonthlyProgress()` and `editProgressRecord()` after commit;
+  both responses now include `project_status`.
+- Tests (PredictionHistorySyncTest): recording 100 → Completed + end date;
+  below 100 stays Ongoing; editing up to 100 → Completed.
+- Note: does NOT auto-revert on delete/edit-lower (a project completed this way
+  stays Completed unless an admin changes status) — deliberate, to avoid
+  reverting manually-completed projects.
+
 
 1. **Fix B** (`9576dbf`) — `RegressionDatasetBuilder::normalizeMonthlyRecords()`:
    `sortByDesc('inspection_date')` → multi-key `sortByDesc(['inspection_date',
@@ -499,13 +517,16 @@ committed incrementally; full suite green after each. Final suite: **195 passed 
      four `PredictionHistorySyncTest` delete scenarios updated to delete
      latest-first (they previously deleted out of order, which the new guard
      correctly blocks).
-3. **Fix D + E** (`d6b9db2`) — `AIPredictionPresenter.php`: removed the
-   `take(6)` cap and the `$recentMonths`/`$rawHistory` split (history now covers
-   every distinct month), each row carries `month_label`, and the result is
-   explicitly `sortBy('month_label')` (oldest → newest). `ai-prediction.blade.php`:
-   history table gets `max-height:320px; overflow-y:auto` + sticky `<thead>`.
-   Tests: `test_prediction_history_is_not_capped_at_six`,
-   `test_prediction_history_is_sorted_by_month_ascending`.
+3. **Fix D + E** (`d6b9db2`, order revised 2026-08-01) —
+   `AIPredictionPresenter.php`: removed the `take(6)` cap and the
+   `$recentMonths`/`$rawHistory` split (history now covers every distinct
+   month), each row carries `month_label`, and the result is explicitly
+   `sortByDesc('month_label')` (NEWEST → OLDEST, newest on top — matching the
+   progress-history table, per user feedback; originally ascending).
+   `ai-prediction.blade.php`: history table gets `max-height:320px;
+   overflow-y:auto` + sticky `<thead>`. Tests:
+   `test_prediction_history_is_not_capped_at_six`,
+   `test_prediction_history_is_sorted_by_month_descending`.
 4. **Fix G** (`386c304`) — `recordMonthlyProgress()` month-match guard now allows
    the LAST target month (`baselineSchedules()->max('month_label')`) an
    inspection date up to one month AFTER its month (mirrors the frontend

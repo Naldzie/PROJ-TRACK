@@ -185,6 +185,9 @@ class ProjectProgressController extends Controller
 
             DB::commit();
 
+            // Auto-complete the project when the edited actual reaches 100%
+            $this->autoCompleteOnFullProgress($project, $request->inspection_date);
+
             // Sync prediction history actual_next with the edited value
             if ($isMonthlyRecord && !empty($record->month_label)) {
                 $this->syncPredictionHistoryActual($project, $record->month_label);
@@ -195,6 +198,7 @@ class ProjectProgressController extends Controller
                 'message' => 'Progress record updated successfully',
                 'record' => $record->fresh(),
                 'audit_info' => $record->getEditHistory(),
+                'project_status' => $project->status,
             ]);
 
         } catch (\Exception $e) {
@@ -391,6 +395,9 @@ class ProjectProgressController extends Controller
 
             DB::commit();
 
+            // Auto-complete the project when actual progress reaches 100%
+            $this->autoCompleteOnFullProgress($project, $validated['inspection_date']);
+
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'Record Monthly Progress',
@@ -431,6 +438,7 @@ class ProjectProgressController extends Controller
                 'monthly_summary' => $monthlySummary,
                 'variance' => $variancePercent,
                 'status' => $this->getProgressStatus($variancePercent),
+                'project_status' => $project->status,
                 'incomplete_activities' => $incompleteActivities->isNotEmpty() && $hasFutureMonths ? $incompleteActivities->toArray() : [],
             ]);
 
@@ -458,6 +466,41 @@ class ProjectProgressController extends Controller
             return 'Ahead';
         }
         return 'OnTrack';
+    }
+
+    /**
+     * Auto-complete a project once it reaches 100% actual progress.
+     *
+     * Called by: recordMonthlyProgress(), editProgressRecord()
+     * Non-blocking: failures are logged, never break the main operation.
+     *
+     * @param Project $project
+     * @param string  $inspectionDate Inspection date that achieved 100%
+     * @return void
+     */
+    private function autoCompleteOnFullProgress(Project $project, string $inspectionDate): void
+    {
+        try {
+            $maxActual = (float) (ProjectProgressHistory::where('project_id', $project->id)
+                ->max('actual_progress_percent') ?? 0);
+
+            if ($maxActual >= 100 && $project->status !== 'Completed') {
+                $project->update([
+                    'status' => 'Completed',
+                    'actual_end_date' => $project->actual_end_date ?? $inspectionDate,
+                ]);
+
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'action' => 'Project Auto-Completed',
+                    'description' => auth()->user()->name . " marked {$project->title} as Completed (reached 100% actual progress).",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Failed to auto-complete project: ' . $e->getMessage());
+        }
     }
 
     /**

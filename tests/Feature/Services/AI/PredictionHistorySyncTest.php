@@ -438,6 +438,75 @@ class PredictionHistorySyncTest extends TestCase
     }
 
     /**
+     * Recording 100% actual progress auto-completes the project and stamps the
+     * actual end date with the inspection date.
+     */
+    public function test_project_auto_completes_when_recording_100_percent(): void
+    {
+        $project = $this->makeProject();
+
+        $this->recordMonthlyProgress($project, '2026-02', 20.0);
+        $this->recordMonthlyProgress($project, '2026-03', 40.0);
+        $this->recordMonthlyProgress($project, '2026-04', 60.0);
+        $this->recordMonthlyProgress($project, '2026-05', 80.0);
+        $this->recordMonthlyProgress($project, '2026-06', 95.0);
+        $this->recordMonthlyProgress($project, '2026-07', 100.0);
+
+        $project->refresh();
+        $this->assertEquals('Completed', $project->status);
+        $this->assertEquals('2026-07-01', $project->actual_end_date->format('Y-m-d'));
+    }
+
+    /**
+     * Any actual below 100% keeps the project Ongoing and no end date is set.
+     */
+    public function test_project_does_not_auto_complete_below_100_percent(): void
+    {
+        $project = $this->makeProject();
+
+        $this->recordMonthlyProgress($project, '2026-02', 20.0);
+        $this->recordMonthlyProgress($project, '2026-03', 40.0);
+        $this->recordMonthlyProgress($project, '2026-07', 90.0);
+
+        $project->refresh();
+        $this->assertEquals('Ongoing', $project->status);
+        $this->assertNull($project->actual_end_date);
+    }
+
+    /**
+     * Editing an existing record up to 100% also auto-completes the project.
+     */
+    public function test_project_auto_completes_when_editing_to_100_percent(): void
+    {
+        $project = $this->makeProject();
+
+        $this->recordMonthlyProgress($project, '2026-02', 20.0);
+        $this->recordMonthlyProgress($project, '2026-03', 40.0);
+        $this->recordMonthlyProgress($project, '2026-04', 60.0);
+        $this->recordMonthlyProgress($project, '2026-05', 80.0);
+        $this->recordMonthlyProgress($project, '2026-06', 90.0);
+        $this->recordMonthlyProgress($project, '2026-07', 99.0);
+
+        $project->refresh();
+        $this->assertEquals('Ongoing', $project->status);
+
+        $record = ProjectProgressHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-07')
+            ->first();
+
+        $editRequest = Request::create('/progress/' . $record->id, 'PUT', [
+            'inspection_date'     => '2026-07-25',
+            'progress_percentage' => 100.0,
+        ]);
+        $editResponse = app(ProjectProgressController::class)->editProgressRecord($editRequest, $project, $record->id);
+        $this->assertTrue($editResponse->getData()->success);
+
+        $project->refresh();
+        $this->assertEquals('Completed', $project->status);
+        $this->assertEquals('2026-07-25', $project->actual_end_date->format('Y-m-d'));
+    }
+
+    /**
      * Deleting the LAST progress record for a project removes ALL prediction
      * rows — they become pending months that will never be observed.
      * (v4 fix — full wipe only.)
