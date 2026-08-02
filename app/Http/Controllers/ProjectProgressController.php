@@ -280,7 +280,7 @@ class ProjectProgressController extends Controller
                 'action' => 'Delete Progress Record',
                 'description' => auth()->user()->name . " deleted a progress record for project: {$project->title}" . (!empty($record->month_label) ? " ({$record->month_label})" : ''),
                 'ip_address' => request()->ip(),
-                'visibility' => 'admin_only',
+                'visibility' => 'all',
             ]);
 
             DB::commit();

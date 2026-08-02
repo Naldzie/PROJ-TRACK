@@ -402,7 +402,7 @@ class ProjectExtensionController extends Controller
                 'action' => 'Delete Extension',
                 'description' => auth()->user()->name . " deleted extension #{$extensionNumber} from project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'admin_only',
+                'visibility' => 'all',
             ]);
 
             return response()->json([

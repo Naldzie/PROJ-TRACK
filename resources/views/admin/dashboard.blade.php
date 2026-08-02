@@ -235,8 +235,9 @@
 
             {{-- ── RECENT ACTIVITY LOOP ──────────────────────────────────────────
                 Data source: DashboardController@index → $recentActivities
-                Already filtered by visibility via scopeVisibleTo() — staff never
-                see 'admin_only' entries (deletions, user edits, etc).
+                Already filtered via scopeForDashboard() — staff see visibility
+                'all' entries minus routine deletions (Delete Project still
+                shown) and admin-housekeeping (Edit User, Password Change).
             ── --}}
             @forelse($recentActivities as $activity)
                 @php

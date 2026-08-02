@@ -86,6 +86,7 @@ class AttachmentController extends Controller
             // Audit the upload. project_id population on activity_logs is Phase B.
             ActivityLog::create([
                 'user_id'     => Auth::id(),
+                'project_id'  => $project->id,
                 'action'      => 'Upload Attachment',
                 'description' => Auth::user()->name . ' uploaded an attachment to project "' . $project->title . '".',
                 'ip_address'  => $request->ip(),
@@ -139,6 +140,7 @@ class AttachmentController extends Controller
 
             ActivityLog::create([
                 'user_id'     => Auth::id(),
+                'project_id'  => $attachment->project_id,
                 'action'      => 'Delete Attachment',
                 'description' => "{$actorName} deleted attachment \"{$attachmentName}\" from project \"{$projectTitle}\".",
                 'ip_address'  => request()->ip(),

@@ -74,10 +74,12 @@ class DashboardController extends Controller
         $pendingUpdateCount = $allOngoingIds->diff($projectsWithThisMonthRecord)->count();
 
         // ── RECENT ACTIVITY FEED ──────────────────────────────────────────────
-        // Latest 6 activity log entries, filtered by role via scopeVisibleTo().
-        // Staff never see 'admin_only' entries (deletions, user edits, etc).
+        // Latest 6 activity log entries. Admins see everything. Staff see
+        // visibility='all' entries minus routine deletions and admin-housekeeping
+        // (Edit User, Password Change); Delete Project is still shown. Deletions
+        // stay visible on the project-scoped Overview feed.
         $recentActivities = ActivityLog::with('user')
-            ->visibleTo(auth()->user()->role)
+            ->forDashboard(auth()->user()->role)
             ->latest()
             ->limit(6)
             ->get();

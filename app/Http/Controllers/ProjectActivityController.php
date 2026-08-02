@@ -153,7 +153,7 @@ class ProjectActivityController extends Controller
                 'action' => 'Delete Checklist Item',
                 'description' => auth()->user()->name . " deleted activity \"{$activityName}\" from project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'admin_only',
+                'visibility' => 'all',
             ]);
 
             return response()->json([

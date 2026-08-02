@@ -183,3 +183,24 @@ appears in any overview because `project_id` is nulled on deletion).
 - Plan written (this file) during combined Phase A/B frontend-testing review.
 - Client-proxy decisions recorded (§1): staff dashboard hides deletions except
   Delete Project; hides Edit User/Password Change; attachment project_id fixed.
+
+### 2026-08-02 — Implementation complete
+- `ActivityLog::scopeForDashboard($role)` added — `visibleTo` + (non-admin)
+  exclude `Delete%` except `Delete Project`, exclude `Edit User` / `Password
+  Change`. Overview feed keeps `scopeVisibleTo`, so semantics preserved.
+- `DashboardController@index` now uses `->forDashboard(role)` (`:80`).
+- Deletion visibility flipped `admin_only` → `all` for staff-visible Overview:
+  Delete Progress Record, Delete Baseline Schedule, Delete Checklist Item,
+  Delete Extension (`ProjectProgressController:283`, `BaselineScheduleController:974`,
+  `ProjectActivityController:156`, `ProjectExtensionController:405`).
+- `Delete Project` (`Project.php:439`) flipped to `all` for the staff dashboard.
+- **Latent bug fixed**: Project has no SoftDeletes, so the `deleted` event fires
+  after the row is gone — inserting `project_id => $project->id` would violate
+  the FK in MySQL and break project deletion. Now logs with `project_id => null`
+  (audit trail survives, matching `nullOnDelete`).
+- Phase A gap fixed: `Upload Attachment` / `Delete Attachment` logs now carry
+  `project_id` (`AttachmentController:87`, `:140`) so they appear in Overview.
+- Stale comment updated in `dashboard.blade.php` Recent Activity block.
+- Verification: `php -l` clean on all 9 changed files; new
+  `tests/Feature/ActivityVisibilityTest.php` (7 tests / 23 assertions) passing;
+  full suite green at **233 passed / 798 assertions**. Committed as `CIPHER`.

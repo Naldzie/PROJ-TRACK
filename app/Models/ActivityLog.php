@@ -40,4 +40,24 @@ class ActivityLog extends Model
 
         return $query->where('visibility', 'all');
     }
+
+    /**
+     * Scope for the global dashboard feed. Admins see everything; staff see
+     * visibility = 'all' entries minus routine deletions (Delete Project is
+     * still shown) and admin-housekeeping entries (Edit User, Password Change).
+     * Deletions remain visible on the project-scoped Overview feed.
+     */
+    public function scopeForDashboard($query, $role)
+    {
+        $query->visibleTo($role);
+
+        if ($role !== 'admin') {
+            $query->where(function ($q) {
+                $q->where('action', 'not like', 'Delete%')
+                  ->orWhere('action', 'Delete Project');
+            })->whereNotIn('action', ['Edit User', 'Password Change']);
+        }
+
+        return $query;
+    }
 }

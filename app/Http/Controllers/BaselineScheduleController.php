@@ -971,7 +971,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'action' => 'Delete Baseline Schedule',
                 'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'admin_only',
+                'visibility' => 'all',
             ]);
 
             DB::commit();

@@ -438,11 +438,12 @@ class Project extends Model
         \App\Models\ActivityLog::withoutEvents(function () use ($project) {
             \App\Models\ActivityLog::create([
                 'user_id' => auth()->id(),
-                'project_id' => $project->id,
+                // Project row is already gone (deleted event) — FK must be null.
+                'project_id' => null,
                 'action' => 'Delete Project',
                 'description' => auth()->user()->name . " deleted project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'admin_only',
+                'visibility' => 'all',
             ]);
         });
 
