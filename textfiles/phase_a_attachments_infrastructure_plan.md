@@ -2,7 +2,7 @@
 
 CSPC PMU System — Core Project Monitoring (core_monitoring_completion_plan.md Phase A)
 
-Status: 📋 PLANNED — no implementation yet (plan only, per user request)
+Status: ✅ IMPLEMENTED — all steps complete, tests green (2026-08-02)
 
 Branch: `core/attachments-infra` (created from `main` @ `7d27678`)
 
@@ -242,13 +242,9 @@ MODIFIED:
 
 ## 6. OPEN QUESTIONS / STILL TO RESOLVE
 
-1. Policy auto-discovery — confirm `AttachmentPolicy` resolves by convention;
-   explicit registration fallback documented in Step 3.
-2. `uploaded_by` stores user name (mirrors Document) — confirm acceptable vs
-   storing `user_id`.
-3. Whether `context` should also be enforced against attachable type (e.g.
-   `resolution` only valid on Issue) — Phase A allows all combos; a cross-field
-   rule can be added later if needed.
+1. ~~Policy auto-discovery~~ — CONFIRMED (AttachmentTest contractor 403 proves `AttachmentPolicy` resolves by convention; no explicit registration needed).
+2. `uploaded_by` stores user name (mirrors Document) — used as planned (name, falling back to email); no change.
+3. Whether `context` should also be enforced against attachable type (e.g. `resolution` only valid on Issue) — Phase A allows all combos; a cross-field rule can be added later if needed. (Open for Phase C/D.)
 
 ---
 
@@ -270,6 +266,21 @@ implemented.)
 ### 2026-08-02 — Plan created
 - Branch `core/attachments-infra` created from main @ 7d27678.
 - Plan written (this file); committed as plan-only (no implementation).
+
+### 2026-08-02 — Phase implemented (user approved "yes please")
+- Step 1: Migration `database/migrations/2026_08_02_000001_create_attachments_table.php` — schema exactly as planned (morph pair, project_id FK cascade + index, context string(20), file metadata, composite morph index).
+- Step 2: `app/Models/Attachment.php` — CONTEXTS + ALLOWED_ATTACHABLE_TYPES constants, project()/attachable() morphTo, accessors (file_url, full_path, size_kb, display_size, file_extension, fileExists()), booted() deleting hook removes the physical file, generateStoragePath() static. No file_size accessor (real column).
+- Step 3: `app/Policies/AttachmentPolicy.php` — view→delegates to project view; create/delete→admin+staff. Auto-discovery CONFIRMED via AttachmentTest (contractor 403 from `Gate::can` on policy methods).
+- Step 4: `app/Http/Controllers/AttachmentController.php` — upload() (validate incl. max:20480 + mimes:jpg,jpeg,png,pdf; policy 403; cross-project attachable 422; storeAs public; Attachment::create with stored file_size + uploaded_by; ActivityLog 'Upload Attachment'; JSON payload incl. display_size), delete() (policy 403; ActivityLog 'Delete Attachment'), view() (inline Content-Disposition), download().
+- Step 5: `routes/web.php` — ATTACHMENT ROUTES blocks: staff (upload/destroy/view/download), contractor (view/download READ-ONLY), admin (all four). `route:list --name=attachment` shows all 10.
+- Step 6: `tests/Feature/AttachmentTest.php` — 13 tests (43 assertions), direct controller invocation per codebase convention.
+- Step 7: Verification — `php -l` clean on all new files; `php artisan test --filter=AttachmentTest` 13/13; full suite 211 passed / 735 assertions (baseline 198/692 — no regressions).
+
+### 2026-08-02 — Environment findings (deviations from plan)
+1. **Route-based authenticated requests do NOT authenticate in this test environment** — the `auth` middleware reports `401 Unauthenticated` even after `actingAs()` (confirmed via a throwaway GET `/admin/dashboard` and a JSON request returning `{"message":"Unauthenticated."}`). This is a PRE-EXISTING repo-wide condition — every existing test (ProgressDeleteGuardTest, PredictionHistorySyncTest) invokes controllers directly for this reason. AttachmentTest therefore follows that convention: direct controller calls; only the guest-redirect assertion uses a real route.
+2. **GD extension is not installed** — `UploadedFile::fake()->image()` throws `LogicException: GD extension is not installed.`; replaced with `UploadedFile::fake()->createWithContent(...)` using real JPEG magic bytes so the content-based `mimes` rule passes.
+3. **`User::factory()` unusable** — the `users` table has no `email_verified_at` column, but the factory sets it; users are created via `User::create([...])` exactly as the reference test does.
+4. **Role-scoped routes require the matching actor role** — posting to `staff.*` as an admin redirects (RoleMiddleware → unauthorized), so tests route by actor role; contractor policy guards are exercised via direct controller calls.
 
 ---
 

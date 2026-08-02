@@ -25,6 +25,7 @@ use App\Http\Controllers\staff\StaffWarrantyController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Admin\EmailController as AdminEmailController;
 use App\Http\Controllers\Admin\RatingController;
@@ -219,6 +220,19 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/documents/{document}/view', [DocumentController::class, 'view'])
         ->name('staff.documents.view');
 
+    // === ATTACHMENT ROUTES ===
+    Route::post('/attachments/upload', [AttachmentController::class, 'upload'])
+        ->name('staff.attachments.upload');
+
+    Route::delete('/attachments/{attachment}', [AttachmentController::class, 'delete'])
+        ->name('staff.attachments.destroy');
+
+    Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
+        ->name('staff.attachments.view');
+
+    Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
+        ->name('staff.attachments.download');
+
 });
 
 /*
@@ -292,6 +306,13 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
  
     Route::get('/documents/{document}/download', [DocumentController::class, 'download'])
         ->name('contractor.documents.download');
+
+    // === ATTACHMENT ROUTES (READ-ONLY) ===
+    Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
+        ->name('contractor.attachments.view');
+
+    Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
+        ->name('contractor.attachments.download');
 
 });
 
@@ -490,6 +511,19 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/documents/{document}/view', [DocumentController::class, 'view'])
         ->name('admin.documents.view');
+
+    // === ATTACHMENT ROUTES ===
+    Route::post('/attachments/upload', [AttachmentController::class, 'upload'])
+        ->name('admin.attachments.upload');
+
+    Route::delete('/attachments/{attachment}', [AttachmentController::class, 'delete'])
+        ->name('admin.attachments.destroy');
+
+    Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
+        ->name('admin.attachments.view');
+
+    Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
+        ->name('admin.attachments.download');
 
     // === DOCUMENT TYPE MANAGEMENT ROUTES ===
     Route::get('/document-types/all', [DocumentTypeController::class, 'getAllForManagement'])
