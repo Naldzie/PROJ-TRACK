@@ -309,6 +309,15 @@ NOT touched:
 - Step 8: Verification — `php -l` clean on all changed PHP files; `php artisan test --filter=IssueLifecycleTest` 12/12; full suite 245 passed / 858 assertions (baseline 233/798 — no regressions); `php artisan view:cache` compiles all Blade templates.
 - Deviations from plan (documented): (a) NO extra `@include('components.document-viewer-modal')` on the issues tab — the modal is already on the page via `documents.blade.php:167` (all tabs render together on `project_detail.blade.php`), so adding a second include would duplicate the `documentViewerModal` element ID. (b) Baseline dropdown is server-rendered from `$project->baselineSchedules()` via a `@php` block (available since the include has `$project` in scope). (c) `resolution_notes` validation uses `required_if` on BOTH `Resolved` and `Closed` (chained) rather than a single conditional.
 
+### 2026-08-02 — Adjustment: baseline month display format (user request)
+- User asked the baseline month selection to use "month name-YYYY" (e.g. "June-2026") instead of the raw `Y-m` label.
+- `app/Models/ProjectBaselineSchedule.php` — added `month_display` accessor (`Carbon::createFromFormat` on `Y-m`/`Y-m-d` → `F-Y`, with parse fallback).
+- `issues_modal.blade.php` — add + edit dropdown options now render `{{ $baseline->month_display }}`; issue cards display `issue.month_display`.
+- `issues.blade.php` — table Month column displays `issue.month_display || issue.month_label`.
+- `IssueController::getIssues()` — JSON adds `month_display` (raw `month_label` kept as the canonical identifier).
+- `IssueLifecycleTest` — asserts `month_display === 'June-2026'` for a `2026-06` baseline. Full suite 245 passed / 859 assertions.
+- NOTE: `month_label` column/value is untouched app-wide — only display formatting changes; the existing `ProjectOverviewService::formatMonthLabelForDisplay` (`M Y`) is NOT used here since the requested format is full month name (`F-Y`).
+
 ---
 
 END OF PHASE C PLAN

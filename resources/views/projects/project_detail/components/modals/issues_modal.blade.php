@@ -73,7 +73,7 @@
                                     <select class="form-control" id="issueBaselineId" name="baseline_schedule_id">
                                         <option value="">-- Select Baseline Month (Optional) --</option>
                                         @foreach($baselines as $baseline)
-                                            <option value="{{ $baseline->id }}">{{ $baseline->month_label }}</option>
+                                            <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
                                         @endforeach
                                     </select>
                                     <small class="text-muted">Link the issue to the baseline month it belongs to</small>
@@ -86,12 +86,12 @@
                                 <div class="mb-3">
                                     <label for="issueAttachmentFiles" class="form-label">Issue Evidence Files</label>
                                     <input type="file" class="form-control" id="issueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf — max 20 MB each)</small>
+                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf â€” max 20 MB each)</small>
                                 </div>
                                 <div class="mb-3" id="issueResolutionFilesWrap" style="display: none;">
                                     <label for="resolutionAttachmentFiles" class="form-label">Resolution Evidence Files</label>
                                     <input type="file" class="form-control" id="resolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Proof of resolution (jpg, png, pdf — max 20 MB each)</small>
+                                    <small class="text-muted">Proof of resolution (jpg, png, pdf â€” max 20 MB each)</small>
                                 </div>
                                 <button type="submit" class="btn btn-primary w-100">
                                     <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
@@ -186,7 +186,7 @@
                         <select class="form-control" id="editIssueBaselineId" name="baseline_schedule_id">
                             <option value="">-- Select Baseline Month (Optional) --</option>
                             @foreach($baselines as $baseline)
-                                <option value="{{ $baseline->id }}">{{ $baseline->month_label }}</option>
+                                <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -198,7 +198,7 @@
                     <div class="mb-3">
                         <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
                         <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Existing attachments are shown on the issue card.</small>
+                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf â€” max 20 MB each). Existing attachments are shown on the issue card.</small>
                     </div>
                     <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
                         <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
@@ -413,7 +413,7 @@ function displayIssues(issues) {
                         <div>
                             ${issue.issue_type ? `<span class="badge bg-info issue-badge me-1">${escapeHtml(issue.issue_type)}</span>` : ''}
                             ${issue.severity ? `<span class="badge ${severityBadgeClass(issue.severity)} issue-badge me-1">${escapeHtml(issue.severity)}</span>` : ''}
-                            ${issue.month_label ? `<span class="issue-meta-line me-2"><i class="bi bi-calendar-month"></i> ${escapeHtml(issue.month_label)}</span>` : ''}
+                            ${issue.month_display ? `<span class="issue-meta-line me-2"><i class="bi bi-calendar-month"></i> ${escapeHtml(issue.month_display)}</span>` : ''}
                             <small class="text-muted ms-1">
                                 <i class="bi bi-calendar-event"></i> ${issue.created_at}
                             </small>

@@ -84,4 +84,27 @@ class ProjectBaselineSchedule extends Model
     {
         return $this->planned_date->format('Y-m');
     }
+
+    /**
+     * Human-readable month label, e.g. "June-2026" (from a "Y-m" month_label).
+     */
+    public function getMonthDisplayAttribute()
+    {
+        if (empty($this->month_label)) {
+            return 'N/A';
+        }
+
+        foreach (['Y-m', 'Y-m-d'] as $format) {
+            try {
+                return \Illuminate\Support\Carbon::createFromFormat($format, $this->month_label)->format('F-Y');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        try {
+            return \Illuminate\Support\Carbon::parse($this->month_label)->format('F-Y');
+        } catch (\Throwable $e) {
+            return $this->month_label;
+        }
+    }
 }

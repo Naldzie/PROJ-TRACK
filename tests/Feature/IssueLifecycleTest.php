@@ -309,6 +309,7 @@ class IssueLifecycleTest extends TestCase
         $this->assertEquals('Fixed and verified.', $first->resolution_notes);
         $this->assertEquals($baseline->id, $first->baseline_schedule_id);
         $this->assertEquals($baseline->month_label, $first->month_label);
+        $this->assertEquals('June-2026', $first->month_display);
         $this->assertIsArray($first->attachments);
         $this->assertCount(1, $first->attachments);
         $this->assertEquals('issue', $first->attachments[0]->context);

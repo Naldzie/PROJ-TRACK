@@ -188,7 +188,7 @@ function displayTabIssues(issues) {
                             </span>
                         </td>
                         <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">
-                            ${issue.month_label ? escapeHtml(issue.month_label) : '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
+                            ${issue.month_display || issue.month_label ? escapeHtml(issue.month_display || issue.month_label) : '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
                         </td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 220px;">
                             ${issue.status === 'Resolved' || issue.status === 'Closed'

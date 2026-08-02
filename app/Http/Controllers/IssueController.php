@@ -44,6 +44,7 @@ class IssueController extends Controller
                         'resolution_notes' => $issue->resolution_notes,
                         'baseline_schedule_id' => $issue->baseline_schedule_id,
                         'month_label' => $issue->baselineSchedule?->month_label,
+                        'month_display' => $issue->baselineSchedule?->month_display,
                         'created_at' => $issue->created_at->format('M d, Y'),
                         'updated_at' => $issue->updated_at->format('M d, Y'),
                         'attachments' => $issue->attachments->map(function ($attachment) {
