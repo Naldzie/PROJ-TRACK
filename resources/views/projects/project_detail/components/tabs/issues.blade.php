@@ -162,7 +162,10 @@ function displayTabIssues(issues) {
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Type</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Severity</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Status</th>
+                    <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Month</th>
+                    <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Resolution</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Created Date</th>
+                    <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Attachments</th>
                     @if(in_array(auth()->user()->role, ['admin', 'staff']))
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Actions</th>
                     @endif
@@ -185,11 +188,23 @@ function displayTabIssues(issues) {
                             </span>
                         </td>
                         <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">
+                            ${issue.month_label ? escapeHtml(issue.month_label) : '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
+                        </td>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 220px;">
+                            ${issue.status === 'Resolved' || issue.status === 'Closed'
+                                ? `<div><i class="bi bi-check-circle" style="color: #15803d; margin-right: 4px;"></i>${issue.resolved_at ? escapeHtml(issue.resolved_at) : ''}</div>
+                                   ${issue.resolution_notes ? `<div style="font-size: 12px; color: #6b7280; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(issue.resolution_notes)}">${escapeHtml(issue.resolution_notes)}</div>` : ''}`
+                                : '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
+                        </td>
+                        <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">
                             <i class="bi bi-calendar-event" style="margin-right: 4px;"></i>${issue.created_at}
+                        </td>
+                        <td style="padding: 12px 16px; text-align: center;">
+                            ${renderAttachmentChips(issue.attachments) || '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
                         </td>
                         @if(in_array(auth()->user()->role, ['admin', 'staff']))
                         <td style="padding: 12px 16px; text-align: center;">
-                            <button class="btn btn-sm" onclick="openEditIssueModal(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}')" title="Edit"
+                            <button class="btn btn-sm" onclick="openEditIssueModal(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}', '${issue.baseline_schedule_id || ''}', '${escapeHtml(issue.resolution_notes || '')}')" title="Edit"
                                     style="background: #dbeafe; color: #0369a1; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 4px; transition: all 0.2s;"
                                     onmouseover="this.style.background='#bae6fd'; this.style.transform='scale(1.05)';"
                                     onmouseout="this.style.background='#dbeafe'; this.style.transform='scale(1)';">
@@ -243,13 +258,21 @@ function severityTabStyle(severity) {
     return styles[severity] || 'background: #e5e7eb; color: #374151;';
 }
 
-function openEditIssueModal(id, name, description, status, issueType, severity) {
+function openEditIssueModal(id, name, description, status, issueType, severity, baselineScheduleId, resolutionNotes) {
     document.getElementById('editIssueId').value = id;
     document.getElementById('editIssueName').value = name;
     document.getElementById('editIssueDescription').value = description;
     document.getElementById('editIssueStatus').value = status;
     document.getElementById('editIssueType').value = issueType || '';
     document.getElementById('editIssueSeverity').value = severity || '';
+    document.getElementById('editIssueBaselineId').value = baselineScheduleId || '';
+    document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
+    document.getElementById('editIssueAttachmentFiles').value = '';
+    document.getElementById('editResolutionAttachmentFiles').value = '';
+    
+    if (typeof toggleIssueResolutionFields === 'function') {
+        toggleIssueResolutionFields(status);
+    }
     
     const editModal = new bootstrap.Modal(document.getElementById('editIssueModal'));
     editModal.show();
@@ -321,53 +344,4 @@ function showErrorMessage(message) {
         alert('Error: ' + message);
     }
 }
-
-// Override modal form submission to refresh tab
-const originalEditFormSubmit = document.getElementById('editIssueForm')?.addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    const issueId = document.getElementById('editIssueId').value;
-    const apiUrl = getIssuesApiUrl(issueId);
-    
-    const jsonData = {
-        issue_name: document.getElementById('editIssueName').value,
-        description: document.getElementById('editIssueDescription').value,
-        status: document.getElementById('editIssueStatus').value,
-        issue_type: document.getElementById('editIssueType').value || null,
-        severity: document.getElementById('editIssueSeverity').value || null
-    };
-    
-    fetch(apiUrl, {
-        method: 'PUT',
-        headers: {
-            'X-CSRF-TOKEN': window.csrfToken,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: JSON.stringify(jsonData)
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                console.error('Validation errors:', data);
-                throw {status: response.status, data: data};
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('editIssueModal')).hide();
-            loadTabIssues();
-            showSuccessMessage('Issue updated successfully');
-        } else {
-            showErrorMessage(data.message || 'Error updating issue');
-        }
-    })
-    .catch(error => {
-        console.error('Error updating issue:', error);
-        showErrorMessage('Error updating issue');
-    });
-});
 </script>

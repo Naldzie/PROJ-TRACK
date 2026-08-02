@@ -32,6 +32,8 @@ class Issue extends Model
         'issue_type',
         'severity',
         'resolved_at',
+        'baseline_schedule_id',
+        'resolution_notes',
     ];
 
     protected $casts = [
@@ -50,12 +52,36 @@ class Issue extends Model
         return $this->belongsTo(Project::class);
     }
 
+    /**
+     * The baseline schedule month this issue is linked to (optional)
+     */
+    public function baselineSchedule()
+    {
+        return $this->belongsTo(ProjectBaselineSchedule::class);
+    }
+
+    /**
+     * Evidence files attached to this issue (issue photo/document or resolution proof)
+     */
+    public function attachments()
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
+
     // ==================== SCOPES ====================
 
     /**
      * Scope to issues that are not yet resolved (Open or In Progress)
      */
     public function scopeUnresolved($query)
+    {
+        return $query->whereIn('status', ['Open', 'In Progress']);
+    }
+
+    /**
+     * Scope to open issues (Open or In Progress) — alias for the Overview card
+     */
+    public function scopeOpen($query)
     {
         return $query->whereIn('status', ['Open', 'In Progress']);
     }

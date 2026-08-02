@@ -1,4 +1,7 @@
 <!-- ISSUES MODAL -->
+@php
+    $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
+@endphp
 <div class="modal fade" id="issuesModal" tabindex="-1" aria-labelledby="issuesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -64,6 +67,31 @@
                                             <option value="Critical">Critical</option>
                                         </select>
                                     </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="issueBaselineId" class="form-label">Baseline Month</label>
+                                    <select class="form-control" id="issueBaselineId" name="baseline_schedule_id">
+                                        <option value="">-- Select Baseline Month (Optional) --</option>
+                                        @foreach($baselines as $baseline)
+                                            <option value="{{ $baseline->id }}">{{ $baseline->month_label }}</option>
+                                        @endforeach
+                                    </select>
+                                    <small class="text-muted">Link the issue to the baseline month it belongs to</small>
+                                </div>
+                                <div class="mb-3" id="issueResolutionNotesWrap" style="display: none;">
+                                    <label for="issueResolutionNotes" class="form-label">Resolution Notes *</label>
+                                    <textarea class="form-control" id="issueResolutionNotes" name="resolution_notes" rows="3"
+                                              placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="issueAttachmentFiles" class="form-label">Issue Evidence Files</label>
+                                    <input type="file" class="form-control" id="issueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
+                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf — max 20 MB each)</small>
+                                </div>
+                                <div class="mb-3" id="issueResolutionFilesWrap" style="display: none;">
+                                    <label for="resolutionAttachmentFiles" class="form-label">Resolution Evidence Files</label>
+                                    <input type="file" class="form-control" id="resolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                                    <small class="text-muted">Proof of resolution (jpg, png, pdf — max 20 MB each)</small>
                                 </div>
                                 <button type="submit" class="btn btn-primary w-100">
                                     <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
@@ -153,6 +181,29 @@
                             </select>
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label for="editIssueBaselineId" class="form-label">Baseline Month</label>
+                        <select class="form-control" id="editIssueBaselineId" name="baseline_schedule_id">
+                            <option value="">-- Select Baseline Month (Optional) --</option>
+                            @foreach($baselines as $baseline)
+                                <option value="{{ $baseline->id }}">{{ $baseline->month_label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="mb-3" id="editIssueResolutionNotesWrap" style="display: none;">
+                        <label for="editIssueResolutionNotes" class="form-label">Resolution Notes *</label>
+                        <textarea class="form-control" id="editIssueResolutionNotes" name="resolution_notes" rows="3"
+                                  placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
+                        <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
+                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Existing attachments are shown on the issue card.</small>
+                    </div>
+                    <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
+                        <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
+                        <input type="file" class="form-control" id="editResolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                    </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-check-circle" style="margin-right: 6px;"></i>
@@ -200,6 +251,42 @@
     padding: 0.4rem 0.6rem;
     font-weight: 600;
 }
+
+.issue-meta-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #6b7280;
+    font-size: 0.8rem;
+}
+
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #fff;
+    border: 1px solid #dbeafe;
+    color: #0369a1;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.attachment-chip:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.attachment-chip i {
+    font-size: 0.8rem;
+}
 </style>
 
 <script>
@@ -211,7 +298,27 @@ document.addEventListener('DOMContentLoaded', function() {
             loadIssues();
         });
     }
+
+    // Toggle resolution fields when status changes (add + edit forms)
+    document.getElementById('issueStatus')?.addEventListener('change', function() {
+        toggleIssueResolutionFields(this.value);
+    });
+    document.getElementById('editIssueStatus')?.addEventListener('change', function() {
+        toggleIssueResolutionFields(this.value);
+    });
 });
+
+window._issueAttachments = window._issueAttachments || {};
+
+function toggleIssueResolutionFields(status) {
+    const show = status === 'Resolved' || status === 'Closed';
+    ['', 'edit'].forEach(prefix => {
+        const notesWrap = document.getElementById(prefix + 'IssueResolutionNotesWrap');
+        const filesWrap = document.getElementById(prefix + 'IssueResolutionFilesWrap');
+        if (notesWrap) notesWrap.style.display = show ? '' : 'none';
+        if (filesWrap) filesWrap.style.display = show ? '' : 'none';
+    });
+}
 
 function loadIssues() {
     const projectId = window.projectId;
@@ -231,6 +338,49 @@ function loadIssues() {
         }
     })
     .catch(error => console.error('Error loading issues:', error));
+}
+
+function getAttachmentIcon(filename) {
+    const ext = (filename || '').split('.').pop().toLowerCase();
+    const map = {
+        pdf: 'bi-file-earmark-pdf',
+        jpg: 'bi-file-earmark-image',
+        jpeg: 'bi-file-earmark-image',
+        png: 'bi-file-earmark-image',
+        gif: 'bi-file-earmark-image',
+        webp: 'bi-file-earmark-image',
+        svg: 'bi-file-earmark-image'
+    };
+    return map[ext] || 'bi-file-earmark-text';
+}
+
+function renderAttachmentChips(attachments) {
+    return (attachments || []).map(att => {
+        window._issueAttachments[att.id] = att;
+        return `
+            <span class="attachment-chip me-1 mb-1" title="${escapeHtml(att.original_name)}"
+                  onclick="openIssueAttachmentById(${att.id})">
+                <i class="bi ${getAttachmentIcon(att.original_name)}"></i>
+                <span>${escapeHtml(att.original_name)}</span>
+            </span>
+        `;
+    }).join('');
+}
+
+function openIssueAttachmentById(id) {
+    const att = window._issueAttachments[id];
+    if (!att || typeof openDocumentViewer !== 'function') return;
+    const role = window.userRole;
+    openDocumentViewer({
+        id: att.id,
+        name: att.original_name,
+        type: att.context === 'resolution' ? 'Resolution Proof' : 'Issue Evidence',
+        size: att.display_size,
+        uploadedBy: att.uploaded_by,
+        uploadedAt: att.created_at,
+        viewUrl: `/${role}/attachments/${att.id}/view`,
+        downloadUrl: `/${role}/attachments/${att.id}/download`
+    });
 }
 
 function displayIssues(issues) {
@@ -263,16 +413,28 @@ function displayIssues(issues) {
                         <div>
                             ${issue.issue_type ? `<span class="badge bg-info issue-badge me-1">${escapeHtml(issue.issue_type)}</span>` : ''}
                             ${issue.severity ? `<span class="badge ${severityBadgeClass(issue.severity)} issue-badge me-1">${escapeHtml(issue.severity)}</span>` : ''}
+                            ${issue.month_label ? `<span class="issue-meta-line me-2"><i class="bi bi-calendar-month"></i> ${escapeHtml(issue.month_label)}</span>` : ''}
                             <small class="text-muted ms-1">
                                 <i class="bi bi-calendar-event"></i> ${issue.created_at}
                             </small>
                         </div>
                         <span class="badge bg-${statusColors[issue.status]} issue-badge">${issue.status}</span>
                     </div>
+                    ${issue.status === 'Resolved' || issue.status === 'Closed' ? `
+                        <div class="mt-2" style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 10px;">
+                            <small style="font-weight: 600; color: #166534;">
+                                <i class="bi bi-check-circle"></i> Resolved ${issue.resolved_at ? 'on ' + escapeHtml(issue.resolved_at) : ''}
+                            </small>
+                            ${issue.resolution_notes ? `<p class="mb-0 mt-1 text-muted" style="font-size: 0.82rem;">${escapeHtml(issue.resolution_notes)}</p>` : ''}
+                        </div>
+                    ` : ''}
+                    ${renderAttachmentChips(issue.attachments) ? `
+                        <div class="mt-2">${renderAttachmentChips(issue.attachments)}</div>
+                    ` : ''}
                 </div>
                     @if(in_array(auth()->user()->role, ['admin', 'staff']))
                 <div class="ms-2" style="flex-shrink: 0;">
-                    <button class="btn btn-sm btn-outline-primary" onclick="editIssue(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}')">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editIssue(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}', '${issue.baseline_schedule_id || ''}', '${escapeHtml(issue.resolution_notes || '')}')">
                         <i class="bi bi-pencil"></i>
                     </button>
                     <button class="btn btn-sm btn-outline-danger" onclick="deleteIssue(${issue.id})">
@@ -285,13 +447,19 @@ function displayIssues(issues) {
     `).join('');
 }
 
-function editIssue(id, name, description, status, issueType, severity) {
+function editIssue(id, name, description, status, issueType, severity, baselineScheduleId, resolutionNotes) {
     document.getElementById('editIssueId').value = id;
     document.getElementById('editIssueName').value = name;
     document.getElementById('editIssueDescription').value = description;
     document.getElementById('editIssueStatus').value = status;
     document.getElementById('editIssueType').value = issueType || '';
     document.getElementById('editIssueSeverity').value = severity || '';
+    document.getElementById('editIssueBaselineId').value = baselineScheduleId || '';
+    document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
+    document.getElementById('editIssueAttachmentFiles').value = '';
+    document.getElementById('editResolutionAttachmentFiles').value = '';
+    
+    toggleIssueResolutionFields(status);
     
     const editModal = new bootstrap.Modal(document.getElementById('editIssueModal'));
     editModal.show();
@@ -338,12 +506,55 @@ function deleteIssue(id) {
     }
 }
 
+function uploadIssueAttachment(issueId, context, file) {
+    const fd = new FormData();
+    fd.append('project_id', window.projectId);
+    fd.append('attachable_type', 'App\\Models\\Issue');
+    fd.append('attachable_id', issueId);
+    fd.append('context', context);
+    fd.append('file', file);
+    const role = window.userRole;
+    return fetch(`/${role}/attachments/upload`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': window.csrfToken,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: fd
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            console.error('Attachment upload failed (' + context + '):', data.message);
+        }
+        return data;
+    })
+    .catch(error => {
+        console.error('Attachment upload error (' + context + '):', error);
+    });
+}
+
+function uploadIssueFiles(issueId, issueFiles, resolutionFiles) {
+    const promises = [];
+    (issueFiles || []).forEach(file => promises.push(uploadIssueAttachment(issueId, 'issue', file)));
+    (resolutionFiles || []).forEach(file => promises.push(uploadIssueAttachment(issueId, 'resolution', file)));
+    return Promise.all(promises);
+}
+
 // Form submission
 @if(in_array(auth()->user()->role, ['admin', 'staff']))
 document.getElementById('addIssueForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
     
+    const issueFiles = Array.from(document.getElementById('issueAttachmentFiles')?.files || []);
+    const resolutionFiles = Array.from(document.getElementById('resolutionAttachmentFiles')?.files || []);
+    
     const formData = new FormData(this);
+    // Files are uploaded after issue creation (attachable_id requires the new issue id)
+    formData.delete('issue_attachment_files[]');
+    formData.delete('resolution_attachment_files[]');
+    
     const apiUrl = getIssuesApiUrl();
     
     fetch(apiUrl, {
@@ -366,20 +577,28 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
     })
     .then(data => {
         if (data.success) {
-            this.reset();
-            loadIssues();
-            // Also refresh the issues tab
-            if (typeof loadTabIssues === 'function') {
-                loadTabIssues();
-            }
-            showSuccessMessage('Issue created successfully');
-        } else {
-            showErrorMessage(data.message || 'Error creating issue');
+            return uploadIssueFiles(data.issue.id, issueFiles, resolutionFiles).then(() => data);
         }
+        throw {status: 400, data: data};
+    })
+    .then(data => {
+        this.reset();
+        toggleIssueResolutionFields('Open');
+        loadIssues();
+        // Also refresh the issues tab
+        if (typeof loadTabIssues === 'function') {
+            loadTabIssues();
+        }
+        showSuccessMessage('Issue created successfully');
     })
     .catch(error => {
         console.error('Error creating issue:', error);
-        showErrorMessage('Error creating issue');
+        if (error && error.data && error.data.errors) {
+            const firstError = Object.values(error.data.errors)[0];
+            showErrorMessage(firstError ? firstError[0] : 'Error creating issue');
+        } else {
+            showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error creating issue');
+        }
     });
 });
 
@@ -387,12 +606,17 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     e.preventDefault();
     
     const issueId = document.getElementById('editIssueId').value;
+    const issueFiles = Array.from(document.getElementById('editIssueAttachmentFiles')?.files || []);
+    const resolutionFiles = Array.from(document.getElementById('editResolutionAttachmentFiles')?.files || []);
+    
     const jsonData = {
         issue_name: document.getElementById('editIssueName').value,
         description: document.getElementById('editIssueDescription').value,
         status: document.getElementById('editIssueStatus').value,
         issue_type: document.getElementById('editIssueType').value || null,
-        severity: document.getElementById('editIssueSeverity').value || null
+        severity: document.getElementById('editIssueSeverity').value || null,
+        baseline_schedule_id: document.getElementById('editIssueBaselineId').value || null,
+        resolution_notes: document.getElementById('editIssueResolutionNotes').value || null
     };
     const apiUrl = getIssuesApiUrl(issueId);
     
@@ -417,20 +641,27 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     })
     .then(data => {
         if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('editIssueModal')).hide();
-            loadIssues();
-            // Also refresh the issues tab
-            if (typeof loadTabIssues === 'function') {
-                loadTabIssues();
-            }
-            showSuccessMessage('Issue updated successfully');
-        } else {
-            showErrorMessage(data.message || 'Error updating issue');
+            return uploadIssueFiles(issueId, issueFiles, resolutionFiles).then(() => data);
         }
+        throw {status: 400, data: data};
+    })
+    .then(data => {
+        bootstrap.Modal.getInstance(document.getElementById('editIssueModal')).hide();
+        loadIssues();
+        // Also refresh the issues tab
+        if (typeof loadTabIssues === 'function') {
+            loadTabIssues();
+        }
+        showSuccessMessage('Issue updated successfully');
     })
     .catch(error => {
         console.error('Error updating issue:', error);
-        showErrorMessage('Error updating issue');
+        if (error && error.data && error.data.errors) {
+            const firstError = Object.values(error.data.errors)[0];
+            showErrorMessage(firstError ? firstError[0] : 'Error updating issue');
+        } else {
+            showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error updating issue');
+        }
     });
 });
 @endif

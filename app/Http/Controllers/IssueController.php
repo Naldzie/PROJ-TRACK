@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Issue;
+use App\Models\ProjectBaselineSchedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -27,18 +29,36 @@ class IssueController extends Controller
     public function getIssues(Project $project)
     {
         try {
-            $issues = $project->issues()->get()->map(function($issue) {
-                return [
-                    'id' => $issue->id,
-                    'issue_name' => $issue->issue_name,
-                    'description' => $issue->description,
-                    'status' => $issue->status,
-                    'issue_type' => $issue->issue_type,
-                    'severity' => $issue->severity,
-                    'created_at' => $issue->created_at->format('M d, Y'),
-                    'updated_at' => $issue->updated_at->format('M d, Y'),
-                ];
-            });
+            $issues = $project->issues()
+                ->with(['baselineSchedule', 'attachments'])
+                ->get()
+                ->map(function($issue) {
+                    return [
+                        'id' => $issue->id,
+                        'issue_name' => $issue->issue_name,
+                        'description' => $issue->description,
+                        'status' => $issue->status,
+                        'issue_type' => $issue->issue_type,
+                        'severity' => $issue->severity,
+                        'resolved_at' => $issue->resolved_at ? $issue->resolved_at->format('M d, Y') : null,
+                        'resolution_notes' => $issue->resolution_notes,
+                        'baseline_schedule_id' => $issue->baseline_schedule_id,
+                        'month_label' => $issue->baselineSchedule?->month_label,
+                        'created_at' => $issue->created_at->format('M d, Y'),
+                        'updated_at' => $issue->updated_at->format('M d, Y'),
+                        'attachments' => $issue->attachments->map(function ($attachment) {
+                            return [
+                                'id' => $attachment->id,
+                                'original_name' => $attachment->original_name,
+                                'context' => $attachment->context,
+                                'file_url' => $attachment->file_url,
+                                'display_size' => $attachment->display_size,
+                                'uploaded_by' => $attachment->uploaded_by,
+                                'created_at' => $attachment->created_at->format('M d, Y H:i'),
+                            ];
+                        }),
+                    ];
+                });
 
             return response()->json([
                 'success' => true,
@@ -75,8 +95,23 @@ class IssueController extends Controller
                 'description' => 'required|string|max:1000',
                 'status' => 'required|in:Open,In Progress,Resolved,Closed',
                 'issue_type' => 'nullable|string|in:material,contractor,weather,design,regulatory,financial,other',
-                'severity' => 'nullable|string|in:Low,Medium,High,Critical'
+                'severity' => 'nullable|string|in:Low,Medium,High,Critical',
+                'baseline_schedule_id' => 'nullable|integer|exists:project_baseline_schedules,id',
+                'resolution_notes' => 'required_if:status,Resolved|required_if:status,Closed|nullable|string|max:5000'
             ]);
+
+            // Guard: the selected baseline month must belong to this project
+            if (!empty($validated['baseline_schedule_id'])) {
+                $baselineExists = ProjectBaselineSchedule::where('id', $validated['baseline_schedule_id'])
+                    ->where('project_id', $project->id)
+                    ->exists();
+                if (!$baselineExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected baseline month does not belong to this project.'
+                    ], 422);
+                }
+            }
 
             // Auto-set resolved_at if status is Resolved or Closed
             $data = $validated;
@@ -89,6 +124,15 @@ class IssueController extends Controller
                 'project_id' => $project->id,
             ]));
 
+            // Audit the creation
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'project_id'  => $project->id,
+                'action'      => 'Create Issue',
+                'description' => $user->name . ' created issue "' . $issue->issue_name . '" for project "' . $project->title . '".',
+                'ip_address'  => $request->ip(),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Issue created successfully',
@@ -99,6 +143,9 @@ class IssueController extends Controller
                     'status' => $issue->status,
                     'issue_type' => $issue->issue_type,
                     'severity' => $issue->severity,
+                    'resolved_at' => $issue->resolved_at ? $issue->resolved_at->format('M d, Y') : null,
+                    'resolution_notes' => $issue->resolution_notes,
+                    'baseline_schedule_id' => $issue->baseline_schedule_id,
                     'created_at' => $issue->created_at->format('M d, Y'),
                     'updated_at' => $issue->updated_at->format('M d, Y'),
                 ]
@@ -148,8 +195,23 @@ class IssueController extends Controller
                 'description' => 'required|string|max:1000',
                 'status' => 'required|in:Open,In Progress,Resolved,Closed',
                 'issue_type' => 'nullable|string|in:material,contractor,weather,design,regulatory,financial,other',
-                'severity' => 'nullable|string|in:Low,Medium,High,Critical'
+                'severity' => 'nullable|string|in:Low,Medium,High,Critical',
+                'baseline_schedule_id' => 'nullable|integer|exists:project_baseline_schedules,id',
+                'resolution_notes' => 'required_if:status,Resolved|required_if:status,Closed|nullable|string|max:5000'
             ]);
+
+            // Guard: the selected baseline month must belong to this project
+            if (!empty($validated['baseline_schedule_id'])) {
+                $baselineExists = ProjectBaselineSchedule::where('id', $validated['baseline_schedule_id'])
+                    ->where('project_id', $project->id)
+                    ->exists();
+                if (!$baselineExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected baseline month does not belong to this project.'
+                    ], 422);
+                }
+            }
 
             // Auto-manage resolved_at based on status transitions
             $data = $validated;
@@ -169,6 +231,15 @@ class IssueController extends Controller
             // Update issue
             $issue->update($data);
 
+            // Audit the update
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'project_id'  => $project->id,
+                'action'      => 'Update Issue',
+                'description' => $user->name . ' updated issue "' . $issue->issue_name . '" for project "' . $project->title . '".',
+                'ip_address'  => $request->ip(),
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Issue updated successfully',
@@ -179,6 +250,9 @@ class IssueController extends Controller
                     'status' => $issue->status,
                     'issue_type' => $issue->issue_type,
                     'severity' => $issue->severity,
+                    'resolved_at' => $issue->resolved_at ? $issue->resolved_at->format('M d, Y') : null,
+                    'resolution_notes' => $issue->resolution_notes,
+                    'baseline_schedule_id' => $issue->baseline_schedule_id,
                     'created_at' => $issue->created_at->format('M d, Y'),
                     'updated_at' => $issue->updated_at->format('M d, Y'),
                 ]
@@ -222,7 +296,25 @@ class IssueController extends Controller
                 ], 404);
             }
 
+            // Capture details before deleting — model is gone after delete()
+            $issueName  = $issue->issue_name;
+            $projectTitle = $project->title;
+
+            // Remove evidence attachments (rows + physical files via the model's deleting hook)
+            foreach ($issue->attachments as $attachment) {
+                $attachment->delete();
+            }
+
             $issue->delete();
+
+            // Audit the deletion
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'project_id'  => $project->id,
+                'action'      => 'Delete Issue',
+                'description' => $user->name . ' deleted issue "' . $issueName . '" from project "' . $projectTitle . '".',
+                'ip_address'  => request()->ip(),
+            ]);
 
             return response()->json([
                 'success' => true,

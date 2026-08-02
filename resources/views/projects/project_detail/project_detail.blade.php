@@ -98,53 +98,6 @@
 <!-- Include issues modal -->
 @include('projects.project_detail.components.modals.issues_modal')
 
-<!-- Include edit issue modal (part of issues modal) -->
-<div class="modal fade" id="editIssueModal" tabindex="-1" aria-labelledby="editIssueModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="editIssueModalLabel">
-                    <i class="bi bi-pencil-square" style="margin-right: 8px;"></i>
-                    Edit Issue
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form id="editIssueForm">
-                    @csrf
-                    @method('PUT')
-                    <input type="hidden" id="editIssueId" name="issue_id">
-                    <div class="mb-3">
-                        <label for="editIssueName" class="form-label">Issue Name *</label>
-                        <input type="text" class="form-control" id="editIssueName" name="issue_name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editIssueDescription" class="form-label">Description *</label>
-                        <textarea class="form-control" id="editIssueDescription" name="description" rows="3" required></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editIssueStatus" class="form-label">Status *</label>
-                        <select class="form-control" id="editIssueStatus" name="status" required>
-                            <option value="">Select Status</option>
-                            <option value="Open">Open</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Resolved">Resolved</option>
-                            <option value="Closed">Closed</option>
-                        </select>
-                    </div>
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-circle" style="margin-right: 6px;"></i>
-                            Update Issue
-                        </button>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
 @endsection
 
 <script>
