@@ -166,7 +166,7 @@ Branch: `core/overview-real-data` (from `main`)
 
 ## 6. PHASE C — Issue Lifecycle Upgrade
 
-Branch: `core/issue-lifecycle` (from `core/attachments-infra`)
+Branch: `core/issue-lifecycle` (from `main`)
 
 ### Migration
 - `issues`: add `baseline_schedule_id` (nullable FK → project_baseline_schedules,
@@ -253,8 +253,8 @@ Branch: `core/ai-baseline-linkage` (from `core/issue-lifecycle`)
 |-------|--------|------|
 | A — Attachments infra | `core/attachments-infra` | main |
 | B — Overview real data | `core/overview-real-data` | main |
-| C — Issue lifecycle | `core/issue-lifecycle` | `core/attachments-infra` |
-| D — Progress attachments | `core/progress-attachments` | `core/attachments-infra` |
+| C — Issue lifecycle | `core/issue-lifecycle` | `main` (was `core/attachments-infra`) |
+| D — Progress attachments | `core/progress-attachments` | `main` (was `core/attachments-infra`) |
 | E — AI↔baseline linkage | `core/ai-baseline-linkage` | `core/issue-lifecycle` |
 
 - Rule 8 — test each phase (PHPUnit for services/controllers, browser for views)
