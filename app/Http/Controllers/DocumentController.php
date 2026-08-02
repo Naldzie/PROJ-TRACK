@@ -69,6 +69,18 @@ class DocumentController extends Controller
                 'description'      => $validated['description'] ?? null,
             ]);
 
+            // Record in activity log
+            $actorName = Auth::user()->name ?? Auth::user()->email;
+            $actorRole = ucfirst(Auth::user()->role);
+
+            ActivityLog::create([
+                'user_id'     => Auth::id(),
+                'project_id'  => $validated['project_id'],
+                'action'      => 'Upload Document',
+                'description' => "{$actorName} ({$actorRole}) uploaded document \"{$document->document_name}\" to project \"{$project->title}\".",
+                'ip_address'  => request()->ip(),
+            ]);
+
             return response()->json([
                 'success'  => true,
                 'message'  => 'Document uploaded successfully.',

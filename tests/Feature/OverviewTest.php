@@ -13,6 +13,8 @@ use App\Services\ProjectOverviewService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -350,6 +352,36 @@ class OverviewTest extends TestCase
             ->first();
 
         $this->assertNotNull($log, 'Monthly progress should create a project-scoped activity log');
+    }
+
+    public function test_activity_log_project_id_populated_on_document_upload(): void
+    {
+        Storage::fake('public');
+
+        $documentType = \App\Models\DocumentType::create(['name' => 'Report']);
+
+        $request = Request::create('/documents/upload', 'POST', [
+            'project_id'       => $this->project->id,
+            'document_type_id' => $documentType->id,
+            'description'      => 'Quarterly report',
+        ]);
+        $request->files->set('file', UploadedFile::fake()->createWithContent(
+            'quarterly-report.pdf',
+            "%PDF-1.4\n%test\ntrailer<</Root 1 0 R>>\n%%EOF",
+            'application/pdf'
+        ));
+
+        $response = app(\App\Http\Controllers\DocumentController::class)->upload($request);
+
+        $this->assertTrue($response->getData()->success);
+
+        $log = ActivityLog::where('action', 'Upload Document')
+            ->where('project_id', $this->project->id)
+            ->first();
+
+        $this->assertNotNull($log, 'Document upload should create a project-scoped activity log');
+        $this->assertEquals($this->admin->id, $log->user_id);
+        $this->assertStringContainsString('quarterly-report.pdf', $log->description);
     }
 
     // === view ===
