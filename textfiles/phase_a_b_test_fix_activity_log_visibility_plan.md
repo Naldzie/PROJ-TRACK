@@ -203,4 +203,4 @@ appears in any overview because `project_id` is nulled on deletion).
 - Stale comment updated in `dashboard.blade.php` Recent Activity block.
 - Verification: `php -l` clean on all 9 changed files; new
   `tests/Feature/ActivityVisibilityTest.php` (7 tests / 23 assertions) passing;
-  full suite green at **233 passed / 798 assertions**. Committed as `CIPHER`.
+  full suite green at **233 passed / 798 assertions**. Committed as `42218bc`.
