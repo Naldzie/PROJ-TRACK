@@ -1,18 +1,69 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: July 27, 2026
+  Last Updated: August 2, 2026
 ================================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
   in referenced plan files under textfiles/.
 
 ================================================================================
-  SECTION 1 — AI MODULE V2 REMAINING PHASES
+  SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING
+
+  Plan: textfiles/core_monitoring_completion_plan.md (new, Aug 2 2026)
+
+  NOTE: The AI regression module is PAUSED (V2 functionally complete through
+        Phase 8 + post-fixes, all merged to main @ 7086afe). Focus shifts to
+        finishing the core project monitoring features, which still contain
+        hardcoded placeholders (overview.blade.php mockup cards).
+
+  Phases (each on its own branch; merge to main only on approval):
+    A — Attachments infrastructure
+        Branch: core/attachments-infra (from main)
+        New polymorphic attachments table (morph + project_id + context),
+        Attachment model, AttachmentController (upload/delete/view/download),
+        whitelist jpg/jpeg/png/pdf <=20MB. NOT the existing documents table.
+
+    B — Overview real data
+        Branch: core/overview-real-data (from main)
+        Replace the 4 mockup cards (Issues & Risks, Documents, Recent
+        Activity, Notifications & Alerts) with real DB data.
+        Adds nullable project_id to activity_logs + populates the
+        project-scoped log calls; new ProjectOverviewService::getRecentActivity()
+        + getAlerts() (next pending month, aging issues, pending extensions,
+        document-coverage reminder).
+
+    C — Issue lifecycle upgrade
+        Branch: core/issue-lifecycle (from core/attachments-infra)
+        issues += baseline_schedule_id (FK) + resolution_notes; resolution
+        notes required on Resolved/Closed; attachments on issue + resolution;
+        expose resolved_at/resolution/month in JSON; ActivityLog on CRUD.
+
+    D — Progress recording attachments
+        Branch: core/progress-attachments (from core/attachments-infra)
+        recordMonthlyProgress()/editProgressRecord() accept multiple optional
+        files (image/pdf) via FormData; stored as inspection attachments;
+        chips + preview on progress/baseline views.
+
+    E — AI ↔ baseline linkage (preparation only)
+        Branch: core/ai-baseline-linkage (from core/issue-lifecycle)
+        ai_solutions += baseline_schedule_id (= current pending baseline at
+        generation). No recommendation snapshot / outcome display yet —
+        deferred to Phase 10.
+
+  Future tie-in: this groundwork (issue↔baseline, prediction_history↔baseline
+  already exists, ai_solutions↔baseline) enables the Phase 10 recommendation-
+  outcome feedback loop (ai_recommendation_data_gaps.txt).
+
+===============================================================================
+  SECTION 2 — AI MODULE V2 REMAINING PHASES
 ================================================================================
 
   Plan: active_reference/ai_module_ver2_master_plan.txt
-  Recommended Order: 8 → 9 → 10 → 11 → 12 → 13
+  Recommended Order: 9 → 10 → 11 → 12 → 13 (Phase 8 COMPLETE — see below)
+
+  NOTE: Phase 8 (Cross-Project Historical Regression) is COMPLETE —
+        implemented + health-gauge fixes merged into main (merge 5d8dfc3).
 
   NOTE: Phases 6 (Estimated Completion Gauge) and 7 (Prediction History)
         are COMPLETE — verified in codebase.
@@ -21,10 +72,11 @@
         may not implement. The Prediction History & Accuracy table (Phase 7)
         already provides prediction tracking in the UI.
 
-  Phase 8 — Cross-Project Historical Regression
-     Use completed projects of same category as proxy for insufficient-data
-     projects. Two modes: fallback (< 2 obs) and supplementary (< ⅓ planned).
-     Plan: active_reference/phase8_cross_project_regression_plan.txt
+  Phase 8 — Cross-Project Historical Regression   ✅ COMPLETE
+     Implemented (phase-8-cross-project-regression, Jul 28) + health gauge /
+     completion display fixes merged to main (Jul 31). Open items (health
+     gauge at gap=0, completion_multi in supplement mode) tracked in
+     textfiles/regression_v2_5_cross_project_expansion_plan.md §7.
 
   Phase 9 — Contractor Performance Tracking
      Track reliability: on-time delivery %, avg delay, performance rating
@@ -47,7 +99,7 @@
      ~150 new V2 tests; no V1 regressions
 
 ================================================================================
-  SECTION 2 — AI-RELATED ENHANCEMENT IDEAS (DEFERRED / NOT PLANNED)
+  SECTION 3 — AI-RELATED ENHANCEMENT IDEAS (DEFERRED / NOT PLANNED)
 ================================================================================
 
   Sources: gaps_and_features_missing.txt, ai_recommendation_data_gaps.txt
@@ -71,7 +123,7 @@
      Requires: activity dependency mapping or critical path tagging
 
 ================================================================================
-  SECTION 3 — NON-AI FUTURE WORK (GAPS & FEATURES)
+  SECTION 4 — NON-AI FUTURE WORK (GAPS & FEATURES)
 ================================================================================
 
   Sources: gaps_and_features_missing.txt, project_gaps_and_future_roadmap.mmd
@@ -115,7 +167,7 @@
      3 dead methods in ProjectChartService.php (unused)
 
 ================================================================================
-  SECTION 4 — CLIENT-EXCLUDED (WILL NOT BUILD)
+  SECTION 5 — CLIENT-EXCLUDED (WILL NOT BUILD)
 ================================================================================
 
   Source: gaps_and_features_missing.txt
@@ -129,7 +181,7 @@
                                            forecasts even for behind-schedule projects
 
 ================================================================================
-  SECTION 5 — EXTENSION APPROVAL ACTIVITY LOGGING (PENDING)
+  SECTION 6 — EXTENSION APPROVAL ACTIVITY LOGGING (PENDING)
 ================================================================================
 
   File: app/Http/Controllers/Admin/ProjectExtensionController.php
@@ -138,7 +190,7 @@
   Plan ref: uncertain/baseline_extension_adjustment_plan__4_ (2).txt Part A
 
 ================================================================================
-  SECTION 6 — ORGANIZATION STATUS NOTES
+  SECTION 7 — ORGANIZATION STATUS NOTES
 ================================================================================
 
   Items in uncertain/ that are verified done in codebase:
@@ -147,9 +199,15 @@
     • adjusted_baseline_generation_plan.txt       ✅ auto-distribution works
   These can be moved to done/ when convenient.
 
-  ✅ Completed (but not yet reflected in this file's structure):
+  ✅ Completed (not yet reflected in this file's structure):
     • Phase 6 — Estimated Completion Gauge
     • Phase 7 — Prediction History & Accuracy
+    • Phase 8 — Cross-Project Historical Regression (+ health gauge fixes)
+    • Fixes A–G + auto-complete at 100% actual (main @ 7086afe)
+    • Inspection-date refactor (month_label + inspection_date consolidation)
+
+  Active Plans (also):
+    core_monitoring_completion_plan.md   — CURRENT FOCUS (core monitoring)
 
 ================================================================================
   KEY FILE LOCATIONS (current organization)
