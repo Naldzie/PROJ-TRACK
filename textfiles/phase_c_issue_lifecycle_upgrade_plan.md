@@ -318,6 +318,19 @@ NOT touched:
 - `IssueLifecycleTest` — asserts `month_display === 'June-2026'` for a `2026-06` baseline. Full suite 245 passed / 859 assertions.
 - NOTE: `month_label` column/value is untouched app-wide — only display formatting changes; the existing `ProjectOverviewService::formatMonthLabelForDisplay` (`M Y`) is NOT used here since the requested format is full month name (`F-Y`).
 
+### 2026-08-02 — Adjustment: dropdown arrow icons (user request)
+- User asked for a chevron arrow on the baseline-month `<select>` dropdowns (both add + edit forms).
+- `issues_modal.blade.php` — scoped `<style>` block: `#issuesModal select.form-control, #editIssueModal select.form-control` get `appearance: none` + inline SVG chevron as a background data-URI (fill `#6b7280`, focus `#1e3a8a`), `padding-right: 34px`, `cursor: pointer`.
+- Scope kept to the issue modals only (user declined broadening app-wide).
+
+### 2026-08-02 — Adjustment: auto-select baseline month on Add Issue (user request)
+- User asked the Add Issue form to auto-choose a baseline month; confirmed decisions: **date-match first** (current calendar month), fallback to the **latest month with recorded actual**, and if neither exists, the **earliest baseline**.
+- `app/Services/ProjectOverviewService.php` — new `getDefaultIssueBaseline(Project)`: (1) baseline with `month_label === now()->format('Y-m')`; (2) baseline linked to the most recent progress record (`reorder('month_label','desc')->orderBy('inspection_date','desc')`, preferring `baseline_schedule_id`, falling back to a `month_label` match for legacy null-FK records); (3) earliest baseline by `planned_date`. Returns null only when the project has no baselines.
+- `issues_modal.blade.php` — top `@php` block computes `$defaultBaselineId` from the service; add-form dropdown options render `{{ $baseline->id === $defaultBaselineId ? 'selected' : '' }}`. Edit-form dropdown unchanged (pre-fills from the saved issue).
+- `IssueLifecycleTest` — 6 new cases (18 tests / 73 assertions for the class) exercising the service directly.
+- BUG FOUND during full-suite run: `progressHistory()` relationship has a built-in `orderBy('inspection_date','asc')`, so `orderByDesc('month_label')` was only a secondary sort and the result flipped between runs (random factory inspection_dates). Fixed with `reorder('month_label','desc')` + explicit `orderBy('inspection_date','desc')`.
+- Verification: `php -l` clean; full suite 251 passed / 871 assertions; `php artisan view:cache` compiles (compiled blade confirmed the `selected` expression). No controller/route changes.
+
 ---
 
 END OF PHASE C PLAN

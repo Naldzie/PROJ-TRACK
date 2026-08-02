@@ -334,4 +334,49 @@ class ProjectOverviewService
             ->take(6)
             ->get();
     }
+
+    /**
+     * Resolve the baseline month to auto-select when a NEW issue is added:
+     *   1. the monthly target matching the current calendar month, else
+     *   2. the monthly target of the most recently recorded actual progress,
+     *   3. otherwise the earliest baseline (no progress yet).
+     *
+     * Returns null only when the project has no baselines at all.
+     */
+    public function getDefaultIssueBaseline(Project $project)
+    {
+        $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
+
+        if ($baselines->isEmpty()) {
+            return null;
+        }
+
+        // Priority 1: monthly target matching today's month
+        $currentMonth = Carbon::now()->format('Y-m');
+        $dateMatch = $baselines->firstWhere('month_label', $currentMonth);
+        if ($dateMatch) {
+            return $dateMatch;
+        }
+
+        // Priority 2: monthly target of the latest recorded actual progress
+        $latestProgress = $project->progressHistory()
+            ->reorder('month_label', 'desc')
+            ->orderBy('inspection_date', 'desc')
+            ->first();
+        if ($latestProgress) {
+            if ($latestProgress->baseline_schedule_id) {
+                $byFk = $baselines->firstWhere('id', $latestProgress->baseline_schedule_id);
+                if ($byFk) {
+                    return $byFk;
+                }
+            }
+            $byLabel = $baselines->firstWhere('month_label', $latestProgress->month_label);
+            if ($byLabel) {
+                return $byLabel;
+            }
+        }
+
+        // Priority 3: earliest baseline (no recorded progress yet)
+        return $baselines->first();
+    }
 }

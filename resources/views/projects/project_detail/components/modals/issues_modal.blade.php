@@ -1,6 +1,7 @@
 <!-- ISSUES MODAL -->
 @php
     $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
+    $defaultBaselineId = app(\App\Services\ProjectOverviewService::class)->getDefaultIssueBaseline($project)?->id;
 @endphp
 <div class="modal fade" id="issuesModal" tabindex="-1" aria-labelledby="issuesModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
@@ -73,7 +74,7 @@
                                     <select class="form-control" id="issueBaselineId" name="baseline_schedule_id">
                                         <option value="">-- Select Baseline Month (Optional) --</option>
                                         @foreach($baselines as $baseline)
-                                            <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
+                                            <option value="{{ $baseline->id }}" {{ $baseline->id === $defaultBaselineId ? 'selected' : '' }}>{{ $baseline->month_display }}</option>
                                         @endforeach
                                     </select>
                                     <small class="text-muted">Link the issue to the baseline month it belongs to</small>

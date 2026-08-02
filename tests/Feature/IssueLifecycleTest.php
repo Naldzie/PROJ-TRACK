@@ -8,7 +8,9 @@ use App\Models\Attachment;
 use App\Models\Issue;
 use App\Models\Project;
 use App\Models\ProjectBaselineSchedule;
+use App\Models\ProjectProgressHistory;
 use App\Models\User;
+use App\Services\ProjectOverviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -439,5 +441,139 @@ class IssueLifecycleTest extends TestCase
 
         $this->assertCount(2, $issue->attachments);
         $this->assertEquals(['issue', 'resolution'], $issue->attachments->pluck('context')->sort()->values()->all());
+    }
+
+    // === AUTO-SELECT DEFAULT BASELINE MONTH (getDefaultIssueBaseline) ===
+
+    public function test_default_baseline_prefers_current_month_target(): void
+    {
+        $currentMonth = now()->format('Y-m');
+
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => $currentMonth,
+            'planned_date' => $currentMonth . '-15',
+        ]);
+        $earlier = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-06',
+            'planned_date' => '2026-06-15',
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($currentMonth, $default->month_label);
+        $this->assertNotEquals($earlier->id, $default->id);
+    }
+
+    public function test_default_baseline_falls_back_to_latest_month_with_actual(): void
+    {
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-05',
+            'planned_date' => '2026-05-15',
+        ]);
+        $june = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-06',
+            'planned_date' => '2026-06-15',
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $this->project->id,
+            'baseline_schedule_id'    => null,
+            'month_label'             => '2026-05',
+            'actual_progress_percent' => 30,
+        ]);
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $this->project->id,
+            'baseline_schedule_id'    => $june->id,
+            'month_label'             => '2026-06',
+            'actual_progress_percent' => 45,
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($june->id, $default->id);
+    }
+
+    public function test_default_baseline_date_match_wins_over_latest_actual(): void
+    {
+        $currentMonth = now()->format('Y-m');
+
+        $current = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => $currentMonth,
+            'planned_date' => $currentMonth . '-15',
+        ]);
+        $june = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-06',
+            'planned_date' => '2026-06-15',
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $this->project->id,
+            'baseline_schedule_id'    => $june->id,
+            'month_label'             => '2026-06',
+            'actual_progress_percent' => 45,
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($current->id, $default->id);
+    }
+
+    public function test_default_baseline_falls_back_to_month_label_when_fk_null(): void
+    {
+        $june = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-06',
+            'planned_date' => '2026-06-15',
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $this->project->id,
+            'baseline_schedule_id'    => null,
+            'month_label'             => '2026-06',
+            'actual_progress_percent' => 40,
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($june->id, $default->id);
+    }
+
+    public function test_default_baseline_returns_null_when_project_has_no_baselines(): void
+    {
+        $this->assertNull(app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project));
+    }
+
+    public function test_default_baseline_returns_earliest_baseline_when_no_progress_and_no_current_month(): void
+    {
+        $first = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-04',
+            'planned_date' => '2026-04-15',
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-05',
+            'planned_date' => '2026-05-15',
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-09',
+            'planned_date' => '2026-09-15',
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultIssueBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($first->id, $default->id);
     }
 }
