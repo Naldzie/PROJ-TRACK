@@ -108,6 +108,7 @@ class ProjectActivityController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Add Checklist Item',
                 'description' => auth()->user()->name . " added activity \"{$activity->activity_name}\" for project: {$project->title} ({$validated['month_label']})",
                 'ip_address' => request()->ip(),
@@ -148,6 +149,7 @@ class ProjectActivityController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Delete Checklist Item',
                 'description' => auth()->user()->name . " deleted activity \"{$activityName}\" from project: {$project->title}",
                 'ip_address' => request()->ip(),
@@ -229,6 +231,7 @@ class ProjectActivityController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $activity->project_id,
                 'action' => 'Update Checklist Item',
                 'description' => auth()->user()->name . " marked \"{$activity->activity_name}\" as {$statusWord} for project: {$projectTitle}",
                 'ip_address' => request()->ip(),

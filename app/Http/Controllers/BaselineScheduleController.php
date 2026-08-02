@@ -216,6 +216,7 @@ class BaselineScheduleController extends Controller
 
                 ActivityLog::create([
                     'user_id' => auth()->id(),
+                    'project_id' => $project->id,
                     'action' => 'Create Baseline Schedule',
                     'description' => auth()->user()->name . " set {$validated['month_label']} target ({$validated['planned_progress_percent']}%) for project: {$project->title}",
                     'ip_address' => request()->ip(),
@@ -369,6 +370,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
             // ── Activity log ──────────────────────────────────────────────────
             ActivityLog::create([
                 'user_id'     => auth()->id(),
+                'project_id'  => $project->id,
                 'action'      => 'Set Up Baseline Schedule',
                 'description' => auth()->user()->name
                     . ' set up the initial baseline schedule ('
@@ -480,6 +482,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Update Baseline Schedule',
                 'description' => auth()->user()->name . " updated {$schedule->month_label} target to {$validated['planned_progress_percent']}% for project: {$project->title}",
                 'ip_address' => request()->ip(),
@@ -598,6 +601,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
                 ActivityLog::create([
                     'user_id'    => auth()->id(),
+                    'project_id' => $project->id,
                     'action'     => 'Carry Over Activity',
                     'description' => auth()->user()->name
                         . " carried over activity \"{$activity->activity_name}\" from {$activity->month_label} to {$targetSchedule->month_label} (carryover #{$nextNumber}) for project: {$project->title}",
@@ -895,6 +899,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
             ActivityLog::create([
                 'user_id'    => auth()->id(),
+                'project_id' => $project->id,
                 'action'     => 'Adjust Baseline',
                 'description' => auth()->user()->name
                     . " adjusted the baseline schedule for project: {$project->title}",
@@ -962,6 +967,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Delete Baseline Schedule',
                 'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title}",
                 'ip_address' => request()->ip(),

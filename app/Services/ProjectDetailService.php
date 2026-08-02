@@ -56,6 +56,9 @@ class ProjectDetailService
             'documents'        => $documentsData['documents'] ?? [],
             'documents_by_type'=> $documentsData['documents_by_type'] ?? collect(),
             'total_documents'  => $documentsData['total_documents'] ?? 0,
+            'recent_activity'  => $this->overviewService->getRecentActivity($project),
+            'alerts'           => $this->overviewService->getAlerts($project),
+            'open_issues'      => $this->overviewService->getOpenIssues($project),
         ];
     }
 

@@ -166,6 +166,7 @@ class DocumentController extends Controller
             // Record in activity log
             ActivityLog::create([
                 'user_id'     => Auth::id(),
+                'project_id'  => $document->project_id,
                 'action'      => 'Delete Document',
                 'description' => "{$actorName} ({$actorRole}) deleted document \"{$documentName}\" from project \"{$projectTitle}\".",
                 'ip_address'  => request()->ip(),

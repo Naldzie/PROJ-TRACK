@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectExtension;
 use Illuminate\Http\Request;
@@ -76,6 +77,19 @@ class ProjectExtensionController extends Controller
             }
 
             DB::commit();
+
+            // Audit the submission. Admin submissions are auto-approved;
+            // staff submissions sit pending until an admin approves them.
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => $isAdmin ? 'Approve Extension' : 'Request Extension',
+                'description' => auth()->user()->name . ($isAdmin
+                        ? " approved extension #{$nextExtensionNumber} for project: {$project->title}"
+                        : " requested extension #{$nextExtensionNumber} ({$durationDays} days) for project: {$project->title}"),
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -228,6 +242,17 @@ class ProjectExtensionController extends Controller
                 $extension->save();
                 DB::commit();
 
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => $wasRejected ? 'Resubmit Extension' : 'Update Extension',
+                    'description' => auth()->user()->name . " " . ($wasRejected
+                            ? "resubmitted extension #{$extension->extension_number} for project: {$project->title}"
+                            : "updated extension #{$extension->extension_number} for project: {$project->title}"),
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+
                 return response()->json([
                     'success' => true,
                     'message' => $wasRejected
@@ -301,6 +326,25 @@ class ProjectExtensionController extends Controller
 
             DB::commit();
 
+            $logAction = 'Update Extension';
+            if ($transitioningToApproved) {
+                $logAction = 'Approve Extension';
+            } elseif (($validated['status'] ?? null) === 'rejected') {
+                $logAction = 'Reject Extension';
+            }
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => $logAction,
+                'description' => auth()->user()->name . " {$logAction} for project: {$project->title}"
+                    . (($validated['status'] ?? null) === 'rejected' && !empty($validated['rejection_reason'])
+                        ? ' — ' . $validated['rejection_reason']
+                        : ''),
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Extension updated',
@@ -351,6 +395,15 @@ class ProjectExtensionController extends Controller
 
             $extensionNumber = $extension->extension_number;
             $extension->delete();
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => 'Delete Extension',
+                'description' => auth()->user()->name . " deleted extension #{$extensionNumber} from project: {$project->title}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'admin_only',
+            ]);
 
             return response()->json([
                 'success' => true,

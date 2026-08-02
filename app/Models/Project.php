@@ -370,6 +370,7 @@ class Project extends Model
         \App\Models\ActivityLog::withoutEvents(function () use ($project) {
             \App\Models\ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Create Project',
                 'description' => auth()->user()->name . " created project: " . ($project->title ?? 'N/A'),
                 'ip_address' => request()->ip(),
@@ -396,6 +397,7 @@ class Project extends Model
             \App\Models\ActivityLog::withoutEvents(function () use ($project, $changes) {
                 \App\Models\ActivityLog::create([
                     'user_id' => auth()->id(),
+                    'project_id' => $project->id,
                     'action' => 'Update Project',
                     'description' => auth()->user()->name . " updated project: {$project->title} | {$changes}",
                     'ip_address' => request()->ip(),
@@ -436,6 +438,7 @@ class Project extends Model
         \App\Models\ActivityLog::withoutEvents(function () use ($project) {
             \App\Models\ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Delete Project',
                 'description' => auth()->user()->name . " deleted project: {$project->title}",
                 'ip_address' => request()->ip(),
