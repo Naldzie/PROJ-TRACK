@@ -343,7 +343,7 @@ implemented.)
 - **Verification**: `php -l` clean on all 11 changed files; new
   `tests/Feature/OverviewTest.php` (14 tests / 36 assertions) passing; full
   suite green at **212 passed / 728 assertions** (baseline was 198/692).
-  Committed as `6c841d6` (Phase B implementation).
+  Committed as `28e3f7f` (Phase B implementation).
 
 ---
 
