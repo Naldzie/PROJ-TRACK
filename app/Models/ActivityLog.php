@@ -8,6 +8,7 @@ class ActivityLog extends Model
 {
     protected $fillable = [
         'user_id',
+        'project_id',
         'action',
         'description',
         'ip_address',
@@ -17,6 +18,14 @@ class ActivityLog extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The project this log entry belongs to (null for global/system entries)
+     */
+    public function project()
+    {
+        return $this->belongsTo(Project::class);
     }
 
     /**

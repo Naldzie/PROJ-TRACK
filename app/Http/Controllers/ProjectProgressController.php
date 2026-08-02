@@ -52,6 +52,7 @@ class ProjectProgressController extends Controller
         // dead code, this logging call is harmless and can be removed later.
         ActivityLog::create([
             'user_id' => auth()->id(),
+            'project_id' => $project->id,
             'action' => 'Create Progress Record',
             'description' => auth()->user()->name . " recorded {$request->progress_percentage}% progress for project: {$project->title}",
             'ip_address' => request()->ip(),
@@ -177,6 +178,7 @@ class ProjectProgressController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Edit Progress Record',
                 'description' => auth()->user()->name . " edited progress record for project: {$project->title}" . (!empty($record->month_label) ? " ({$record->month_label})" : ''),
                 'ip_address' => request()->ip(),
@@ -274,6 +276,7 @@ class ProjectProgressController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Delete Progress Record',
                 'description' => auth()->user()->name . " deleted a progress record for project: {$project->title}" . (!empty($record->month_label) ? " ({$record->month_label})" : ''),
                 'ip_address' => request()->ip(),
@@ -400,6 +403,7 @@ class ProjectProgressController extends Controller
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
+                'project_id' => $project->id,
                 'action' => 'Record Monthly Progress',
                 'description' => auth()->user()->name . " recorded {$actualProgressPercent}% actual progress for project: {$project->title} ({$validated['month_label']}) — " . $this->getProgressStatus($variancePercent),
                 'ip_address' => request()->ip(),
@@ -492,6 +496,7 @@ class ProjectProgressController extends Controller
 
                 ActivityLog::create([
                     'user_id' => auth()->id(),
+                    'project_id' => $project->id,
                     'action' => 'Project Auto-Completed',
                     'description' => auth()->user()->name . " marked {$project->title} as Completed (reached 100% actual progress).",
                     'ip_address' => request()->ip(),

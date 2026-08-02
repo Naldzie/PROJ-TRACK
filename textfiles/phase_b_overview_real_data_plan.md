@@ -306,6 +306,45 @@ implemented.)
   branch; this phase intentionally does not include it).
 - Plan written (this file); committed as plan-only before implementation.
 
+### 2026-08-02 — Implementation complete (uncommitted until verified)
+- **Migration** `2026_08_02_000002_add_project_id_to_activity_logs_table.php`:
+  nullable `project_id` FK → projects (`nullOnDelete`) + index. Down: drops
+  index, FK, column.
+- **`ActivityLog` model**: `project_id` added to `$fillable`; `project()`
+  belongsTo relation added.
+- **`ProjectOverviewService`**: added `severityOrder()`, `severityColor()`,
+  `getOpenIssues()` (top 3 unresolved by severity desc then newest; returns
+  `total_open`, `worst_severity`, `aging_count` (≥30 days), `items` with
+  `days_open` + `badge_color`), `getAlerts()` (derived signals: next pending
+  baseline month when project not Completed, open/aging issues, pending
+  extension requests, document-coverage reminder when zero documents),
+  `getRecentActivity()` (latest 6 project-scoped logs, newest first, joined
+  user, `visibleTo(role)`).
+- **`ProjectDetailService::prepareProjectData()`**: now returns `recent_activity`,
+  `alerts`, `open_issues` keys.
+- **`project_id` populated** at all project-scoped log call sites:
+  `ProjectProgressController` (record/edit/delete progress), `DocumentController`
+  (delete), `BaselineScheduleController` (store/update/delete), 
+  `ProjectActivityController` (record/edit/delete activity), `Project::booted()`
+  (created/updated/deleted).
+- **`ProjectExtensionController`**: added ActivityLog calls — store: "Approve
+  Extension" (admin auto-approval) / "Request Extension" (staff); update:
+  resubmit/update/approve/reject (appends rejection reason); destroy: "Delete
+  Extension" (`admin_only`). Closes the extension-audit gap noted in
+  `summary_of_next_work.txt`.
+- **`overview.blade.php`**: removed `$issueMockups`, `$alertMockups`,
+  `$documentMockups`, static timeline, and "Mockup" labels; Issues & Risks,
+  Notifications & Alerts, Documents, and Recent Activity cards now render real
+  data with empty states; footer buttons delegate to Issues/Documents tabs.
+- **Bugs found & fixed**: Laravel `sortByDesc([fn, fn])` treats each closure as
+  a 2-arg comparator — replaced with a single value-retriever closure returning
+  a composite key `[severityOrder, created_at]`. `Issue`/`ActivityLog` do not
+  allow `created_at` via mass assignment — tests use `forceFill()`.
+- **Verification**: `php -l` clean on all 11 changed files; new
+  `tests/Feature/OverviewTest.php` (14 tests / 36 assertions) passing; full
+  suite green at **212 passed / 728 assertions** (baseline was 198/692).
+  Committed as `6c841d6` (Phase B implementation).
+
 ---
 
 END OF PHASE B PLAN

@@ -84,24 +84,11 @@
         $nextTarget = $baselineSchedules->first();
     }
 
-    $issueMockups = [
-        ['title' => 'Material delivery delay', 'meta' => 'Critical · Open for 3 days', 'badge' => 'Blocker', 'color' => 'var(--red)'],
-        ['title' => 'Weather disruption risk', 'meta' => 'High · Monitoring only', 'badge' => 'Watch', 'color' => 'var(--orange)'],
-        ['title' => 'Pending inspection notes', 'meta' => 'Medium · For review', 'badge' => 'Action Needed', 'color' => 'var(--blue)'],
-    ];
-
-    $alertMockups = [
-        ['title' => 'Monthly progress due soon', 'meta' => 'Reminder · Next inspection window', 'color' => 'var(--orange)'],
-        ['title' => 'Contractor update received', 'meta' => 'Status change · Logged today', 'color' => 'var(--primary)'],
-        ['title' => 'Documentation pending', 'meta' => 'Follow up required', 'color' => 'var(--purple)'],
-    ];
-
-    $documentMockups = [
-        ['name' => 'Contract Agreement.pdf', 'meta' => '2.2 MB · Updated Jan 15, 2026'],
-        ['name' => 'Technical Specifications.xlsx', 'meta' => '1.1 MB · Updated Feb 28, 2026'],
-        ['name' => 'Monthly Progress Report — Mar 2026.pdf', 'meta' => '845 KB · Updated Mar 05, 2026'],
-        ['name' => 'Site Survey Report.pdf', 'meta' => '3.2 MB · Updated Feb 15, 2026'],
-    ];
+    $recentActivity = $data['recent_activity'] ?? collect();
+    $alerts = $data['alerts'] ?? [];
+    $openIssues = $data['open_issues'] ?? ['total_open' => 0, 'worst_severity' => null, 'aging_count' => 0, 'items' => []];
+    $totalDocuments = $data['total_documents'] ?? 0;
+    $latestDocuments = collect($data['documents'] ?? [])->take(3);
 @endphp
 
 <div id="overview" class="tab-content active">
@@ -235,26 +222,33 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><span class="card-title">Issues & Risks</span><span class="card-action">Mockup preview</span></div>
+                    <div class="card-header"><span class="card-title">Issues & Risks</span><span class="card-action">{{ $openIssues['total_open'] }} open</span></div>
                     <div style="padding: 16px; display: grid; gap: 10px;">
-                        @foreach($issueMockups as $issue)
+                        @forelse($openIssues['items'] as $issue)
                         <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafafa;">
-                            <div><div style="font-weight: 700; color: #111827;">{{ $issue['title'] }}</div><div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">{{ $issue['meta'] }}</div></div>
-                            <span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,0.04); color: {{ $issue['color'] }}; font-size: 11px; font-weight: 700; white-space: nowrap;">{{ $issue['badge'] }}</span>
+                            <div><div style="font-weight: 700; color: #111827;">{{ $issue['issue_name'] }}</div><div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">{{ $issue['severity'] }} · Open for {{ $issue['days_open'] }} day{{ $issue['days_open'] == 1 ? '' : 's' }}</div></div>
+                            <span style="display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,0.04); color: {{ $issue['badge_color'] }}; font-size: 11px; font-weight: 700; white-space: nowrap;">{{ $issue['severity'] }}</span>
                         </div>
-                        @endforeach
+                        @empty
+                        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">No open issues — good to go.</div>
+                        @endforelse
+                        @if($openIssues['total_open'] > 0)
+                        <button type="button" onclick="switchMainTab('issues', event)" style="margin-top: 4px; padding: 8px 0; border: none; background: none; cursor: pointer; color: var(--primary); font-size: 12px; font-weight: 700; text-align: left;">View all {{ $openIssues['total_open'] }} open issues →</button>
+                        @endif
                     </div>
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><span class="card-title">Notifications & Alerts</span><span class="card-action">Mockup preview</span></div>
+                    <div class="card-header"><span class="card-title">Notifications & Alerts</span><span class="card-action">{{ count($alerts) }} active</span></div>
                     <div style="padding: 16px; display: grid; gap: 10px;">
-                        @foreach($alertMockups as $alert)
+                        @forelse($alerts as $alert)
                         <div style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: 10px; background: #fffaf2; border: 1px solid rgba(245, 158, 11, 0.15);">
                             <div style="width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: {{ $alert['color'] }};"></div>
                             <div><div style="font-weight: 700; color: #111827;">{{ $alert['title'] }}</div><div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">{{ $alert['meta'] }}</div></div>
                         </div>
-                        @endforeach
+                        @empty
+                        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">No active alerts.</div>
+                        @endforelse
                     </div>
                 </div>
             </div>
@@ -270,24 +264,30 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><span class="card-title">Documents</span><span class="card-action">Mockup preview</span></div>
+                    <div class="card-header"><span class="card-title">Documents</span><span class="card-action">{{ $totalDocuments }} total</span></div>
                     <div class="doc-list" style="padding: 16px; display: grid; gap: 10px;">
-                        @foreach($documentMockups as $document)
+                        @forelse($latestDocuments as $document)
                         <div class="doc-item" style="cursor: default;">
                             <div class="doc-icon" style="background:rgba(59,130,246,0.10)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-                            <div class="doc-info"><div class="doc-name">{{ $document['name'] }}</div><div class="doc-meta">{{ $document['meta'] }}</div></div>
+                            <div class="doc-info"><div class="doc-name">{{ $document->document_name }}</div><div class="doc-meta">{{ number_format($document->file_size, 1) }} KB · {{ $document->created_at?->format('M d, Y') }}</div></div>
                         </div>
-                        @endforeach
+                        @empty
+                        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">No documents uploaded yet.</div>
+                        @endforelse
+                        @if($totalDocuments > 0)
+                        <button type="button" onclick="switchMainTab('documents', event)" style="margin-top: 4px; padding: 8px 0; border: none; background: none; cursor: pointer; color: var(--primary); font-size: 12px; font-weight: 700; text-align: left;">All {{ $totalDocuments }} documents →</button>
+                        @endif
                     </div>
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><span class="card-title">Recent Activity</span><span class="card-action">Mockup timeline</span></div>
+                    <div class="card-header"><span class="card-title">Recent Activity</span><span class="card-action">Live</span></div>
                     <div class="activity-list" style="padding: 16px;">
-                        <div class="activity-item"><div class="activity-line"><div class="activity-dot" style="background:var(--primary)"></div><div class="activity-tail"></div></div><div class="activity-content"><div class="activity-text"><strong>Progress updated</strong> — Latest monthly inspection recorded</div><div class="activity-time">Today · PMU Staff</div></div></div>
-                        <div class="activity-item"><div class="activity-line"><div class="activity-dot" style="background:var(--orange)"></div><div class="activity-tail"></div></div><div class="activity-content"><div class="activity-text"><strong>Issue flagged</strong> — Delivery delay needs review</div><div class="activity-time">Yesterday · Site Engineer</div></div></div>
-                        <div class="activity-item"><div class="activity-line"><div class="activity-dot" style="background:var(--success)"></div><div class="activity-tail"></div></div><div class="activity-content"><div class="activity-text"><strong>Document uploaded</strong> — Monthly progress report placeholder</div><div class="activity-time">2 days ago · System</div></div></div>
-                        <div class="activity-item"><div class="activity-line"><div class="activity-dot" style="background:var(--purple)"></div></div><div class="activity-content"><div class="activity-text"><strong>Project reviewed</strong> — Executive summary updated</div><div class="activity-time">This week · Admin</div></div></div>
+                        @forelse($recentActivity as $activity)
+                        <div class="activity-item"><div class="activity-line"><div class="activity-dot" style="background:var(--primary)"></div><div class="activity-tail"></div></div><div class="activity-content"><div class="activity-text"><strong>{{ $activity->action }}</strong> — {{ $activity->description }}</div><div class="activity-time">{{ $activity->user?->name ?? 'System' }} · {{ $activity->created_at?->diffForHumans() }}</div></div></div>
+                        @empty
+                        <div style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">No activity yet.</div>
+                        @endforelse
                     </div>
                 </div>
             </div>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Models\ProjectActivity;
+use App\Models\ActivityLog;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -176,5 +177,161 @@ class ProjectOverviewService
             'Cancelled' => 'red',
             default => 'gray',
         };
+    }
+
+    // ==================== PHASE B: OVERVIEW REAL DATA ====================
+
+    // Severity → weight used to rank the Issues & Risks card and the worst
+    // severity surfaced in the Alerts card.
+    public function severityOrder(string $severity): int
+    {
+        return match ($severity) {
+            'Critical' => 4,
+            'High'     => 3,
+            'Medium'   => 2,
+            'Low'      => 1,
+            default    => 0,
+        };
+    }
+
+    // Severity → badge/text color (CSS var, matches the mockup palette)
+    public function severityColor(string $severity): string
+    {
+        return match ($severity) {
+            'Critical' => 'var(--red)',
+            'High'     => 'var(--orange)',
+            'Medium'   => 'var(--blue)',
+            'Low'      => 'var(--green)',
+            default    => 'var(--text-muted)',
+        };
+    }
+
+    /**
+     * Top 3 unresolved issues (by severity desc, newest first) plus totals.
+     *
+     * @return array{total_open: int, worst_severity: ?string, aging_count: int, items: array}
+     */
+    public function getOpenIssues(Project $project): array
+    {
+        $issues = $project->issues()
+            ->whereIn('status', ['Open', 'In Progress'])
+            ->get()
+            ->sortByDesc(fn ($issue) => [
+                $this->severityOrder($issue->severity),
+                $issue->created_at?->timestamp ?? 0,
+            ])
+            ->values();
+
+        $totalOpen    = $issues->count();
+        $worstSeverity = $issues->first()?->severity ?? null;
+        $agingCount   = $issues->filter(
+            fn ($issue) => $issue->created_at && $issue->created_at->lte(now()->subDays(30))
+        )->count();
+
+        return [
+            'total_open'     => $totalOpen,
+            'worst_severity' => $worstSeverity,
+            'aging_count'    => $agingCount,
+            'items'          => $issues->take(3)->map(fn ($issue) => [
+                'id'          => $issue->id,
+                'issue_name'  => $issue->issue_name,
+                'severity'    => $issue->severity,
+                'status'      => $issue->status,
+                'days_open'   => $issue->created_at ? (int) $issue->created_at->diffInDays(now()) : 0,
+                'badge_color' => $this->severityColor($issue->severity),
+            ])->all(),
+        ];
+    }
+
+    /**
+     * Derived alerts for the Notifications & Alerts card. No new table — all
+     * signals are computed from existing data:
+     *   - inspection_pending  → first baseline month with no progress record
+     *   - open_issues         → unresolved count + worst severity (+ aging)
+     *   - pending_extensions  → project_extensions.status = 'pending'
+     *   - document_coverage   → shown when the project has zero documents
+     *
+     * @return array<int, array{type: string, title: string, meta: string, color: string}>
+     */
+    public function getAlerts(Project $project): array
+    {
+        $alerts = [];
+
+        // 1. Next pending inspection month
+        if ($project->status !== 'Completed') {
+            $recordedMonths = $project->progressHistory()->pluck('month_label');
+            $nextPending = $project->baselineSchedules()
+                ->orderBy('planned_date')
+                ->get()
+                ->first(fn ($baseline) => !$recordedMonths->contains($baseline->month_label));
+
+            if ($nextPending) {
+                $alerts[] = [
+                    'type'  => 'inspection_pending',
+                    'title' => 'Inspection pending for ' . $this->formatMonthLabelForDisplay($nextPending->month_label),
+                    'meta'  => 'Reminder · Next unrecorded baseline month',
+                    'color' => 'var(--orange)',
+                ];
+            }
+        }
+
+        // 2. Open / aging issues
+        $open = $this->getOpenIssues($project);
+        if ($open['total_open'] > 0) {
+            $severity = $open['worst_severity'] ?? 'Low';
+            $meta = $open['total_open'] . ' open issue' . ($open['total_open'] > 1 ? 's' : '');
+            if ($open['aging_count'] > 0) {
+                $meta .= ' · ' . $open['aging_count'] . ' aging';
+            }
+
+            $alerts[] = [
+                'type'  => 'open_issues',
+                'title' => $open['total_open'] . ' open issue' . ($open['total_open'] > 1 ? 's' : '')
+                    . ' · ' . $severity,
+                'meta'  => $meta,
+                'color' => in_array($severity, ['Critical', 'High']) ? 'var(--red)' : 'var(--orange)',
+            ];
+        }
+
+        // 3. Pending extension requests
+        $pendingExtensions = $project->extensions()->where('status', 'pending')->count();
+        if ($pendingExtensions > 0) {
+            $alerts[] = [
+                'type'  => 'pending_extensions',
+                'title' => $pendingExtensions . ' extension request'
+                    . ($pendingExtensions > 1 ? 's' : '') . ' awaiting approval',
+                'meta'  => 'Pending · Action required',
+                'color' => 'var(--blue)',
+            ];
+        }
+
+        // 4. Document-coverage reminder
+        if ($project->documents()->count() === 0) {
+            $alerts[] = [
+                'type'  => 'document_coverage',
+                'title' => 'No documents uploaded yet',
+                'meta'  => 'Documentation pending',
+                'color' => 'var(--purple)',
+            ];
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Latest ~6 project-scoped activity logs (newest first), joined with the
+     * acting user. Respects the visibility scope so non-admins never see
+     * admin_only entries.
+     *
+     * @return \Illuminate\Support\Collection<int, ActivityLog>
+     */
+    public function getRecentActivity(Project $project): Collection
+    {
+        return ActivityLog::with('user')
+            ->where('project_id', $project->id)
+            ->visibleTo(auth()->user()?->role ?? 'admin')
+            ->latest('created_at')
+            ->take(6)
+            ->get();
     }
 }
