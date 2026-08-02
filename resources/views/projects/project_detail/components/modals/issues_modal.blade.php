@@ -199,11 +199,17 @@
                     <div class="mb-3">
                         <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
                         <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf â€” max 20 MB each). Existing attachments are shown on the issue card.</small>
+                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Existing attachments are listed below.</small>
                     </div>
                     <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
                         <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
                         <input type="file" class="form-control" id="editResolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Existing Attachments</label>
+                        <div id="editIssueAttachmentList">
+                            <small class="text-muted">Loading...</small>
+                        </div>
                     </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
@@ -289,6 +295,25 @@
     font-size: 0.8rem;
 }
 
+.attachment-remove-btn {
+    border: none;
+    background: transparent;
+    color: #dc2626;
+    padding: 0 2px;
+    margin-left: 4px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.attachment-remove-btn:hover {
+    color: #991b1b;
+}
+
+.attachment-chip:hover .attachment-remove-btn {
+    background: transparent;
+}
+
 /* Dropdown arrow indicator so select fields read as selection, not text input */
 #issuesModal select.form-control,
 #editIssueModal select.form-control {
@@ -329,6 +354,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 window._issueAttachments = window._issueAttachments || {};
+window._issueDataById = window._issueDataById || {};
 
 function toggleIssueResolutionFields(status) {
     const show = status === 'Resolved' || status === 'Closed';
@@ -403,6 +429,71 @@ function openIssueAttachmentById(id) {
     });
 }
 
+function renderEditIssueAttachmentList(issue) {
+    const container = document.getElementById('editIssueAttachmentList');
+    if (!container) return;
+
+    const attachments = (issue && issue.attachments) || [];
+    if (attachments.length === 0) {
+        container.innerHTML = '<small class="text-muted">No attachments yet.</small>';
+        return;
+    }
+
+    container.innerHTML = attachments.map(att => {
+        window._issueAttachments[att.id] = att;
+        return `
+            <div class="attachment-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
+                <span onclick="openIssueAttachmentById(${att.id})" title="View attachment"
+                      style="cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi ${getAttachmentIcon(att.original_name)}"></i>
+                    <span>${escapeHtml(att.original_name)}</span>
+                </span>
+                <button type="button" class="attachment-remove-btn" title="Remove attachment"
+                        onclick="deleteIssueAttachment(${att.id})">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function deleteIssueAttachment(attachmentId) {
+    if (!confirm('Are you sure you want to remove this attachment?')) return;
+    const role = window.userRole;
+    const apiUrl = `/${role}/attachments/${attachmentId}`;
+
+    fetch(apiUrl, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRF-TOKEN': window.csrfToken,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            throw {data: data};
+        }
+        const editIssueId = document.getElementById('editIssueId')?.value;
+        if (editIssueId && window._issueDataById[editIssueId]) {
+            window._issueDataById[editIssueId].attachments =
+                (window._issueDataById[editIssueId].attachments || []).filter(a => a.id !== attachmentId);
+            renderEditIssueAttachmentList(window._issueDataById[editIssueId]);
+        }
+        delete window._issueAttachments[attachmentId];
+        loadIssues();
+        if (typeof loadTabIssues === 'function') {
+            loadTabIssues();
+        }
+        showSuccessMessage('Attachment removed successfully');
+    })
+    .catch(error => {
+        console.error('Error removing attachment:', error);
+        showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error removing attachment');
+    });
+}
+
 function displayIssues(issues) {
     const issuesList = document.getElementById('issuesList');
     
@@ -423,7 +514,9 @@ function displayIssues(issues) {
         'Closed': 'secondary'
     };
 
-    issuesList.innerHTML = issues.map(issue => `
+    issuesList.innerHTML = issues.map(issue => {
+        window._issueDataById[issue.id] = issue;
+        return `
         <div class="issue-card ${issue.status.toLowerCase().replace(' ', '-')} p-3">
             <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
@@ -464,7 +557,8 @@ function displayIssues(issues) {
                 @endif
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 function editIssue(id, name, description, status, issueType, severity, baselineScheduleId, resolutionNotes) {
@@ -478,7 +572,8 @@ function editIssue(id, name, description, status, issueType, severity, baselineS
     document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
     document.getElementById('editIssueAttachmentFiles').value = '';
     document.getElementById('editResolutionAttachmentFiles').value = '';
-    
+
+    renderEditIssueAttachmentList(window._issueDataById[id]);
     toggleIssueResolutionFields(status);
     
     const editModal = new bootstrap.Modal(document.getElementById('editIssueModal'));
@@ -546,12 +641,13 @@ function uploadIssueAttachment(issueId, context, file) {
     .then(response => response.json())
     .then(data => {
         if (!data.success) {
-            console.error('Attachment upload failed (' + context + '):', data.message);
+            throw new Error((data && data.message) || 'Attachment upload failed (' + context + ')');
         }
         return data;
     })
     .catch(error => {
         console.error('Attachment upload error (' + context + '):', error);
+        throw error;
     });
 }
 
@@ -616,8 +712,12 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
         if (error && error.data && error.data.errors) {
             const firstError = Object.values(error.data.errors)[0];
             showErrorMessage(firstError ? firstError[0] : 'Error creating issue');
+        } else if (error && error.data && error.data.message) {
+            showErrorMessage(error.data.message);
+        } else if (error && error.message) {
+            showErrorMessage(error.message);
         } else {
-            showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error creating issue');
+            showErrorMessage('Error creating issue');
         }
     });
 });
@@ -679,8 +779,12 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
         if (error && error.data && error.data.errors) {
             const firstError = Object.values(error.data.errors)[0];
             showErrorMessage(firstError ? firstError[0] : 'Error updating issue');
+        } else if (error && error.data && error.data.message) {
+            showErrorMessage(error.data.message);
+        } else if (error && error.message) {
+            showErrorMessage(error.message);
         } else {
-            showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error updating issue');
+            showErrorMessage('Error updating issue');
         }
     });
 });

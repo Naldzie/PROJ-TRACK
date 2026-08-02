@@ -331,6 +331,18 @@ NOT touched:
 - BUG FOUND during full-suite run: `progressHistory()` relationship has a built-in `orderBy('inspection_date','asc')`, so `orderByDesc('month_label')` was only a secondary sort and the result flipped between runs (random factory inspection_dates). Fixed with `reorder('month_label','desc')` + explicit `orderBy('inspection_date','desc')`.
 - Verification: `php -l` clean; full suite 251 passed / 871 assertions; `php artisan view:cache` compiles (compiled blade confirmed the `selected` expression). No controller/route changes.
 
+### 2026-08-02 — Adjustment: manage attachments in the Edit Issue modal (user request)
+- User reported the edit modal had no list of the issue's attachments and no way to add/delete them.
+- FINDING: the edit form ALREADY had working "Add" file inputs (issue + resolution contexts, wired in the edit submit handler via the existing `/attachments/upload` endpoint) — but uploads failed SILENTLY (a failed upload just logged to console and the modal still closed as success). Fixed `uploadIssueAttachment()` to throw on `!data.success` and improved the add/edit catch blocks so the real message surfaces.
+- Added the missing UI in `issues_modal.blade.php`:
+  - New "Existing Attachments" block (`#editIssueAttachmentList`) in the edit form — chips with a clickable view span (opens the document viewer) and a red remove button.
+  - `renderEditIssueAttachmentList(issue)` renders chips (icon + name + context-aware view), `deleteIssueAttachment(id)` calls the existing `DELETE /{role}/attachments/{attachment}` endpoint, then removes the chip from the list, refreshes the card list + tab, and toasts success.
+  - `window._issueDataById` global maps issue id → full issue object (populated in both `displayIssues` and `displayTabIssues`) so the edit modal can show the current attachment list.
+  - `editIssue()` and `openEditIssueModal()` now call `renderEditIssueAttachmentList(window._issueDataById[id])`.
+  - Fixed mojibake in the add-files helper text; added `.attachment-remove-btn` CSS.
+- `AttachmentPolicy::delete` confirmed admin+staff (contractors read-only) — matches the existing delete route.
+- Verification: Blade compiles (`view:cache`); both inline scripts extracted and `node --check` clean (Blade `@if/@endif` normalized to `if (true) {}`); full suite 251 passed / 871 assertions. No PHP/controller changes.
+
 ---
 
 END OF PHASE C PLAN

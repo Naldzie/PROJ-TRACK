@@ -172,7 +172,10 @@ function displayTabIssues(issues) {
                 </tr>
             </thead>
             <tbody>
-                    ${issues.map((issue, index) => `
+                    ${issues.map((issue, index) => {
+                        window._issueDataById = window._issueDataById || {};
+                        window._issueDataById[issue.id] = issue;
+                        return `
                     <tr style="border-bottom: 1px solid #e5e7eb; ${index % 2 === 0 ? 'background: #f9fafb;' : 'background: white;'} transition: background 0.2s;">
                         <td style="padding: 12px 16px; font-weight: 600; color: #111827; font-size: 13px;">${escapeHtml(issue.issue_name)}</td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(issue.description)}</td>
@@ -219,7 +222,8 @@ function displayTabIssues(issues) {
                         </td>
                         @endif
                     </tr>
-                `).join('')}
+                `;
+                    }).join('')}
             </tbody>
         </table>
     `;
@@ -269,7 +273,11 @@ function openEditIssueModal(id, name, description, status, issueType, severity, 
     document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
     document.getElementById('editIssueAttachmentFiles').value = '';
     document.getElementById('editResolutionAttachmentFiles').value = '';
-    
+
+    if (typeof renderEditIssueAttachmentList === 'function') {
+        renderEditIssueAttachmentList(window._issueDataById[id]);
+    }
+
     if (typeof toggleIssueResolutionFields === 'function') {
         toggleIssueResolutionFields(status);
     }
