@@ -158,11 +158,36 @@ NOT touched:
 
 (Chronological log of what is built and bugs found — append as the phase is implemented.)
 
-### 2026-08-03 — Plan created (plan-only, NOT committed to a feature branch yet)
+### 2026-08-03 — Plan created (plan-only, committed as 919612d)
 - Branch `refactor/issue-modal-separate-assets` created from `main`.
-- Verified current inline CSS (issues_modal.blade.php 286–508) and JS (510–1146) boundaries and
+- Verified current inline CSS (issues_modal.blade.php 286–576) and JS (510–1146) boundaries and
   the codebase's asset-include conventions (layout CSS list + baseline-schedule inline JS).
 - Wrote this plan to `textfiles/issues_modal_refactor_plan.md`.
+
+### 2026-08-03 — Refactor implemented (committed)
+- Step 1: NEW `resources/css/admin/projects/issues-modal.css` (221 lines) = the inline `<style>`
+  block extracted verbatim (was issues_modal.blade.php 286–508).
+- Step 2: NEW `public/js/admin/projects/issues-modal.js` (636 lines) = the inline `<script>`
+  block extracted (blade 510–1146). Two Blade-only directives had to be converted to runtime JS:
+  - `@if(in_array(auth()->user()->role,['admin','staff']))` inside the `displayIssues()` template
+    literal → `${['admin','staff'].includes(window.userRole) ? `...` : ''}`.
+  - The same `@if` / `@endif` wrapping the Add/Edit submit handlers → `if (['admin','staff']
+    .includes(window.userRole)) { ... }` (uses the existing global `window.userRole`, set in
+    `project_detail.blade.php:108`).
+  - `node --check` passes (no Blade directives remain in the .js).
+- Step 3: MODIFIED `issues_modal.blade.php` — truncated after the two modals' markup (line 284),
+  removed the inline `<style>` and `<script>` blocks; added
+  `<link rel="stylesheet" href="{{ asset('css/admin/projects/issues-modal.css') }}">` and
+  `<script src="{{ asset('js/admin/projects/issues-modal.js') }}"></script>`.
+- Deviation from plan §4 Step 4: CSS kept INLINE in the modal (via `<link>`) rather than added to
+  `layouts/app.blade.php`, matching the baseline-schedule convention (component assets live in the
+  view). This avoids loading issue-modal CSS globally; selectors are already scoped to
+  `#issuesModal` / `#editIssueModal`.
+- Verification: `php artisan view:cache` compiles; `node --check` clean; `php artisan test
+  --filter="IssueLifecycleTest|AttachmentTest|OverviewTest"` → 46 passed / 156 assertions.
+  JS include remains at load-time equivalent to the old inline script (modal included at
+  `project_detail.blade.php:99`, before the globals at 104–111 — same as before, since the globals
+  are used inside `DOMContentLoaded` and submit handlers).
 
 ---
 END OF PLAN

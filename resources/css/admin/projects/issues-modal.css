@@ -1,0 +1,221 @@
+﻿/* Larger dialogs: modal-xl (1140px) for both issue modals */
+#issuesModal .modal-dialog,
+#editIssueModal .modal-dialog {
+    max-width: 1140px;
+}
+
+/* Modal header polish */
+.issue-modal-header {
+    background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
+    border-bottom: 2px solid #e5e7eb;
+    padding: 1rem 1.25rem;
+}
+
+.issue-modal-header .modal-title {
+    font-weight: 700;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+}
+
+.issue-modal-header .modal-title i {
+    color: #2563eb;
+    font-size: 1.25rem;
+}
+
+/* Form card + header */
+.issue-form-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.issue-form-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.issue-form-header h6 {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* Grouped form sections with a labeled divider */
+.issue-form-section {
+    margin-bottom: 1.25rem;
+}
+
+.issue-form-section + .issue-form-section {
+    border-top: 1px dashed #d1d5db;
+    padding-top: 1.25rem;
+}
+
+.issue-form-section-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 0.85rem;
+}
+
+.issue-form-section-label i {
+    color: #2563eb;
+    font-size: 0.9rem;
+}
+
+/* Conditional "Resolution" sub-group inside the Evidence section */
+.issue-evidence-group {
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    background: #fcfcfd;
+}
+
+.issue-evidence-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 0.6rem;
+}
+
+.issue-evidence-group-label i {
+    color: #16a34a;
+    font-size: 0.85rem;
+}
+
+.issue-card {
+    border-left: 4px solid #007bff;
+    background: #f8f9fa;
+    margin-bottom: 12px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.issue-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.issue-card.open {
+    border-left-color: #dc3545;
+}
+
+.issue-card.in-progress {
+    border-left-color: #ffc107;
+}
+
+.issue-card.resolved {
+    border-left-color: #20c997;
+}
+
+.issue-card.closed {
+    border-left-color: #6c757d;
+}
+
+.issue-badge {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.6rem;
+    font-weight: 600;
+}
+
+.issue-meta-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #6b7280;
+    font-size: 0.8rem;
+}
+
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #fff;
+    border: 1px solid #dbeafe;
+    color: #0369a1;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.attachment-chip:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.attachment-chip i {
+    font-size: 0.8rem;
+}
+
+.attachment-remove-btn {
+    border: none;
+    background: transparent;
+    color: #dc2626;
+    padding: 0 2px;
+    margin-left: 4px;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.attachment-remove-btn:hover {
+    color: #991b1b;
+}
+
+.attachment-chip:hover .attachment-remove-btn {
+    background: transparent;
+}
+
+/* Edit-modal chips: keep the remove (âœ•) button always visible, even for long names.
+   The name itself is allowed to truncate (ellipsis) instead of clipping the button. */
+.attachment-chip.edit-chip {
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
+    cursor: default;
+    padding-right: 6px;
+}
+
+.attachment-chip.edit-chip .att-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Dropdown arrow indicator so select fields read as selection, not text input */
+#issuesModal select.form-control,
+#editIssueModal select.form-control {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px 14px;
+    padding-right: 34px;
+    cursor: pointer;
+}
+
+#issuesModal select.form-control:focus,
+#editIssueModal select.form-control:focus {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%231e3a8a' viewBox='0 0 16 16'%3E%3Cpath d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+}
