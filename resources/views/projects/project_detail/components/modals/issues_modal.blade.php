@@ -4,9 +4,9 @@
     $defaultBaselineId = app(\App\Services\ProjectOverviewService::class)->getDefaultIssueBaseline($project)?->id;
 @endphp
 <div class="modal fade" id="issuesModal" tabindex="-1" aria-labelledby="issuesModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header issue-modal-header">
                 <h5 class="modal-title" id="issuesModalLabel">
                     <i class="bi bi-exclamation-circle" style="margin-right: 8px;"></i>
                     Manage Issues
@@ -16,90 +16,116 @@
             <div class="modal-body">
                 @if(in_array(auth()->user()->role, ['admin', 'staff']))
                     <!-- Add Issue Form -->
-                    <div class="card mb-4" style="border: 1px solid #e0e0e0;">
-                        <div class="card-header" style="background-color: #f8f9fa; border-bottom: 1px solid #e0e0e0;">
-                            <h6 class="mb-0" style="font-weight: 600;">Add New Issue</h6>
+                    <div class="card issue-form-card mb-4">
+                        <div class="card-header issue-form-header">
+                            <h6 class="mb-0"><i class="bi bi-plus-circle" style="margin-right: 6px;"></i>Add New Issue</h6>
                         </div>
                         <div class="card-body">
                             <form id="addIssueForm">
                                 @csrf
-                                <div class="mb-3">
-                                    <label for="issueName" class="form-label">Issue Name *</label>
-                                    <input type="text" class="form-control" id="issueName" name="issue_name" 
-                                           placeholder="e.g., Delay in Material Delivery" required>
-                                    <small class="text-muted">Brief title for the issue</small>
-                                </div>
-                                <div class="mb-3">
-                                    <label for="issueDescription" class="form-label">Description *</label>
-                                    <textarea class="form-control" id="issueDescription" name="description" 
-                                              rows="3" placeholder="Detailed description of the issue..." required></textarea>
-                                </div>
-                                <div class="mb-3">
-                                    <label for="issueStatus" class="form-label">Status *</label>
-                                    <select class="form-control" id="issueStatus" name="status" required>
-                                        <option value="">Select Status</option>
-                                        <option value="Open">Open</option>
-                                        <option value="In Progress">In Progress</option>
-                                        <option value="Resolved">Resolved</option>
-                                        <option value="Closed">Closed</option>
-                                    </select>
-                                </div>
-                                <div class="row mb-3">
-                                    <div class="col-md-6">
-                                        <label for="issueType" class="form-label">Issue Type</label>
-                                        <select class="form-control" id="issueType" name="issue_type">
-                                            <option value="">-- Select Type (Optional) --</option>
-                                            <option value="material">Material</option>
-                                            <option value="contractor">Contractor</option>
-                                            <option value="weather">Weather</option>
-                                            <option value="design">Design</option>
-                                            <option value="regulatory">Regulatory</option>
-                                            <option value="financial">Financial</option>
-                                            <option value="other">Other</option>
-                                        </select>
+
+                                <div class="issue-form-section">
+                                    <div class="issue-form-section-label">
+                                        <i class="bi bi-info-circle"></i> Issue Details
                                     </div>
-                                    <div class="col-md-6">
-                                        <label for="issueSeverity" class="form-label">Severity</label>
-                                        <select class="form-control" id="Add New IssueissueSeverity" name="severity">
-                                            <option value="">-- Select Severity (Optional) --</option>
-                                            <option value="Low">Low</option>
-                                            <option value="Medium">Medium</option>
-                                            <option value="High">High</option>
-                                            <option value="Critical">Critical</option>
-                                        </select>
+                                    <div class="row g-3">
+                                        <div class="col-md-8">
+                                            <label for="issueName" class="form-label">Issue Name *</label>
+                                            <input type="text" class="form-control" id="issueName" name="issue_name" 
+                                                   placeholder="e.g., Delay in Material Delivery" required>
+                                            <small class="text-muted">Brief title for the issue</small>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="issueStatus" class="form-label">Status *</label>
+                                            <select class="form-control" id="issueStatus" name="status" required>
+                                                <option value="">Select Status</option>
+                                                <option value="Open">Open</option>
+                                                <option value="In Progress">In Progress</option>
+                                                <option value="Resolved">Resolved</option>
+                                                <option value="Closed">Closed</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <label for="issueDescription" class="form-label">Description *</label>
+                                        <textarea class="form-control" id="issueDescription" name="description" 
+                                                  rows="3" placeholder="Detailed description of the issue..." required></textarea>
                                     </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label for="issueBaselineId" class="form-label">Baseline Month</label>
-                                    <select class="form-control" id="issueBaselineId" name="baseline_schedule_id">
-                                        <option value="">-- Select Baseline Month (Optional) --</option>
-                                        @foreach($baselines as $baseline)
-                                            <option value="{{ $baseline->id }}" {{ $baseline->id === $defaultBaselineId ? 'selected' : '' }}>{{ $baseline->month_display }}</option>
-                                        @endforeach
-                                    </select>
-                                    <small class="text-muted">Link the issue to the baseline month it belongs to</small>
+
+                                <div class="issue-form-section">
+                                    <div class="issue-form-section-label">
+                                        <i class="bi bi-tags"></i> Classification
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <label for="issueType" class="form-label">Issue Type</label>
+                                            <select class="form-control" id="issueType" name="issue_type">
+                                                <option value="">-- Select Type (Optional) --</option>
+                                                <option value="material">Material</option>
+                                                <option value="contractor">Contractor</option>
+                                                <option value="weather">Weather</option>
+                                                <option value="design">Design</option>
+                                                <option value="regulatory">Regulatory</option>
+                                                <option value="financial">Financial</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="issueSeverity" class="form-label">Severity</label>
+                                            <select class="form-control" id="issueSeverity" name="severity">
+                                                <option value="">-- Select Severity (Optional) --</option>
+                                                <option value="Low">Low</option>
+                                                <option value="Medium">Medium</option>
+                                                <option value="High">High</option>
+                                                <option value="Critical">Critical</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label for="issueBaselineId" class="form-label">Baseline Month</label>
+                                            <select class="form-control" id="issueBaselineId" name="baseline_schedule_id">
+                                                <option value="">-- Select Baseline Month (Optional) --</option>
+                                                @foreach($baselines as $baseline)
+                                                    <option value="{{ $baseline->id }}" {{ $baseline->id === $defaultBaselineId ? 'selected' : '' }}>{{ $baseline->month_display }}</option>
+                                                @endforeach
+                                            </select>
+                                            <small class="text-muted">Link the issue to the baseline month it belongs to</small>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="mb-3" id="issueResolutionNotesWrap" style="display: none;">
-                                    <label for="issueResolutionNotes" class="form-label">Resolution Notes *</label>
-                                    <textarea class="form-control" id="issueResolutionNotes" name="resolution_notes" rows="3"
-                                              placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
+
+                                <div class="issue-form-section">
+                                    <div class="issue-form-section-label">
+                                        <i class="bi bi-paperclip"></i> Evidence
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="issueAttachmentFiles" class="form-label">Issue Evidence Files</label>
+                                        <input type="file" class="form-control" id="issueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
+                                        <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                                        <div class="mt-2 d-flex flex-wrap gap-1" id="issueAttachmentFilesPreview"></div>
+                                    </div>
+
+                                    <div class="issue-evidence-group" id="issueResolutionWrap" style="display: none;">
+                                        <div class="issue-evidence-group-label">
+                                            <i class="bi bi-check-circle"></i> Resolution
+                                        </div>
+                                        <div class="mb-3" id="issueResolutionNotesWrap" style="display: none;">
+                                            <label for="issueResolutionNotes" class="form-label">Resolution Notes *</label>
+                                            <textarea class="form-control" id="issueResolutionNotes" name="resolution_notes" rows="3"
+                                                      placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
+                                        </div>
+                                        <div class="mb-3" id="issueResolutionFilesWrap" style="display: none;">
+                                            <label for="resolutionAttachmentFiles" class="form-label">Resolution Evidence Files</label>
+                                            <input type="file" class="form-control" id="resolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                                            <small class="text-muted">Proof of resolution (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                                            <div class="mt-2 d-flex flex-wrap gap-1" id="resolutionAttachmentFilesPreview"></div>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
+                                        Add Issue
+                                    </button>
                                 </div>
-                                <div class="mb-3">
-                                    <label for="issueAttachmentFiles" class="form-label">Issue Evidence Files</label>
-                                    <input type="file" class="form-control" id="issueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf â€” max 20 MB each). Select one or more.</small>
-                                    <div class="mt-2 d-flex flex-wrap gap-1" id="issueAttachmentFilesPreview"></div>
-                                </div>
-                                <div class="mb-3" id="issueResolutionFilesWrap" style="display: none;">
-                                    <label for="resolutionAttachmentFiles" class="form-label">Resolution Evidence Files</label>
-                                    <input type="file" class="form-control" id="resolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Proof of resolution (jpg, png, pdf â€” max 20 MB each). Select one or more.</small>
-                                    <div class="mt-2 d-flex flex-wrap gap-1" id="resolutionAttachmentFilesPreview"></div>
-                                </div>
-                                <button type="submit" class="btn btn-primary w-100">
-                                    <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
-                                    Add Issue
-                                </button>
                             </form>
                         </div>
                     </div>
@@ -127,9 +153,9 @@
 
 <!-- EDIT ISSUE MODAL -->
 <div class="modal fade" id="editIssueModal" tabindex="-1" aria-labelledby="editIssueModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header issue-modal-header">
                 <h5 class="modal-title" id="editIssueModalLabel">
                     <i class="bi bi-pencil-square" style="margin-right: 8px;"></i>
                     Edit Issue
@@ -141,81 +167,109 @@
                     @csrf
                     @method('PUT')
                     <input type="hidden" id="editIssueId" name="issue_id">
-                    <div class="mb-3">
-                        <label for="editIssueName" class="form-label">Issue Name *</label>
-                        <input type="text" class="form-control" id="editIssueName" name="issue_name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editIssueDescription" class="form-label">Description *</label>
-                        <textarea class="form-control" id="editIssueDescription" name="description" rows="3" required></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editIssueStatus" class="form-label">Status *</label>
-                        <select class="form-control" id="editIssueStatus" name="status" required>
-                            <option value="">Select Status</option>
-                            <option value="Open">Open</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Resolved">Resolved</option>
-                            <option value="Closed">Closed</option>
-                        </select>
-                    </div>
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label for="editIssueType" class="form-label">Issue Type</label>
-                            <select class="form-control" id="editIssueType" name="issue_type">
-                                <option value="">-- Select Type (Optional) --</option>
-                                <option value="material">Material</option>
-                                <option value="contractor">Contractor</option>
-                                <option value="weather">Weather</option>
-                                <option value="design">Design</option>
-                                <option value="regulatory">Regulatory</option>
-                                <option value="financial">Financial</option>
-                                <option value="other">Other</option>
-                            </select>
+
+                    <div class="issue-form-section">
+                        <div class="issue-form-section-label">
+                            <i class="bi bi-info-circle"></i> Issue Details
                         </div>
-                        <div class="col-md-6">
-                            <label for="editIssueSeverity" class="form-label">Severity</label>
-                            <select class="form-control" id="editIssueSeverity" name="severity">
-                                <option value="">-- Select Severity (Optional) --</option>
-                                <option value="Low">Low</option>
-                                <option value="Medium">Medium</option>
-                                <option value="High">High</option>
-                                <option value="Critical">Critical</option>
-                            </select>
+                        <div class="row g-3">
+                            <div class="col-md-8">
+                                <label for="editIssueName" class="form-label">Issue Name *</label>
+                                <input type="text" class="form-control" id="editIssueName" name="issue_name" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editIssueStatus" class="form-label">Status *</label>
+                                <select class="form-control" id="editIssueStatus" name="status" required>
+                                    <option value="">Select Status</option>
+                                    <option value="Open">Open</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Resolved">Resolved</option>
+                                    <option value="Closed">Closed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label for="editIssueDescription" class="form-label">Description *</label>
+                            <textarea class="form-control" id="editIssueDescription" name="description" rows="3" required></textarea>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="editIssueBaselineId" class="form-label">Baseline Month</label>
-                        <select class="form-control" id="editIssueBaselineId" name="baseline_schedule_id">
-                            <option value="">-- Select Baseline Month (Optional) --</option>
-                            @foreach($baselines as $baseline)
-                                <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="mb-3" id="editIssueResolutionNotesWrap" style="display: none;">
-                        <label for="editIssueResolutionNotes" class="form-label">Resolution Notes *</label>
-                        <textarea class="form-control" id="editIssueResolutionNotes" name="resolution_notes" rows="3"
-                                  placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
-                        <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Select one or more.</small>
-                        <div class="mt-2 d-flex flex-wrap gap-1" id="editIssueAttachmentFilesPreview"></div>
-                    </div>
-                    <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
-                        <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
-                        <input type="file" class="form-control" id="editResolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
-                        <small class="text-muted">New proof-of-resolution files (jpg, png, pdf — max 20 MB each). Select one or more.</small>
-                        <div class="mt-2 d-flex flex-wrap gap-1" id="editResolutionAttachmentFilesPreview"></div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Existing Attachments</label>
-                        <div id="editIssueAttachmentList">
-                            <small class="text-muted">Loading...</small>
+
+                    <div class="issue-form-section">
+                        <div class="issue-form-section-label">
+                            <i class="bi bi-tags"></i> Classification
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="editIssueType" class="form-label">Issue Type</label>
+                                <select class="form-control" id="editIssueType" name="issue_type">
+                                    <option value="">-- Select Type (Optional) --</option>
+                                    <option value="material">Material</option>
+                                    <option value="contractor">Contractor</option>
+                                    <option value="weather">Weather</option>
+                                    <option value="design">Design</option>
+                                    <option value="regulatory">Regulatory</option>
+                                    <option value="financial">Financial</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editIssueSeverity" class="form-label">Severity</label>
+                                <select class="form-control" id="editIssueSeverity" name="severity">
+                                    <option value="">-- Select Severity (Optional) --</option>
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                    <option value="Critical">Critical</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editIssueBaselineId" class="form-label">Baseline Month</label>
+                                <select class="form-control" id="editIssueBaselineId" name="baseline_schedule_id">
+                                    <option value="">-- Select Baseline Month (Optional) --</option>
+                                    @foreach($baselines as $baseline)
+                                        <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
                         </div>
                     </div>
+
+                    <div class="issue-form-section">
+                        <div class="issue-form-section-label">
+                            <i class="bi bi-paperclip"></i> Evidence
+                        </div>
+                        <div class="mb-3">
+                            <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
+                            <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
+                            <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                            <div class="mt-2 d-flex flex-wrap gap-1" id="editIssueAttachmentFilesPreview"></div>
+                        </div>
+
+                        <div class="issue-evidence-group" id="editIssueResolutionWrap" style="display: none;">
+                            <div class="issue-evidence-group-label">
+                                <i class="bi bi-check-circle"></i> Resolution
+                            </div>
+                            <div class="mb-3" id="editIssueResolutionNotesWrap" style="display: none;">
+                                <label for="editIssueResolutionNotes" class="form-label">Resolution Notes *</label>
+                                <textarea class="form-control" id="editIssueResolutionNotes" name="resolution_notes" rows="3"
+                                          placeholder="Describe how this issue was resolved (required when status is Resolved or Closed)..."></textarea>
+                            </div>
+                            <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
+                                <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
+                                <input type="file" class="form-control" id="editResolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                                <small class="text-muted">New proof-of-resolution files (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                                <div class="mt-2 d-flex flex-wrap gap-1" id="editResolutionAttachmentFilesPreview"></div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Existing Attachments</label>
+                            <div id="editIssueAttachmentList">
+                                <small class="text-muted">Loading...</small>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-check-circle" style="margin-right: 6px;"></i>
@@ -230,6 +284,103 @@
 </div>
 
 <style>
+/* Larger dialogs: modal-xl (1140px) for both issue modals */
+#issuesModal .modal-dialog,
+#editIssueModal .modal-dialog {
+    max-width: 1140px;
+}
+
+/* Modal header polish */
+.issue-modal-header {
+    background: linear-gradient(90deg, #f8f9fa 0%, #ffffff 100%);
+    border-bottom: 2px solid #e5e7eb;
+    padding: 1rem 1.25rem;
+}
+
+.issue-modal-header .modal-title {
+    font-weight: 700;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+}
+
+.issue-modal-header .modal-title i {
+    color: #2563eb;
+    font-size: 1.25rem;
+}
+
+/* Form card + header */
+.issue-form-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.issue-form-header {
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.issue-form-header h6 {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* Grouped form sections with a labeled divider */
+.issue-form-section {
+    margin-bottom: 1.25rem;
+}
+
+.issue-form-section + .issue-form-section {
+    border-top: 1px dashed #d1d5db;
+    padding-top: 1.25rem;
+}
+
+.issue-form-section-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #374151;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 0.85rem;
+}
+
+.issue-form-section-label i {
+    color: #2563eb;
+    font-size: 0.9rem;
+}
+
+/* Conditional "Resolution" sub-group inside the Evidence section */
+.issue-evidence-group {
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+    background: #fcfcfd;
+}
+
+.issue-evidence-group-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 0.6rem;
+}
+
+.issue-evidence-group-label i {
+    color: #16a34a;
+    font-size: 0.85rem;
+}
+
 .issue-card {
     border-left: 4px solid #007bff;
     background: #f8f9fa;
@@ -381,6 +532,9 @@ window._issueDataById = window._issueDataById || {};
 function toggleIssueResolutionFields(status) {
     const show = status === 'Resolved' || status === 'Closed';
     ['', 'edit'].forEach(prefix => {
+        // Parent "Resolution" group (notes + resolution evidence files)
+        const groupWrap = document.getElementById(prefix + 'IssueResolutionWrap');
+        if (groupWrap) groupWrap.style.display = show ? '' : 'none';
         const notesWrap = document.getElementById(prefix + 'IssueResolutionNotesWrap');
         const filesWrap = document.getElementById(prefix + 'IssueResolutionFilesWrap');
         if (notesWrap) notesWrap.style.display = show ? '' : 'none';
@@ -464,7 +618,11 @@ function renderEditIssueAttachmentList(issue) {
         return;
     }
 
-    container.innerHTML = attachments.map(att => {
+    // Separate existing attachments by context: issue evidence vs resolution proof
+    const issueAtts = attachments.filter(a => a.context !== 'resolution');
+    const resolutionAtts = attachments.filter(a => a.context === 'resolution');
+
+    const renderChip = (att) => {
         window._issueAttachments[att.id] = att;
         return `
             <div class="attachment-chip edit-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
@@ -479,7 +637,27 @@ function renderEditIssueAttachmentList(issue) {
                 </button>
             </div>
         `;
-    }).join('');
+    };
+
+    let html = '';
+    if (issueAtts.length > 0) {
+        html += `
+            <div class="issue-evidence-group-label" style="margin-bottom: 4px;">
+                <i class="bi bi-clipboard-plus"></i> Issue Evidence (${issueAtts.length})
+            </div>
+            <div class="d-flex flex-wrap mb-2">${issueAtts.map(renderChip).join('')}</div>
+        `;
+    }
+    if (resolutionAtts.length > 0) {
+        html += `
+            <div class="issue-evidence-group-label" style="margin-bottom: 4px;">
+                <i class="bi bi-check-circle"></i> Resolution Evidence (${resolutionAtts.length})
+            </div>
+            <div class="d-flex flex-wrap">${resolutionAtts.map(renderChip).join('')}</div>
+        `;
+    }
+
+    container.innerHTML = html;
 }
 
 function deleteIssueAttachment(attachmentId) {

@@ -343,6 +343,37 @@ NOT touched:
 - `AttachmentPolicy::delete` confirmed admin+staff (contractors read-only) — matches the existing delete route.
 - Verification: Blade compiles (`view:cache`); both inline scripts extracted and `node --check` clean (Blade `@if/@endif` normalized to `if (true) {}`); full suite 251 passed / 871 assertions. No PHP/controller changes.
 
+### 2026-08-03 — Adjustment: selected-files preview, attachment delete clipping fix, shorten Issues modal (user request; committed)
+- User reported the attachment delete button was invisible in the edit modal and wanted a live preview of files selected but not yet uploaded. Root cause of the missing button was CSS clipping (`.attachment-chip { max-width:180px; overflow:hidden }`), NOT a stale frontend.
+- `issues_modal.blade.php`:
+  - `.attachment-chip.edit-chip` scoped CSS — `max-width:none; overflow:visible`; the name is wrapped in `.att-name` (ellipsis at 160px) so the ✕ button stays fully visible for long filenames.
+  - Pending-files system: `window._pendingIssueFiles`, `getPendingFiles`, `addPendingFiles` (APPENDS each new pick, dedupes by name+size, clears the input after each pick), `removePendingFile`, `clearPendingFiles` (revokes object URLs), `renderPendingFiles` (thumbnail for images), `collectPendingFiles`; `change` listeners wired on all 4 file inputs (add + edit, issue + resolution contexts).
+  - Add + edit submit handlers now `collectPendingFiles(...)` instead of reading `this.files`; pending lists cleared on success.
+  - `editIssue()` (modal) and `openEditIssueModal()` (tab) clear pending on open.
+- Temporarily commented out the in-modal "All Issues" list (lines ~108–122) — the modal was too tall on the user's small screen (kept `modal-lg` width). `loadIssues()`/`displayIssues()` are now safe no-ops when `#issuesList` is absent so delete/submit callers don't error.
+- Committed as `fe7519f` ("Add selected-files preview, fix attachment delete clipping, shorten Issues modal") — staged ONLY the 2 real changed files; the phantom stat-cache artifacts and `merging/` were left untouched. Pushed to `origin/core/issue-lifecycle`.
+
+### 2026-08-03 — Adjustment: redesign Issues modals — larger size + 2/3-column layout (user request; NOT committed)
+- User asked to redesign the Issues modal layout, enlarge the modal, and lay out narrow fields in 2/3 columns instead of full-width rectangles.
+- `issues_modal.blade.php`:
+  - Both dialogs upgraded `modal-lg` (800px) → `modal-xl` (1140px) + `modal-dialog-scrollable`; explicit `#issuesModal .modal-dialog, #editIssueModal .modal-dialog { max-width: 1140px }`.
+  - Forms reorganized into labeled sections via new `.issue-form-section` / `.issue-form-section-label` CSS (uppercase icon headers, dashed separators): **Issue Details** (Name col-8 + Status col-4, then Description full-width) → **Classification** (Type + Severity + Baseline Month in one 3-column row) → **Evidence**.
+  - Polished `.issue-modal-header` (subtle gradient, bolder title) and `.issue-form-card`/`.issue-form-header`.
+  - BUG FIXED: mangled select id `id="Add New IssueissueSeverity"` → `id="issueSeverity"`; mojibake `â€”` → `—` in helper text.
+  - All form IDs, `name` attributes, and JS hooks preserved (submit handlers, `toggleIssueResolutionFields`, pending-file previews, attachment list).
+- Verified: `php artisan view:cache` compiles; inline script extracted + `node --check` clean; `IssueLifecycleTest` 18/18. No PHP/controller changes.
+
+### 2026-08-03 — Adjustment: separate Issue Evidence vs Resolution evidence + attachment grouping (user request; NOT committed)
+- User confirmed the edit modal already reveals resolution notes + resolution evidence files when status = Resolved/Closed, asked that the ADD modal behave the same, and asked for proper separation of issue vs resolution attachments in both modals.
+- FINDING: `toggleIssueResolutionFields()` already toggled resolution fields for BOTH modals (prefix `''` and `'edit'`); the gap was visual grouping, not behavior.
+- `issues_modal.blade.php`:
+  - Evidence sections restructured: **Issue Evidence Files** always visible; new conditional `.issue-evidence-group` (dashed border, subtle bg) wrapper `...IssueResolutionWrap` holds the **Resolution** label + Resolution Notes + Resolution Evidence Files, shown only for Resolved/Closed.
+  - `toggleIssueResolutionFields()` now also toggles the parent `prefix + 'IssueResolutionWrap'` group.
+  - `renderEditIssueAttachmentList(issue)` splits existing attachments by their `context` field into labeled sub-groups **Issue Evidence (n)** and **Resolution Evidence (n)** with counts and icons.
+  - New `.issue-evidence-group` / `.issue-evidence-group-label` CSS.
+- Confirmed the `context` field is already in the JSON (`AttachmentController::upload` response line 101; `IssueController::getIssues` line 54).
+- Verified: Blade compiles; script extracted + `node --check` clean; `IssueLifecycleTest` 18/18. No PHP/controller changes.
+
 ---
 
 END OF PHASE C PLAN
