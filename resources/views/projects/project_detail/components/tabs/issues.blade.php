@@ -273,6 +273,10 @@ function openEditIssueModal(id, name, description, status, issueType, severity, 
     document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
     document.getElementById('editIssueAttachmentFiles').value = '';
     document.getElementById('editResolutionAttachmentFiles').value = '';
+    if (typeof clearPendingFiles === 'function') {
+        clearPendingFiles('editIssueAttachmentFiles');
+        clearPendingFiles('editResolutionAttachmentFiles');
+    }
 
     if (typeof renderEditIssueAttachmentList === 'function') {
         renderEditIssueAttachmentList(window._issueDataById[id]);

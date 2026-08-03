@@ -60,7 +60,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label for="issueSeverity" class="form-label">Severity</label>
-                                        <select class="form-control" id="issueSeverity" name="severity">
+                                        <select class="form-control" id="Add New IssueissueSeverity" name="severity">
                                             <option value="">-- Select Severity (Optional) --</option>
                                             <option value="Low">Low</option>
                                             <option value="Medium">Medium</option>
@@ -87,12 +87,14 @@
                                 <div class="mb-3">
                                     <label for="issueAttachmentFiles" class="form-label">Issue Evidence Files</label>
                                     <input type="file" class="form-control" id="issueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf â€” max 20 MB each)</small>
+                                    <small class="text-muted">Photos or documents supporting this issue (jpg, png, pdf â€” max 20 MB each). Select one or more.</small>
+                                    <div class="mt-2 d-flex flex-wrap gap-1" id="issueAttachmentFilesPreview"></div>
                                 </div>
                                 <div class="mb-3" id="issueResolutionFilesWrap" style="display: none;">
                                     <label for="resolutionAttachmentFiles" class="form-label">Resolution Evidence Files</label>
                                     <input type="file" class="form-control" id="resolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
-                                    <small class="text-muted">Proof of resolution (jpg, png, pdf â€” max 20 MB each)</small>
+                                    <small class="text-muted">Proof of resolution (jpg, png, pdf â€” max 20 MB each). Select one or more.</small>
+                                    <div class="mt-2 d-flex flex-wrap gap-1" id="resolutionAttachmentFilesPreview"></div>
                                 </div>
                                 <button type="submit" class="btn btn-primary w-100">
                                     <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
@@ -103,8 +105,8 @@
                     </div>
                 @endif
 
-                <!-- Issues List -->
-                <div class="card">
+                {{-- Issues List (temporarily commented out — makes the modal too tall on small screens) --}}
+                {{-- <div class="card">
                     <div class="card-header" style="background-color: #f8f9fa; border-bottom: 1px solid #e0e0e0;">
                         <h6 class="mb-0" style="font-weight: 600;">
                             <i class="bi bi-list-ul" style="margin-right: 6px;"></i>
@@ -117,7 +119,7 @@
                             <p>No issues yet</p>
                         </div>
                     </div>
-                </div>
+                </div> --}}
             </div>
         </div>
     </div>
@@ -199,11 +201,14 @@
                     <div class="mb-3">
                         <label for="editIssueAttachmentFiles" class="form-label">Add Issue Evidence Files</label>
                         <input type="file" class="form-control" id="editIssueAttachmentFiles" name="issue_attachment_files[]" multiple accept="image/*,.pdf">
-                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Existing attachments are listed below.</small>
+                        <small class="text-muted">New photos or documents to attach (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="editIssueAttachmentFilesPreview"></div>
                     </div>
                     <div class="mb-3" id="editIssueResolutionFilesWrap" style="display: none;">
                         <label for="editResolutionAttachmentFiles" class="form-label">Add Resolution Evidence Files</label>
                         <input type="file" class="form-control" id="editResolutionAttachmentFiles" name="resolution_attachment_files[]" multiple accept="image/*,.pdf">
+                        <small class="text-muted">New proof-of-resolution files (jpg, png, pdf — max 20 MB each). Select one or more.</small>
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="editResolutionAttachmentFilesPreview"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Existing Attachments</label>
@@ -314,6 +319,23 @@
     background: transparent;
 }
 
+/* Edit-modal chips: keep the remove (✕) button always visible, even for long names.
+   The name itself is allowed to truncate (ellipsis) instead of clipping the button. */
+.attachment-chip.edit-chip {
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
+    cursor: default;
+    padding-right: 6px;
+}
+
+.attachment-chip.edit-chip .att-name {
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Dropdown arrow indicator so select fields read as selection, not text input */
 #issuesModal select.form-control,
 #editIssueModal select.form-control {
@@ -367,6 +389,9 @@ function toggleIssueResolutionFields(status) {
 }
 
 function loadIssues() {
+    // The in-modal issues list was temporarily commented out for small screens.
+    // Keep this a safe no-op so existing callers (delete attachment, submit) don't error.
+    if (!document.getElementById('issuesList')) return;
     const projectId = window.projectId;
     const apiUrl = getIssuesApiUrl();
     
@@ -442,8 +467,8 @@ function renderEditIssueAttachmentList(issue) {
     container.innerHTML = attachments.map(att => {
         window._issueAttachments[att.id] = att;
         return `
-            <div class="attachment-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
-                <span onclick="openIssueAttachmentById(${att.id})" title="View attachment"
+            <div class="attachment-chip edit-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
+                <span class="att-name" onclick="openIssueAttachmentById(${att.id})" title="View attachment"
                       style="cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
                     <i class="bi ${getAttachmentIcon(att.original_name)}"></i>
                     <span>${escapeHtml(att.original_name)}</span>
@@ -496,6 +521,7 @@ function deleteIssueAttachment(attachmentId) {
 
 function displayIssues(issues) {
     const issuesList = document.getElementById('issuesList');
+    if (!issuesList) return;
     
     if (issues.length === 0) {
         issuesList.innerHTML = `
@@ -572,6 +598,8 @@ function editIssue(id, name, description, status, issueType, severity, baselineS
     document.getElementById('editIssueResolutionNotes').value = resolutionNotes || '';
     document.getElementById('editIssueAttachmentFiles').value = '';
     document.getElementById('editResolutionAttachmentFiles').value = '';
+    clearPendingFiles('editIssueAttachmentFiles');
+    clearPendingFiles('editResolutionAttachmentFiles');
 
     renderEditIssueAttachmentList(window._issueDataById[id]);
     toggleIssueResolutionFields(status);
@@ -658,13 +686,94 @@ function uploadIssueFiles(issueId, issueFiles, resolutionFiles) {
     return Promise.all(promises);
 }
 
+// ==== PENDING FILE SELECTION (multi-file) ====
+// Files the user has picked but not yet uploaded are accumulated per input id.
+// A later pick APPENDS to earlier picks instead of replacing them (browser default).
+window._pendingIssueFiles = window._pendingIssueFiles || {};
+
+function getPendingFiles(inputId) {
+    if (!window._pendingIssueFiles[inputId]) window._pendingIssueFiles[inputId] = [];
+    return window._pendingIssueFiles[inputId];
+}
+
+function addPendingFiles(inputId, fileList) {
+    const pending = getPendingFiles(inputId);
+    Array.from(fileList || []).forEach(file => {
+        const dup = pending.some(p => p.file.name === file.name && p.file.size === file.size);
+        if (!dup) {
+            pending.push({
+                file: file,
+                url: file.type && file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+            });
+        }
+    });
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+    renderPendingFiles(inputId);
+}
+
+function removePendingFile(inputId, index) {
+    const pending = getPendingFiles(inputId);
+    const removed = pending.splice(index, 1)[0];
+    if (removed && removed.url) URL.revokeObjectURL(removed.url);
+    renderPendingFiles(inputId);
+}
+
+function clearPendingFiles(inputId) {
+    getPendingFiles(inputId).forEach(p => { if (p.url) URL.revokeObjectURL(p.url); });
+    window._pendingIssueFiles[inputId] = [];
+    const container = document.getElementById(inputId + 'Preview');
+    if (container) container.innerHTML = '';
+    const input = document.getElementById(inputId);
+    if (input) input.value = '';
+}
+
+function renderPendingFiles(inputId) {
+    const container = document.getElementById(inputId + 'Preview');
+    if (!container) return;
+    const pending = getPendingFiles(inputId);
+    if (pending.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = pending.map((p, i) => `
+        <span class="attachment-chip edit-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(p.file.name)}">
+            <span style="display: inline-flex; align-items: center; gap: 5px;">
+                ${p.url
+                    ? `<img src="${p.url}" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px;">`
+                    : `<i class="bi ${getAttachmentIcon(p.file.name)}"></i>`}
+                <span class="att-name">${escapeHtml(p.file.name)}</span>
+            </span>
+            <button type="button" class="attachment-remove-btn" title="Remove file"
+                    onclick="removePendingFile('${inputId}', ${i})">
+                <i class="bi bi-x-circle-fill"></i>
+            </button>
+        </span>
+    `).join('');
+}
+
+function collectPendingFiles(inputId) {
+    return getPendingFiles(inputId).map(p => p.file);
+}
+
+// Accumulate multiple file picks on every file input (add + edit forms).
+['issueAttachmentFiles', 'resolutionAttachmentFiles', 'editIssueAttachmentFiles', 'editResolutionAttachmentFiles']
+    .forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.addEventListener('change', function() {
+                addPendingFiles(inputId, this.files);
+            });
+        }
+    });
+
 // Form submission
 @if(in_array(auth()->user()->role, ['admin', 'staff']))
 document.getElementById('addIssueForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
     
-    const issueFiles = Array.from(document.getElementById('issueAttachmentFiles')?.files || []);
-    const resolutionFiles = Array.from(document.getElementById('resolutionAttachmentFiles')?.files || []);
+    const issueFiles = collectPendingFiles('issueAttachmentFiles');
+    const resolutionFiles = collectPendingFiles('resolutionAttachmentFiles');
     
     const formData = new FormData(this);
     // Files are uploaded after issue creation (attachable_id requires the new issue id)
@@ -699,6 +808,8 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
     })
     .then(data => {
         this.reset();
+        clearPendingFiles('issueAttachmentFiles');
+        clearPendingFiles('resolutionAttachmentFiles');
         toggleIssueResolutionFields('Open');
         loadIssues();
         // Also refresh the issues tab
@@ -726,8 +837,8 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     e.preventDefault();
     
     const issueId = document.getElementById('editIssueId').value;
-    const issueFiles = Array.from(document.getElementById('editIssueAttachmentFiles')?.files || []);
-    const resolutionFiles = Array.from(document.getElementById('editResolutionAttachmentFiles')?.files || []);
+    const issueFiles = collectPendingFiles('editIssueAttachmentFiles');
+    const resolutionFiles = collectPendingFiles('editResolutionAttachmentFiles');
     
     const jsonData = {
         issue_name: document.getElementById('editIssueName').value,
@@ -767,6 +878,8 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     })
     .then(data => {
         bootstrap.Modal.getInstance(document.getElementById('editIssueModal')).hide();
+        clearPendingFiles('editIssueAttachmentFiles');
+        clearPendingFiles('editResolutionAttachmentFiles');
         loadIssues();
         // Also refresh the issues tab
         if (typeof loadTabIssues === 'function') {
