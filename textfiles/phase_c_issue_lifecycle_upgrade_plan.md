@@ -374,6 +374,16 @@ NOT touched:
 - Confirmed the `context` field is already in the JSON (`AttachmentController::upload` response line 101; `IssueController::getIssues` line 54).
 - Verified: Blade compiles; script extracted + `node --check` clean; `IssueLifecycleTest` 18/18. No PHP/controller changes.
 
+### 2026-08-03 — Adjustment: reusable delete confirmation for attachment removal + deferred edit deletion (user request; branch `nondeep`)
+- User asked that attachment removal in the edit modal use the reusable `components/delete-confirmation-modal.blade.php` and that deletion NOT fire until the Update button is clicked.
+- `issues_modal.blade.php`:
+  - FIRST attempt redefined the component's own globals `showDeleteConfirmation`/`confirmDeleteAction` inside the issues modal, which collided with the component's versions (issues tab renders after the baseline tab that includes the component) → warning message + Cancel/Close broken. Rewritten to use the component's `showDeleteConfirmation(title, message, onConfirm)` and pass a callback; moved the actual DELETE logic into a separate `performAttachmentDelete(attachmentId)`.
+  - Deferred-delete design: removals are queued in `window._pendingDeleteAttachmentIds`; `queueAttachmentForDeletion()` re-renders the edit list locally WITHOUT a DELETE request; `flushPendingAttachmentDeletions()` actually deletes on the server and is only called after a successful issue update. `deleteIssueAttachment()` still confirms via the reusable modal first.
+  - BUG FOUND during testing: `queueAttachmentForDeletion` previously did `window._issueDataById[id].attachments = ...filter(...)`, permanently mutating the shared cache (used by both modal and issues tab). After cancelling and re-opening the edit modal, the removed attachment stayed hidden until a full page refresh. Fixed by NOT mutating the cached array; `renderEditIssueAttachmentList()` now excludes pending-deleted ids at render time only.
+- `tabs/issues.blade.php`:
+  - `openEditIssueModal()` resets `window._pendingDeleteAttachmentIds` on open, matching the modal's `editIssue()`.
+- Verified: `php artisan view:cache` compiles. Changes committed to branch `nondeep`.
+
 ---
 
 END OF PHASE C PLAN

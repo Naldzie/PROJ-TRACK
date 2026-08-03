@@ -263,6 +263,9 @@ function severityTabStyle(severity) {
 }
 
 function openEditIssueModal(id, name, description, status, issueType, severity, baselineScheduleId, resolutionNotes) {
+    // Start a fresh deletion queue each time the edit modal is opened.
+    window._pendingDeleteAttachmentIds = window._pendingDeleteAttachmentIds || [];
+    window._pendingDeleteAttachmentIds = [];
     document.getElementById('editIssueId').value = id;
     document.getElementById('editIssueName').value = name;
     document.getElementById('editIssueDescription').value = description;

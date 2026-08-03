@@ -612,7 +612,11 @@ function renderEditIssueAttachmentList(issue) {
     const container = document.getElementById('editIssueAttachmentList');
     if (!container) return;
 
-    const attachments = (issue && issue.attachments) || [];
+    // Read from the source list and exclude any attachments currently queued
+    // for deletion (pending). We must NOT mutate issue.attachments itself so a
+    // cancelled edit session leaves the cached data intact for re-opening.
+    const pending = (window._pendingDeleteAttachmentIds || []);
+    const attachments = ((issue && issue.attachments) || []).filter(a => pending.indexOf(a.id) === -1);
     if (attachments.length === 0) {
         container.innerHTML = '<small class="text-muted">No attachments yet.</small>';
         return;
@@ -660,41 +664,70 @@ function renderEditIssueAttachmentList(issue) {
     container.innerHTML = html;
 }
 
-function deleteIssueAttachment(attachmentId) {
-    if (!confirm('Are you sure you want to remove this attachment?')) return;
-    const role = window.userRole;
-    const apiUrl = `/${role}/attachments/${attachmentId}`;
+// Attachment deletions in the EDIT modal are deferred: they are queued in
+// window.pendingDeleteAttachmentIds and only deleted on the server when the
+// user actually clicks the "Update Issue" button. Queued files are visually
+// removed from the list immediately (on confirm), but no DELETE request fires
+// until the issue is saved — so closing/cancelling the modal keeps them intact.
 
-    fetch(apiUrl, {
-        method: 'DELETE',
-        headers: {
-            'X-CSRF-TOKEN': window.csrfToken,
-            'Accept': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success) {
-            throw {data: data};
-        }
-        const editIssueId = document.getElementById('editIssueId')?.value;
-        if (editIssueId && window._issueDataById[editIssueId]) {
-            window._issueDataById[editIssueId].attachments =
-                (window._issueDataById[editIssueId].attachments || []).filter(a => a.id !== attachmentId);
-            renderEditIssueAttachmentList(window._issueDataById[editIssueId]);
-        }
-        delete window._issueAttachments[attachmentId];
-        loadIssues();
-        if (typeof loadTabIssues === 'function') {
-            loadTabIssues();
-        }
-        showSuccessMessage('Attachment removed successfully');
-    })
-    .catch(error => {
-        console.error('Error removing attachment:', error);
-        showErrorMessage(error && error.data && error.data.message ? error.data.message : 'Error removing attachment');
-    });
+window._pendingDeleteAttachmentIds = [];
+
+function deleteIssueAttachment(attachmentId) {
+    // Use the reusable delete confirmation modal (components/delete-confirmation-modal.blade.php).
+    // The component supplies showDeleteConfirmation(title, message, onConfirm) + confirmDeleteAction().
+    if (typeof showDeleteConfirmation !== 'function') {
+        showErrorMessage('Delete confirmation component is not available');
+        return;
+    }
+    showDeleteConfirmation(
+        'Remove Attachment',
+        'This attachment will be removed when you save the issue. It will not be deleted unless you click "Update Issue".',
+        function() { queueAttachmentForDeletion(attachmentId); }
+    );
+}
+
+function queueAttachmentForDeletion(attachmentId) {
+    // Add to the pending-deletion queue for this edit session. We do NOT mutate
+    // window._issueDataById so that cancelling/refreshing keeps the attachment.
+    if (window._pendingDeleteAttachmentIds.indexOf(attachmentId) === -1) {
+        window._pendingDeleteAttachmentIds.push(attachmentId);
+    }
+    // Visually remove the chip from the list immediately (UI only — server not touched yet).
+    const editIssueId = document.getElementById('editIssueId')?.value;
+    if (editIssueId && window._issueDataById[editIssueId]) {
+        renderEditIssueAttachmentList(window._issueDataById[editIssueId]);
+    }
+    delete window._issueAttachments[attachmentId];
+}
+
+// Actually delete all queued attachments on the server. Called only after the
+// issue update has been persisted successfully (Update button), never on a
+// plain "remove" click or on modal close.
+function flushPendingAttachmentDeletions() {
+    const toDelete = window._pendingDeleteAttachmentIds.slice();
+    if (toDelete.length === 0) return Promise.resolve();
+
+    const role = window.userRole;
+    const requests = toDelete.map(attachmentId =>
+        fetch(`/${role}/attachments/${attachmentId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error((data && data.message) || 'Failed to delete attachment #' + attachmentId);
+            }
+        })
+    );
+
+    // Clear the queue once we attempt the flushes.
+    window._pendingDeleteAttachmentIds = [];
+    return Promise.all(requests);
 }
 
 function displayIssues(issues) {
@@ -766,6 +799,8 @@ function displayIssues(issues) {
 }
 
 function editIssue(id, name, description, status, issueType, severity, baselineScheduleId, resolutionNotes) {
+    // Start a fresh deletion queue each time the edit modal is opened.
+    window._pendingDeleteAttachmentIds = [];
     document.getElementById('editIssueId').value = id;
     document.getElementById('editIssueName').value = name;
     document.getElementById('editIssueDescription').value = description;
@@ -1050,7 +1085,9 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     })
     .then(data => {
         if (data.success) {
-            return uploadIssueFiles(issueId, issueFiles, resolutionFiles).then(() => data);
+            return uploadIssueFiles(issueId, issueFiles, resolutionFiles)
+                .then(() => flushPendingAttachmentDeletions())
+                .then(() => data);
         }
         throw {status: 400, data: data};
     })
