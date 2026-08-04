@@ -8,7 +8,7 @@
     {{-- NEW: lets the JS validation mirror the controller's extension-aware 100%-cap logic --}}
     window.projectExtensionCount = {{ $project->extension_count ?? 0 }};
     {{-- Expose progress records for edit modal --}}
-    window._progressRecordData = @json($project->progressHistory->load('recordedBy')->each->setAppends(['recorded_by_name', 'activity_names'])->keyBy('id'));
+    window._progressRecordData = @json($project->progressHistory->load('recordedBy')->load('attachments')->each->setAppends(['recorded_by_name', 'activity_names'])->keyBy('id'));
 </script>
 
 <!-- Load Baseline Schedule Utilities -->
@@ -150,6 +150,7 @@
                 $activitiesCount = $project->activities()->where('month_label', $plan->month_label)->count();
                 $activitiesCompleted = $project->activities()->where('month_label', $plan->month_label)->where('is_completed', true)->count();
                 $latestProgress = $plan->progressHistory()
+                    ->with('attachments')
                     ->orderBy('month_label', 'desc')
                     ->orderBy('inspection_date', 'desc')
                     ->orderBy('id', 'desc')
@@ -216,6 +217,19 @@
                             </div>
                             @endif
                         </div>
+
+                        @if($latestProgress && $latestProgress->attachments->count() > 0)
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 600;">Evidence:</span>
+                            @foreach($latestProgress->attachments as $att)
+                                <span class="attachment-chip me-1" title="{{ $att->original_name }}"
+                                      onclick="openDocumentViewer({id: {{ $att->id }}, name: '{{ addslashes($att->original_name) }}', type: 'Inspection Evidence', size: '{{ $att->display_size }}', uploadedBy: '{{ addslashes($att->uploaded_by ?? '') }}', uploadedAt: '{{ $att->created_at ? $att->created_at->format('M d, Y H:i') : '' }}', viewUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/view', downloadUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/download'})">
+                                    <i class="bi {{ $att->file_extension === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark-image' }}"></i>
+                                    <span>{{ $att->original_name }}</span>
+                                </span>
+                            @endforeach
+                        </div>
+                        @endif
                     </div>
 
                     <!-- Right: Collapse Icon & Actions -->
@@ -536,6 +550,9 @@ Add Month Target Modal functions moved to baseline-schedule-add-month-modal.js
 
 <!-- Load Manage Month Modal JavaScript (includes reloadInlineActivities) -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-manage-month-modal.js') }}"></script>
+
+<!-- Phase D: shared progress-attachments helpers (loaded before record/edit modal JS) -->
+<script src="{{ asset('js/admin/projects/progress-attachments.js') }}"></script>
 
 <!-- Load Record Progress Modal JavaScript -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-record-progress-modal.js') }}"></script>

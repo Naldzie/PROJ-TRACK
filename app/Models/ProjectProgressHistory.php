@@ -78,6 +78,16 @@ class ProjectProgressHistory extends Model
         return $this->belongsTo(User::class, 'recorded_by');
     }
 
+    /**
+     * Evidence files attached to this progress record (inspection photos/PDFs).
+     * The inverse side is wired here (Phase D); Attachment::ALLOWED_ATTACHABLE_TYPES
+     * already lists ProjectProgressHistory.
+     */
+    public function attachments()
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
+    }
+
     // === ACCESSORS ===
     
     /**

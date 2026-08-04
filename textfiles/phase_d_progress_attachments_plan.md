@@ -325,6 +325,19 @@ NOT touched:
 - Codebase study complete (models, controllers, views, routes, policies verified).
 - Plan written (this file); committed as plan-only (no implementation); pushed to GitHub.
 
+### 2026-08-04 — Phase implemented (Rule 8: tested per step)
+- **Step 1 (Model):** `ProjectProgressHistory::attachments()` morphMany appended (mirrors `Issue::attachments`).
+- **Step 2 (Controller):** `ProjectProgressController` — `attachments` key in `recordMonthlyProgress()` + `editProgressRecord()` success JSON; explicit attachment-row cleanup (row → physical file via model hook) inside `destroyProgress()` before `$record->delete()`.
+- **Step 3 (Data load):** `baseline-schedule.blade.php` + `progress.blade.php` eager-load `attachments` on the `_progressRecordData` payloads.
+- **Step 4 (JS):** new `public/js/admin/projects/progress-attachments.js` — shared helpers (chips, document-viewer open, pending-files preview system, `uploadProgressFiles` via POST `/{role}/attachments/upload` with `attachable_type=App\Models\ProjectProgressHistory`, `context=inspection`, deferred delete queue mirroring Phase C `showDeleteConfirmation`). Wired into `baseline-schedule-record-progress-modal.js` (upload after successful save) and `baseline-schedule-edit-progress-modal.js` (reset/render, upload + flush on successful update; never mutates `_progressRecordData` cache).
+- **Step 5 (Views):** `record_progress_modal.blade.php` — "Inspection Evidence Files" input + preview; `_edit_progress_modal.blade.php` — add-evidence input + preview + "Existing Attachments" list with deferred delete.
+- **Step 6 (Views):** `progress.blade.php` history table — Attachments column with per-row chips (inline `openDocumentViewer`, role-scoped URLs, pdf/image icon); `baseline-schedule.blade.php` month cards — Evidence chips row under indicators for the latest record (attachments eager-loaded via `$latestProgress` query).
+- **Step 7 (Tests):** new `tests/Feature/ProgressAttachmentTest.php` (9 tests / 54 assertions) — mirrors AttachmentTest conventions (direct controller invocation, `Storage::fake('public')`, real JPEG magic bytes via `createWithContent`). Covers: record response `attachments` key, upload binds to new record, edit exposes attachment ids, morphMany loads attachments, delete removes row+file, contractor upload/delete 403s, destroyProgress cleans attachments + files, contractor cannot destroy.
+- **Step 8 (Verification):** `php -l` clean on changed PHP; `php artisan view:cache` OK; full suite **260 passed / 925 assertions** (baseline 251/871 + 9/54 new; zero regressions).
+
+### 2026-08-04 — Awaiting user approval to merge
+- All work on `core/progress-attachments`; NOT merged to `main` (Rule 12 — requires explicit approval).
+
 ---
 
 END OF PHASE D PLAN

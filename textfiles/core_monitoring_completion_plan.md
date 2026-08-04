@@ -2,10 +2,11 @@
 
 CSPC PMU System — Core Monitoring (AI regression module paused)
 
-Status: 📋 PLANNED — not started. User decided to shift focus from the
-        regression-based predictive module to finishing the core project
-        monitoring features first. Regression module paused (Phase 8 done;
-        Fix H + v2.5 deferred to backlog).
+Status: ✅ IN PROGRESS — Phases A–D implemented. Phase A (attachments infra),
+        B (overview real data), C (issue lifecycle) merged to main. Phase D
+        (progress attachments) implemented on `core/progress-attachments`,
+        awaiting user approval to merge (Rule 12). Phase E pending. Regression
+        module paused (Phase 8 done; Fix H + v2.5 deferred to backlog).
 
 Date: August 2, 2026
 
@@ -199,28 +200,43 @@ Branch: `core/issue-lifecycle` (from `main`)
 
 ## 7. PHASE D — Progress Recording Attachments
 
-Branch: `core/progress-attachments` (from `core/attachments-infra`)
+Branch: `core/progress-attachments` (from `main` @ `81c667e`)
+Detailed plan: `textfiles/phase_d_progress_attachments_plan.md`
+
+### Design (confirmed 2026-08-04 — deviates from original draft)
+- **Separate-endpoint upload** (Phase C pattern), NOT FormData in the record
+  controller. Record/edit endpoints stay JSON; files upload after record save
+  via the existing `/{role}/attachments/upload` (attachable_type =
+  `App\Models\ProjectProgressHistory`, context `inspection`).
+- Single `inspection` context only; no issue/resolution group labels.
+- Edit deletion deferred (queue via `showDeleteConfirmation`, flush after
+  successful Update, never mutate `_progressRecordData` cache).
 
 ### Files
-- `app/Http/Controllers/ProjectProgressController.php` —
-  `recordMonthlyProgress()` and `editProgressRecord()` accept optional
-  `attachments[]` (multiple, image/pdf); persist as `Attachment` rows
-  (`context: 'inspection'`) after the record commit; return `attachments` in
-  responses.
-- `record_monthly_progress_modal.blade.php` + `baseline-schedule-record-progress-modal.js`
-  — switch request body from JSON to `FormData` (adds file inputs).
-- `baseline-schedule-edit-progress-modal.js` / edit modal — same change.
+- `app/Models/ProjectProgressHistory.php` — `attachments()` morphMany.
+- `app/Http/Controllers/ProjectProgressController.php` — `attachments` key in
+  `recordMonthlyProgress()` + `editProgressRecord()` success JSON; explicit
+  attachment cleanup (rows + physical files) inside `destroyProgress()`.
+- `public/js/admin/projects/progress-attachments.js` — shared chips / pending
+  preview / upload / deferred-delete helpers.
+- `baseline-schedule-record-progress-modal.js` — upload pending files after
+  successful record save; `baseline-schedule-edit-progress-modal.js` — render
+  existing, upload new, flush deferred deletes on successful update.
 
 ### Views
-- `progress.blade.php` history table + baseline monthly cards show attachment
-  chips (image thumbnail / PDF icon) with preview via `document-viewer-modal`;
-  add/remove attachment UI on the record.
+- `record_progress_modal.blade.php` — "Inspection Evidence Files" input + preview.
+- `_edit_progress_modal.blade.php` — add-evidence input + preview + "Existing
+  Attachments" list with deferred delete.
+- `progress.blade.php` history table — Attachments column with chips
+  (document-viewer preview, pdf/image icon).
+- `baseline-schedule.blade.php` month cards — Evidence chips under indicators
+  for the latest record.
 
 ### Tests
-- multipart record with 0 / N files
-- mime whitelist (image/pdf only)
-- attachment rows created + linked to the progress record
-- edit adds attachments
+- `tests/Feature/ProgressAttachmentTest.php` (9 tests / 54 assertions): record
+  response `attachments` key, upload binds to new record, edit exposes ids,
+  morphMany loads attachments, delete removes row+file, contractor 403s,
+  destroyProgress cleans attachments + files.
 
 ---
 
@@ -307,6 +323,15 @@ Branch: `core/ai-baseline-linkage` (from `core/issue-lifecycle`)
    Consequences: prediction_history's existing predicted-vs-actual data is
    preserved and ready for Phase 10.
 
+5. **Phase D upload transport** — separate endpoint, not FormData.
+   Context: the original Phase D draft said to switch the record controller to
+   FormData; this is a regression risk for the JSON-based record/edit flow.
+   Decision: keep record/edit endpoints JSON and upload files after save via the
+   existing `/{role}/attachments/upload` (Phase C pattern), bound by
+   attachable_type + context `inspection`.
+   Consequences: upload failures after save surface a toast and the record is
+   kept; files transmit only on Save/Update.
+
 ---
 
-END OF PLAN (draft — not started)
+END OF PLAN (draft — Phases A–D implemented; D awaiting merge approval)

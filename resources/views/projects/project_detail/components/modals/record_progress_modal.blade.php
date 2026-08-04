@@ -75,6 +75,17 @@
                         <textarea id="progressRemarks" name="remarks" class="form-control" rows="3" placeholder="Inspection observations, issues encountered, etc."
                                   style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;"></textarea>
                     </div>
+
+                    <!-- Inspection Evidence (Phase D) — uploaded after save via /attachments/upload -->
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label for="progressAttachmentFiles" style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">
+                            Inspection Evidence Files
+                        </label>
+                        <input type="file" id="progressAttachmentFiles" name="progress_attachment_files[]" multiple accept="image/*,.pdf"
+                               class="form-control" style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;">
+                        <small style="color: #6b7280; margin-top: 4px; display: block;">Inspection photos or documents (jpg, png, pdf &mdash; max 20 MB each). Select one or more; attached when you save.</small>
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="progressAttachmentFilesPreview"></div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid #e5e7eb;">

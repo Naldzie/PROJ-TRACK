@@ -74,7 +74,7 @@
         </div>
 
         <!-- ==================== PROGRESS RECORDING HISTORY ==================== -->
-        @php $progressHistoryRecords = $project->progressHistory->sortByDesc(fn($h) => $h->month_label . '|' . ($h->inspection_date ?? '0000-00-00') . '|' . str_pad($h->id, 12, '0', STR_PAD_LEFT)); @endphp
+        @php $progressHistoryRecords = $project->progressHistory->load('attachments')->sortByDesc(fn($h) => $h->month_label . '|' . ($h->inspection_date ?? '0000-00-00') . '|' . str_pad($h->id, 12, '0', STR_PAD_LEFT)); @endphp
         @can('update', $project)
         <div style="margin-top: 40px;">
             <div style="background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color: white; padding: 15px 20px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
@@ -114,6 +114,7 @@
                                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Recorded By</th>
                                 @endif
                                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Notes</th>
+                                <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Attachments</th>
                                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Actions</th>
                             </tr>
                         </thead>
@@ -179,6 +180,21 @@
                                     @endif
                                     <td style="padding: 12px 15px; color: #6b7280; font-size: 13px; max-width: 250px; word-break: break-word;">
                                         {{ $history->remarks ?? '—' }}
+                                    </td>
+                                    <td style="padding: 12px 15px;">
+                                        @if($history->attachments->count() > 0)
+                                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                                @foreach($history->attachments as $att)
+                                                    <span class="attachment-chip me-1 mb-1" title="{{ $att->original_name }}"
+                                                          onclick="openDocumentViewer({id: {{ $att->id }}, name: '{{ addslashes($att->original_name) }}', type: 'Inspection Evidence', size: '{{ $att->display_size }}', uploadedBy: '{{ addslashes($att->uploaded_by ?? '') }}', uploadedAt: '{{ $att->created_at ? $att->created_at->format('M d, Y H:i') : '' }}', viewUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/view', downloadUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/download'})">
+                                                        <i class="bi {{ $att->file_extension === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark-image' }}"></i>
+                                                        <span>{{ $att->original_name }}</span>
+                                                    </span>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <span style="color: #9ca3af;">—</span>
+                                        @endif
                                     </td>
                                     <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
                                         <button onclick="openEditProgressModal({{ $history->id }}, '{{ $history->month_label }}')"
@@ -618,9 +634,10 @@ function buildMonthlySummaryTable(monthlySummary) {
 @include('projects.project_detail.components.modals._edit_progress_modal')
 
 <script>
-window._progressRecordData = @json($project->progressHistory->load('recordedBy')->each->setAppends(['recorded_by_name', 'activity_names'])->keyBy('id'));
+window._progressRecordData = @json($project->progressHistory->load('recordedBy')->load('attachments')->each->setAppends(['recorded_by_name', 'activity_names'])->keyBy('id'));
 </script>
 
+<script src="{{ asset('js/admin/projects/progress-attachments.js') }}"></script>
 <script src="{{ asset('js/admin/projects/baseline-schedule-edit-progress-modal.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Attachment;
 use App\Models\Project;
 use App\Models\ProjectActivity;
 use App\Models\ProjectProgressHistory;
@@ -199,6 +200,7 @@ class ProjectProgressController extends Controller
                 'success' => true,
                 'message' => 'Progress record updated successfully',
                 'record' => $record->fresh(),
+                'attachments' => $record->attachments->pluck('id'), // Existing inspection evidence ids (Phase D)
                 'audit_info' => $record->getEditHistory(),
                 'project_status' => $project->status,
             ]);
@@ -271,6 +273,16 @@ class ProjectProgressController extends Controller
                     }
                 }
             }
+
+            // Delete the record's inspection attachments (rows) first so the
+            // Attachment deleting hook removes their physical files too. The
+            // morph pair has no FK cascade, so this cleanup is explicit (Phase D).
+            Attachment::where('attachable_type', ProjectProgressHistory::class)
+                ->where('attachable_id', $record->id)
+                ->get()
+                ->each(function ($attachment) {
+                    $attachment->delete();
+                });
 
             $record->delete();
 
@@ -437,6 +449,7 @@ class ProjectProgressController extends Controller
                 'success' => true,
                 'message' => 'Monthly progress recorded successfully',
                 'progress_record' => $progressRecord,
+                'attachments' => [], // Files are uploaded after save via /attachments/upload (Phase D)
                 'activity_stats' => $activityStats,
                 'current_progress' => $currentProgress,
                 'monthly_summary' => $monthlySummary,

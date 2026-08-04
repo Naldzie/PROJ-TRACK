@@ -78,6 +78,26 @@
                                   style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;"></textarea>
                     </div>
 
+                    <!-- Inspection Evidence (Phase D) — uploaded after save via /attachments/upload -->
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label for="editProgressAttachmentFiles" style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">
+                            Add Inspection Evidence Files
+                        </label>
+                        <input type="file" id="editProgressAttachmentFiles" name="progress_attachment_files[]" multiple accept="image/*,.pdf"
+                               class="form-control" style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px;">
+                        <small style="color: #6b7280; margin-top: 4px; display: block;">New inspection photos or documents (jpg, png, pdf &mdash; max 20 MB each). Select one or more; attached when you save.</small>
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="editProgressAttachmentFilesPreview"></div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">
+                            Existing Attachments
+                        </label>
+                        <div id="editProgressAttachmentList">
+                            <small class="text-muted">Loading...</small>
+                        </div>
+                    </div>
+
                     <div id="editProgressAuditSection" style="display: none; margin-top: 16px; padding: 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
                         <div style="font-size: 12px; font-weight: 600; color: #92400e; margin-bottom: 8px;">
                             <i class="bi bi-clock-history" style="margin-right: 4px;"></i> Edit History

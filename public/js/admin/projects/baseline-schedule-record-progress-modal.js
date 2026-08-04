@@ -233,9 +233,34 @@ function saveMonthlyProgress() {
         return response.json();
     })
     .then(data => {
-        if (data.success) {
-            console.log('[saveMonthlyProgress] Success! Progress saved for month:', monthLabel);
-            
+        if (!data.success) {
+            console.error('[saveMonthlyProgress] API returned error:', data.message);
+            showRecordProgressErrors([data.message || 'Failed to save progress. Please try again.']);
+            return;
+        }
+        console.log('[saveMonthlyProgress] Success! Progress saved for month:', monthLabel);
+
+        // Phase D: upload any pending inspection evidence files via the existing
+        // /attachments/upload endpoint (context 'inspection'). The record already
+        // exists — a failed upload is surfaced but must NOT block the reload
+        // (the user can re-add the file afterwards).
+        var recordId = data.progress_record && data.progress_record.id;
+        var pendingFiles = (typeof collectPendingFiles === 'function')
+            ? collectPendingFiles('progressAttachmentFiles')
+            : [];
+        var uploadPromise = (recordId && pendingFiles.length > 0 && typeof uploadProgressFiles === 'function')
+            ? uploadProgressFiles(recordId, pendingFiles)
+                .catch(function(err) {
+                    console.error('[saveMonthlyProgress] Evidence upload failed (record already saved):', err);
+                    showToast('Progress saved, but one or more attachments failed to upload.', 'error', 4000);
+                })
+            : Promise.resolve();
+
+        return uploadPromise.then(function() {
+            if (typeof clearPendingFiles === 'function') {
+                clearPendingFiles('progressAttachmentFiles');
+            }
+
             // Show success toast notification
             showToast('Monthly progress recorded successfully!', 'success', 2500);
             
@@ -265,10 +290,7 @@ function saveMonthlyProgress() {
                     location.reload();
                 }, 2000);
             }
-        } else {
-            console.error('[saveMonthlyProgress] API returned error:', data.message);
-            showRecordProgressErrors([data.message || 'Failed to save progress. Please try again.']);
-        }
+        });
     })
     .catch(error => {
         console.error('[saveMonthlyProgress] Fetch error:', error);

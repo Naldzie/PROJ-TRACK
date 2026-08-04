@@ -197,6 +197,17 @@ function openEditProgressModal(recordId, monthLabel, isLastMonth) {
             '<div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">No month linked — activities not available.</div>';
     }
 
+    // Phase D: fresh edit session for attachments — reset the deferred-delete
+    // queue and pending selections, then render the record's existing
+    // inspection evidence (chips with view/remove).
+    window._pendingDeleteAttachmentIds = [];
+    if (typeof clearPendingFiles === 'function') {
+        clearPendingFiles('editProgressAttachmentFiles');
+    }
+    if (typeof renderEditProgressAttachmentList === 'function') {
+        renderEditProgressAttachmentList(record);
+    }
+
     var modal = new bootstrap.Modal(document.getElementById('editProgressModal'));
     modal.show();
 }
@@ -339,23 +350,55 @@ function saveProgressEdit() {
         });
     })
     .then(function(result) {
-        if (result.ok && result.data.success) {
-            showToast('Progress record updated successfully!', 'success', 2500);
-
-            try {
-                var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
-                if (modal) modal.hide();
-            } catch (err) {}
-
-            var activeTab = document.querySelector('.tab-btn.active');
-            if (activeTab) {
-                sessionStorage.setItem('activeTab', activeTab.getAttribute('data-tab'));
-            }
-            setTimeout(function() { location.reload(); }, 2000);
-        } else {
+        if (!result.ok || !result.data.success) {
             var msg = result.data.message || 'Failed to update progress record.';
             showEditProgressErrors([msg]);
+            return;
         }
+
+        // Phase D: upload any newly chosen inspection evidence and flush any
+        // queued attachment deletions (deferred) — only now, after the update
+        // has persisted. A failure here is surfaced but still reloads, since
+        // the record update already succeeded.
+        var recordId = document.getElementById('editProgressRecordId').value;
+        var pendingFiles = (typeof collectPendingFiles === 'function')
+            ? collectPendingFiles('editProgressAttachmentFiles')
+            : [];
+
+        var uploadPromise = Promise.resolve();
+        if (pendingFiles.length > 0 && typeof uploadProgressFiles === 'function') {
+            uploadPromise = uploadProgressFiles(recordId, pendingFiles);
+        }
+        if (typeof flushPendingAttachmentDeletions === 'function') {
+            uploadPromise = uploadPromise.then(function() {
+                return flushPendingAttachmentDeletions();
+            });
+        }
+
+        return uploadPromise
+            .then(function() {
+                if (typeof clearPendingFiles === 'function') {
+                    clearPendingFiles('editProgressAttachmentFiles');
+                }
+
+                showToast('Progress record updated successfully!', 'success', 2500);
+
+                try {
+                    var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
+                    if (modal) modal.hide();
+                } catch (err) {}
+
+                var activeTab = document.querySelector('.tab-btn.active');
+                if (activeTab) {
+                    sessionStorage.setItem('activeTab', activeTab.getAttribute('data-tab'));
+                }
+                setTimeout(function() { location.reload(); }, 2000);
+            })
+            .catch(function(error) {
+                console.error('Attachment handling failed after progress update:', error);
+                showToast('Progress updated, but an attachment action failed.', 'error', 4000);
+                setTimeout(function() { location.reload(); }, 2000);
+            });
     })
     .catch(function(error) {
         showEditProgressErrors(['Error: ' + error.message]);
