@@ -11,3 +11,7 @@ Artisan::command('inspire', function () {
 Schedule::command('reports:send-ai-monthly')
     ->dailyAt('08:00')
     ->withoutOverlapping();
+
+Schedule::command('notifications:scan')
+    ->dailyAt('07:00')
+    ->withoutOverlapping();

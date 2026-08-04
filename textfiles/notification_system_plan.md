@@ -348,6 +348,22 @@ NOT touched:
 - **Verification:** `php -l` clean on all changed PHP; full suite **276 passed / 962 assertions**
   (baseline 260/925 + 16/37 new; zero regressions).
 
+### 2026-08-04 — Phase N2 implemented (Rule 8: tested per step)
+- **N2.1:** `app/Console/Commands/SendNotifications.php` (`notifications:scan`) — reads
+  `notification_enabled` / `notification_deadline_days` (30,14,7) / `notification_overdue_grace_days` (7)
+  Settings; resolves recipients (active admins + staff + the project's contractor); sends deadline
+  reminders into the SMALLEST qualifying bucket and overdue-inspection alerts for the earliest
+  unrecorded baseline month past the grace window. Fixed during testing: `resolveDeadlineBucket()`
+  originally returned the LARGEST qualifying bucket (always '30') — now sorts ascending and returns
+  the smallest bucket >= days remaining.
+- **N2.2:** `routes/console.php` — `Schedule::command('notifications:scan')->dailyAt('07:00')->withoutOverlapping();`.
+- **N2.3:** `tests/Feature/NotificationScanTest.php` — 11 tests / 23 assertions (30/14/7/overdue
+  buckets, escalation once-per-bucket, grace window, recorded-month skip, once-per-(project,month),
+  completed-project exclusion, disabled toggle, contractor isolation). Uses `Carbon::setTestNow`.
+- **Verification:** `php -l` clean; full suite **287 passed / 985 assertions** (N1 276/962 + 11/23;
+  zero regressions). `schedule:list` not runnable in this env (MySQL down — cache driver hits DB);
+  registration verified via tests + console.php diff.
+
 ---
 
 END OF NOTIFICATION SYSTEM PLAN
