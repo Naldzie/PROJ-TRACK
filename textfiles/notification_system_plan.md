@@ -364,6 +364,27 @@ NOT touched:
   zero regressions). `schedule:list` not runnable in this env (MySQL down — cache driver hits DB);
   registration verified via tests + console.php diff.
 
+### 2026-08-04 — Phase N3 implemented (Rule 8: tested per step)
+- **N3.1:** `app/Http/Controllers/Admin/ProjectExtensionController.php` —
+  - `store()` now writes `created_by_user_id`; dispatches `ExtensionStatusChanged(SUBMITTED)` to
+    admins on staff submission, or `(APPROVED)` to the project contractor on admin auto-approval.
+  - `update()` admin path dispatches `(APPROVED)` (requester + contractor) / `(REJECTED)` (requester
+    with `rejection_reason` + contractor); staff resubmit path re-dispatches `(SUBMITTED)` to admins.
+  - New `notifyExtension()` helper resolves audiences via `NotificationService`.
+- **N3.2:** `app/Http/Controllers/IssueController.php` `store()` — dispatches `IssueReported` to
+  admins + the project contractor (all severities) after the ActivityLog.
+- **N3.3:** `tests/Feature/NotificationTest.php` — 10 tests / 43 assertions (route-based: staff
+  submit → admins; admin autocreate → contractor; approve → requester+contractor; reject → requester
+  with reason; resubmit → admins re-notified; dedupe on repeat approval; issue → admins+contractor;
+  low severity included; unrelated contractor untouched). Fixed during testing: `is_active` must be
+  explicit `true` for HTTP-path users (the `active` middleware logs out otherwise); issue store
+  returns 200 not 201.
+- **Service change:** `NotificationService::notifyUnique()/notifyMany()` gained a `$dedupe` flag so
+  SUBMITTED extension events (distinct review events) bypass dedupe while scan/approve/reject events
+  stay deduplicated.
+- **Verification:** `php -l` clean; full suite **297 passed / 1028 assertions** (N2 287/985 + 10/43;
+  zero regressions — one transient failure seen on a single run, green on subsequent runs).
+
 ---
 
 END OF NOTIFICATION SYSTEM PLAN

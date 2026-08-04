@@ -7,6 +7,8 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Issue;
 use App\Models\ProjectBaselineSchedule;
+use App\Notifications\IssueReported;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -133,6 +135,22 @@ class IssueController extends Controller
                 'description' => $user->name . ' created issue "' . $issue->issue_name . '" for project "' . $project->title . '".',
                 'ip_address'  => $request->ip(),
             ]);
+
+            // Notify admins + the project's contractor about the new issue
+            // (all severities — user confirmed).
+            $service = app(NotificationService::class);
+            $recipients = collect($service->admins());
+            $contractorUser = $service->contractorUserFor($project);
+            if ($contractorUser) {
+                $recipients->push($contractorUser);
+            }
+            $service->notifyMany($recipients->unique('id'), new IssueReported(
+                $project->id,
+                $project->title,
+                $issue->id,
+                $issue->issue_name,
+                $issue->severity ?? 'Low'
+            ));
 
             return response()->json([
                 'success' => true,

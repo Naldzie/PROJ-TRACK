@@ -23,7 +23,7 @@ class NotificationService
      * Deliver a notification to one user, skipping it if an identical
      * (same type + key) notification already exists for them.
      */
-    public function notifyUnique(User $user, Notification $notification): bool
+    public function notifyUnique(User $user, Notification $notification, bool $dedupe = true): bool
     {
         if (!$user->is_active) {
             return false;
@@ -35,7 +35,7 @@ class NotificationService
 
         $key = $data['key'] ?? null;
 
-        if ($key !== null) {
+        if ($dedupe && $key !== null) {
             $exists = $user->notifications()
                 ->where('type', get_class($notification))
                 ->where('data->key', $key)
@@ -56,12 +56,12 @@ class NotificationService
      * @param  iterable<User>  $users
      * @return int  number of notifications actually delivered
      */
-    public function notifyMany(iterable $users, Notification $notification): int
+    public function notifyMany(iterable $users, Notification $notification, bool $dedupe = true): int
     {
         $delivered = 0;
 
         foreach ($users as $user) {
-            if ($this->notifyUnique($user, $notification)) {
+            if ($this->notifyUnique($user, $notification, $dedupe)) {
                 $delivered++;
             }
         }

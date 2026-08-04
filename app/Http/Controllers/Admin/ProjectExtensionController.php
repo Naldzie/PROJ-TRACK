@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectExtension;
+use App\Models\User;
+use App\Notifications\ExtensionStatusChanged;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +67,9 @@ class ProjectExtensionController extends Controller
                 'status' => $isAdmin ? 'approved' : 'pending',
                 'approved_by_user_id' => $isAdmin ? auth()->user()->id : null,
                 'approved_at' => $isAdmin ? now() : null,
+                // Track who submitted the request so approval/rejection
+                // notices can be targeted at the requester.
+                'created_by_user_id' => auth()->id(),
             ]);
 
             // Only push the change to the project itself once the
@@ -90,6 +96,14 @@ class ProjectExtensionController extends Controller
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
+
+            // Notify: staff submissions go to admins; admin auto-approvals go to
+            // the project contractor (who is affected by the new deadline).
+            $this->notifyExtension(
+                $project,
+                $extension,
+                $isAdmin ? ExtensionStatusChanged::APPROVED : ExtensionStatusChanged::SUBMITTED
+            );
 
             return response()->json([
                 'success' => true,
@@ -253,6 +267,12 @@ class ProjectExtensionController extends Controller
                     'visibility' => 'all',
                 ]);
 
+                // A resubmitted (previously rejected) request goes back to
+                // pending — re-notify the admins for review.
+                if ($wasRejected) {
+                    $this->notifyExtension($project, $extension, ExtensionStatusChanged::SUBMITTED);
+                }
+
                 return response()->json([
                     'success' => true,
                     'message' => $wasRejected
@@ -344,6 +364,14 @@ class ProjectExtensionController extends Controller
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
+
+            // Notify on approve/reject: the requester (created_by_user_id) + the
+            // project contractor. Rejection carries the reason for resubmission.
+            if ($transitioningToApproved) {
+                $this->notifyExtension($project, $extension, ExtensionStatusChanged::APPROVED);
+            } elseif (($validated['status'] ?? null) === 'rejected') {
+                $this->notifyExtension($project, $extension, ExtensionStatusChanged::REJECTED);
+            }
 
             return response()->json([
                 'success' => true,
@@ -441,6 +469,58 @@ class ProjectExtensionController extends Controller
             'reason.min' => 'Please provide a detailed reason (at least 5 characters)',
             'reason.max' => 'Reason limited to 500 characters',
         ]);
+    }
+
+    /**
+     * Dispatch ExtensionStatusChanged notifications for a lifecycle event.
+     *
+     * Audiences:
+     *  - SUBMITTED: all active admins (review required).
+     *  - APPROVED/REJECTED: the requester (created_by_user_id) + the project's
+     *    contractor (their deadline/request is affected). Rejection carries the
+     *    rejection_reason so the requester can revise and resubmit.
+     *
+     * Dedupe key includes the status, so submit → approve / submit → reject /
+     * resubmit → approve are all distinct events.
+     */
+    private function notifyExtension(Project $project, ProjectExtension $extension, string $status): void
+    {
+        $service = app(NotificationService::class);
+
+        $notification = new ExtensionStatusChanged(
+            $project->id,
+            $project->title,
+            $extension->id,
+            $extension->extension_number,
+            $status,
+            $status === ExtensionStatusChanged::REJECTED ? $extension->rejection_reason : null
+        );
+
+        if ($status === ExtensionStatusChanged::SUBMITTED) {
+            // Each submission/resubmission is a distinct review event — bypass
+            // dedupe so a resubmitted request re-notifies the admins. (Only
+            // scan-generated notifications rely on dedupe; SUBMITTED is
+            // always event-driven.)
+            $service->notifyMany($service->admins(), $notification, dedupe: false);
+            return;
+        }
+
+        // Approved / rejected → requester + project contractor.
+        $recipients = collect();
+
+        if ($extension->created_by_user_id) {
+            $requester = User::find($extension->created_by_user_id);
+            if ($requester && $requester->is_active) {
+                $recipients->push($requester);
+            }
+        }
+
+        $contractorUser = $service->contractorUserFor($project);
+        if ($contractorUser) {
+            $recipients->push($contractorUser);
+        }
+
+        $service->notifyMany($recipients->unique('id'), $notification);
     }
 
     /**
