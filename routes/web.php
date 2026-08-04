@@ -712,6 +712,9 @@ if (app()->environment() !== 'production') {
         Route::get('/date', [App\Http\Controllers\Admin\DevDateController::class, 'get'])->name('date.get');
         Route::post('/date/set', [App\Http\Controllers\Admin\DevDateController::class, 'set'])->name('date.set');
         Route::post('/date/clear', [App\Http\Controllers\Admin\DevDateController::class, 'clear'])->name('date.clear');
+
+        Route::post('/notifications/scan', [App\Http\Controllers\Admin\DevNotificationController::class, 'scan'])
+            ->name('notifications.scan');
     });
 }
 

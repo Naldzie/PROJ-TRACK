@@ -406,6 +406,28 @@ NOT touched:
 - **Verification:** `php -l` clean; `php artisan view:cache` OK; full suite **309 passed / 1060
   assertions** (N3 297/1028 + 12/32; zero regressions).
 
+### 2026-08-04 — Browser testability + bell UI fixes (follow-up)
+- **Dev scan trigger:** `app/Http/Controllers/Admin/DevNotificationController.php::scan()` runs
+  `notifications:scan` in-process; registered as `POST /dev/notifications/scan`
+  (`dev.notifications.scan`) inside the non-production dev route block. Because the route sits
+  behind the `SimulateDate` web middleware, `Carbon::setTestNow` is applied from the session — so
+  the Date Simulator now drives deadline/overdue notifications end-to-end from the browser.
+- **Dev widget shared:** the Date Simulator block was extracted from `layouts/app.blade.php` into
+  `resources/views/components/dev_date_widget.blade.php` with a new "Run Notification Scan" button
+  (calls the dev route, shows command output via Swal). Included in all three layouts
+  (admin/staff/contractor) inside the existing non-production guard.
+- **Bell rewrite:** `resources/views/notifications/partials/bell.blade.php` was rebuilt
+  self-contained — inline SVG bell (no icon-font dependency), own open/close state (outside-click
+  + Escape close), and viewport-safe positioning (`width:min(340px, calc(100vw - 24px))`,
+  `right:0` anchor) so it can never be stuck open or cut off at the screen edge. Previously the
+  `.notification-menu` `display:flex` rule overrode Bootstrap's dropdown hidden state, which is
+  what caused the always-visible/can't-close/cut-off behavior.
+- **Tests:** `tests/Feature/DevNotificationScanTest.php` — 3 tests / 8 assertions (dev scan runs
+  and returns output; respects the simulated date — a 15-day-out project yields bucket '30', not
+  'overdue'; unauthenticated JSON request is 401).
+- **Verification:** `php -l` clean; `view:cache` OK; full suite **312 passed / 1068 assertions**
+  (309/1060 + 3/8; zero regressions).
+
 ---
 
 END OF NOTIFICATION SYSTEM PLAN

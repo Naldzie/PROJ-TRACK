@@ -383,5 +383,10 @@ Swal.fire({
 
 {{-- GLOBAL TOAST NOTIFICATION --}}
 @include('components.toast')
+
+{{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
+@if (app()->environment() !== 'production')
+@include('components.dev_date_widget')
+@endif
 </body>
 </html>
