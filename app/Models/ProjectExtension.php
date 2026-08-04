@@ -22,6 +22,7 @@ class ProjectExtension extends Model
         'rejection_reason',
         'approved_by_user_id',
         'approved_at',
+        'created_by_user_id',
     ];
 
     protected $casts = [

@@ -328,6 +328,26 @@ NOT touched:
 - User confirmations captured: all four notification types; contractors included; scheduler via
   schedule:work/cron; deadline buckets `30/14/7` + overdue; issues notify all severities.
 
+### 2026-08-04 — Phase N1 implemented (Rule 8: tested per step)
+- **N1.1:** `2026_08_04_000001_create_notifications_table.php` (Laravel polymorphic shape via
+  `morphs`; removed the redundant explicit index the `morphs()` helper already creates — caught by
+  the sqlite test run).
+- **N1.2:** `2026_08_04_000002_add_created_by_user_id_to_project_extensions_table.php` (nullable FK,
+  guarded by `Schema::hasColumn`, index) + `ProjectExtension::$fillable` entry for the new column.
+- **N1.4:** four notification classes under `app/Notifications/` — `DeadlineReminder`,
+  `OverdueInspectionReminder`, `ExtensionStatusChanged` (with SUBMITTED/APPROVED/REJECTED consts),
+  `IssueReported` — each returning a `data` payload with a canonical `key` for dedupe.
+- **N1.5:** `app/Services/NotificationService.php` — `notifyUnique()` (reads `data.key`, skips
+  existing same-type+key rows, ignores inactive users), `notifyMany()` (fans out with per-user
+  dedupe), `admins()` / `allStaff()` (active only), `contractorUserFor(Project)`.
+- **N1.6:** `tests/Feature/NotificationServiceTest.php` — 16 tests / 37 assertions (dedupe,
+  escalation buckets, inactive skip, audience resolvers, all four payload shapes, submitter persist).
+- **N1.3 (deferred):** `php artisan migrate` on the real MySQL DB NOT run — local MySQL was not
+  running during implementation. Migrations validated via the sqlite test suite; run migrate when
+  MySQL is up.
+- **Verification:** `php -l` clean on all changed PHP; full suite **276 passed / 962 assertions**
+  (baseline 260/925 + 16/37 new; zero regressions).
+
 ---
 
 END OF NOTIFICATION SYSTEM PLAN
