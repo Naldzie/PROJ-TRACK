@@ -261,6 +261,7 @@
 <!-- TOPBAR -->
 <div class="topbar">
     <div class="profile-section">
+        @include('notifications.partials.bell')
         <div class="profile-info">
             <div class="name">
                 {{ auth()->user()->contractor->contractor_name

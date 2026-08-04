@@ -2,7 +2,7 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #12
 
-Status: 📋 PLANNED — not started (branch `core/notification-system` created from `main` @ `f2598aa`; plan-only commit follows)
+Status: ✅ COMPLETE — all four phases (N1–N4) implemented on branch `core/notification-system` (full suite 309 passed / 1060 assertions); pending merge approval per Rule 12.
 
 Branch: `core/notification-system` (created from `main` @ `f2598aa`)
 
@@ -384,6 +384,27 @@ NOT touched:
   stay deduplicated.
 - **Verification:** `php -l` clean; full suite **297 passed / 1028 assertions** (N2 287/985 + 10/43;
   zero regressions — one transient failure seen on a single run, green on subsequent runs).
+
+### 2026-08-04 — Phase N4 implemented (UI layer) (Rule 8: tested per step)
+- **N4.1:** `app/Http/Controllers/NotificationController.php` — `index()` (paginated 20, role-matched
+  view via `match (role)`), `recent()` (latest 5 unread JSON for the dropdown), `read()` (owner-only
+  guard; 403 JSON otherwise), `readAll()`; private `format()/humanType()/title()` helpers. Routes added
+  in all three role groups in `routes/web.php` (`admin.notifications` + `admin.notifications.recent` +
+  `admin.notifications.read` + `admin.notifications.readAll`, and the same four with `staff.` /
+  `contractor.` names).
+- **N4.2:** `resources/views/notifications/partials/bell.blade.php` — Bootstrap dropdown bell in the
+  topbar `.profile-section` of all three layouts (`layouts/app.blade.php`, `stafflayouts.blade.php`,
+  `contractorlayouts.blade.php`); server-rendered unread badge + latest 5; click-to-mark-read and
+  mark-all-read via fetch POST with `meta[name=csrf-token]` (present in all three layouts).
+- **N4.3:** `resources/views/notifications/index_admin.blade.php`, `index_staff.blade.php`,
+  `index_contractor.blade.php` (each `@extends` the matching layout) sharing
+  `resources/views/notifications/_list.blade.php` (title, unread count, mark-all-read, per-row
+  mark-read, icon/color per type, rejection-reason display, empty state, `->links()` pagination).
+- **N4.4:** `tests/Feature/NotificationUiTest.php` — 12 tests / 32 assertions (per-role page access,
+  unread items shown, recent() unread+limit-5, read() marks read, owner-only 403, readAll() scoped to
+  current user, IssueReported payload renders).
+- **Verification:** `php -l` clean; `php artisan view:cache` OK; full suite **309 passed / 1060
+  assertions** (N3 297/1028 + 12/32; zero regressions).
 
 ---
 

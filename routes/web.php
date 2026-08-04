@@ -27,6 +27,7 @@ use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Admin\EmailController as AdminEmailController;
 use App\Http\Controllers\Admin\RatingController;
 use App\Http\Controllers\Staff\EmailController as StaffEmailController;
@@ -233,6 +234,19 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('staff.attachments.download');
 
+    // === NOTIFICATION ROUTES ===
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('staff.notifications');
+
+    Route::get('/notifications/recent', [NotificationController::class, 'recent'])
+        ->name('staff.notifications.recent');
+
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])
+        ->name('staff.notifications.read');
+
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
+        ->name('staff.notifications.readAll');
+
 });
 
 /*
@@ -313,6 +327,19 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('contractor.attachments.download');
+
+    // === NOTIFICATION ROUTES ===
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('contractor.notifications');
+
+    Route::get('/notifications/recent', [NotificationController::class, 'recent'])
+        ->name('contractor.notifications.recent');
+
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])
+        ->name('contractor.notifications.read');
+
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
+        ->name('contractor.notifications.readAll');
 
 });
 
@@ -524,6 +551,19 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('admin.attachments.download');
+
+    // === NOTIFICATION ROUTES ===
+    Route::get('/notifications', [NotificationController::class, 'index'])
+        ->name('admin.notifications');
+
+    Route::get('/notifications/recent', [NotificationController::class, 'recent'])
+        ->name('admin.notifications.recent');
+
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])
+        ->name('admin.notifications.read');
+
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
+        ->name('admin.notifications.readAll');
 
     // === DOCUMENT TYPE MANAGEMENT ROUTES ===
     Route::get('/document-types/all', [DocumentTypeController::class, 'getAllForManagement'])
