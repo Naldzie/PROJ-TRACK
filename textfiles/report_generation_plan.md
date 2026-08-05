@@ -2,8 +2,10 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #10
 
-Status: ⬜ NOT STARTED — plan-only commit on branch `core/report-generation`
-        (created from `main` @ `74da1a4`). No implementation yet.
+Status: 🟢 IN PROGRESS — R1 (Excel exports) and R2 (PDF summary) implemented,
+        tested, and committed on `core/report-generation` (commits `c47b9ab`,
+        `aae78cd`). Remaining: client confirmation, browser check, merge to main
+        (Rule 12 — requires explicit approval).
 
 Date: August 5, 2026
 
@@ -41,10 +43,16 @@ Both are pure-PHP (no node build, no browser) and match the no-vite convention.
 
 **Environment check (verified 2026-08-05):** Composer 2.8.5, PHP 8.2.12,
 extensions `zip` + `xmlwriter` present (required by PhpSpreadsheet),
-**GD NOT installed** (so charts in the PDF must be rendered as **inline SVG**,
-not PNG — dompdf ≥2 ships a built-in SVG image renderer usable via
-`data:image/svg+xml;base64,...`). Packagist reachable (HTTP 200) so
-`composer require` will work.
+**GD was initially NOT installed** (so charts in the PDF must be rendered as
+**inline SVG**, not PNG — dompdf ships a built-in SVG image renderer usable via
+`data:image/svg+xml;base64,...`). GD was later **enabled** (un-commented
+`extension=gd` in `C:\xampp\php\php.ini`) because PhpSpreadsheet 4.x requires it.
+Packagist reachable (HTTP 200) so `composer require` will work.
+
+> **Deviation (deps):** `barryvdh/laravel-dompdf` is **NOT Laravel 12-compatible**
+> (requires illuminate ^9|^10|^11). We installed **`dompdf/dompdf:^3.0`** directly
+> instead and drive it with the bare `Dompdf` class in `ReportExportService`
+> (no facade/wrapper). Same result (Blade HTML → PDF), one fewer dependency.
 
 ---
 
@@ -86,10 +94,11 @@ not PNG — dompdf ≥2 ships a built-in SVG image renderer usable via
 
 ## 3. CONFIRMED DECISIONS
 
-1. **Library — Excel:** `phpoffice/phpspreadsheet` (^2.0) directly. Native
+1. **Library — Excel:** `phpoffice/phpspreadsheet` (^4.0). Native
    `.xlsx` via `Xlsx` writer; streams to `php://output`. No facade wrapper
    (keeps the service layer plain; mirrors the project's bare-service style).
-2. **Library — PDF:** `barryvdh/laravel-dompdf` (^3.0, Laravel 12-compatible).
+2. **Library — PDF:** `dompdf/dompdf` (^3.0) directly (NOT the barryvdh wrapper —
+   see deviation note above; barryvdh requires illuminate ^9|^10|^11).
    Renders a dedicated Blade template to PDF; streams the result.
 3. **One shared controller + one shared service** registered in all three role
    groups — mirrors `ProjectController`. Per-role authorization enforced inside.
@@ -120,8 +129,10 @@ not PNG — dompdf ≥2 ships a built-in SVG image renderer usable via
 
 ### Phase R1 — Dependencies + Excel exports
 
-1. `composer require phpoffice/phpspreadsheet:^2.0 barryvdh/laravel-dompdf:^3.0`.
-   Verify both autoload (`php artisan tinker` `class_exists`).
+1. `composer require phpoffice/phpspreadsheet:^4.0 dompdf/dompdf:^3.0`
+   (installed via direct `composer.json` edit + `composer update` because the
+   shell strips `^` on this machine). GD extension enabled first (required by
+   PhpSpreadsheet 4.x). Verify both autoload (`class_exists`).
 2. NEW `app/Services/ReportExportService.php`:
    - `progressExcel(Project $project): StreamedResponse` — sheet "Progress
      History": columns Month | Inspection Date | Planned % | Actual % |
@@ -172,11 +183,12 @@ Verify: `php -l` on changed PHP; `php artisan test --filter=ReportExportTest`.
      (reuses overview/stats/alerts/open_issues assembly);
    - builds the S-Curve SVG polyline from `prepareChartData()` (labels,
      `frozen_planned_data`, `adjusted_planned_data`, `actual_data`,
-     `has_extension`) via a small private `buildSvgChart(array $chartData): string`;
-   - renders the Blade view, `$pdf = Pdf::loadHTML($html)->setPaper('a4')`,
-     streams to `php://output` with `application/pdf`.
-   - Fallback: if the SVG chart throws or renders empty, call
-     `buildHtmlChart()` (CSS bars) instead — always produce a chart.
+     `has_extension`, `y_max`) via a small private `buildSvgChart(array $chartData): string`;
+   - renders the Blade view, `$dompdf = new Dompdf(); loadHtml($html); setPaper('A4'); render();`
+     (bare dompdf — no facade), streams via `Response::streamDownload` with
+     `Content-Type: application/pdf`.
+   - Fallback: `buildSvgChart()` returns a `.no-chart` div when `ready`/`labels`
+     are empty (view hides it) — no CSS-bar chart was needed (SVG renders fine).
 8. ROUTE `GET /projects/{project}/reports/summary.pdf` in all three role groups
    (named `{role}.projects.exports.summary`).
 9. UI — the "Reports" dropdown in `components/header.blade.php`
@@ -185,13 +197,9 @@ Verify: `php -l` on changed PHP; `php artisan test --filter=ReportExportTest`.
    card header (`progress.blade.php` line ~10 flexbox header).
 10. TEST (extend `ReportExportTest`):
     - summary route returns 200 + `Content-Type: application/pdf`;
-    - streamed bytes start with `%PDF-` and contain the project title/code
-      (dompdf embeds text as PDF objects — assert via `str_contains` on the
-      raw stream or, more robustly, assert it is a non-empty valid PDF header
-      plus metadata we set explicitly);
-    - `buildSvgChart()` returns an `<svg>` containing planned+actual polylines
-      for a project with history; returns a `<div>` bar fallback for an
-      empty-chart project.
+    - streamed bytes start with `%PDF-` (dompdf v3 uncompressed header — verified
+      working) and are non-trivial length; also assert the ActivityLog row;
+    - empty-chart project still produces a valid `%PDF-` stream.
 
 Verify: `php -l`; `php artisan view:cache` compiles the new Blade;
 `php artisan test --filter=ReportExportTest`; full `composer test`.
@@ -272,6 +280,49 @@ NOT touched:
   shared controller + service across the three role groups, contractor scoped
   to own project, inline-SVG S-Curve with CSS-bar fallback.
 - Plan written (this file); committed as plan-only; no implementation yet.
+
+### 2026-08-05 — R1 implemented (commit `c47b9ab`)
+
+- Enabled GD (`extension=gd` in `C:\xampp\php\php.ini`) — required by
+  PhpSpreadsheet 4.x; verified via `php -m`.
+- **Deviation:** `barryvdh/laravel-dompdf` incompatible with Laravel 12 → used
+  **`dompdf/dompdf:^3.0`** directly + **`phpoffice/phpspreadsheet:^4.0`**.
+  Composer constraints set by editing `composer.json` (shell strips `^`).
+- `app/Services/ReportExportService.php` — 4 Excel exporters + `summaryPdf` +
+  private helpers (`streamSpreadsheet`, `writeHeaderRow`, `fileName`,
+  `logExport`, `authorize`, `buildSvgChart`). No storage writes; streams to
+  `php://output`; ActivityLog audit row per export.
+- `app/Http/Controllers/ReportExportController.php` — thin shared controller
+  (admin/staff/contractor), auth enforced inside service.
+- `routes/web.php` — 5 export routes × 3 role groups (`{role}.projects.exports.*`).
+  Note: `php artisan route:list` silently omits new routes until `route:clear`
+  is run (stale route cache).
+- `tests/Feature/ReportExportTest.php` — 10 tests green (Excel cell assertions
+  via `IOFactory` from captured stream; StreamedResponse body captured with
+  `sendContent()` inside `ob_start`; 403 via `HttpException::getStatusCode()`).
+- Full suite: **325 passed**.
+
+### 2026-08-05 — R2 implemented (commit `aae78cd`)
+
+- `resources/views/reports/project-summary.blade.php` — standalone dompdf-safe
+  view (tables, inline CSS, inline SVG chart, status pills, open issues +
+  extension tables, generated-at footer).
+- `summaryPdf` renders via bare `Dompdf` (loadHtml → setPaper A4 → render) and
+  streams with `application/pdf`; SVG chart built server-side from
+  `prepareChartData()` (frozen/adjusted planned + actual polylines).
+- UI: **Reports dropdown** in `components/header.blade.php`
+  `.header-badges-right` (role-aware named routes: `route($role . '.projects.exports.{kind}', $project->id)`) + **Export dropdown** in the Progress tab
+  card header (`progress.blade.php`) — Bootstrap 5.3 dropdowns already loaded.
+- PDF tests added (magic header `%PDF-`, content-type, ActivityLog); note:
+  dompdf v3 compresses content streams so the plan's raw `str_contains` text
+  assertion is replaced by a non-trivial-length check.
+- Full suite: **325 passed**.
+
+### Remaining
+
+- Manual browser check (optional): Reports dropdown downloads all 5 files per
+  role; Excel opens with correct rows; PDF renders header + SVG chart + tables.
+- Merge to `main` requires explicit approval (Rule 12).
 
 ---
 
