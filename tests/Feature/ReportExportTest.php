@@ -438,24 +438,31 @@ class ReportExportTest extends TestCase
 
     public function test_summary_scurve_is_non_flat_and_has_legend_and_month_names(): void
     {
+        $this->project->update(['extension_count' => 1]);
+
         ProjectBaselineSchedule::factory()->create([
             'project_id'               => $this->project->id,
             'month_label'              => '2026-04',
             'planned_date'             => '2026-04-30',
             'planned_progress_percent' => 2,
+            'original_planned_progress_percent' => 2,
         ]);
         ProjectBaselineSchedule::factory()->create([
             'project_id'               => $this->project->id,
             'month_label'              => '2026-05',
             'planned_date'             => '2026-05-31',
             'planned_progress_percent' => 5,
+            'original_planned_progress_percent' => 5,
         ]);
         ProjectBaselineSchedule::factory()->create([
             'project_id'               => $this->project->id,
             'month_label'              => '2026-06',
             'planned_date'             => '2026-06-30',
             'planned_progress_percent' => 40,
+            'original_planned_progress_percent' => 40,
         ]);
+
+        $this->progressRow();
 
         $html = $this->renderSummaryView();
 
@@ -464,9 +471,9 @@ class ReportExportTest extends TestCase
         preg_match('/base64,([A-Za-z0-9+\/=]+)/', $html, $match);
         $svg = base64_decode($match[1]);
 
-        $this->assertStringContainsString('Frozen Baseline', $svg, 'Legend must label the frozen-planned series.');
-        $this->assertStringContainsString('Adjusted Planned', $svg, 'Legend must label the adjusted-planned series.');
-        $this->assertStringContainsString('Actual', $svg, 'Legend must label the actual series.');
+        $this->assertStringContainsString('Original Plan', $svg, 'Legend must label the frozen-planned series.');
+        $this->assertStringContainsString('Adjusted Plan', $svg, 'Legend must label the adjusted-planned series.');
+        $this->assertStringContainsString('Actual Progress', $svg, 'Legend must label the actual series.');
 
         $this->assertStringContainsString('April 2026', $svg, 'X-axis labels must use month-name + year format.');
         $this->assertStringContainsString('June 2026', $svg, 'X-axis labels must use month-name + year format.');
@@ -483,6 +490,146 @@ class ReportExportTest extends TestCase
         }
         $this->assertGreaterThan(1, count(array_unique($ys)),
             'Polyline y-coordinates must vary (the S-Curve must not collapse to a flat line).');
+    }
+
+    public function test_summary_scurve_actual_beyond_baseline_extends_x_axis(): void
+    {
+        // Baselines end in 2026-07; an actual record lands a month later (2026-08)
+        // with NO extension. The actual line must extend past the last planned
+        // column instead of clamping onto it.
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-04',
+            'planned_date'             => '2026-04-30',
+            'planned_progress_percent' => 10,
+            'original_planned_progress_percent' => 10,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-05',
+            'planned_date'             => '2026-05-31',
+            'planned_progress_percent' => 30,
+            'original_planned_progress_percent' => 30,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-06',
+            'planned_date'             => '2026-06-30',
+            'planned_progress_percent' => 60,
+            'original_planned_progress_percent' => 60,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-07',
+            'planned_date'             => '2026-07-31',
+            'planned_progress_percent' => 100,
+            'original_planned_progress_percent' => 100,
+        ]);
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $this->project->id,
+            'month_label'             => '2026-08',
+            'inspection_date'         => '2026-08-15',
+            'actual_progress_percent' => 95,
+            'progress_percentage'     => 95,
+            'planned_progress_percent'=> 100,
+            'remarks'                 => 'Inspection one month after baseline end',
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        preg_match('/base64,([A-Za-z0-9+\/=]+)/', $html, $match);
+        $svg = base64_decode($match[1]);
+
+        // Parse polylines by their stroke color to inspect per-series geometry.
+        preg_match_all("/<polyline points='([^']+)' fill='none' stroke='([^']+)'/", $svg, $polys, PREG_SET_ORDER);
+        $this->assertNotEmpty($polys, 'Chart must emit at least one polyline.');
+
+        $frozenMaxX = null;
+        $actualMaxX = null;
+        foreach ($polys as $poly) {
+            $xs = array_map(fn ($pt) => (float) explode(',', $pt)[0], explode(' ', trim($poly[1])));
+            if (str_contains($poly[2], '#3b82f6')) {
+                $frozenMaxX = max($xs);
+            }
+            if (str_contains($poly[2], '#10b981')) {
+                $actualMaxX = max($xs);
+            }
+        }
+
+        $this->assertNotNull($frozenMaxX, 'Frozen polyline must be present.');
+        $this->assertNotNull($actualMaxX, 'Actual polyline must be present.');
+        $this->assertGreaterThan(
+            $frozenMaxX,
+            $actualMaxX,
+            'Actual progress line must extend past the last planned month (no X-axis clamping).'
+        );
+    }
+
+    public function test_summary_scurve_frozen_line_stops_at_last_original_month(): void
+    {
+        // Extension month (2026-07) has original_planned_progress_percent = null.
+        // The frozen (Original Plan) line must stop at 2026-06 instead of being
+        // drawn down to 0% at the extension month.
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-04',
+            'planned_date'             => '2026-04-30',
+            'planned_progress_percent' => 10,
+            'original_planned_progress_percent' => 10,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-05',
+            'planned_date'             => '2026-05-31',
+            'planned_progress_percent' => 30,
+            'original_planned_progress_percent' => 30,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-06',
+            'planned_date'             => '2026-06-30',
+            'planned_progress_percent' => 60,
+            'original_planned_progress_percent' => 60,
+        ]);
+        // Extension month: planned continues, original is null.
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-07',
+            'planned_date'             => '2026-07-31',
+            'planned_progress_percent' => 100,
+            'original_planned_progress_percent' => null,
+        ]);
+        $this->project->update(['extension_count' => 1]);
+
+        $html = $this->renderSummaryView();
+
+        preg_match('/base64,([A-Za-z0-9+\/=]+)/', $html, $match);
+        $svg = base64_decode($match[1]);
+
+        preg_match_all("/<polyline points='([^']+)' fill='none' stroke='([^']+)'/", $svg, $polys, PREG_SET_ORDER);
+
+        $frozenPts = null;
+        $adjustedPts = null;
+        foreach ($polys as $poly) {
+            if (str_contains($poly[2], '#3b82f6')) {
+                $frozenPts = $poly[1];
+            }
+            if (str_contains($poly[2], '#f59e0b')) {
+                $adjustedPts = $poly[1];
+            }
+        }
+
+        $this->assertNotNull($frozenPts, 'Frozen polyline must be present.');
+        $this->assertNotNull($adjustedPts, 'Adjusted polyline must be present when the project has extensions.');
+
+        // Frozen line: exactly one point per non-null original month (3), so it
+        // stops at 2026-06 at 60% — never drawn down to 0% at 2026-07.
+        $frozenCount = count(explode(' ', trim($frozenPts)));
+        $this->assertSame(3, $frozenCount, 'Frozen line must stop at the last original month.');
+
+        // Adjusted line: includes the extension month (4 points total).
+        $adjustedCount = count(explode(' ', trim($adjustedPts)));
+        $this->assertSame(4, $adjustedCount, 'Adjusted line must continue into the extension month.');
     }
 
     public function test_summary_pdf_inline_view_serves_pdf_without_audit_log(): void

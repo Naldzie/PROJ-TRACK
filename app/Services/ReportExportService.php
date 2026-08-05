@@ -376,50 +376,53 @@ class ReportExportService
         $maxY = 100;
         $maxY = max($maxY, (float) ($chartData['y_max'] ?? 0));
 
-        $xFor = fn (float $i) => $padLeft + ($i / max($n - 1, 1)) * $plotW;
-        $yFor = fn (float $v) => $padTop + (1 - min(max($v, 0), $maxY) / $maxY) * $plotH;
-
-        // Chart points arrive as ['x' => ms-timestamp, 'y' => value] from
-        // ProjectChartService. Map each timestamp onto the tick grid so sparse
-        // actual/progress series land on the correct calendar column (not by
-        // array index, which would collapse a 2-point actual series to x=0/1).
+        // Linear millisecond-timestamp X-axis spanning the baseline ticks AND
+        // every plotted point (frozen / adjusted / actual), mirroring the tab's
+        // Chart.js linear scale. A raw timestamp scale (instead of a fixed
+        // 0..n-1 index grid) lets actual records that fall after the last
+        // baseline month render at their true calendar position instead of
+        // clamping onto the final planned column.
         $ticks = $chartData['tick_timestamps'] ?? [];
-        $tickCount = count($ticks);
-        $indexForTs = function (float $ts) use ($ticks, $tickCount, $n) {
-            if ($tickCount === 0) {
-                return null;
-            }
-            if ($ts <= (float) $ticks[0]) {
-                return 0.0;
-            }
-            if ($ts >= (float) $ticks[$tickCount - 1]) {
-                return (float) ($n - 1);
-            }
-            for ($i = 0; $i < $tickCount - 1; $i++) {
-                $a = (float) $ticks[$i];
-                $b = (float) $ticks[$i + 1];
-                if ($ts >= $a && $ts <= $b) {
-                    $span = $b - $a;
-                    return $span > 0 ? $i + ($ts - $a) / $span : (float) $i;
+        $allXs = $ticks;
+        foreach (['frozen_planned_data', 'adjusted_planned_data', 'actual_data'] as $seriesKey) {
+            foreach (($chartData[$seriesKey] ?? []) as $pt) {
+                if (is_array($pt) && isset($pt['x'])) {
+                    $allXs[] = (float) $pt['x'];
                 }
             }
-            return null;
-        };
+        }
+        $xMin = !empty($allXs) ? min($allXs) : 0;
+        $xMax = !empty($allXs) ? max($allXs) : 0;
+        if ($xMax <= $xMin) {
+            $xMax = $xMin + 1;
+        }
 
-        $points = function (array $values) use ($xFor, $yFor, $indexForTs) {
+        $xFor = function (float $ts) use ($padLeft, $plotW, $xMin, $xMax) {
+            return $padLeft + (($ts - $xMin) / ($xMax - $xMin)) * $plotW;
+        };
+        $yFor = fn (float $v) => $padTop + (1 - min(max($v, 0), $maxY) / $maxY) * $plotH;
+
+        // Convert {x: ms-timestamp, y: value} points to SVG coordinates. A null
+        // y (e.g. extension months in the frozen plan) is a gap — skip it like
+        // Chart.js spanGaps:false instead of drawing a 0% point that plunges the
+        // line to the bottom of the chart.
+        $points = function (array $values) use ($xFor, $yFor, $ticks) {
             $pts = [];
             foreach ($values as $i => $v) {
                 if ($v === null) {
                     continue;
                 }
                 if (is_array($v)) {
-                    $y = isset($v['y']) ? (float) $v['y'] : 0.0;
-                    $idx = isset($v['x']) ? ($indexForTs((float) $v['x']) ?? $i) : $i;
+                    if (!isset($v['y']) || $v['y'] === null) {
+                        continue;
+                    }
+                    $y = (float) $v['y'];
+                    $x = $xFor((float) ($v['x'] ?? ($ticks[$i] ?? 0)));
                 } else {
                     $y = (float) $v;
-                    $idx = $i;
+                    $x = $xFor((float) ($ticks[$i] ?? 0));
                 }
-                $pts[] = round($xFor($idx), 1) . ',' . round($yFor($y), 1);
+                $pts[] = round($x, 1) . ',' . round($yFor($y), 1);
             }
             return implode(' ', $pts);
         };
@@ -441,35 +444,88 @@ class ReportExportService
             }
         };
 
-        $xLabels = '';
+        // X labels sit at the baseline tick timestamps; if an actual record
+        // lands after the last baseline month, add its month as an extra label
+        // so the extended tail has a readable axis label (matches the tab's
+        // auto-generated ticks).
+        $labelTicks = [];
         foreach ($labels as $i => $label) {
-            if ($i % max(1, intdiv($n, 6)) !== 0 && $i !== $n - 1) {
+            $labelTicks[] = [$label, isset($ticks[$i]) ? (float) $ticks[$i] : null];
+        }
+        $lastTickTs = !empty($ticks) ? (float) end($ticks) : null;
+        foreach (($chartData['actual_data'] ?? []) as $pt) {
+            if (!is_array($pt) || !isset($pt['x'], $pt['month_label']) || $lastTickTs === null) {
                 continue;
             }
-            $xLabels .= "<text x='" . round($xFor($i), 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($monthLabel($label)) . "</text>";
+            if ((float) $pt['x'] > $lastTickTs) {
+                $labelTicks[] = [$pt['month_label'], (float) $pt['x']];
+            }
+        }
+        // Also add any adjusted/frozen point that stretches past the last tick
+        // (extension months), keeping labels unique and chronological.
+        foreach (['adjusted_planned_data', 'frozen_planned_data'] as $seriesKey) {
+            foreach (($chartData[$seriesKey] ?? []) as $pt) {
+                if (!is_array($pt) || !isset($pt['x']) || $lastTickTs === null) {
+                    continue;
+                }
+                if ((float) $pt['x'] <= $lastTickTs) {
+                    continue;
+                }
+                $existingLabels = array_map(fn ($lt) => $lt[0], $labelTicks);
+                $labelForTs = Carbon::createFromTimestampMs((int) $pt['x'])->format('Y-m');
+                if (!in_array($labelForTs, $existingLabels, true)) {
+                    $labelTicks[] = [$labelForTs, (float) $pt['x']];
+                }
+            }
+        }
+        usort($labelTicks, fn ($a, $b) => ($a[1] ?? 0) <=> ($b[1] ?? 0));
+
+        $xLabels = '';
+        $labelCount = count($labelTicks);
+        $skipEvery = max(1, intdiv($labelCount, 6));
+        foreach ($labelTicks as $i => [$label, $ts]) {
+            if ($i % $skipEvery !== 0 && $i !== $labelCount - 1) {
+                continue;
+            }
+            $xPos = $ts !== null ? $xFor($ts) : $padLeft + ($i / max($labelCount - 1, 1)) * $plotW;
+            $xLabels .= "<text x='" . round($xPos, 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($monthLabel($label)) . "</text>";
         }
 
+        // Legend mirrors the Progress tab exactly: Original Plan (blue), Actual
+        // Progress (green), Adjusted Plan (amber/yellow, only when extensions).
+        $hasExtension = (bool) ($chartData['has_extension'] ?? false);
+        $hasActual = !empty($chartData['actual_data']);
+        $legendItems = [$this->legendItem($padLeft, 18, '#3b82f6', false, 'Original Plan')];
+        $legendWidth = 160;
+        if ($hasActual) {
+            $legendItems[] = $this->legendItem($padLeft + $legendWidth, 18, '#10b981', false, 'Actual Progress');
+            $legendWidth += 160;
+        }
+        if ($hasExtension) {
+            $legendItems[] = $this->legendItem($padLeft + $legendWidth, 18, '#f59e0b', false, 'Adjusted Plan');
+            $legendWidth += 150;
+        }
         $legend = implode('', [
-            "<rect x='" . ($padLeft - 6) . "' y='8' width='330' height='20' rx='4' fill='#f8fafc' stroke='#e2e8f0'/>",
-            $this->legendItem($padLeft, 18, '#3b82f6', false, 'Frozen Baseline'),
-            $this->legendItem($padLeft + 130, 18, '#8b5cf6', true, 'Adjusted Planned'),
-            $this->legendItem($padLeft + 270, 18, '#10b981', false, 'Actual'),
+            "<rect x='" . ($padLeft - 6) . "' y='8' width='" . ($legendWidth + 10) . "' height='20' rx='4' fill='#f8fafc' stroke='#e2e8f0'/>",
+            implode('', $legendItems),
         ]);
 
-        $polyline = function (array $values, string $stroke, float $width, string $dash = '') use ($points) {
+        $polyline = function (array $values, string $stroke, float $strokeWidth) use ($points) {
             $pts = $points($values);
             if ($pts === '') {
                 return '';
             }
-            return "<polyline points='{$pts}' fill='none' stroke='{$stroke}' stroke-width='{$width}'" . ($dash ? " stroke-dasharray='{$dash}'" : '') . "/>";
+            return "<polyline points='{$pts}' fill='none' stroke='{$stroke}' stroke-width='{$strokeWidth}'/>";
         };
 
         $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='{$width}' height='{$height}' viewBox='0 0 {$width} {$height}'>";
         $svg .= $legend;
         $svg .= $gridLines;
-        $svg .= $polyline($chartData['frozen_planned_data'] ?? [], '#3b82f6', 2.5);
-        $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#8b5cf6', 2, '5,3');
-        $svg .= $polyline($chartData['actual_data'] ?? [], '#10b981', 3);
+        $svg .= $polyline($chartData['frozen_planned_data'] ?? [], '#3b82f6', 2);
+        if ($hasExtension) {
+            $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#f59e0b', 2);
+        }
+        $svg .= $polyline($chartData['actual_data'] ?? [], '#10b981', 2);
         $svg .= $xLabels;
         $svg .= "</svg>";
 
