@@ -6,7 +6,9 @@
 {{-- See loadProgressChartData() in the <script> block below. --}}
 
 <!-- PROJECT PROGRESS CHART -->
-@php($reportRole = auth()->user()->role)
+@php
+    $reportRole = auth()->user()->role;
+@endphp
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <span class="card-title">
