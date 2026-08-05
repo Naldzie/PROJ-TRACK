@@ -2,7 +2,7 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #12
 
-Status: ✅ COMPLETE — phases N1–N4 implemented on branch `core/notification-system` (full suite 312 passed / 1068 assertions) + browser-testability fixes (314 passed / 1074 assertions); **Phase N5 (overdue-inspection all-months) IMPLEMENTED on branch `core/overdue-inspection-all-months` (315 passed / 1087 assertions), uncommitted**; pending merge approval per Rule 12.
+Status: ✅ COMPLETE — phases N1–N4 implemented on branch `core/notification-system` (full suite 312 passed / 1068 assertions) + browser-testability fixes (314 passed / 1074 assertions); **Phase N5 (overdue-inspection all-months) IMPLEMENTED on branch `core/overdue-inspection-all-months` (315 passed / 1087 assertions)**; **ALL N1–N5 MERGED TO MAIN @ `79919f0`** (N5 merge 7d5b028, dev-scan fixes 79919f0). Gap #12 marked [DONE] in gaps_and_features_missing.txt.
 
 Branch: `core/notification-system` (created from `main` @ `f2598aa`) → `core/overdue-inspection-all-months` (Phase N5, created from `core/notification-system` @ `a98f83b`)
 
@@ -521,6 +521,16 @@ NOT touched:
 - **Verification:** `php -l` clean on all changed PHP; `composer.json` JSON valid; `view:cache` OK;
   filter suites green; full suite **315 passed / 1087 assertions** (N4+fixes 314/1074 + 1/13; zero
   regressions). Not yet committed.
+
+### 2026-08-05 — Phase N5 committed, merged to main, gap #12 closed
+
+- **N5 committed** on `core/overdue-inspection-all-months` (`7d5b028`) and merged to `main`.
+- **Dev scan fixes** (`79919f0`): self-diagnosing command output, clear-my-notifications button,
+  dev-widget reload after scan.
+- **All N1–N5 work now on `main` @ `79919f0`.** In-app notification system (gap #12) is fully
+  delivered and working — verified live via the Date Simulator + "Run Notification Scan" widget.
+- **Docs sync:** `textfiles/gaps_and_features_missing.txt` item #12 marked `[DONE]`;
+  `textfiles/summary_of_next_work.txt` updated (date + notification complete + Phases A–D merged).
 
 ---
 

@@ -1,7 +1,7 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 2, 2026
+  Last Updated: August 5, 2026
 ================================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
@@ -17,15 +17,18 @@
         finishing the core project monitoring features, which still contain
         hardcoded placeholders (overview.blade.php mockup cards).
 
+  STATUS: Phases A–D COMPLETE & merged to main. Phase E (AI ↔ baseline
+        linkage) remains as the only unfinished core-monitoring phase.
+
   Phases (each on its own branch; merge to main only on approval):
     A — Attachments infrastructure
-        Branch: core/attachments-infra (from main)
+        Branch: core/attachments-infra (from main)   ✅ MERGED
         New polymorphic attachments table (morph + project_id + context),
         Attachment model, AttachmentController (upload/delete/view/download),
         whitelist jpg/jpeg/png/pdf <=20MB. NOT the existing documents table.
 
     B — Overview real data
-        Branch: core/overview-real-data (from main)
+        Branch: core/overview-real-data (from main)  ✅ MERGED
         Replace the 4 mockup cards (Issues & Risks, Documents, Recent
         Activity, Notifications & Alerts) with real DB data.
         Adds nullable project_id to activity_logs + populates the
@@ -34,18 +37,18 @@
         document-coverage reminder).
 
     C — Issue lifecycle upgrade
-        Branch: core/issue-lifecycle (from core/attachments-infra)
+        Branch: core/issue-lifecycle (from core/attachments-infra)  ✅ MERGED
         issues += baseline_schedule_id (FK) + resolution_notes; resolution
         notes required on Resolved/Closed; attachments on issue + resolution;
         expose resolved_at/resolution/month in JSON; ActivityLog on CRUD.
 
     D — Progress recording attachments
-        Branch: core/progress-attachments (from core/attachments-infra)
+        Branch: core/progress-attachments (from core/attachments-infra)  ✅ MERGED
         recordMonthlyProgress()/editProgressRecord() accept multiple optional
         files (image/pdf) via FormData; stored as inspection attachments;
         chips + preview on progress/baseline views.
 
-    E — AI ↔ baseline linkage (preparation only)
+    E — AI ↔ baseline linkage (preparation only)   ⬜ NOT STARTED
         Branch: core/ai-baseline-linkage (from core/issue-lifecycle)
         ai_solutions += baseline_schedule_id (= current pending baseline at
         generation). No recommendation snapshot / outcome display yet —
@@ -132,10 +135,12 @@
      PDF of S-Curve chart, Excel of progress history,
      project summary doc, extension history report
 
-  In-App Notification System
-     Deadline reminders, overdue inspection alerts,
-     extension approval/rejection notices, issue assignments
-     jobs table exists but unused
+  In-App Notification System  ✅ COMPLETE (gaps #12)
+     Deadline reminders (30/14/7 + overdue), overdue inspection alerts
+     (one per uninspected month), extension approval/rejection notices,
+     issue assignments. Laravel-native DB notifications, written
+     synchronously (jobs table still unused). Implemented N1–N5, merged
+     to main @ 79919f0. Detail: textfiles/notification_system_plan.md
 
   Activity Log UI for Staff
      activity_logs table exists — admin-only currently

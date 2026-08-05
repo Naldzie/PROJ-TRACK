@@ -1,6 +1,6 @@
 ﻿================================================================================
   GAPS & MISSING FEATURES — CSPC PMU SYSTEM
-  Last updated: August 4, 2026 (verified against codebase @ main)
+  Last updated: August 5, 2026 (verified against codebase @ main)
 ================================================================================
 
   Purpose: Document features that are not yet implemented but may be
@@ -149,11 +149,27 @@
   NOTIFICATION & COMMUNICATION GAPS
 ================================================================================
 
-  12. [GAP] IN-APP NOTIFICATION SYSTEM
-      - Email notifications exist (welcome emails) but no in-app alerts
-      - Missing: deadline reminders, overdue inspection alerts,
-        extension approval/rejection notices, issue assignments
-      - jobs table exists but nothing uses it yet
+  12. [DONE] IN-APP NOTIFICATION SYSTEM
+      - IMPLEMENTED (N1-N5, merged to main @ 79919f0): Laravel-native
+        database-backed notifications — no queue needed (written
+        synchronously during scan/request).
+      - Four types: deadline reminders (30/14/7 days + overdue buckets),
+        overdue-inspection alerts (one notice PER uninspected baseline
+        month past the 7-day grace, "Month-YYYY" + planned inspection
+        date), extension status changes (submitted/approved/rejected),
+        issue reported (all severities → admins + project contractor).
+      - Deduplication via a tracking key in each notification's data
+        payload (type + project + bucket/extension_id/issue_id), so daily
+        scans escalate without re-firing.
+      - Sources: `notifications:scan` command scheduled 07:00 (deadline
+        buckets + overdue inspections), event-driven hooks in
+        ProjectExtensionController + IssueController (extensions/issues).
+      - UI: bell + unread badge + dropdown in all three role topbars,
+        full Notifications page with read / mark-all-read, empty state.
+      - Browser testability: dev widget "Run Notification Scan" behind the
+        Date Simulator (web request) + `schedule:work` added to
+        `composer dev` (real time, CLI context).
+      - Detail: textfiles/notification_system_plan.md
 
   13. [GAP] AUDIT LOG UI FOR NON-ADMINS
       - activity_logs table exists and logs all actions
