@@ -176,26 +176,15 @@
 
 /* ========== HEADER SECTION ========== */
 .header-section {
-    background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
+    background:
+        radial-gradient(circle at 115% -10%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 55%),
+        linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
     color: white;
     padding: 32px;
     border-radius: 12px;
     margin-bottom: 28px;
     box-shadow: 0 10px 15px -3px rgba(26, 86, 219, 0.2);
     position: relative;
-    overflow: hidden;
-}
-
-.header-section::before {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -10%;
-    width: 400px;
-    height: 400px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 50%;
-    z-index: 0;
 }
 
 .header-content {

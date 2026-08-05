@@ -375,7 +375,7 @@ class ReportExportService
             $xLabels .= "<text x='" . round($xFor($i), 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($label) . "</text>";
         }
 
-        $polyline = function (array $values, string $stroke, float $width, string $dash = '') {
+        $polyline = function (array $values, string $stroke, float $width, string $dash = '') use ($points) {
             $pts = $points($values);
             if ($pts === '') {
                 return '';
