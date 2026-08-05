@@ -2,12 +2,16 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #10
 
-Status: 🟢 IN PROGRESS — R1 (Excel exports) and R2 (PDF summary) implemented,
-        tested, and committed on `core/report-generation` (commits `c47b9ab`,
-        `aae78cd`). Remaining: client confirmation, browser check, merge to main
+Status: 🟢 IN PROGRESS — R1 (Excel exports) and R2 (PDF summary) implemented
+        and committed on `core/report-generation`; **three PDF quality fixes**
+        (peso sign, S-Curve flat-0% bug, latest-inspection selection) plus a
+        **view-before-download PDF viewer flow** shipped in follow-up commits
+        (`3e58fe0`, `2ecc0e9`, `52e2f4e`, `1bb101a`). **Excel exports are
+        frozen** until the unexplained corruption report is resolved (see
+        §6.4). Remaining: client confirmation, browser check, merge to main
         (Rule 12 — requires explicit approval).
 
-Date: August 5, 2026
+Date: August 5, 2026 (updated after PDF-fix + viewer round)
 
 Rules: textfiles/active_reference/project_context_and_development_rules.txt (Rule 8/10/11/12)
 
@@ -104,22 +108,36 @@ Packagist reachable (HTTP 200) so `composer require` will work.
    groups — mirrors `ProjectController`. Per-role authorization enforced inside.
 4. **PDF S-Curve = inline SVG** built server-side from
    `ProjectChartService::prepareChartData()` (labels + frozen/adjusted planned +
-   actual + extension). Fallback if dompdf's SVG renderer misbehaves: an HTML/CSS
-   bar table of the same data (documented, test both in R2).
+   actual + extension). Embedded as a base64 `data:image/svg+xml` `<img>`
+   (dompdf has no inline `<svg>` frame handler — only `<img>` routes through
+   php-svg-lib). **Point shape confirmed:** chart series are associative arrays
+   `['x' => ms-timestamp, 'y' => value]`, NOT scalars — so the builder maps each
+   `x` onto the label grid via `tick_timestamps` and reads `y` from the array,
+   then emits a legend (Frozen Baseline / Adjusted Planned / Actual) and
+   month-name x labels (`April 2026`). Fallback if php-svg-lib misbehaves: GD
+   PNG rendering (GD is now enabled) or an HTML/CSS bar table.
 5. **Routes** — one route per report type, named per role:
    `{role}.projects.exports.progress` etc. Controller methods
    `progressExcel / baselineExcel / extensionsExcel / issuesExcel / summaryPdf`.
+   Plus `{role}.projects.exports.summary.view` (`summaryPdfView`) serving the
+   same PDF inline (`Content-Disposition: inline`, no audit-log entry) for the
+   viewer-modal iframe.
 6. **Auth** — admin/staff any project; contractor own project only (reuses the
    exact `show()` authorization block).
 7. **UI** — a "Reports" dropdown (Export Excel → 4 items, View PDF Summary) in
    the project header `.header-badges-right`, plus a small inline
    "Export Excel" button in the Progress tab card header (progress.blade.php
-   card header already uses flexbox `justify-content: space-between`).
+   card header already uses flexbox `justify-content: space-between`). The PDF
+   item now opens the **existing document-viewer modal**
+   (`openDocumentViewer({viewUrl, downloadUrl})`); Excel items remain direct
+   download links until the corruption issue is resolved.
 8. **File naming** — `{project_code}_progress.xlsx`,
    `{project_code}_baseline.xlsx`, `{project_code}_extensions.xlsx`,
    `{project_code}_issues.xlsx`, `{project_code}_project-summary.pdf`.
 9. **Activity log** — record an `ActivityLog::create` (action `Export Report`,
    project_id set) on each export, consistent with the audit-trail pattern.
+   **Previews (inline `summaryPdfView`) do NOT log** — only the actual download
+   via `summaryPdf()` records the audit entry.
 10. **No storage / no queue** — files are generated and streamed on demand;
     nothing persisted (audit trail lives in `activity_logs`).
 
@@ -204,14 +222,71 @@ Verify: `php -l` on changed PHP; `php artisan test --filter=ReportExportTest`.
 Verify: `php -l`; `php artisan view:cache` compiles the new Blade;
 `php artisan test --filter=ReportExportTest`; full `composer test`.
 
+### Phase R2b — PDF summary quality fixes (commits `3e58fe0`, `2ecc0e9`, `52e2f4e`)
+
+11. Progress-tab Blade compile fix — replaced an invalid `@php(...)` one-liner
+    with a paired `@php`/`@endphp` block (Blade 12 won't compile the former).
+12. SVG closure scope fix — `buildSvgChart` polyline closures `use ($points)`;
+    header dropdown CSS clipping fix.
+13. **Peso sign** — `.meta-grid .value.peso` must use `'DejaVu Sans'` with
+    `font-weight: bold`; the inherited `font-weight: 600` maps to an
+    unresolvable `'600'` font subtype and silently falls back to Helvetica
+    (no U+20B1 glyph). DejaVuSans-Bold embedded (verified via hex).
+14. **S-Curve flat-0% bug identified** — `$points` did `(float)$v` on
+    `['x'=>ts,'y'=>val]` arrays → every point became `1.0` → all polylines
+    collapsed to y=292.5. Full rewrite landed in R3 step 17.
+15. **Latest-inspection selection** — `->reorder()` before `orderByDesc()`
+    in `project-summary.blade.php` and `ProjectOverviewService::getOverviewStats()`
+    (the `progressHistory()` relation bakes in `orderBy inspection_date asc`,
+    so the appended `desc` was a no-op and `first()` returned the earliest
+    record). PDF now shows the most recent inspection (2026-05, actual 3.00%).
+16. **Legend + month-name labels** — shipped as part of the R3 SVG rewrite
+    (step 17).
+
+### Phase R3 — S-Curve rewrite + view-before-download (commit `1bb101a`)
+
+17. `buildSvgChart()` rewritten to accept **both** scalar and associative-array
+    points:
+    - `y` read from `$v['y']` when the point is an array (else the scalar value);
+    - `x` timestamp mapped onto the label grid via `tick_timestamps`
+      (`indexForTs`), so a sparse 2-point `actual_data` (Apr/May 2026) lands on
+      the correct calendar columns instead of collapsing to x=0/1;
+    - legend emitted (Frozen Baseline `#3b82f6`, Adjusted Planned `#8b5cf6`
+      dashed, Actual `#10b981`) on a `#f8fafc` rect at the chart top
+      (`legendItem()` helper), with `padTop` bumped 25→45 to fit;
+    - x-axis labels formatted `Y-m` → `F Y` via `Carbon` (`April 2026`);
+    - verified on project 142 real PDF: 65 distinct line y-coordinates (was
+      collapsed), legend text + `April 2026` present in decompressed streams.
+18. **Inline preview route** — extracted shared `buildSummaryDompdf(Project)`;
+    added `summaryPdfView()` returning the same PDF via `streamDownload` with
+    the 4th `$disposition = 'inline'` arg (no `Content-Disposition` header
+    override — ResponseFactory sets it from the disposition param). No
+    audit-log entry for previews.
+19. Routes `GET /projects/{project}/reports/summary/view` in all three role
+    groups (named `{role}.projects.exports.summary.view`). NOTE: `route:cache`
+    was stale — new routes invisible until `php artisan route:cache` re-run.
+20. UI — both export dropdowns (header + progress tab) PDF item now calls the
+    existing `openDocumentViewer({name, viewUrl: summary.view, downloadUrl:
+    summary})` modal (already included on every project-detail page via the
+    always-rendered Documents tab). Excel items left as plain links.
+21. Tests (ReportExportTest, now 16):
+    - S-Curve SVG: ≥2 distinct polyline y-coords (non-flat), legend labels,
+      `April 2026` / `June 2026` month names;
+    - `summaryPdfView`: 200 + `application/pdf` + `Content-Disposition: inline`
+      + NO ActivityLog row;
+    - `summaryPdf`: `attachment` disposition + ActivityLog row still written.
+
 ### Final verification (after all phases)
 
 - `php -l` on every changed PHP file.
-- `php artisan route:list` shows the 15 new export routes (5 × 3 roles).
+- `php artisan route:list` shows the 18 export routes (6 × 3 roles: 5 export +
+  1 inline view).
 - `php artisan view:cache` — new Blade compiles.
-- Full suite `php artisan test` — no regressions (re-baseline count vs main).
-- Browser check (manual, on request): Reports dropdown downloads all 5 files
-  per role; Excel opens with correct rows; PDF renders header + chart + tables.
+- Full suite `php artisan test` — no regressions (**331 passed / 1150 assertions**
+  as of `1bb101a`).
+- Browser check (manual, on request): Reports dropdown previews the summary PDF
+  in the viewer modal and downloads on button click; Excel downloads all 4
+  files per role.
 
 ---
 
@@ -226,15 +301,19 @@ NEW:
 
 MODIFIED:
 - `composer.json` / `composer.lock` (2 new dependencies)
-- `routes/web.php` (export routes in 3 role groups)
+- `routes/web.php` (export routes in 3 role groups + inline summary.view routes)
 - `resources/views/projects/project_detail/components/header.blade.php` (Reports dropdown)
 - `resources/views/projects/project_detail/components/tabs/progress.blade.php` (Export Excel button)
+- `app/Http/Controllers/ReportExportController.php` (+ `summaryPdfView`)
 
 NOT touched:
 - No migrations (pure read + generate; no schema change).
 - No new `public/` assets (buttons are plain `<a>` links; no JS needed).
 - `ProjectChartService` / `ProjectDetailService` (read-only reuse; no changes).
 - No queue, no storage writes.
+- `components/document-viewer-modal.blade.php` — reused as-is (no changes).
+- **Excel generation code intentionally unchanged** (corruption issue unresolved,
+  see §6.4).
 
 ---
 
@@ -247,7 +326,15 @@ NOT touched:
    reports, gate contractor exports off entirely.
 3. **PDF S-Curve fidelity** — inline SVG is close to the browser chart but
    simpler (no tooltips/interaction). Acceptable for a printed report.
-4. **Summary PDF scope** — currently one combined document. A separate
+4. **Excel corruption report (BLOCKING Excel work)** — a client reported a
+   downloaded `.xlsx` as corrupt, but every local reproduction round-trips
+   through `IOFactory::load` cleanly (tests pass; `PK\x03\x04` magic verified;
+   cells assert correctly). Root cause never identified. **Decision: Excel
+   exports are frozen — do NOT add the HTML-table preview / viewer flow for
+   Excel, and do NOT touch Excel generation code, until the corruption issue is
+   reproduced and fixed.** Revisit with a real client file + browser-download
+   capture if one becomes available.
+5. **Summary PDF scope** — currently one combined document. A separate
    extension-history PDF could be added later if requested (data is ready).
 
 ---
@@ -318,10 +405,63 @@ NOT touched:
   assertion is replaced by a non-trivial-length check.
 - Full suite: **325 passed**.
 
+### 2026-08-05 — PDF-fix round 1 (commits `3e58fe0`, `2ecc0e9`, `52e2f4e`)
+
+After the R2 PDF was reviewed on a real project, three defects surfaced and
+were fixed:
+
+- **Progress-tab Blade compile error** (`3e58fe0`) — replaced a one-line
+  `@php(...)` construct with a paired `@php`/`@endphp` block.
+- **SVG closure scope + dropdown clipping** (`2ecc0e9`) — polyline closures
+  gained `use ($points)`; header dropdown CSS fixed.
+- **Peso sign (₱) missing** (`52e2f4e`) — `.value.peso` switched to
+  `'DejaVu Sans'` + `font-weight: bold` (the inherited `600` maps to an
+  unresolvable font subtype → silent Helvetica fallback without U+20B1).
+  DejaVuSans-Bold confirmed embedded via hex in the stream.
+- **S-Curve rendered flat at 0%** — root cause: `$points` did `(float)$v` on
+  associative-array points (`['x'=>ts,'y'=>val]`) → every point `(float)[] == 1.0`
+  → all lines collapsed to y=292.5. (Full rewrite landed in `1bb101a`.)
+- **Latest inspection showed the FIRST record** — the `progressHistory()`
+  relation bakes in `orderBy inspection_date asc`; the appended `orderByDesc`
+  was a no-op until `->reorder()` was added in the view AND
+  `ProjectOverviewService::getOverviewStats()`. PDF now shows 2026-05 (3.00%).
+- 3 new tests (`renderSummaryView()` helper + peso/latest-inspection/data-URI
+  assertions). Full suite: **328 passed / 1133 assertions**.
+
+### 2026-08-05 — S-Curve rewrite + inline PDF viewer (commit `1bb101a`)
+
+User report after the first fix round: S-Curve still flat with no legend, and
+users want to **view files before downloading**. Work completed:
+
+- `buildSvgChart()` rewritten:
+  - reads `y` from `$v['y']` for array points (scalar values still supported);
+  - maps each point's `x` timestamp onto the label grid via `tick_timestamps`
+    so sparse `actual_data` lands on the correct calendar columns;
+  - emits a legend (Frozen Baseline / Adjusted Planned / Actual) with
+    `legendItem()` swatches; `padTop` 25→45 for legend headroom;
+  - x-axis labels now `Y-m` → month-name format (`April 2026`) via Carbon;
+  - verified on project 142's real PDF: **65 distinct line y-coordinates**,
+    legend text + `April 2026` present in decompressed streams (was flat).
+- **View-before-download (PDF only):** extracted `buildSummaryDompdf()`;
+  added `summaryPdfView()` → same PDF with `Content-Disposition: inline`
+  (4th `$disposition` arg to `Response::streamDownload`) and **no audit log**.
+  New routes `{role}.projects.exports.summary.view` × 3 roles.
+- **UI:** both export dropdowns (header + Progress tab) now open the existing
+  document-viewer modal (`openDocumentViewer`) for the PDF summary; Excel items
+  intentionally left as direct download links (corruption issue — see §6.4).
+- Verified end-to-end via HTTP: `/staff/projects/142/reports/summary/view`
+  → 200, `application/pdf`, `inline; filename=prj-2026-00037_project-summary.pdf`,
+  13,034 bytes `%PDF-1.7`.
+- Tests: +3 (non-flat S-Curve with legend + month names; inline view serves PDF
+  with no audit log; download still logs). **ReportExportTest: 16 passed /
+  63 assertions. Full suite: 331 passed / 1150 assertions.**
+
 ### Remaining
 
-- Manual browser check (optional): Reports dropdown downloads all 5 files per
-  role; Excel opens with correct rows; PDF renders header + SVG chart + tables.
+- Manual browser check (optional): Reports dropdown previews the summary PDF in
+  the viewer modal, Download button streams the attachment; Excel downloads all
+  4 files per role.
+- Resolve the **Excel corruption report** (§6.4) before touching Excel again.
 - Merge to `main` requires explicit approval (Rule 12).
 
 ---
