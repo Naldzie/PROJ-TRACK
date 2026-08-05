@@ -2,11 +2,11 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #12
 
-Status: ✅ COMPLETE — all four phases (N1–N4) implemented on branch `core/notification-system` (full suite 309 passed / 1060 assertions); pending merge approval per Rule 12.
+Status: ✅ COMPLETE — phases N1–N4 implemented on branch `core/notification-system` (full suite 312 passed / 1068 assertions) + browser-testability fixes (314 passed / 1074 assertions); **Phase N5 (overdue-inspection all-months) PLANNED on branch `core/overdue-inspection-all-months`**; pending merge approval per Rule 12.
 
-Branch: `core/notification-system` (created from `main` @ `f2598aa`)
+Branch: `core/notification-system` (created from `main` @ `f2598aa`) → `core/overdue-inspection-all-months` (Phase N5, created from `core/notification-system` @ `a98f83b`)
 
-Date: August 4, 2026
+Date: August 4, 2026 (updated August 5, 2026)
 
 Rules: textfiles/active_reference/project_context_and_development_rules.txt (Rule 8/10/11/12)
 
@@ -240,6 +240,58 @@ Verify: `php -l`; `php artisan test --filter=NotificationTest`.
 Verify: `php -l`; `php artisan view:cache` compiles; `php artisan route:list` shows the 12 new
 routes (4 × 3 roles); `php artisan test --filter=NotificationUiTest`; full suite green.
 
+### Phase N5 — Overdue inspections: notify ALL uninspected months + message format (PLANNED)
+
+Work tracked on branch `core/overdue-inspection-all-months` (created from
+`core/notification-system` @ `a98f83b`). This is a plan-only commit; no code changes yet.
+
+**Background (user report, verified 2026-08-05):** a project whose last progress record is May,
+with simulated date in September, only received ONE overdue-inspection notice (2026-06). The scan
+currently uses `->first()` on baselines sorted by `planned_date`
+(`app/Console/Commands/SendNotifications.php::sendOverdueInspectionReminders`, lines ~174-182), so
+only the earliest past-grace uninspected month is notified. Expected: every uninspected baseline
+month past the grace window (June, July, August, …) gets its own notice.
+
+**Decisions (user-confirmed 2026-08-05):**
+1. **One notification per overdue month** (matches the existing per-(project, month) dedupe key
+   `overdue_inspection:{project_id}:{month_label}`; repeated scans stay deduped automatically).
+2. **Keep the 7-day grace window** (default `notification_overdue_grace_days` = 7).
+3. **Message format change:** month shown as "Month-YYYY" (e.g. "June-2026" — the
+   `ProjectBaselineSchedule::$month_display` accessor already produces this) plus the planned
+   inspection date from the baseline `planned_date`.
+4. **Real-time automation:** add `php artisan schedule:work` to the `composer dev` concurrently
+   list so deadline/overdue scans fire automatically in real time. NOTE: the scheduler runs in a
+   CLI context with no session, so it uses REAL time only — the simulated date applies solely to
+   the browser dev widget "Run Notification Scan" button (web request behind `SimulateDate`).
+
+**Implementation steps:**
+1. `app/Console/Commands/SendNotifications.php` — replace the `->first(...)` selection with a
+   `->filter(...)` over all baselines that are (a) not in `progressHistory` `month_label`s and
+   (b) `planned_date < now - graceDays`; loop, sending one `OverdueInspectionReminder` per month;
+   sum returned counts; update the diagnostic line to list all overdue months.
+2. `app/Notifications/OverdueInspectionReminder.php` — constructor gains `monthDisplay`
+   ("June-2026") and `plannedDate` ("2026-06-15"); `toDatabase()` payload adds `month_display`
+   and `planned_date` (key/project_id/project_title/month_label unchanged).
+3. `app/Http/Controllers/NotificationController.php::title()` — "Inspection overdue for "
+   + `month_display` (fallback `month_label`).
+4. `resources/views/notifications/_list.blade.php` — render `(June-2026)` via
+   `$d['month_display'] ?? $d['month_label']` and add a meta line "Planned inspection: Jun 15,
+   2026" for overdue inspections.
+5. `resources/views/notifications/partials/bell.blade.php` — meta line shows
+   `{project_title} · {month_display} · {created}` for inspection alerts.
+6. `composer.json` `dev` script — add `"php artisan schedule:work"` (new color + name,
+   e.g. `#f472b6`/`scheduler`) to the concurrently list, keep `--kill-others`.
+7. Tests: `tests/Feature/NotificationScanTest.php` — add
+   `test_overdue_inspection_alert_fires_for_each_overdue_month` (three past-grace baselines → one
+   notice per month, correct `month_display`/`planned_date`); update
+   `test_overdue_inspection_alert_fires_after_grace` to assert the new payload fields.
+   `tests/Feature/NotificationServiceTest.php` — update `OverdueInspectionReminder` construction +
+   assert `month_display`/`planned_date`.
+
+Verify: `php -l`; `php artisan test --filter=NotificationScanTest`; `php artisan test
+--filter=NotificationServiceTest`; full `composer test`; update AGENTS.md dev-stack line to note
+the scheduler now starts with `composer dev` (real-time only).
+
 ### Final verification (after all phases)
 
 - `php -l` on every changed PHP file.
@@ -427,6 +479,18 @@ NOT touched:
   'overdue'; unauthenticated JSON request is 401).
 - **Verification:** `php -l` clean; `view:cache` OK; full suite **312 passed / 1068 assertions**
   (309/1060 + 3/8; zero regressions).
+
+### 2026-08-05 — Phase N5 planned (overdue inspections: all uninspected months + message format)
+
+- Branch `core/overdue-inspection-all-months` created from `core/notification-system` @ `a98f83b`
+  (plan-only commit; no implementation).
+- User reported (verified on disk): only the EARLIEST past-grace uninspected baseline month is
+  notified (`->first()` in `sendOverdueInspectionReminders`); project with last progress in May +
+  simulated September produced only a 2026-06 notice — expected June–August.
+- User confirmations captured: one notification PER overdue month; keep 7-day grace; message shows
+  "Month-YYYY" + planned inspection date; add `schedule:work` to `composer dev` for real-time
+  automation (scheduler = real time only; simulated date stays dev-button-only).
+- Plan written in §4 (Phase N5); committed as plan-only; pushed to GitHub.
 
 ---
 
