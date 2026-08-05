@@ -109,7 +109,7 @@ class NotificationController extends Controller
             \App\Notifications\DeadlineReminder::class => $data['bucket'] === 'overdue'
                     ? ($project ? "Project {$project} is overdue" : 'Project is overdue')
                     : "Project deadline in {$data['days_remaining']} days",
-            \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . ($data['month_label'] ?? ''),
+            \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . ($data['month_display'] ?? $data['month_label'] ?? ''),
             \App\Notifications\ExtensionStatusChanged::class => 'Extension ' . ($data['status'] ?? '') . ($data['extension_number'] ? " #{$data['extension_number']}" : ''),
             \App\Notifications\IssueReported::class => 'Issue reported' . ($data['severity'] ? " ({$data['severity']})" : ''),
             default => 'Notification',

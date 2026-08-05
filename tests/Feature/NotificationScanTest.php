@@ -181,6 +181,8 @@ class NotificationScanTest extends TestCase
         $data = $this->admin->notifications()->first()->data;
         $this->assertSame('overdue_inspection', $this->typeOf($this->admin->notifications()->first()->type));
         $this->assertSame('2026-07', $data['month_label']);
+        $this->assertSame('July-2026', $data['month_display']);
+        $this->assertSame('2026-07-31', $data['planned_date']);
     }
 
     public function test_overdue_inspection_within_grace_is_skipped(): void
@@ -235,6 +237,35 @@ class NotificationScanTest extends TestCase
         $this->runScan();
 
         $this->assertSame(1, $this->admin->notifications()->count());
+    }
+
+    public function test_overdue_inspection_alert_fires_for_each_overdue_month(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00'));
+
+        $project = $this->projectForInspection();
+        foreach (['2026-06' => '2026-06-30', '2026-07' => '2026-07-31', '2026-08' => '2026-08-01'] as $label => $planned) {
+            ProjectBaselineSchedule::factory()->create([
+                'project_id'   => $project->id,
+                'month_label'  => $label,
+                'planned_date' => $planned,
+            ]);
+        }
+
+        $this->runScan();
+
+        $this->assertSame(3, $this->admin->notifications()->count());
+        $this->assertSame(3, $this->staff->notifications()->count());
+        $this->assertSame(3, $this->contractorUser->notifications()->count());
+
+        $rows = $this->admin->notifications()->get()->sortBy(fn ($n) => $n->data['month_label'])->values();
+
+        $this->assertSame('overdue_inspection', $this->typeOf($rows[0]->type));
+        $this->assertSame('2026-06', $rows[0]->data['month_label']);
+        $this->assertSame('June-2026', $rows[0]->data['month_display']);
+        $this->assertSame('2026-06-30', $rows[0]->data['planned_date']);
+        $this->assertSame('July-2026', $rows[1]->data['month_display']);
+        $this->assertSame('August-2026', $rows[2]->data['month_display']);
     }
 
     public function test_completed_project_gets_no_inspection_alert(): void

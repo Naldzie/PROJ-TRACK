@@ -17,8 +17,9 @@ use Illuminate\Console\Command;
  *  - Deadline reminders: Ongoing projects whose planned_end_date falls within
  *    the configured buckets (default 30,14,7 days) or is already overdue.
  *    Escalates naturally because each bucket is a distinct dedupe key.
- *  - Overdue inspection alerts: the earliest baseline month whose planned_date
- *    is past the grace window with no recorded progress for that month_label.
+ *  - Overdue inspection alerts: every baseline month whose planned_date is past
+ *    the grace window with no recorded progress for that month_label (one notice
+ *    per uninspected month).
  *
  * Safe to run repeatedly — NotificationService dedupes by tracking key.
  */
@@ -39,6 +40,15 @@ class SendNotifications extends Command
         $graceDays = (int) Setting::getValue('notification_overdue_grace_days', 7);
 
         $this->info('Scanning projects for notifications...');
+
+        // Diagnostic counts so "0 notices" is never ambiguous: show how many
+        // projects were scanned vs excluded by the status/end-date filter.
+        $statusCounts = Project::selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status')
+            ->all();
+        $plannedExcluded = $statusCounts['Planned'] ?? 0;
+        $noEndDate = Project::whereNull('planned_end_date')->count();
 
         $projects = Project::whereIn('status', ['Ongoing'])
             ->whereNotNull('planned_end_date')
@@ -67,6 +77,7 @@ class SendNotifications extends Command
             $inspectionSent += $sent;
         }
 
+        $this->info("Scope: Ongoing w/ end date: {$projectsChecked} | Planned excluded: {$plannedExcluded} | all w/o end date: {$noEndDate}");
         $this->info("Done. Projects checked: {$projectsChecked}, Deadline notices: {$deadlineSent}, Overdue-inspection notices: {$inspectionSent}");
 
         return 0;
@@ -104,6 +115,7 @@ class SendNotifications extends Command
 
         $bucket = $this->resolveDeadlineBucket($daysRemaining, $buckets);
         if ($bucket === null) {
+            $this->line("  [Deadline] #{$project->id} '{$project->title}' ends {$project->planned_end_date->format('Y-m-d')} → no bucket ({$daysRemaining} days out)");
             return 0;
         }
 
@@ -115,7 +127,10 @@ class SendNotifications extends Command
             $project->planned_end_date->format('Y-m-d')
         );
 
-        return $service->notifyMany($recipients, $notification);
+        $sent = $service->notifyMany($recipients, $notification);
+        $this->line("  [Deadline] #{$project->id} '{$project->title}' ends {$project->planned_end_date->format('Y-m-d')} → bucket {$bucket} ({$daysRemaining} days out, {$sent} sent)");
+
+        return $sent;
     }
 
     /**
@@ -141,9 +156,9 @@ class SendNotifications extends Command
     }
 
     /**
-     * Send overdue-inspection alerts for the earliest baseline month past the
-     * grace window with no recorded progress for that month. Returns the number
-     * of notifications actually delivered.
+     * Send overdue-inspection alerts for every baseline month past the grace
+     * window with no recorded progress for that month (one per uninspected
+     * month). Returns the number of notifications actually delivered.
      */
     private function sendOverdueInspectionReminders(
         Project $project,
@@ -157,26 +172,39 @@ class SendNotifications extends Command
 
         $recordedMonths = $project->progressHistory->pluck('month_label');
 
-        $overdueBaseline = $project->baselineSchedules
+        $overdueBaselines = $project->baselineSchedules
             ->sortBy('planned_date')
-            ->first(function ($baseline) use ($recordedMonths, $graceDays) {
+            ->filter(function ($baseline) use ($recordedMonths, $graceDays) {
                 if ($recordedMonths->contains($baseline->month_label)) {
                     return false;
                 }
 
                 return $baseline->planned_date->lt(Carbon::now()->subDays($graceDays));
-            });
+            })
+            ->values();
 
-        if (!$overdueBaseline) {
+        if ($overdueBaselines->isEmpty()) {
+            $this->line("  [Inspection] #{$project->id} '{$project->title}' → none overdue past {$graceDays}-day grace");
             return 0;
         }
 
-        $notification = new OverdueInspectionReminder(
-            $project->id,
-            $project->title,
-            $overdueBaseline->month_label
-        );
+        $totalSent = 0;
+        $overdueMonths = $overdueBaselines->pluck('month_label')->all();
 
-        return $service->notifyMany($recipients, $notification);
+        foreach ($overdueBaselines as $overdueBaseline) {
+            $notification = new OverdueInspectionReminder(
+                $project->id,
+                $project->title,
+                $overdueBaseline->month_label,
+                $overdueBaseline->month_display,
+                $overdueBaseline->planned_date->format('Y-m-d')
+            );
+
+            $totalSent += $service->notifyMany($recipients, $notification);
+        }
+
+        $this->line("  [Inspection] #{$project->id} '{$project->title}' → overdue months " . implode(', ', $overdueMonths) . " ({$totalSent} sent)");
+
+        return $totalSent;
     }
 }

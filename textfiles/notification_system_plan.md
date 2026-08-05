@@ -2,7 +2,7 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #12
 
-Status: ✅ COMPLETE — phases N1–N4 implemented on branch `core/notification-system` (full suite 312 passed / 1068 assertions) + browser-testability fixes (314 passed / 1074 assertions); **Phase N5 (overdue-inspection all-months) PLANNED on branch `core/overdue-inspection-all-months`**; pending merge approval per Rule 12.
+Status: ✅ COMPLETE — phases N1–N4 implemented on branch `core/notification-system` (full suite 312 passed / 1068 assertions) + browser-testability fixes (314 passed / 1074 assertions); **Phase N5 (overdue-inspection all-months) IMPLEMENTED on branch `core/overdue-inspection-all-months` (315 passed / 1087 assertions), uncommitted**; pending merge approval per Rule 12.
 
 Branch: `core/notification-system` (created from `main` @ `f2598aa`) → `core/overdue-inspection-all-months` (Phase N5, created from `core/notification-system` @ `a98f83b`)
 
@@ -491,6 +491,36 @@ NOT touched:
   "Month-YYYY" + planned inspection date; add `schedule:work` to `composer dev` for real-time
   automation (scheduler = real time only; simulated date stays dev-button-only).
 - Plan written in §4 (Phase N5); committed as plan-only; pushed to GitHub.
+
+### 2026-08-05 — Phase N5 implemented (overdue inspections: all uninspected months + message format)
+
+- Branch `core/overdue-inspection-all-months` created from `core/notification-system` @ `a98f83b`;
+  plan committed first (`08e3802`), then this implementation.
+- **N5.1:** `app/Console/Commands/SendNotifications.php::sendOverdueInspectionReminders()` — replaced
+  the `->first(...)` selection with a `->filter(...)` over all baselines that are unrecorded and past
+  the grace window; loops sending one `OverdueInspectionReminder` per month; sums delivered counts;
+  diagnostic line now lists all overdue months. Docblock updated to "every baseline month".
+- **N5.2:** `app/Notifications/OverdueInspectionReminder.php` — constructor gained `monthDisplay`
+  and `plannedDate`; `toDatabase()` payload adds `month_display` + `planned_date` (dedupe key,
+  project_id, project_title, month_label unchanged).
+- **N5.3:** `NotificationController::title()` — "Inspection overdue for " uses `month_display` with
+  `month_label` fallback.
+- **N5.4:** `resources/views/notifications/_list.blade.php` — title shows `(June-2026)` via
+  `month_display ?? month_label`; added amber "Planned inspection: Jun 15, 2026" meta line.
+- **N5.5:** `resources/views/notifications/partials/bell.blade.php` — inspection meta line now
+  `{project_title} · {month_display} · {created}`.
+- **N5.6:** `composer.json` `dev` script — added `"php artisan schedule:work"` (color `#f472b6`,
+  name `scheduler`) to the concurrently list. NOTE: scheduler = real time only (CLI, no session);
+  simulated date remains dev-widget-button-only. AGENTS.md dev-stack line updated accordingly.
+- **N5.7:** tests — `NotificationScanTest` added
+  `test_overdue_inspection_alert_fires_for_each_overdue_month` (three past-grace baselines → one
+  notice per month with correct `month_display`/`planned_date`) and updated
+  `test_overdue_inspection_alert_fires_after_grace` to assert the new payload fields;
+  `NotificationServiceTest::test_overdue_inspection_reminder_payload` asserts `month_display` +
+  `planned_date`.
+- **Verification:** `php -l` clean on all changed PHP; `composer.json` JSON valid; `view:cache` OK;
+  filter suites green; full suite **315 passed / 1087 assertions** (N4+fixes 314/1074 + 1/13; zero
+  regressions). Not yet committed.
 
 ---
 

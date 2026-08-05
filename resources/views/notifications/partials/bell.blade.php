@@ -53,7 +53,7 @@
                             <span class="notification-dot"></span>
                         @endif
                     </div>
-                    <div class="notification-item-meta">{{ $d['project_title'] ?? '' }} · {{ $n->created_at?->diffForHumans() }}</div>
+                    <div class="notification-item-meta">{{ $d['project_title'] ?? '' }}{{ $n->type === \App\Notifications\OverdueInspectionReminder::class ? ' · ' . ($d['month_display'] ?? $d['month_label'] ?? '') : '' }} · {{ $n->created_at?->diffForHumans() }}</div>
                 </div>
             @empty
                 <div class="notification-empty">No unread notifications</div>

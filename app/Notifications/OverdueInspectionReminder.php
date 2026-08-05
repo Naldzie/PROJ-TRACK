@@ -20,6 +20,8 @@ class OverdueInspectionReminder extends Notification
         public int $projectId,
         public string $projectTitle,
         public string $monthLabel,
+        public string $monthDisplay = '',
+        public string $plannedDate = '',
     ) {
     }
 
@@ -35,6 +37,8 @@ class OverdueInspectionReminder extends Notification
             'project_id'    => $this->projectId,
             'project_title' => $this->projectTitle,
             'month_label'   => $this->monthLabel,
+            'month_display' => $this->monthDisplay,
+            'planned_date'  => $this->plannedDate,
         ];
     }
 

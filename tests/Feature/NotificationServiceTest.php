@@ -229,12 +229,14 @@ class NotificationServiceTest extends TestCase
     public function test_overdue_inspection_reminder_payload(): void
     {
         $user = $this->makeUser('staff');
-        $notification = new OverdueInspectionReminder(7, 'Bridge', '2026-07');
+        $notification = new OverdueInspectionReminder(7, 'Bridge', '2026-07', 'July-2026', '2026-07-31');
 
         $payload = $notification->toDatabase($user);
 
         $this->assertSame('overdue_inspection:7:2026-07', $payload['key']);
         $this->assertSame('2026-07', $payload['month_label']);
+        $this->assertSame('July-2026', $payload['month_display']);
+        $this->assertSame('2026-07-31', $payload['planned_date']);
     }
 
     public function test_extension_status_changed_payload(): void

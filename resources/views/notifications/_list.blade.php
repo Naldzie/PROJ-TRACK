@@ -82,7 +82,7 @@
                         ? 'Project overdue — ' . ($d['project_title'] ?? '')
                         : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days — ' . ($d['project_title'] ?? ''))
                     : (str_contains($n->type, 'OverdueInspectionReminder')
-                        ? 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_label'] ?? '') . ')'
+                        ? 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')'
                         : (str_contains($n->type, 'ExtensionStatusChanged')
                             ? 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? '')
                             : 'Issue reported' . ($d['severity'] ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? '')));
@@ -97,6 +97,9 @@
                         @endif
                     </div>
                     <div class="notif-meta">{{ $n->created_at?->format('M d, Y h:i A') }}</div>
+                    @if(str_contains($n->type, 'OverdueInspectionReminder') && !empty($d['planned_date']))
+                        <div class="notif-meta" style="margin-top:4px; color:#b45309;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
+                    @endif
                     @if(str_contains($n->type, 'ExtensionStatusChanged') && ($d['status'] ?? '') === 'rejected' && !empty($d['rejection_reason']))
                         <div class="notif-meta" style="margin-top:4px; color:#b91c1c;">Reason: {{ $d['rejection_reason'] }}</div>
                     @endif
