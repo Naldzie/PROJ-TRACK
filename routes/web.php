@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\EmailController as AdminEmailController;
 use App\Http\Controllers\Admin\RatingController;
 use App\Http\Controllers\Staff\EmailController as StaffEmailController;
 use App\Http\Controllers\Contractor\EmailController as ContractorEmailController;
+use App\Http\Controllers\ReportExportController;
 /*
 |--------------------------------------------------------------------------
 | Public Routes
@@ -247,6 +248,22 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('staff.notifications.readAll');
 
+    // === REPORT EXPORT ROUTES ===
+    Route::get('/projects/{project}/reports/progress.xlsx', [ReportExportController::class, 'progressExcel'])
+        ->name('staff.projects.exports.progress');
+
+    Route::get('/projects/{project}/reports/baseline.xlsx', [ReportExportController::class, 'baselineExcel'])
+        ->name('staff.projects.exports.baseline');
+
+    Route::get('/projects/{project}/reports/extensions.xlsx', [ReportExportController::class, 'extensionsExcel'])
+        ->name('staff.projects.exports.extensions');
+
+    Route::get('/projects/{project}/reports/issues.xlsx', [ReportExportController::class, 'issuesExcel'])
+        ->name('staff.projects.exports.issues');
+
+    Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
+        ->name('staff.projects.exports.summary');
+
 });
 
 /*
@@ -327,6 +344,22 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('contractor.attachments.download');
+
+    // === REPORT EXPORT ROUTES (READ-ONLY; contractor scoped to own project) ===
+    Route::get('/projects/{project}/reports/progress.xlsx', [ReportExportController::class, 'progressExcel'])
+        ->name('contractor.projects.exports.progress');
+
+    Route::get('/projects/{project}/reports/baseline.xlsx', [ReportExportController::class, 'baselineExcel'])
+        ->name('contractor.projects.exports.baseline');
+
+    Route::get('/projects/{project}/reports/extensions.xlsx', [ReportExportController::class, 'extensionsExcel'])
+        ->name('contractor.projects.exports.extensions');
+
+    Route::get('/projects/{project}/reports/issues.xlsx', [ReportExportController::class, 'issuesExcel'])
+        ->name('contractor.projects.exports.issues');
+
+    Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
+        ->name('contractor.projects.exports.summary');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])
@@ -551,6 +584,22 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('admin.attachments.download');
+
+    // === REPORT EXPORT ROUTES ===
+    Route::get('/projects/{project}/reports/progress.xlsx', [ReportExportController::class, 'progressExcel'])
+        ->name('admin.projects.exports.progress');
+
+    Route::get('/projects/{project}/reports/baseline.xlsx', [ReportExportController::class, 'baselineExcel'])
+        ->name('admin.projects.exports.baseline');
+
+    Route::get('/projects/{project}/reports/extensions.xlsx', [ReportExportController::class, 'extensionsExcel'])
+        ->name('admin.projects.exports.extensions');
+
+    Route::get('/projects/{project}/reports/issues.xlsx', [ReportExportController::class, 'issuesExcel'])
+        ->name('admin.projects.exports.issues');
+
+    Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
+        ->name('admin.projects.exports.summary');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])
