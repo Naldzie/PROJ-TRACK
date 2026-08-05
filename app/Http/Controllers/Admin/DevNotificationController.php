@@ -24,4 +24,18 @@ class DevNotificationController extends Controller
             'output'  => trim(Artisan::output()),
         ]);
     }
+
+    /**
+     * Dev-only: delete the current user's notifications so deadline buckets can
+     * be re-tested (the dedupe tracking key would otherwise block re-firing).
+     */
+    public function clear(Request $request)
+    {
+        $deleted = $request->user()->notifications()->delete();
+
+        return response()->json([
+            'success' => true,
+            'deleted' => $deleted,
+        ]);
+    }
 }

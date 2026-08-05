@@ -715,6 +715,9 @@ if (app()->environment() !== 'production') {
 
         Route::post('/notifications/scan', [App\Http\Controllers\Admin\DevNotificationController::class, 'scan'])
             ->name('notifications.scan');
+
+        Route::post('/notifications/clear', [App\Http\Controllers\Admin\DevNotificationController::class, 'clear'])
+            ->name('notifications.clear');
     });
 }
 

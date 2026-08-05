@@ -1,37 +1,61 @@
-================================================================================
+﻿================================================================================
   GAPS & MISSING FEATURES — CSPC PMU SYSTEM
-  Last updated: July 22, 2026
+  Last updated: August 4, 2026 (verified against codebase @ main)
 ================================================================================
 
   Purpose: Document features that are not yet implemented but may be
   considered for future development. Organized by category.
 
   Legend:
+    [DONE]   — Implemented & verified in codebase (keep entry for reference)
+    [DONE-PARTIAL] — Partially implemented / implemented differently than planned
     [V2]     — Deferred to Version 2 in the master implementation plan
     [PLAN]   — Has an existing plan file but not yet started
     [GAP]    — Genuinely missing, no plan file exists
-
+    [CAPSTONE] — Candidate for capstone project (time-constrained)
+    [SKIP]   — Not pursuing at this time (per developer opinion)
+    [CLIENT] — Requires client clarification before proceeding
 
 ================================================================================
   VERSION 2 DEFERRED ITEMS (from Master Plan)
 ================================================================================
 
-  These were intentionally deferred during V1 development and have
-  existing documentation in the master plan. Start here if you want
-  to extend the AI module.
+  These were deferred during V1 development and have
+  existing documentation in the master plan. V2 Phases 1-8 are now
+  COMPLETE (regression/predictive AI module). Items marked [DONE] below
+  are implemented and verified; items still [V2]/[GAP] remain.
 
-  1. [V2] COMPLETION ESTIMATION
+  1. [DONE] COMPLETION ESTIMATION
      - estimated_completion_date (projected completion date)
      - predicted_delay_days (estimated days beyond planned end date)
      - completion_confidence (derived from R² + remaining months ratio)
-     - Solve regression equation for x when y = 100%
-     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+     - IMPLEMENTED: Schedule-aware estimation + multi-method comparison
+       (Polynomial Newton-Raphson solve, Schedule-Aware, EAC_time) via
+       CompletionEstimationService + CompletionComparisonService.
+       Displayed in AI Prediction tab (Est. Completion cards + 3-method
+       comparison). V2 Phase 3 / 3.5 / 6 (gauge) complete.
+     - Working; only adjustments if needed.
+     - See: active_reference/ai_module_ver2_master_plan.txt (Phases 3, 3.5, 6)
 
-  2. [V2] CROSS-PROJECT HISTORICAL REGRESSION
+  2. [DONE-PARTIAL] CROSS-PROJECT HISTORICAL REGRESSION
      - Use similar completed projects' progress as proxy for new projects
      - Addresses "Insufficient Data" fallback for projects with <2 observations
      - Similarity criteria: category, budget range, duration, contractor
-     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+     - IMPLEMENTED (V2 Phase 8): HistoricalSimilarityService finds similar
+       completed projects (category, budget ±20%, duration ±30%, workers
+       ±40%, contractor bonus), builds aggregate curve (P25/P50/P75),
+       generates scaled synthetic points. data_source = 'hybrid' /
+       'similar_projects' shown in the Prediction Report.
+     - LIMITATION confirmed: only 'supplement' mode is active. The
+       'fallback' mode (aggregate curve as sole dataset replacing
+       "Insufficient Data" for <2 obs) exists in code
+       (generateFallbackDataset) but is UNUSED — shouldSupplement() maps
+       0 obs → 'none' and 1 obs → 'supplement'. This matches the
+       observation that the current implementation is just a supplement.
+     - See: active_reference/phase8_cross_project_regression_plan.txt,
+       active_reference/ai_v2_phase8_cross_project_progress_log.txt
+     - Remaining polish (v2.5, non-blocking): MIN_SIMILAR_PROJECTS gate,
+       ratio floor, health gauge at gap=0, completion_multi in supplement mode
 
   3. [V2] MULTIPLE LINEAR REGRESSION (MLR)
      - Additional independent variables: budget utilization, issue density,
@@ -40,12 +64,19 @@
      - AIPredictionService would auto-select SLR vs MLR based on data depth
      - See: regression_implementation_master_plan_ver5.txt (V2 section)
 
-  4. [V2] S-CURVE REGRESSION OVERLAY
+  4. [DONE] S-CURVE REGRESSION OVERLAY
      - Overlay regression line (dashed) on the existing S-Curve chart
      - Forecast extension (dotted) continuing from current month to end
      - Highlighted variance region between predicted and planned
      - Tooltip: month, predicted %, planned %, variance
-     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+     - IMPLEMENTED DIFFERENTLY (V2 Phase 5): "Dual S-Curve" —
+       (a) 4-month polynomial near-term forecast (dashed purple) added to
+       the main S-Curve chart; (b) separate "Completion Forecast" chart
+       with Schedule-Aware (dashed) + EAC_time (dotted) shifted baselines
+       vs the original plan. Near-term uses polynomial; the original
+       regression-line-overlay idea was replaced to avoid over-optimistic
+       polynomial extrapolation (see polynomial_over_optimism_findings.txt).
+     - See: done/ai_module_ver2_planandlogs/phase5_s_curve_shifted_forecast_plan.txt
 
   5. [V2] AI-POWERED RECOMMENDATIONS (Phase 7.6)
      - Replace rule-based RecommendationEngine with AI-generated recs
@@ -53,23 +84,35 @@
      - Same pattern as AIExplanationService (AI + static fallback)
      - See: phase7_implementation_plan.txt, ai_recommendation_data_gaps.txt
 
-  6. [V2] FORECAST TABLE / RISK ASSESSMENT TABLE IN UI
+  6. [DONE] FORECAST TABLE — REPLACED BY PREDICTION HISTORY TABLE
      - Month-by-month forecast table (collapsible, hidden by default)
      - Or bandwidth/range forecasts (45-48% instead of 46.33%)
-     - Deferred because linear increments mislead vs actual S-Curve
-     - See: regression_implementation_master_plan_ver5.txt (V2 section)
+     - CHANGED: the standalone month-by-month forecast table was NOT built.
+       Instead, a Prediction History & Accuracy table was implemented
+       (V2 Phase 7): prediction_history table records each prediction
+       (predicted_next, actual_next back-filled on progress record), and
+       the AI Prediction tab shows an accuracy table with Accurate/Close/
+       Off badges + summary stats. Gemini prompt now uses real accuracy
+       stats instead of raw R².
+     - See: done/ai_module_ver2_planandlogs/v2_phase7_prediction_history_plan.txt
 
 
 ================================================================================
   CONTRACTOR MANAGEMENT GAPS
 ================================================================================
 
-  7. [GAP] CONTRACTOR PERFORMANCE TRACKING
+  7. [DONE-PARTIAL] CONTRACTOR PERFORMANCE TRACKING
      - No rating system, on-time delivery %, or quality score for contractors
      - Needed for: smarter AI recommendations, contractor evaluation,
        cross-project pattern detection
      - Potential fields: performance_rating, on_time_delivery_percentage,
        completed_projects_count, average_delay_days
+     - IMPLEMENTED PARTIALLY: a contractor RATING system exists — 
+       contractor_ratings table, ContractorRating model, RatingController
+       (manual store, AI suggest, auto-rate-all), admin.rating page with
+       leaderboard. Rating is 1-5 derived from variance/delay + AI review.
+     - REMAINING (V2 Phase 9): on-time delivery %, avg delay days, completed
+       projects count and a computed ContractorPerformanceService — NOT built.
      - Referenced as prerequisite in: ai_recommendation_data_gaps.txt
 
   8. [GAP] CONTRACTOR ANALYTICS DASHBOARD
@@ -78,18 +121,25 @@
        upcoming inspections, completed vs ongoing
      - Could mirror admin dashboard but scoped to their assigned projects
 
+  9. [CAPSTONE] CONTRACTOR PERFORMANCE TRENDS
+     - ContractorRating exists (1–5 rating, static per project + leaderboard)
+     - Missing: time-series trend visualization (improving, declining, consistent)
+     - Would use existing ContractorRating data but add a trend chart
+     - Note: This is an improvement for the existing rating feature, not a new system
+     - Developer opinion: Good improvement for the rating, will consider (teammate's work)
+
 
 ================================================================================
   REPORTING & DATA EXPORT GAPS
 ================================================================================
 
-  9. [GAP] REPORT GENERATION (PDF/EXCEL)
-     - No way to export project reports for stakeholders
-     - Missing: PDF of S-Curve chart, Excel of progress history,
-       project summary document, extension history report
-     - Common in PMU systems for official documentation
+  10. [GAP] REPORT GENERATION (PDF/EXCEL)
+      - No way to export project reports for stakeholders
+      - Missing: PDF of S-Curve chart, Excel of progress history,
+        project summary document, extension history report
+      - Common in PMU systems for official documentation
 
-  10. [GAP] DATA EXPORT/IMPORT
+  11. [GAP] DATA EXPORT/IMPORT
       - No CSV/Excel import for bulk project creation
       - No export of progress records, baseline schedules, or issues
       - No way to migrate data between systems
@@ -99,13 +149,13 @@
   NOTIFICATION & COMMUNICATION GAPS
 ================================================================================
 
-  11. [GAP] IN-APP NOTIFICATION SYSTEM
+  12. [GAP] IN-APP NOTIFICATION SYSTEM
       - Email notifications exist (welcome emails) but no in-app alerts
       - Missing: deadline reminders, overdue inspection alerts,
         extension approval/rejection notices, issue assignments
       - jobs table exists but nothing uses it yet
 
-  12. [GAP] AUDIT LOG UI FOR NON-ADMINS
+  13. [GAP] AUDIT LOG UI FOR NON-ADMINS
       - activity_logs table exists and logs all actions
       - Only admin can view — staff have no visibility into who changed what
 
@@ -114,21 +164,21 @@
   WORKFLOW & PRODUCTIVITY GAPS
 ================================================================================
 
-  13. [GAP] PROJECT COMPARISON
+  14. [GAP] PROJECT COMPARISON
       - No side-by-side comparison of multiple projects
       - Cannot compare: progress %, budget, timeline, risk levels
       - Useful for management reviews and portfolio oversight
 
-  14. [GAP] BULK OPERATIONS
+  15. [GAP] BULK OPERATIONS
       - No batch archive, batch status update, or bulk progress recording
       - Each action is per-project, time-consuming for large portfolios
 
-  15. [GAP] USER ACTIVITY SUMMARY
+  16. [GAP] USER ACTIVITY SUMMARY
       - No per-user work statistics
       - Missing: how many inspections recorded, issues closed,
         extensions processed, documents uploaded by each user
 
-  16. [GAP] PROJECT TEMPLATES
+  17. [GAP] PROJECT TEMPLATES
       - No reusable baseline schedule templates
       - Similar project types (e.g., classroom buildings) must
         re-enter the same S-Curve targets manually every time
@@ -138,7 +188,7 @@
   TECHNICAL DEBT / HOUSEKEEPING
 ================================================================================
 
-  17. [GAP] DEAD CODE CLEANUP
+  18. [GAP] DEAD CODE CLEANUP
       - backup/ directory still contains old service files:
         backup/app/Services/ProjectDetailService.php (multiple variants)
         backup/app/Services/AI/AIPredictionService.php
@@ -146,10 +196,167 @@
       - The backup files are no longer needed now that all phases are done
       - Also: any unused routes, dead JS functions, orphaned views
 
-  18. [GAP] JOB QUEUE UTILIZATION
+  19. [GAP] JOB QUEUE UTILIZATION
       - jobs table and queue infrastructure exist
       - Not used by any feature yet
       - Could async: email sending, report generation, data exports
+
+
+================================================================================
+  BRAINSTORM — FEATURES NOT IN THE DOCUMENTED BACKLOG
+================================================================================
+
+  These features were brainstormed during discussion but are NOT in the
+  recorded gaps catalog (gaps_and_features_missing.txt, summary_of_next_work.txt,
+  project_gaps_and_future_roadmap.mmd). They are presented here for consideration.
+
+  Capstone context: This is a capstone project with time constraints.
+  Features marked [CAPSTONE] are candidates for the capstone scope.
+  Features marked [SKIP] are not being pursued at this time.
+  Features marked [CLIENT] need client clarification before implementation.
+
+  ──────────────────────────────────────────────────────────────────────
+
+  CORE PM FEATURES
+
+  20. [CAPSTONE] RISK REGISTER
+      - A dedicated risk tracker distinct from the existing Issues feature
+      - Risks are PROSPECTIVE (what could go wrong); Issues are RETROSPECTIVE
+        (what has already happened)
+      - Fields: risk description, probability (Low/Medium/High), impact
+        (Low/Medium/High), risk score (probability × impact), mitigation plan,
+        owner, status (Open/Mitigated/Closed), date identified
+      - Why it matters: Standard PMU feature. The existing Issues system
+        captures problems after they occur; a risk register captures them
+        before they happen, enabling proactive management
+      - Capstone candidate: Yes — adds significant PM value
+
+  21. [CAPSTONE] CHANGE / VARIATION ORDERS
+      - Construction projects frequently have scope changes
+      - Tracks: change request, reason, cost impact, timeline impact,
+        approval status, approved by
+      - Developer opinion: Curious about this but unsure how to implement
+      - Needs design discussion before proceeding
+      - Capstone candidate: Possible if design is straightforward
+
+  22. [CAPSTONE] SITE INSPECTION / MEETING LOGS
+      - Beyond monthly progress inspections (which are progress records),
+        a dedicated inspection checklist and meeting minutes tracker
+      - Inspection logs: checklist items, findings, corrective actions,
+        attendance, photos
+      - Meeting logs: date, attendees, agenda, minutes, action items
+      - Developer opinion: May need client clarification — does the client
+        want this in addition to the existing monthly inspection system?
+      - Capstone candidate: Depends on client clarification
+
+  23. [CAPSTONE] PROJECT CLOSEOUT / PUNCH LIST
+      - A final-phase checklist when a project is completed
+      - Tracks punch list items: description, severity, assigned person,
+        status, date resolved
+      - Why it matters: Standard construction PM feature for final acceptance
+      - Developer opinion: Will consider adding for the capstone
+      - Capstone candidate: Yes
+
+  24. [CAPSTONE] PHOTO GALLERY PER PROJECT
+      - A dedicated photo gallery for each project (distinct from inspection
+        evidence attachments in Phase D)
+      - Photos categorized by type: site progress, completed work, issues,
+        safety observations
+      - Browsable by date, with captions
+      - Developer opinion: Will consider adding to the current system
+      - Capstone candidate: Yes — builds on existing attachment infrastructure
+
+  25. [CAPSTONE] CUSTOM DASHBOARD WIDGETS
+      - Allow users to customize their dashboard with widgets
+      - Possible widgets: upcoming deadlines, open issues, pending extensions,
+        recent activity, risk summary, contractor performance, progress summary
+      - Developer opinion: Wants this but unsure what other widgets are useful
+      - Capstone candidate: Yes — start with a few widgets, expand later
+
+  ──────────────────────────────────────────────────────────────────────
+
+  DOCUMENT & DATA MANAGEMENT
+
+  26. [SKIP] DOCUMENT VERSIONING
+      - The existing documents table is a formal library, but there's no
+        version control — updating a document overwrites the old version
+      - Developer opinion: While good, not necessary for this project
+      - Reason: The document library is managed by admins; version control
+        adds complexity without proportional benefit for the current scope
+
+  27. [SKIP] WEATHER LOG
+      - A weather log tied to the project timeline: date, conditions,
+        impact on work (delay/no-work day), temperature
+      - Developer opinion: The existing Issues system has something similar
+        (weather delays can be logged as issues). Not worth a separate feature
+        unless the client specifically requests it
+      - Reason: Redundant with the Issues system; low added value
+
+  28. [SKIP] MATERIAL TRACKING
+      - Track material orders, deliveries, and usage per project
+      - Developer opinion: Wants this but will focus on MVP first
+      - Reason: Not core to the PMU's monitoring role; better for a later phase
+
+  29. [SKIP] SUBCONTRACTOR MANAGEMENT
+      - Track subcontractor assignments and performance
+      - Developer opinion: Similar to existing contractor management; might not add
+      - Reason: The existing Contractor model and ContractorRating cover the
+        main contractor. Subcontractors are a different entity but overlap
+        significantly with the current contractor management features
+
+  30. [SKIP] LABOR TRACKING
+      - Track labor allocation across projects: worker name, role, hours, date
+      - Developer opinion: Same as material tracking — wants it but focus on MVP
+      - Reason: Not core to the PMU's monitoring role; better for a later phase
+
+  ──────────────────────────────────────────────────────────────────────
+
+  COMPLIANCE & WORKFLOW
+
+  31. [SKIP] PERMIT / COMPLIANCE TRACKING
+      - Track permits, inspections, and compliance requirements per project
+      - Developer opinion: Might be covered by the existing document library
+        or attachment management. Not sure if a separate feature is needed
+      - Reason: Could be modeled as documents or issues; needs clarification
+
+  32. [SKIP] COMMENT / DISCUSSION THREAD PER PROJECT
+      - A discussion thread for each project where team members can post
+        comments, tag others, and attach files
+      - Developer opinion: Good idea but time-dependent
+      - Reason: Nice-to-have for collaboration, but not core to the PMU's
+        monitoring role. Better for a later phase or if time allows in capstone
+
+  33. [SKIP] FILE APPROVAL WORKFLOW
+      - A simple approval workflow for documents: submit → review → approve/reject
+      - Developer opinion: The existing document flow (documents pass to client
+        for approval) may already cover this. The PMU is a multi-office/department
+        business, so a formal approval workflow may not be needed
+      - Reason: Existing document flow may be sufficient; low added value
+
+  34. [SKIP] BUDGET VS ACTUAL COMPARISON
+      - A simple snapshot comparison of contract budget vs total disbursed/committed
+      - Developer opinion: Not focusing on this for now
+      - Note: The client explicitly excluded budget burn-rate tracking. This is
+        a simplified version (snapshot, not trend), but still budget-related
+      - Reason: Client decision to exclude budget tracking; this is too close
+        to the excluded feature
+
+  ──────────────────────────────────────────────────────────────────────
+
+  LEGACY / DEPRECATED FEATURES
+
+  35. [SKIP] MILESTONES STATUS VIEW (Revival)
+      - The ProjectMilestone model, MilestoneController, and milestones.blade.php
+        view still exist in the codebase but are NOT rendered in the project detail
+        page's tab navigation (active tabs: Overview, S-Curve Planning, Progress
+        Tracking, Documents, Issues)
+      - The milestones feature was the original progress tracking system before
+        the client changed to monthly cumulative progress
+      - Developer opinion: Will not bring back or focus on milestones unless the
+        client explicitly wants it
+      - Reason: Client changed to monthly cumulative progress to reduce complexity.
+        The milestone routes and model are legacy/dead code. Could be removed
+        during dead code cleanup.
 
 
 ================================================================================
@@ -165,6 +372,30 @@
 
 
 ================================================================================
+  CAPSTONE PROJECT NOTES
+================================================================================
+
+  This is a capstone project. Time is limited. Prioritize features that:
+
+  1. Add significant PM value without excessive complexity
+  2. Build on existing infrastructure (models, controllers, views)
+  3. Are demonstrable in a capstone presentation
+
+  Recommended capstone candidates from this brainstorm:
+    - Risk Register (#20) — standard PM feature, significant value
+    - Project Closeout / Punch List (#23) — standard construction PM feature
+    - Photo Gallery per Project (#24) — builds on existing attachments
+    - Custom Dashboard Widgets (#25) — improves UX, demonstrates modern PM practice
+    - Change / Variation Orders (#21) — interesting to implement, if design is clear
+
+  Features to defer or skip:
+    - Material Tracking, Labor Tracking, Subcontractor Management — MVP focus
+    - Document Versioning, Weather Log, File Approval Workflow — not necessary
+    - Budget vs Actual — client excluded budget tracking
+    - Milestones Revival — client changed to monthly progress
+
+
+================================================================================
   PRIORITY RECOMMENDATION
 ================================================================================
 
@@ -172,12 +403,20 @@
     1. Dead code cleanup (backup/ directory) — quick win, reduces confusion
 
   Short-term / Existing Plan:
-    2. Contractor performance tracking — unlocks smarter AI recommendations
+    2. Contractor performance tracking (complete Phase 9) — computed metrics
+       (on-time %, avg delay, completed count) build on the existing rating
     3. Report generation (PDF export) — useful for PMU documentation needs
 
-  Medium-term / V2 Features:
-    4. S-Curve regression overlay — visual enhancement for AI Prediction tab
-    5. Cross-project historical regression — solves insufficient-data problem
+  Capstone Candidates (from brainstorm):
+    4. Risk Register — standard PM feature, proactive risk management
+    5. Project Closeout / Punch List — standard construction PM feature
+    6. Photo Gallery per Project — builds on existing attachment infrastructure
+    7. Custom Dashboard Widgets — improves UX, modern PM practice
+
+  Medium-term / V2 Remaining:
+    8. Cross-project 'fallback' mode — wire generateFallbackDataset() so
+       <2-observation projects use the aggregate curve (supplement is live)
+    9. AI-powered recommendations (Phase 10) — after Phase 9 contractor data
 
 ================================================================================
   END OF FILE

@@ -96,4 +96,38 @@ class DevNotificationScanTest extends TestCase
     {
         $this->postJson(route('dev.notifications.scan'))->assertUnauthorized();
     }
+
+    public function test_dev_clear_deletes_only_current_users_notifications(): void
+    {
+        Project::factory()->create([
+            'status'           => 'Ongoing',
+            'contractor_id'    => $this->contractor->id,
+            'planned_end_date' => Carbon::parse('2026-01-20'),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->withSession(['simulated_date' => '2026-01-05'])
+            ->postJson(route('dev.notifications.scan'))
+            ->assertOk();
+
+        $otherUser = User::create(['name' => 'Other Admin', 'email' => fake()->unique()->safeEmail(), 'role' => 'admin', 'is_active' => true]);
+        $otherUser->notifications()->create([
+            'id' => fake()->uuid(),
+            'type' => \App\Notifications\DeadlineReminder::class,
+            'data' => ['key' => 'deadline:999:30'],
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->postJson(route('dev.notifications.clear'));
+
+        $response->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSame(0, $this->admin->notifications()->count());
+        $this->assertSame(1, $otherUser->notifications()->count());
+    }
+
+    public function test_dev_clear_requires_authentication(): void
+    {
+        $this->postJson(route('dev.notifications.clear'))->assertUnauthorized();
+    }
 }

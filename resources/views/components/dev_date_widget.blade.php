@@ -33,7 +33,7 @@
         width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;
         border-radius: 6px; font-size: 13px; margin: 8px 0;
     }
-    #dev-date-apply, #dev-date-reset, #dev-notif-scan {
+    #dev-date-apply, #dev-date-reset, #dev-notif-scan, #dev-notif-clear {
         width: 100%; padding: 8px; border: none; border-radius: 6px;
         font-size: 12px; font-weight: 600; cursor: pointer; margin-bottom: 6px;
     }
@@ -44,6 +44,9 @@
     #dev-notif-scan { background: #fef3c7; color: #92400e; }
     #dev-notif-scan:hover { background: #fde68a; }
     #dev-notif-scan:disabled { opacity: 0.6; cursor: wait; }
+    #dev-notif-clear { background: #fee2e2; color: #b91c1c; }
+    #dev-notif-clear:hover { background: #fecaca; }
+    #dev-notif-clear:disabled { opacity: 0.6; cursor: wait; }
     .dev-badge {
         display: inline-block; background: #fef3c7; color: #92400e;
         font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px;
@@ -59,6 +62,7 @@
         <button id="dev-date-apply"><i class="bi bi-check-lg"></i> Apply Date</button>
         <button id="dev-date-reset"><i class="bi bi-arrow-counterclockwise"></i> Reset to Real</button>
         <button id="dev-notif-scan"><i class="bi bi-bell"></i> Run Notification Scan</button>
+        <button id="dev-notif-clear"><i class="bi bi-x-circle"></i> Clear My Notifications</button>
     </div>
     <button id="dev-date-toggle" title="Date Simulator (Ctrl+M)">
         <i class="bi bi-clock"></i>
@@ -71,6 +75,7 @@
         set: '{{ route("dev.date.set") }}',
         clear: '{{ route("dev.date.clear") }}',
         scan: '{{ route("dev.notifications.scan") }}',
+        notifClear: '{{ route("dev.notifications.clear") }}',
     };
 
     const widget = document.getElementById('dev-date-widget');
@@ -80,6 +85,7 @@
     const applyBtn = document.getElementById('dev-date-apply');
     const resetBtn = document.getElementById('dev-date-reset');
     const scanBtn = document.getElementById('dev-notif-scan');
+    const clearBtn = document.getElementById('dev-notif-clear');
     const realDateEl = document.getElementById('dev-real-date');
     const simStatusEl = document.getElementById('dev-sim-status');
 
@@ -207,7 +213,11 @@
                         html: '<pre style="text-align:left;font-size:12px;max-height:220px;overflow:auto;">' +
                               (data.output || 'No output') + '</pre>',
                         confirmButtonColor: '#2563eb',
+                    }).then(function () {
+                        location.reload();
                     });
+                } else {
+                    location.reload();
                 }
             })
             .catch(function () {
@@ -215,6 +225,44 @@
                 scanBtn.innerHTML = original;
                 if (typeof Swal !== 'undefined') {
                     Swal.fire({ icon: 'error', title: 'Scan request failed', text: 'Session may have expired. Try logging in again.' });
+                }
+            });
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            var original = clearBtn.innerHTML;
+            clearBtn.disabled = true;
+            clearBtn.textContent = 'Clearing...';
+            fetch(DEV_DATE_URLS.notifClear, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                clearBtn.disabled = false;
+                clearBtn.innerHTML = original;
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: data.success ? 'success' : 'error',
+                        title: data.success ? 'Cleared' : 'Clear failed',
+                        html: data.success ? ('Deleted ' + data.deleted + ' notification(s)') : (data.message || 'Request failed'),
+                        confirmButtonColor: '#2563eb',
+                    }).then(function () {
+                        location.reload();
+                    });
+                } else {
+                    location.reload();
+                }
+            })
+            .catch(function () {
+                clearBtn.disabled = false;
+                clearBtn.innerHTML = original;
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({ icon: 'error', title: 'Clear request failed', text: 'Session may have expired. Try logging in again.' });
                 }
             });
         });
