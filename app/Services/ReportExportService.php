@@ -383,7 +383,7 @@ class ReportExportService
             return "<polyline points='{$pts}' fill='none' stroke='{$stroke}' stroke-width='{$width}'" . ($dash ? " stroke-dasharray='{$dash}'" : '') . "/>";
         };
 
-        $svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {$width} {$height}' width='{$width}' height='{$height}'>";
+        $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='{$width}' height='{$height}' viewBox='0 0 {$width} {$height}'>";
         $svg .= $gridLines;
         $svg .= $polyline($chartData['frozen_planned_data'] ?? [], '#3b82f6', 2.5);
         $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#8b5cf6', 2);
@@ -391,6 +391,12 @@ class ReportExportService
         $svg .= $xLabels;
         $svg .= "</svg>";
 
-        return $svg;
+        // dompdf renders SVG only as an <img> (php-svg-lib), not as inline
+        // markup, so embed it as a base64 data URI sized to fit the A4 page.
+        $fitWidth = 680;
+        $fitHeight = (int) round($fitWidth * ($height / $width));
+
+        return "<img src='data:image/svg+xml;base64," . base64_encode($svg)
+            . "' style='width:{$fitWidth}px;height:{$fitHeight}px;' />";
     }
 }

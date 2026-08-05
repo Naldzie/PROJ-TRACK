@@ -61,6 +61,10 @@
             font-weight: 600;
             color: #0f172a;
         }
+        .meta-grid .value.peso {
+            font-family: 'DejaVu Sans', 'Helvetica', 'Arial', sans-serif;
+            font-weight: bold;
+        }
         .section-title {
             font-size: 13px;
             font-weight: 700;
@@ -145,7 +149,7 @@
         </tr>
         <tr>
             <td><span class="label">Overall Progress</span><span class="value">{{ number_format($data['overview']['progress'] ?? 0, 1) }}%</span></td>
-            <td><span class="label">Approved Budget</span><span class="value">₱ {{ number_format($project->approved_budget ?? 0, 2) }}</span></td>
+            <td><span class="label">Approved Budget</span><span class="value peso">₱ {{ number_format($project->approved_budget ?? 0, 2) }}</span></td>
             <td><span class="label">Contractor</span><span class="value">{{ $project->contractor?->company_name ?? '—' }}</span></td>
         </tr>
         <tr>
@@ -162,7 +166,7 @@
     </div>
 
     <!-- LATEST MONTHLY STATUS -->
-    @php($latest = $project->progressHistory()->orderByDesc('inspection_date')->first())
+    @php($latest = $project->progressHistory()->reorder()->orderByDesc('inspection_date')->orderByDesc('created_at')->first())
     @if($latest)
         <div class="section-title">Latest Monthly Inspection</div>
         <table class="data">

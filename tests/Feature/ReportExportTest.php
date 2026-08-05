@@ -351,4 +351,88 @@ class ReportExportTest extends TestCase
         $this->assertTrue($response->isSuccessful());
         $this->assertStringStartsWith('%PDF-', $body);
     }
+
+    // === PDF SUMMARY CONTENT FIXES ===
+
+    private function renderSummaryView(): string
+    {
+        $detailService = app(\App\Services\ProjectDetailService::class);
+        $exportService = app(\App\Services\ReportExportService::class);
+
+        $data = $detailService->prepareProjectData($this->project);
+        $chartData = $detailService->prepareChartData($this->project);
+
+        $method = new \ReflectionMethod(\App\Services\ReportExportService::class, 'buildSvgChart');
+        $method->setAccessible(true);
+        $svgChart = $method->invoke($exportService, $chartData);
+
+        return view('reports.project-summary', [
+            'project'     => $this->project,
+            'data'        => $data,
+            'chartData'   => $chartData,
+            'svgChart'    => $svgChart,
+            'generatedAt' => now()->format('F j, Y g:i A'),
+        ])->render();
+    }
+
+    public function test_summary_view_renders_peso_sign_with_unicode_font(): void
+    {
+        $this->project->update(['approved_budget' => 10000000.00]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('₱', $html, 'Peso sign must be present in the markup.');
+        $this->assertStringContainsString('value peso', $html, 'Budget cell must carry the peso font class.');
+        $this->assertStringContainsString('DejaVu Sans', $html, 'A Unicode font supporting U+20B1 must be declared.');
+    }
+
+    public function test_summary_view_selects_latest_inspection_not_first(): void
+    {
+        ProjectProgressHistory::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-06',
+            'inspection_date'          => '2026-06-15',
+            'actual_progress_percent'  => 35,
+            'progress_percentage'      => 35,
+            'planned_progress_percent' => 40,
+            'remarks'                  => 'June inspection',
+        ]);
+        ProjectProgressHistory::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-07',
+            'inspection_date'          => '2026-07-15',
+            'actual_progress_percent'  => 50,
+            'progress_percentage'      => 50,
+            'planned_progress_percent' => 55,
+            'remarks'                  => 'July inspection',
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('2026-07', $html, 'Latest inspection month must be rendered.');
+        $this->assertStringContainsString('July inspection', $html, 'Latest inspection remarks must be rendered.');
+        $this->assertStringNotContainsString('2026-06-15', $html, 'First inspection date must not be shown as the latest.');
+    }
+
+    public function test_summary_view_embeds_scurve_as_data_uri_image(): void
+    {
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-06',
+            'planned_date'             => '2026-06-30',
+            'planned_progress_percent' => 40,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-07',
+            'planned_date'             => '2026-07-31',
+            'planned_progress_percent' => 55,
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('data:image/svg+xml;base64,', $html, 'S-Curve must be embedded as a base64 data-URI <img> for dompdf.');
+        $this->assertStringContainsString('<img', $html, 'S-Curve must be rendered as an <img> element.');
+        $this->assertStringNotContainsString('<svg', $html, 'Inline <svg> markup is not supported by dompdf and must not be emitted.');
+    }
 }

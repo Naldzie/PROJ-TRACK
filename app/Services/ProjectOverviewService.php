@@ -23,6 +23,7 @@ class ProjectOverviewService
         $latestProgress = $progressHistory
             ? $progressHistory->first()
             : $project->progressHistory()
+                ->reorder()
                 ->orderByDesc('month_label')
                 ->orderByDesc('inspection_date')
                 ->orderByDesc('created_at')
