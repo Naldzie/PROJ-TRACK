@@ -6,9 +6,6 @@
 {{-- See loadProgressChartData() in the <script> block below. --}}
 
 <!-- PROJECT PROGRESS CHART -->
-@php
-    $reportRole = auth()->user()->role;
-@endphp
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <span class="card-title">
@@ -17,33 +14,6 @@
         <span style="display: flex; align-items: center; gap: 12px;">
             <span style="font-size: 12px; color: var(--text-muted);">
                 <i class="bi bi-info-circle"></i> Cumulative project progress over time
-            </span>
-            <span class="dropdown">
-                <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="bi bi-download"></i> Export
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                    <li><span class="dropdown-header">Reports</span></li>
-                    <li>
-                        <button type="button" class="dropdown-item" onclick="openDocumentViewer({
-                            name: '{{ Str::slug($project->code ?? $project->id) }}_project-summary.pdf',
-                            type: 'Report',
-                            size: 'PDF',
-                            viewUrl: '{{ route($reportRole . '.projects.exports.summary.view', $project->id) }}',
-                            downloadUrl: '{{ route($reportRole . '.projects.exports.summary', $project->id) }}'
-                        })">
-                            <i class="bi bi-file-earmark-pdf"></i> Project Summary (PDF)
-                        </button>
-                    </li>
-                    <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.progress', $project->id) }}">
-                        <i class="bi bi-file-earmark-excel"></i> Progress History (Excel)</a></li>
-                    <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.baseline', $project->id) }}">
-                        <i class="bi bi-file-earmark-excel"></i> Baseline Schedule (Excel)</a></li>
-                    <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.extensions', $project->id) }}">
-                        <i class="bi bi-file-earmark-excel"></i> Extensions (Excel)</a></li>
-                    <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.issues', $project->id) }}">
-                        <i class="bi bi-file-earmark-excel"></i> Issues (Excel)</a></li>
-                </ul>
             </span>
         </span>
     </div>

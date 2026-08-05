@@ -6,12 +6,14 @@ Status: 🟢 IN PROGRESS — R1 (Excel exports) and R2 (PDF summary) implemented
         and committed on `core/report-generation`; **three PDF quality fixes**
         (peso sign, S-Curve flat-0% bug, latest-inspection selection) plus a
         **view-before-download PDF viewer flow** shipped in follow-up commits
-        (`3e58fe0`, `2ecc0e9`, `52e2f4e`, `1bb101a`). **Excel exports are
-        frozen** until the unexplained corruption report is resolved (see
-        §6.4). Remaining: client confirmation, browser check, merge to main
-        (Rule 12 — requires explicit approval).
+        (`3e58fe0`, `2ecc0e9`, `52e2f4e`, `1bb101a`). **S-Curve now matches the
+        Progress tab 1:1** (linear timestamp X-axis, null-gap handling, tab
+        legend/colors) in `bd6a0aa`. **Excel exports are frozen** until the
+        unexplained corruption report is resolved (see §6.4). Remaining: client
+        confirmation, browser check, merge to main (Rule 12 — requires explicit
+        approval).
 
-Date: August 5, 2026 (updated after PDF-fix + viewer round)
+Date: August 5, 2026 (updated after S-Curve 1:1 + future-enhancement round)
 
 Rules: textfiles/active_reference/project_context_and_development_rules.txt (Rule 8/10/11/12)
 
@@ -303,7 +305,7 @@ MODIFIED:
 - `composer.json` / `composer.lock` (2 new dependencies)
 - `routes/web.php` (export routes in 3 role groups + inline summary.view routes)
 - `resources/views/projects/project_detail/components/header.blade.php` (Reports dropdown)
-- `resources/views/projects/project_detail/components/tabs/progress.blade.php` (Export Excel button)
+- `resources/views/projects/project_detail/components/tabs/progress.blade.php` (Export dropdown added in R2, **removed again on 2026-08-05** — the header Reports dropdown already covers every tab, so the Progress-tab duplicate was deleted)
 - `app/Http/Controllers/ReportExportController.php` (+ `summaryPdfView`)
 
 NOT touched:
@@ -336,6 +338,64 @@ NOT touched:
    capture if one becomes available.
 5. **Summary PDF scope** — currently one combined document. A separate
    extension-history PDF could be added later if requested (data is ready).
+
+---
+
+## 6.5 FUTURE ENHANCEMENTS (deferred — user-requested additions, NOT in current scope)
+
+> Added 2026-08-05. These are **future** additions; nothing here is implemented
+> yet. They are parked until the Excel corruption issue (§6.4) is resolved and
+> the current PDF round is confirmed.
+
+### FE-1 — Combined Excel workbook with embedded S-Curve graph + tables
+
+Replace the 4 separate Excel downloads (Progress / Baseline / Extensions /
+Issues) with a **single `.xlsx` workbook** containing:
+
+- An **S-Curve chart sheet** rendering all three lines exactly like the tab
+  (Original Plan blue `#3b82f6`, Actual Progress green `#10b981`, Adjusted Plan
+  amber `#f59e0b`), using the same `ProjectChartService::prepareChartData()`
+  data source.
+- **Table sheets** for Progress History, Baseline Schedule, Extensions, and
+  Issues (same columns as today's individual exports).
+
+Design notes:
+- PhpSpreadsheet supports chart objects (`PhpOffice\PhpSpreadsheet\Chart`) but
+  its line-chart styling is limited (no smooth curves, no per-point timestamps).
+  **Option A:** build the chart as a server-side PNG via **GD** (now enabled)
+  and embed it as a worksheet image. **Option B:** write the raw `{x, y}`
+  coordinates into a chart-sheet grid and let Excel render a native line chart
+  from that data. Option B is more native/filterable; Option A matches the
+  on-screen look more closely.
+- Keep one report per role group; the workbook replaces the 4 routes with a
+  single `{role}.projects.exports.workbook` route (or keep old routes as thin
+  aliases).
+- Still gated on the §6.4 corruption investigation — do NOT start until that is
+  reproduced/fixed.
+
+### FE-2 — PDF Project Summary: full tables for the 3 datasets
+
+Enrich `project-summary.pdf` so it is a **complete report**, not a summary:
+- **Full Progress History table** (every `ProjectProgressHistory` row — month,
+  inspection date, planned %, actual %, variance, remarks, evidence count).
+  User note: **omit the "Recorded By" name** column in the PDF.
+- **Full Baseline Schedule table** (month, planned date, planned %, description).
+- **Full Extensions table** (extension #, original/new end, duration, status,
+  reason, approved at/by).
+- Issues already have a table in the PDF; consider including **all** issues
+  (not only Open/In Progress) for completeness.
+
+### FE-3 — Overall report (all projects, PDF)
+
+A **portfolio-level PDF** listing **all projects** — the printable version of
+the projects index page: code, title, category, location, contractor, status,
+current progress %, planned end date, risk/overdue flag. 
+- New route + controller method (e.g. `{role}.projects.reports.overview`) using
+  the same `ProjectChartService`/overview data per project.
+- Separate Blade template (`reports/overview.blade.php`), likely multi-page
+  (one project per row or per block).
+- No chart per project (summary PDF already covers per-project detail) unless
+  requested.
 
 ---
 
@@ -456,6 +516,45 @@ users want to **view files before downloading**. Work completed:
   with no audit log; download still logs). **ReportExportTest: 16 passed /
   63 assertions. Full suite: 331 passed / 1150 assertions.**
 
+### 2026-08-05 — S-Curve matches Progress tab 1:1 (commit `bd6a0aa`)
+
+User reported two remaining chart discrepancies vs the tab:
+
+- **Extension months drew the Original Plan down to 0%** — `frozen_planned_data`
+  carries a trailing `{x, y:null}` point for extension months
+  (`original_planned_progress_percent` is NULL); `$points` coerced
+  `isset($v['y']) ? (float)$v['y'] : 0.0` → `(float)null === 0.0`, so the blue
+  line plummeted to the bottom at April 2027. Fixed: **skip null-y points as
+  gaps** (mirrors Chart.js `spanGaps:false`).
+- **Actual record one month past the baseline collapsed onto the last planned
+  column** — the old index-grid X-scale clamped any timestamp ≥ last tick to
+  index `n-1`. Fixed: **linear millisecond-timestamp X-axis** spanning ticks +
+  all plotted points (frozen/adjusted/actual), exactly like the tab's Chart.js
+  linear scale. Actual now extends past the planned end with its own X label.
+- **Legend + colors made identical to the tab** — Original Plan `#3b82f6`,
+  Actual Progress `#10b981`, Adjusted Plan `#f59e0b` (solid), drawn only when
+  `has_extension`; legend items conditional on data presence; line widths → 2.
+- Verified on project 142 real SVG: frozen ends Mar 2027 @ 100% (no drop),
+  adjusted extends to Apr 2027 @ 100%, actual through Sep 2026 @ 35%.
+- Tests: +2 regression tests (`actual beyond baseline extends x axis`,
+  `frozen line stops at last original month`); legend assertions updated.
+  **ReportExportTest: 18 passed / 71 assertions. Full suite: 333 passed /
+  1158 assertions.**
+
+### 2026-08-05 — Duplicate Progress-tab export removed + future scope noted
+
+- **Removed the "Export" dropdown** from the Progress tab card header
+  (`tabs/progress.blade.php`). The header **Reports** dropdown is already
+  visible on every tab, so the duplicate is gone (its `$reportRole` @php block
+  removed too). Header remains the single export entry point.
+- **Plan doc** gained §6.5 FUTURE ENHANCEMENTS:
+  - FE-1 Combined Excel workbook (embedded S-Curve graph of all 3 lines + the
+    4 data tables) — still gated on §6.4 corruption fix.
+  - FE-2 PDF full tables for progress/baseline/extensions (omit "Recorded By"),
+    all issues included.
+  - FE-3 Portfolio-level "all projects" PDF (printable index).
+  None implemented — parked as future additions.
+
 ### Remaining
 
 - Manual browser check (optional): Reports dropdown previews the summary PDF in
@@ -463,7 +562,5 @@ users want to **view files before downloading**. Work completed:
   4 files per role.
 - Resolve the **Excel corruption report** (§6.4) before touching Excel again.
 - Merge to `main` requires explicit approval (Rule 12).
-
----
 
 END OF REPORT GENERATION PLAN
