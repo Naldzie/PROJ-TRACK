@@ -315,4 +315,40 @@ class ReportExportTest extends TestCase
             ->where('action', 'Export Report')
             ->count());
     }
+
+    // === PDF SUMMARY ===
+
+    public function test_summary_pdf_streams_valid_pdf_with_data(): void
+    {
+        $this->actingAs($this->admin());
+        $this->progressRow();
+        $this->issueRow();
+
+        [$response, $body] = $this->runExport(
+            fn () => app(ReportExportController::class)->summaryPdf($this->project)
+        );
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertEquals('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('project-summary.pdf', $response->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF-', $body, 'PDF payload should start with the PDF magic header');
+        $this->assertGreaterThan(500, strlen($body), 'PDF body should be non-trivial');
+
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $this->project->id,
+            'action'     => 'Export Report',
+        ]);
+    }
+
+    public function test_summary_pdf_handles_project_without_records(): void
+    {
+        $this->actingAs($this->admin());
+
+        [$response, $body] = $this->runExport(
+            fn () => app(ReportExportController::class)->summaryPdf($this->project)
+        );
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertStringStartsWith('%PDF-', $body);
+    }
 }

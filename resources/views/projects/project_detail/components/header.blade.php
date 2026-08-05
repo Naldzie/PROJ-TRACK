@@ -94,6 +94,27 @@
                     Proposal
                 </button>
                 @endif
+
+                @php($reportRole = auth()->user()->role)
+                <div class="dropdown d-inline-block">
+                    <button type="button" class="header-badge-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        Reports
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><span class="dropdown-header">Export</span></li>
+                        <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.summary', $project->id) }}">
+                            <i class="bi bi-file-earmark-pdf"></i> Project Summary (PDF)</a></li>
+                        <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.progress', $project->id) }}">
+                            <i class="bi bi-file-earmark-excel"></i> Progress History (Excel)</a></li>
+                        <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.baseline', $project->id) }}">
+                            <i class="bi bi-file-earmark-excel"></i> Baseline Schedule (Excel)</a></li>
+                        <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.extensions', $project->id) }}">
+                            <i class="bi bi-file-earmark-excel"></i> Extensions (Excel)</a></li>
+                        <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.issues', $project->id) }}">
+                            <i class="bi bi-file-earmark-excel"></i> Issues (Excel)</a></li>
+                    </ul>
+                </div>
                 
                 @can('update', $project)
                     <button type="button" class="header-badge-btn" 
