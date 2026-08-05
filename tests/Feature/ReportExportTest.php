@@ -435,4 +435,92 @@ class ReportExportTest extends TestCase
         $this->assertStringContainsString('<img', $html, 'S-Curve must be rendered as an <img> element.');
         $this->assertStringNotContainsString('<svg', $html, 'Inline <svg> markup is not supported by dompdf and must not be emitted.');
     }
+
+    public function test_summary_scurve_is_non_flat_and_has_legend_and_month_names(): void
+    {
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-04',
+            'planned_date'             => '2026-04-30',
+            'planned_progress_percent' => 2,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-05',
+            'planned_date'             => '2026-05-31',
+            'planned_progress_percent' => 5,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-06',
+            'planned_date'             => '2026-06-30',
+            'planned_progress_percent' => 40,
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('data:image/svg+xml;base64,', $html);
+
+        preg_match('/base64,([A-Za-z0-9+\/=]+)/', $html, $match);
+        $svg = base64_decode($match[1]);
+
+        $this->assertStringContainsString('Frozen Baseline', $svg, 'Legend must label the frozen-planned series.');
+        $this->assertStringContainsString('Adjusted Planned', $svg, 'Legend must label the adjusted-planned series.');
+        $this->assertStringContainsString('Actual', $svg, 'Legend must label the actual series.');
+
+        $this->assertStringContainsString('April 2026', $svg, 'X-axis labels must use month-name + year format.');
+        $this->assertStringContainsString('June 2026', $svg, 'X-axis labels must use month-name + year format.');
+
+        preg_match_all("/points='([^']+)'/", $svg, $polys);
+        $this->assertNotEmpty($polys[1], 'Chart must emit at least one polyline.');
+
+        $ys = [];
+        foreach ($polys[1] as $poly) {
+            foreach (explode(' ', trim($poly)) as $pt) {
+                [, $y] = explode(',', $pt);
+                $ys[] = (float) $y;
+            }
+        }
+        $this->assertGreaterThan(1, count(array_unique($ys)),
+            'Polyline y-coordinates must vary (the S-Curve must not collapse to a flat line).');
+    }
+
+    public function test_summary_pdf_inline_view_serves_pdf_without_audit_log(): void
+    {
+        $this->actingAs($this->admin());
+        $this->progressRow();
+
+        [$response, $body] = $this->runExport(
+            fn () => app(ReportExportController::class)->summaryPdfView($this->project)
+        );
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertEquals('application/pdf', $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('inline', $response->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF-', $body);
+
+        $this->assertDatabaseMissing('activity_logs', [
+            'project_id' => $this->project->id,
+            'action'     => 'Export Report',
+        ]);
+    }
+
+    public function test_summary_pdf_download_still_logs_audit(): void
+    {
+        $this->actingAs($this->admin());
+        $this->progressRow();
+
+        [$response, $body] = $this->runExport(
+            fn () => app(ReportExportController::class)->summaryPdf($this->project)
+        );
+
+        $this->assertTrue($response->isSuccessful());
+        $this->assertStringContainsString('attachment', $response->headers->get('Content-Disposition'));
+        $this->assertStringStartsWith('%PDF-', $body);
+
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $this->project->id,
+            'action'     => 'Export Report',
+        ]);
+    }
 }

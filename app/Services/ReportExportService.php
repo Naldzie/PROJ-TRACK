@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
+use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Response;
@@ -211,6 +212,46 @@ class ReportExportService
     {
         $this->authorize($project);
 
+        $dompdf = $this->buildSummaryDompdf($project);
+
+        $this->logExport($project, 'PDF Summary Report');
+
+        $filename = $this->fileName($project, 'project-summary.pdf');
+
+        return Response::streamDownload(function () use ($dompdf) {
+            echo $dompdf->output();
+        }, $filename, [
+            'Content-Type' => 'application/pdf',
+        ]);
+    }
+
+    /**
+     * Preview the project-summary PDF inline (no audit-log entry; the viewer
+     * modal iframe loads this, and only an actual download via summaryPdf()
+     * records the audit trail).
+     */
+    public function summaryPdfView(Project $project): StreamedResponse
+    {
+        $this->authorize($project);
+
+        $dompdf = $this->buildSummaryDompdf($project);
+
+        $filename = $this->fileName($project, 'project-summary.pdf');
+
+        return Response::streamDownload(function () use ($dompdf) {
+            echo $dompdf->output();
+        }, $filename, [
+            'Content-Type' => 'application/pdf',
+        ], 'inline');
+    }
+
+    // === PRIVATE HELPERS ===
+
+    /**
+     * Assemble the shared dompdf instance for the project-summary PDF.
+     */
+    private function buildSummaryDompdf(Project $project): Dompdf
+    {
         // Reuse the project-detail assembly as the single source of truth.
         $detailService = app(ProjectDetailService::class);
         $data = $detailService->prepareProjectData($project);
@@ -231,18 +272,8 @@ class ReportExportService
         $dompdf->setPaper('A4');
         $dompdf->render();
 
-        $this->logExport($project, 'PDF Summary Report');
-
-        $filename = $this->fileName($project, 'project-summary.pdf');
-
-        return Response::streamDownload(function () use ($dompdf) {
-            echo $dompdf->output();
-        }, $filename, [
-            'Content-Type' => 'application/pdf',
-        ]);
+        return $dompdf;
     }
-
-    // === PRIVATE HELPERS ===
 
     /**
      * Stream an Xlsx workbook to the browser as a download.
@@ -333,7 +364,7 @@ class ReportExportService
         $height = 340;
         $padLeft = 55;
         $padRight = 25;
-        $padTop = 25;
+        $padTop = 45;
         $padBottom = 45;
 
         $labels = $chartData['labels'];
@@ -345,16 +376,50 @@ class ReportExportService
         $maxY = 100;
         $maxY = max($maxY, (float) ($chartData['y_max'] ?? 0));
 
-        $xFor = fn (int $i) => $padLeft + ($i / max($n - 1, 1)) * $plotW;
+        $xFor = fn (float $i) => $padLeft + ($i / max($n - 1, 1)) * $plotW;
         $yFor = fn (float $v) => $padTop + (1 - min(max($v, 0), $maxY) / $maxY) * $plotH;
 
-        $points = function (array $values) use ($xFor, $yFor) {
+        // Chart points arrive as ['x' => ms-timestamp, 'y' => value] from
+        // ProjectChartService. Map each timestamp onto the tick grid so sparse
+        // actual/progress series land on the correct calendar column (not by
+        // array index, which would collapse a 2-point actual series to x=0/1).
+        $ticks = $chartData['tick_timestamps'] ?? [];
+        $tickCount = count($ticks);
+        $indexForTs = function (float $ts) use ($ticks, $tickCount, $n) {
+            if ($tickCount === 0) {
+                return null;
+            }
+            if ($ts <= (float) $ticks[0]) {
+                return 0.0;
+            }
+            if ($ts >= (float) $ticks[$tickCount - 1]) {
+                return (float) ($n - 1);
+            }
+            for ($i = 0; $i < $tickCount - 1; $i++) {
+                $a = (float) $ticks[$i];
+                $b = (float) $ticks[$i + 1];
+                if ($ts >= $a && $ts <= $b) {
+                    $span = $b - $a;
+                    return $span > 0 ? $i + ($ts - $a) / $span : (float) $i;
+                }
+            }
+            return null;
+        };
+
+        $points = function (array $values) use ($xFor, $yFor, $indexForTs) {
             $pts = [];
             foreach ($values as $i => $v) {
                 if ($v === null) {
                     continue;
                 }
-                $pts[] = round($xFor($i), 1) . ',' . round($yFor((float) $v), 1);
+                if (is_array($v)) {
+                    $y = isset($v['y']) ? (float) $v['y'] : 0.0;
+                    $idx = isset($v['x']) ? ($indexForTs((float) $v['x']) ?? $i) : $i;
+                } else {
+                    $y = (float) $v;
+                    $idx = $i;
+                }
+                $pts[] = round($xFor($idx), 1) . ',' . round($yFor($y), 1);
             }
             return implode(' ', $pts);
         };
@@ -367,13 +432,29 @@ class ReportExportService
             $gridLines .= "<text x='" . ($padLeft - 8) . "' y='" . ($y + 4) . "' font-size='11' fill='#64748b' text-anchor='end'>" . round($val) . "%</text>";
         }
 
+        $monthLabel = function (string $label) {
+            try {
+                $parsed = Carbon::createFromFormat('Y-m', $label);
+                return $parsed ? $parsed->format('F Y') : $label;
+            } catch (\Throwable $e) {
+                return $label;
+            }
+        };
+
         $xLabels = '';
         foreach ($labels as $i => $label) {
             if ($i % max(1, intdiv($n, 6)) !== 0 && $i !== $n - 1) {
                 continue;
             }
-            $xLabels .= "<text x='" . round($xFor($i), 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($label) . "</text>";
+            $xLabels .= "<text x='" . round($xFor($i), 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($monthLabel($label)) . "</text>";
         }
+
+        $legend = implode('', [
+            "<rect x='" . ($padLeft - 6) . "' y='8' width='330' height='20' rx='4' fill='#f8fafc' stroke='#e2e8f0'/>",
+            $this->legendItem($padLeft, 18, '#3b82f6', false, 'Frozen Baseline'),
+            $this->legendItem($padLeft + 130, 18, '#8b5cf6', true, 'Adjusted Planned'),
+            $this->legendItem($padLeft + 270, 18, '#10b981', false, 'Actual'),
+        ]);
 
         $polyline = function (array $values, string $stroke, float $width, string $dash = '') use ($points) {
             $pts = $points($values);
@@ -384,9 +465,10 @@ class ReportExportService
         };
 
         $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='{$width}' height='{$height}' viewBox='0 0 {$width} {$height}'>";
+        $svg .= $legend;
         $svg .= $gridLines;
         $svg .= $polyline($chartData['frozen_planned_data'] ?? [], '#3b82f6', 2.5);
-        $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#8b5cf6', 2);
+        $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#8b5cf6', 2, '5,3');
         $svg .= $polyline($chartData['actual_data'] ?? [], '#10b981', 3);
         $svg .= $xLabels;
         $svg .= "</svg>";
@@ -398,5 +480,16 @@ class ReportExportService
 
         return "<img src='data:image/svg+xml;base64," . base64_encode($svg)
             . "' style='width:{$fitWidth}px;height:{$fitHeight}px;' />";
+    }
+
+    /**
+     * A single legend entry: a short color swatch line + label text.
+     */
+    private function legendItem(float $x, float $y, string $color, bool $dashed, string $label): string
+    {
+        $dash = $dashed ? " stroke-dasharray='5,3'" : '';
+        $swatch = "<line x1='{$x}' y1='{$y}' x2='" . ($x + 16) . "' y2='{$y}' stroke='{$color}' stroke-width='3'{$dash}/>";
+        $text = "<text x='" . ($x + 22) . "' y='" . ($y + 4) . "' font-size='10' fill='#334155' font-family='DejaVu Sans'>" . htmlspecialchars($label) . "</text>";
+        return $swatch . $text;
     }
 }

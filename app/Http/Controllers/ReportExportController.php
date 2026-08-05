@@ -55,4 +55,9 @@ class ReportExportController extends Controller
     {
         return $this->service->summaryPdf($project);
     }
+
+    public function summaryPdfView(Project $project)
+    {
+        return $this->service->summaryPdfView($project);
+    }
 }

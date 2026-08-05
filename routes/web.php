@@ -264,6 +264,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
         ->name('staff.projects.exports.summary');
 
+    Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
+        ->name('staff.projects.exports.summary.view');
+
 });
 
 /*
@@ -360,6 +363,9 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
 
     Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
         ->name('contractor.projects.exports.summary');
+
+    Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
+        ->name('contractor.projects.exports.summary.view');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])
@@ -600,6 +606,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/projects/{project}/reports/summary.pdf', [ReportExportController::class, 'summaryPdf'])
         ->name('admin.projects.exports.summary');
+
+    Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
+        ->name('admin.projects.exports.summary.view');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])
