@@ -75,6 +75,7 @@
 
 <!-- RISK REGISTER MODALS -->
 @include('projects.project_detail.components.modals.risk_modal')
+@include('projects.project_detail.components.modals.risk_to_issue_modal')
 
 <link rel="stylesheet" href="{{ asset('css/admin/projects/risk-register.css') }}">
 <script src="{{ asset('js/admin/projects/risk-register.js') }}"></script>

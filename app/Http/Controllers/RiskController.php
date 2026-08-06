@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Issue;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\Risk;
 use App\Notifications\RiskReported;
 use App\Services\NotificationService;
@@ -78,7 +79,21 @@ class RiskController extends Controller
                 'owner'          => 'nullable|string|max:255',
                 'status'         => 'required|in:Open,Mitigated,Closed',
                 'identified_at'  => 'nullable|date',
+                'baseline_schedule_id' => 'nullable|integer|exists:project_baseline_schedules,id',
             ]);
+
+            // Guard: the selected baseline month must belong to this project
+            if (!empty($validated['baseline_schedule_id'])) {
+                $baselineExists = ProjectBaselineSchedule::where('id', $validated['baseline_schedule_id'])
+                    ->where('project_id', $project->id)
+                    ->exists();
+                if (!$baselineExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected baseline month does not belong to this project.',
+                    ], 422);
+                }
+            }
 
             $data = $this->applyLifecycleTimestamps($validated);
 
@@ -167,9 +182,23 @@ class RiskController extends Controller
                 'impact'         => 'required|in:Low,Medium,High',
                 'mitigation_plan' => 'nullable|string|max:5000',
                 'owner'          => 'nullable|string|max:255',
-                'status'         => 'required|in:Open,Mitigated,Closed',
+                'status'         => 'required|in:Open,Mitigated,Closed,Realized',
                 'identified_at'  => 'nullable|date',
+                'baseline_schedule_id' => 'nullable|integer|exists:project_baseline_schedules,id',
             ]);
+
+            // Guard: the selected baseline month must belong to this project
+            if (!empty($validated['baseline_schedule_id'])) {
+                $baselineExists = ProjectBaselineSchedule::where('id', $validated['baseline_schedule_id'])
+                    ->where('project_id', $project->id)
+                    ->exists();
+                if (!$baselineExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected baseline month does not belong to this project.',
+                    ], 422);
+                }
+            }
 
             $data = $this->applyLifecycleTimestamps($validated, $risk);
             $data['risk_score'] = Risk::computeScore($data['probability'], $data['impact']);
@@ -276,7 +305,7 @@ class RiskController extends Controller
      * evidence attachments to the new issue (relabelled context 'issue'), and
      * fires the normal IssueReported notification (admins + contractor).
      */
-    public function convertToIssue(Project $project, Risk $risk)
+    public function convertToIssue(Request $request, Project $project, Risk $risk)
     {
         try {
             // Authorization — only admin and staff can convert risks
@@ -304,15 +333,37 @@ class RiskController extends Controller
                 ], 422);
             }
 
-            // Build the issue from the risk
+            // Validate the pre-filled, editable issue fields sent from the modal
+            $validated = $request->validate([
+                'issue_name'   => 'required|string|max:255',
+                'description'  => 'nullable|string|max:5000',
+                'issue_type'   => 'nullable|string|in:material,contractor,weather,design,regulatory,financial,other',
+                'severity'     => 'nullable|string|in:Low,Medium,High,Critical',
+                'baseline_schedule_id' => 'nullable|integer|exists:project_baseline_schedules,id',
+            ]);
+
+            // Guard: the selected baseline month must belong to this project
+            if (!empty($validated['baseline_schedule_id'])) {
+                $baselineExists = ProjectBaselineSchedule::where('id', $validated['baseline_schedule_id'])
+                    ->where('project_id', $project->id)
+                    ->exists();
+                if (!$baselineExists) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The selected baseline month does not belong to this project.',
+                    ], 422);
+                }
+            }
+
+            // Build the issue from the modal values, falling back to the risk
             $issue = Issue::create([
                 'project_id'           => $project->id,
-                'issue_name'           => $risk->risk_name,
-                'description'          => $risk->description ?: 'Risk "' . $risk->risk_name . '" materialized and was converted into an issue.',
+                'issue_name'           => $validated['issue_name'],
+                'description'          => $validated['description'] ?? 'Risk "' . $risk->risk_name . '" materialized and was converted into an issue.',
                 'status'               => 'Open',
-                'issue_type'           => 'other',
-                'severity'             => $this->severityFromRiskLevel($risk->risk_level),
-                'baseline_schedule_id' => $risk->baseline_schedule_id,
+                'issue_type'           => $validated['issue_type'] ?? 'other',
+                'severity'             => $validated['severity'] ?? $this->severityFromRiskLevel($risk->risk_level),
+                'baseline_schedule_id' => $validated['baseline_schedule_id'] ?? $risk->baseline_schedule_id,
                 'source_risk_id'       => $risk->id,
             ]);
 
@@ -361,6 +412,12 @@ class RiskController extends Controller
                 'issue'   => $issue,
                 'risk'    => $this->riskToJson($risk),
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors'  => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             Log::error('Risk conversion error: ' . $e->getMessage());
 
@@ -443,6 +500,11 @@ class RiskController extends Controller
         } elseif ($status === 'Closed') {
             $data['mitigated_at'] = $data['mitigated_at'] ?? $existing?->mitigated_at;
             $data['closed_at']    = $data['closed_at'] ?? ($existing?->closed_at ?? now());
+        } elseif ($status === 'Realized') {
+            // A Realized risk is the product of conversion; keep any earlier
+            // lifecycle stamps (the risk may have been mitigated first).
+            $data['mitigated_at'] = $data['mitigated_at'] ?? $existing?->mitigated_at;
+            $data['closed_at']    = $data['closed_at'] ?? $existing?->closed_at;
         } else {
             // Returning to Open clears both lifecycle stamps
             $data['mitigated_at'] = null;

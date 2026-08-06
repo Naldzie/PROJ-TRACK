@@ -62,7 +62,8 @@ function displayTabRisks(risks) {
     const statusColors = {
         'Open':      { bg: '#fee2e2', text: '#991b1b' },
         'Mitigated': { bg: '#fef3c7', text: '#92400e' },
-        'Closed':    { bg: '#dcfce7', text: '#166534' }
+        'Closed':    { bg: '#dcfce7', text: '#166534' },
+        'Realized':  { bg: '#ede9fe', text: '#5b21b6' }
     };
 
     const html = `
@@ -74,9 +75,11 @@ function displayTabRisks(risks) {
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Score</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Level</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Status</th>
+                    <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Baseline</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Mitigation</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Owner</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Identified</th>
+                    <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Evidence</th>
                     ${window.userRole === 'contractor' ? '' : `
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Actions</th>
                     `}
@@ -102,12 +105,28 @@ function displayTabRisks(risks) {
                             <span style="display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; background: ${sc.bg}; color: ${sc.text};">
                                 ${escapeHtml(risk.status)}
                             </span>
+                            ${risk.converted_issue_label ? `
+                            <div style="margin-top: 5px;">
+                                <a href="#" onclick="event.preventDefault(); switchToIssuesTab();" title="View the issue this risk became"
+                                   style="font-size: 11px; font-weight: 600; color: #5b21b6; text-decoration: none; background: #ede9fe; padding: 3px 8px; border-radius: 10px; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i class="bi bi-arrow-right-short"></i> ${escapeHtml(risk.converted_issue_label)}
+                                </a>
+                            </div>
+                            ` : ''}
                         </td>
+                        <td style="padding: 12px 16px; color: #6b7280; font-size: 13px;">${risk.baseline_label ? '<i class="bi bi-calendar-month" style="margin-right: 4px;"></i>' + escapeHtml(risk.baseline_label) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(risk.mitigation_plan || '')}">${risk.mitigation_plan ? escapeHtml(risk.mitigation_plan) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px;">${risk.owner ? escapeHtml(risk.owner) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">${risk.identified_at ? '<i class="bi bi-calendar-event" style="margin-right: 4px;"></i>' + escapeHtml(risk.identified_at) : '<span style="color:#9ca3af;">—</span>'}</td>
+                        <td style="padding: 12px 16px;">${renderRiskAttachmentChips(risk.attachments)}</td>
                         ${window.userRole === 'contractor' ? '' : `
                         <td style="padding: 12px 16px; text-align: center;">
+                            ${risk.status !== 'Realized' && risk.status !== 'Closed' ? `
+                            <button class="btn btn-sm" onclick="openConvertRiskModal(${risk.id})" title="Convert to Issue"
+                                    style="background: #dcfce7; color: #166534; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 4px;">
+                                <i class="bi bi-arrow-left-right"></i>
+                            </button>
+                            ` : ''}
                             <button class="btn btn-sm" onclick="openEditRiskModal(${risk.id})" title="Edit"
                                     style="background: #dbeafe; color: #0369a1; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 4px;">
                                 <i class="bi bi-pencil"></i>
@@ -149,6 +168,281 @@ function updateRisksSummary(risks) {
     document.getElementById('closedRisksCount').textContent    = summary['Closed'];
     document.getElementById('highRisksCount').textContent      = summary['High'];
     document.getElementById('totalRisksCount').textContent     = risks.length;
+}
+
+// ==================== RISK ATTACHMENT HELPERS ====================
+
+/**
+ * Cache for risk attachment payloads (keyed by attachment id) so the
+ * document viewer can be opened without another network call.
+ */
+window._riskAttachments = window._riskAttachments || {};
+
+/**
+ * Bootstrap icon for a file based on its extension.
+ */
+function riskAttachmentIcon(filename) {
+    const ext = (filename || '').split('.').pop().toLowerCase();
+    const map = {
+        pdf: 'bi-file-earmark-pdf',
+        jpg: 'bi-file-earmark-image',
+        jpeg: 'bi-file-earmark-image',
+        png: 'bi-file-earmark-image',
+        gif: 'bi-file-earmark-image',
+        webp: 'bi-file-earmark-image',
+        svg: 'bi-file-earmark-image'
+    };
+    return map[ext] || 'bi-file-earmark-text';
+}
+
+/**
+ * Render clickable evidence chips for a risk's attachments.
+ */
+function renderRiskAttachmentChips(attachments) {
+    const list = attachments || [];
+    if (list.length === 0) return '<span style="color:#9ca3af;">—</span>';
+    return list.map(att => {
+        window._riskAttachments[att.id] = att;
+        return `
+            <span class="attachment-chip me-1 mb-1" title="${escapeHtml(att.original_name)}"
+                  onclick="openRiskAttachmentById(${att.id})">
+                <i class="bi ${riskAttachmentIcon(att.original_name)}"></i>
+                <span>${escapeHtml(att.original_name)}</span>
+            </span>
+        `;
+    }).join('');
+}
+
+/**
+ * Open the shared document viewer for a risk attachment.
+ */
+function openRiskAttachmentById(id) {
+    const att = window._riskAttachments[id];
+    if (!att || typeof openDocumentViewer !== 'function') return;
+    const role = window.userRole;
+    openDocumentViewer({
+        id: att.id,
+        name: att.original_name,
+        type: 'Risk Evidence',
+        size: att.display_size,
+        uploadedBy: att.uploaded_by,
+        uploadedAt: att.created_at,
+        viewUrl: `/${role}/attachments/${att.id}/view`,
+        downloadUrl: `/${role}/attachments/${att.id}/download`
+    });
+}
+
+/**
+ * Render the current (saved) attachment list in the EDIT modal, excluding any
+ * attachments queued for deletion this session.
+ */
+function renderEditRiskAttachmentList(risk) {
+    const container = document.getElementById('editRiskAttachmentList');
+    if (!container) return;
+
+    const pending = (window._pendingRiskDeleteAttachmentIds || []);
+    const attachments = ((risk && risk.attachments) || []).filter(a => pending.indexOf(a.id) === -1);
+    if (attachments.length === 0) {
+        container.innerHTML = '<small class="text-muted">No evidence attached.</small>';
+        return;
+    }
+
+    const renderChip = (att) => {
+        window._riskAttachments[att.id] = att;
+        return `
+            <div class="attachment-chip edit-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
+                <span class="att-name" onclick="openRiskAttachmentById(${att.id})" title="View attachment"
+                      style="cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi ${riskAttachmentIcon(att.original_name)}"></i>
+                    <span>${escapeHtml(att.original_name)}</span>
+                </span>
+                <button type="button" class="attachment-remove-btn" title="Remove attachment"
+                        onclick="deleteRiskAttachment(${att.id})">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            </div>
+        `;
+    };
+
+    container.innerHTML = attachments.map(renderChip).join('');
+}
+
+// Attachment deletions in the EDIT modal are deferred: they are queued in
+// window._pendingRiskDeleteAttachmentIds and only deleted on the server when
+// the user actually clicks "Update Risk". Queued files are visually removed
+// immediately, but no DELETE request fires until the risk is saved.
+
+window._pendingRiskDeleteAttachmentIds = [];
+
+function deleteRiskAttachment(attachmentId) {
+    if (typeof showDeleteConfirmation !== 'function') {
+        showErrorMessage('Delete confirmation component is not available');
+        return;
+    }
+    showDeleteConfirmation(
+        'Remove Attachment',
+        'This attachment will be removed when you save the risk. It will not be deleted unless you click "Update Risk".',
+        function() { queueRiskAttachmentForDeletion(attachmentId); }
+    );
+}
+
+function queueRiskAttachmentForDeletion(attachmentId) {
+    if (window._pendingRiskDeleteAttachmentIds.indexOf(attachmentId) === -1) {
+        window._pendingRiskDeleteAttachmentIds.push(attachmentId);
+    }
+    const editRiskId = document.getElementById('editRiskId')?.value;
+    if (editRiskId && window._riskDataById[editRiskId]) {
+        renderEditRiskAttachmentList(window._riskDataById[editRiskId]);
+    }
+    delete window._riskAttachments[attachmentId];
+}
+
+/**
+ * Actually delete all queued risk attachments on the server. Called only after
+ * the risk update has been persisted successfully, never on plain "remove".
+ */
+function flushPendingRiskAttachmentDeletions() {
+    const toDelete = window._pendingRiskDeleteAttachmentIds.slice();
+    if (toDelete.length === 0) return Promise.resolve();
+
+    const role = window.userRole;
+    const requests = toDelete.map(attachmentId =>
+        fetch(`/${role}/attachments/${attachmentId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error((data && data.message) || 'Failed to delete attachment #' + attachmentId);
+            }
+        })
+    );
+
+    window._pendingRiskDeleteAttachmentIds = [];
+    return Promise.all(requests);
+}
+
+/**
+ * Upload a single risk evidence file (context 'risk').
+ */
+function uploadRiskAttachment(riskId, file) {
+    const fd = new FormData();
+    fd.append('project_id', window.projectId);
+    fd.append('attachable_type', 'App\\Models\\Risk');
+    fd.append('attachable_id', riskId);
+    fd.append('context', 'risk');
+    fd.append('file', file);
+    const role = window.userRole;
+    return fetch(`/${role}/attachments/upload`, {
+        method: 'POST',
+        headers: {
+            'X-CSRF-TOKEN': window.csrfToken,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: fd
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) {
+            throw new Error((data && data.message) || 'Attachment upload failed');
+        }
+        return data;
+    });
+}
+
+/**
+ * Upload all pending risk files for a risk.
+ */
+function uploadRiskFiles(riskId, files) {
+    return Promise.all((files || []).map(file => uploadRiskAttachment(riskId, file)));
+}
+
+// ==================== CONVERT RISK → ISSUE ====================
+
+/**
+ * Fill and open the Convert Risk to Issue modal, pre-filling issue fields
+ * from the risk and carrying over the baseline month + severity.
+ */
+function openConvertRiskModal(riskId) {
+    const risk = window._riskDataById ? window._riskDataById[riskId] : null;
+    if (!risk) return;
+
+    document.getElementById('convertIssueName').value = risk.risk_name;
+    document.getElementById('convertIssueDescription').value =
+        risk.description || 'Risk "' + risk.risk_name + '" materialized and was converted into an issue.';
+    document.getElementById('convertIssueType').value = 'other';
+    document.getElementById('convertIssueSeverity').value = risk.risk_level || riskLevelFromScore(risk.risk_score);
+    document.getElementById('convertIssueBaselineId').value = risk.baseline_schedule_id || '';
+    window._riskBeingConverted = risk.id;
+
+    const convertModal = new bootstrap.Modal(document.getElementById('riskToIssueModal'));
+    convertModal.show();
+}
+
+/**
+ * Wire the Convert to Issue modal submit → POST the staff/admin convert route.
+ */
+function initConvertRiskForm() {
+    const btn = document.getElementById('confirmConvertRiskBtn');
+    if (!btn) return;
+
+    btn.addEventListener('click', function() {
+        const riskId = window._riskBeingConverted;
+        if (!riskId) return;
+
+        const payload = {
+            issue_name:       document.getElementById('convertIssueName').value.trim(),
+            description:      document.getElementById('convertIssueDescription').value.trim(),
+            issue_type:       document.getElementById('convertIssueType').value || null,
+            severity:         document.getElementById('convertIssueSeverity').value || null,
+            baseline_schedule_id: document.getElementById('convertIssueBaselineId').value || null,
+        };
+
+        fetch(getRisksApiUrl(riskId + '/convert'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': window.csrfToken,
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('riskToIssueModal')).hide();
+                window._riskBeingConverted = null;
+                loadTabRisks();
+                if (typeof loadTabIssues === 'function') loadTabIssues();
+                showSuccessMessage('Risk converted to issue successfully');
+            } else {
+                showErrorMessage(data.message || 'Error converting risk');
+            }
+        })
+        .catch(error => {
+            console.error('Error converting risk:', error);
+            showErrorMessage('Error converting risk');
+        });
+    });
+}
+
+/**
+ * Jump to the Issues section (via the All/Issues/Risks toggle) so the user
+ * can see the issue a Realized risk became.
+ */
+function switchToIssuesTab() {
+    const toggleBtn = document.querySelector('.risk-toggle-btn[data-risk-view="all"]') ||
+                      document.querySelector('.risk-toggle-btn[data-risk-view="issues"]');
+    if (toggleBtn) toggleBtn.click();
+    const target = document.getElementById('issuesSection');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ==================== SCORE / LEVEL HELPERS ====================
@@ -219,6 +513,8 @@ function initAddRiskForm() {
     form.addEventListener('submit', function(e) {
         e.preventDefault();
 
+        const riskFiles = (typeof collectPendingFiles === 'function') ? collectPendingFiles('riskAttachmentFiles') : [];
+
         const payload = {
             risk_name:       document.getElementById('riskName').value.trim(),
             description:     document.getElementById('riskDescription').value.trim(),
@@ -228,6 +524,7 @@ function initAddRiskForm() {
             owner:           document.getElementById('riskOwner').value.trim(),
             status:          document.getElementById('riskStatus').value,
             identified_at:   document.getElementById('riskIdentifiedAt').value || null,
+            baseline_schedule_id: document.getElementById('riskBaselineId').value || null,
         };
 
         fetch(getRisksApiUrl(), {
@@ -243,18 +540,25 @@ function initAddRiskForm() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('riskModal')).hide();
-                form.reset();
-                loadTabRisks();
-                showSuccessMessage('Risk created successfully');
+                return uploadRiskFiles(data.risk.id, riskFiles).then(() => data);
             } else if (data.errors) {
                 const first = Object.values(data.errors)[0];
                 showErrorMessage(first ? first[0] : 'Validation error');
+                return Promise.reject({ silent: true });
             } else {
                 showErrorMessage(data.message || 'Error creating risk');
+                return Promise.reject({ silent: true });
             }
         })
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('riskModal')).hide();
+            form.reset();
+            if (typeof clearPendingFiles === 'function') clearPendingFiles('riskAttachmentFiles');
+            loadTabRisks();
+            showSuccessMessage('Risk created successfully');
+        })
         .catch(error => {
+            if (error && error.silent) return;
             console.error('Error:', error);
             showErrorMessage('Error creating risk');
         });
@@ -268,6 +572,9 @@ function openEditRiskModal(id) {
     const risk = window._riskDataById ? window._riskDataById[id] : null;
     if (!risk) return;
 
+    // Start a fresh deletion queue each time the edit modal is opened.
+    window._pendingRiskDeleteAttachmentIds = [];
+
     document.getElementById('editRiskId').value = risk.id;
     document.getElementById('editRiskName').value = risk.risk_name;
     document.getElementById('editRiskDescription').value = risk.description || '';
@@ -276,11 +583,25 @@ function openEditRiskModal(id) {
     document.getElementById('editRiskMitigation').value = risk.mitigation_plan || '';
     document.getElementById('editRiskOwner').value = risk.owner || '';
     document.getElementById('editRiskStatus').value = risk.status;
+    document.getElementById('editRiskBaselineId').value = risk.baseline_schedule_id || '';
 
     const identified = document.getElementById('editRiskIdentifiedAt');
     if (identified) {
         identified.value = risk.identified_at ? toDateInputValue(risk.identified_at) : '';
     }
+
+    // Lock the status select when the risk has been converted (Realized)
+    const statusSelect = document.getElementById('editRiskStatus');
+    const statusNote = document.getElementById('editRiskStatusNote');
+    const isRealized = risk.status === 'Realized';
+    if (statusSelect) statusSelect.disabled = isRealized;
+    if (statusNote) statusNote.style.display = isRealized ? '' : 'none';
+
+    // Reset file inputs + pending previews, then render existing evidence
+    const fileInput = document.getElementById('editRiskAttachmentFiles');
+    if (fileInput) fileInput.value = '';
+    if (typeof clearPendingFiles === 'function') clearPendingFiles('editRiskAttachmentFiles');
+    renderEditRiskAttachmentList(risk);
 
     // Update score preview to the actual stored score
     const preview = document.getElementById('editRiskScorePreview');
@@ -315,6 +636,7 @@ function initEditRiskForm() {
         e.preventDefault();
 
         const id = document.getElementById('editRiskId').value;
+        const editFiles = (typeof collectPendingFiles === 'function') ? collectPendingFiles('editRiskAttachmentFiles') : [];
         const payload = {
             risk_name:       document.getElementById('editRiskName').value.trim(),
             description:     document.getElementById('editRiskDescription').value.trim(),
@@ -324,6 +646,7 @@ function initEditRiskForm() {
             owner:           document.getElementById('editRiskOwner').value.trim(),
             status:          document.getElementById('editRiskStatus').value,
             identified_at:   document.getElementById('editRiskIdentifiedAt').value || null,
+            baseline_schedule_id: document.getElementById('editRiskBaselineId').value || null,
         };
 
         fetch(getRisksApiUrl(id), {
@@ -339,17 +662,28 @@ function initEditRiskForm() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('editRiskModal')).hide();
-                loadTabRisks();
-                showSuccessMessage('Risk updated successfully');
+                return Promise.all([
+                    flushPendingRiskAttachmentDeletions(),
+                    uploadRiskFiles(id, editFiles)
+                ]).then(() => data);
             } else if (data.errors) {
                 const first = Object.values(data.errors)[0];
                 showErrorMessage(first ? first[0] : 'Validation error');
+                return Promise.reject({ silent: true });
             } else {
                 showErrorMessage(data.message || 'Error updating risk');
+                return Promise.reject({ silent: true });
             }
         })
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('editRiskModal')).hide();
+            window._pendingRiskDeleteAttachmentIds = [];
+            if (typeof clearPendingFiles === 'function') clearPendingFiles('editRiskAttachmentFiles');
+            loadTabRisks();
+            showSuccessMessage('Risk updated successfully');
+        })
         .catch(error => {
+            if (error && error.silent) return;
             console.error('Error:', error);
             showErrorMessage('Error updating risk');
         });
@@ -450,6 +784,17 @@ document.addEventListener('DOMContentLoaded', function() {
     bindRiskScorePreview();
     initAddRiskForm();
     initEditRiskForm();
+    initConvertRiskForm();
+
+    // Accumulate multiple file picks for the risk evidence inputs (add + edit).
+    ['riskAttachmentFiles', 'editRiskAttachmentFiles'].forEach(inputId => {
+        const input = document.getElementById(inputId);
+        if (input && typeof addPendingFiles === 'function') {
+            input.addEventListener('change', function() {
+                addPendingFiles(inputId, this.files);
+            });
+        }
+    });
 
     // Load risks once the tab is present (in case the page loads directly on it)
     if (document.getElementById('risksTableContainer')) {

@@ -1,3 +1,10 @@
+<!-- RISK MODALS (Add + Edit) — parity with the issues modal: optional baseline
+     month link + evidence attachments (context 'risk'). -->
+
+@php
+    $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
+@endphp
+
 <!-- ADD RISK MODAL -->
 <div class="modal fade" id="riskModal" tabindex="-1" aria-labelledby="riskModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -73,6 +80,36 @@
 
                     <div class="risk-form-section">
                         <div class="risk-form-section-label">
+                            <i class="bi bi-tags"></i> Classification
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="riskBaselineId" class="form-label">Baseline Month</label>
+                                <select class="form-control" id="riskBaselineId" name="baseline_schedule_id">
+                                    <option value="">-- Select Baseline Month (Optional) --</option>
+                                    @foreach($baselines as $baseline)
+                                        <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">Link the risk to the baseline month/phase it threatens</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="risk-form-section">
+                        <div class="risk-form-section-label">
+                            <i class="bi bi-paperclip"></i> Evidence
+                        </div>
+                        <div class="mb-3">
+                            <label for="riskAttachmentFiles" class="form-label">Risk Evidence Files</label>
+                            <input type="file" class="form-control" id="riskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
+                            <small class="text-muted">Photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each). Select one or more.</small>
+                            <div class="mt-2 d-flex flex-wrap gap-1" id="riskAttachmentFilesPreview"></div>
+                        </div>
+                    </div>
+
+                    <div class="risk-form-section">
+                        <div class="risk-form-section-label">
                             <i class="bi bi-clipboard-check"></i> Response
                         </div>
                         <div class="mb-3">
@@ -136,6 +173,9 @@
                                     <option value="Mitigated">Mitigated</option>
                                     <option value="Closed">Closed</option>
                                 </select>
+                                <small class="text-muted" id="editRiskStatusNote" style="display: none;">
+                                    <i class="bi bi-info-circle"></i> Converted to an issue &mdash; status is locked.
+                                </small>
                             </div>
                         </div>
                         <div class="mt-3">
@@ -171,6 +211,42 @@
                                     <span class="risk-score-badge risk-level-medium">Score 4 · Medium</span>
                                 </div>
                                 <small class="text-muted">Score = probability × impact (1–9), computed automatically</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="risk-form-section">
+                        <div class="risk-form-section-label">
+                            <i class="bi bi-tags"></i> Classification
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="editRiskBaselineId" class="form-label">Baseline Month</label>
+                                <select class="form-control" id="editRiskBaselineId" name="baseline_schedule_id">
+                                    <option value="">-- Select Baseline Month (Optional) --</option>
+                                    @foreach($baselines as $baseline)
+                                        <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">Link the risk to the baseline month/phase it threatens</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="risk-form-section">
+                        <div class="risk-form-section-label">
+                            <i class="bi bi-paperclip"></i> Evidence
+                        </div>
+                        <div class="mb-3">
+                            <label for="editRiskAttachmentFiles" class="form-label">Risk Evidence Files</label>
+                            <input type="file" class="form-control" id="editRiskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
+                            <small class="text-muted">Photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each). Select one or more.</small>
+                            <div class="mt-2 d-flex flex-wrap gap-1" id="editRiskAttachmentFilesPreview"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Current Evidence</label>
+                            <div class="d-flex flex-wrap" id="editRiskAttachmentList">
+                                <small class="text-muted">Loading...</small>
                             </div>
                         </div>
                     </div>

@@ -137,3 +137,54 @@
 .risk-form-section-label i {
     color: #d97706;
 }
+
+/* ---------- Convert risk → issue ---------- */
+.risk-convert-btn {
+    background: #dcfce7;
+    color: #166534;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-right: 4px;
+    transition: background 0.15s ease;
+}
+
+.risk-convert-btn:hover {
+    background: #bbf7d0;
+}
+
+/* ---------- Realized status badge ---------- */
+.risk-status-realized {
+    background: #ede9fe;
+    color: #5b21b6;
+}
+
+/* ---------- "→ Issue #N" link chip on Realized risks ---------- */
+.risk-to-issue-link {
+    font-size: 11px;
+    font-weight: 600;
+    color: #5b21b6;
+    text-decoration: none;
+    background: #ede9fe;
+    padding: 3px 8px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.risk-to-issue-link:hover {
+    background: #ddd6fe;
+}
+
+/* ---------- Risk evidence chips (reuses .attachment-chip from issues-modal.css) ---------- */
+.risk-evidence-group-label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
