@@ -214,7 +214,17 @@ function displayTabIssues(issues) {
                         window._issueDataById[issue.id] = issue;
                         return `
                     <tr style="border-bottom: 1px solid #e5e7eb; ${index % 2 === 0 ? 'background: #f9fafb;' : 'background: white;'} transition: background 0.2s;">
-                        <td style="padding: 12px 16px; font-weight: 600; color: #111827; font-size: 13px;">${escapeHtml(issue.issue_name)}</td>
+                        <td style="padding: 12px 16px; font-weight: 600; color: #111827; font-size: 13px;">
+                            ${escapeHtml(issue.issue_name)}
+                            ${issue.source_risk_id ? `
+                            <div style="margin-top: 4px;">
+                                <a href="#" onclick="event.preventDefault(); switchToRisksTab();" title="Converted from a risk — view the source risk"
+                                   style="font-size: 11px; font-weight: 600; color: #5b21b6; text-decoration: none; background: #ede9fe; padding: 3px 8px; border-radius: 10px; display: inline-flex; align-items: center; gap: 4px;">
+                                    <i class="bi bi-shield-exclamation"></i> from Risk: ${escapeHtml(issue.source_risk_name || '#' + issue.source_risk_id)}
+                                </a>
+                            </div>
+                            ` : ''}
+                        </td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(issue.description)}</td>
                         <td style="padding: 12px 16px; text-align: center;">
                             ${issue.issue_type ? `<span style="display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; background: #e0f2fe; color: #0369a1;">${escapeHtml(issue.issue_type)}</span>` : '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
@@ -324,6 +334,17 @@ function openEditIssueModal(id, name, description, status, issueType, severity, 
 
     if (typeof toggleIssueResolutionFields === 'function') {
         toggleIssueResolutionFields(status);
+    }
+
+    // Show a "converted from risk" note when this issue came from a risk
+    const fromRiskWrap = document.getElementById('editIssueFromRiskWrap');
+    const fromRiskName = document.getElementById('editIssueFromRiskName');
+    const issueData = window._issueDataById[id];
+    if (fromRiskWrap && fromRiskName && issueData && issueData.source_risk_id) {
+        fromRiskName.textContent = issueData.source_risk_name || '#' + issueData.source_risk_id;
+        fromRiskWrap.style.display = '';
+    } else if (fromRiskWrap) {
+        fromRiskWrap.style.display = 'none';
     }
     
     const editModal = new bootstrap.Modal(document.getElementById('editIssueModal'));

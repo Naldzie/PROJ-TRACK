@@ -445,6 +445,18 @@ function switchToIssuesTab() {
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/**
+ * Jump to the Risks section (via the All/Issues/Risks toggle) so the user
+ * can see the source risk a converted issue came from.
+ */
+function switchToRisksTab() {
+    const toggleBtn = document.querySelector('.risk-toggle-btn[data-risk-view="all"]') ||
+                      document.querySelector('.risk-toggle-btn[data-risk-view="risks"]');
+    if (toggleBtn) toggleBtn.click();
+    const target = document.getElementById('risksSection');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // ==================== SCORE / LEVEL HELPERS ====================
 
 /**

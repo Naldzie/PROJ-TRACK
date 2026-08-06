@@ -163,6 +163,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <div class="issue-form-section" id="editIssueFromRiskWrap" style="display: none;">
+                    <small style="color: #5b21b6; font-weight: 600;">
+                        <i class="bi bi-shield-exclamation"></i> Converted from risk:
+                        <span id="editIssueFromRiskName"></span>
+                    </small>
+                </div>
                 <form id="editIssueForm">
                     @csrf
                     @method('PUT')

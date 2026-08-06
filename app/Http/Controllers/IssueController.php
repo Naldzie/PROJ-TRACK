@@ -32,7 +32,7 @@ class IssueController extends Controller
     {
         try {
             $issues = $project->issues()
-                ->with(['baselineSchedule', 'attachments'])
+                ->with(['baselineSchedule', 'attachments', 'sourceRisk'])
                 ->get()
                 ->map(function($issue) {
                     return [
@@ -47,6 +47,8 @@ class IssueController extends Controller
                         'baseline_schedule_id' => $issue->baseline_schedule_id,
                         'month_label' => $issue->baselineSchedule?->month_label,
                         'month_display' => $issue->baselineSchedule?->month_display,
+                        'source_risk_id' => $issue->source_risk_id,
+                        'source_risk_name' => $issue->sourceRisk?->risk_name,
                         'created_at' => $issue->created_at->format('M d, Y'),
                         'updated_at' => $issue->updated_at->format('M d, Y'),
                         'attachments' => $issue->attachments->map(function ($attachment) {
