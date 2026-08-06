@@ -4,6 +4,7 @@
 
 @php
     $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
+    $defaultRiskBaselineId = app(\App\Services\ProjectOverviewService::class)->getDefaultRiskBaseline($project)?->id;
 @endphp
 
 <!-- ADD RISK MODAL -->
@@ -117,7 +118,7 @@
                                 <select class="form-control" id="riskBaselineId" name="baseline_schedule_id">
                                     <option value="">-- Select Baseline Month (Optional) --</option>
                                     @foreach($baselines as $baseline)
-                                        <option value="{{ $baseline->id }}">{{ $baseline->month_display }}</option>
+                                        <option value="{{ $baseline->id }}" {{ $baseline->id === $defaultRiskBaselineId ? 'selected' : '' }}>{{ $baseline->month_display }}</option>
                                     @endforeach
                                 </select>
                                 <small class="text-muted">Link the risk to the baseline month/phase it threatens</small>

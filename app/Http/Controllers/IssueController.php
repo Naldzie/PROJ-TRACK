@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Issue;
 use App\Models\ProjectBaselineSchedule;
+use App\Models\Risk;
 use App\Notifications\IssueReported;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
@@ -331,10 +332,25 @@ class IssueController extends Controller
                         'status'                => 'Open',
                         'converted_to_issue_id' => null,
                     ]);
+
+                    // Return only the evidence that originally came from the
+                    // risk (provenance stamped at conversion). Those files live
+                    // on with the reverted risk and are removed only when the
+                    // risk itself is deleted. Attachments that were added to
+                    // the issue afterwards (unstamped) are deleted below.
+                    $issue->attachments()
+                        ->where('risk_origin_id', $sourceRisk->id)
+                        ->update([
+                            'attachable_type' => Risk::class,
+                            'attachable_id'   => $sourceRisk->id,
+                            'context'         => 'risk',
+                        ]);
                 }
             }
 
-            // Remove evidence attachments (rows + physical files via the model's deleting hook)
+            // Remove evidence attachments (rows + physical files via the model's
+            // deleting hook). Risk-origin files were re-assigned above, so this
+            // only clears the attachments that belonged solely to the issue.
             foreach ($issue->attachments as $attachment) {
                 $attachment->delete();
             }

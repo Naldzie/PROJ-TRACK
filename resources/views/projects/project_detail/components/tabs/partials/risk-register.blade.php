@@ -54,25 +54,6 @@
     </div>
 </div>
 
-<!-- DELETE CONFIRMATION MODAL FOR RISKS -->
-<div class="modal fade" id="deleteRiskConfirmModal" tabindex="-1" aria-labelledby="deleteRiskConfirmLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteRiskConfirmLabel">Confirm Delete</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                Are you sure you want to delete this risk? This action cannot be undone.
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteRiskBtn">Delete</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <!-- RISK REGISTER MODALS -->
 @include('projects.project_detail.components.modals.risk_modal')
 @include('projects.project_detail.components.modals.risk_to_issue_modal')

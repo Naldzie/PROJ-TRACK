@@ -373,11 +373,17 @@ class RiskController extends Controller
             ]);
 
             // Transfer risk evidence attachments to the new issue (relabel 'issue')
+            // and stamp each with its provenance (risk_origin_id) so that, if the
+            // converted issue is later deleted, only these originally-from-the-risk
+            // files are returned to the reverted risk. Files uploaded directly to
+            // the issue (e.g. via the convert modal) stay unstamped and are
+            // deleted with the issue.
             foreach ($risk->attachments as $attachment) {
                 $attachment->update([
                     'attachable_type' => Issue::class,
                     'attachable_id'   => $issue->id,
                     'context'         => 'issue',
+                    'risk_origin_id'  => $risk->id,
                 ]);
             }
 

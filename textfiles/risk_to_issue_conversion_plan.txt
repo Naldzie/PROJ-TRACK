@@ -321,8 +321,42 @@
   fields, attachment transfer + relabel, IssueReported notification,
   contractor 403, Realized/Closed rejection, both destroy guards, Realized
   scope exclusion + update behavior, baseline validation, and the extended
-  getRisks payload. Docs updated (gaps #20 [DONE], summary_of_next_work,
-  risk_register_plan).
+   getRisks payload. Docs updated (gaps #20 [DONE], summary_of_next_work,
+   risk_register_plan).
+
+  2026-08-06 — Follow-up polish COMPLETE (372 tests pass; commit pending).
+    • Owner field REMOVED from risks (user-confirmed): guarded migration
+      2026_08_06_000003_drop_risk_owner.php + removed from create migration,
+      Risk model $fillable, RiskController validation/riskToJson,
+      risk_modal.blade.php, risk-register.js, RiskFactory, RiskRegisterTest.
+    • Add Risk modal layout: two-column grid (Assessment|Response,
+      Classification|Evidence), subtitle, larger score badge, footer action bar.
+    • Baseline month auto-selects on Add Risk (getDefaultRiskBaseline() in
+      ProjectOverviewService, mirrors getDefaultIssueBaseline; 3 new tests).
+    • Delete button HIDDEN for Realized risks (risk-register.js actions cell);
+      server 422 guard remains the backstop.
+    • No-reload refresh: deleteTabIssue()/deleteIssue() call loadTabRisks() so a
+      reverted risk reappears without a page reload.
+    • Convert modal Evidence section: current risk evidence chips with remove
+      buttons (queued, permanently deleted on convert submit) + Add Evidence
+      Files input; helpers renderConvertRiskAttachmentList / removeConvert-
+      Attachment / queueConvertAttachmentForDeletion / flushPendingConvert-
+      AttachmentDeletions / uploadConvertIssueFiles.
+    • Delete-confirmation UNIFICATION: issues.blade.php + risk-register.js now
+      use the reusable components/delete-confirmation-modal (showDeleteConfirmation);
+      dedicated #deleteIssueConfirmModal / #deleteRiskConfirmModal markup and
+      listeners removed. Converting-issue delete warns the risk reverts to Open.
+    • Attachment PROVENANCE (user-confirmed): migration 2026_08_06_000004 adds
+      nullable attachments.risk_origin_id. convertToIssue() stamps transferred
+      risk evidence with risk_origin_id; IssueController::destroy() returns ONLY
+      those files to the reverted risk (Risk/context 'risk'), while attachments
+      added directly to the issue (incl. convert-modal uploads) are deleted with
+      the issue. Risk model gained a deleting hook so its evidence (rows +
+      physical files) is removed only when the risk itself is deleted (also
+      fixes pre-existing orphan bug). New tests: transfer stamps risk_origin_id,
+      destroy returns only risk-origin evidence, delete risk cleans attachments.
+
+
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

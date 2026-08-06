@@ -340,6 +340,11 @@ function deleteIssue(id) {
                 if (typeof loadTabIssues === 'function') {
                     loadTabIssues();
                 }
+                // A converted issue's source risk reverts to Open server-side;
+                // refresh the risks table too so it appears without a reload.
+                if (typeof loadTabRisks === 'function') {
+                    loadTabRisks();
+                }
                 showSuccessMessage('Issue deleted successfully');
             } else {
                 showErrorMessage(data.message || 'Error deleting issue');

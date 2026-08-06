@@ -74,6 +74,23 @@ class Risk extends Model
         'converted_to_issue_id'=> 'integer',
     ];
 
+    // ==================== EVENTS ====================
+
+    /**
+     * Remove the risk's evidence attachments (rows + physical files) when the
+     * risk itself is deleted. The Attachment model's deleting hook removes the
+     * physical file; this loop just cleans up the rows that would otherwise be
+     * orphaned after the risk is gone.
+     */
+    protected static function booted()
+    {
+        static::deleting(function (Risk $risk) {
+            foreach ($risk->attachments as $attachment) {
+                $attachment->delete();
+            }
+        });
+    }
+
     // ==================== RELATIONSHIPS ====================
 
     /**

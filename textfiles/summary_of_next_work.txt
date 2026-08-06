@@ -47,6 +47,22 @@
   the issues table + edit modal. RiskRegisterTest extended to 30 tests; full
   suite now 367 passing.
 
+  FOLLOW-UP POLISH (Aug 6 2026, uncommitted at 106f74d) — Risk Register:
+    • Owner field removed from risks (guarded migration + all layers).
+    • Add Risk modal: two-column layout, subtitle, larger score badge.
+    • Baseline month auto-selects on Add Risk (getDefaultRiskBaseline).
+    • Delete button hidden for Realized risks; server 422 guard remains.
+    • No-reload refresh after issue delete (risk reverts in place).
+    • Convert modal Evidence section: preview/remove/add attachments; removals
+      are permanently deleted on convert submit.
+    • Delete confirmations unified onto the reusable components/
+      delete-confirmation-modal for both issues and risks.
+    • Attachment provenance (attachments.risk_origin_id): deleting a converted
+      issue returns ONLY the evidence that originally came from the risk; files
+      added to the issue (incl. convert-modal uploads) are deleted with it. Risk
+      model deleting hook cleans its own evidence on risk delete (fixes orphan
+      bug). RiskRegisterTest now 35 tests; full suite 372 passing.
+
 ===============================================================================
   NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: Activity Log
   UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)

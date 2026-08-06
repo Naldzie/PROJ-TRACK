@@ -380,4 +380,15 @@ class ProjectOverviewService
         // Priority 3: earliest baseline (no recorded progress yet)
         return $baselines->first();
     }
+
+    /**
+     * Resolve the baseline month to auto-select when a NEW risk is added.
+     * Uses the same priority as issues (current month → latest progress →
+     * earliest baseline), since a risk most often threatens the phase the
+     * project is currently in.
+     */
+    public function getDefaultRiskBaseline(Project $project)
+    {
+        return $this->getDefaultIssueBaseline($project);
+    }
 }

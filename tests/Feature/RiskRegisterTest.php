@@ -15,6 +15,7 @@ use App\Models\Risk;
 use App\Models\User;
 use App\Notifications\IssueReported;
 use App\Notifications\RiskReported;
+use App\Services\ProjectOverviewService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -625,11 +626,13 @@ class RiskRegisterTest extends TestCase
 
         $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
 
-        // Attachment now belongs to the issue, relabelled context 'issue'
+        // Attachment now belongs to the issue, relabelled context 'issue' and
+        // stamped with its risk provenance so it can be returned later
         $issue = Issue::where('source_risk_id', $risk->id)->first();
         $this->assertSame(1, Attachment::where('attachable_type', Issue::class)
             ->where('attachable_id', $issue->id)
             ->where('context', 'issue')
+            ->where('risk_origin_id', $risk->id)
             ->count());
         $this->assertDatabaseMissing('attachments', [
             'attachable_type' => Risk::class,
@@ -721,6 +724,103 @@ class RiskRegisterTest extends TestCase
         $this->assertNull($fresh->converted_to_issue_id);
     }
 
+    public function test_destroy_converted_issue_returns_only_risk_origin_attachments(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+
+        // Evidence that originally belonged to the risk (context 'risk')
+        $riskUpload = Request::create('/attachments/upload', 'POST', [
+            'project_id'      => $this->project->id,
+            'attachable_type' => Risk::class,
+            'attachable_id'   => $risk->id,
+            'context'         => 'risk',
+        ]);
+        $riskUpload->files->set('file', UploadedFile::fake()->createWithContent(
+            'risk-evidence.jpg',
+            "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9",
+            'image/jpeg'
+        ));
+        app(AttachmentController::class)->upload($riskUpload);
+
+        $this->callConvert($risk, ['issue_name' => 'Converted issue', 'description' => 'd']);
+        $issue = Issue::where('source_risk_id', $risk->id)->first();
+
+        // Attachment added directly to the issue after conversion (no origin)
+        $issueUpload = Request::create('/attachments/upload', 'POST', [
+            'project_id'      => $this->project->id,
+            'attachable_type' => Issue::class,
+            'attachable_id'   => $issue->id,
+            'context'         => 'issue',
+        ]);
+        $issueUpload->files->set('file', UploadedFile::fake()->image('issue-extra.png'));
+        $issueUploadResponse = app(AttachmentController::class)->upload($issueUpload);
+        $this->assertEquals(200, $issueUploadResponse->getStatusCode());
+
+        $issueAttachment = $issue->attachments()->whereNull('risk_origin_id')->first();
+        $this->assertNotNull($issueAttachment);
+
+        $this->assertSame(2, $issue->attachments()->count());
+        $this->assertSame(1, $issue->attachments()->where('risk_origin_id', $risk->id)->count());
+
+        // Deleting the converted issue returns only the risk-origin evidence
+        $response = app(IssueController::class)->destroy($this->project, $issue);
+        $this->assertTrue($response->getData()->success);
+
+        $freshRisk = $risk->fresh();
+        $this->assertSame('Open', $freshRisk->status);
+        $this->assertNull($freshRisk->converted_to_issue_id);
+
+        // Risk-origin attachment returned (Risk, context 'risk', file intact)
+        $returned = Attachment::where('attachable_type', Risk::class)
+            ->where('attachable_id', $risk->id)
+            ->where('context', 'risk')
+            ->where('risk_origin_id', $risk->id)
+            ->first();
+        $this->assertNotNull($returned);
+        $this->assertSame('risk-evidence.jpg', $returned->original_name);
+        $this->assertTrue($returned->fileExists());
+
+        // Issue-only attachment deleted (row + physical file)
+        $this->assertDatabaseCount('attachments', 1);
+        Storage::disk('public')->assertMissing($issueAttachment->file_path);
+    }
+
+    public function test_delete_risk_removes_its_attachments(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+
+        $upload = Request::create('/attachments/upload', 'POST', [
+            'project_id'      => $this->project->id,
+            'attachable_type' => Risk::class,
+            'attachable_id'   => $risk->id,
+            'context'         => 'risk',
+        ]);
+        $upload->files->set('file', UploadedFile::fake()->createWithContent(
+            'risk-evidence.jpg',
+            "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9",
+            'image/jpeg'
+        ));
+        $uploadResponse = app(AttachmentController::class)->upload($upload);
+        $this->assertEquals(200, $uploadResponse->getStatusCode());
+
+        $attachment = Attachment::where('attachable_type', Risk::class)
+            ->where('attachable_id', $risk->id)
+            ->first();
+        $this->assertNotNull($attachment);
+        $this->assertTrue($attachment->fileExists());
+
+        $risk->delete();
+
+        $this->assertDatabaseMissing('attachments', ['id' => $attachment->id]);
+        Storage::disk('public')->assertMissing($attachment->file_path);
+    }
+
     // === REALIZED STATUS BEHAVIOR ===
 
     public function test_realized_status_excluded_from_open_scope(): void
@@ -809,5 +909,52 @@ class RiskRegisterTest extends TestCase
         $this->assertNotNull($first->converted_to_issue_id);
         $this->assertStringContainsString('Shown as label', $first->converted_issue_label);
         $this->assertIsArray($first->attachments);
+    }
+
+    // === AUTO-SELECT DEFAULT BASELINE MONTH (getDefaultRiskBaseline) ===
+
+    public function test_default_risk_baseline_prefers_current_month_target(): void
+    {
+        $currentMonth = now()->format('Y-m');
+
+        $current = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => $currentMonth,
+            'planned_date' => $currentMonth . '-15',
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-06',
+            'planned_date' => '2026-06-15',
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultRiskBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($current->id, $default->id);
+    }
+
+    public function test_default_risk_baseline_returns_earliest_when_no_progress_or_current_month(): void
+    {
+        $first = ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-04',
+            'planned_date' => '2026-04-15',
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $this->project->id,
+            'month_label'  => '2026-09',
+            'planned_date' => '2026-09-15',
+        ]);
+
+        $default = app(ProjectOverviewService::class)->getDefaultRiskBaseline($this->project);
+
+        $this->assertNotNull($default);
+        $this->assertEquals($first->id, $default->id);
+    }
+
+    public function test_default_risk_baseline_returns_null_when_no_baselines(): void
+    {
+        $this->assertNull(app(ProjectOverviewService::class)->getDefaultRiskBaseline($this->project));
     }
 }

@@ -265,6 +265,16 @@
         a badge + "→ Issue #N" link; converted issues get a "from Risk" badge.
         RiskRegisterTest now 30 tests; full suite 367 passing. Plan:
         textfiles/risk_to_issue_conversion_plan.txt
+        FOLLOW-UP (Aug 6 2026): owner field removed; Add Risk auto-selects the
+        baseline month; delete button hidden for Realized risks; no-reload
+        refresh after issue delete; convert modal supports preview/remove/add
+        attachments; issue+risk delete confirmations unified onto the reusable
+        delete-confirmation component; attachment provenance
+        (attachments.risk_origin_id) — deleting a converted issue returns only
+        the evidence that originally came from the risk (files added to the
+        issue are deleted with it), and the risk's own evidence is removed only
+        when the risk is deleted (Risk deleting hook). RiskRegisterTest now 35
+        tests; full suite 372 passing.
 
   21. [CAPSTONE] CHANGE / VARIATION ORDERS
       - Construction projects frequently have scope changes

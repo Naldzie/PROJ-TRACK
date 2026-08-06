@@ -129,10 +129,12 @@ function displayTabRisks(risks) {
                                     style="background: #dbeafe; color: #0369a1; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 4px;">
                                 <i class="bi bi-pencil"></i>
                             </button>
+                            ${risk.status === 'Realized' ? '' : `
                             <button class="btn btn-sm" onclick="confirmDeleteRisk(${risk.id})" title="Delete"
                                     style="background: #fee2e2; color: #991b1b; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer;">
                                 <i class="bi bi-trash"></i>
                             </button>
+                            `}
                         </td>
                         `}
                     </tr>
@@ -379,8 +381,149 @@ function openConvertRiskModal(riskId) {
     document.getElementById('convertIssueBaselineId').value = risk.baseline_schedule_id || '';
     window._riskBeingConverted = risk.id;
 
+    // Start a fresh evidence-deletion queue + reset the add-evidence input.
+    window._pendingConvertDeleteAttachmentIds = [];
+    const fileInput = document.getElementById('convertRiskAttachmentFiles');
+    if (fileInput) fileInput.value = '';
+    if (typeof clearPendingFiles === 'function') clearPendingFiles('convertRiskAttachmentFiles');
+    renderConvertRiskAttachmentList(risk);
+
     const convertModal = new bootstrap.Modal(document.getElementById('riskToIssueModal'));
     convertModal.show();
+}
+
+// Evidence the user removes in the convert modal is queued here and permanently
+// deleted only AFTER the conversion succeeds (mirrors the risk edit modal).
+window._pendingConvertDeleteAttachmentIds = [];
+
+/**
+ * Render the risk's current evidence in the convert modal with a remove (X)
+ * button per chip. Removed chips disappear immediately but are only deleted on
+ * the server once the issue has been created.
+ */
+function renderConvertRiskAttachmentList(risk) {
+    const container = document.getElementById('convertRiskAttachmentList');
+    if (!container) return;
+
+    const pending = window._pendingConvertDeleteAttachmentIds;
+    const attachments = ((risk && risk.attachments) || []).filter(a => pending.indexOf(a.id) === -1);
+    if (attachments.length === 0) {
+        container.innerHTML = '<small class="text-muted">No evidence attached to this risk.</small>';
+        return;
+    }
+
+    container.innerHTML = attachments.map(att => {
+        window._riskAttachments[att.id] = att;
+        return `
+            <div class="attachment-chip edit-chip me-1 mb-1" style="cursor: default;" title="${escapeHtml(att.original_name)}">
+                <span class="att-name" onclick="openRiskAttachmentById(${att.id})" title="View attachment"
+                      style="cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi ${riskAttachmentIcon(att.original_name)}"></i>
+                    <span>${escapeHtml(att.original_name)}</span>
+                </span>
+                <button type="button" class="attachment-remove-btn" title="Remove evidence"
+                        onclick="removeConvertAttachment(${att.id})">
+                    <i class="bi bi-x-circle-fill"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * Confirm + queue a risk evidence removal in the convert modal. The file is
+ * permanently deleted only after conversion succeeds.
+ */
+function removeConvertAttachment(attachmentId) {
+    if (typeof showDeleteConfirmation !== 'function') {
+        showErrorMessage('Delete confirmation component is not available');
+        return;
+    }
+    showDeleteConfirmation(
+        'Remove Evidence',
+        'This file will be permanently deleted when you convert the risk. It will not be moved to the new issue.',
+        function() { queueConvertAttachmentForDeletion(attachmentId); }
+    );
+}
+
+function queueConvertAttachmentForDeletion(attachmentId) {
+    if (window._pendingConvertDeleteAttachmentIds.indexOf(attachmentId) === -1) {
+        window._pendingConvertDeleteAttachmentIds.push(attachmentId);
+    }
+    const riskId = window._riskBeingConverted;
+    if (riskId && window._riskDataById[riskId]) {
+        renderConvertRiskAttachmentList(window._riskDataById[riskId]);
+    }
+    delete window._riskAttachments[attachmentId];
+}
+
+/**
+ * Permanently delete all queued evidence on the server after the issue has
+ * been created. Uses the shared DELETE /attachments/{id} endpoint.
+ */
+function flushPendingConvertAttachmentDeletions() {
+    const toDelete = window._pendingConvertDeleteAttachmentIds.slice();
+    if (toDelete.length === 0) return Promise.resolve();
+
+    const role = window.userRole;
+    const requests = toDelete.map(attachmentId =>
+        fetch(`/${role}/attachments/${attachmentId}`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error((data && data.message) || 'Failed to delete attachment #' + attachmentId);
+            }
+        })
+    );
+
+    window._pendingConvertDeleteAttachmentIds = [];
+    return Promise.all(requests);
+}
+
+/**
+ * Upload newly picked evidence files to the newly created issue (context 'issue').
+ * Reuses uploadIssueAttachment() from issues-modal.js when available.
+ */
+function uploadConvertIssueFiles(issueId, files) {
+    const list = files || [];
+    if (list.length === 0) return Promise.resolve();
+
+    if (typeof uploadIssueAttachment === 'function') {
+        return Promise.all(list.map(file => uploadIssueAttachment(issueId, 'issue', file)));
+    }
+
+    const role = window.userRole;
+    return Promise.all(list.map(file => {
+        const fd = new FormData();
+        fd.append('project_id', window.projectId);
+        fd.append('attachable_type', 'App\\Models\\Issue');
+        fd.append('attachable_id', issueId);
+        fd.append('context', 'issue');
+        fd.append('file', file);
+        return fetch(`/${role}/attachments/upload`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: fd
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error((data && data.message) || 'Attachment upload failed');
+            }
+            return data;
+        });
+    }));
 }
 
 /**
@@ -415,11 +558,32 @@ function initConvertRiskForm() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('riskToIssueModal')).hide();
-                window._riskBeingConverted = null;
-                loadTabRisks();
-                if (typeof loadTabIssues === 'function') loadTabIssues();
-                showSuccessMessage('Risk converted to issue successfully');
+                const issueId = data.issue && data.issue.id;
+                const newFiles = (typeof collectPendingFiles === 'function') ? collectPendingFiles('convertRiskAttachmentFiles') : [];
+
+                // Issue created + risk evidence transferred server-side. Now
+                // delete any removed evidence and upload newly picked files.
+                return Promise.all([
+                    flushPendingConvertAttachmentDeletions(),
+                    issueId ? uploadConvertIssueFiles(issueId, newFiles) : Promise.resolve()
+                ])
+                .then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('riskToIssueModal')).hide();
+                    window._riskBeingConverted = null;
+                    if (typeof clearPendingFiles === 'function') clearPendingFiles('convertRiskAttachmentFiles');
+                    loadTabRisks();
+                    if (typeof loadTabIssues === 'function') loadTabIssues();
+                    showSuccessMessage('Risk converted to issue successfully');
+                })
+                .catch(err => {
+                    // The issue was created; only the attachment sync failed.
+                    console.error('Attachment sync error:', err);
+                    bootstrap.Modal.getInstance(document.getElementById('riskToIssueModal')).hide();
+                    window._riskBeingConverted = null;
+                    loadTabRisks();
+                    if (typeof loadTabIssues === 'function') loadTabIssues();
+                    showErrorMessage('Issue created, but some attachment changes failed. Manage attachments from the issue edit modal.');
+                });
             } else {
                 showErrorMessage(data.message || 'Error converting risk');
             }
@@ -699,29 +863,18 @@ function initEditRiskForm() {
 
 // ==================== DELETE ====================
 
-let riskToDelete = null;
-
 /**
- * Show the delete confirmation modal for a risk.
+ * Show the delete confirmation for a risk using the reusable
+ * components/delete-confirmation-modal (showDeleteConfirmation).
  */
 function confirmDeleteRisk(id) {
-    riskToDelete = id;
-    const deleteModal = new bootstrap.Modal(document.getElementById('deleteRiskConfirmModal'));
-    deleteModal.show();
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const confirmBtn = document.getElementById('confirmDeleteRiskBtn');
-    if (confirmBtn) {
-        confirmBtn.addEventListener('click', function() {
-            if (riskToDelete) {
-                deleteTabRisk(riskToDelete);
-                bootstrap.Modal.getInstance(document.getElementById('deleteRiskConfirmModal')).hide();
-                riskToDelete = null;
-            }
-        });
+    const message = 'Are you sure you want to delete this risk? This action cannot be undone.';
+    if (typeof showDeleteConfirmation === 'function') {
+        showDeleteConfirmation('Delete Risk', message, function() { deleteTabRisk(id); });
+    } else {
+        deleteTabRisk(id);
     }
-});
+}
 
 /**
  * Delete a risk via the API and refresh the list.
@@ -793,8 +946,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initEditRiskForm();
     initConvertRiskForm();
 
-    // Accumulate multiple file picks for the risk evidence inputs (add + edit).
-    ['riskAttachmentFiles', 'editRiskAttachmentFiles'].forEach(inputId => {
+    // Accumulate multiple file picks for the risk evidence inputs (add + edit + convert).
+    ['riskAttachmentFiles', 'editRiskAttachmentFiles', 'convertRiskAttachmentFiles'].forEach(inputId => {
         const input = document.getElementById(inputId);
         if (input && typeof addPendingFiles === 'function') {
             input.addEventListener('change', function() {

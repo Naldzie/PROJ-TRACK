@@ -75,25 +75,6 @@
     </div>
 </div>
 
-<!-- DELETE CONFIRMATION MODAL FOR ISSUES -->
-<div class="modal fade" id="deleteIssueConfirmModal" tabindex="-1" aria-labelledby="deleteIssueConfirmLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="deleteIssueConfirmLabel">Confirm Delete</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                Are you sure you want to delete this issue? This action cannot be undone.
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <style>
 /* Table row hover effect */
 table tbody tr:hover {
@@ -351,20 +332,20 @@ function openEditIssueModal(id, name, description, status, issueType, severity, 
     editModal.show();
 }
 
-let issueToDelete = null;
-
 function confirmDeleteTabIssue(id) {
-    issueToDelete = id;
-    const deleteModal = new bootstrap.Modal(document.getElementById('deleteIssueConfirmModal'));
-    deleteModal.show();
-}
-
-document.getElementById('confirmDeleteBtn')?.addEventListener('click', function() {
-    if (issueToDelete) {
-        deleteTabIssue(issueToDelete);
-        bootstrap.Modal.getInstance(document.getElementById('deleteIssueConfirmModal')).hide();
+    const issueData = window._issueDataById && window._issueDataById[id];
+    let message = 'Are you sure you want to delete this issue? This action cannot be undone.';
+    if (issueData && issueData.source_risk_id) {
+        const riskName = issueData.source_risk_name || ('#' + issueData.source_risk_id);
+        message = 'This issue was created from risk <strong>' + escapeHtml(riskName) + '</strong>. ' +
+            'Deleting it will revert the risk back to Open (and its evidence returns to the risk) so it can be re-converted or mitigated.';
     }
-});
+    if (typeof showDeleteConfirmation === 'function') {
+        showDeleteConfirmation('Delete Issue', message, function() { deleteTabIssue(id); });
+    } else {
+        deleteTabIssue(id);
+    }
+}
 
 function deleteTabIssue(id) {
     const apiUrl = getIssuesApiUrl(id);
@@ -381,6 +362,10 @@ function deleteTabIssue(id) {
     .then(data => {
         if (data.success) {
             loadTabIssues();
+            // A converted issue's source risk reverts to Open server-side;
+            // refresh the risks table too so the reverted risk (and its
+            // delete button) appears without a page reload.
+            if (typeof loadTabRisks === 'function') loadTabRisks();
             showSuccessMessage('Issue deleted successfully');
         } else {
             showErrorMessage(data.message || 'Error deleting issue');

@@ -84,6 +84,29 @@
                     </div>
                 </div>
 
+                <div class="risk-form-section">
+                    <div class="risk-form-section-label">
+                        <i class="bi bi-paperclip"></i> Evidence
+                    </div>
+                    <small class="text-muted d-block mb-3">
+                        Risk evidence below will move to the new issue. Remove any that should not be
+                        transferred &mdash; removed files are permanently deleted on conversion. Files picked
+                        here will be attached to the new issue as evidence.
+                    </small>
+                    <div class="mb-3">
+                        <label class="form-label">Current Risk Evidence</label>
+                        <div class="d-flex flex-wrap" id="convertRiskAttachmentList">
+                            <small class="text-muted">Loading...</small>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="convertRiskAttachmentFiles" class="form-label">Add Evidence Files</label>
+                        <input type="file" class="form-control" id="convertRiskAttachmentFiles" multiple accept="image/*,.pdf">
+                        <small class="text-muted">jpg, png, pdf &mdash; max 20 MB each. Select one or more.</small>
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="convertRiskAttachmentFilesPreview"></div>
+                    </div>
+                </div>
+
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-primary" id="confirmConvertRiskBtn"
                             style="background: #d97706; border-color: #d97706;">

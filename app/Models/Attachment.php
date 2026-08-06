@@ -32,6 +32,7 @@ class Attachment extends Model
         'attachable_type',
         'attachable_id',
         'context',
+        'risk_origin_id',
         'original_name',
         'file_path',
         'file_size',
