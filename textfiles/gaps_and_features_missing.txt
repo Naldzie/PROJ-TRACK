@@ -241,7 +241,7 @@
         (what has already happened)
       - Fields: risk description, probability (Low/Medium/High), impact
         (Low/Medium/High), risk score (probability × impact), mitigation plan,
-        owner, status (Open/Mitigated/Closed), date identified
+        status (Open/Mitigated/Closed), date identified
       - Why it matters: Standard PMU feature. The existing Issues system
         captures problems after they occur; a risk register captures them
         before they happen, enabling proactive management

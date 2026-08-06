@@ -99,7 +99,6 @@ class RiskRegisterTest extends TestCase
             'probability'     => 'Medium',
             'impact'          => 'Medium',
             'mitigation_plan' => 'Lock pricing with alternate suppliers.',
-            'owner'           => 'John Doe',
             'status'          => 'Open',
             'identified_at'   => now()->toDateString(),
         ], $overrides);
@@ -318,7 +317,6 @@ class RiskRegisterTest extends TestCase
         $risk = Risk::factory()->high()->create([
             'project_id'  => $this->project->id,
             'risk_name'   => 'Permit approval delayed',
-            'owner'       => 'Jane Doe',
             'identified_at' => now()->toDateString(),
         ]);
 
@@ -337,7 +335,6 @@ class RiskRegisterTest extends TestCase
         $this->assertSame('High', $first->impact);
         $this->assertSame(9, $first->risk_score);
         $this->assertSame('High', $first->risk_level);
-        $this->assertSame('Jane Doe', $first->owner);
         $this->assertSame('Open', $first->status);
         $this->assertNotNull($first->identified_at);
         $this->assertNotNull($first->created_at);

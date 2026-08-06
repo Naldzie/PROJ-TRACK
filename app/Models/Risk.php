@@ -57,7 +57,6 @@ class Risk extends Model
         'impact',
         'risk_score',
         'mitigation_plan',
-        'owner',
         'status',
         'identified_at',
         'mitigated_at',

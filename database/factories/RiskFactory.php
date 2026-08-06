@@ -46,7 +46,6 @@ class RiskFactory extends Factory
             'impact'         => $impact,
             'risk_score'     => Risk::computeScore($probability, $impact),
             'mitigation_plan' => fake()->sentence(8),
-            'owner'          => fake()->name(),
             'status'         => 'Open',
             'identified_at'  => now()->toDateString(),
         ];

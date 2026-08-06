@@ -19,7 +19,7 @@
   (distinct from the auto-computed OVERDUE/AT RISK badges and from Issues,
   which are retrospective). Fields: risk description, probability x impact
   score (auto-computed 1-9 with Low/Medium/High level), mitigation plan,
-  owner, status (Open/Mitigated/Closed), date identified.
+  status (Open/Mitigated/Closed), date identified.
 
   UI: lives inside the existing Issues tab (renamed "Issues & Risks") with an
   All / Issues / Risks toggle; risk code in separate files. Admin/Staff CRUD,
@@ -178,7 +178,7 @@
 
   Risk Register  ✅ COMPLETE (gaps #20) — branch phase-20-risk-register
      Manual, forward-looking register of potential risks with probability x
-     impact score, mitigation plan, owner, status. Lives in the Issues tab
+     impact score, mitigation plan, status. Lives in the Issues tab
      ("Issues & Risks") via a toggle. High-level risks notify admins + the
      project's contractor. Plan: risk_register_plan.txt
 

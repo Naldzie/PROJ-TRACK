@@ -59,7 +59,7 @@
   auto-derives schedule-health badges (OVERDUE / AT RISK / risk levels). There
   is NO forward-looking, manually-maintained register of risks — things that
   COULD still go wrong — with a probability × impact score, mitigation plan,
-  owner, and lifecycle status.
+  and lifecycle status.
 
   Without it, the PMU cannot proactively track and retire risks; risk
   management is implicit in progress gaps rather than an explicit, auditable
@@ -108,7 +108,6 @@
         - impact: enum('Low','Medium','High') default 'Medium'
         - risk_score: unsignedSmallInteger (1-9, computed at write)
         - mitigation_plan: text nullable
-        - owner: string(255) nullable
         - status: enum('Open','Mitigated','Closed') default 'Open'
         - identified_at: date (default today)
         - mitigated_at: timestamp nullable
@@ -117,7 +116,7 @@
 
     ⬜ Create app/Models/Risk.php
         - $fillable: project_id, risk_name, description, probability, impact,
-          risk_score, mitigation_plan, owner, status, identified_at,
+          risk_score, mitigation_plan, status, identified_at,
           mitigated_at, closed_at
         - $casts: identified_at date, mitigated_at datetime, closed_at datetime,
           risk_score integer
@@ -138,7 +137,7 @@
     ⬜ Create app/Http/Controllers/RiskController.php (mirror IssueController)
         - getRisks(Project): all roles; eager-load nothing extra; map each risk
           to JSON: id, risk_name, description, probability, impact, risk_score,
-          risk_level, mitigation_plan, owner, status, identified_at,
+          risk_level, mitigation_plan, status, identified_at,
           mitigated_at, closed_at, created_at, updated_at
         - store(Project): admin/staff only (else 403); validate probability/
           impact in enum, risk_name required, others nullable; compute
@@ -192,7 +191,7 @@
     ⬜ resources/views/projects/project_detail/components/modals/risk_modal.blade.php
         - Add form + Edit form (modal-xl, mirrors issues_modal structure)
         - Fields: risk_name, description, probability, impact, mitigation_plan,
-          owner, status, identified_at
+          status, identified_at
         - Links its own CSS/JS at the bottom
     ⬜ public/js/admin/projects/risk-register.js
         - loadTabRisks() -> GET getRisksApiUrl(); render table + summary
@@ -305,7 +304,7 @@
     Options considered: skip the feature; build it.
     Decision: build it. Existing labels are auto-computed, retrospective
       schedule-health indicators; the register is a manual, forward-looking,
-      persistent risk artifact (probability × impact, mitigation, owner).
+      persistent risk artifact (probability × impact, mitigation).
     Consequences: they are complementary — a risk that materializes becomes an
       Issue; the register is the "before", Issues the "after".
 

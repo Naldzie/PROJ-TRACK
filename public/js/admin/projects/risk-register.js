@@ -77,7 +77,6 @@ function displayTabRisks(risks) {
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Status</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Baseline</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Mitigation</th>
-                    <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Owner</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Identified</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Evidence</th>
                     ${window.userRole === 'contractor' ? '' : `
@@ -116,7 +115,6 @@ function displayTabRisks(risks) {
                         </td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px;">${risk.baseline_label ? '<i class="bi bi-calendar-month" style="margin-right: 4px;"></i>' + escapeHtml(risk.baseline_label) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(risk.mitigation_plan || '')}">${risk.mitigation_plan ? escapeHtml(risk.mitigation_plan) : '<span style="color:#9ca3af;">—</span>'}</td>
-                        <td style="padding: 12px 16px; color: #6b7280; font-size: 13px;">${risk.owner ? escapeHtml(risk.owner) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">${risk.identified_at ? '<i class="bi bi-calendar-event" style="margin-right: 4px;"></i>' + escapeHtml(risk.identified_at) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px;">${renderRiskAttachmentChips(risk.attachments)}</td>
                         ${window.userRole === 'contractor' ? '' : `
@@ -533,7 +531,6 @@ function initAddRiskForm() {
             probability:     document.getElementById('riskProbability').value,
             impact:          document.getElementById('riskImpact').value,
             mitigation_plan: document.getElementById('riskMitigation').value.trim(),
-            owner:           document.getElementById('riskOwner').value.trim(),
             status:          document.getElementById('riskStatus').value,
             identified_at:   document.getElementById('riskIdentifiedAt').value || null,
             baseline_schedule_id: document.getElementById('riskBaselineId').value || null,
@@ -593,7 +590,6 @@ function openEditRiskModal(id) {
     document.getElementById('editRiskProbability').value = risk.probability;
     document.getElementById('editRiskImpact').value = risk.impact;
     document.getElementById('editRiskMitigation').value = risk.mitigation_plan || '';
-    document.getElementById('editRiskOwner').value = risk.owner || '';
     document.getElementById('editRiskStatus').value = risk.status;
     document.getElementById('editRiskBaselineId').value = risk.baseline_schedule_id || '';
 
@@ -655,7 +651,6 @@ function initEditRiskForm() {
             probability:     document.getElementById('editRiskProbability').value,
             impact:          document.getElementById('editRiskImpact').value,
             mitigation_plan: document.getElementById('editRiskMitigation').value.trim(),
-            owner:           document.getElementById('editRiskOwner').value.trim(),
             status:          document.getElementById('editRiskStatus').value,
             identified_at:   document.getElementById('editRiskIdentifiedAt').value || null,
             baseline_schedule_id: document.getElementById('editRiskBaselineId').value || null,

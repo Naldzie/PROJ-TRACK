@@ -11,7 +11,7 @@ return new class extends Migration
      *
      * Mirrors the issues table structure: a project-scoped record with a
      * status lifecycle plus risk-specific fields (probability, impact,
-     * computed score, mitigation plan, owner, lifecycle timestamps).
+     * computed score, mitigation plan, lifecycle timestamps).
      *
      * Called by: php artisan migrate
      */
@@ -27,7 +27,6 @@ return new class extends Migration
             // risk_score is computed at write time as probability × impact (1-9)
             $table->unsignedSmallInteger('risk_score')->default(1);
             $table->text('mitigation_plan')->nullable();
-            $table->string('owner')->nullable();
             $table->enum('status', ['Open', 'Mitigated', 'Closed'])->default('Open');
             $table->date('identified_at')->nullable();
             $table->timestamp('mitigated_at')->nullable();

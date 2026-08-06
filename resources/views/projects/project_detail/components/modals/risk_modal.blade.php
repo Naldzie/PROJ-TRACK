@@ -119,11 +119,6 @@
                         </div>
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label for="riskOwner" class="form-label">Owner</label>
-                                <input type="text" class="form-control" id="riskOwner" name="owner"
-                                       placeholder="Who is responsible for this risk">
-                            </div>
-                            <div class="col-md-6">
                                 <label for="riskIdentifiedAt" class="form-label">Date Identified</label>
                                 <input type="date" class="form-control" id="riskIdentifiedAt" name="identified_at">
                             </div>
@@ -260,10 +255,6 @@
                             <textarea class="form-control" id="editRiskMitigation" name="mitigation_plan" rows="2"></textarea>
                         </div>
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="editRiskOwner" class="form-label">Owner</label>
-                                <input type="text" class="form-control" id="editRiskOwner" name="owner">
-                            </div>
                             <div class="col-md-6">
                                 <label for="editRiskIdentifiedAt" class="form-label">Date Identified</label>
                                 <input type="date" class="form-control" id="editRiskIdentifiedAt" name="identified_at">
