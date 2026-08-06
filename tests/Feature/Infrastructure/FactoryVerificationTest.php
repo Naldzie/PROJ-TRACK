@@ -9,6 +9,7 @@ use App\Models\ProjectActivity;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectExtension;
 use App\Models\ProjectProgressHistory;
+use App\Models\Risk;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Helpers\CreatesProjectWithHistory;
 use Tests\TestCase;
@@ -210,6 +211,68 @@ class FactoryVerificationTest extends TestCase
         ]);
 
         $this->assertEquals('Open', $issue->status);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Risk Factory
+     * ------------------------------------------------------------------------
+     *
+     * Verify Risk factory creates a valid record with a computed score
+     * that matches probability × impact.
+     */
+    public function test_risk_factory_creates_valid_record(): void
+    {
+        $project = Project::factory()->create();
+        $risk = Risk::factory()->create([
+            'project_id' => $project->id,
+        ]);
+
+        $this->assertNotNull($risk->id);
+        $this->assertEquals($project->id, $risk->project_id);
+        $this->assertNotNull($risk->risk_name);
+        $this->assertContains($risk->status, ['Open', 'Mitigated', 'Closed']);
+        $this->assertEquals(
+            Risk::computeScore($risk->probability, $risk->impact),
+            $risk->risk_score,
+            'risk_score must equal probability × impact'
+        );
+        $this->assertDatabaseHas('risks', ['id' => $risk->id]);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Risk Factory — High State
+     * ------------------------------------------------------------------------
+     *
+     * Verify the high() state modifier produces a High-level risk.
+     */
+    public function test_risk_factory_high_state(): void
+    {
+        $project = Project::factory()->create();
+        $risk = Risk::factory()->high()->create([
+            'project_id' => $project->id,
+        ]);
+
+        $this->assertEquals(9, $risk->risk_score);
+        $this->assertEquals('High', $risk->risk_level);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Risk Level Boundaries
+     * ------------------------------------------------------------------------
+     *
+     * Verify risk_level thresholds: 1-3 Low, 4-6 Medium, 7-9 High.
+     */
+    public function test_risk_level_boundaries(): void
+    {
+        $this->assertEquals('Low', (new Risk(['risk_score' => 1]))->risk_level);
+        $this->assertEquals('Low', (new Risk(['risk_score' => 3]))->risk_level);
+        $this->assertEquals('Medium', (new Risk(['risk_score' => 4]))->risk_level);
+        $this->assertEquals('Medium', (new Risk(['risk_score' => 6]))->risk_level);
+        $this->assertEquals('High', (new Risk(['risk_score' => 7]))->risk_level);
+        $this->assertEquals('High', (new Risk(['risk_score' => 9]))->risk_level);
     }
 
     /**

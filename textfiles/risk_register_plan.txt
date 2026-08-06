@@ -45,7 +45,7 @@
     • Notification system (gap #12) merged to main @ 79919f0.
 
   This plan:
-    ⬜ Phase 1 — Migration + Risk model + factory
+    ✅ Phase 1 — Migration + Risk model + factory
     ⬜ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
     ⬜ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
     ⬜ Phase 4 — Feature tests + factory verification
@@ -236,6 +236,14 @@
   for future; score auto-computed from probability × impact; High-level risks
   notify admins + the project's contractor (in-app). summary_of_next_work
   updated to make this the next item to implement.
+
+  2026-08-06 — Phase 1 COMPLETE (verified). Migration
+  2026_08_06_000001_create_risks_table.php, app/Models/Risk.php (scopes
+  open/mitigated/closed/highRisk, riskLevel accessor, computeScore helper),
+  database/factories/RiskFactory.php (incl. high()/open()/mitigated()/closed()
+  states), and Project::risks() relationship added. FactoryVerificationTest
+  gained 3 tests (valid record w/ score invariant, high state, level
+  boundaries) — 22/22 pass. Branch phase-20-risk-register.
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

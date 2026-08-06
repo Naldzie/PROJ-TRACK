@@ -110,6 +110,12 @@ class Project extends Model
         return $this->hasMany(Issue::class)->orderBy('created_at', 'desc');
     }
 
+    // Risk Register (gap #20) — forward-looking risks for this project, newest first
+    public function risks()
+    {
+        return $this->hasMany(Risk::class)->orderBy('created_at', 'desc');
+    }
+
     public function documents()
     {
         return $this->hasMany(Document::class)->orderBy('created_at', 'desc');
