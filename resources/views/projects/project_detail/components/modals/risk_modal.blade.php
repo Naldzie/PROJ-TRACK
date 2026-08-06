@@ -1,5 +1,6 @@
 <!-- RISK MODALS (Add + Edit) — parity with the issues modal: optional baseline
-     month link + evidence attachments (context 'risk'). -->
+     month link + evidence attachments (context 'risk'). Sections are laid out
+     in a two-column grid on wide screens to reduce scrolling. -->
 
 @php
     $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
@@ -10,10 +11,13 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header risk-modal-header">
-                <h5 class="modal-title" id="riskModalLabel">
-                    <i class="bi bi-shield-plus" style="margin-right: 8px;"></i>
-                    Add Risk
-                </h5>
+                <div class="risk-modal-heading">
+                    <h5 class="modal-title" id="riskModalLabel">
+                        <i class="bi bi-shield-plus"></i>
+                        Add Risk
+                    </h5>
+                    <small class="risk-modal-subtitle">Capture a potential threat before it becomes an issue</small>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -47,43 +51,68 @@
                         </div>
                     </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-sliders"></i> Assessment
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <label for="riskProbability" class="form-label">Probability *</label>
-                                <select class="form-control" id="riskProbability" name="probability" required>
-                                    <option value="Low">Low</option>
-                                    <option value="Medium" selected>Medium</option>
-                                    <option value="High">High</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="riskImpact" class="form-label">Impact *</label>
-                                <select class="form-control" id="riskImpact" name="impact" required>
-                                    <option value="Low">Low</option>
-                                    <option value="Medium" selected>Medium</option>
-                                    <option value="High">High</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Auto Score</label>
-                                <div id="riskScorePreview" class="risk-score-preview">
-                                    <span class="risk-score-badge risk-level-medium">Score 4 · Medium</span>
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-sliders"></i> Assessment
                                 </div>
-                                <small class="text-muted">Score = probability × impact (1–9), computed automatically</small>
+                                <div class="row g-3">
+                                    <div class="col-sm-6">
+                                        <label for="riskProbability" class="form-label">Probability *</label>
+                                        <select class="form-control" id="riskProbability" name="probability" required>
+                                            <option value="Low">Low</option>
+                                            <option value="Medium" selected>Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label for="riskImpact" class="form-label">Impact *</label>
+                                        <select class="form-control" id="riskImpact" name="impact" required>
+                                            <option value="Low">Low</option>
+                                            <option value="Medium" selected>Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label">Auto Score</label>
+                                    <div id="riskScorePreview" class="risk-score-preview">
+                                        <span class="risk-score-badge risk-level-medium">Score 4 · Medium</span>
+                                    </div>
+                                    <small class="text-muted d-block mt-2">
+                                        Score = Probability × Impact (Low 1, Med 2, High 3) — levels:
+                                        1–3 Low, 4–6 Medium, 7–9 High.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-clipboard-check"></i> Response
+                                </div>
+                                <div class="mb-3">
+                                    <label for="riskMitigation" class="form-label">Mitigation Plan</label>
+                                    <textarea class="form-control" id="riskMitigation" name="mitigation_plan" rows="3"
+                                              placeholder="What should be done to reduce this risk..."></textarea>
+                                </div>
+                                <div>
+                                    <label for="riskIdentifiedAt" class="form-label">Date Identified</label>
+                                    <input type="date" class="form-control" id="riskIdentifiedAt" name="identified_at">
+                                    <small class="text-muted">Leave blank to default to today</small>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-tags"></i> Classification
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-tags"></i> Classification
+                                </div>
                                 <label for="riskBaselineId" class="form-label">Baseline Month</label>
                                 <select class="form-control" id="riskBaselineId" name="baseline_schedule_id">
                                     <option value="">-- Select Baseline Month (Optional) --</option>
@@ -94,41 +123,30 @@
                                 <small class="text-muted">Link the risk to the baseline month/phase it threatens</small>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-paperclip"></i> Evidence
-                        </div>
-                        <div class="mb-3">
-                            <label for="riskAttachmentFiles" class="form-label">Risk Evidence Files</label>
-                            <input type="file" class="form-control" id="riskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
-                            <small class="text-muted">Photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each). Select one or more.</small>
-                            <div class="mt-2 d-flex flex-wrap gap-1" id="riskAttachmentFilesPreview"></div>
-                        </div>
-                    </div>
-
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-clipboard-check"></i> Response
-                        </div>
-                        <div class="mb-3">
-                            <label for="riskMitigation" class="form-label">Mitigation Plan</label>
-                            <textarea class="form-control" id="riskMitigation" name="mitigation_plan" rows="2"
-                                      placeholder="What should be done to reduce this risk..."></textarea>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="riskIdentifiedAt" class="form-label">Date Identified</label>
-                                <input type="date" class="form-control" id="riskIdentifiedAt" name="identified_at">
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-paperclip"></i> Evidence
+                                </div>
+                                <label for="riskAttachmentFiles" class="form-label">Risk Evidence Files</label>
+                                <input type="file" class="form-control" id="riskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
+                                <small class="text-muted">Photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each).</small>
+                                <div class="mt-2 d-flex flex-wrap gap-1" id="riskAttachmentFilesPreview"></div>
                             </div>
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary w-100" style="background: #d97706; border-color: #d97706;">
-                        <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
-                        Add Risk
-                    </button>
+                    <div class="d-flex justify-content-end gap-2 risk-form-actions">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                            <i class="bi bi-x-lg" style="margin-right: 6px;"></i>
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" style="background: #d97706; border-color: #d97706;">
+                            <i class="bi bi-plus-circle" style="margin-right: 6px;"></i>
+                            Add Risk
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -140,10 +158,13 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header risk-modal-header">
-                <h5 class="modal-title" id="editRiskModalLabel">
-                    <i class="bi bi-pencil-square" style="margin-right: 8px;"></i>
-                    Edit Risk
-                </h5>
+                <div class="risk-modal-heading">
+                    <h5 class="modal-title" id="editRiskModalLabel">
+                        <i class="bi bi-pencil-square"></i>
+                        Edit Risk
+                    </h5>
+                    <small class="risk-modal-subtitle">Update the risk details, response, and evidence</small>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -179,43 +200,66 @@
                         </div>
                     </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-sliders"></i> Assessment
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-4">
-                                <label for="editRiskProbability" class="form-label">Probability *</label>
-                                <select class="form-control" id="editRiskProbability" name="probability" required>
-                                    <option value="Low">Low</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="High">High</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editRiskImpact" class="form-label">Impact *</label>
-                                <select class="form-control" id="editRiskImpact" name="impact" required>
-                                    <option value="Low">Low</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="High">High</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Auto Score</label>
-                                <div id="editRiskScorePreview" class="risk-score-preview">
-                                    <span class="risk-score-badge risk-level-medium">Score 4 · Medium</span>
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-sliders"></i> Assessment
                                 </div>
-                                <small class="text-muted">Score = probability × impact (1–9), computed automatically</small>
+                                <div class="row g-3">
+                                    <div class="col-sm-6">
+                                        <label for="editRiskProbability" class="form-label">Probability *</label>
+                                        <select class="form-control" id="editRiskProbability" name="probability" required>
+                                            <option value="Low">Low</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label for="editRiskImpact" class="form-label">Impact *</label>
+                                        <select class="form-control" id="editRiskImpact" name="impact" required>
+                                            <option value="Low">Low</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label">Auto Score</label>
+                                    <div id="editRiskScorePreview" class="risk-score-preview">
+                                        <span class="risk-score-badge risk-level-medium">Score 4 · Medium</span>
+                                    </div>
+                                    <small class="text-muted d-block mt-2">
+                                        Score = Probability × Impact (Low 1, Med 2, High 3) — levels:
+                                        1–3 Low, 4–6 Medium, 7–9 High.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-clipboard-check"></i> Response
+                                </div>
+                                <div class="mb-3">
+                                    <label for="editRiskMitigation" class="form-label">Mitigation Plan</label>
+                                    <textarea class="form-control" id="editRiskMitigation" name="mitigation_plan" rows="3"></textarea>
+                                </div>
+                                <div>
+                                    <label for="editRiskIdentifiedAt" class="form-label">Date Identified</label>
+                                    <input type="date" class="form-control" id="editRiskIdentifiedAt" name="identified_at">
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-tags"></i> Classification
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-tags"></i> Classification
+                                </div>
                                 <label for="editRiskBaselineId" class="form-label">Baseline Month</label>
                                 <select class="form-control" id="editRiskBaselineId" name="baseline_schedule_id">
                                     <option value="">-- Select Baseline Month (Optional) --</option>
@@ -226,48 +270,37 @@
                                 <small class="text-muted">Link the risk to the baseline month/phase it threatens</small>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-paperclip"></i> Evidence
-                        </div>
-                        <div class="mb-3">
-                            <label for="editRiskAttachmentFiles" class="form-label">Risk Evidence Files</label>
-                            <input type="file" class="form-control" id="editRiskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
-                            <small class="text-muted">Photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each). Select one or more.</small>
-                            <div class="mt-2 d-flex flex-wrap gap-1" id="editRiskAttachmentFilesPreview"></div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Current Evidence</label>
-                            <div class="d-flex flex-wrap" id="editRiskAttachmentList">
-                                <small class="text-muted">Loading...</small>
+                        <div class="col-lg-6">
+                            <div class="risk-form-section">
+                                <div class="risk-form-section-label">
+                                    <i class="bi bi-paperclip"></i> Evidence
+                                </div>
+                                <div class="mb-3">
+                                    <label for="editRiskAttachmentFiles" class="form-label">Add Risk Evidence Files</label>
+                                    <input type="file" class="form-control" id="editRiskAttachmentFiles" name="risk_attachment_files[]" multiple accept="image/*,.pdf">
+                                    <small class="text-muted">New photos or documents showing this risk is credible (jpg, png, pdf &mdash; max 20 MB each).</small>
+                                    <div class="mt-2 d-flex flex-wrap gap-1" id="editRiskAttachmentFilesPreview"></div>
+                                </div>
+                                <div>
+                                    <label class="form-label">Current Evidence</label>
+                                    <div class="d-flex flex-wrap" id="editRiskAttachmentList">
+                                        <small class="text-muted">Loading...</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="risk-form-section">
-                        <div class="risk-form-section-label">
-                            <i class="bi bi-clipboard-check"></i> Response
-                        </div>
-                        <div class="mb-3">
-                            <label for="editRiskMitigation" class="form-label">Mitigation Plan</label>
-                            <textarea class="form-control" id="editRiskMitigation" name="mitigation_plan" rows="2"></textarea>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="editRiskIdentifiedAt" class="form-label">Date Identified</label>
-                                <input type="date" class="form-control" id="editRiskIdentifiedAt" name="identified_at">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="d-flex gap-2">
+                    <div class="d-flex justify-content-end gap-2 risk-form-actions">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                            <i class="bi bi-x-lg" style="margin-right: 6px;"></i>
+                            Cancel
+                        </button>
                         <button type="submit" class="btn btn-primary" style="background: #d97706; border-color: #d97706;">
                             <i class="bi bi-check-circle" style="margin-right: 6px;"></i>
                             Update Risk
                         </button>
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     </div>
                 </form>
             </div>
