@@ -53,7 +53,7 @@ class ProjectController extends Controller
      * - Admin/Staff: See all projects
      * - Contractor: See only their assigned projects
      */
-    public function index()
+    public function index(Request $request)
     {
         $user = Auth::user();
         
@@ -69,10 +69,45 @@ class ProjectController extends Controller
             $query->whereHas('contractor', function ($q) use ($user) {
                 $q->where('user_id', $user->id);
             });
+        } else {
+            // Admin/Staff: optional deep-link filters from the dashboard stat cards.
+            //   ?status=Ongoing|Completed|Planned|... — exact status match
+            //   ?filter=overdue|atrisk|pending         — health buckets (ongoing only)
+            $status = $request->get('status');
+            $filter = $request->get('filter');
+
+            if (in_array($status, ['Ongoing', 'Completed', 'Planned', 'Suspended', 'Cancelled'])) {
+                $query->where('status', $status);
+            } elseif ($filter === 'overdue') {
+                $query->where('status', 'Ongoing')->where('planned_end_date', '<', now());
+            } elseif ($filter === 'atrisk') {
+                $query->where('status', 'Ongoing')
+                    ->whereBetween('planned_end_date', [now(), now()->addDays(14)]);
+            } elseif ($filter === 'pending') {
+                $projectsWithRecord = ProjectProgressHistory
+                    ::where('month_label', 'like', now()->format('Y-m') . '%')
+                    ->distinct()
+                    ->pluck('project_id');
+                $query->where('status', 'Ongoing')
+                    ->whereNotIn('id', $projectsWithRecord);
+            } elseif ($filter === 'inspection_overdue') {
+                $graceDays = (int) \App\Models\Setting::getValue('notification_overdue_grace_days', 7);
+                $query->where('status', 'Ongoing')
+                    ->whereHas('baselineSchedules', function ($q) use ($graceDays) {
+                        $q->whereNotNull('month_label')
+                            ->where('planned_date', '<', now()->subDays($graceDays))
+                            ->whereNotIn('month_label', function ($sub) {
+                                $sub->select('month_label')
+                                    ->from('project_progress_history')
+                                    ->whereColumn('project_id', 'project_baseline_schedules.project_id')
+                                    ->whereNotNull('month_label');
+                            });
+                    });
+            }
         }
         // Admin and Staff see all projects (no additional filter)
         
-        $projects = $query->latest()->paginate(15);
+        $projects = $query->latest()->paginate(15)->withQueryString();
         
         //Prepare data array
         $data = compact('projects');

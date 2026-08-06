@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectProgressHistory;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ActivityLog;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -19,7 +20,7 @@ class DashboardController extends Controller
         $ongoingProjects = Project::where('status', 'Ongoing')
             ->where('is_archived', false)
             ->with(['contractor', 'category'])
-            ->orderByRaw("CASE WHEN planned_end_date < NOW() THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
             ->orderBy('planned_end_date', 'asc')
             ->limit(10)
             ->get();
@@ -73,6 +74,14 @@ class DashboardController extends Controller
 
         $pendingUpdateCount = $allOngoingIds->diff($projectsWithThisMonthRecord)->count();
 
+        // ── OVERDUE INSPECTION COUNT (DB-level, ALL ongoing) ───────────────
+        // Ongoing projects with ≥1 baseline month whose planned target date is
+        // past the grace window and has no recorded progress for that month.
+        // Mirrors SendNotifications@sendOverdueInspectionReminders exactly so
+        // the dashboard pill and the notification alerts stay in sync.
+        $graceDays = (int) Setting::getValue('notification_overdue_grace_days', 7);
+        $overdueInspectionCount = $this->overdueInspectionQuery($graceDays)->count();
+
         // ── RECENT ACTIVITY FEED ──────────────────────────────────────────────
         // Latest 6 activity log entries. Admins see everything. Staff see
         // visibility='all' entries minus routine deletions and admin-housekeeping
@@ -95,6 +104,7 @@ class DashboardController extends Controller
             'atRiskCount',
             'overdueCount',
             'pendingUpdateCount',
+            'overdueInspectionCount',
             'recentActivities'
         ));
     }
@@ -103,11 +113,12 @@ class DashboardController extends Controller
     {
         // ── VALIDATE TYPE PARAMETER ───────────────────────────────────────
         // Whitelist check — invalid types fall back to 'default' safely.
-        $type = in_array($request->get('type'), ['default', 'overdue', 'atrisk', 'pending'])
+        $type = in_array($request->get('type'), ['default', 'overdue', 'atrisk', 'pending', 'inspection_overdue'])
             ? $request->get('type')
             : 'default';
 
         $currentMonthLabel = now()->format('Y-m');
+        $graceDays = (int) Setting::getValue('notification_overdue_grace_days', 7);
 
         // ── BUILD PROJECT COLLECTION BASED ON FILTER TYPE ─────────────────
         if ($type === 'overdue') {
@@ -141,7 +152,16 @@ class DashboardController extends Controller
                 ->where('is_archived', false)
                 ->whereNotIn('id', $projectsWithRecord)
                 ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < NOW() THEN 0 ELSE 1 END")
+                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->orderBy('planned_end_date', 'asc')
+                ->get();
+
+        } elseif ($type === 'inspection_overdue') {
+            // Ongoing projects with an uninspected baseline month past the grace
+            // window — same definition as the overdue-inspection notification scan.
+            $projects = $this->overdueInspectionQuery($graceDays)
+                ->with(['contractor', 'category'])
+                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->get();
 
@@ -150,7 +170,7 @@ class DashboardController extends Controller
             $projects = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < NOW() THEN 0 ELSE 1 END")
+                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->limit(10)
                 ->get();
@@ -198,5 +218,28 @@ class DashboardController extends Controller
             ->keyBy('project_id');
 
         return compact('currentMonthProgress', 'latestKnownProgress', 'currentMonthBaseline');
+    }
+
+    // ── PRIVATE HELPER ────────────────────────────────────────────────────
+    // Base query for the "Overdue Inspections" signal: ongoing, non-archived
+    // projects that have ≥1 baseline month whose planned target date is past
+    // the grace window with no recorded progress for that month_label. Used by
+    // both index() (count badge) and filter() (AJAX list) so they never drift.
+    private function overdueInspectionQuery(int $graceDays)
+    {
+        $cutoff = now()->subDays($graceDays);
+
+        return Project::where('status', 'Ongoing')
+            ->where('is_archived', false)
+            ->whereHas('baselineSchedules', function ($q) use ($cutoff) {
+                $q->whereNotNull('month_label')
+                    ->where('planned_date', '<', $cutoff)
+                    ->whereNotIn('month_label', function ($sub) {
+                        $sub->select('month_label')
+                            ->from('project_progress_history')
+                            ->whereColumn('project_id', 'project_baseline_schedules.project_id')
+                            ->whereNotNull('month_label');
+                    });
+            });
     }
 }

@@ -194,9 +194,10 @@
                     @empty
                         {{-- Shown when there are no ongoing projects --}}
                         <tr>
-                            <td colspan="6" style="text-align:center;padding:32px;color:var(--gray-400)">
-                                <i class="bi bi-check-circle" style="font-size:22px;display:block;margin-bottom:8px"></i>
-                                No ongoing projects at the moment.
+                            <td colspan="6" class="db-empty">
+                                <i class="bi bi-check-circle"></i>
+                                <div class="db-empty-title">No ongoing projects at the moment</div>
+                                <div>Projects that are being worked on right now will appear here.</div>
                             </td>
                         </tr>
                     @endforelse

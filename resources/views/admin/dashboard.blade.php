@@ -4,6 +4,10 @@
         'staff'      => 'layouts.stafflayouts',
         default      => 'layouts.app'
     };
+
+    // Role-aware destinations — staff must never land on admin-only URLs.
+    $projectsIndex = auth()->user()->role === 'staff' ? 'staff.projects' : 'admin.projects';
+    $roleLabel     = auth()->user()->role === 'staff' ? 'Staff Overview' : 'Admin Overview';
 @endphp
 @extends($layout)
 
@@ -33,14 +37,15 @@
         </h2>
         <p class="db-header-sub">
             Real-time project overview — CSPC Project Management Unit &mdash;
+            {{ $roleLabel }} &mdash;
             {{ now()->format('l, F j, Y') }}
         </p>
     </div>
     <div class="db-header-actions">
-        <a href="{{ route('admin.projects') }}" class="db-header-btn light">
+        <a href="{{ route($projectsIndex) }}" class="db-header-btn light">
             <i class="bi bi-plus-circle"></i> New Project
         </a>
-        <a href="{{ route('admin.projects') }}" class="db-header-btn outline">
+        <a href="{{ route($projectsIndex) }}" class="db-header-btn outline">
             <i class="bi bi-folder2-open"></i> All Projects
         </a>
     </div>
@@ -52,7 +57,7 @@
      Clicking the same pill again restores the default 10 rows.
      Hidden entirely when all counts are zero.
 ══ --}}
-@if($overdueCount > 0 || $atRiskCount > 0 || $pendingUpdateCount > 0)
+@if($overdueCount > 0 || $atRiskCount > 0 || $pendingUpdateCount > 0 || $overdueInspectionCount > 0)
 <div class="db-alert-bar">
     <span class="db-alert-label">⚠ Needs attention</span>
 
@@ -80,6 +85,15 @@
         <i class="bi bi-arrow-clockwise"></i>
         <span>Pending Updates</span>
         <span class="alert-count">{{ $pendingUpdateCount }}</span>
+    </button>
+    @endif
+
+    @if($overdueInspectionCount > 0)
+    <button type="button" class="alert-pill warning"
+            onclick="filterDashboardTable('inspection_overdue', this)">
+        <i class="bi bi-calendar-x"></i>
+        <span>Overdue Inspections</span>
+        <span class="alert-count">{{ $overdueInspectionCount }}</span>
     </button>
     @endif
 
@@ -116,7 +130,7 @@
     <div class="db-stats">
 
         {{-- Total Projects --}}
-        <a href="{{ route('admin.projects') }}" class="db-stat-card s-blue">
+        <a href="{{ route($projectsIndex) }}" class="db-stat-card s-blue">
             <div class="db-stat-icon"><i class="bi bi-folder2"></i></div>
             <div>
                 <div class="db-stat-num">{{ $totalProjects }}</div>
@@ -126,7 +140,7 @@
         </a>
 
         {{-- Ongoing --}}
-        <a href="{{ route('admin.projects') }}" class="db-stat-card s-amber">
+        <a href="{{ route($projectsIndex, ['status' => 'Ongoing']) }}" class="db-stat-card s-amber">
             <div class="db-stat-icon"><i class="bi bi-arrow-repeat"></i></div>
             <div>
                 <div class="db-stat-num">{{ $ongoingCount }}</div>
@@ -136,7 +150,7 @@
         </a>
 
         {{-- Overdue — ongoing projects past their current planned_end_date --}}
-        <a href="{{ route('admin.projects') }}" class="db-stat-card s-red">
+        <a href="{{ route($projectsIndex, ['filter' => 'overdue']) }}" class="db-stat-card s-red">
             <div class="db-stat-icon"><i class="bi bi-alarm-fill"></i></div>
             <div>
                 <div class="db-stat-num">{{ $overdueCount }}</div>
@@ -152,7 +166,7 @@
         </a>
 
         {{-- At Risk — deadline within 14 days, DB-level count covers ALL ongoing --}}
-        <a href="{{ route('admin.projects') }}" class="db-stat-card s-violet">
+        <a href="{{ route($projectsIndex, ['filter' => 'atrisk']) }}" class="db-stat-card s-violet">
             <div class="db-stat-icon"><i class="bi bi-exclamation-diamond-fill"></i></div>
             <div>
                 <div class="db-stat-num">{{ $atRiskCount }}</div>
@@ -168,7 +182,7 @@
         </a>
 
         {{-- Completed --}}
-        <a href="{{ route('admin.projects') }}" class="db-stat-card s-green">
+        <a href="{{ route($projectsIndex, ['status' => 'Completed']) }}" class="db-stat-card s-green">
             <div class="db-stat-icon"><i class="bi bi-check-circle-fill"></i></div>
             <div>
                 <div class="db-stat-num">{{ $completedCount }}</div>
@@ -200,7 +214,7 @@
                             onclick="filterDashboardTable('default', null)">Clear</span>
                     </span>
                 </div>
-                <a href="{{ route('admin.projects') }}" class="db-view-all">
+                <a href="{{ route($projectsIndex) }}" class="db-view-all">
                     View all <i class="bi bi-arrow-right"></i>
                 </a>
             </div>
@@ -288,11 +302,10 @@
                     </div>
                 </div>
             @empty
-                <div class="activity-item">
-                    <div class="activity-icon update"><i class="bi bi-info-circle"></i></div>
-                    <div>
-                        <div class="activity-text">No recent activity yet.</div>
-                    </div>
+                <div class="db-empty">
+                    <i class="bi bi-info-circle"></i>
+                    <div class="db-empty-title">No recent activity yet</div>
+                    <div>Project updates and notifications will show up here.</div>
                 </div>
             @endforelse
 

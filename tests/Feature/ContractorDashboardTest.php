@@ -141,7 +141,7 @@ class ContractorDashboardTest extends TestCase
         $this->actingAs($this->contractorUser)
             ->get(route('contractor.dashboard'))
             ->assertOk()
-            ->assertSee('No ongoing projects at the moment.')
+            ->assertSee('No ongoing projects at the moment')
             ->assertSee('No upcoming deadlines.')
             ->assertSee('No recent activity.');
     }

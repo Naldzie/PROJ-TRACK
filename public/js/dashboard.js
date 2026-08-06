@@ -56,10 +56,10 @@ async function filterDashboardTable(type, btn) {
     const tbody = document.querySelector('.db-proj-tbl tbody');
     tbody.innerHTML = `
         <tr>
-            <td colspan="6" style="text-align:center;padding:32px;color:var(--gray-400)">
+            <td colspan="6" class="db-empty">
                 <div class="spinner-border spinner-border-sm" role="status"
-                     style="width:16px;height:16px;margin-right:8px;vertical-align:middle"></div>
-                Loading...
+                     style="width:16px;height:16px;margin-bottom:8px"></div>
+                <div class="db-empty-title">Loading projects…</div>
             </td>
         </tr>`;
 
@@ -84,7 +84,8 @@ async function filterDashboardTable(type, btn) {
             const labelMap = {
                 overdue: 'Overdue Projects',
                 atrisk:  'At Risk',
-                pending: 'Pending Updates'
+                pending: 'Pending Updates',
+                inspection_overdue: 'Overdue Inspections'
             };
             label.textContent = 'Showing: ' + labelMap[type];
             badge.style.display = 'inline-flex';
@@ -94,10 +95,10 @@ async function filterDashboardTable(type, btn) {
     } catch (err) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" style="text-align:center;padding:32px;color:var(--red-600)">
-                    <i class="bi bi-exclamation-circle"
-                       style="font-size:20px;display:block;margin-bottom:6px"></i>
-                    Failed to load. Please refresh the page.
+                <td colspan="6" class="db-empty" style="color:var(--red-600)">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <div class="db-empty-title">Failed to load</div>
+                    <div>Please refresh the page to try again.</div>
                 </td>
             </tr>`;
     }

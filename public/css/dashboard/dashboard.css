@@ -240,6 +240,16 @@
 .db-row-link:hover { background:var(--blue-50); color:var(--blue-700); }
 
 /* ══════════════════════════════════════════
+   EMPTY STATE (dashboard tables + feeds)
+══════════════════════════════════════════ */
+.db-empty {
+    text-align:center; padding:36px 20px; color:var(--gray-400);
+    font-size:13px;
+}
+.db-empty i { display:block; font-size:26px; margin-bottom:10px; color:var(--gray-300); }
+.db-empty-title { font-weight:700; color:var(--gray-500); margin-bottom:2px; }
+
+/* ══════════════════════════════════════════
    ACTIVITY FEED
 ══════════════════════════════════════════ */
 .activity-item {

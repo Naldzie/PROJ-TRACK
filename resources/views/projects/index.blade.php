@@ -11,10 +11,39 @@
         'staff' => 'staff.projects.detail',
         default => 'admin.projects.detail', // admin
     };
+
+    $indexRoute = match(auth()->user()->role) {
+        'staff'  => 'staff.projects',
+        default  => 'admin.projects',
+    };
+
+    $activeFilterLabel = match(true) {
+        request('status') === 'Ongoing'   => 'Ongoing Projects',
+        request('status') === 'Completed' => 'Completed Projects',
+        request('status') === 'Planned'   => 'Planned Projects',
+        request('status') === 'Suspended' => 'Suspended Projects',
+        request('status') === 'Cancelled' => 'Cancelled Projects',
+        request('filter') === 'overdue'   => 'Overdue Projects',
+        request('filter') === 'atrisk'    => 'At Risk Projects',
+        request('filter') === 'pending'   => 'Projects Pending Updates',
+        request('filter') === 'inspection_overdue' => 'Overdue Inspections',
+        default => null,
+    };
 @endphp
 @extends($layout)
 
 @section('content')
+
+@if($activeFilterLabel)
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;">
+        <i class="bi bi-funnel-fill" style="color:#2563eb;"></i>
+        <span>Showing: <strong>{{ $activeFilterLabel }}</strong></span>
+        <a href="{{ route($indexRoute) }}"
+           style="margin-left:auto;font-weight:600;color:#2563eb;text-decoration:none;font-size:12px;">
+            <i class="bi bi-x-lg"></i> Clear filter
+        </a>
+    </div>
+@endif
 
 <div class="page-header">
     
