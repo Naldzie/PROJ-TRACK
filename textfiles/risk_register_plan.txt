@@ -1,0 +1,392 @@
+===============================================================================
+  RISK REGISTER PLAN (gap #20)
+  CSPC PMU System
+  Created: August 6, 2026
+  Status: ⬜ NOT STARTED — plan approved, ready to implement
+===============================================================================
+
+==============================================================================
+  SECTION 1 — PROJECT CONTEXT
+==============================================================================
+
+  System Name
+    Construction Project Monitoring System (CSPC PMU)
+
+  Client
+    CSPC Project Management Unit (PMU)
+
+  Framework / Language / DB
+    Laravel 12 / PHP 8.2 / MySQL (tests use SQLite :memory:)
+
+  Architecture
+    Laravel Service-Oriented Architecture (Services, Models, Controllers)
+
+  Role model
+    admin / staff / contractor (contractors are read-only by design)
+
+  Frontend convention
+    NO-VITE: feature CSS/JS live in public/css and public/js (e.g.
+    public/css/admin/projects/, public/js/admin/projects/), linked via
+    asset() from the owning Blade partial. Do NOT add to resources/ or @vite.
+
+==============================================================================
+  SECTION 2 — STATUS SUMMARY
+==============================================================================
+
+  Related / already done:
+    • Issues feature (models/controller/routes/views/JS/tests) — the closest
+      analog this plan mirrors. See textfiles/phase_c_issue_lifecycle_upgrade_plan.txt
+    • Auto-computed risk labels already exist: Project::isOverdue()/isAtRisk()
+      (app/Models/Project.php), ProjectStatusService::getRiskLevel()
+      (app/Services/ProjectStatusService.php), AI prediction risk_level
+      (Low/Moderate/High/Critical). These are DERIVED schedule-health indicators,
+      NOT a risk register (see Decision 1).
+    • Report generation (gap #10) merged to main @ 47a7ddb.
+    • Notification system (gap #12) merged to main @ 79919f0.
+
+  This plan:
+    ⬜ Phase 1 — Migration + Risk model + factory
+    ⬜ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
+    ⬜ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
+    ⬜ Phase 4 — Feature tests + factory verification
+    ⬜ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
+
+==============================================================================
+  SECTION 3 — PROBLEM STATEMENT
+==============================================================================
+
+  The system currently only records what HAS happened (progress, issues) and
+  auto-derives schedule-health badges (OVERDUE / AT RISK / risk levels). There
+  is NO forward-looking, manually-maintained register of risks — things that
+  COULD still go wrong — with a probability × impact score, mitigation plan,
+  owner, and lifecycle status.
+
+  Without it, the PMU cannot proactively track and retire risks; risk
+  management is implicit in progress gaps rather than an explicit, auditable
+  project artifact. The AI/regression module also has no risk data to factor
+  into recommendations (future enhancement, see FLAGGED FOR FUTURE).
+
+==============================================================================
+  SECTION 4 — CHOSEN DIRECTION
+==============================================================================
+
+  Build a Risk Register as a first-class project-scoped entity that closely
+  mirrors the existing Issues feature to stay consistent with codebase
+  conventions:
+
+  • New `risks` table + `Risk` model + `RiskFactory`.
+  • Shared `RiskController` (App\Http\Controllers) used by all three role
+    groups — admin/staff CRUD, contractor read-only.
+  • UI lives INSIDE the existing Issues tab (renamed "Issues & Risks") with
+    an All / Issues / Risks toggle. Tab DOM id stays "issues" so tab-switching,
+    sessionStorage restore, and Overview cross-links keep working unchanged.
+    Risk code stays in its own separate files (partial, modal, JS, CSS).
+  • risk_score (1–9) and risk level (Low/Medium/High) computed automatically
+    from probability × impact (Low=1, Medium=2, High=3).
+  • ActivityLog on create/update/delete (audit trail, same as Issues).
+  • High-level risks trigger an in-app notification to admins + the project's
+    contractor (mirrors IssueReported); Low/Medium risks are visible only.
+  • No attachments, no AI hook in this first build
+    (see Decision Log + FLAGGED FOR FUTURE).
+
+  Rationale: reuse the proven Issues patterns (routes, controller shape,
+  modal-driven CRUD, lazy AJAX list, per-feature public/ assets, test
+  conventions) minimizes risk and matches the project's development rules
+  (Rule 7 — extend existing architecture, don't redesign).
+
+==============================================================================
+  SECTION 5 — IMPLEMENTATION STEPS
+==============================================================================
+
+  Phase 1 — Migration + Model + Factory
+  -------------------------------------
+    ⬜ Create database/migrations/2026_08_06_000001_create_risks_table.php
+        - project_id: foreignId constrained('projects')->cascadeOnDelete()
+        - risk_name: string(255)
+        - description: text nullable
+        - probability: enum('Low','Medium','High') default 'Medium'
+        - impact: enum('Low','Medium','High') default 'Medium'
+        - risk_score: unsignedSmallInteger (1-9, computed at write)
+        - mitigation_plan: text nullable
+        - owner: string(255) nullable
+        - status: enum('Open','Mitigated','Closed') default 'Open'
+        - identified_at: date (default today)
+        - mitigated_at: timestamp nullable
+        - closed_at: timestamp nullable
+        - timestamps()
+
+    ⬜ Create app/Models/Risk.php
+        - $fillable: project_id, risk_name, description, probability, impact,
+          risk_score, mitigation_plan, owner, status, identified_at,
+          mitigated_at, closed_at
+        - $casts: identified_at date, mitigated_at datetime, closed_at datetime,
+          risk_score integer
+        - constants: PROBABILITIES, IMPACTS, STATUSES, LEVEL_THRESHOLDS
+        - relationships: project() belongsTo(Project::class)
+        - helper: riskLevel() accessor (1-3 Low, 4-6 Medium, 7-9 High)
+        - scopes: open(), mitigated(), closed(), highRisk() (score >= 7)
+        - comment labels per Rule 9
+
+    ⬜ Create database/factories/RiskFactory.php
+        - definition() with realistic risk names
+        - state modifiers: open(), mitigated(), closed(), high()
+
+    ⬜ Add risks() hasMany to app/Models/Project.php
+
+  Phase 2 — Controller + Routes + ActivityLog
+  -------------------------------------------
+    ⬜ Create app/Http/Controllers/RiskController.php (mirror IssueController)
+        - getRisks(Project): all roles; eager-load nothing extra; map each risk
+          to JSON: id, risk_name, description, probability, impact, risk_score,
+          risk_level, mitigation_plan, owner, status, identified_at,
+          mitigated_at, closed_at, created_at, updated_at
+        - store(Project): admin/staff only (else 403); validate probability/
+          impact in enum, risk_name required, others nullable; compute
+          risk_score; set identified_at default now; ActivityLog 'Create Risk'
+        - update(Project, Risk): admin/staff only; project-belonging guard;
+          recompute risk_score; manage mitigated_at/closed_at on status
+          transition (set when entering Mitigated/Closed, clear when returning
+          to Open); ActivityLog 'Update Risk'
+        - destroy(Project, Risk): admin/staff only; project-belonging guard;
+          capture names before delete; ActivityLog 'Delete Risk'
+        - score computation helper: probability/impact map to 1/2/3, product
+
+    ⬜ Add routes to routes/web.php in all three role groups (mirror issues):
+        staff:   GET/POST/PUT/DELETE  /projects/{project}/risks[/{risk}]
+                 names staff.projects.risks.{list,store,update,destroy}
+        contractor: GET /projects/{project}/risks  (read-only)
+                 name contractor.projects.risks.list
+        admin:   GET/POST/PUT/DELETE  /projects/{project}/risks[/{risk}]
+                 names admin.projects.risks.{list,store,update,destroy}
+
+    ⬜ Create app/Notifications/RiskReported.php (mirror IssueReported)
+        - Sent to admins + the project's contractor via
+          NotificationService::notifyMany() (same as issues)
+        - Dedupe key: risk:{project_id}:{risk_id} (prevents re-firing)
+        - Message: "High risk: {risk_name}" (severity = High)
+
+    ⬜ Update app/Http/Controllers/NotificationController.php
+        - Add render case for RiskReported (bell dropdown + notifications page,
+          mirroring the existing "Issue Reported" mapping)
+
+    ⬜ Wire into RiskController::store()
+        - After creating a risk whose computed level is High, call
+          NotificationService to notify admins + contractorUserFor(project)
+        - Low/Medium risks: NO notification (visible only)
+
+  Phase 3 — UI (Issues & Risks tab, separate risk files)
+  ------------------------------------------------------
+    ⬜ resources/views/projects/project_detail/project_detail.blade.php
+        - Rename Issues tab button label to "Issues & Risks"
+          (data-tab stays "issues")
+    ⬜ resources/views/projects/project_detail/components/tabs/issues.blade.php
+        - Add All / Issues / Risks toggle bar (buttons switch which container
+          is visible: issues table vs risk partial vs both)
+        - Include the risk partial
+    ⬜ resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php
+        - Summary cards: Open / Mitigated / Closed / High-risk counts
+        - Table container populated by JS (loadTabRisks())
+        - Add Risk button (admin/staff only); contractor gets read-only view
+        - Risk delete uses shared showDeleteConfirmation() component
+        - Links risk-register.css + risk-register.js
+    ⬜ resources/views/projects/project_detail/components/modals/risk_modal.blade.php
+        - Add form + Edit form (modal-xl, mirrors issues_modal structure)
+        - Fields: risk_name, description, probability, impact, mitigation_plan,
+          owner, status, identified_at
+        - Links its own CSS/JS at the bottom
+    ⬜ public/js/admin/projects/risk-register.js
+        - loadTabRisks() -> GET getRisksApiUrl(); render table + summary
+        - toggle behavior for All/Issues/Risks
+        - add/edit submit handlers (POST/PUT) + delete (DELETE)
+        - role gating via window.userRole; uses showToast()
+    ⬜ public/css/admin/projects/risk-register.css
+        - risk level badges (Low/Med/High colors), score pill, toggle styles,
+          table/modal styles
+
+  Phase 4 — Tests
+  ---------------
+    ⬜ tests/Feature/RiskRegisterTest.php (mirror IssueLifecycleTest)
+        - store persists + computes risk_score
+        - store computes correct level (Low/Medium/High boundaries)
+        - update recomputes score on probability/impact change
+        - status transition sets mitigated_at / closed_at; reopen clears them
+        - contractor gets 403 on store/update/destroy
+        - cross-project guard (risk from another project rejected)
+        - getRisks returns expected JSON shape + risk_level
+        - ActivityLog created on store / update / destroy
+        - scopes open/mitigated/closed/highRisk
+        - High-level risk creation notifies admins + project contractor
+          (assert database notifications rows)
+        - Low/Medium-level risk creation sends NO notification
+    ⬜ Update tests/Feature/Infrastructure/FactoryVerificationTest.php
+        - add test_risk_factory_creates_valid_record + open state
+
+  Phase 5 — Docs
+  --------------
+    ⬜ textfiles/gaps_and_features_missing.txt — mark #20 [DONE] (or note)
+    ⬜ textfiles/summary_of_next_work.txt — status of this item
+    ⬜ Session log entry in this plan (SECTION 6)
+
+==============================================================================
+  SECTION 6 — SESSION LOGS
+==============================================================================
+
+  2026-08-06 — Plan created. Decided with user (Decision Log): risk lives in
+  the same tab as Issues via a toggle; no AI hook in this build but flagged
+  for future; score auto-computed from probability × impact; High-level risks
+  notify admins + the project's contractor (in-app). summary_of_next_work
+  updated to make this the next item to implement.
+
+==============================================================================
+  SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE
+==============================================================================
+
+  (none — plan approved. Any unresolved item during implementation will be
+   raised with the user before proceeding, per Rule 10.)
+
+==============================================================================
+  SECTION 8 — DECISION LOG
+==============================================================================
+
+  Decision 1 — Risk Register is NOT redundant with existing risk labels
+    Context: user asked whether the feature duplicates OVERDUE / AT RISK badges.
+    Options considered: skip the feature; build it.
+    Decision: build it. Existing labels are auto-computed, retrospective
+      schedule-health indicators; the register is a manual, forward-looking,
+      persistent risk artifact (probability × impact, mitigation, owner).
+    Consequences: they are complementary — a risk that materializes becomes an
+      Issue; the register is the "before", Issues the "after".
+
+  Decision 2 — UI placement: same tab as Issues with a toggle
+    Context: user asked to put risks in the same tab as Issues (separate code).
+    Options considered: dedicated 6th tab; same tab two sections; same tab toggle.
+    Decision: same tab, renamed "Issues & Risks", with All / Issues / Risks
+      toggle. Tab DOM id stays "issues". Risk code files remain separate.
+    Rationale: avoids tab bloat; matches Overview "Issues & Risks" card naming;
+      keeps tab-switching/session/Overview cross-links untouched.
+    Consequences: issues.blade.php gains a toggle bar and includes the risk
+      partial; risk partial/modal/JS/CSS are independent files.
+
+  Decision 3 — No AI/regression hook in the first build
+    Context: user asked whether the regression/AI module can use this data.
+    Options considered: build AI hook now; defer.
+    Decision: defer. The Risk model gets clean scopes so AI services can adopt
+      it later without redesign (see FLAGGED FOR FUTURE).
+    Rationale: keeps scope tight; AI integration has no existing consumer yet.
+
+  Decision 4 — Scoring model
+    Context: how to compute risk score/level.
+    Options considered: store manually entered score; compute from P × I.
+    Decision: compute risk_score = probability × impact (Low=1, Med=2, High=3,
+      range 1–9) at write time; level = 1–3 Low, 4–6 Medium, 7–9 High.
+    Rationale: automatic, consistent, sortable; matches standard 3×3 risk matrix.
+
+  Decision 5 — Permissions
+    Context: who can manage risks.
+    Decision: admin/staff create/update/delete; contractor read-only (mirrors
+      Issues, consistent with the "contractors are read-only by design" rule).
+
+  Decision 6 — Auditing
+    Context: traceability requirement (dev Rule 11 / project norm).
+    Decision: ActivityLog rows on create/update/delete
+      ('Create Risk' / 'Update Risk' / 'Delete Risk').
+
+  Decision 7 — Branching
+    Context: project Rule 12.
+    Decision: new branch phase-20-risk-register off main; merge to main only
+      after user review/approval.
+
+  Decision 8 — Scope exclusions (first build)
+    Context: keep the feature focused.
+    Decision: NO attachments, NO Excel/PDF export, NO overview-card widget this
+      build. Notifications ARE included but LIMITED to High-level risks
+      (see Decision 9).
+    Consequences: attachments/exports/widget noted as FLAGGED FOR FUTURE;
+      low-risk to add later on top of the same model/scopes.
+
+  Decision 9 — Notification scope: High-level risks only
+    Context: user asked whether all 3 roles should be "communicated" of risks
+      and chose to be notified on High risks only.
+    Options considered: visible-only (no notifications); notify on all new
+      risks; notify on High risks only.
+    Decision: in-app notification (RiskReported) to admins + the project's
+      contractor ONLY when a risk with level High is created. Low/Medium risks
+      remain visible-only. All 3 roles can always see the full list when they
+      open the project (contractor read-only).
+    Rationale: all-3-roles visibility is a core purpose; proactive alerts are
+      reserved for the highest-priority risks to avoid notification noise.
+    Consequences: RiskReported notification class + NotificationController
+      render case + store() hook; notification tests in Phase 4.
+
+==============================================================================
+  SECTION 9 — FILES TOUCHED
+==============================================================================
+
+  Created:
+    database/migrations/2026_08_06_000001_create_risks_table.php
+    app/Models/Risk.php
+    database/factories/RiskFactory.php
+    app/Http/Controllers/RiskController.php
+    app/Notifications/RiskReported.php
+    resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php
+    resources/views/projects/project_detail/components/modals/risk_modal.blade.php
+    public/js/admin/projects/risk-register.js
+    public/css/admin/projects/risk-register.css
+    tests/Feature/RiskRegisterTest.php
+    textfiles/risk_register_plan.txt
+
+  Modified:
+    app/Models/Project.php                          (risks() relationship)
+    app/Http/Controllers/NotificationController.php (RiskReported render case)
+    routes/web.php                                  (risk routes x3 role groups)
+    resources/views/projects/project_detail/project_detail.blade.php
+        (rename Issues tab button -> "Issues & Risks")
+    resources/views/projects/project_detail/components/tabs/issues.blade.php
+        (All/Issues/Risks toggle + include risk partial)
+    tests/Feature/Infrastructure/FactoryVerificationTest.php
+    textfiles/gaps_and_features_missing.txt          (mark #20)
+    textfiles/summary_of_next_work.txt               (next-to-implement status)
+
+==============================================================================
+  SECTION 10 — FLAGGED FOR FUTURE
+==============================================================================
+
+  AI / regression integration (user-requested to note; NOT built now):
+    • RecommendationEngine (app/Services/AI/RecommendationEngine.php) to factor
+      in open-risk count / high-score risks when generating recommendations.
+    • AIExplanationService narrative to reference open risks.
+    • Multiple Linear Regression (gap #3) to add risk count/score as an
+      independent variable alongside issue density.
+    • Phase 10 AI-powered recommendations: auto-suggest risks from schedule
+      variance (e.g. "project behind plan -> extension risk").
+    Enabled by the clean Risk scopes (open/mitigated/closed/highRisk) — no
+    redesign needed.
+
+  Other possible additions (deferred):
+    • Attachments on risks (requires expanding Attachment::ALLOWED_ATTACHABLE_TYPES
+      and CONTEXTS in app/Models/Attachment.php + AttachmentController validation)
+    • Notify on ALL risks (not just High) — likely too noisy; kept High-only
+    • Excel/PDF export of risks (mirror ReportExportService issuesExcel)
+    • Overview "Issues & Risks" card open-risk count + cross-link
+
+==============================================================================
+  SECTION 11 — CONVERSATION CONTINUATION GUIDE
+==============================================================================
+
+  1. Branch: phase-20-risk-register (off main). Never commit to main directly
+     (Rule 12); merge only after explicit user approval.
+  2. Before writing code, re-read the CURRENT source of the files in SECTION 9
+     (Rule 1 — never assume prior code is unchanged).
+  3. Follow the Issues feature as the structural template throughout
+     (IssueController, issues routes, issues.blade.php, issues_modal.blade.php,
+      issues-modal.js, IssueLifecycleTest).
+  4. No-vite convention: new CSS/JS go in public/css|js/admin/projects/ and are
+     linked from the owning partial.
+  5. Tests: controller tests invoke controllers directly (IssueLifecycleTest
+     pattern); run `composer test` after each phase.
+  6. Inform the user at the end of each phase before continuing (Rule 10) and
+     update this plan's SESSION LOG (Rule 11).
+
+===============================================================================
+  END OF PLAN
+===============================================================================

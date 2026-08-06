@@ -1,13 +1,34 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 5, 2026
-================================================================================
+  Last Updated: August 6, 2026
+===============================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
   in referenced plan files under textfiles/.
 
-================================================================================
+===============================================================================
+  NEXT TO IMPLEMENT — RISK REGISTER (gap #20)
+===============================================================================
+
+  Status: ⬜ NOT STARTED — plan approved & ready to implement
+  Branch: phase-20-risk-register (from main)
+  Plan:   textfiles/risk_register_plan.txt
+
+  Forward-looking, manually-maintained register of potential project risks
+  (distinct from the auto-computed OVERDUE/AT RISK badges and from Issues,
+  which are retrospective). Fields: risk description, probability x impact
+  score (auto-computed 1-9 with Low/Medium/High level), mitigation plan,
+  owner, status (Open/Mitigated/Closed), date identified.
+
+  UI: lives inside the existing Issues tab (renamed "Issues & Risks") with an
+  All / Issues / Risks toggle; risk code in separate files. Admin/Staff CRUD,
+  contractor read-only. ActivityLog on every change. High-level risks trigger
+  an in-app notification to admins + the project's contractor (Low/Medium are
+  visible only). No AI hook in this build (flagged for future:
+  RecommendationEngine, MLR variable, Phase 10).
+
+===============================================================================
   SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING
 
   Plan: textfiles/core_monitoring_completion_plan.md (new, Aug 2 2026)
@@ -131,6 +152,12 @@
 
   Sources: gaps_and_features_missing.txt, project_gaps_and_future_roadmap.mmd
 
+  Risk Register  ⬜ NEXT TO IMPLEMENT (gaps #20)
+     Manual, forward-looking register of potential risks with probability x
+     impact score, mitigation plan, owner, status. Lives in the Issues tab
+     ("Issues & Risks") via a toggle. High-level risks notify admins + the
+     project's contractor. Plan: risk_register_plan.txt
+
   Report Generation
      PDF of S-Curve chart, Excel of progress history,
      project summary doc, extension history report
@@ -213,6 +240,7 @@
 
   Active Plans (also):
     core_monitoring_completion_plan.md   — CURRENT FOCUS (core monitoring)
+    risk_register_plan.txt               — NEXT TO IMPLEMENT (gap #20)
 
 ================================================================================
   KEY FILE LOCATIONS (current organization)
