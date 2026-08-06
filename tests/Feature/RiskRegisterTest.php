@@ -2,15 +2,23 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\AttachmentController;
+use App\Http\Controllers\IssueController;
 use App\Http\Controllers\RiskController;
 use App\Models\ActivityLog;
+use App\Models\Attachment;
 use App\Models\Contractor;
+use App\Models\Issue;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\Risk;
 use App\Models\User;
+use App\Notifications\IssueReported;
 use App\Notifications\RiskReported;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 /**
@@ -485,5 +493,324 @@ class RiskRegisterTest extends TestCase
 
         $this->assertSame(0, $admin->notifications()->count());
         $this->assertSame(0, $contractorUser->notifications()->count());
+    }
+
+    // === RISK → ISSUE CONVERSION ===
+
+    private function callConvert(Risk $risk, array $payload = []): \Illuminate\Http\JsonResponse
+    {
+        $request = Request::create(
+            "/admin/projects/{$this->project->id}/risks/{$risk->id}/convert",
+            'POST',
+            $payload
+        );
+
+        return app(RiskController::class)->convertToIssue($request, $this->project, $risk);
+    }
+
+    public function test_convert_creates_issue_with_bidirectional_fks(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+
+        $response = $this->callConvert($risk, [
+            'issue_name'  => 'Converted issue',
+            'description' => 'Materialized.',
+        ]);
+
+        $this->assertEquals(200, $response->getStatusCode());
+        $this->assertTrue($response->getData()->success);
+
+        // Issue created with the link back to the risk
+        $issue = Issue::where('source_risk_id', $risk->id)->first();
+        $this->assertNotNull($issue);
+        $this->assertSame('Converted issue', $issue->issue_name);
+        $this->assertSame('Open', $issue->status);
+
+        // Risk marked Realized with the link forward to the issue
+        $fresh = $risk->fresh();
+        $this->assertSame('Realized', $fresh->status);
+        $this->assertSame($issue->id, $fresh->converted_to_issue_id);
+    }
+
+    public function test_convert_maps_severity_from_risk_level(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $cases = [
+            'Low'    => ['probability' => 'Low',    'impact' => 'Low'],
+            'Medium' => ['probability' => 'Medium', 'impact' => 'Medium'],
+            'High'   => ['probability' => 'High',   'impact' => 'High'],
+        ];
+
+        foreach ($cases as $expectedSeverity => $pair) {
+            $risk = Risk::factory()->create([
+                'project_id'  => $this->project->id,
+                'probability' => $pair['probability'],
+                'impact'      => $pair['impact'],
+                'risk_score'  => Risk::computeScore($pair['probability'], $pair['impact']),
+            ]);
+            $this->assertSame($expectedSeverity, $risk->risk_level);
+
+            $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
+
+            $issue = Issue::where('source_risk_id', $risk->id)->first();
+            $this->assertSame($expectedSeverity, $issue->severity);
+        }
+    }
+
+    public function test_convert_carries_baseline_schedule_id_to_issue(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $baseline = ProjectBaselineSchedule::factory()->create(['project_id' => $this->project->id]);
+        $risk = Risk::factory()->create([
+            'project_id'           => $this->project->id,
+            'baseline_schedule_id' => $baseline->id,
+        ]);
+
+        $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
+
+        $issue = Issue::where('source_risk_id', $risk->id)->first();
+        $this->assertSame($baseline->id, $issue->baseline_schedule_id);
+    }
+
+    public function test_convert_applies_editable_fields_from_modal(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $baseline = ProjectBaselineSchedule::factory()->create(['project_id' => $this->project->id]);
+        $risk = Risk::factory()->create(['project_id' => $this->project->id]);
+
+        $this->callConvert($risk, [
+            'issue_name'   => 'Edited name from modal',
+            'description'  => 'Edited description',
+            'issue_type'   => 'material',
+            'severity'     => 'Critical',
+            'baseline_schedule_id' => $baseline->id,
+        ]);
+
+        $issue = Issue::where('source_risk_id', $risk->id)->first();
+        $this->assertSame('Edited name from modal', $issue->issue_name);
+        $this->assertSame('Edited description', $issue->description);
+        $this->assertSame('material', $issue->issue_type);
+        $this->assertSame('Critical', $issue->severity);
+        $this->assertSame($baseline->id, $issue->baseline_schedule_id);
+    }
+
+    public function test_convert_transfers_and_relabels_risk_attachments(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+
+        // Attach risk evidence (context 'risk') to the risk
+        $upload = Request::create('/attachments/upload', 'POST', [
+            'project_id'      => $this->project->id,
+            'attachable_type' => Risk::class,
+            'attachable_id'   => $risk->id,
+            'context'         => 'risk',
+        ]);
+        $upload->files->set('file', UploadedFile::fake()->createWithContent(
+            'risk-evidence.jpg',
+            "\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xD9",
+            'image/jpeg'
+        ));
+        $uploadResponse = app(AttachmentController::class)->upload($upload);
+        $this->assertEquals(200, $uploadResponse->getStatusCode());
+        $this->assertDatabaseHas('attachments', [
+            'attachable_type' => Risk::class,
+            'attachable_id'   => $risk->id,
+            'context'         => 'risk',
+        ]);
+
+        $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
+
+        // Attachment now belongs to the issue, relabelled context 'issue'
+        $issue = Issue::where('source_risk_id', $risk->id)->first();
+        $this->assertSame(1, Attachment::where('attachable_type', Issue::class)
+            ->where('attachable_id', $issue->id)
+            ->where('context', 'issue')
+            ->count());
+        $this->assertDatabaseMissing('attachments', [
+            'attachable_type' => Risk::class,
+            'attachable_id'   => $risk->id,
+        ]);
+    }
+
+    public function test_convert_fires_issuereported_notification(): void
+    {
+        $admin = $this->user('admin');
+        $contractorUser = $this->projectWithContractor();
+        $this->actingAs($admin);
+
+        $risk = Risk::factory()->create(['project_id' => $this->project->id]);
+        $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
+
+        $issue = Issue::first();
+
+        // Admin notified
+        $this->assertSame(1, $admin->notifications()->count());
+        $adminNotification = $admin->notifications()->first();
+        $this->assertSame(IssueReported::class, $adminNotification->type);
+        $this->assertSame($issue->id, $adminNotification->data['issue_id']);
+
+        // Project contractor notified
+        $this->assertSame(1, $contractorUser->notifications()->count());
+        $this->assertSame(IssueReported::class, $contractorUser->notifications()->first()->type);
+    }
+
+    public function test_contractor_cannot_convert_risk(): void
+    {
+        $this->actingAs($this->user('contractor'));
+
+        $risk = Risk::factory()->create(['project_id' => $this->project->id]);
+        $response = $this->callConvert($risk, ['issue_name' => $risk->risk_name, 'description' => 'd']);
+
+        $this->assertEquals(403, $response->getStatusCode());
+        $this->assertFalse($response->getData()->success);
+        $this->assertDatabaseCount('issues', 0);
+    }
+
+    public function test_convert_rejects_realized_or_closed_risk(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $realized = Risk::factory()->realized()->create(['project_id' => $this->project->id]);
+        $r1 = $this->callConvert($realized, ['issue_name' => 'x', 'description' => 'd']);
+        $this->assertEquals(422, $r1->getStatusCode());
+
+        $closed = Risk::factory()->closed()->create(['project_id' => $this->project->id]);
+        $r2 = $this->callConvert($closed, ['issue_name' => 'x', 'description' => 'd']);
+        $this->assertEquals(422, $r2->getStatusCode());
+
+        $this->assertDatabaseCount('issues', 0);
+    }
+
+    // === DELETE-LINK GUARDS ===
+
+    public function test_destroy_rejects_risk_converted_to_issue(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+        $this->callConvert($risk, ['issue_name' => 'x', 'description' => 'd']);
+        $issue = Issue::first();
+
+        $response = app(RiskController::class)->destroy($this->project, $risk->fresh());
+
+        $this->assertEquals(422, $response->getStatusCode());
+        $this->assertDatabaseHas('risks', ['id' => $risk->id, 'status' => 'Realized']);
+        $this->assertDatabaseHas('issues', ['id' => $issue->id]);
+    }
+
+    public function test_destroy_converted_issue_reverts_risk_to_open(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $risk = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+        $this->callConvert($risk, ['issue_name' => 'x', 'description' => 'd']);
+        $issue = Issue::first();
+        $this->assertSame('Realized', $risk->fresh()->status);
+
+        $response = app(IssueController::class)->destroy($this->project, $issue);
+
+        $this->assertTrue($response->getData()->success);
+
+        $fresh = $risk->fresh();
+        $this->assertSame('Open', $fresh->status);
+        $this->assertNull($fresh->converted_to_issue_id);
+    }
+
+    // === REALIZED STATUS BEHAVIOR ===
+
+    public function test_realized_status_excluded_from_open_scope(): void
+    {
+        $open = Risk::factory()->open()->create(['project_id' => $this->project->id]);
+        Risk::factory()->realized()->create(['project_id' => $this->project->id]);
+
+        $this->assertEquals([$open->id], Risk::open()->pluck('id')->all());
+    }
+
+    public function test_update_allows_realized_status_and_preserves_lifecycle(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $mitigatedAt = now()->subDays(3);
+        $risk = Risk::factory()->create([
+            'project_id'   => $this->project->id,
+            'status'       => 'Realized',
+            'mitigated_at' => $mitigatedAt,
+        ]);
+
+        $response = $this->callUpdate($this->updateRequest($risk, $this->validPayload([
+            'status'    => 'Realized',
+            'risk_name' => 'Realized risk renamed',
+        ])), $risk);
+
+        $this->assertTrue($response->getData()->success);
+
+        $fresh = $risk->fresh();
+        $this->assertSame('Realized', $fresh->status);
+        $this->assertSame('Realized risk renamed', $fresh->risk_name);
+        $this->assertSame($mitigatedAt->toDateString(), $fresh->mitigated_at->toDateString());
+    }
+
+    // === BASELINE LINK ON RISKS ===
+
+    public function test_store_persists_baseline_schedule_id(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $baseline = ProjectBaselineSchedule::factory()->create(['project_id' => $this->project->id]);
+
+        $response = $this->callStore($this->storeRequest($this->validPayload([
+            'baseline_schedule_id' => $baseline->id,
+        ])));
+
+        $this->assertTrue($response->getData()->success);
+        $this->assertDatabaseHas('risks', [
+            'project_id'           => $this->project->id,
+            'baseline_schedule_id' => $baseline->id,
+        ]);
+    }
+
+    public function test_store_rejects_baseline_from_another_project(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $otherProject = Project::factory()->create();
+        $foreignBaseline = ProjectBaselineSchedule::factory()->create(['project_id' => $otherProject->id]);
+
+        $response = $this->callStore($this->storeRequest($this->validPayload([
+            'baseline_schedule_id' => $foreignBaseline->id,
+        ])));
+
+        $this->assertEquals(422, $response->getStatusCode());
+        $this->assertDatabaseCount('risks', 0);
+    }
+
+    public function test_get_risks_exposes_conversion_payload_fields(): void
+    {
+        $this->actingAs($this->user('admin'));
+
+        $baseline = ProjectBaselineSchedule::factory()->create(['project_id' => $this->project->id]);
+        $risk = Risk::factory()->open()->create([
+            'project_id'           => $this->project->id,
+            'baseline_schedule_id' => $baseline->id,
+        ]);
+        $this->callConvert($risk, ['issue_name' => 'Shown as label', 'description' => 'd']);
+
+        $response = app(RiskController::class)->getRisks($this->project);
+        $first = $response->getData()->risks[0];
+
+        $this->assertSame($baseline->id, $first->baseline_schedule_id);
+        $this->assertSame($baseline->month_display, $first->baseline_label);
+        $this->assertSame('Realized', $first->status);
+        $this->assertNotNull($first->converted_to_issue_id);
+        $this->assertStringContainsString('Shown as label', $first->converted_issue_label);
+        $this->assertIsArray($first->attachments);
     }
 }

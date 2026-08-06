@@ -33,6 +33,20 @@
   RiskReported notification (High-only, dedupe key), UI partial/modal/JS/CSS,
   15-feature RiskRegisterTest. Full suite: 351 tests passing.
 
+  ENHANCEMENT (Aug 6 2026) — RISK → ISSUE CONVERSION, commits 5b69fee (Phase D)
+  + 1896c1d (Phase E). Plan: textfiles/risk_to_issue_conversion_plan.txt.
+  A Convert-to-Issue button (admin/staff) on Open/Mitigated risks opens a
+  pre-filled, editable modal; confirming creates the issue, links both records
+  (risk.converted_to_issue_id ↔ issue.source_risk_id), marks the risk Realized,
+  transfers + relabels its evidence attachments to the issue (context 'risk' →
+  'issue'), audits 'Convert Risk to Issue', and notifies admins + contractor.
+  Risks gained an optional baseline month link + evidence attachments (parity
+  with issues). Delete guards: Realized risks are blocked (422 "delete the
+  issue first"); deleting a converted issue reverts its risk Realized → Open.
+  Realized badge + "→ Issue #N" link in the risks table; "from Risk" badge in
+  the issues table + edit modal. RiskRegisterTest extended to 30 tests; full
+  suite now 367 passing.
+
 ===============================================================================
   NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: Activity Log
   UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)

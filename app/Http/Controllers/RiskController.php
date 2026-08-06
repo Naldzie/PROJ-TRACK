@@ -8,6 +8,7 @@ use App\Models\Issue;
 use App\Models\Project;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\Risk;
+use App\Notifications\IssueReported;
 use App\Notifications\RiskReported;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;

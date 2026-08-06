@@ -46,9 +46,9 @@
     ✅ Phase A — Migration + models + attachment whitelist
     ✅ Phase B — Conversion endpoint (RiskController::convertToIssue) + routes
     ✅ Phase C — Delete-link guards (both directions)
-    ⬜ Phase D — Risk UI (baseline dropdown, attachments, convert button/modal)
-    ⬜ Phase E — Issue UI ("from Risk" badge)
-    ⬜ Phase F — Tests + docs
+    ✅ Phase D — Risk UI (baseline dropdown, attachments, convert button/modal)
+    ✅ Phase E — Issue UI ("from Risk" badge)
+    ✅ Phase F — Tests + docs
 
 ==============================================================================
   SECTION 3 — PROBLEM STATEMENT
@@ -295,6 +295,34 @@
   loading; 2 convert routes (staff + admin). Phase C: destroy guards both
   directions (RiskController::destroy blocks converted risks 422;
   IssueController::destroy reverts risk to Open + clears link).
+
+  2026-08-06 — Phases D–F COMPLETE (367 tests pass, +15 conversion tests).
+  Phase D (risk UI, commit 5b69fee): risk_modal.blade.php gained a baseline
+  month dropdown + Risk Evidence upload section on BOTH add/edit forms (with
+  deferred delete-on-save for existing evidence, mirroring issues-modal.js);
+  new risk_to_issue_modal.blade.php pre-fills editable issue fields
+  (name/description/type/severity/baseline, status fixed Open); risk-register.js
+  renders a Baseline column + evidence chips + a Convert-to-Issue button on
+  non-Realized/Closed risks (admin/staff), a Realized badge with a "→ Issue #N"
+  link (switchToIssuesTab), locks the status select + shows a note when editing
+  a Realized risk, wires the convert flow (POST risks/{risk}/convert then reload
+  risks + issues); risk-register.css added Realized/convert/chip-link styles.
+  RiskController store()/update() now validate baseline_schedule_id (incl.
+  belongs-to-project guard, mirroring IssueController) and update() accepts
+  'Realized' (preserving lifecycle stamps); convertToIssue() now accepts the
+  editable modal fields (issue_name/description/issue_type/severity/
+  baseline_schedule_id) with validation + a ValidationException catch, and a
+  MISSING use App\Notifications\IssueReported import (latent Phase B bug) was
+  fixed. Phase E (commit 1896c1d): IssueController::getIssues eager-loads
+  sourceRisk and exposes source_risk_id/source_risk_name; issues.blade.php rows
+  show a "from Risk: <name>" badge (switchToRisksTab) and the edit modal shows a
+  "converted from risk" note. Phase F: RiskRegisterTest extended from 15 to 30
+  tests covering conversion FKs, severity mapping, baseline carry, editable
+  fields, attachment transfer + relabel, IssueReported notification,
+  contractor 403, Realized/Closed rejection, both destroy guards, Realized
+  scope exclusion + update behavior, baseline validation, and the extended
+  getRisks payload. Docs updated (gaps #20 [DONE], summary_of_next_work,
+  risk_register_plan).
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

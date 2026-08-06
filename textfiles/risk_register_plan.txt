@@ -439,6 +439,16 @@
   6. Inform the user at the end of each phase before continuing (Rule 10) and
      update this plan's SESSION LOG (Rule 11).
 
+------------------------------------------------------------------------------
+  ENHANCEMENT NOTE (Aug 6, 2026)
+------------------------------------------------------------------------------
+  The Risk Register was enhanced with RISK → ISSUE CONVERSION + parity
+  upgrades (baseline month link, evidence attachments, Realized status, and
+  bidirectional delete guards). This is tracked SEPARATELY in:
+      textfiles/risk_to_issue_conversion_plan.txt
+  (Phases A–F all COMPLETE; RiskRegisterTest extended 15 → 30 tests; full
+   suite 367 passing). Merge to main still gated on user review (Rule 12).
+
 ===============================================================================
   END OF PLAN
 ===============================================================================

@@ -251,6 +251,20 @@
         ActivityLog on every change. High-level risks notify admins + the
         project's contractor (RiskReported). 15 feature tests; full suite 351
         passing. Plan: textfiles/risk_register_plan.txt
+      - ENHANCED (Aug 6, 2026): RISK → ISSUE CONVERSION + parity upgrades.
+        Convert-to-Issue button on Open/Mitigated risks opens a pre-filled,
+        editable modal (name/description/type/severity/baseline; status fixed
+        Open). Conversion creates the issue, links both records
+        (risk.converted_to_issue_id ↔ issue.source_risk_id), marks the risk
+        Realized, transfers + relabels risk evidence to the issue, audits
+        'Convert Risk to Issue', and notifies admins + contractor. Risks gained
+        an optional baseline month link and evidence attachments (context
+        'risk') like issues. Delete guards: Realized risks are blocked from
+        delete (422 "delete the issue first"); deleting a converted issue
+        reverts its risk Realized → Open so it is preserved. Realized risks get
+        a badge + "→ Issue #N" link; converted issues get a "from Risk" badge.
+        RiskRegisterTest now 30 tests; full suite 367 passing. Plan:
+        textfiles/risk_to_issue_conversion_plan.txt
 
   21. [CAPSTONE] CHANGE / VARIATION ORDERS
       - Construction projects frequently have scope changes
