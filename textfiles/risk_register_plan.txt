@@ -49,7 +49,7 @@
     ✅ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
     ✅ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
     ✅ Phase 4 — Feature tests + factory verification
-    ⬜ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
+    ✅ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
 
 ==============================================================================
   SECTION 3 — PROBLEM STATEMENT
@@ -278,6 +278,16 @@
   scopes open/mitigated/closed/highRisk, High-risk notifies admins + project
   contractor (RiskReported rows w/ key dedupe), no notification for
   Low/Medium. Full suite: 351 passed (1245 assertions).
+
+  2026-08-06 — Phase 5 COMPLETE — ALL PHASES DONE. Marked gap #20 [DONE] in
+  textfiles/gaps_and_features_missing.txt (entry, capstone-candidates list, and
+  priority-recommendation list; header date bumped to Aug 6 2026). Updated
+  textfiles/summary_of_next_work.txt: Risk Register moved to ✅ COMPLETE with
+  commit list, top "NEXT TO IMPLEMENT" block replaced with a completed block +
+  next-candidates note, SECTION 4 entry and Active Plans reference flipped to
+  ✅ COMPLETE. Session log entry appended here. Feature implemented end-to-end
+  and verified (frontend confirmed working by user; 351 tests pass). Branch
+  phase-20-risk-register ready for user review/merge to main (Rule 12).
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

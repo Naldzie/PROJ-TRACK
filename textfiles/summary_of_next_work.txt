@@ -8,10 +8,10 @@
   in referenced plan files under textfiles/.
 
 ===============================================================================
-  NEXT TO IMPLEMENT — RISK REGISTER (gap #20)
+  COMPLETED — RISK REGISTER (gap #20)
 ===============================================================================
 
-  Status: ⬜ NOT STARTED — plan approved & ready to implement
+  Status: ✅ COMPLETE — implemented on branch phase-20-risk-register
   Branch: phase-20-risk-register (from main)
   Plan:   textfiles/risk_register_plan.txt
 
@@ -27,6 +27,16 @@
   an in-app notification to admins + the project's contractor (Low/Medium are
   visible only). No AI hook in this build (flagged for future:
   RecommendationEngine, MLR variable, Phase 10).
+
+  Implemented across 4 phases (commits 98dfe41, 045d2af, 0f4fe4f, be9f64d):
+  risks table + Risk model + factory, RiskController + 9 routes + ActivityLog,
+  RiskReported notification (High-only, dedupe key), UI partial/modal/JS/CSS,
+  15-feature RiskRegisterTest. Full suite: 351 tests passing.
+
+===============================================================================
+  NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: Activity Log
+  UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)
+===============================================================================
 
 ===============================================================================
   SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING
@@ -152,7 +162,7 @@
 
   Sources: gaps_and_features_missing.txt, project_gaps_and_future_roadmap.mmd
 
-  Risk Register  ⬜ NEXT TO IMPLEMENT (gaps #20)
+  Risk Register  ✅ COMPLETE (gaps #20) — branch phase-20-risk-register
      Manual, forward-looking register of potential risks with probability x
      impact score, mitigation plan, owner, status. Lives in the Issues tab
      ("Issues & Risks") via a toggle. High-level risks notify admins + the
@@ -240,7 +250,7 @@
 
   Active Plans (also):
     core_monitoring_completion_plan.md   — CURRENT FOCUS (core monitoring)
-    risk_register_plan.txt               — NEXT TO IMPLEMENT (gap #20)
+    risk_register_plan.txt               — ✅ COMPLETE (gap #20)
 
 ================================================================================
   KEY FILE LOCATIONS (current organization)

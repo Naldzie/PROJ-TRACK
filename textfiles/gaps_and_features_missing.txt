@@ -1,6 +1,6 @@
 ﻿================================================================================
   GAPS & MISSING FEATURES — CSPC PMU SYSTEM
-  Last updated: August 5, 2026 (verified against codebase @ main)
+  Last updated: August 6, 2026 (Risk Register #20 implemented)
 ================================================================================
 
   Purpose: Document features that are not yet implemented but may be
@@ -235,7 +235,7 @@
 
   CORE PM FEATURES
 
-  20. [CAPSTONE] RISK REGISTER
+  20. [DONE] RISK REGISTER
       - A dedicated risk tracker distinct from the existing Issues feature
       - Risks are PROSPECTIVE (what could go wrong); Issues are RETROSPECTIVE
         (what has already happened)
@@ -245,7 +245,12 @@
       - Why it matters: Standard PMU feature. The existing Issues system
         captures problems after they occur; a risk register captures them
         before they happen, enabling proactive management
-      - Capstone candidate: Yes — adds significant PM value
+      - IMPLEMENTED (Aug 6, 2026): branch phase-20-risk-register, 4 phases.
+        Lives in the Issues & Risks tab (All/Issues/Risks toggle). Admin/Staff
+        CRUD, contractor read-only. Auto score 1-9 + Low/Med/High level.
+        ActivityLog on every change. High-level risks notify admins + the
+        project's contractor (RiskReported). 15 feature tests; full suite 351
+        passing. Plan: textfiles/risk_register_plan.txt
 
   21. [CAPSTONE] CHANGE / VARIATION ORDERS
       - Construction projects frequently have scope changes
@@ -398,7 +403,7 @@
   3. Are demonstrable in a capstone presentation
 
   Recommended capstone candidates from this brainstorm:
-    - Risk Register (#20) — standard PM feature, significant value
+    - Risk Register (#20) — ✅ IMPLEMENTED (Aug 6, 2026)
     - Project Closeout / Punch List (#23) — standard construction PM feature
     - Photo Gallery per Project (#24) — builds on existing attachments
     - Custom Dashboard Widgets (#25) — improves UX, demonstrates modern PM practice
@@ -424,7 +429,7 @@
     3. Report generation (PDF export) — useful for PMU documentation needs
 
   Capstone Candidates (from brainstorm):
-    4. Risk Register — standard PM feature, proactive risk management
+    4. Risk Register — ✅ IMPLEMENTED (gap #20, Aug 6 2026)
     5. Project Closeout / Punch List — standard construction PM feature
     6. Photo Gallery per Project — builds on existing attachment infrastructure
     7. Custom Dashboard Widgets — improves UX, modern PM practice
