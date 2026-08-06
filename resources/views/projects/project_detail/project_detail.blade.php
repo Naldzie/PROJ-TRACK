@@ -53,7 +53,7 @@
 
     <button class="tab-btn" data-tab="issues" onclick="switchMainTab('issues', event)">
         <i class="bi bi-exclamation-circle" style="margin-right: 6px; font-size: 14px;"></i>
-        Issues
+        Issues & Risks
     </button>
 </div>
 
@@ -111,6 +111,13 @@ window.userRole = '{{ auth()->user()->role }}';
 function getIssuesApiUrl(action = '') {
     const role = window.userRole;
     const baseUrl = `/${role}/projects/${projectId}/issues`;
+    return action ? `${baseUrl}/${action}` : baseUrl;
+}
+
+// Build the correct Risk Register API base URL based on user role
+function getRisksApiUrl(action = '') {
+    const role = window.userRole;
+    const baseUrl = `/${role}/projects/${projectId}/risks`;
     return action ? `${baseUrl}/${action}` : baseUrl;
 }
 
@@ -200,6 +207,9 @@ function switchMainTab(tabName, event) {
     if (tabName === 'issues') {
         if (typeof loadTabIssues === 'function') {
             loadTabIssues();
+        }
+        if (typeof loadTabRisks === 'function') {
+            loadTabRisks();
         }
     }
 }

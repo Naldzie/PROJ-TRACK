@@ -46,7 +46,8 @@
 
   This plan:
     ✅ Phase 1 — Migration + Risk model + factory
-    ✅ Phase 2 — RiskController + routes + ActivityLog + High-risk notification    ⬜ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
+    ✅ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
+    ✅ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
     ⬜ Phase 4 — Feature tests + factory verification
     ⬜ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
 
@@ -252,6 +253,20 @@
   key risk:{project_id}:{risk_id}), 9 routes across staff/contractor/admin
   groups in routes/web.php, and NotificationController humanType/title cases
   for RiskReported.
+
+  2026-08-06 — Phase 3 COMPLETE (Blade compiles via view:cache; JS syntax
+  verified via node --check). Created risk-register.blade.php partial (summary
+  cards Open/Mitigated/Closed/High ids, risksTableContainer, totalRisksCount,
+  deleteRiskConfirmModal, includes risk_modal + links css/js), risk_modal.blade.php
+  (add + edit forms, score preview, #d97706 submit buttons), risk-register.js
+  (loadTabRisks via getRisksApiUrl, table render w/ score/level badges +
+  contractor read-only gating, summary counts, add/edit/delete handlers,
+  live score preview, showToast fallback), risk-register.css (toggle bar,
+  badges, modal sections). Edited issues.blade.php (tab title "Issues & Risks",
+  All/Issues/Risks toggle, #issuesSection wrap, partial include, toggle handler
+  calling loadTabRisks) and project_detail.blade.php (tab label, getRisksApiUrl()
+  helper, switchMainTab issues branch calls loadTabRisks). All IDs in JS match
+  the Blade partials/modal and riskToJson() payload keys. 22/22 tests pass.
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

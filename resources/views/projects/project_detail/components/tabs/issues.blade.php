@@ -1,4 +1,4 @@
-<!-- ISSUES TAB -->
+<!-- ISSUES & RISKS TAB -->
 <div id="issues" class="tab-content">
     <div style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         
@@ -6,9 +6,9 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e5e7eb;">
             <div>
                 <h4 style="margin: 0 0 6px 0; font-size: 16px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 10px;">
-                    <i class="bi bi-exclamation-circle" style="color: #ef4444; font-size: 20px;"></i> Project Issues
+                    <i class="bi bi-exclamation-circle" style="color: #ef4444; font-size: 20px;"></i> Issues & Risks
                 </h4>
-                <p style="margin: 0; font-size: 12px; color: #6b7280;">Track and manage project issues with status updates</p>
+                <p style="margin: 0; font-size: 12px; color: #6b7280;">Track project issues and forward-looking risks</p>
             </div>
             @if(in_array(auth()->user()->role, ['admin', 'staff']))
             <button class="btn" data-bs-toggle="modal" data-bs-target="#issuesModal"
@@ -25,6 +25,15 @@
             @endif
         </div>
 
+        <!-- All / Issues / Risks Toggle -->
+        <div class="risk-toggle-bar">
+            <button type="button" class="risk-toggle-btn active" data-risk-view="all">All</button>
+            <button type="button" class="risk-toggle-btn" data-risk-view="issues">Issues</button>
+            <button type="button" class="risk-toggle-btn" data-risk-view="risks">Risks</button>
+        </div>
+
+        <!-- Issues Section -->
+        <div id="issuesSection">
         <!-- Issues Summary Cards -->
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px;">
             <div style="padding: 15px; background: #fee2e2; border: 1px solid #fecaca; border-radius: 8px;">
@@ -59,6 +68,10 @@
                 </div>
             </div>
         </div>
+        </div>
+
+        <!-- Risk Register Section -->
+        @include('projects.project_detail.components.tabs.partials.risk-register', ['project' => $project])
     </div>
 </div>
 
@@ -105,6 +118,30 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+});
+
+// All / Issues / Risks toggle behavior
+document.querySelectorAll('.risk-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const view = this.dataset.riskView;
+        document.querySelectorAll('.risk-toggle-btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+
+        const issuesSection = document.getElementById('issuesSection');
+        const risksSection = document.getElementById('risksSection');
+
+        if (view === 'issues') {
+            issuesSection.style.display = '';
+            risksSection.style.display = 'none';
+        } else if (view === 'risks') {
+            issuesSection.style.display = 'none';
+            risksSection.style.display = '';
+            if (typeof loadTabRisks === 'function') loadTabRisks();
+        } else {
+            issuesSection.style.display = '';
+            risksSection.style.display = '';
+        }
+    });
 });
 
 function loadTabIssues() {
