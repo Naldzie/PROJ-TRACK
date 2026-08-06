@@ -97,6 +97,7 @@ class NotificationController extends Controller
             \App\Notifications\OverdueInspectionReminder::class   => 'Overdue Inspection',
             \App\Notifications\ExtensionStatusChanged::class      => 'Extension Update',
             \App\Notifications\IssueReported::class               => 'Issue Reported',
+            \App\Notifications\RiskReported::class                => 'Risk Reported',
             default => 'Notification',
         };
     }
@@ -112,6 +113,7 @@ class NotificationController extends Controller
             \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . ($data['month_display'] ?? $data['month_label'] ?? ''),
             \App\Notifications\ExtensionStatusChanged::class => 'Extension ' . ($data['status'] ?? '') . ($data['extension_number'] ? " #{$data['extension_number']}" : ''),
             \App\Notifications\IssueReported::class => 'Issue reported' . ($data['severity'] ? " ({$data['severity']})" : ''),
+            \App\Notifications\RiskReported::class => 'High risk: ' . ($data['risk_name'] ?? ''),
             default => 'Notification',
         };
     }

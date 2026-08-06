@@ -8,6 +8,7 @@ use App\Http\Controllers\ProjectController;  // Consolidated: handles all roles 
 use App\Http\Controllers\BaselineScheduleController;
 use App\Http\Controllers\ProjectActivityController;
 use App\Http\Controllers\IssueController;
+use App\Http\Controllers\RiskController;
 use App\Http\Controllers\Admin\ProjectExtensionController;
 use App\Http\Controllers\Admin\MilestoneController;
 use App\Http\Controllers\ProjectProgressController;
@@ -187,6 +188,16 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::delete('/projects/{project}/issues/{issue}', [IssueController::class, 'destroy'])
         ->name('staff.projects.issues.destroy');
 
+    // === RISK REGISTER: CRUD ROUTES ===
+    Route::get('/projects/{project}/risks', [RiskController::class, 'getRisks'])
+        ->name('staff.projects.risks.list');
+    Route::post('/projects/{project}/risks', [RiskController::class, 'store'])
+        ->name('staff.projects.risks.store');
+    Route::put('/projects/{project}/risks/{risk}', [RiskController::class, 'update'])
+        ->name('staff.projects.risks.update');
+    Route::delete('/projects/{project}/risks/{risk}', [RiskController::class, 'destroy'])
+        ->name('staff.projects.risks.destroy');
+
     // === PROJECT EXTENSIONS: CRUD ROUTES ===
     Route::post('/projects/{project}/extensions', [ProjectExtensionController::class, 'store'])
         ->name('staff.projects.extensions.store');
@@ -326,6 +337,10 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
     // === CONTRACTOR ISSUES ROUTES (READ-ONLY) ===
     Route::get('/projects/{project}/issues', [IssueController::class, 'getIssues'])
         ->name('contractor.projects.issues.list');
+
+    // === CONTRACTOR RISK REGISTER ROUTES (READ-ONLY) ===
+    Route::get('/projects/{project}/risks', [RiskController::class, 'getRisks'])
+        ->name('contractor.projects.risks.list');
 
     // === CATEGORY ROUTES (READ-ONLY) ===
     Route::get('/categories', [CategoryController::class, 'getCategories'])
@@ -508,6 +523,16 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.issues.update');
     Route::delete('/projects/{project}/issues/{issue}', [IssueController::class, 'destroy'])
         ->name('admin.projects.issues.destroy');
+
+    // === RISK REGISTER: CRUD ROUTES ===
+    Route::get('/projects/{project}/risks', [RiskController::class, 'getRisks'])
+        ->name('admin.projects.risks.list');
+    Route::post('/projects/{project}/risks', [RiskController::class, 'store'])
+        ->name('admin.projects.risks.store');
+    Route::put('/projects/{project}/risks/{risk}', [RiskController::class, 'update'])
+        ->name('admin.projects.risks.update');
+    Route::delete('/projects/{project}/risks/{risk}', [RiskController::class, 'destroy'])
+        ->name('admin.projects.risks.destroy');
 
     // === PROJECT EXTENSIONS: CRUD ROUTES ===
     Route::post('/projects/{project}/extensions', [ProjectExtensionController::class, 'store'])

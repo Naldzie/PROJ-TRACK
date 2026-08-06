@@ -46,8 +46,7 @@
 
   This plan:
     ✅ Phase 1 — Migration + Risk model + factory
-    ⬜ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
-    ⬜ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
+    ✅ Phase 2 — RiskController + routes + ActivityLog + High-risk notification    ⬜ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
     ⬜ Phase 4 — Feature tests + factory verification
     ⬜ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
 
@@ -244,6 +243,15 @@
   states), and Project::risks() relationship added. FactoryVerificationTest
   gained 3 tests (valid record w/ score invariant, high state, level
   boundaries) — 22/22 pass. Branch phase-20-risk-register.
+
+  2026-08-06 — Phase 2 COMPLETE (routes verified via route:list). Created
+  app/Http/Controllers/RiskController.php (getRisks/store/update/destroy with
+  admin-staff-only guard, project-belonging guard, risk_score computation,
+  lifecycle timestamps, ActivityLog on CRUD, High-risk-only notification via
+  NotificationService::notifyMany), app/Notifications/RiskReported.php (dedupe
+  key risk:{project_id}:{risk_id}), 9 routes across staff/contractor/admin
+  groups in routes/web.php, and NotificationController humanType/title cases
+  for RiskReported.
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE
