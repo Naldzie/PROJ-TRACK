@@ -103,4 +103,19 @@ class RiskFactory extends Factory
             'risk_score'  => 9,
         ]);
     }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Realized Risk State
+     * ------------------------------------------------------------------------
+     *
+     * The risk materialized and was converted into an issue. Tests typically
+     * override converted_to_issue_id with a real Issue record.
+     */
+    public function realized(): static
+    {
+        return $this->state(fn () => [
+            'status' => 'Realized',
+        ]);
+    }
 }

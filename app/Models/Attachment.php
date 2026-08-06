@@ -15,13 +15,16 @@ class Attachment extends Model
     use HasFactory;
 
     // Context classifications for attachment slots on a parent record.
-    const CONTEXTS = ['inspection', 'issue', 'resolution'];
+    // 'inspection' = progress evidence, 'issue' = issue evidence,
+    // 'resolution' = issue fix proof, 'risk' = risk evidence.
+    const CONTEXTS = ['inspection', 'issue', 'resolution', 'risk'];
 
     // The only parent types the controller accepts. Inverse morphMany relations
     // are wired on these models in Phases C/D of the core-monitoring plan.
     const ALLOWED_ATTACHABLE_TYPES = [
         ProjectProgressHistory::class,
         Issue::class,
+        Risk::class,
     ];
 
     protected $fillable = [

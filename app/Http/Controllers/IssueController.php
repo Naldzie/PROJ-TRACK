@@ -319,6 +319,19 @@ class IssueController extends Controller
             $issueName  = $issue->issue_name;
             $projectTitle = $project->title;
 
+            // If this issue was created by converting a risk, revert that risk
+            // to Open and clear the link so the risk is preserved and can be
+            // re-converted or mitigated (forward delete-link guard).
+            if ($issue->source_risk_id) {
+                $sourceRisk = $issue->sourceRisk;
+                if ($sourceRisk) {
+                    $sourceRisk->update([
+                        'status'                => 'Open',
+                        'converted_to_issue_id' => null,
+                    ]);
+                }
+            }
+
             // Remove evidence attachments (rows + physical files via the model's deleting hook)
             foreach ($issue->attachments as $attachment) {
                 $attachment->delete();

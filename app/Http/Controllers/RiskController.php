@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use App\Models\Issue;
 use App\Models\Project;
 use App\Models\Risk;
 use App\Notifications\RiskReported;
@@ -30,9 +31,12 @@ class RiskController extends Controller
     public function getRisks(Project $project)
     {
         try {
-            $risks = $project->risks()->get()->map(function (Risk $risk) {
-                return $this->riskToJson($risk);
-            });
+            $risks = $project->risks()
+                ->with(['baselineSchedule', 'convertedToIssue', 'attachments'])
+                ->get()
+                ->map(function (Risk $risk) {
+                    return $this->riskToJson($risk);
+                });
 
             return response()->json([
                 'success' => true,
@@ -225,6 +229,15 @@ class RiskController extends Controller
                 ], 404);
             }
 
+            // Guard: a Realized risk is linked to an issue — prevent dangling
+            // issue.source_risk_id by requiring the issue to be deleted first.
+            if ($risk->converted_to_issue_id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This risk was converted to an issue. Delete the issue first to remove both records.',
+                ], 422);
+            }
+
             // Capture details before deleting — model is gone after delete()
             $riskName = $risk->risk_name;
             $projectTitle = $project->title;
@@ -255,9 +268,122 @@ class RiskController extends Controller
     }
 
     /**
+     * Convert a risk into an issue when it materializes (Admin/Staff only).
+     *
+     * Creates a new Issue pre-filled from the risk (name, description, severity
+     * mapped from risk level, baseline month carried over), marks the risk as
+     * Realized, links the two records in both directions, transfers the risk's
+     * evidence attachments to the new issue (relabelled context 'issue'), and
+     * fires the normal IssueReported notification (admins + contractor).
+     */
+    public function convertToIssue(Project $project, Risk $risk)
+    {
+        try {
+            // Authorization — only admin and staff can convert risks
+            $user = Auth::user();
+            if (!in_array($user->role, ['admin', 'staff'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized: Only admin and staff can convert risks to issues',
+                ], 403);
+            }
+
+            // Guard: risk belongs to project
+            if ($risk->project_id !== $project->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Risk not found in this project',
+                ], 404);
+            }
+
+            // Guard: only Open/Mitigated risks can be converted
+            if (in_array($risk->status, ['Realized', 'Closed'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This risk is already ' . $risk->status . ' and cannot be converted again.',
+                ], 422);
+            }
+
+            // Build the issue from the risk
+            $issue = Issue::create([
+                'project_id'           => $project->id,
+                'issue_name'           => $risk->risk_name,
+                'description'          => $risk->description ?: 'Risk "' . $risk->risk_name . '" materialized and was converted into an issue.',
+                'status'               => 'Open',
+                'issue_type'           => 'other',
+                'severity'             => $this->severityFromRiskLevel($risk->risk_level),
+                'baseline_schedule_id' => $risk->baseline_schedule_id,
+                'source_risk_id'       => $risk->id,
+            ]);
+
+            // Link the risk to the issue and mark it Realized
+            $risk->update([
+                'status'               => 'Realized',
+                'converted_to_issue_id'=> $issue->id,
+            ]);
+
+            // Transfer risk evidence attachments to the new issue (relabel 'issue')
+            foreach ($risk->attachments as $attachment) {
+                $attachment->update([
+                    'attachable_type' => Issue::class,
+                    'attachable_id'   => $issue->id,
+                    'context'         => 'issue',
+                ]);
+            }
+
+            // Audit the conversion
+            ActivityLog::create([
+                'user_id'     => $user->id,
+                'project_id'  => $project->id,
+                'action'      => 'Convert Risk to Issue',
+                'description' => $user->name . ' converted risk "' . $risk->risk_name . '" to issue "' . $issue->issue_name . '" for project "' . $project->title . '".',
+                'ip_address'  => request()->ip(),
+            ]);
+
+            // Notify admins + the project's contractor (same as IssueController::store)
+            $service = app(NotificationService::class);
+            $recipients = collect($service->admins());
+            $contractorUser = $service->contractorUserFor($project);
+            if ($contractorUser) {
+                $recipients->push($contractorUser);
+            }
+            $service->notifyMany($recipients->unique('id'), new IssueReported(
+                $project->id,
+                $project->title,
+                $issue->id,
+                $issue->issue_name,
+                $issue->severity ?? 'Low'
+            ));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Risk converted to issue successfully',
+                'issue'   => $issue,
+                'risk'    => $this->riskToJson($risk),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Risk conversion error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error converting risk: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Map a risk level (Low/Medium/High) to an issue severity.
+     * Called by: convertToIssue()
+     */
+    private function severityFromRiskLevel(string $level): string
+    {
+        return in_array($level, ['Low', 'Medium', 'High']) ? $level : 'Low';
+    }
+
+    /**
      * Shape a Risk model into the JSON payload consumed by the UI.
      *
-     * Called by: getRisks(), store(), update()
+     * Called by: getRisks(), store(), update(), convertToIssue()
      */
     private function riskToJson(Risk $risk): array
     {
@@ -275,6 +401,21 @@ class RiskController extends Controller
             'identified_at'  => $risk->identified_at ? $risk->identified_at->format('M d, Y') : null,
             'mitigated_at'   => $risk->mitigated_at ? $risk->mitigated_at->format('M d, Y') : null,
             'closed_at'      => $risk->closed_at ? $risk->closed_at->format('M d, Y') : null,
+            'baseline_schedule_id' => $risk->baseline_schedule_id,
+            'baseline_label' => $risk->baselineSchedule?->month_display,
+            'converted_to_issue_id' => $risk->converted_to_issue_id,
+            'converted_issue_label' => $risk->convertedToIssue ? '#' . $risk->convertedToIssue->id . ' ' . $risk->convertedToIssue->issue_name : null,
+            'attachments'    => $risk->attachments->map(function ($attachment) {
+                return [
+                    'id'            => $attachment->id,
+                    'original_name' => $attachment->original_name,
+                    'context'       => $attachment->context,
+                    'file_url'      => $attachment->file_url,
+                    'display_size'  => $attachment->display_size,
+                    'uploaded_by'   => $attachment->uploaded_by,
+                    'created_at'    => $attachment->created_at->format('M d, Y H:i'),
+                ];
+            }),
             'created_at'     => $risk->created_at->format('M d, Y'),
             'updated_at'     => $risk->updated_at->format('M d, Y'),
         ];

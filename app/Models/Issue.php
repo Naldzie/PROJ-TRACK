@@ -34,6 +34,7 @@ class Issue extends Model
         'resolved_at',
         'baseline_schedule_id',
         'resolution_notes',
+        'source_risk_id',
     ];
 
     protected $casts = [
@@ -58,6 +59,14 @@ class Issue extends Model
     public function baselineSchedule()
     {
         return $this->belongsTo(ProjectBaselineSchedule::class);
+    }
+
+    /**
+     * The risk that materialized into this issue (set on conversion)
+     */
+    public function sourceRisk()
+    {
+        return $this->belongsTo(Risk::class, 'source_risk_id');
     }
 
     /**

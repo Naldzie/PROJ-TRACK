@@ -260,6 +260,25 @@ class FactoryVerificationTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * Risk Factory — Realized State
+     * ------------------------------------------------------------------------
+     *
+     * Verify the realized() state modifier produces a Realized risk (the
+     * lifecycle status used when a risk is converted into an issue).
+     */
+    public function test_risk_factory_realized_state(): void
+    {
+        $project = Project::factory()->create();
+        $risk = Risk::factory()->realized()->create([
+            'project_id' => $project->id,
+        ]);
+
+        $this->assertEquals('Realized', $risk->status);
+        $this->assertDatabaseHas('risks', ['id' => $risk->id, 'status' => 'Realized']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * Risk Level Boundaries
      * ------------------------------------------------------------------------
      *

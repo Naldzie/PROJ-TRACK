@@ -43,9 +43,9 @@
       Attachment::CONTEXTS = ['inspection', 'issue', 'resolution'].
 
   This plan:
-    ⬜ Phase A — Migration + models + attachment whitelist
-    ⬜ Phase B — Conversion endpoint (RiskController::convertToIssue) + routes
-    ⬜ Phase C — Delete-link guards (both directions)
+    ✅ Phase A — Migration + models + attachment whitelist
+    ✅ Phase B — Conversion endpoint (RiskController::convertToIssue) + routes
+    ✅ Phase C — Delete-link guards (both directions)
     ⬜ Phase D — Risk UI (baseline dropdown, attachments, convert button/modal)
     ⬜ Phase E — Issue UI ("from Risk" badge)
     ⬜ Phase F — Tests + docs
@@ -279,6 +279,22 @@
       cleared; risk preserved and re-convertable.
     • Converted issue deletion deletes its attachments (transferred risk
       evidence) as with any issue today.
+
+  2026-08-06 — Phases A–C COMPLETE (352 tests pass). Phase A: migration
+  2026_08_06_000002_risk_issue_conversion.php (risks += baseline_schedule_id +
+  converted_to_issue_id; issues += source_risk_id; Realized status via raw
+  ALTER for MySQL, guarded by driver check); Risk/Issue/Attachment model
+  updates (Realized STATUSES, baselineSchedule/convertedToIssue/sourceRisk/
+  attachments relationships, 'risk' context + Risk in attachable whitelist);
+  RiskFactory realized() state + factory test. Phase B: RiskController::
+  convertToIssue() (admin/staff guard, project-belonging + already-Realized/
+  Closed guards, severity mapping Low/Med/High, baseline carry, Realized +
+  both-FK link, attachment transfer + relabel, ActivityLog 'Convert Risk to
+  Issue', IssueReported notification); riskToJson now exposes baseline_label,
+  converted_to_issue_id, converted_issue_label, attachments[] with eager
+  loading; 2 convert routes (staff + admin). Phase C: destroy guards both
+  directions (RiskController::destroy blocks converted risks 422;
+  IssueController::destroy reverts risk to Open + clears link).
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE

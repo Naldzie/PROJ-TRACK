@@ -23,8 +23,11 @@ class Risk extends Model
 
     /**
      * Available lifecycle statuses for a risk.
+     *
+     * 'Realized' means the risk actually materialized and was converted into
+     * an issue (see converted_to_issue_id).
      */
-    const STATUSES = ['Open', 'Mitigated', 'Closed'];
+    const STATUSES = ['Open', 'Mitigated', 'Closed', 'Realized'];
 
     /**
      * Level thresholds derived from risk_score (probability × impact, 1-9).
@@ -59,13 +62,17 @@ class Risk extends Model
         'identified_at',
         'mitigated_at',
         'closed_at',
+        'baseline_schedule_id',
+        'converted_to_issue_id',
     ];
 
     protected $casts = [
-        'identified_at' => 'date',
-        'mitigated_at'  => 'datetime',
-        'closed_at'     => 'datetime',
-        'risk_score'    => 'integer',
+        'identified_at'        => 'date',
+        'mitigated_at'         => 'datetime',
+        'closed_at'            => 'datetime',
+        'risk_score'           => 'integer',
+        'baseline_schedule_id' => 'integer',
+        'converted_to_issue_id'=> 'integer',
     ];
 
     // ==================== RELATIONSHIPS ====================
@@ -76,6 +83,30 @@ class Risk extends Model
     public function project()
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * The baseline month this risk threatens (optional)
+     */
+    public function baselineSchedule()
+    {
+        return $this->belongsTo(ProjectBaselineSchedule::class);
+    }
+
+    /**
+     * The issue created when this risk materialized (set on conversion)
+     */
+    public function convertedToIssue()
+    {
+        return $this->belongsTo(Issue::class, 'converted_to_issue_id');
+    }
+
+    /**
+     * Evidence files attached to this risk (risk evidence; context 'risk')
+     */
+    public function attachments()
+    {
+        return $this->morphMany(Attachment::class, 'attachable');
     }
 
     // ==================== SCOPES ====================

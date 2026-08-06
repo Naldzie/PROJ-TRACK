@@ -197,6 +197,8 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
         ->name('staff.projects.risks.update');
     Route::delete('/projects/{project}/risks/{risk}', [RiskController::class, 'destroy'])
         ->name('staff.projects.risks.destroy');
+    Route::post('/projects/{project}/risks/{risk}/convert', [RiskController::class, 'convertToIssue'])
+        ->name('staff.projects.risks.convert');
 
     // === PROJECT EXTENSIONS: CRUD ROUTES ===
     Route::post('/projects/{project}/extensions', [ProjectExtensionController::class, 'store'])
@@ -533,6 +535,8 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.risks.update');
     Route::delete('/projects/{project}/risks/{risk}', [RiskController::class, 'destroy'])
         ->name('admin.projects.risks.destroy');
+    Route::post('/projects/{project}/risks/{risk}/convert', [RiskController::class, 'convertToIssue'])
+        ->name('admin.projects.risks.convert');
 
     // === PROJECT EXTENSIONS: CRUD ROUTES ===
     Route::post('/projects/{project}/extensions', [ProjectExtensionController::class, 'store'])
