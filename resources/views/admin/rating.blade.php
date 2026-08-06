@@ -242,14 +242,6 @@ select {
 .empty-state strong { display: block; color: var(--ink); font-size: 13px; margin-bottom: 5px; }
 .empty-state p { font-size: 12px; }
 
-.toast {
-  position: fixed; right: 24px; bottom: 24px; background: #1a2540; color: #fff;
-  padding: 12px 15px; border-radius: 10px; box-shadow: var(--shadow-md);
-  font-size: 12px; transform: translateY(18px); opacity: 0; pointer-events: none;
-  transition: transform .3s var(--ease-out), opacity .3s var(--ease-out); z-index: 9999;
-}
-.toast.show { transform: translateY(0); opacity: 1; }
-
 /* ── Rating Modal ── */
 .cr-modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
@@ -433,8 +425,6 @@ select {
   </div>
 </div>
 
-<div class="toast" id="toast" role="status"></div>
-
 <script>
 const contractorsData = @json($contractorsJson);
 const ratingsData = @json($ratingsJson);
@@ -446,14 +436,6 @@ let currentProjectId = null;
 let currentStar = 0;
 
 const starLabels = ['', 'Poor performance', 'Below average', 'Acceptable', 'Good performance', 'Excellent performance'];
-
-function showToast(message) {
-  const el = document.getElementById('toast');
-  el.textContent = message;
-  el.classList.add('show');
-  clearTimeout(window.toastTimer);
-  window.toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
-}
 
 function starsHtml(rating) {
   let s = '';
@@ -648,7 +630,7 @@ function saveRating() {
   .then(data => {
     if (data.success) {
       updateProjectStars(currentKey, currentStar);
-      showToast('Rating saved. Keep the feedback specific.');
+      showToast('Rating saved. Keep the feedback specific.', 'success');
     }
     closeModal();
   })
@@ -731,7 +713,7 @@ function applyAISuggestion(contractorId, projectId, rating, key) {
   .then(data => {
     if (data.success) {
       updateProjectStars(key, rating);
-      showToast('Rating applied! (' + rating + '/5)');
+      showToast('Rating applied! (' + rating + '/5)', 'success');
       document.getElementById('analysisBody').innerHTML = '<div class="empty-state" style="color:oklch(40% .11 160)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><strong>Rating applied!</strong><p>' + rating + '/5 — AI review complete.</p></div>';
     }
   })
@@ -756,7 +738,7 @@ document.getElementById('autoRateBtn').addEventListener('click', function() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      showToast(data.message);
+      showToast(data.message, 'success');
       location.reload();
     }
   })

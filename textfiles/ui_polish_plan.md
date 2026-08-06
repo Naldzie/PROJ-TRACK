@@ -2,7 +2,7 @@
 
 CSPC PMU System — phase-ui-polish branch
 
-Status: ✅ Phase A + Phase B COMPLETE (committed & pushed) — Phase C next
+Status: ✅ Phases A, B, C & D COMPLETE (committed & pushed)
 
 Rules: textfiles/active_reference/project_context_and_development_rules.txt (Rule 8/10/11/12)
 
@@ -111,19 +111,20 @@ untouched.
   `ContractorDashboardTest` empty-state copy. Full suite green: 385 passed.
 - Browser-verified per Rule 8.
 
-### Phase C — Data-display page pass
+### Phase C — Data-display page pass ✅ DONE (scoped: index + project detail)
 
 Browser-walk each page; fix page headers, card styling, tables, status badges,
-empty states, button consistency.
+empty states, button consistency. Per user decision, Phase C was scoped to the
+**projects index + project detail** pages only (secondary pages deferred).
 
 - Projects index (`projects/index.blade.php`) — filter/search/sort/pagination;
   verify existing JS filters work.
 - Project detail — header, stats-row, tab nav, baseline/progress/issues/risks
   tables + modals.
 - Secondary pages — email inbox, warranty, ratings, profile, notifications,
-  activity logs (heading/card/empty-state consistency).
+  activity logs (heading/card/empty-state consistency). ⬜ deferred.
 
-#### Phase C audit (Aug 6) — projects index + project detail consistency fixes ✅ (code/tests done)
+#### Phase C audit (Aug 6) — consistency fixes ✅ (committed & pushed)
 
 Audited the shared index + detail blades. Fixed 4 concrete consistency /
 correctness issues:
@@ -146,14 +147,48 @@ correctness issues:
   shown when assigned and absent when not; contractor detail access rules
   (own project OK, other project 403).
 - Full suite green: **394 passed / 1396 assertions**.
-- ⏳ PENDING: browser verification by user (Rule 8), then commit + push.
+- ✅ Committed `2980791` + pushed.
 
-### Phase D — Cross-cutting UX (lighter, time permitting)
+### Phase D — Cross-cutting UX (lighter, time permitting) ✅ DONE
 
 - Toast/SweetAlert consistency, loading states.
 - Light responsive pass (allow fixed sidebar to collapse on small screens)
   WITHOUT merging the 3 layouts.
 - Anything risky flagged before proceeding.
+
+#### Phase D audit (Aug 7) — toast unify + responsive sidebar ✅ (committed & pushed)
+
+**Loading states** — audited, already well covered (email pages + document viewer
+have spinners/overlays, ~83 disabled/spinner/saving patterns). No work needed.
+
+**Toast unification** — the 4 live pages with a legacy bottom-right `#toast` +
+local `showToast(text)` (no type arg) migrated to the shared
+`components/toast` (top-right `#toastContainer`, typed `showToast(msg, type)`):
+
+- `admin/email.blade.php` — removed local `.toast` CSS, `#toast` div, local
+  `showToast()`; auto-send toggle now calls typed `showToast(msg, 'success'|'warning')`.
+- `staff/email.blade.php`, `contractor/email.blade.php` — removed the (dead)
+  local toast CSS/div/function.
+- `admin/rating.blade.php` — removed local toast; 3 call sites now typed
+  (`'success'`).
+- `admin/projects.blade.php` left as-is (orphaned page, not rendered by any
+  controller; its local `showToast(type, message)` doesn't affect live pages).
+
+**Responsive sidebar (no layout merge)** — new shared assets wired into all 3
+layouts (app / stafflayouts / contractorlayouts):
+
+- `public/css/layouts/responsive.css` — ≤1023.98px: `.sidebar` off-canvas
+  translate, `.topbar`/`.content` margin reset, hamburger + backdrop show.
+- `public/js/layouts/sidebar.js` — `toggleSidebar()`/`closeSidebar()`; closes on
+  nav-click, Escape, or backdrop; resets on resize past the breakpoint.
+- Each layout: hamburger `.sidebar-toggle` in the topbar, `.sidebar-backdrop`
+  after the content div, CSS/JS linked via `asset()` (no-vite convention).
+
+- TEST `tests/Feature/UiPolishLayoutTest.php` (4 tests): admin.email,
+  staff.email, contractor.email, admin.rating each render `#toastContainer`,
+  responsive CSS + JS, hamburger, and no legacy `#toast`.
+- Full suite green: **398 passed / 1420 assertions**.
+- Browser verification still pending (Rule 8) — see §6 next session.
 
 ## 4. CONSTRAINTS
 
@@ -168,6 +203,10 @@ NEW:
 - `app/Http/Controllers/Contractor/DashboardController.php` ✅
 - `tests/Feature/ContractorDashboardTest.php` ✅
 - `tests/Feature/DashboardOverdueInspectionTest.php` ✅
+- `tests/Feature/ProjectsRenderTest.php` ✅
+- `tests/Feature/UiPolishLayoutTest.php` ✅
+- `public/css/layouts/responsive.css` ✅
+- `public/js/layouts/sidebar.js` ✅
 - `textfiles/ui_polish_plan.md` (this file)
 
 MODIFIED:
@@ -179,6 +218,13 @@ MODIFIED:
 - `app/Http/Controllers/DashboardController.php` ✅ (overdue-inspection signal + NOW() fix)
 - `app/Http/Controllers/ProjectController.php` ✅ (filter=… deep links)
 - `resources/views/projects/index.blade.php` ✅ (filter banner)
+- `resources/views/layouts/app.blade.php` ✅ (responsive CSS/JS + hamburger + backdrop)
+- `resources/views/layouts/stafflayouts.blade.php` ✅ (same)
+- `resources/views/layouts/contractorlayouts.blade.php` ✅ (same)
+- `resources/views/admin/email.blade.php` ✅ (toast migration)
+- `resources/views/staff/email.blade.php` ✅ (toast cleanup)
+- `resources/views/contractor/email.blade.php` ✅ (toast cleanup)
+- `resources/views/admin/rating.blade.php` ✅ (toast migration)
 - Secondary pages per Phase C findings.
 
 DELETED (housekeeping — deferred, user chose to keep for now):
@@ -215,14 +261,37 @@ DELETED (housekeeping — deferred, user chose to keep for now):
   updated `ContractorDashboardTest` empty-state copy. Full suite green:
   **385 passed / 1368 assertions**.
 
-### 2026-08-06 — Phase C audit: index + detail consistency fixes (not yet committed)
+### 2026-08-06 — Phase C audit: index + detail consistency fixes (committed & pushed)
 
 - Fixed 4 issues in `projects/index.blade.php` (contractor clear-filter route,
   banner gating, `colspan` 9→13) and project detail header (PM meta-item
   label/value).
 - New `tests/Feature/ProjectsRenderTest.php` (9 tests). Full suite green:
   **394 passed / 1396 assertions**.
-- Awaiting user browser verification before commit/push (Rule 8/10/12).
+- Commit `2980791` "Projects index & detail consistency: contractor clear-filter
+  route, banner gating, 13-col empty state, PM meta-item; render tests" + pushed.
+
+### 2026-08-06 — Phase D started
+
+- Phase D = cross-cutting UX: toast/SweetAlert consistency + loading states, and
+  a light responsive pass (fixed sidebar collapses on small screens) WITHOUT
+  merging the 3 layouts. Anything risky flagged before proceeding.
+
+### 2026-08-07 — Phase D completed (committed & pushed with this update)
+
+- **Toast unify:** 4 live pages migrated from legacy bottom-right `#toast` +
+  local `showToast(text)` to shared `components/toast` (typed `showToast`).
+  `admin/email` + `admin/rating` calls now typed; `staff/email` +
+  `contractor/email` dead toast code removed. `admin/projects.blade.php` left
+  alone (orphaned page).
+- **Responsive sidebar:** shared `public/css/layouts/responsive.css` +
+  `public/js/layouts/sidebar.js`, wired into all 3 layouts (hamburger in
+  topbar, backdrop, off-canvas ≤1023.98px). No layout merge.
+- Loading-state audit: already well covered — no work.
+- New `tests/Feature/UiPolishLayoutTest.php` (4 tests). Full suite green:
+  **398 passed / 1420 assertions**.
+- ⚠️ Remaining: browser-verify responsive sidebar + toast visuals per Rule 8
+  (needs a running server), then commit + push.
 
 ---
 

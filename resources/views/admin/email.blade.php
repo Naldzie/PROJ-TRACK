@@ -393,24 +393,6 @@
 .empty-state strong { display: block; color: var(--ink); font-size: 13px; margin-bottom: 4px; }
 .empty-state span { font-size: 11px; }
 
-.toast {
-  position: fixed;
-  right: 24px;
-  bottom: 22px;
-  padding: 11px 14px;
-  border-radius: 9px;
-  background: oklch(25% .045 275);
-  color: oklch(98% .008 270);
-  box-shadow: var(--shadow-md);
-  font-size: 12px;
-  transform: translateY(16px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .3s var(--ease), transform .3s var(--ease);
-  z-index: 500;
-}
-.toast.show { transform: translateY(0); opacity: 1; }
-
 .overlay {
   display: none;
   position: fixed;
@@ -815,26 +797,16 @@
   </div>
 </div>
 
-<div class="toast" id="toast" role="status"></div>
-
 <script>
 let currentFilter = 'all';
 let currentEmailId = null;
-
-function showToast(text) {
-  const el = document.getElementById('toast');
-  el.textContent = text;
-  el.classList.add('show');
-  clearTimeout(window.toast);
-  window.toast = setTimeout(() => el.classList.remove('show'), 2400);
-}
 
 document.getElementById('autoToggle').addEventListener('click', function() {
   this.classList.toggle('on');
   const enabled = this.classList.contains('on');
   document.getElementById('automationLabel').textContent = enabled ? 'Currently active' : 'Paused';
   document.getElementById('autoSendVal').value = enabled ? '1' : '0';
-  showToast(enabled ? 'Auto-send enabled' : 'Auto-send paused');
+  showToast(enabled ? 'Auto-send enabled' : 'Auto-send paused', enabled ? 'success' : 'warning');
   document.getElementById('autoSendForm').submit();
 });
 

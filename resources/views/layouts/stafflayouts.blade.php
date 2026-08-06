@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="{{ asset('css/admin/projects/project-detail.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/projects.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}">
+    {{-- RESPONSIVE SIDEBAR (shared) --}}
+    <link rel="stylesheet" href="{{ asset('css/layouts/responsive.css') }}">
 
     <style>
         * { box-sizing: border-box; }
@@ -263,6 +265,9 @@
 
 <!-- TOPBAR -->
 <div class="topbar">
+    <button type="button" class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle navigation">
+        <i class="bi bi-list"></i>
+    </button>
     <div class="profile-section">
         @include('notifications.partials.bell')
         <div class="profile-info">
@@ -288,6 +293,9 @@
 <div class="content">
     @yield('content')
 </div>
+
+<!-- RESPONSIVE SIDEBAR BACKDROP -->
+<div class="sidebar-backdrop" onclick="closeSidebar()"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -403,6 +411,9 @@ Swal.fire({
 
 {{-- GLOBAL TOAST NOTIFICATION --}}
 @include('components.toast')
+
+{{-- RESPONSIVE SIDEBAR TOGGLE (shared) --}}
+<script src="{{ asset('js/layouts/sidebar.js') }}"></script>
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')
