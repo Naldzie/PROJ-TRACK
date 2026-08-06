@@ -13,6 +13,7 @@
     };
 
     $indexRoute = match(auth()->user()->role) {
+        'contractor' => 'contractor.projects',
         'staff'  => 'staff.projects',
         default  => 'admin.projects',
     };
@@ -34,7 +35,7 @@
 
 @section('content')
 
-@if($activeFilterLabel)
+@if($activeFilterLabel && in_array(auth()->user()->role, ['admin', 'staff']))
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;">
         <i class="bi bi-funnel-fill" style="color:#2563eb;"></i>
         <span>Showing: <strong>{{ $activeFilterLabel }}</strong></span>
@@ -538,7 +539,7 @@
             @endforeach
         @else
             <tr>
-                <td colspan="9" style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
+                <td colspan="13" style="text-align: center; padding: 40px 20px; color: var(--text-muted);">
                     No projects found
                 </td>
             </tr>

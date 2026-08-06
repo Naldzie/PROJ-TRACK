@@ -123,6 +123,31 @@ empty states, button consistency.
 - Secondary pages — email inbox, warranty, ratings, profile, notifications,
   activity logs (heading/card/empty-state consistency).
 
+#### Phase C audit (Aug 6) — projects index + project detail consistency fixes ✅ (code/tests done)
+
+Audited the shared index + detail blades. Fixed 4 concrete consistency /
+correctness issues:
+
+1. **Filter-banner "Clear filter" pointed contractors at `admin.projects`.**
+   `$indexRoute` in `projects/index.blade.php` had no contractor case, so the
+   role-correct route now falls back to `contractor.projects`.
+2. **Filter banner rendered for contractors** even though `ProjectController@index`
+   ignores `?status=`/`?filter=` for that role — banner now gated to admin/staff.
+3. **Table empty-state `colspan="9"`** under a 13-column table — fixed to 13
+   (empty row no longer renders off-center).
+4. **Project detail header Project Manager meta-item was icon-only** (no label /
+   value rendered) when `assigned_project_manager` was set — added the
+   `<div class="meta-info">` block using `getProjectManagerName()`.
+   (`projects/project_detail/components/header.blade.php`)
+
+- TEST `tests/Feature/ProjectsRenderTest.php` (9 tests): index renders with
+  project cards; admin deep-link banner + clear target; contractor index never
+  links to admin; 13-col empty state; detail renders header/stats/tabs; PM meta
+  shown when assigned and absent when not; contractor detail access rules
+  (own project OK, other project 403).
+- Full suite green: **394 passed / 1396 assertions**.
+- ⏳ PENDING: browser verification by user (Rule 8), then commit + push.
+
 ### Phase D — Cross-cutting UX (lighter, time permitting)
 
 - Toast/SweetAlert consistency, loading states.
@@ -189,6 +214,15 @@ DELETED (housekeeping — deferred, user chose to keep for now):
 - Tests: `tests/Feature/DashboardOverdueInspectionTest.php` (8 tests);
   updated `ContractorDashboardTest` empty-state copy. Full suite green:
   **385 passed / 1368 assertions**.
+
+### 2026-08-06 — Phase C audit: index + detail consistency fixes (not yet committed)
+
+- Fixed 4 issues in `projects/index.blade.php` (contractor clear-filter route,
+  banner gating, `colspan` 9→13) and project detail header (PM meta-item
+  label/value).
+- New `tests/Feature/ProjectsRenderTest.php` (9 tests). Full suite green:
+  **394 passed / 1396 assertions**.
+- Awaiting user browser verification before commit/push (Rule 8/10/12).
 
 ---
 
