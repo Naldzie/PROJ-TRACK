@@ -4,6 +4,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+<link href="{{ asset('css/dashboard/dashboard.css') }}" rel="stylesheet">
 
 <style>
   :root {
@@ -191,94 +192,6 @@
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--bg-light);
-  }
-
-  /* ===== TIMELINE ===== */
-  .tl-header {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid var(--bg-light);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .tl-name-col {
-    flex: 0 0 160px;
-  }
-
-  .tl-bar-col {
-    flex: 1;
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .tl-end-col {
-    flex: 0 0 80px;
-    text-align: right;
-  }
-
-  .tl-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 0;
-    border-bottom: 1px solid var(--bg-light);
-  }
-
-  .tl-row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .tl-row:first-child {
-    padding-top: 0;
-  }
-
-  .tl-name {
-    flex: 0 0 160px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-main);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .tl-loc {
-    font-size: 11px;
-    color: var(--text-light);
-    margin-top: 3px;
-  }
-
-  .tl-track {
-    flex: 1;
-    position: relative;
-    height: 8px;
-  }
-
-  .tl-bg {
-    position: absolute;
-    height: 6px;
-    top: 1px;
-    border-radius: 3px;
-    background: var(--bg-light);
-  }
-
-  .tl-fill {
-    position: absolute;
-    height: 6px;
-    top: 1px;
-    border-radius: 3px;
-  }
-
-  .tl-pct {
-    flex: 0 0 80px;
-    text-align: right;
   }
 
   .status-pill {
@@ -575,7 +488,7 @@
         <p>View your assigned projects, track progress, and manage project activities.</p>
       </div>
       <div class="dashboard-header-actions">
-        <a href="#" class="btn btn-light quick-action-btn">
+        <a href="{{ route('contractor.projects') }}" class="btn btn-light quick-action-btn">
           <i class="bi bi-eye me-1"></i> View All Projects
         </a>
       </div>
@@ -586,23 +499,23 @@
   <div class="stat-cards">
     <div class="stat-card">
       <div class="stat-label"><span class="stat-dot" style="background:#888780"></span>Total assigned</div>
-      <div class="stat-val">5</div>
+      <div class="stat-val">{{ $totalProjects }}</div>
       <div class="stat-sub">All projects</div>
     </div>
     <div class="stat-card">
       <div class="stat-label"><span class="stat-dot" style="background:#059669"></span>Completed</div>
-      <div class="stat-val" style="color:#059669">2</div>
-      <div class="stat-sub">40% of total</div>
+      <div class="stat-val" style="color:#059669">{{ $completedCount }}</div>
+      <div class="stat-sub">{{ $completedPct }}% of total</div>
     </div>
     <div class="stat-card">
       <div class="stat-label"><span class="stat-dot" style="background:#2563eb"></span>In progress</div>
-      <div class="stat-val" style="color:#2563eb">2</div>
-      <div class="stat-sub">45% of total</div>
+      <div class="stat-val" style="color:#2563eb">{{ $ongoingCount }}</div>
+      <div class="stat-sub">{{ $ongoingPct }}% of total</div>
     </div>
     <div class="stat-card">
       <div class="stat-label"><span class="stat-dot" style="background:#f59e0b"></span>Not yet started</div>
-      <div class="stat-val" style="color:#f59e0b">1</div>
-      <div class="stat-sub">15% of total</div>
+      <div class="stat-val" style="color:#f59e0b">{{ $plannedCount }}</div>
+      <div class="stat-sub">{{ $plannedPct }}% of total</div>
     </div>
   </div>
 
@@ -612,60 +525,173 @@
     {{-- LEFT COLUMN --}}
     <div class="left-col">
 
-      {{-- TIMELINE --}}
+      {{-- PROJECTS TABLE (mirrors admin/staff dashboard) --}}
       <div class="d-card">
         <div class="d-card-head">
-          <span class="d-card-title">Project timeline</span>
-          <span style="font-size:10px;color:#adb5bd">Jan – Dec 2024</span>
+          <span class="d-card-title">My Projects</span>
+          <a href="{{ route('contractor.projects') }}" class="db-view-all">
+            View all <i class="bi bi-arrow-right"></i>
+          </a>
         </div>
-        <div class="tl-header">
-          <div class="tl-name-col">Project</div>
-          <div class="tl-bar-col"><span>Jan</span><span>Apr</span><span>Jul</span><span>Oct</span><span>Dec</span></div>
-          <div class="tl-end-col">Progress</div>
-        </div>
+        <table class="db-proj-tbl">
+          <thead>
+            <tr>
+              <th style="width:30%">Project</th>
+              <th style="width:22%">This Month</th>
+              <th style="width:18%">Deadline</th>
+              <th style="width:12%">Health</th>
+              <th style="width:4%"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @forelse($tableProjects as $project)
+              @php
+                // ── OVERALL PROGRESS (preloaded — no N+1) ──────────────
+                $progress = isset($latestKnownProgress[$project->id])
+                    ? (float) ($latestKnownProgress[$project->id]->actual_progress_percent ?? 0)
+                    : 0;
 
-        {{-- Replace this block with @foreach($projects as $project) in real implementation --}}
-        <div class="tl-row">
-          <div class="tl-name" title="Building A Renovation">Building A Renovation<div class="tl-loc">Batangas City</div></div>
-          <div class="tl-track">
-            <div class="tl-bg"   style="left:0%;width:54%"></div>
-            <div class="tl-fill" style="left:0%;width:54%;background:#059669"></div>
-          </div>
-          <div class="tl-pct"><span class="status-pill pill-completed">100%</span></div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-name" title="Road Expansion">Road Expansion<div class="tl-loc">Lipa City</div></div>
-          <div class="tl-track">
-            <div class="tl-bg"   style="left:15%;width:70%"></div>
-            <div class="tl-fill" style="left:15%;width:49%;background:#2563eb"></div>
-          </div>
-          <div class="tl-pct"><span class="status-pill pill-inprogress">70%</span></div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-name" title="Bridge Construction">Bridge Construction<div class="tl-loc">Tanauan</div></div>
-          <div class="tl-track">
-            <div class="tl-bg"   style="left:23%;width:77%"></div>
-            <div class="tl-fill" style="left:23%;width:35%;background:#2563eb"></div>
-          </div>
-          <div class="tl-pct"><span class="status-pill pill-inprogress">45%</span></div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-name" title="Water System Upgrade">Water System Upgrade<div class="tl-loc">Sto. Tomas</div></div>
-          <div class="tl-track">
-            <div class="tl-bg"   style="left:46%;width:31%"></div>
-            <div class="tl-fill" style="left:46%;width:0%;background:#f59e0b"></div>
-          </div>
-          <div class="tl-pct"><span class="status-pill pill-notstarted">0%</span></div>
-        </div>
-        <div class="tl-row">
-          <div class="tl-name" title="Admin Bldg Extension">Admin Bldg Extension<div class="tl-loc">Batangas City</div></div>
-          <div class="tl-track">
-            <div class="tl-bg"   style="left:8%;width:54%"></div>
-            <div class="tl-fill" style="left:8%;width:54%;background:#059669"></div>
-          </div>
-          <div class="tl-pct"><span class="status-pill pill-completed">100%</span></div>
-        </div>
-        {{-- End foreach --}}
+                // ── THIS MONTH: PLANNED vs ACTUAL ─────────────────────
+                $monthRecord     = $currentMonthProgress[$project->id] ?? null;
+                $monthBaseline   = $currentMonthBaseline[$project->id] ?? null;
+                $latestRecord    = $latestKnownProgress[$project->id] ?? null;
+
+                $monthActual     = $monthRecord  ? (float) $monthRecord->actual_progress_percent
+                                : ($latestRecord ? (float) $latestRecord->actual_progress_percent
+                                : null);
+                $monthPlanned    = $monthBaseline ? (float) $monthBaseline->planned_progress_percent : null;
+
+                $hasActual       = $monthActual  !== null;
+                $hasPlanned      = $monthBaseline !== null;
+                $isCurrentMonth  = $monthRecord  !== null;
+
+                // ── HEALTH (mirrors Project::isOverdue()/isAtRisk()) ───
+                $days          = $project->planned_end_date
+                    ? (int) now()->diffInDays($project->planned_end_date, false)
+                    : null;
+                $isOverdue     = $project->planned_end_date
+                    && $project->planned_end_date->lt(now()) && $progress < 100;
+                $isAtRisk      = !$isOverdue && $days !== null && $days < 15 && $progress < 90;
+
+                $fillClass     = $isOverdue ? 'fill-danger'
+                                : ($isAtRisk  ? 'fill-warning'
+                                : 'fill-healthy');
+                $deadlineClass = $isOverdue           ? 'overdue'
+                                : ($days !== null && $days < 30 ? 'urgent' : 'ok');
+
+                $riskLabel     = $isOverdue ? 'OVERDUE'
+                                : ($isAtRisk ? 'AT RISK' : 'ON TRACK');
+                $riskClass     = $isOverdue ? 'risk-high'
+                                : ($isAtRisk ? 'risk-medium' : 'risk-low');
+                $dotColor      = $isOverdue ? 'var(--red-600)'
+                                : ($isAtRisk ? 'var(--amber-600)' : 'var(--green-600)');
+              @endphp
+              <tr>
+                {{-- Project identity: code, title, category --}}
+                <td>
+                  <div class="project-code">{{ $project->code }}</div>
+                  <div class="project-title">{{ $project->title }}</div>
+                  <span class="project-category">{{ $project->category->name ?? '—' }}</span>
+                </td>
+
+                {{-- This month: planned vs actual, falls back to overall --}}
+                <td>
+                  @if($hasActual || $hasPlanned)
+                    <div class="this-month-label">
+                      @if($hasPlanned)
+                        Planned <strong style="color:var(--gray-700)">{{ number_format($monthPlanned, 0) }}%</strong>
+                      @else
+                        <span style="color:var(--gray-400)">No target set</span>
+                      @endif
+                      ·
+                      @if($hasActual)
+                        @if($isCurrentMonth)
+                          Actual
+                        @else
+                          Last
+                        @endif
+                        @if($monthActual >= ($monthPlanned ?? 0))
+                          <strong style="color:var(--green-600)">{{ number_format($monthActual, 0) }}%</strong>
+                        @else
+                          <strong style="color:var(--red-600)">{{ number_format($monthActual, 0) }}%</strong>
+                        @endif
+                      @else
+                        <span style="color:var(--gray-400);font-style:italic">no record</span>
+                      @endif
+                    </div>
+                    <div class="progress-visual">
+                      <div class="progress-bar-mini">
+                        <div class="fill {{ $fillClass }}"
+                            style="width:{{ $hasActual ? $monthActual : $monthPlanned }}%;
+                                    {{ !$isCurrentMonth ? 'opacity:0.6' : '' }}">
+                        </div>
+                      </div>
+                      <span class="progress-percent" style="{{ !$isCurrentMonth ? 'color:var(--gray-400)' : '' }}">
+                        {{ $hasActual ? number_format($monthActual, 0) : number_format($monthPlanned, 0) }}%
+                      </span>
+                    </div>
+                    @if(!$isCurrentMonth && $hasActual)
+                      <div style="font-size:10px;color:var(--gray-400);margin-top:2px;font-style:italic">
+                        No {{ now()->format('M') }} inspection yet
+                      </div>
+                    @endif
+                  @else
+                    <div class="this-month-label">
+                      Overall <strong style="color:var(--gray-700)">{{ number_format($progress, 0) }}%</strong>
+                    </div>
+                    <div class="progress-visual">
+                      <div class="progress-bar-mini">
+                        <div class="fill {{ $fillClass }}" style="width:{{ $progress }}%"></div>
+                      </div>
+                      <span class="progress-percent">{{ number_format($progress, 0) }}%</span>
+                    </div>
+                    <div style="font-size:10px;color:var(--gray-400);margin-top:2px">
+                      No {{ now()->format('M') }} baseline
+                    </div>
+                  @endif
+                </td>
+
+                {{-- Deadline: date + days remaining or overdue count --}}
+                <td>
+                  <div class="deadline-cell {{ $deadlineClass }}">
+                    {{ $project->planned_end_date?->format('M d, Y') ?? '—' }}
+                  </div>
+                  @if($isOverdue)
+                    <div class="days-label overdue-text">
+                      {{ abs($days) }}d overdue
+                    </div>
+                  @elseif($days !== null)
+                    <div class="days-label {{ $days < 30 ? 'days-urgent' : 'days-ok' }}">
+                      {{ $days }}d left
+                    </div>
+                  @endif
+                </td>
+
+                {{-- Health badge: ON TRACK / AT RISK / OVERDUE --}}
+                <td>
+                  <span class="risk-indicator {{ $riskClass }}">
+                    <span class="risk-dot" style="background:{{ $dotColor }}"></span>
+                    {{ $riskLabel }}
+                  </span>
+                </td>
+
+                {{-- Row action: links to the project detail page --}}
+                <td>
+                  <a href="{{ route('projects.show', $project->id) }}" class="db-row-link">
+                    <i class="bi bi-chevron-right"></i>
+                  </a>
+                </td>
+              </tr>
+            @empty
+              <tr>
+                <td colspan="5" style="text-align:center;padding:32px;color:var(--gray-400)">
+                  <i class="bi bi-check-circle" style="font-size:22px;display:block;margin-bottom:8px"></i>
+                  No ongoing projects at the moment.
+                </td>
+              </tr>
+            @endforelse
+          </tbody>
+        </table>
       </div>
 
       {{-- BUDGET --}}
@@ -673,36 +699,24 @@
         <div class="d-card-head">
           <span class="d-card-title">Total budget allocation</span>
         </div>
-        <div class="budget-total">₱34,550,000</div>
-        <div class="budget-sub">Across 5 assigned projects</div>
+        <div class="budget-total">{{ \App\Helpers\FormatHelper::formatCurrency($totalBudget) }}</div>
+        <div class="budget-sub">Across {{ $totalProjects }} assigned {{ Str::plural('project', $totalProjects) }}</div>
 
-        {{-- Replace with @foreach in real implementation --}}
-        <div class="bbar-row">
-          <div class="bbar-name" title="Building A Renovation">Building A</div>
-          <div class="bbar-track"><div class="bbar-fill" style="width:12%;background:#059669"></div></div>
-          <div class="bbar-amt">₱4.2M</div>
-        </div>
-        <div class="bbar-row">
-          <div class="bbar-name" title="Road Expansion">Road Expansion</div>
-          <div class="bbar-track"><div class="bbar-fill" style="width:25%;background:#2563eb"></div></div>
-          <div class="bbar-amt">₱8.75M</div>
-        </div>
-        <div class="bbar-row">
-          <div class="bbar-name" title="Bridge Construction">Bridge Constr.</div>
-          <div class="bbar-track"><div class="bbar-fill" style="width:35%;background:#2563eb"></div></div>
-          <div class="bbar-amt">₱12.0M</div>
-        </div>
-        <div class="bbar-row">
-          <div class="bbar-name" title="Water System Upgrade">Water System</div>
-          <div class="bbar-track"><div class="bbar-fill" style="width:10%;background:#f59e0b"></div></div>
-          <div class="bbar-amt">₱3.5M</div>
-        </div>
-        <div class="bbar-row">
-          <div class="bbar-name" title="Admin Bldg Extension">Admin Bldg</div>
-          <div class="bbar-track"><div class="bbar-fill" style="width:18%;background:#059669"></div></div>
-          <div class="bbar-amt">₱6.1M</div>
-        </div>
-        {{-- End foreach --}}
+        @forelse($budgetProjects as $project)
+          @php
+            $budgetPct = $totalBudget ? round(($project->approved_budget / $totalBudget) * 100) : 0;
+          @endphp
+          <div class="bbar-row">
+            <div class="bbar-name" title="{{ $project->title }}">{{ $project->title }}</div>
+            <div class="bbar-track"><div class="bbar-fill" style="width:{{ $budgetPct }}%;background:{{ $project->status === 'Completed' ? '#059669' : '#2563eb' }}"></div></div>
+            <div class="bbar-amt">{{ \App\Helpers\FormatHelper::formatCurrencyShort($project->approved_budget) }}</div>
+          </div>
+        @empty
+          <div style="text-align:center;padding:24px;color:var(--text-light)">
+            <i class="bi bi-cash-stack" style="font-size:20px;display:block;margin-bottom:8px"></i>
+            No budget data yet.
+          </div>
+        @endforelse
       </div>
 
     </div>{{-- end left-col --}}
@@ -715,14 +729,14 @@
         <div class="d-card-head"><span class="d-card-title">Status overview</span></div>
         <div class="donut-wrap">
           <div style="position:relative;width:96px;height:96px;flex-shrink:0">
-            <canvas id="statusDonut" role="img" aria-label="Donut chart: 2 completed, 2 in progress, 1 not started">
-              2 completed, 2 in progress, 1 not started.
+            <canvas id="statusDonut" role="img" aria-label="Donut chart: {{ $completedCount }} completed, {{ $ongoingCount }} in progress, {{ $plannedCount }} not started">
+              {{ $completedCount }} completed, {{ $ongoingCount }} in progress, {{ $plannedCount }} not started.
             </canvas>
           </div>
           <div style="flex:1">
-            <div class="leg-row"><span class="leg-sq" style="background:#639922"></span>Completed<span class="leg-val">2</span></div>
-            <div class="leg-row"><span class="leg-sq" style="background:#378ADD"></span>In progress<span class="leg-val">2</span></div>
-            <div class="leg-row"><span class="leg-sq" style="background:#EF9F27"></span>Not started<span class="leg-val">1</span></div>
+            <div class="leg-row"><span class="leg-sq" style="background:#059669"></span>Completed<span class="leg-val">{{ $completedCount }}</span></div>
+            <div class="leg-row"><span class="leg-sq" style="background:#2563eb"></span>In progress<span class="leg-val">{{ $ongoingCount }}</span></div>
+            <div class="leg-row"><span class="leg-sq" style="background:#f59e0b"></span>Not started<span class="leg-val">{{ $plannedCount }}</span></div>
           </div>
         </div>
       </div>
@@ -731,88 +745,53 @@
       <div class="d-card">
         <div class="d-card-head"><span class="d-card-title">Upcoming deadlines</span></div>
 
-        {{-- Replace with @foreach in real implementation --}}
-        <div class="dl-row">
-          <div class="dl-date"><div class="dl-month">Aug</div><div class="dl-day">30</div></div>
-          <div class="dl-info">
-            <div class="dl-proj">Building A Renovation</div>
-            <div class="dl-desc">Final turnover &amp; inspection</div>
+        @forelse($deadlineProjects as $project)
+          @php
+            $dlProgress = (float) ($latestKnownProgress[$project->id]->actual_progress_percent
+                        ?? $latestKnownProgress[$project->id]->progress_percentage ?? 0);
+            $dlDays     = (int) now()->diffInDays($project->planned_end_date, false);
+            $dlOverdue  = $dlDays < 0 && $dlProgress < 100;
+            $dlPill     = $dlOverdue ? 'pill-notstarted'
+                : match ($project->status) {
+                    'Ongoing' => 'pill-inprogress',
+                    default   => 'pill-notstarted',
+                };
+          @endphp
+          <div class="dl-row">
+            <div class="dl-date"><div class="dl-month">{{ $project->planned_end_date->format('M') }}</div><div class="dl-day">{{ $project->planned_end_date->format('d') }}</div></div>
+            <div class="dl-info">
+              <div class="dl-proj">{{ $project->title }}</div>
+              <div class="dl-desc">{{ $dlOverdue ? 'Overdue by ' . abs($dlDays) . ' day' . (abs($dlDays) !== 1 ? 's' : '') : ($dlDays >= 0 ? $dlDays . ' days remaining' : 'Completed on schedule') }}</div>
+            </div>
+            <span class="status-pill {{ $dlPill }}">{{ $dlOverdue ? 'Overdue' : $project->status }}</span>
           </div>
-          <span class="status-pill pill-completed">Done</span>
-        </div>
-        <div class="dl-row">
-          <div class="dl-date"><div class="dl-month">Nov</div><div class="dl-day">15</div></div>
-          <div class="dl-info">
-            <div class="dl-proj">Road Expansion</div>
-            <div class="dl-desc">Monthly progress report due</div>
+        @empty
+          <div style="text-align:center;padding:24px;color:var(--text-light)">
+            <i class="bi bi-calendar-check" style="font-size:20px;display:block;margin-bottom:8px"></i>
+            No upcoming deadlines.
           </div>
-          <span class="status-pill pill-inprogress">Active</span>
-        </div>
-        <div class="dl-row">
-          <div class="dl-date"><div class="dl-month">Dec</div><div class="dl-day">10</div></div>
-          <div class="dl-info">
-            <div class="dl-proj">Road Expansion</div>
-            <div class="dl-desc">Target completion date</div>
-          </div>
-          <span class="status-pill pill-inprogress">Active</span>
-        </div>
-        <div class="dl-row">
-          <div class="dl-date"><div class="dl-month">Oct</div><div class="dl-day">31</div></div>
-          <div class="dl-info">
-            <div class="dl-proj">Water System Upgrade</div>
-            <div class="dl-desc">Target completion date</div>
-          </div>
-          <span class="status-pill pill-notstarted">Pending</span>
-        </div>
-        {{-- End foreach --}}
+        @endforelse
       </div>
 
       {{-- RECENT ACTIVITY --}}
       <div class="d-card">
         <div class="d-card-head"><span class="d-card-title">Recent activity</span></div>
 
-        {{-- Replace with @foreach in real implementation --}}
-        <div class="act-row">
-          <div class="act-dot" style="background:#2563eb"></div>
-          <div class="act-body">
-            <div class="act-proj">Road Expansion</div>
-            <div class="act-text">Monthly activities for Oct submitted</div>
+        @forelse($recentActivities as $activity)
+          <div class="act-row">
+            <div class="act-dot" style="background:#2563eb"></div>
+            <div class="act-body">
+              <div class="act-proj">{{ $activity->project?->title ?? 'System' }}</div>
+              <div class="act-text">{{ $activity->description }}</div>
+            </div>
+            <div class="act-time">{{ $activity->created_at?->diffForHumans() }}</div>
           </div>
-          <div class="act-time">2h ago</div>
-        </div>
-        <div class="act-row">
-          <div class="act-dot" style="background:#2563eb"></div>
-          <div class="act-body">
-            <div class="act-proj">Bridge Construction</div>
-            <div class="act-text">Monthly activities for Oct submitted</div>
+        @empty
+          <div style="text-align:center;padding:24px;color:var(--text-light)">
+            <i class="bi bi-activity" style="font-size:20px;display:block;margin-bottom:8px"></i>
+            No recent activity.
           </div>
-          <div class="act-time">1d ago</div>
-        </div>
-        <div class="act-row">
-          <div class="act-dot" style="background:#2563eb"></div>
-          <div class="act-body">
-            <div class="act-proj">Bridge Construction</div>
-            <div class="act-text">Progress updated to 45%</div>
-          </div>
-          <div class="act-time">1d ago</div>
-        </div>
-        <div class="act-row">
-          <div class="act-dot" style="background:#2563eb"></div>
-          <div class="act-body">
-            <div class="act-proj">Road Expansion</div>
-            <div class="act-text">Progress updated to 70%</div>
-          </div>
-          <div class="act-time">3d ago</div>
-        </div>
-        <div class="act-row">
-          <div class="act-dot" style="background:#059669"></div>
-          <div class="act-body">
-            <div class="act-proj">Admin Bldg Extension</div>
-            <div class="act-text">Marked as completed</div>
-          </div>
-          <div class="act-time">2w ago</div>
-        </div>
-        {{-- End foreach --}}
+        @endforelse
       </div>
 
     </div>{{-- end right-col --}}
@@ -826,7 +805,7 @@
     data: {
       labels: ['Completed', 'In Progress', 'Not Started'],
       datasets: [{
-        data: [2, 2, 1],
+        data: [{{ $completedCount }}, {{ $ongoingCount }}, {{ $plannedCount }}],
         backgroundColor: ['#059669', '#2563eb', '#f59e0b'],
         borderWidth: 0,
         hoverOffset: 3

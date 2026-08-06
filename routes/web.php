@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Staff\ProfileStaffController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Contractor\DashboardController as ContractorDashboardController;
 use App\Http\Controllers\Contractor\ProfileContractorController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProjectController;  // Consolidated: handles all roles with authorization
@@ -290,9 +291,8 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
 
 Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->group(function () {
 
-    Route::get('/dashboard', function () {
-        return view('contractor.dashboard');
-    })->name('contractor.dashboard');
+    Route::get('/dashboard', [ContractorDashboardController::class, 'index'])
+        ->name('contractor.dashboard');
 
     Route::get('/email', [ContractorEmailController::class, 'index'])->name('contractor.email');
     Route::get('/emails/{email}', [ContractorEmailController::class, 'show'])->name('contractor.emails.show');
