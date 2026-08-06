@@ -1,0 +1,397 @@
+===============================================================================
+  RISK → ISSUE CONVERSION PLAN (gap #20 enhancement)
+  CSPC PMU System
+  Created: August 6, 2026
+  Status: ⬜ NOT STARTED — plan approved, ready to implement
+===============================================================================
+
+==============================================================================
+  SECTION 1 — PROJECT CONTEXT
+==============================================================================
+
+  System Name
+    Construction Project Monitoring System (CSPC PMU)
+
+  Framework / Language / DB
+    Laravel 12 / PHP 8.2 / MySQL (tests use SQLite :memory:)
+
+  Role model
+    admin / staff / contractor (contractors are read-only by design)
+
+  Frontend convention
+    NO-VITE: feature CSS/JS live in public/css and public/js (e.g.
+    public/css/admin/projects/, public/js/admin/projects/), linked via
+    asset() from the owning Blade partial.
+
+  Base feature
+    Risk Register (gap #20) — fully implemented on branch
+    phase-20-risk-register (commits 98dfe41, 045d2af, 0f4fe4f, be9f64d,
+    4efdcdf). This plan ADDS the risk→issue conversion + parity upgrades.
+
+==============================================================================
+  SECTION 2 — STATUS SUMMARY
+==============================================================================
+
+  Related / already done:
+    • Risk Register (gap #20): risks table + Risk model + RiskController +
+      RiskReported notification + Issues & Risks tab UI + RiskRegisterTest
+      (15 tests). See textfiles/risk_register_plan.txt.
+    • Issues feature: issue_type/severity, baseline_schedule_id link,
+      resolution_notes, polymorphic attachments (contexts 'issue'/'resolution').
+    • Attachment system: polymorphic `attachments` table + AttachmentController
+      (upload/delete/view/download) + AttachmentPolicy. Context whitelist:
+      Attachment::CONTEXTS = ['inspection', 'issue', 'resolution'].
+
+  This plan:
+    ⬜ Phase A — Migration + models + attachment whitelist
+    ⬜ Phase B — Conversion endpoint (RiskController::convertToIssue) + routes
+    ⬜ Phase C — Delete-link guards (both directions)
+    ⬜ Phase D — Risk UI (baseline dropdown, attachments, convert button/modal)
+    ⬜ Phase E — Issue UI ("from Risk" badge)
+    ⬜ Phase F — Tests + docs
+
+==============================================================================
+  SECTION 3 — PROBLEM STATEMENT
+==============================================================================
+
+  Risks (prospective: "what could go wrong") and Issues (retrospective:
+  "what already went wrong") are stored separately with NO link between them.
+
+  When a risk actually materializes, the user must:
+    1. manually create an issue from scratch, re-typing the name/description,
+    2. leave the original risk "Open" forever with no record that it came true,
+    3. re-enter the baseline month, severity, etc. by hand.
+
+  Consequences:
+    • No audit trail connecting a materialized risk to the issue it caused.
+    • Open-risk counts stay inflated after a risk becomes real.
+    • Evidence attached to a risk (site photos, quotes, permits) cannot follow
+      the problem into its new life as an issue.
+    • Risks cannot be tied to a specific baseline month target, unlike issues.
+
+==============================================================================
+  SECTION 4 — CHOSEN DIRECTION
+==============================================================================
+
+  Add a one-way conversion path risk → issue, plus two parity upgrades so
+  risks behave like issues where it makes sense:
+
+  1. Conversion button ("Convert to Issue")
+     Admin/Staff click a button on a non-Realized risk → a pre-filled,
+     editable modal → creates an Issue, marks the risk Realized, and links the
+     two records (risk.converted_to_issue_id ↔ issue.source_risk_id).
+
+  2. Baseline link on risks (parity with issues)
+     Optional baseline_schedule_id on risks so a risk can threaten a specific
+     month/phase target; carries over automatically on conversion.
+
+  3. Attachments on risks (parity with issues)
+     Optional attachments using a NEW context label 'risk' (evidence the risk
+     is credible). Reuses the existing AttachmentController + policy — no new
+     attachment routes.
+
+  4. Attachment behavior on conversion
+     Risk attachments TRANSFER to the new issue and are relabeled context
+     'issue' so they render as normal issue evidence in the issues tab.
+
+  5. Delete-link guards (edge cases — decided with user)
+     • Reverse (delete a Realized risk): BLOCKED. destroy() rejects a risk
+       with converted_to_issue_id set — "delete the issue first". Nothing
+       can dangle.
+     • Forward (delete a converted issue): risk reverts Realized → Open and
+       converted_to_issue_id is cleared, so the risk is preserved and can be
+       re-converted or mitigated. The issue's attachments (transferred risk
+       evidence) are deleted with the issue, as with any issue today.
+
+  Rationale: reuses proven Issues patterns (controller shape, modal-driven
+  forms, polymorphic attachments, notification wiring) and keeps the audit
+  trail intact in both deletion directions.
+
+==============================================================================
+  SECTION 5 — IMPLEMENTATION STEPS
+==============================================================================
+
+  Phase A — Migration + Models
+  -----------------------------
+    ⬜ New migration database/migrations/2026_08_06_000002_risk_issue_conversion.php
+        - risks += baseline_schedule_id: foreignId nullable constrained
+          ('project_baseline_schedules') nullOnDelete
+        - risks += converted_to_issue_id: foreignId nullable constrained
+          ('issues') nullOnDelete
+        - issues += source_risk_id: foreignId nullable constrained('risks')
+          nullOnDelete
+        - alter risks.status enum to include 'Realized' — use raw
+          DB::statement (avoids doctrine/dbal complications on MySQL):
+          ALTER TABLE risks MODIFY status ENUM('Open','Mitigated','Closed',
+          'Realized') NOT NULL DEFAULT 'Open'
+        - indexes: risks.baseline_schedule_id, issues.source_risk_id
+
+    ⬜ app/Models/Risk.php
+        - STATUSES += 'Realized'
+        - fillable += baseline_schedule_id, converted_to_issue_id
+        - cast converted_to_issue_id integer (nullable)
+        - relationships: baselineSchedule() belongsTo(ProjectBaselineSchedule),
+          convertedToIssue() belongsTo(Issue), attachments() morphMany(Attachment)
+        - helper: converted() / open() scopes unchanged (Realized excluded
+          from open count automatically since status != 'Open')
+
+    ⬜ app/Models/Issue.php
+        - fillable += source_risk_id
+        - relationship: sourceRisk() belongsTo(Risk)
+        - no scope changes
+
+    ⬜ app/Models/Attachment.php
+        - CONTEXTS += 'risk'
+        - ALLOWED_ATTACHABLE_TYPES += Risk::class
+
+    ⬜ database/factories/RiskFactory.php
+        - state realized(): status = 'Realized', converted_to_issue_id set
+          to an Issue factory (or left null; set in tests directly)
+
+    ⬜ tests/Feature/Infrastructure/FactoryVerificationTest.php
+        - add risk factory realized-state verification
+
+  Phase B — Conversion Endpoint
+  ------------------------------
+    ⬜ app/Http/Controllers/RiskController.php
+        - new convertToIssue(Project, Risk) method
+          Authorization: admin/staff only (else 403)
+          Guards: risk belongs to project (404 if not)
+                  risk.status in ['Open','Mitigated'] (reject if Realized/Closed)
+          Build issue payload:
+            issue_name       = risk.risk_name
+            description      = risk.description ?: 'Risk "' . risk_name .
+                               '" materialized and was converted to an issue.'
+            status           = 'Open'
+            issue_type       = 'other'
+            severity         = map from risk level:
+                               Low → Low, Medium → Medium, High → High
+            baseline_schedule_id = risk.baseline_schedule_id
+            source_risk_id   = risk.id
+          Create issue; then update risk:
+            status = 'Realized', converted_to_issue_id = issue.id
+          Transfer attachments:
+            foreach risk.attachments: attachable_type = Issue::class,
+            attachable_id = issue.id, context = 'issue' (relabel)
+          ActivityLog 'Convert Risk to Issue'
+          Notify: reuse IssueReported via NotificationService::notifyMany
+            (admins + contractorUserFor(project)) — same as IssueController::store
+          Return JSON { success, issue, risk }
+        - Existing destroy() gains the reverse guard (Phase C)
+
+    ⬜ routes/web.php — add to staff + admin groups:
+        Route::post('/projects/{project}/risks/{risk}/convert',
+          [RiskController::class, 'convertToIssue'])
+          ->name('staff.projects.risks.convert');
+        (same for admin.projects.risks.convert)
+
+  Phase C — Delete-Link Guards
+  ----------------------------
+    ⬜ RiskController::destroy()
+        - before deleting: if risk.converted_to_issue_id is set → return 422
+          with message "This risk was converted to an issue. Delete the issue
+          first to remove both records." (block the dangling case)
+
+    ⬜ IssueController::destroy()
+        - before deleting the issue: if issue.source_risk_id is set, update
+          the owning risk: status = 'Open', converted_to_issue_id = null
+          (revert the risk so it is preserved and re-convertable)
+
+  Phase D — Risk UI
+  -----------------
+    ⬜ resources/views/projects/project_detail/components/modals/risk_modal.blade.php
+        - Add baseline month dropdown (select of project_baseline_schedules,
+          month_display labels) to the add + edit forms
+        - Add attachment upload section to the add + edit forms (mirror the
+          issue modal pattern; context 'risk')
+        - Add a convert button action / note for Realized status lock
+
+    ⬜ resources/views/projects/project_detail/components/modals/risk_to_issue_modal.blade.php (NEW)
+        - Pre-filled, editable issue fields: issue_name, description,
+          issue_type, severity (derived from risk level), baseline dropdown,
+          status fixed to Open
+        - Confirm → POST convert route
+
+    ⬜ resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php
+        - Include risk_to_issue_modal
+        - Maybe show baseline month in summary/table
+
+    ⬜ public/js/admin/projects/risk-register.js
+        - render: Baseline Month column, attachment chips column (render via
+          renderAttachmentChips-style helper w/ context 'risk' → label
+          'Risk Evidence'), "Convert to Issue" button for non-Realized risks
+          (admin/staff only)
+        - Realized risk: badge + "→ Issue #N" link (from risk.converted_to_issue_id
+          / issue id in payload); status field locked in edit
+        - convert flow: openConvertRiskModal(riskId) → fills risk_to_issue_modal
+          → submit → POST convert route → reload risks + issues
+        - riskToJson payload from controller must include baseline_schedule_id,
+          baseline display label, attachments[], converted_to_issue_id,
+          converted_issue label
+
+    ⬜ public/css/admin/projects/risk-register.css
+        - Realized badge style, convert button, "from risk"/"to issue" link chips
+
+  Phase E — Issue UI
+  ------------------
+    ⬜ resources/views/projects/project_detail/components/tabs/issues.blade.php
+        - "from Risk" badge/link in issue rows + edit modal when
+          issue.source_risk_id is set (payload from IssueController::getIssues
+          must expose source_risk_id + source risk name)
+
+    ⬜ public/js/admin/projects/issues-modal.js (if needed)
+        - display helper for the source-risk badge
+
+  Phase F — Tests + Docs
+  -----------------------
+    ⬜ tests/Feature/RiskRegisterTest.php — extend with:
+        - convert creates issue with correct FKs (both directions)
+        - convert maps severity from risk level (Low/Medium/High)
+        - convert carries baseline_schedule_id from risk to issue
+        - convert sets risk.status = Realized + converted_to_issue_id
+        - convert transfers + relabels risk attachments to the issue
+        - convert fires IssueReported notification (admins + contractor)
+        - contractor gets 403 on convert
+        - convert rejects already-Realized / Closed risk
+        - destroy risk with converted_to_issue_id → 422 (blocked)
+        - destroy converted issue → risk reverts to Open, link cleared
+        - risk status 'Realized' excluded from open() scope
+    ⬜ tests/Feature/Infrastructure/FactoryVerificationTest.php
+        - realized() state verification
+    ⬜ textfiles/risk_to_issue_conversion_plan.txt (this file) — session log
+    ⬜ textfiles/risk_register_plan.txt — note the enhancement + link
+    ⬜ textfiles/gaps_and_features_missing.txt — note under #20
+    ⬜ textfiles/summary_of_next_work.txt — status of this item
+
+==============================================================================
+  SECTION 6 — SESSION LOGS
+==============================================================================
+
+  2026-08-06 — Plan created. Decided with user:
+    • Conversion button with a pre-filled, editable modal (not one-click).
+    • Baseline link added to risks (optional, carries to issue).
+    • Attachments added to risks with a single new context 'risk'
+      (evidence only; mitigation stays a text field).
+    • On conversion, risk attachments transfer to the issue and are relabeled
+      context 'issue'.
+    • Reverse delete (Realized risk): BLOCKED — "delete the issue first".
+    • Forward delete (converted issue): risk reverts Realized → Open, link
+      cleared; risk preserved and re-convertable.
+    • Converted issue deletion deletes its attachments (transferred risk
+      evidence) as with any issue today.
+
+==============================================================================
+  SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE
+==============================================================================
+
+  (none — plan approved. Any unresolved item during implementation will be
+   raised with the user before proceeding, per Rule 10.)
+
+==============================================================================
+  SECTION 8 — DECISION LOG
+==============================================================================
+
+  Decision 1 — One-way conversion risk → issue (with link)
+    Context: user asked whether a materialized risk should become an issue.
+    Options: manual re-entry; auto-link on conversion.
+    Decision: Convert to Issue button (admin/staff) creates the issue
+      pre-filled, sets risk Realized, links both directions.
+    Consequences: audit trail; open-risk counts drop when a risk materializes.
+
+  Decision 2 — Baseline link on risks
+    Context: user asked whether risks should be tied to a baseline like issues.
+    Decision: add optional baseline_schedule_id to risks; carries over on
+      conversion.
+    Rationale: risk can threaten a specific month/phase target.
+
+  Decision 3 — Risk attachments + context label
+    Context: user asked whether risks should have attachments like issues.
+    Decision: yes — single new context 'risk' (evidence the risk is credible).
+      Mitigation plan remains a text field; attachments are proof.
+    Consequences: Attachment::CONTEXTS += 'risk';
+      ALLOWED_ATTACHABLE_TYPES += Risk::class. Reuses existing upload/view
+      routes + policy.
+
+  Decision 4 — Attachment behavior on conversion
+    Context: what happens to risk attachments when the risk becomes an issue.
+    Decision: transfer to the issue and relabel context 'risk' → 'issue' so
+      they render as normal issue evidence.
+    Rationale: evidence follows the problem into its new lifecycle.
+
+  Decision 5 — Reverse delete (Realized risk): BLOCKED
+    Context: user asked about the reverse edge case.
+    Decision: destroy() rejects a risk with converted_to_issue_id set.
+    Rationale: prevents dangling issue.source_risk_id; protects audit trail.
+
+  Decision 6 — Forward delete (converted issue): revert risk to Open
+    Context: symmetric edge case.
+    Decision: deleting the converted issue clears converted_to_issue_id and
+      sets risk status back to Open (risk preserved, re-convertable).
+    Rationale: don't lose a risk because its issue was removed.
+
+  Decision 7 — Severity mapping on conversion
+    Decision: risk level → issue severity (Low→Low, Medium→Medium, High→High);
+      issue_type defaults to 'other'. Editable in the convert modal.
+
+  Decision 8 — Branching
+    Decision: work continues on branch phase-20-risk-register; merge to main
+      only after user review/approval (Rule 12).
+
+==============================================================================
+  SECTION 9 — FILES TOUCHED
+==============================================================================
+
+  Created:
+    database/migrations/2026_08_06_000002_risk_issue_conversion.php
+    resources/views/projects/project_detail/components/modals/risk_to_issue_modal.blade.php
+    textfiles/risk_to_issue_conversion_plan.txt
+
+  Modified:
+    app/Models/Risk.php                          (Realized, baseline, converted, attachments)
+    app/Models/Issue.php                         (source_risk_id + sourceRisk())
+    app/Models/Attachment.php                    (CONTEXTS, ALLOWED_ATTACHABLE_TYPES)
+    app/Http/Controllers/RiskController.php      (convertToIssue + destroy guard)
+    app/Http/Controllers/IssueController.php     (destroy revert guard)
+    database/factories/RiskFactory.php           (realized() state)
+    routes/web.php                               (convert routes x2 groups)
+    resources/views/projects/project_detail/components/modals/risk_modal.blade.php
+    resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php
+    resources/views/projects/project_detail/components/tabs/issues.blade.php
+    public/js/admin/projects/risk-register.js
+    public/js/admin/projects/issues-modal.js     (if needed)
+    public/css/admin/projects/risk-register.css
+    tests/Feature/RiskRegisterTest.php
+    tests/Feature/Infrastructure/FactoryVerificationTest.php
+    textfiles/risk_register_plan.txt
+    textfiles/gaps_and_features_missing.txt
+    textfiles/summary_of_next_work.txt
+
+==============================================================================
+  SECTION 10 — FLAGGED FOR FUTURE
+==============================================================================
+
+  • Notify on converted risk with a dedicated notification type instead of
+    reusing IssueReported (currently reuses issue notification for simplicity).
+  • Allow editing the Realized risk after conversion (currently status locked).
+  • Show risk evidence in the issue's viewer history.
+  • Bulk convert / convert from the Issues tab (reverse lookup).
+
+==============================================================================
+  SECTION 11 — CONVERSATION CONTINUATION GUIDE
+==============================================================================
+
+  1. Branch: phase-20-risk-register (off main). Never commit to main directly
+     (Rule 12); merge only after explicit user approval.
+  2. Before writing code, re-read the CURRENT source of the files in SECTION 9
+     (Rule 1 — never assume prior code is unchanged).
+  3. Mirror IssueController::store()/destroy() and issues-modal.js patterns.
+  4. No-vite convention: new CSS/JS go in public/css|js/admin/projects/ and are
+     linked from the owning partial.
+  5. Tests: extend RiskRegisterTest (IssueLifecycleTest pattern); run
+     `composer test` after each phase.
+  6. Inform the user at the end of each phase before continuing (Rule 10) and
+     update this plan's SESSION LOG (Rule 11).
+
+==============================================================================
+  END OF PLAN
+==============================================================================
