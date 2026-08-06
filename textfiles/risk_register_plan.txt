@@ -48,7 +48,7 @@
     ✅ Phase 1 — Migration + Risk model + factory
     ✅ Phase 2 — RiskController + routes + ActivityLog + High-risk notification
     ✅ Phase 3 — UI: Issues & Risks tab toggle + risk partial + modal + JS/CSS
-    ⬜ Phase 4 — Feature tests + factory verification
+    ✅ Phase 4 — Feature tests + factory verification
     ⬜ Phase 5 — Docs update (gaps file, summary_of_next_work, session log)
 
 ==============================================================================
@@ -267,6 +267,17 @@
   calling loadTabRisks) and project_detail.blade.php (tab label, getRisksApiUrl()
   helper, switchMainTab issues branch calls loadTabRisks). All IDs in JS match
   the Blade partials/modal and riskToJson() payload keys. 22/22 tests pass.
+
+  2026-08-06 — Phase 4 COMPLETE. Created tests/Feature/RiskRegisterTest.php
+  (15 tests mirroring IssueLifecycleTest + NotificationTest patterns):
+  store persists + computes score (High×Medium=6), level boundaries (1/4/9),
+  validation 422, update recomputes score, lifecycle timestamps (Mitigated sets
+  mitigated_at; Closed preserves mitigated_at + sets closed_at; reopen clears
+  both), contractor 403 on store/update/destroy, cross-project 404 guard,
+  getRisks JSON shape incl. risk_level, ActivityLog on store/update/destroy,
+  scopes open/mitigated/closed/highRisk, High-risk notifies admins + project
+  contractor (RiskReported rows w/ key dedupe), no notification for
+  Low/Medium. Full suite: 351 passed (1245 assertions).
 
 ==============================================================================
   SECTION 7 — OPEN QUESTIONS / STILL TO RESOLVE
