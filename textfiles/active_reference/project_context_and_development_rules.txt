@@ -12,7 +12,7 @@ PROJECT CONTEXT
 ===============================================================================
 
 System Name
-  Construction Project Monitoring System
+  Construction Project Monitoring System(Capstone Project System)
 
 Client
   CSPC Project Management Unit (PMU)

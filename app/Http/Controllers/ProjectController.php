@@ -885,6 +885,10 @@ class ProjectController extends Controller
             // Delete the project itself
             $project->delete();
 
+            // Flash a success toast message so it renders AFTER the page reloads
+            // (consumed by the load-time toast script in projects/index.blade.php).
+            session()->flash('toast_success', "Project '{$projectTitle}' has been permanently deleted.");
+
             return response()->json([
                 'success' => true,
                 'message' => "Project '{$projectTitle}' has been permanently deleted."

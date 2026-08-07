@@ -548,6 +548,17 @@
 </table>
 
 @include('components.delete-confirmation-modal')
+@include('components.loading-overlay', ['id' => 'deleteProjectLoadingOverlay', 'label' => 'Deleting project…'])
+
+{{-- Show the success toast AFTER the post-delete page reload (flash set by
+     ProjectController@destroy → session('toast_success')). --}}
+@if(session('toast_success'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        window.showToast(@json(session('toast_success')), 'success');
+    });
+</script>
+@endif
 
 <script>
 function deleteProject(projectId, projectTitle) {
@@ -555,6 +566,7 @@ function deleteProject(projectId, projectTitle) {
         'Delete Project',
         `<strong style="color: #ef4444;"><i class="bi bi-exclamation-triangle-fill" style="margin-right: 8px;"></i>Warning:</strong> Are you sure you want to permanently delete <strong>"${projectTitle}"</strong> and all associated data? This action cannot be undone.`,
         function() {
+            showLoadingOverlay('deleteProjectLoadingOverlay', 'Deleting project…');
             fetch(`/projects/${projectId}`, {
                 method: 'DELETE',
                 headers: {
@@ -565,14 +577,20 @@ function deleteProject(projectId, projectTitle) {
             .then(r => r.json())
             .then(data => {
                 if (data.success) {
-                    showToast(data.message, 'success');
-                    setTimeout(() => location.reload(), 1500);
+                    // Keep the overlay visible through the reload: re-label it and
+                    // let location.reload() tear the page down (no gap between the
+                    // overlay hiding and the reload painting). The success toast is
+                    // flashed server-side and rendered after this reload.
+                    showLoadingOverlay('deleteProjectLoadingOverlay', 'Almost done…');
+                    location.reload();
                 } else {
-                    showToast('Failed to delete project', 'error');
+                    hideLoadingOverlay('deleteProjectLoadingOverlay');
+                    showToast(data.message || 'Failed to delete project', 'error');
                 }
             })
             .catch(err => {
                 console.error('Delete error:', err);
+                hideLoadingOverlay('deleteProjectLoadingOverlay');
                 showToast('Error deleting project. Please try again.', 'error');
             });
         }

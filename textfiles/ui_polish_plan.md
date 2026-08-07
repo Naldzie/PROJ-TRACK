@@ -293,6 +293,50 @@ DELETED (housekeeping — deferred, user chose to keep for now):
 - ⚠️ Remaining: browser-verify responsive sidebar + toast visuals per Rule 8
   (needs a running server), then commit + push.
 
+### 2026-08-07 — Project delete: toast-after-reload (session flash) + lighter overlay
+
+User refined the delete UX further:
+1. The loading overlay was "too white" — now frosted/translucent.
+2. The success toast kept appearing before the reload, leaving the deleted
+   project visible for a split second. Decision: **Option B** — toast renders
+   AFTER the reload via a session flash (no pre-reload toast, no in-place JS).
+
+- `components/loading-overlay.blade.php` — overlay bg `rgba(255,255,255,0.45)`
+  + `blur(3px)`; spinner + label moved into a small white card so they stay
+  legible without washing the page white.
+- `ProjectController@destroy` — on success flashes `toast_success` (dedicated
+  key, avoids the layouts' `session('success')` SweetAlert convention).
+- `projects/index.blade.php` — success branch now `hideLoadingOverlay()` then
+  `location.reload()` immediately (dropped the 1500ms delay + pre-reload toast);
+  a `@if(session('toast_success'))` script shows `showToast(..., 'success')` on
+  DOMContentLoaded (via `@json()` for safe quoting). Failure/network paths
+  unchanged.
+- Tests: +1 `ProjectsRenderTest` (index renders the delete loading overlay);
+  admin-delete test asserts `assertSessionHas('toast_success')` and that the
+  flashed message renders on the index reload. Full suite green:
+  **401 passed / 1434 assertions**.
+- Deferred follow-up: migrate the 4 duplicated email/login overlays to the
+  reusable `components/loading-overlay`; orphaned `admin/projects.blade.php`
+  untouched.
+
+### 2026-08-07 — Delete flow: overlay persists through reload (no gap)
+
+Fixed the remaining UX gap: after DELETE success the overlay was hidden before
+`location.reload()`, leaving the old page visible for a beat while the reload
+painted.
+
+- `projects/index.blade.php` — `deleteProject()` success branch no longer calls
+  `hideLoadingOverlay()`. Instead it re-labels the overlay to "Almost done…"
+  (`showLoadingOverlay('deleteProjectLoadingOverlay', 'Almost done…')`) and then
+  calls `location.reload()`; the reload itself tears the page down, so the
+  overlay stays visible continuously with no white-gap. The post-reload flash
+  toast (`session('toast_success')`) still renders over the fresh page. Failure
+  and network paths unchanged.
+- Tests: `test_admin_index_renders_delete_loading_overlay` now also asserts
+  `Almost done…`. Full suite green: **401 passed / 1435 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8 (delete a project → overlay holds
+  through reload → toast over updated page), then commit + push.
+
 ---
 
 END OF UI POLISH PLAN

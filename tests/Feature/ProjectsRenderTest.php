@@ -31,6 +31,7 @@ class ProjectsRenderTest extends TestCase
     use RefreshDatabase;
 
     private User $admin;
+    private User $staff;
     private User $contractorUser;
     private Contractor $contractor;
 
@@ -42,6 +43,13 @@ class ProjectsRenderTest extends TestCase
             'name'      => 'Render Admin',
             'email'     => fake()->unique()->safeEmail(),
             'role'      => 'admin',
+            'is_active' => true,
+        ]);
+
+        $this->staff = User::create([
+            'name'      => 'Render Staff',
+            'email'     => fake()->unique()->safeEmail(),
+            'role'      => 'staff',
             'is_active' => true,
         ]);
 
@@ -71,6 +79,21 @@ class ProjectsRenderTest extends TestCase
             ->assertOk()
             ->assertSee('Project Monitor')
             ->assertSee('Render Index Project');
+    }
+
+    public function test_admin_index_renders_delete_loading_overlay(): void
+    {
+        Project::factory()->create([
+            'title'  => 'Render Overlay Project',
+            'status' => 'Ongoing',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects'))
+            ->assertOk()
+            ->assertSee('deleteProjectLoadingOverlay', false)
+            ->assertSee('Deleting project…')
+            ->assertSee('Almost done…');
     }
 
     public function test_admin_index_shows_filter_banner_with_clear_link_to_admin_index(): void
@@ -192,5 +215,54 @@ class ProjectsRenderTest extends TestCase
         $this->actingAs($this->contractorUser)
             ->get(route('projects.show', $project->id))
             ->assertForbidden();
+    }
+
+    public function test_admin_delete_removes_project_and_related_records(): void
+    {
+        $project = Project::factory()->create([
+            'title'  => 'Doomed Project',
+            'status' => 'Ongoing',
+        ]);
+
+        $progress = \App\Models\ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+        ]);
+        $baseline = \App\Models\ProjectBaselineSchedule::factory()->create([
+            'project_id' => $project->id,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->deleteJson(route('projects.destroy.shared', $project->id));
+
+        $response->assertOk()
+            ->assertJson(['success' => true])
+            ->assertSessionHas('toast_success');
+
+        $this->assertDatabaseMissing('projects', ['id' => $project->id]);
+        $this->assertDatabaseMissing('project_progress_history', ['id' => $progress->id]);
+        $this->assertDatabaseMissing('project_baseline_schedules', ['id' => $baseline->id]);
+
+        // The flashed toast must be rendered by the index page on the reload.
+        // (Note: @json() escapes apostrophes, so match the un-escaped tail.)
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects'))
+            ->assertOk()
+            ->assertSee('has been permanently deleted.', false);
+    }
+
+    public function test_staff_cannot_delete_project(): void
+    {
+        $project = Project::factory()->create([
+            'title'  => 'Untouchable',
+            'status' => 'Ongoing',
+        ]);
+
+        $response = $this->actingAs($this->staff)
+            ->deleteJson(route('projects.destroy.shared', $project->id));
+
+        $response->assertStatus(403)
+            ->assertJson(['success' => false]);
+
+        $this->assertDatabaseHas('projects', ['id' => $project->id]);
     }
 }
