@@ -51,14 +51,10 @@ function openAddMonthTargetModal() {
     if (hasExistingTargets) {
         cardElements.forEach(card => {
             const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-            if (monthBadge) {
-                const monthText = monthBadge.textContent.trim();
-                const monthMatch = monthText.match(/\d{4}-\d{2}/);
-                if (monthMatch) {
-                    const currentMonth = monthMatch[0];
-                    if (!latestMonthLabel || currentMonth > latestMonthLabel) {
-                        latestMonthLabel = currentMonth;
-                    }
+            if (monthBadge && monthBadge.dataset.monthLabel) {
+                const currentMonth = monthBadge.dataset.monthLabel;
+                if (!latestMonthLabel || currentMonth > latestMonthLabel) {
+                    latestMonthLabel = currentMonth;
                 }
             }
         });
@@ -372,10 +368,7 @@ function saveMonthTarget() {
     var existingMonthLabels = [];
     cardElements.forEach(function (card) {
         var monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge) {
-            var match = monthBadge.textContent.match(/\d{4}-\d{2}/);
-            if (match) existingMonthLabels.push(match[0]);
-        }
+        if (monthBadge && monthBadge.dataset.monthLabel) existingMonthLabels.push(monthBadge.dataset.monthLabel);
     });
     if (existingMonthLabels.length > 0) {
         existingMonthLabels.sort();

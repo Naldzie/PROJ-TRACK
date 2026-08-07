@@ -184,7 +184,7 @@
                     <!-- Left: Month and Date Info -->
                     <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 12px;">
-                            <span style="background: #dbeafe; color: #0369a1; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700;">
+                            <span data-month-label="{{ $plan->month_label }}" style="background: #dbeafe; color: #0369a1; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700;">
                                 {{ $plan->planned_date->format('F - Y') }}
                             </span>
                             <span style="color: #6b7280; font-size: 13px; font-weight: 500;">{{ $plan->planned_date->format('F d, Y') }}</span>

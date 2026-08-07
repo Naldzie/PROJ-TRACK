@@ -318,4 +318,25 @@ class ProjectsRenderTest extends TestCase
             ->assertSee('consumePendingToast()', false)
             ->assertSee('queueToastAfterReload', false);
     }
+
+    public function test_project_detail_month_badge_carries_machine_month_label(): void
+    {
+        $project = Project::factory()->create([
+            'title'  => 'Month Label Project',
+            'status' => 'Ongoing',
+        ]);
+
+        \App\Models\ProjectBaselineSchedule::factory()->forMonth(0, '2026-09', '2026-09-01', 25)
+            ->create(['project_id' => $project->id]);
+
+        // The month card badge shows the human-readable "September - 2026" but
+        // must ALSO carry the machine month_label in data-month-label so the
+        // carry-over / inline-refresh JS can match cards reliably (the old
+        // textContent === month_label compare never matched).
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->assertSee('September - 2026', false)
+            ->assertSee('data-month-label="2026-09"', false);
+    }
 }

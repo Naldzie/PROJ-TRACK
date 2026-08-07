@@ -166,7 +166,7 @@ function saveMonthlyProgress() {
     
     cardElements.forEach((card) => {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        const rowMonth = monthBadge ? monthBadge.textContent.trim().match(/\d{4}-\d{2}/)?.[0] : null;
+        const rowMonth = monthBadge ? (monthBadge.dataset.monthLabel || null) : null;
         
         // Get actual progress - find the SECOND span with color: #10b981 (actual progress, not planned)
         // Structure: Planned has color #667eea, Actual has color #10b981

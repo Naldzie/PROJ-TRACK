@@ -486,4 +486,40 @@ express them uniformly).
 
 ---
 
+### 2026-08-07 — Baseline tab: month cards now carry machine month_label (data-month-label)
+
+Bug report: clicking "↗ Carry Over" on a month with unchecked (incomplete) activities
+showed the spurious toast `No incomplete activities found for 2026-09`. Root cause: the
+month card badge renders the human-readable `planned_date->format('F - Y')` ("September -
+2026") but the JS passed the machine `month_label` ("2026-09"), and several DOM lookups
+compared `badge.textContent.trim() === monthLabel` — which can never match.
+
+1. **`baseline-schedule.blade.php`** — the month badge span now carries
+   `data-month-label="{{ $plan->month_label }}"`; the pretty display text is unchanged.
+2. **`baseline-schedule-carry-over.js`** — `openCarryOverForMonth`,
+   `findBaselineScheduleIdByMonthLabel` and `populateTargetMonthDropdown` now match on
+   `dataset.monthLabel` (machine vs machine). This ALSO fixes the target-month dropdown,
+   which previously compared "September - 2026" > "2026-09" (always true) and listed every
+   month — including earlier ones — as a target, auto-selecting an alphabetically-first
+   (often earlier) month.
+3. **`baseline-schedule-utils.js`** — `updateActivityCount` (fixes the header X/Y count
+   refresh after add/delete activity), plus `updateActualProgressPercent` and
+   `findMonthCardId` for consistency (both currently caller-less).
+4. **`baseline-schedule-manage-month-modal.js`** — `reloadInlineActivities` matches on
+   `dataset.monthLabel`, fixing the silent card-refresh failure after add/delete activity.
+5. **Consistency (previously worked via regex extraction of `\d{4}-\d{2}` from the badge
+   text)** — `baseline-schedule-record-progress-modal.js` (validation month scan) and
+   `baseline-schedule-add-month-modal.js` (next-month derivation + duplicate/order rules)
+   now read `dataset.monthLabel` too.
+- Result: carry-over matches the right month, the dropdown lists only future months, and
+  inline activity add/delete updates the card immediately.
+- Tests: new `ProjectsRenderTest::test_project_detail_month_badge_carries_machine_month_label`
+  (asserts `September - 2026` renders alongside `data-month-label="2026-09"`);
+  `node --check` clean on all 5 edited JS files. Full suite green:
+  **406 passed / 1470 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8 (manual carry-over opens the correct activities +
+  only-future target months; add/delete activity refreshes the card inline), then commit + push.
+
+---
+
 END OF UI POLISH PLAN

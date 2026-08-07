@@ -307,15 +307,12 @@ function reloadInlineActivities(monthLabel) {
     
     for (const card of cards) {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge) {
-            const badgeText = monthBadge.textContent.trim();
-            if (badgeText === monthLabel) {
-                targetCard = card;
-                const collapseDiv = card.querySelector('[id^="activities-"]');
-                if (collapseDiv) {
-                    collapseElement = collapseDiv;
-                    break;
-                }
+        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
+            targetCard = card;
+            const collapseDiv = card.querySelector('[id^="activities-"]');
+            if (collapseDiv) {
+                collapseElement = collapseDiv;
+                break;
             }
         }
     }

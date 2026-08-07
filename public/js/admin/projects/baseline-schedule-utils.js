@@ -201,7 +201,7 @@ function updateActualProgressPercent(monthLabel, actualProgressPercent) {
     
     for (const card of cards) {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.textContent.trim() === monthLabel) {
+        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
             console.log('[updateActualProgressPercent] Found matching card for month:', monthLabel);
             
             // Find the Actual progress spans - look for the green color #10b981
@@ -243,8 +243,8 @@ function updateActivityCount(monthLabel) {
     cards.forEach(card => {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
         if (monthBadge) {
-            const badgeText = monthBadge.textContent.trim();
-            if (badgeText === monthLabel) {
+            const badgeMonth = monthBadge.dataset.monthLabel;
+            if (badgeMonth === monthLabel) {
                 console.log('[updateActivityCount] Found matching card for:', monthLabel);
                 
                 // Get all activities from the card (only count actual activity checkboxes)
@@ -276,7 +276,7 @@ function findMonthCardId(monthLabel) {
     const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
     for (const card of cards) {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.textContent.trim().includes(monthLabel)) {
+        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
             // Extract ID from the card's collapse element
             const collapseDiv = card.querySelector('[id^="activities-"]');
             if (collapseDiv) {

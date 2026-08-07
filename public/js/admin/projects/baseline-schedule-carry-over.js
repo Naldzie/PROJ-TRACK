@@ -151,10 +151,12 @@ function populateTargetMonthDropdown(fromMonthLabel) {
     cards.forEach((card) => {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
         if (!monthBadge) return;
-        const cardMonth = monthBadge.textContent.trim();
+        // The machine month label (e.g. "2026-10") lives in data-month-label —
+        // the badge text is the human-readable "October - 2026" form.
+        const cardMonth = monthBadge.dataset.monthLabel;
 
         // Only include months after the source month
-        if (cardMonth > fromMonthLabel) {
+        if (cardMonth && cardMonth > fromMonthLabel) {
             const monthDisplay = card.querySelector('span[style*="color: #6b7280"]');
             const dateLabel = monthDisplay ? monthDisplay.textContent.trim() : '';
             futureOptions.push({ value: cardMonth, label: `${cardMonth} ${dateLabel}` });
@@ -184,7 +186,7 @@ function findBaselineScheduleIdByMonthLabel(monthLabel) {
     const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
     for (const card of cards) {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.textContent.trim() === monthLabel) {
+        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
             const collapseDiv = card.querySelector('[id^="activities-"]');
             if (collapseDiv) {
                 return collapseDiv.id.replace('activities-', '');
@@ -354,7 +356,7 @@ function openCarryOverForMonth(monthLabel) {
 
     for (const card of cards) {
         const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.textContent.trim() === monthLabel) {
+        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
             const collapseDiv = card.querySelector('[id^="activities-"]');
             if (collapseDiv) {
                 const checkboxes = collapseDiv.querySelectorAll('input[type="checkbox"].activity-checkbox');
