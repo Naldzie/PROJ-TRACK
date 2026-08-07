@@ -19,9 +19,6 @@
 
                 <!-- === STEP INDICATOR === -->
                 <div class="mb-4 pb-3 border-bottom">
-                    <div class="progress mb-3 progress-thin">
-                        <div id="progressBar" class="progress-bar bg-primary progress-bar-dynamic" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100"></div>
-                    </div>
                     <div class="step-wizard" role="list" aria-label="Form steps">
                         <div class="step-item current" id="step1-indicator" role="listitem">
                             <div class="step-dot">1</div>

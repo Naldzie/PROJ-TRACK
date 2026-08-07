@@ -16,11 +16,6 @@ function updatePageDisplay() {
     // Update step indicators
     updateStepIndicators();
     
-    // Update progress bar
-    const progressPercent = (currentFormPage / TOTAL_PAGES) * 100;
-    document.getElementById('progressBar').style.width = progressPercent + '%';
-    document.getElementById('progressBar').setAttribute('aria-valuenow', progressPercent);
-    
     // Update button states
     const prevBtn = document.getElementById('prevPageBtn');
     const nextBtn = document.getElementById('nextPageBtn');
