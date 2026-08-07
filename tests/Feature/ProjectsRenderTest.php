@@ -299,4 +299,23 @@ class ProjectsRenderTest extends TestCase
             ->assertSee('Project created successfully.', false)
             ->assertSee('showToast', false);
     }
+
+    public function test_project_detail_baseline_tab_consumes_pending_toast(): void
+    {
+        $project = Project::factory()->create([
+            'title'  => 'Pending Toast Project',
+            'status' => 'Ongoing',
+        ]);
+
+        // The baseline tab loads the shared utils (queueToastAfterReload /
+        // consumePendingToast), consumes any queued toast on DOMContentLoaded,
+        // and the delete-month flow queues its toast via sessionStorage so it
+        // shows AFTER the reload (fixing the toast-before-reload flicker).
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->assertSee('baseline-schedule-utils.js', false)
+            ->assertSee('consumePendingToast()', false)
+            ->assertSee('queueToastAfterReload', false);
+    }
 }

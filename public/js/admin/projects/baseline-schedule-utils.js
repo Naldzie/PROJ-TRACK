@@ -126,6 +126,40 @@ function sortActivitiesByCreationOrder(activities) {
 // showToast() is defined globally by resources/views/components/toast.blade.php
 // which is included in project_detail.blade.php
 
+/**
+ * Queue a toast to display AFTER the page reloads. The message is written to
+ * sessionStorage (same pattern as the 'activeTab' restore) and consumed by
+ * consumePendingToast() on the freshly loaded page. This fixes the
+ * toast-before-reload flicker across the baseline tab's add/edit/delete flows.
+ *
+ * @param {string} message - The message to display
+ * @param {string} type - 'success', 'error', 'warning', 'info'
+ * @param {number} duration - Duration in milliseconds (default: 3000)
+ */
+function queueToastAfterReload(message, type, duration) {
+    sessionStorage.setItem('pendingToast', JSON.stringify({
+        message: message,
+        type: type || 'success',
+        duration: duration || 3000
+    }));
+}
+
+/**
+ * Read and display any toast queued via queueToastAfterReload(), then clear it.
+ * Called on DOMContentLoaded by the baseline tab (alongside tab restoration).
+ */
+function consumePendingToast() {
+    var raw = sessionStorage.getItem('pendingToast');
+    if (!raw) return;
+    sessionStorage.removeItem('pendingToast');
+    try {
+        var pending = JSON.parse(raw);
+        showToast(pending.message, pending.type || 'success', pending.duration || 3000);
+    } catch (e) {
+        console.error('[consumePendingToast] Error showing pending toast:', e);
+    }
+}
+
 // ==================== Error Handling ====================
 
 /**

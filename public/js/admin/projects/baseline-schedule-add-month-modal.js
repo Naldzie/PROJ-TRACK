@@ -465,8 +465,9 @@ function saveMonthTarget() {
         if (data.success) {
             console.log('[saveMonthTarget] Success response:', data);
             
-            // Show success toast notification
-            showToast('Month target and activities saved successfully!', 'success', 2500);
+            // Queue success toast to display after the reload (fixes the
+            // toast-before-reload flicker) and remember the active tab.
+            queueToastAfterReload('Month target and activities saved successfully!', 'success');
             
             // Store the active tab before reloading
             sessionStorage.setItem('activeTab', 's-curve-planning');
@@ -475,7 +476,7 @@ function saveMonthTarget() {
             setTimeout(() => {
                 bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide();
                 location.reload();
-            }, 1000);
+            }, 600);
         } else {
             console.error('[saveMonthTarget] Backend error:', data);
             showMonthTargetErrors([data.message || 'Failed to save month target. Please try again.']);
@@ -551,13 +552,13 @@ function saveMonthTargetEdit() {
     .then(data => {
         if (data.success) {
             console.log('[saveMonthTargetEdit] Success response:', data);
-            showToast('Month target updated successfully!', 'success', 2500);
+            queueToastAfterReload('Month target updated successfully!', 'success');
             sessionStorage.setItem('activeTab', 's-curve-planning');
             editingScheduleId = null;
             setTimeout(() => {
                 bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide();
                 location.reload();
-            }, 1000);
+            }, 600);
         } else {
             console.error('[saveMonthTargetEdit] Backend error:', data);
             showMonthTargetErrors([data.message || 'Failed to update month target. Please try again.']);

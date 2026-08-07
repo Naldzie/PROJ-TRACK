@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(data => {
-            showSuccessMessage(data.message || 'Extension saved successfully!');
+            queueSuccessMessage(data.message || 'Extension saved successfully!');
 
             extensionForm.reset();
             extensionForm.classList.remove('was-validated');
@@ -451,7 +451,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 sessionStorage.setItem('activeTab', 's-curve-planning');
                 location.reload();
-            }, 1500);
+            }, 600);
         })
         .catch(error => {
             showErrorMessage(error.message || 'Failed to save extension. Please try again.');
@@ -462,8 +462,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     };
 
-    function showSuccessMessage(message) {
-        if (window.showToast && typeof window.showToast === 'function') {
+    function queueSuccessMessage(message) {
+        if (window.queueToastAfterReload && typeof window.queueToastAfterReload === 'function') {
+            window.queueToastAfterReload(message, 'success', 2500);
+        } else if (window.showToast && typeof window.showToast === 'function') {
             window.showToast(message, 'success', 2500);
         } else {
             alert('Success: ' + message);

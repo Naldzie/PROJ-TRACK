@@ -20,6 +20,10 @@
 <!-- Restore Active Tab on Page Load -->
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Show any toast queued by queueToastAfterReload() (e.g. a baseline
+        // add/edit/delete) so it appears AFTER the reload instead of before.
+        consumePendingToast();
+
         const activeTab = sessionStorage.getItem('activeTab');
         if (activeTab) {
             console.log('[DOMContentLoaded] Restoring tab:', activeTab);
@@ -633,10 +637,12 @@ function confirmDeleteMonthTarget() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast('Month target deleted successfully!', 'success', 2000);
+            // Queue the toast so it displays AFTER the reload (with the page-
+            // loading overlay masking the transition) instead of flashing first.
+            queueToastAfterReload('Month target deleted successfully!', 'success');
             // Store the active tab before reloading
             sessionStorage.setItem('activeTab', 's-curve-planning');
-            setTimeout(() => location.reload(), 2000);
+            setTimeout(() => location.reload(), 600);
         } else {
             showToast('Error: ' + (data.message || 'Failed to delete'), 'error');
             closeDeleteConfirmModal();

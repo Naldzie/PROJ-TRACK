@@ -248,11 +248,12 @@ function saveMonthlyProgress() {
         var pendingFiles = (typeof collectPendingFiles === 'function')
             ? collectPendingFiles('progressAttachmentFiles')
             : [];
+        var uploadFailed = false;
         var uploadPromise = (recordId && pendingFiles.length > 0 && typeof uploadProgressFiles === 'function')
             ? uploadProgressFiles(recordId, pendingFiles)
                 .catch(function(err) {
                     console.error('[saveMonthlyProgress] Evidence upload failed (record already saved):', err);
-                    showToast('Progress saved, but one or more attachments failed to upload.', 'error', 4000);
+                    uploadFailed = true;
                 })
             : Promise.resolve();
 
@@ -261,8 +262,13 @@ function saveMonthlyProgress() {
                 clearPendingFiles('progressAttachmentFiles');
             }
 
-            // Show success toast notification
-            showToast('Monthly progress recorded successfully!', 'success', 2500);
+            // Build the result toast: a warning when evidence uploads failed,
+            // otherwise a plain success. It must appear AFTER the reload, so
+            // queue it via sessionStorage instead of showing it client-side.
+            var resultMessage = uploadFailed
+                ? 'Progress saved, but one or more attachments failed to upload.'
+                : 'Monthly progress recorded successfully!';
+            var resultType = uploadFailed ? 'warning' : 'success';
             
             // Close modal first
             try {
@@ -278,17 +284,21 @@ function saveMonthlyProgress() {
             if (data.incomplete_activities && data.incomplete_activities.length > 0) {
                 console.log('[saveMonthlyProgress] Found', data.incomplete_activities.length, 'incomplete activities for carry-over');
                 
-                // Defer page reload; show carry-over modal after a short delay
+                // The carry-over modal opens next (no reload yet) — show the
+                // result toast now, client-side; the carry-over flow queues
+                // its own message when it reloads.
+                showToast(resultMessage, resultType, 2500);
                 setTimeout(() => {
                     openCarryOverModalFromSave(data.incomplete_activities, monthLabel);
                 }, 2000);
             } else {
                 // No carry-over needed: proceed with page reload
                 console.log('[saveMonthlyProgress] No incomplete activities — reloading page');
+                queueToastAfterReload(resultMessage, resultType);
+                sessionStorage.setItem('activeTab', 's-curve-planning');
                 setTimeout(() => {
-                    sessionStorage.setItem('activeTab', 's-curve-planning');
                     location.reload();
-                }, 2000);
+                }, 600);
             }
         });
     })

@@ -375,29 +375,39 @@ function saveProgressEdit() {
             });
         }
 
+        // Hide the modal, queue the result toast (shown AFTER the reload so it
+        // doesn't flash before the page refreshes), and reload.
+        var attachmentFailed = false;
+        var finalizeReload = function() {
+            if (typeof clearPendingFiles === 'function') {
+                clearPendingFiles('editProgressAttachmentFiles');
+            }
+
+            queueToastAfterReload(
+                attachmentFailed
+                    ? 'Progress updated, but an attachment action failed.'
+                    : 'Progress record updated successfully!',
+                attachmentFailed ? 'warning' : 'success'
+            );
+
+            try {
+                var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
+                if (modal) modal.hide();
+            } catch (err) {}
+
+            var activeTab = document.querySelector('.tab-btn.active');
+            if (activeTab) {
+                sessionStorage.setItem('activeTab', activeTab.getAttribute('data-tab'));
+            }
+            setTimeout(function() { location.reload(); }, 600);
+        };
+
         return uploadPromise
-            .then(function() {
-                if (typeof clearPendingFiles === 'function') {
-                    clearPendingFiles('editProgressAttachmentFiles');
-                }
-
-                showToast('Progress record updated successfully!', 'success', 2500);
-
-                try {
-                    var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
-                    if (modal) modal.hide();
-                } catch (err) {}
-
-                var activeTab = document.querySelector('.tab-btn.active');
-                if (activeTab) {
-                    sessionStorage.setItem('activeTab', activeTab.getAttribute('data-tab'));
-                }
-                setTimeout(function() { location.reload(); }, 2000);
-            })
+            .then(finalizeReload)
             .catch(function(error) {
                 console.error('Attachment handling failed after progress update:', error);
-                showToast('Progress updated, but an attachment action failed.', 'error', 4000);
-                setTimeout(function() { location.reload(); }, 2000);
+                attachmentFailed = true;
+                finalizeReload();
             });
     })
     .catch(function(error) {
@@ -434,14 +444,14 @@ function deleteProgressRecord(recordId) {
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (data.success) {
-                    showToast('Progress record deleted.', 'success', 2500);
+                    queueToastAfterReload('Progress record deleted.', 'success');
                     delete window._progressRecordData[recordId];
 
                     var activeTab = document.querySelector('.tab-btn.active');
                     if (activeTab) {
                         sessionStorage.setItem('activeTab', activeTab.getAttribute('data-tab'));
                     }
-                    setTimeout(function() { location.reload(); }, 2000);
+                    setTimeout(function() { location.reload(); }, 600);
                 } else {
                     showToast('Error: ' + (data.message || 'Unable to delete'), 'error');
                 }

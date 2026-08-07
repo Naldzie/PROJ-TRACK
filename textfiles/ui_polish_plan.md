@@ -441,4 +441,49 @@ clickable for quick skipping in edit mode.
 
 ---
 
+### 2026-08-07 — Baseline tab: toast now appears AFTER the reload (sessionStorage pendingToast)
+
+Same UX bug as the projects index: every baseline-tab add/edit/delete showed its
+`showToast()` client-side, then `location.reload()` wiped it (with the loader masking
+the transition). Fixed with a client-side `sessionStorage` pending-toast (the tab
+already uses sessionStorage for `activeTab` restoration, so this reuses the existing
+pattern instead of the index's server-flash — baseline messages are computed in JS,
+e.g. carry-over `X/Y` and the "attachments failed" partial, so a Laravel flash can't
+express them uniformly).
+
+1. **`baseline-schedule-utils.js`** — new `queueToastAfterReload(message, type, duration)`
+   (writes `sessionStorage.pendingToast`) + `consumePendingToast()` (reads, clears, shows).
+2. **`baseline-schedule.blade.php`** — `DOMContentLoaded` restore-active-tab script now
+   calls `consumePendingToast()` first; delete-month success queues its toast instead of
+   showing it (reload delay 2000→600ms).
+3. **`baseline-schedule-add-month-modal.js`** — add-month + edit-month (PATCH) queue their
+   toasts; reload delay 1000→600ms.
+4. **`baseline-schedule-manage-month-modal.js`** — edit-month (manage modal) previously
+   reloaded with NO toast; now queues `Month target updated successfully!` + 600ms reload.
+   Add/delete activity (no reload — inline re-render) gained client-side success toasts.
+5. **`baseline-schedule-setup-modal.js`** — adjust + lock queue their toasts
+   (`data.message` fallback preserved); delay 1000→600ms.
+6. **`baseline-schedule-record-progress-modal.js`** — `uploadFailed` flag from the evidence
+   upload catch; no-carry-over path queues a `warning` toast when uploads failed, else the
+   plain success, then reloads after 600ms; carry-over path still shows client-side (no
+   reload imminent — the carry-over flow queues its own message).
+7. **`baseline-schedule-edit-progress-modal.js`** — update + delete queue their toasts;
+   attachment-pipeline failure now routes through a shared `finalizeReload()` that queues a
+   `warning` toast instead of showing one before reload; delay 2000→600ms.
+8. **`baseline-schedule-carry-over.js`** — aggregate toast (`X/Y`, `hadError ? warning :
+   success`) is queued; delay 1500→600ms.
+9. **`request_extension_modal.blade.php`** — `showSuccessMessage` → `queueSuccessMessage`
+   (queues via `queueToastAfterReload`, falls back to `showToast`, then `alert`); delay
+   1500→600ms.
+- Result: modal closes → always-on loader covers the reload → toast pops up over the loader
+  with the outcome on the freshly-loaded Baseline tab (toast z-index 9999 > overlay 3000).
+- Tests: new `ProjectsRenderTest::test_project_detail_baseline_tab_consumes_pending_toast`
+  (asserts utils script + `consumePendingToast()` + `queueToastAfterReload` in the render);
+  `node --check` clean on all 7 edited JS files. Full suite green:
+  **405 passed / 1467 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8 (all 14 baseline operations show the toast only
+  AFTER the reload, over the loader, with the Baseline tab restored), then commit + push.
+
+---
+
 END OF UI POLISH PLAN

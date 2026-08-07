@@ -240,7 +240,7 @@ function submitCarryOver() {
             const successMsg = hadError
                 ? `Carried over ${completed}/${total} activities.`
                 : `Successfully carried over ${total} activities.`;
-            showToast(successMsg, hadError ? 'warning' : 'success', 3000);
+            queueToastAfterReload(successMsg, hadError ? 'warning' : 'success', 3000);
             btn.innerHTML = '<i class="bi bi-check-lg"></i> Done';
             _carryOverAutoReload = false;
             setTimeout(() => {
@@ -248,7 +248,7 @@ function submitCarryOver() {
                 if (modal) modal.hide();
                 sessionStorage.setItem('activeTab', 's-curve-planning');
                 location.reload();
-            }, 1500);
+            }, 600);
             return;
         }
 

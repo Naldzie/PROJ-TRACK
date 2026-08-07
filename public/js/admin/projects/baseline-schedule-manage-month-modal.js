@@ -164,6 +164,7 @@ function addManageMonthActivity() {
             nameInput.value = '';
             descInput.value = '';
             nameInput.focus();
+            showToast('Activity added successfully!', 'success');
             loadManageMonthActivities(monthLabel);
             // Also update the card's inline activities
             if (typeof reloadInlineActivities === 'function') {
@@ -209,6 +210,7 @@ function deleteManageMonthActivity(activityId, isCompleted) {
             })
             .then(function (data) {
                 if (data.success) {
+                    showToast('Activity deleted successfully!', 'success');
                     loadManageMonthActivities(monthLabel);
                     if (typeof reloadInlineActivities === 'function') {
                         reloadInlineActivities(monthLabel);
@@ -268,9 +270,10 @@ function saveManageMonthTarget() {
     })
     .then(function (data) {
         if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('manageMonthModal')).hide();
+            queueToastAfterReload('Month target updated successfully!', 'success');
             sessionStorage.setItem('activeTab', 's-curve-planning');
-            location.reload();
+            bootstrap.Modal.getInstance(document.getElementById('manageMonthModal')).hide();
+            setTimeout(function () { location.reload(); }, 600);
         } else {
             alert(data.message || 'Failed to save changes.');
         }

@@ -502,15 +502,15 @@ function onSetupBaselineDone() {
         })
         .then(function (data) {
             if (data.success) {
-                if (typeof showToast === 'function') {
-                    showToast(data.message || 'Adjusted baseline saved successfully!', 'success', 2500);
+                if (typeof queueToastAfterReload === 'function') {
+                    queueToastAfterReload(data.message || 'Adjusted baseline saved successfully!', 'success');
                 }
                 setupAdjustMode = false;
                 setupRemovedIds = [];
                 setupProjectEndDate = null;
                 if (setupModalInstance) setupModalInstance.hide();
                 sessionStorage.setItem('activeTab', 's-curve-planning');
-                setTimeout(function () { location.reload(); }, 1000);
+                setTimeout(function () { location.reload(); }, 600);
             } else {
                 showSetupErrors([data.message || 'Failed to save adjusted baseline.']);
                 doneBtn.disabled = false;
@@ -554,8 +554,8 @@ function onSetupBaselineDone() {
     })
     .then(function (data) {
         if (data.success) {
-            if (typeof showToast === 'function') {
-                showToast('Baseline schedule locked successfully!', 'success', 2500);
+            if (typeof queueToastAfterReload === 'function') {
+                queueToastAfterReload('Baseline schedule locked successfully!', 'success');
             }
             if (setupModalInstance) {
                 setupModalInstance.hide();
@@ -564,7 +564,7 @@ function onSetupBaselineDone() {
             // on the Baseline tab instead of falling back to the default Overview.
             sessionStorage.setItem('activeTab', 's-curve-planning');
             // Reload page so the tab re-renders with the new frozen baseline
-            setTimeout(function () { location.reload(); }, 1000);
+            setTimeout(function () { location.reload(); }, 600);
         } else {
             showSetupErrors([data.message || 'Failed to save baseline. Please try again.']);
             doneBtn.disabled = false;
