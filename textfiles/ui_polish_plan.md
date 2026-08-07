@@ -405,4 +405,40 @@ edits).
 
 ---
 
+### 2026-08-07 — Edit mode: Documents step removed (4-step wizard) + clickable step-skipping
+
+User confirmed: in the create/edit project modal's **edit** mode, drop the
+document step entirely (documents are managed on the project detail page's
+dedicated tab), renumbering the wizard to 4 steps; and make the step indicators
+clickable for quick skipping in edit mode.
+
+1. **Blade** `admin/_create_project_modal.blade.php` — removed the
+   `#existingDocumentsSection` markup (current contract + supporting-docs list);
+   added `id="step1-label"`…`step5-label"` to the step labels so JS can renumber
+   them per mode.
+2. **form-navigation.js** — wizard is now mode-aware:
+   `getTotalPages()` (4 edit / 5 create), `getDomPageForStep()` (edit maps logical
+   step N → DOM page N+1, skipping page 1); `updatePageDisplay`, `updateStepIndicators`,
+   `nextPage`/`previousPage`, the submit-validation loop and `validatePage()` (switch
+   now keys off the DOM page) all use the helpers. Added `goToStep(step)` — edit-only
+   jump (no per-step validation; final submit still validates every page).
+3. **_create_project_modal.js** — new `applyWizardMode()`: edit mode renumbers labels
+   (Project Info, Details, Timeline, Assignment), hides `step5-indicator` +
+   `step4-connector`, and toggles `.step-item--clickable`; create mode restores the
+   full 5-step layout. Called on load, in `resetModalToCreateMode()`, and
+   `openEditProjectModal()`. Removed the existing-documents population block and its
+   reset lines; pending-doc append on submit now runs in create mode only. A delegated
+   `.step-wizard` click listener routes clicks to `goToStep()`.
+4. **CSS** `_create_project_modal.css` — `.step-item--clickable { cursor: pointer }`
+   + hover dot scale/color for affordance.
+- Server note: `ProjectController@update()` already ignored `pending_document_files`
+  (only `store()` calls `createProjectDocuments()`), so no controller change was needed.
+- Tests: `ProjectsRenderTest` stepper test now asserts `step1-label`/`step5-label` and
+  `assertDontSee('existingDocumentsSection')`. Full suite green:
+  **404 passed / 1463 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8 (edit modal = 4 renumbered steps, click to
+  skip, no documents; create modal unchanged with 5 steps + autofill), then commit + push.
+
+---
+
 END OF UI POLISH PLAN

@@ -22,27 +22,27 @@
                     <div class="step-wizard" role="list" aria-label="Form steps">
                         <div class="step-item current" id="step1-indicator" role="listitem">
                             <div class="step-dot">1</div>
-                            <div class="step-label">Documents</div>
+                            <div class="step-label" id="step1-label">Documents</div>
                         </div>
                         <div class="step-connector" id="step1-connector"></div>
                         <div class="step-item upcoming" id="step2-indicator" role="listitem">
                             <div class="step-dot">2</div>
-                            <div class="step-label">Project Info</div>
+                            <div class="step-label" id="step2-label">Project Info</div>
                         </div>
                         <div class="step-connector" id="step2-connector"></div>
                         <div class="step-item upcoming" id="step3-indicator" role="listitem">
                             <div class="step-dot">3</div>
-                            <div class="step-label">Details</div>
+                            <div class="step-label" id="step3-label">Details</div>
                         </div>
                         <div class="step-connector" id="step3-connector"></div>
                         <div class="step-item upcoming" id="step4-indicator" role="listitem">
                             <div class="step-dot">4</div>
-                            <div class="step-label">Timeline</div>
+                            <div class="step-label" id="step4-label">Timeline</div>
                         </div>
                         <div class="step-connector" id="step4-connector"></div>
                         <div class="step-item upcoming" id="step5-indicator" role="listitem">
                             <div class="step-dot">5</div>
-                            <div class="step-label">Assignment</div>
+                            <div class="step-label" id="step5-label">Assignment</div>
                         </div>
                     </div>
                 </div>
@@ -61,21 +61,6 @@
                         <!-- === DOCUMENTS & FILES === -->
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-file-pdf"></i> Project Documents</h6>
-                            
-                            <!-- Existing Documents (shown only when editing) -->
-                            <div id="existingDocumentsSection" class="existing-documents-hidden mb-3">
-                                <div id="existingContractInfo" class="d-none mb-2">
-                                    <label class="form-label text-muted">Current Contract:</label>
-                                    <a href="#" id="currentContractLink" target="_blank" class="d-block">
-                                        <i class="bi bi-file-pdf text-danger"></i> <span id="currentContractName">View Contract</span>
-                                    </a>
-                                </div>
-                                <div id="existingSupportingDocs" class="d-none">
-                                    <label class="form-label text-muted">Current Supporting Documents:</label>
-                                    <ul id="supportingDocsList" class="list-unstyled small"></ul>
-                                </div>
-                                <hr class="my-3">
-                            </div>
 
                             <!-- New Documents Upload Section -->
                             <div class="card border-light bg-light mb-3">

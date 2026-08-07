@@ -273,9 +273,14 @@ class ProjectsRenderTest extends TestCase
             ->assertOk()
             ->assertSee('step-wizard', false)
             ->assertSee('step1-indicator', false)
+            // Step labels carry ids so edit mode can renumber them (Documents removed)
+            ->assertSee('step1-label', false)
+            ->assertSee('step5-label', false)
             ->assertSee('documentFileInput', false)
             // No "Add Document" button — files auto-add on selection
             ->assertDontSee('addDocumentBtn', false)
+            // Edit mode no longer shows the existing-documents section on page 1
+            ->assertDontSee('existingDocumentsSection', false)
             ->assertSee('Choose the document type first', false);
     }
 

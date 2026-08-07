@@ -10,6 +10,43 @@ window._keepModalMode = false;
 window._baselineSetupMonths = null;
 
 // ===================================================
+// WIZARD MODE
+// Edit mode removes the Documents step entirely (docs live on the project
+// detail page's dedicated tab), so the wizard shrinks from 5 to 4 steps and
+// its step indicators become clickable for quick skipping. Create mode keeps
+// the full 5-step sequential flow (document autofill depends on the order).
+// ===================================================
+const STEP_LABELS_CREATE = ['Documents', 'Project Info', 'Details', 'Timeline', 'Assignment'];
+const STEP_LABELS_EDIT = ['Project Info', 'Details', 'Timeline', 'Assignment'];
+
+function applyWizardMode() {
+    const isEdit = window._projectModalMode === 'edit';
+    const labels = isEdit ? STEP_LABELS_EDIT : STEP_LABELS_CREATE;
+
+    for (let i = 1; i <= 5; i++) {
+        const indicator = document.getElementById('step' + i + '-indicator');
+        const label = document.getElementById('step' + i + '-label');
+        const connector = document.getElementById('step' + i + '-connector');
+
+        if (isEdit && i === 5) {
+            // Step 5 + its leading connector are removed in edit mode.
+            if (indicator) indicator.style.display = 'none';
+            if (connector) connector.style.display = 'none';
+            continue;
+        }
+
+        if (indicator) indicator.style.display = '';
+        if (connector) connector.style.display = (isEdit && i === 4) ? 'none' : '';
+        if (label && labels[i - 1]) label.textContent = labels[i - 1];
+    }
+
+    // Clickable step-skipping is edit-mode only.
+    document.querySelectorAll('.step-item').forEach(function (item) {
+        item.classList.toggle('step-item--clickable', isEdit);
+    });
+}
+
+// ===================================================
 // FETCH UNIQUE PROJECT CODE FROM SERVER
 // ===================================================
 async function fetchUniqueProjectCode() {
@@ -115,6 +152,9 @@ function resetModalToCreateMode() {
     window._projectModalMode = 'create';
     window._editingProjectId = null;
     
+    // Restore the full 5-step wizard (Documents first)
+    applyWizardMode();
+    
     // Update modal title and button
     document.getElementById('projectModalIcon').className = 'bi bi-plus-circle';
     document.getElementById('projectModalTitleText').textContent = 'Create Project';
@@ -140,11 +180,6 @@ function resetModalToCreateMode() {
     
     // Reset all form fields
     form.reset();
-    
-    // Hide existing documents section
-    document.getElementById('existingDocumentsSection').classList.add('d-none');
-    document.getElementById('existingContractInfo').classList.add('d-none');
-    document.getElementById('existingSupportingDocs').classList.add('d-none');
     
     // Clear pending documents (new document manager)
     if (typeof clearPendingDocuments === 'function') {
@@ -202,6 +237,9 @@ function resetModalToCreateMode() {
 async function openEditProjectModal(projectId, showModal = false) {
     window._projectModalMode = 'edit';
     window._editingProjectId = projectId;
+    
+    // Switch the wizard to its 4-step edit layout (Documents removed)
+    applyWizardMode();
     
     // Only show modal if explicitly requested (e.g., from URL parameter)
     // When triggered by button click, modal is already shown via data-bs-toggle
@@ -338,32 +376,6 @@ function populateFormWithProjectData(project) {
     document.getElementById('projectWorkers').value = project.estimated_workers || '';
     document.getElementById('projectHandoverDate').value = project.planned_handing_over_date || '';
     
-    // Handle existing documents
-    if (project.signed_contract || (project.supporting_documents && project.supporting_documents.length > 0)) {
-        document.getElementById('existingDocumentsSection').classList.remove('d-none');
-        
-        if (project.signed_contract) {
-            document.getElementById('existingContractInfo').classList.remove('d-none');
-            document.getElementById('currentContractLink').href = '/storage/' + project.signed_contract;
-            document.getElementById('currentContractName').textContent = project.signed_contract.split('/').pop();
-        }
-        
-        if (project.supporting_documents && project.supporting_documents.length > 0) {
-            document.getElementById('existingSupportingDocs').classList.remove('d-none');
-            const docsList = document.getElementById('supportingDocsList');
-            docsList.innerHTML = '';
-            project.supporting_documents.forEach(doc => {
-                const li = document.createElement('li');
-                const a = document.createElement('a');
-                a.href = '/storage/' + doc;
-                a.target = '_blank';
-                a.textContent = doc.split('/').pop();
-                li.appendChild(a);
-                docsList.appendChild(li);
-            });
-        }
-    }
-    
     // Initialize page display for multi-page form
     currentFormPage = 1;
     document.getElementById('currentPage').value = 1;
@@ -433,6 +445,25 @@ function showFieldError(fieldName, message) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Ensure the wizard matches the initial mode (create)
+    applyWizardMode();
+
+    // ===================================================
+    // STEP-SKIPPING: click a step indicator to jump to it (edit mode only)
+    // ===================================================
+    const stepWizard = document.querySelector('#addProjectModal .step-wizard');
+    if (stepWizard) {
+        stepWizard.addEventListener('click', function (e) {
+            if (window._projectModalMode !== 'edit') return;
+            const item = e.target.closest('.step-item');
+            if (!item) return;
+            const step = parseInt(item.id.replace('step', '').replace('-indicator', ''), 10);
+            if (step && typeof goToStep === 'function') {
+                goToStep(step);
+            }
+        });
+    }
+
     // ===================================================
     // INITIALIZE FIELD VALIDATORS (Create instances here after field-validation.js is loaded)
     // ===================================================
@@ -668,8 +699,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 const formData = new FormData(createProjectForm);
                 
                 // === APPEND PENDING DOCUMENTS ===
-                // Include all documents that were added via the document manager
-                if (typeof pendingDocuments !== 'undefined' && pendingDocuments.length > 0) {
+                // Create mode only — edit mode has no document step (documents
+                // are managed on the project detail page's dedicated tab), and
+                // the update endpoint ignores these fields anyway.
+                if (window._projectModalMode !== 'edit' &&
+                    typeof pendingDocuments !== 'undefined' && pendingDocuments.length > 0) {
                     pendingDocuments.forEach((doc, index) => {
                         // Use flat key structure that Laravel can properly parse
                         formData.append(`pending_document_files[${index}]`, doc.file);

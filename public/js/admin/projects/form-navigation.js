@@ -1,22 +1,48 @@
 // ===================================================
 // MULTI-PAGE FORM NAVIGATION
 // ===================================================
-const TOTAL_PAGES = 5;
 let currentFormPage = 1;
 
+// In edit mode the Documents step is removed, so the wizard runs 4 steps
+// (Project Info → Details → Timeline → Assignment) mapped to DOM pages 2-5.
+function getTotalPages() {
+    return window._projectModalMode === 'edit' ? 4 : 5;
+}
+
+// Map a logical step number (1-based, as shown in the wizard) to the actual
+// DOM form page id. Edit mode skips page 1 (Documents).
+function getDomPageForStep(step) {
+    return window._projectModalMode === 'edit' ? step + 1 : step;
+}
+
+// Jump straight to a wizard step (clickable step indicator). Edit mode only —
+// create mode stays sequential so the document-autofill flow is preserved.
+// No per-step validation on jump; the final submit validates every page.
+function goToStep(step) {
+    if (window._projectModalMode !== 'edit') return;
+    if (step < 1 || step > getTotalPages()) return;
+    if (step === currentFormPage) return;
+    currentFormPage = step;
+    document.getElementById('currentPage').value = step;
+    updatePageDisplay();
+}
+
 function updatePageDisplay() {
-    // Hide all pages
-    for (let i = 1; i <= TOTAL_PAGES; i++) {
-        document.getElementById(`page${i}`).classList.remove('active');
+    // Hide all DOM pages (1-5)
+    for (let i = 1; i <= 5; i++) {
+        const page = document.getElementById(`page${i}`);
+        if (page) page.classList.remove('active');
     }
     
-    // Show current page
-    document.getElementById(`page${currentFormPage}`).classList.add('active');
+    // Show the DOM page for the current logical step
+    const domPage = getDomPageForStep(currentFormPage);
+    document.getElementById(`page${domPage}`).classList.add('active');
     
     // Update step indicators
     updateStepIndicators();
     
     // Update button states
+    const totalPages = getTotalPages();
     const prevBtn = document.getElementById('prevPageBtn');
     const nextBtn = document.getElementById('nextPageBtn');
     const submitBtn = document.getElementById('submitBtn');
@@ -27,7 +53,7 @@ function updatePageDisplay() {
         prevBtn.classList.remove('d-none');
     }
     
-    if (currentFormPage === TOTAL_PAGES) {
+    if (currentFormPage === totalPages) {
         nextBtn.classList.add('d-none');
         submitBtn.classList.remove('d-none');
     } else {
@@ -43,7 +69,7 @@ function updatePageDisplay() {
 }
 
 function updateStepIndicators() {
-    for (let i = 1; i <= TOTAL_PAGES; i++) {
+    for (let i = 1; i <= getTotalPages(); i++) {
         const indicator = document.getElementById(`step${i}-indicator`);
         const dot = indicator ? indicator.querySelector('.step-dot') : null;
         const connector = document.getElementById(`step${i}-connector`);
@@ -83,7 +109,7 @@ function nextPage() {
 
         const leavingPage = currentFormPage;
 
-        if (currentFormPage < TOTAL_PAGES) {
+        if (currentFormPage < getTotalPages()) {
             currentFormPage++;
             document.getElementById('currentPage').value = currentFormPage;
             updatePageDisplay();
@@ -130,9 +156,12 @@ function validatePage(pageNum) {
     const form = document.getElementById('createProjectForm');
     hideError();
     clearFieldErrors();
+
+    // Convert the logical step to the actual DOM page for validation rules.
+    const domPage = getDomPageForStep(pageNum);
     
-    // For Page 2 (Project Info), handle async validation with flush
-    if (pageNum === 2) {
+    // For DOM Page 2 (Project Info), handle async validation with flush
+    if (domPage === 2) {
         return new Promise((resolve) => {
             const codeField = document.getElementById('projectCode');
             const titleField = document.getElementById('projectTitle');
@@ -204,7 +233,7 @@ function validatePage(pageNum) {
     // Get required fields for this page
     let requiredFields = [];
     
-    switch(pageNum) {
+    switch(domPage) {
         case 1:
             // Page 1: Documents - no required fields
             requiredFields = [];
@@ -230,8 +259,8 @@ function validatePage(pageNum) {
         }
     }
     
-    // Page 3 - Additional validation for budget
-    if (pageNum === 3) {
+    // DOM Page 3 - Additional validation for budget
+    if (domPage === 3) {
         const budgetField = document.getElementById('projectBudget');
         if (budgetField && budgetField.value) {
             const budget = parseFloat(budgetField.value);
@@ -255,7 +284,7 @@ document.addEventListener('DOMContentLoaded', function() {
         submitBtn.addEventListener('click', async function() {
             // Validate all pages before submitting
             let isValid = true;
-            for (let i = 1; i <= TOTAL_PAGES; i++) {
+            for (let i = 1; i <= getTotalPages(); i++) {
                 const pageValid = await validatePage(i);
                 if (!pageValid) {
                     isValid = false;
