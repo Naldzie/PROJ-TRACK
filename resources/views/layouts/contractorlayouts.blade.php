@@ -214,6 +214,9 @@
 </head>
 <body>
 
+{{-- ALWAYS-ON PAGE LOADING OVERLAY (masks page render until assets finish) --}}
+@include('components.page-loading-overlay')
+
 <!-- SIDEBAR -->
 <div class="sidebar">
     <div class="sidebar-brand">

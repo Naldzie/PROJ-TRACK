@@ -76,6 +76,8 @@ class UiPolishLayoutTest extends TestCase
             ->assertSee('css/layouts/responsive.css', false)
             ->assertSee('js/layouts/sidebar.js', false)
             ->assertSee('class="sidebar-toggle"', false)
+            ->assertSee('id="pageLoadingOverlay"', false)
+            ->assertSee('data-auto-hide="load"', false)
             ->assertDontSee('<div class="toast" id="toast"', false);
     }
 
@@ -104,6 +106,13 @@ class UiPolishLayoutTest extends TestCase
     {
         $this->assertPhaseDPolish(
             $this->actingAs($this->admin)->get(route('admin.rating'))
+        );
+    }
+
+    public function test_admin_projects_page_renders_page_loading_overlay(): void
+    {
+        $this->assertPhaseDPolish(
+            $this->actingAs($this->admin)->get(route('admin.projects'))
         );
     }
 }

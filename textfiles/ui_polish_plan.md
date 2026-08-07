@@ -373,6 +373,36 @@ redirect.
   suite green: **403 passed / 1444 assertions**.
 - ⚠️ Remaining: browser-verify per Rule 8, then commit + push.
 
+### 2026-08-07 — Always-on page-loading overlay (masks page render on every load)
+
+User asked whether slow page reloads could be masked with a loading state.
+Chose: **unconditional, server-rendered loader on every page load**, hiding on
+`window.load` with a hard timeout fallback (no flash gating — no controller
+edits).
+
+1. **New partial** `components/page-loading-overlay.blade.php` — fully
+   self-contained (inline `<style>` + `<script>`, own spinner keyframes, no
+   Bootstrap dependency) so it paints with the first bytes of the page. Fixed
+   frosted overlay (`rgba(255,255,255,0.45)` + blur), white card + "Loading…",
+   `z-index: 3000` (above sidebar 100, below toast 9999 so `showToast()` stays
+   visible on top). Element `#pageLoadingOverlay` with marker `data-auto-hide="load"`.
+2. **Behaviour** — hides on `window.load` after a ~350ms minimum display (so
+   fast/cached navs fade smoothly instead of blinking); hard `setTimeout` 5s
+   fallback so a hanging CDN can never leave the page covered; idempotent fade +
+   element removal; `<noscript>` fallback hides it for no-JS clients.
+3. **Wiring** — `@include('components.page-loading-overlay')` as the first
+   element inside `<body>` of all three layouts (`app`, `stafflayouts`,
+   `contractorlayouts`). Completes the delete flow's mask (pre-nav overlay →
+   reload → this loader → toast) and covers the heavy detail-page render after
+   create/edit redirects.
+- Tests: `UiPolishLayoutTest` asserts `id="pageLoadingOverlay"` +
+  `data-auto-hide="load"` on all four email/rating pages + new
+  `test_admin_projects_page_renders_page_loading_overlay`. Full suite green:
+  **404 passed / 1460 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8 (throttled network → loader holds
+  until assets finish; delete/create/edit flows still toast correctly), then
+  commit + push.
+
 ---
 
 END OF UI POLISH PLAN
