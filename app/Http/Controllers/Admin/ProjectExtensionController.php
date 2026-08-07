@@ -335,14 +335,12 @@ class ProjectExtensionController extends Controller
 
             $extension->save();
 
-            // The moment status becomes 'approved' is when the project's
-            // live deadline/extension_count actually move.
-            if ($transitioningToApproved) {
-                $project->update([
-                    'planned_end_date' => $extension->new_end_date,
-                    'extension_count' => $extension->extension_number,
-                ]);
-            }
+            // The project's live deadline/extension_count always reflect the
+            // latest APPROVED extension. Recomputing here — instead of only on
+            // a ->approved transition — keeps the deadline correct for every
+            // admin path: approving, reverting approved -> pending/rejected,
+            // and editing an approved extension's new_end_date.
+            $this->recomputeProjectDeadline($project);
 
             DB::commit();
 
@@ -406,15 +404,26 @@ class ProjectExtensionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
             }
 
-            // Same fix as extensions-section.blade.php's Current Deadline
-            // card: reorder() clears any default ordering baked into the
-            // extensions() relationship before applying descending order,
-            // rather than risking a silently-ignored second orderBy.
-            $latestExtension = $project->extensions()
+            // Staff may only delete pending/rejected requests — approved
+            // extensions are locked for staff (UI hides the button too).
+            $user = auth()->user();
+            if ($user->role !== 'admin' && $extension->isApproved()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Approved extensions can only be deleted by an administrator.',
+                ], 403);
+            }
+
+            // Block deleting the ACTIVE approved extension — the highest-
+            // numbered approved one that currently drives the project's
+            // deadline. (Not merely the highest-numbered row: a rejected row
+            // sitting above the active approved one must not bypass this.)
+            $latestApproved = $project->extensions()
+                ->where('status', 'approved')
                 ->reorder('extension_number', 'desc')
                 ->first();
 
-            if ($extension->id === $latestExtension->id && $extension->isApproved()) {
+            if ($extension->isApproved() && $latestApproved && $extension->id === $latestApproved->id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Cannot delete the active approved extension. Create a new one to replace it.',
@@ -423,6 +432,11 @@ class ProjectExtensionController extends Controller
 
             $extensionNumber = $extension->extension_number;
             $extension->delete();
+
+            // Deleting a non-active approved extension may leave the project
+            // deadline/extension_count stale, so recompute from whatever
+            // approved extensions remain.
+            $this->recomputeProjectDeadline($project);
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
@@ -445,6 +459,37 @@ class ProjectExtensionController extends Controller
                 'message' => 'Error deleting extension: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Point the project's live deadline at the latest approved extension.
+     *
+     * Called after any admin status/date change or extension deletion so
+     * planned_end_date and extension_count always reflect the current set
+     * of approved extensions:
+     *   - an approved extension -> planned_end_date = its new_end_date,
+     *   - no approved extensions -> falls back to the original deadline
+     *     (original_planned_end_date, or the earliest extension's
+     *     original_end_date, or the current value as a last resort).
+     */
+    private function recomputeProjectDeadline(Project $project): void
+    {
+        $latestApproved = $project->extensions()
+            ->where('status', 'approved')
+            ->reorder('extension_number', 'desc')
+            ->first();
+
+        $earliestRemaining = $project->extensions()
+            ->reorder('extension_number', 'asc')
+            ->first();
+
+        $project->update([
+            'planned_end_date' => $latestApproved?->new_end_date
+                ?? $project->original_planned_end_date
+                ?? $earliestRemaining?->original_end_date
+                ?? $project->planned_end_date,
+            'extension_count' => $latestApproved?->extension_number ?? 0,
+        ]);
     }
 
     /**

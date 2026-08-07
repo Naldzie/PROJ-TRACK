@@ -70,6 +70,15 @@ function reloadExtensionsTable() {
                     return;
                 }
                 
+                // The ACTIVE approved extension — the highest-numbered
+                // approved one currently driving the project deadline —
+                // cannot be deleted. Mirrors the backend guard.
+                // (Extensions arrive ordered ascending by extension_number.)
+                let activeApprovedId = null;
+                data.extensions.forEach(ext => {
+                    if (ext.status === 'approved') activeApprovedId = ext.id;
+                });
+
                 // Build table rows for each extension
                 data.extensions.forEach((ext, index) => {
                     const row = document.createElement('tr');
@@ -99,7 +108,13 @@ function reloadExtensionsTable() {
                     // pending/rejected. Backend is the real enforcement
                     // point regardless — this just controls button visibility.
                     const isAdmin = window.routePrefix === 'admin.projects';
+                    const isStaff = window.routePrefix === 'staff.projects';
                     const canEdit = isAdmin || ext.status === 'pending' || ext.status === 'rejected';
+                    // Delete: admin may delete any row EXCEPT the active
+                    // approved extension; staff may delete pending/rejected
+                    // requests. Backend enforces the same rules.
+                    const isActiveApproved = ext.status === 'approved' && ext.id === activeApprovedId;
+                    const canDelete = isAdmin ? !isActiveApproved : (isStaff && (ext.status === 'pending' || ext.status === 'rejected'));
 
                     row.innerHTML = `
                         <td style="padding: 12px 15px; font-size: 13px; font-weight: 600; color: #667eea;">#${ext.extension_number}</td>
@@ -110,8 +125,10 @@ function reloadExtensionsTable() {
                         <td style="padding: 12px 15px; text-align: center;">
                             <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>
                         </td>
-                        <td style="padding: 12px 15px; text-align: center;">
-                            ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;"><i class="bi bi-pencil"></i> Edit</button>` : '<span style="color: #d1d5db; font-size: 11px;">—</span>'}
+                        <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
+                            ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}
+                            ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;"><i class="bi bi-trash"></i> Delete</button>` : ''}
+                            ${(!canEdit && !canDelete) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
                         </td>
                     `;
                     tbody.appendChild(row);
@@ -152,4 +169,46 @@ function reloadExtensionsTable() {
 function reloadProjectData() {
     console.log('[reloadProjectData] Reloading page to refresh all data');
     setTimeout(() => location.reload(), 1500);
+}
+
+/**
+ * Delete an extension via the role-aware DELETE endpoint.
+ * Success: queue a success toast and reload, matching the baseline
+ * toast-after-reload pattern. Failure (incl. the backend's guard
+ * rejection): show an inline danger toast and refresh the table.
+ */
+function deleteExtension(ext) {
+    const confirmed = confirm(
+        `Delete extension #${ext.extension_number} (${ext.status})?\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    console.log(`[deleteExtension] Deleting extension #${ext.extension_number}...`);
+
+    fetch(buildExtensionsEndpoint(ext.id), {
+        method: 'DELETE',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        return response.json().catch(() => ({}))
+            .then(body => ({ ok: response.ok, body }));
+    })
+    .then(({ ok, body }) => {
+        if (ok) {
+            queueToastAfterReload(`Extension #${ext.extension_number} deleted.`, 'success');
+            setTimeout(() => window.location.reload(), 600);
+        } else {
+            showToast(body.message || `Could not delete extension #${ext.extension_number}.`, 'danger');
+            reloadExtensionsTable();
+        }
+    })
+    .catch(error => {
+        console.error('[deleteExtension] Error:', error);
+        showToast('Could not delete this extension.', 'danger');
+        reloadExtensionsTable();
+    });
 }

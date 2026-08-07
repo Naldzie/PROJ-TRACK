@@ -522,4 +522,43 @@ compared `badge.textContent.trim() === monthLabel` — which can never match.
 
 ---
 
+### 2026-08-07 — Extension management: revert-approved + delete (deadline recompute)
+
+Feature request: admins want to revert an approved extension (back to pending/rejected) and
+let staff delete pending/rejected requests. Backend already had `destroy()` (admin + staff
+routes) and an admin Edit-modal status dropdown, but NO UI called delete, and reverting an
+approved extension left `planned_end_date`/`extension_count` stale (the controller only
+updated the project when transitioning TO approved).
+
+1. **`ProjectExtensionController`** — new `recomputeProjectDeadline(Project)` helper points
+   the project's live deadline at the latest APPROVED extension (falls back to
+   `original_planned_end_date`, then the earliest remaining extension's `original_end_date`,
+   then the current value). `update()` now runs it after EVERY admin save (approve, revert
+   approved→pending/rejected, or editing an approved extension's `new_end_date`), replacing
+   the old transition-only project update. `destroy()` runs it after delete and its guard
+   was refined to block the highest-numbered APPROVED extension (previously a rejected row
+   sitting above the active approved one could slip past). Added a staff guard: staff may
+   only delete pending/rejected (403 on approved), matching the existing `update()` rule.
+2. **`baseline-schedule-extensions.js`** — Delete button in the action cell: admin sees it
+   on every row EXCEPT the active approved one; staff sees it on pending/rejected. New
+   `deleteExtension()` confirm → `DELETE` → success `queueToastAfterReload` + 600ms reload,
+   failure `showToast('danger')` + table refresh (matches the toast-after-reload pattern).
+3. **`ProjectChartService`** — deleted the 3 unused projection methods
+   (`calculateExtensionBaseline`, `extendChartForExtensionCompletion`,
+   `calculateExtensionFromStartDate`, ~230 lines) flagged as dead code. Live S-curve
+   behavior is unaffected: `has_extension = extension_count > 0` now flips false after a
+   full revert, so the amber "Adjusted Plan" line disappears automatically (deadline-only
+   revert scope; baseline schedule rows persist by design).
+- Tests: new `ProjectExtensionLifecycleTest` (10 tests: revert→rejected/pending rollback to
+  previous approved or original deadline, edit-approved-new-date moves deadline, delete
+  non-active approved keeps deadline, active-approved delete blocked 400, staff delete
+  pending/rejected OK + deadline unchanged, staff delete approved 403, contractor has no
+  destroy route, delete logs activity). `node --check` clean; full suite green:
+  **416 passed / 1503 assertions**.
+- TODO: browser-verify per Rule 8 (admin revert via Edit modal updates the deadline card +
+  header; staff delete pending/rejected; admin Delete hidden on the active approved row;
+  S-curve amber line drops after revert), then commit + push.
+
+---
+
 END OF UI POLISH PLAN
