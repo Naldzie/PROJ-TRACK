@@ -265,4 +265,33 @@ class ProjectsRenderTest extends TestCase
 
         $this->assertDatabaseHas('projects', ['id' => $project->id]);
     }
+
+    public function test_admin_index_renders_create_modal_stepper_and_auto_add_documents(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects'))
+            ->assertOk()
+            ->assertSee('step-wizard', false)
+            ->assertSee('step1-indicator', false)
+            ->assertSee('documentFileInput', false)
+            // No "Add Document" button — files auto-add on selection
+            ->assertDontSee('addDocumentBtn', false)
+            ->assertSee('Choose the document type first', false);
+    }
+
+    public function test_project_detail_renders_toast_success_script_when_flashed(): void
+    {
+        $project = Project::factory()->create([
+            'title'  => 'Flashed Toast Project',
+            'status' => 'Ongoing',
+        ]);
+
+        session()->flash('toast_success', 'Project created successfully.');
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->assertSee('Project created successfully.', false)
+            ->assertSee('showToast', false);
+    }
 }

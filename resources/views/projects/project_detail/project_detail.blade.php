@@ -237,3 +237,13 @@ function switchTab(el, tabId) {
 @if($project->proposal)
     @include('projects.project_detail._proposal_detail_modal')
 @endif
+
+{{-- Show the create/edit success toast AFTER the post-save redirect to this page
+     (flash set by ProjectController@store/update → session('toast_success')). --}}
+@if(session('toast_success'))
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        window.showToast(@json(session('toast_success')), 'success');
+    });
+</script>
+@endif

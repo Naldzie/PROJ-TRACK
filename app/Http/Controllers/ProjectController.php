@@ -572,7 +572,12 @@ class ProjectController extends Controller
                 'staff' => route('staff.projects.detail', $project->id),
                 default => route('projects.show', $project->id)
             };
-            
+
+            // Flash a success toast so it renders AFTER the modal JS navigates
+            // to the project detail page (consumed by the load-time toast script
+            // in project_detail.blade.php).
+            session()->flash('toast_success', 'Project created successfully.');
+
             return response()->json([
                 'success' => true,
                 'message' => 'Project created successfully.',
@@ -808,7 +813,12 @@ class ProjectController extends Controller
                 'staff' => route('staff.projects.detail', $project->id),
                 default => route('projects.show', $project->id)
             };
-            
+
+            // Flash a success toast so it renders AFTER the modal JS navigates
+            // to the project detail page (consumed by the load-time toast script
+            // in project_detail.blade.php).
+            session()->flash('toast_success', 'Project updated successfully.');
+
             return response()->json([
                 'success' => true,
                 'message' => 'Project updated successfully.',

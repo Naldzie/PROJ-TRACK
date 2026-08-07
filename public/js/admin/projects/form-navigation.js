@@ -50,21 +50,27 @@ function updatePageDisplay() {
 function updateStepIndicators() {
     for (let i = 1; i <= TOTAL_PAGES; i++) {
         const indicator = document.getElementById(`step${i}-indicator`);
+        const dot = indicator ? indicator.querySelector('.step-dot') : null;
+        const connector = document.getElementById(`step${i}-connector`);
+
         if (i < currentFormPage) {
-            // Completed step
-            indicator.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${indicator.textContent.replace(/[^a-zA-Z ]/g, '').trim()}`;
-            indicator.classList.remove('step-indicator-current', 'step-indicator-future');
-            indicator.classList.add('step-indicator-completed');
+            // Completed step — green check inside the dot
+            indicator.classList.remove('current', 'upcoming');
+            indicator.classList.add('done');
+            if (dot) dot.innerHTML = '<i class="bi bi-check-lg" aria-hidden="true"></i>';
+            if (connector) connector.classList.add('done');
         } else if (i === currentFormPage) {
-            // Current step
-            indicator.innerHTML = `<i class="bi bi-circle-fill"></i> ${indicator.textContent.replace(/[^a-zA-Z ]/g, '').trim()}`;
-            indicator.classList.remove('step-indicator-completed', 'step-indicator-future');
-            indicator.classList.add('step-indicator-current');
+            // Current step — filled blue dot with the step number
+            indicator.classList.remove('done', 'upcoming');
+            indicator.classList.add('current');
+            if (dot) dot.textContent = i;
+            if (connector) connector.classList.remove('done');
         } else {
-            // Future step
-            indicator.innerHTML = `<i class="bi bi-circle"></i> ${indicator.textContent.replace(/[^a-zA-Z ]/g, '').trim()}`;
-            indicator.classList.remove('step-indicator-completed', 'step-indicator-current');
-            indicator.classList.add('step-indicator-future');
+            // Future step — outlined gray dot with the step number
+            indicator.classList.remove('done', 'current');
+            indicator.classList.add('upcoming');
+            if (dot) dot.textContent = i;
+            if (connector) connector.classList.remove('done');
         }
     }
 }

@@ -24,10 +24,11 @@ function initializeDocumentManager() {
     // Load document types if empty
     loadDocumentTypes();
     
-    // Add event listeners
-    const addBtn = document.getElementById('addDocumentBtn');
-    if (addBtn) {
-        addBtn.addEventListener('click', handleAddDocument);
+    // Files are added automatically when selected — no "Add Document" button.
+    // The document type must be chosen FIRST (see handleDocumentFileSelected).
+    const fileInput = document.getElementById('documentFileInput');
+    if (fileInput) {
+        fileInput.addEventListener('change', handleDocumentFileSelected);
     }
 }
 
@@ -67,88 +68,81 @@ function loadDocumentTypes() {
 }
 
 /**
- * Handle "Add Document" button click
- * Validates file immediately when user clicks "Add Document"
+ * Handle automatic document addition when file(s) are selected.
+ * The document type MUST be chosen first — if a file is picked without a
+ * type, an error is shown and the input is cleared (strict order).
  */
-function handleAddDocument(e) {
-    e.preventDefault();
-    
+function handleDocumentFileSelected() {
     const fileInput = document.getElementById('documentFileInput');
     const typeSelect = document.getElementById('documentTypeSelect');
-    const file = fileInput.files[0];
+    const files = fileInput.files;
     const typeId = typeSelect.value;
-    
-    // === VALIDATION WHEN ADDING TO PENDING LIST ===
-    
-    // 1. Check if file is selected
-    if (!file) {
-        showDocumentError('Please select a file before clicking Add Document');
-        return;
-    }
-    
-    // 2. Check if document type is selected
+
+    // === STRICT ORDER: document type must be selected before any file ===
     if (!typeId) {
-        showDocumentError('Please select a document type before clicking Add Document');
+        showDocumentError('Please select a document type first, then choose the file(s).');
+        fileInput.value = '';
         return;
     }
-    
-    // 3. Check file size (1MB for testing - change to 20480 for 20MB in production)
-    const maxSizeKB = 20480; // 1MB(1024) for testing - change to 20480 for 20MB in production
-    const maxSizeBytes = maxSizeKB * 1024;
-    
-    if (file.size === 0) {
-        showDocumentError('File is empty. Please select a valid file');
-        return;
-    }
-    
-    if (file.size > maxSizeBytes) {
-        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        const maxSizeMB = (maxSizeBytes / (1024 * 1024)).toFixed(2);
-        showDocumentError(`File size (${fileSizeMB}MB) exceeds maximum limit of ${maxSizeMB}MB`);
-        return;
-    }
-    
-    // 4. Validate file type
-    const allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png'];
-    const fileExtension = file.name.split('.').pop().toLowerCase();
-    
-    if (!allowedExtensions.includes(fileExtension)) {
-        showDocumentError(`File type ".${fileExtension}" is not allowed. Accepted types: ${allowedExtensions.join(', ')}`);
-        return;
-    }
-    
-    // 5. Check for duplicate files (same filename in pending list)
-    const isDuplicate = pendingDocuments.some(doc => doc.fileName === file.name);
-    if (isDuplicate) {
-        showDocumentError(`File "${file.name}" has already been added to the pending list`);
-        return;
-    }
-    
-    // Get the type name
+
+    if (!files || files.length === 0) return;
+
+    // Get the type name (applies to every file in this selection)
     const typeOption = typeSelect.options[typeSelect.selectedIndex];
     const typeName = typeOption.text;
-    
-    // Add to pending documents
-    const docId = 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    pendingDocuments.push({
-        id: docId,
-        file: file,
-        typeId: typeId,
-        typeName: typeName,
-        fileName: file.name,
-        fileSize: formatFileSize(file.size)
-    });
-    
+
+    // === VALIDATE EACH FILE ===
+    const maxSizeBytes = 20480 * 1024; // 20MB
+    const allowedExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png'];
+
+    for (const file of files) {
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+
+        if (file.size === 0) {
+            showDocumentError(`"${file.name}" is empty. Please select a valid file.`);
+            continue;
+        }
+
+        if (file.size > maxSizeBytes) {
+            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            showDocumentError(`"${file.name}" (${fileSizeMB}MB) exceeds the maximum limit of 20MB`);
+            continue;
+        }
+
+        if (!allowedExtensions.includes(fileExtension)) {
+            showDocumentError(`File type ".${fileExtension}" is not allowed. Accepted types: ${allowedExtensions.join(', ')}`);
+            continue;
+        }
+
+        const isDuplicate = pendingDocuments.some(doc => doc.fileName === file.name);
+        if (isDuplicate) {
+            showDocumentError(`File "${file.name}" has already been added to the pending list`);
+            continue;
+        }
+
+        // Add to pending documents
+        const docId = 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        pendingDocuments.push({
+            id: docId,
+            file: file,
+            typeId: typeId,
+            typeName: typeName,
+            fileName: file.name,
+            fileSize: formatFileSize(file.size)
+        });
+    }
+
     // Update UI
     displayPendingDocuments();
-    
-    // Reset form
+
+    // Reset the file input + type select so the next document requires a fresh type choice
     fileInput.value = '';
     typeSelect.value = '';
 }
 
 /**
- * Display pending documents in the table
+ * Display pending documents as removable chips (mirrors the issues-modal
+ * attachment upload style).
  */
 function displayPendingDocuments() {
     const container = document.getElementById('documentsListContainer');
@@ -163,23 +157,38 @@ function displayPendingDocuments() {
     container.classList.remove('d-none');
     
     tbody.innerHTML = pendingDocuments.map(doc => `
-        <tr>
-            <td>
-                <i class="bi bi-file"></i> ${doc.fileName}
-            </td>
-            <td>
-                <span class="badge bg-info">${doc.typeName}</span>
-            </td>
-            <td>
-                <small class="text-muted">${doc.fileSize}</small>
-            </td>
-            <td>
-                <button type="button" class="btn btn-sm btn-danger" onclick="removeDocument('${doc.id}')">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </td>
-        </tr>
+        <span class="doc-chip" title="${doc.fileName} (${doc.fileSize})">
+            <span class="doc-chip-info">
+                <i class="bi ${getDocumentIcon(doc.fileName)}"></i>
+                <span class="doc-chip-name">${doc.fileName}</span>
+                <span class="doc-chip-type">${doc.typeName}</span>
+            </span>
+            <button type="button" class="doc-chip-remove" title="Remove document"
+                    onclick="removeDocument('${doc.id}')">
+                <i class="bi bi-x-circle-fill"></i>
+            </button>
+        </span>
     `).join('');
+}
+
+/**
+ * Pick an icon glyph for a file name based on its extension.
+ */
+function getDocumentIcon(filename) {
+    const ext = (filename || '').split('.').pop().toLowerCase();
+    const map = {
+        pdf: 'bi-file-earmark-pdf',
+        doc: 'bi-file-earmark-word',
+        docx: 'bi-file-earmark-word',
+        xls: 'bi-file-earmark-excel',
+        xlsx: 'bi-file-earmark-excel',
+        ppt: 'bi-file-earmark-ppt',
+        pptx: 'bi-file-earmark-ppt',
+        jpg: 'bi-file-earmark-image',
+        jpeg: 'bi-file-earmark-image',
+        png: 'bi-file-earmark-image'
+    };
+    return map[ext] || 'bi-file-earmark-text';
 }
 
 /**

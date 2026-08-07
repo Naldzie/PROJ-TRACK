@@ -337,6 +337,42 @@ painted.
 - ⚠️ Remaining: browser-verify per Rule 8 (delete a project → overlay holds
   through reload → toast over updated page), then commit + push.
 
+### 2026-08-07 — Create-project modal: stepper redesign + auto-add documents + detail-page success toast
+
+User-requested polish on the create/edit project modal and the post-save
+redirect.
+
+1. **Step indicator bug + redesign** — `updateStepIndicators()` in
+   `form-navigation.js` only swapped `step-indicator-completed/current/future`
+   classes but never removed the initial `active`/`inactive` classes, and those
+   (specificity 0,2,0) outranked the JS classes (0,1,0) — so step colors were
+   frozen (step 1 always blue, steps 2-5 always gray). Rewrote the indicator as
+   a numbered **step wizard** (`.step-item`/`.step-dot`/`.step-label` +
+   `.step-connector` track) in `_create_project_modal.blade.php` +
+   `_create_project_modal.css`; the JS now clears all state classes each pass
+   and drives `done`/`current`/`upcoming` + connector states (check icon in the
+   dot when completed).
+2. **Auto-add documents (no button), type still required** — removed the "Add
+   Document" button. `document-manager.js` now listens on `documentFileInput`
+   `change`: strict **type-before-file** (picking a file without a type shows an
+   error toast and clears the input); valid files auto-push to
+   `pendingDocuments` with the chosen type. `displayPendingDocuments()` renders
+   removable **chips** (`.doc-chip` — icon, name, type badge, ×) mirroring the
+   issues-modal attachment upload; local `getDocumentIcon()` helper. File input
+   is now `multiple`; type + input reset after each add. Autofill
+   (`document-parser.js` reads `getPendingDocuments()`) unaffected.
+3. **Success toast on the project detail page** — `ProjectController@store` and
+   `@update` AJAX branches now `session()->flash('toast_success', …)` before
+   returning the JSON `redirect`; the shared
+   `projects/project_detail/project_detail.blade.php` renders a load-time
+   `showToast(…, 'success')` script on `DOMContentLoaded` (same pattern as the
+   index's delete toast; `showToast` is global via the layout's `components.toast`).
+   Covers all three roles since they share the detail view.
+- Tests: +2 `ProjectsRenderTest` (stepper + no `addDocumentBtn` + type-first
+  helper text; detail page renders the flashed `toast_success` script). Full
+  suite green: **403 passed / 1444 assertions**.
+- ⚠️ Remaining: browser-verify per Rule 8, then commit + push.
+
 ---
 
 END OF UI POLISH PLAN

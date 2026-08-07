@@ -22,21 +22,30 @@
                     <div class="progress mb-3 progress-thin">
                         <div id="progressBar" class="progress-bar bg-primary progress-bar-dynamic" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
-                    <div class="row text-center small">
-                        <div class="col">
-                            <span id="step1-indicator" class="step-indicator active"><i class="bi bi-circle-fill"></i> Documents</span>
+                    <div class="step-wizard" role="list" aria-label="Form steps">
+                        <div class="step-item current" id="step1-indicator" role="listitem">
+                            <div class="step-dot">1</div>
+                            <div class="step-label">Documents</div>
                         </div>
-                        <div class="col">
-                            <span id="step2-indicator" class="step-indicator inactive"><i class="bi bi-circle"></i> Project Info</span>
+                        <div class="step-connector" id="step1-connector"></div>
+                        <div class="step-item upcoming" id="step2-indicator" role="listitem">
+                            <div class="step-dot">2</div>
+                            <div class="step-label">Project Info</div>
                         </div>
-                        <div class="col">
-                            <span id="step3-indicator" class="step-indicator inactive"><i class="bi bi-circle"></i> Details</span>
+                        <div class="step-connector" id="step2-connector"></div>
+                        <div class="step-item upcoming" id="step3-indicator" role="listitem">
+                            <div class="step-dot">3</div>
+                            <div class="step-label">Details</div>
                         </div>
-                        <div class="col">
-                            <span id="step4-indicator" class="step-indicator inactive"><i class="bi bi-circle"></i> Timeline</span>
+                        <div class="step-connector" id="step3-connector"></div>
+                        <div class="step-item upcoming" id="step4-indicator" role="listitem">
+                            <div class="step-dot">4</div>
+                            <div class="step-label">Timeline</div>
                         </div>
-                        <div class="col">
-                            <span id="step5-indicator" class="step-indicator inactive"><i class="bi bi-circle"></i> Assignment</span>
+                        <div class="step-connector" id="step4-connector"></div>
+                        <div class="step-item upcoming" id="step5-indicator" role="listitem">
+                            <div class="step-dot">5</div>
+                            <div class="step-label">Assignment</div>
                         </div>
                     </div>
                 </div>
@@ -74,17 +83,10 @@
                             <!-- New Documents Upload Section -->
                             <div class="card border-light bg-light mb-3">
                                 <div class="card-body">
-                                    <div class="row g-3 mb-3">
-                                        <!-- File Upload Input -->
-                                        <div class="col-md-8">
-                                            <label class="form-label">Select File</label>
-                                            <input type="file" id="documentFileInput" class="form-control" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png">
-                                            <small class="text-muted">Max 20MB. Accepted: PDF, DOC, XLS, PPT, Images</small>
-                                        </div>
-
-                                        <!-- Document Type Selector -->
+                                    <div class="row g-3 mb-2">
+                                        <!-- Document Type Selector (must be chosen first) -->
                                         <div class="col-md-4">
-                                            <label class="form-label">Document Type</label>
+                                            <label class="form-label">Document Type <span class="text-danger">*</span></label>
                                             <div class="input-group">
                                                 <select id="documentTypeSelect" class="form-select">
                                                     <option value="">-- Select Type --</option>
@@ -102,31 +104,20 @@
                                                 @endcan
                                             </div>
                                         </div>
+
+                                        <!-- File Upload Input (auto-added on selection) -->
+                                        <div class="col-md-8">
+                                            <label class="form-label">Select File(s)</label>
+                                            <input type="file" id="documentFileInput" class="form-control" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png">
+                                            <small class="text-muted">Choose the document type first, then select file(s) — they are added automatically. Max 20MB each.</small>
+                                        </div>
                                     </div>
 
-                                    <!-- Add Document Button -->
-                                    <button type="button" id="addDocumentBtn" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-plus-circle"></i> Add Document
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Documents List Table -->
-                            <div id="documentsListContainer" class="d-none">
-                                <label class="form-label fw-bold">Added Documents:</label>
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-hover">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>File Name</th>
-                                                <th>Type</th>
-                                                <th>Size</th>
-                                                <th style="width: 80px;">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="documentsTableBody">
-                                        </tbody>
-                                    </table>
+                                    <!-- Documents List (chip preview) -->
+                                    <div id="documentsListContainer" class="d-none mt-1">
+                                        <label class="form-label fw-bold">Added Documents:</label>
+                                        <div id="documentsTableBody" class="d-flex flex-wrap gap-1"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
