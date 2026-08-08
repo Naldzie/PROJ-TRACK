@@ -18,7 +18,7 @@
  *   - reloadInlineActivities() — self-contained (moved here from old modal)
  */
 
-function openManageMonthModal(scheduleId, monthLabel, plannedDate, plannedProgressPercent, description, mode) {
+function openManageMonthModal(scheduleId, monthLabel, plannedDate, plannedProgressPercent, description, mode, prevTarget, nextTarget) {
     console.log('[openManageMonthModal] Opening for month:', monthLabel, 'mode:', mode);
 
     document.getElementById('manageMonthScheduleId').value = scheduleId || '';
@@ -26,6 +26,25 @@ function openManageMonthModal(scheduleId, monthLabel, plannedDate, plannedProgre
     document.getElementById('manageMonthRawLabel').value = monthLabel || '';
     document.getElementById('manageMonthLabel').textContent = formatMonthLabel(monthLabel);
     document.getElementById('manageMonthMonthDisplay').value = formatMonthLabel(monthLabel);
+
+    // Ordering-lock neighbors (nullable). Used for the inline range hint and
+    // the client-side check in saveManageMonthTarget(); the server stays
+    // authoritative.
+    prevTarget = (prevTarget === undefined || prevTarget === null) ? null : parseFloat(prevTarget);
+    nextTarget = (nextTarget === undefined || nextTarget === null) ? null : parseFloat(nextTarget);
+    document.getElementById('manageMonthPrevTarget').value = (prevTarget === null) ? '' : prevTarget;
+    document.getElementById('manageMonthNextTarget').value = (nextTarget === null) ? '' : nextTarget;
+    var hintEl = document.getElementById('manageMonthRangeHint');
+    if (prevTarget !== null && nextTarget !== null) {
+        hintEl.textContent = 'Allowed range: ' + prevTarget + '% < target < ' + nextTarget + '%';
+    } else if (prevTarget !== null) {
+        hintEl.textContent = 'Allowed range: target > ' + prevTarget + '%';
+    } else if (nextTarget !== null) {
+        hintEl.textContent = 'Allowed range: target < ' + nextTarget + '%';
+    } else {
+        hintEl.textContent = '';
+    }
+    showManageMonthTargetError('');
 
     var isEditMode = (mode === 'edit');
 
@@ -228,6 +247,16 @@ function deleteManageMonthActivity(activityId, isCompleted) {
 }
 
 /**
+ * Show/hide the inline red error text next to the Target % input.
+ */
+function showManageMonthTargetError(message) {
+    var errEl = document.getElementById('manageMonthTargetError');
+    if (!errEl) return;
+    errEl.textContent = message || '';
+    errEl.style.display = message ? 'block' : 'none';
+}
+
+/**
  * Save target changes (edit mode only).
  */
 function saveManageMonthTarget() {
@@ -244,8 +273,22 @@ function saveManageMonthTarget() {
         errors.push('Target % must be a number between 0 and 100.');
     }
 
+    // Ordering lock: value must stay strictly between its chronological
+    // neighbors (mirrors the server-side rule in updateBaselineSchedule).
+    var numPercent = parseFloat(progressPercent);
+    var prevTargetVal = document.getElementById('manageMonthPrevTarget').value;
+    var nextTargetVal = document.getElementById('manageMonthNextTarget').value;
+    if (!isNaN(numPercent)) {
+        if (prevTargetVal !== '' && numPercent <= parseFloat(prevTargetVal)) {
+            errors.push('Target % must be higher than the previous month (' + prevTargetVal + '%).');
+        }
+        if (nextTargetVal !== '' && numPercent >= parseFloat(nextTargetVal)) {
+            errors.push('Target % must be lower than the next month (' + nextTargetVal + '%).');
+        }
+    }
+
     if (errors.length > 0) {
-        alert(errors.join('\n'));
+        showManageMonthTargetError(errors.join(' '));
         return;
     }
 
@@ -275,12 +318,12 @@ function saveManageMonthTarget() {
             bootstrap.Modal.getInstance(document.getElementById('manageMonthModal')).hide();
             setTimeout(function () { location.reload(); }, 600);
         } else {
-            alert(data.message || 'Failed to save changes.');
+            showManageMonthTargetError(data.message || 'Failed to save changes.');
         }
     })
     .catch(function (error) {
         console.error('[saveManageMonthTarget] Error:', error);
-        alert('Error saving changes: ' + error.message);
+        showManageMonthTargetError('Error saving changes: ' + error.message);
     });
 }
 
