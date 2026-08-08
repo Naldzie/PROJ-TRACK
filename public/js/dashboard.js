@@ -85,7 +85,8 @@ async function filterDashboardTable(type, btn) {
                 overdue: 'Overdue Projects',
                 atrisk:  'At Risk',
                 pending: 'Pending Updates',
-                inspection_overdue: 'Overdue Inspections'
+                inspection_overdue: 'Overdue Inspections',
+                pending_extensions: 'Extension Requests'
             };
             label.textContent = 'Showing: ' + labelMap[type];
             badge.style.display = 'inline-flex';

@@ -57,7 +57,7 @@
      Clicking the same pill again restores the default 10 rows.
      Hidden entirely when all counts are zero.
 ══ --}}
-@if($overdueCount > 0 || $atRiskCount > 0 || $pendingUpdateCount > 0 || $overdueInspectionCount > 0)
+@if($overdueCount > 0 || $atRiskCount > 0 || $pendingUpdateCount > 0 || $overdueInspectionCount > 0 || (auth()->user()->role === 'admin' && $pendingExtensionCount > 0))
 <div class="db-alert-bar">
     <span class="db-alert-label">⚠ Needs attention</span>
 
@@ -94,6 +94,15 @@
         <i class="bi bi-calendar-x"></i>
         <span>Overdue Inspections</span>
         <span class="alert-count">{{ $overdueInspectionCount }}</span>
+    </button>
+    @endif
+
+    @if(auth()->user()->role === 'admin' && $pendingExtensionCount > 0)
+    <button type="button" class="alert-pill info"
+            onclick="filterDashboardTable('pending_extensions', this)">
+        <i class="bi bi-arrow-repeat"></i>
+        <span>Extension Requests</span>
+        <span class="alert-count">{{ $pendingExtensionCount }}</span>
     </button>
     @endif
 
