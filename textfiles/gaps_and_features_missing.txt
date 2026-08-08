@@ -1,6 +1,6 @@
 ﻿================================================================================
   GAPS & MISSING FEATURES — CSPC PMU SYSTEM
-  Last updated: August 6, 2026 (Risk Register #20 implemented)
+  Last updated: August 8, 2026 (working-days EOT noted as possible addition)
 ================================================================================
 
   Purpose: Document features that are not yet implemented but may be
@@ -198,6 +198,20 @@
       - No reusable baseline schedule templates
       - Similar project types (e.g., classroom buildings) must
         re-enter the same S-Curve targets manually every time
+
+  17b. [CAPSTONE] WORKING-DAYS / CALENDAR-AWARE EOT CALCULATION
+      - Extension duration + deadline math is pure CALENDAR days
+        (`duration_days` = `diffInDays`, no calendar/holiday concept in `app/`)
+      - Industry EOT tools (WeBuild, Commnia, Buildlogic, PMWeb; FIDIC
+        Sub-Clause 8.4) count EOT in WORKING days — excluding rest days
+        (Sunday; often Saturday for Philippine/DPWH-style contracts) and
+        public holidays — and auto-compute the new completion date from the
+        granted working-day count (skipping non-working days).
+      - Possible addition if time allows (extension management is one module,
+        not the main focus). If pursued: project/contract calendar (rest-day
+        config + holiday list), requested duration computed in working days,
+        granted working-day count → new end date that skips non-working days.
+      - Also noted in: textfiles/extension_management_plan.md (§8, deferred)
 
 
 ================================================================================

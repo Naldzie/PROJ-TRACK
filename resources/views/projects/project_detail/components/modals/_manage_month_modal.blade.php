@@ -13,6 +13,8 @@
                 <input type="hidden" id="manageMonthScheduleId" value="">
                 <input type="hidden" id="manageMonthMode" value="activities-only">
                 <input type="hidden" id="manageMonthRawLabel" value="">
+                <input type="hidden" id="manageMonthPrevTarget" value="">
+                <input type="hidden" id="manageMonthNextTarget" value="">
 
                 <!-- Section 1: Target Information -->
                 <div style="background: #f9fafb; padding: 18px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #e5e7eb;">
@@ -39,6 +41,8 @@
                             </label>
                             <input type="number" id="manageMonthProgressPercent" min="0" max="100" step="0.01"
                                    style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
+                            <div id="manageMonthRangeHint" style="font-size: 11px; color: #6b7280; margin-top: 4px;"></div>
+                            <div id="manageMonthTargetError" style="font-size: 11px; color: #dc2626; margin-top: 4px; display: none;"></div>
                         </div>
                     </div>
 

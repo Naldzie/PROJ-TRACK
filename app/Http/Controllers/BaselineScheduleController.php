@@ -188,6 +188,7 @@ class BaselineScheduleController extends Controller
 
                 if (!$isExtended) {
                     $scheduleData['original_planned_progress_percent'] = $validated['planned_progress_percent'];
+                    $scheduleData['original_planned_date'] = $validated['planned_date'];
                 }
 
                 // Create new Baseline Schedule entry
@@ -218,12 +219,17 @@ class BaselineScheduleController extends Controller
                     'user_id' => auth()->id(),
                     'project_id' => $project->id,
                     'action' => 'Create Baseline Schedule',
-                    'description' => auth()->user()->name . " set {$validated['month_label']} target ({$validated['planned_progress_percent']}%) for project: {$project->title}",
+                    'description' => auth()->user()->name . " set {$validated['month_label']} target ({$validated['planned_progress_percent']}%) for project: {$project->title} (baseline snapshot updated)",
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
 
                 DB::commit();
+
+                // Extension-management Phase 2.5: keep the approved extension's
+                // baseline snapshot in sync with any manual store so a later
+                // revert restores the exact state the user built (Add Month Target).
+                \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
                 return response()->json([
                     'success' => true,
@@ -456,20 +462,33 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 ], 422);
             }
 
-            // FIXED: only compare against OTHER extension-added rows (original_planned_progress_percent
-            // IS NULL), matching the same extension-only sequence used in storeBaselineSchedule().
-            // Comparing against original (pre-extension) rows here was the bug — this row was never
-            // validated against those rows at creation time, so it shouldn't be on edit either.
+            // Ordering lock: the edited target must stay strictly between its
+            // chronological neighbors across the WHOLE timeline (original AND
+            // extension rows), using the live planned_progress_percent values.
+            // max()/min() return null when there is no neighbor, so the first
+            // month only has an upper bound and the last month only a lower one.
             $previousMax = ProjectBaselineSchedule::where('project_id', $project->id)
                 ->where('id', '!=', $schedule->id)
-                ->whereNull('original_planned_progress_percent')
                 ->where('planned_date', '<', $validated['planned_date'])
-                ->max('planned_progress_percent') ?? 0;
+                ->max('planned_progress_percent');
+            $nextMin = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->where('id', '!=', $schedule->id)
+                ->where('planned_date', '>', $validated['planned_date'])
+                ->min('planned_progress_percent');
 
-            if ($validated['planned_progress_percent'] <= $previousMax) {
+            $newPercent = (float) $validated['planned_progress_percent'];
+
+            if ($previousMax !== null && $newPercent <= (float) $previousMax) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Target progress % must be higher than the previous extension-period month (' . $previousMax . '%). You entered: ' . $validated['planned_progress_percent'] . '%'
+                    'message' => 'Target progress % must be higher than the previous month (' . $previousMax . '%). You entered: ' . $newPercent . '%'
+                ], 422);
+            }
+
+            if ($nextMin !== null && $newPercent >= (float) $nextMin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Target progress % must be lower than the next month (' . $nextMin . '%). You entered: ' . $newPercent . '%'
                 ], 422);
             }
 
@@ -484,10 +503,15 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Update Baseline Schedule',
-                'description' => auth()->user()->name . " updated {$schedule->month_label} target to {$validated['planned_progress_percent']}% for project: {$project->title}",
+                'description' => auth()->user()->name . " updated {$schedule->month_label} target to {$validated['planned_progress_percent']}% for project: {$project->title} (baseline snapshot updated)",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
+
+            // Extension-management Phase 2.5: keep the approved extension's
+            // baseline snapshot in sync with manual edits (Manage Month modal)
+            // so a later revert restores the exact state the user built.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
             return response()->json([
                 'success' => true,
@@ -909,6 +933,12 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
             DB::commit();
 
+            // Extension-management Phase 2.5: after a successful adjusted-
+            // baseline save, snapshot the whole baseline state onto the latest
+            // approved extension as a restore point (used when reverting that
+            // extension). See ProjectExtensionController::captureBaselineSnapshot.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Adjusted baseline saved successfully!'
@@ -969,12 +999,17 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Delete Baseline Schedule',
-                'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title}",
+                'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title} (baseline snapshot updated)",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
 
             DB::commit();
+
+            // Extension-management Phase 2.5: keep the approved extension's
+            // baseline snapshot in sync with deletions so a later revert
+            // restores the exact state the user built.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
             return response()->json([
                 'success' => true,

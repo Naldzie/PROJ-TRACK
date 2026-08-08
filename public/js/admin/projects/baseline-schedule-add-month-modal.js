@@ -312,24 +312,24 @@ function saveMonthTarget() {
     // Validate Month field
     const monthLabel = formData.get('month_label')?.trim();
     if (!monthLabel) {
-        errors.push('Month is required');
+        errors.push({ field: 'monthLabel', message: 'Month is required' });
     }
     
     // Validate Target Date field
     const plannedDate = formData.get('planned_date')?.trim();
     if (!plannedDate) {
-        errors.push('Target Date is required');
+        errors.push({ field: 'plannedDate', message: 'Target Date is required' });
     }
     
     // Validate Progress % field
     const progressInput = formData.get('planned_progress_percent')?.trim();
     if (!progressInput) {
-        errors.push('Target Progress % is required');
+        errors.push({ field: 'plannedProgressPercent', message: 'Target Progress % is required' });
     }
     
     const newProgressPercent = parseFloat(progressInput) || 0;
     if (isNaN(newProgressPercent) || newProgressPercent < 0 || newProgressPercent > 100) {
-        errors.push('Target Progress % must be a number between 0 and 100');
+        errors.push({ field: 'plannedProgressPercent', message: 'Target Progress % must be a number between 0 and 100' });
     }
     
     // Get max progress % from existing cards in the container
@@ -360,7 +360,7 @@ function saveMonthTarget() {
     if (monthLabel && plannedDate) {
         var dateMonth = plannedDate.substring(0, 7);
         if (dateMonth !== monthLabel) {
-            errors.push('Target date must fall within ' + formatMonthLabel(monthLabel) + '.');
+            errors.push({ field: 'plannedDate', message: 'Target date must fall within ' + formatMonthLabel(monthLabel) + '.' });
         }
     }
     
@@ -495,12 +495,12 @@ function saveMonthTargetEdit() {
     const errors = [];
 
     const plannedDate = formData.get('planned_date')?.trim();
-    if (!plannedDate) errors.push('Target Date is required');
+    if (!plannedDate) errors.push({ field: 'plannedDate', message: 'Target Date is required' });
 
     const progressInput = formData.get('planned_progress_percent')?.trim();
     const newProgressPercent = parseFloat(progressInput) || 0;
     if (!progressInput || isNaN(newProgressPercent) || newProgressPercent < 0 || newProgressPercent > 100) {
-        errors.push('Target Progress % must be a number between 0 and 100');
+        errors.push({ field: 'plannedProgressPercent', message: 'Target Progress % must be a number between 0 and 100' });
     }
 
     // Rule A (edit): edited date must still fall within the locked month
@@ -508,7 +508,7 @@ function saveMonthTargetEdit() {
     if (editMonth && plannedDate) {
         var dateMonth = plannedDate.substring(0, 7);
         if (dateMonth !== editMonth) {
-            errors.push('Target date must fall within ' + formatMonthLabel(editMonth) + '.');
+            errors.push({ field: 'plannedDate', message: 'Target date must fall within ' + formatMonthLabel(editMonth) + '.' });
         }
     }
 

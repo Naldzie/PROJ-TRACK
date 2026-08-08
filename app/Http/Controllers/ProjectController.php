@@ -520,6 +520,7 @@ class ProjectController extends Controller
                         'month_label'                         => $target['month_label'] ?? null,
                         'planned_progress_percent'            => $target['planned_progress_percent'] ?? 0,
                         'original_planned_progress_percent'   => $target['original_planned_progress_percent'] ?? ($target['planned_progress_percent'] ?? 0),
+                        'original_planned_date'               => $target['planned_date'] ?? null,
                         'description'                         => $target['description'] ?? ''
                     ]);
                     
@@ -557,6 +558,7 @@ class ProjectController extends Controller
                     'month_label'                       => $monthLabel,
                     'planned_progress_percent'          => $progressPercent,
                     'original_planned_progress_percent' => $progressPercent,
+                    'original_planned_date'             => $plannedDate,
                     'description'                      => 'Initial planning target'
                 ]);
             }

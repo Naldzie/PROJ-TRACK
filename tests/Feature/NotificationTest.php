@@ -164,11 +164,12 @@ class NotificationTest extends TestCase
             ['status' => 'rejected', 'rejection_reason' => 'Incomplete']
         )->assertOk();
 
-        // Rejected → then resubmit via staff update.
-        $this->actingAs($this->staff)->putJson(
-            route('staff.projects.extensions.update', [$this->project, $extension]),
+        // Rejected → then resubmit via the Resubmit route (Decision 14: a
+        // rejected row is immutable — resubmission creates a new pending row).
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.extensions.resubmit', [$this->project, $extension]),
             ['new_end_date' => $this->project->planned_end_date->copy()->addMonths(3)->format('Y-m-d'), 'reason' => 'Revised weather justification']
-        )->assertOk();
+        )->assertCreated();
 
         // 1 submission + 1 resubmission = 2 admins notifications (submitted events).
         $submitted = collect($this->notificationsFor($this->admin))

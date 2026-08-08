@@ -312,6 +312,7 @@ class ProjectSeeder extends Seeder
                 'month_label' => $month->format('Y-m'),
                 'planned_progress_percent' => $plannedPct,
                 'original_planned_progress_percent' => $plannedPct,
+                'original_planned_date' => $plannedDate,
                 'description' => 'Baseline planned progress for ' . $month->format('F Y'),
             ]);
 

@@ -172,6 +172,13 @@
                 // inspection) and on the next pending month (first with none).
                 $showRecordButton = $plan->month_label === $latestProgressMonth
                     || $plan->month_label === $nextPendingMonth;
+                // Neighboring targets drive the Manage Month ordering lock hint.
+                $prevTarget = $project->baselineSchedules()
+                    ->where('planned_date', '<', $plan->planned_date)
+                    ->max('planned_progress_percent');
+                $nextTarget = $project->baselineSchedules()
+                    ->where('planned_date', '>', $plan->planned_date)
+                    ->min('planned_progress_percent');
             @endphp
             <!-- Month Card -->
             <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: all 0.3s;">
@@ -331,7 +338,7 @@
                             @php
                                 $manageMode = ($project->extension_count > 0 && !$latestProgress) ? 'edit' : 'activities-only';
                             @endphp
-                            <button onclick="openManageMonthModal({{ $plan->id }}, '{{ $plan->month_label }}', '{{ $plan->planned_date->toDateString() }}', {{ $plan->planned_progress_percent }}, '{{ addslashes($plan->description ?? '') }}', '{{ $manageMode }}')"
+                            <button onclick="openManageMonthModal({{ $plan->id }}, '{{ $plan->month_label }}', '{{ $plan->planned_date->toDateString() }}', {{ $plan->planned_progress_percent }}, '{{ addslashes($plan->description ?? '') }}', '{{ $manageMode }}', {{ $prevTarget ?? 'null' }}, {{ $nextTarget ?? 'null' }})"
                                     style="flex: 1; background: #f0f0f0; color: #374151; border: 1px solid #d1d5db; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Manage Month Target and Activities"
                                     onmouseover="this.style.background='#e5e7eb';"

@@ -19,14 +19,16 @@ class ProjectBaselineSchedule extends Model
         'planned_date',
         'month_label',
         'planned_progress_percent',
-        'original_planned_progress_percent', // NEW: frozen value, set only at initial baseline setup
+        'original_planned_progress_percent', // frozen value, set only at initial baseline setup
+        'original_planned_date',             // frozen target date, set only at initial baseline setup
         'description',
     ];
 
     protected $casts = [
         'planned_date' => 'date',
+        'original_planned_date' => 'date',
         'planned_progress_percent' => 'decimal:2',
-        'original_planned_progress_percent' => 'decimal:2', // NEW
+        'original_planned_progress_percent' => 'decimal:2',
     ];
 
     /**

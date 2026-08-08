@@ -5,25 +5,41 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\Project;
+use App\Models\ProjectActivity;
+use App\Models\ProjectActivityCarryover;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectExtension;
+use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use App\Notifications\ExtensionStatusChanged;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
+/**
+ * ProjectExtensionController
+ *
+ * Extension-management upgrade (extension_management_plan.md, branch
+ * phase-extension-management). Supersedes the single-pending model with a
+ * proposal queue, adds request-quality fields (reason category, evidence
+ * attachments, review aging), baseline snapshot/restore on revert, partial
+ * approval, resubmit-as-new-row, soft delete + archived panel, and fixes the
+ * admin validation gap.
+ */
 class ProjectExtensionController extends Controller
 {
     /**
      * Store a new project extension.
      *
-     * ADMIN: created and auto-approved immediately (unchanged behavior) —
-     *        project's planned_end_date/extension_count updated right away.
-     * STAFF: created as a PENDING request only. Project is NOT updated
-     *        until an admin approves it via update(). Only one pending
-     *        extension is allowed per project at a time.
+     * ADMIN: created and auto-approved immediately — the project's
+     *        planned_end_date/extension_count update right away, and any other
+     *        pending proposals are re-anchored/superseded (Decision 2).
+     * STAFF: created as a PENDING request only. MULTIPLE pendings are allowed
+     *        (Decision 1 — each proposal is anchored to the current approved
+     *        deadline). Project is NOT updated until an admin approves.
      */
     public function store(Request $request, Project $project)
     {
@@ -32,17 +48,25 @@ class ProjectExtensionController extends Controller
 
             $isAdmin = auth()->user()->role === 'admin';
 
-            // Only one pending extension allowed per project at a time.
-            $existingPending = ProjectExtension::where('project_id', $project->id)
-                ->where('status', 'pending')
-                ->exists();
-
-            if ($existingPending) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This project already has a pending extension request. Edit that request instead of creating a new one.',
-                ], 422);
+            // Admin may pick the review status at creation time (defaults to
+            // approved, preserving the auto-approve behavior); staff always
+            // create pending. Partial approval + rejection reason are admin-only.
+            if ($isAdmin) {
+                $validated = array_merge($validated, $request->validate([
+                    'status' => 'sometimes|nullable|in:pending,approved,rejected',
+                    'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                    'approved_new_end_date' => [
+                        'sometimes', 'nullable', 'date_format:Y-m-d',
+                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                        'before_or_equal:2030-12-31',
+                    ],
+                ], [
+                    'approved_new_end_date.after_or_equal' => 'The granted end date cannot be before the current deadline (' . $project->planned_end_date->format('M d, Y') . '). Granting less time still moves the deadline forward, never backward.',
+                ]));
             }
+
+            $status = $isAdmin ? ($validated['status'] ?? 'approved') : 'pending';
+            $rejectionReason = $status === 'rejected' ? ($validated['rejection_reason'] ?? null) : null;
 
             DB::beginTransaction();
 
@@ -55,6 +79,21 @@ class ProjectExtensionController extends Controller
             $newEndDate = Carbon::parse($validated['new_end_date']);
             $durationDays = $originalEndDate->diffInDays($newEndDate);
 
+            // Partial approval (Decision 7): an admin approving with a GRANTED
+            // date earlier than the requested one stores that date here. It can
+            // never exceed the requested new_end_date.
+            $approvedNewEndDate = null;
+            if ($isAdmin && $status === 'approved' && !empty($validated['approved_new_end_date'])) {
+                $approvedNewEndDate = Carbon::parse($validated['approved_new_end_date']);
+                if ($approvedNewEndDate->greaterThan($newEndDate)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The granted end date cannot be later than the requested end date.',
+                    ], 422);
+                }
+            }
+
             $extension = ProjectExtension::create([
                 'project_id' => $project->id,
                 'extension_number' => $nextExtensionNumber,
@@ -62,36 +101,45 @@ class ProjectExtensionController extends Controller
                 'new_end_date' => $newEndDate,
                 'duration_days' => $durationDays,
                 'reason' => $validated['reason'],
-                // Admin submissions are auto-approved; staff submissions
-                // start pending and wait for an admin to approve them.
-                'status' => $isAdmin ? 'approved' : 'pending',
-                'approved_by_user_id' => $isAdmin ? auth()->user()->id : null,
-                'approved_at' => $isAdmin ? now() : null,
-                // Track who submitted the request so approval/rejection
-                // notices can be targeted at the requester.
+                'reason_category' => $validated['reason_category'] ?? null,
+                'status' => $status,
+                'rejection_reason' => $rejectionReason,
+                'approved_new_end_date' => $approvedNewEndDate,
+                'approved_by_user_id' => ($isAdmin && $status === 'approved') ? auth()->id() : null,
+                'approved_at' => ($isAdmin && $status === 'approved') ? now() : null,
                 'created_by_user_id' => auth()->id(),
             ]);
 
-            // Only push the change to the project itself once the
-            // extension is actually approved. For admin this happens
-            // immediately; for staff it happens later in update()/approve.
-            if ($isAdmin) {
-                $project->update([
-                    'planned_end_date' => $newEndDate,
-                    'extension_count' => $nextExtensionNumber,
-                ]);
+            // Push the change to the project itself once the extension is
+            // actually approved. For admin this happens immediately when the
+            // status is approved; for staff it happens later in update()/approve.
+            // An admin creating a pending/rejected extension leaves the project
+            // untouched (same as a staff submission).
+            if ($isAdmin && $status === 'approved') {
+                // A freshly auto-approved admin extension becomes the active
+                // approved — re-anchor any remaining pending proposals and
+                // supersede the obsolete ones (Decision 2), then point the
+                // project deadline/extension_count at the latest approved.
+                $this->resolvePendingQueue($project, $extension);
+                $this->recomputeProjectDeadline($project);
             }
 
             DB::commit();
 
-            // Audit the submission. Admin submissions are auto-approved;
-            // staff submissions sit pending until an admin approves them.
+            // Audit the submission. Admin submissions are auto-approved by
+            // default but may be created pending/rejected; staff submissions
+            // sit pending until an admin approves them.
+            $logAction = $isAdmin
+                ? ($status === 'approved' ? 'Approve Extension'
+                    : ($status === 'rejected' ? 'Reject Extension' : 'Request Extension'))
+                : 'Request Extension';
+
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
-                'action' => $isAdmin ? 'Approve Extension' : 'Request Extension',
+                'action' => $logAction,
                 'description' => auth()->user()->name . ($isAdmin
-                        ? " approved extension #{$nextExtensionNumber} for project: {$project->title}"
+                        ? " {$logAction} extension #{$nextExtensionNumber} for project: {$project->title}"
                         : " requested extension #{$nextExtensionNumber} ({$durationDays} days) for project: {$project->title}"),
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
@@ -99,17 +147,26 @@ class ProjectExtensionController extends Controller
 
             // Notify: staff submissions go to admins; admin auto-approvals go to
             // the project contractor (who is affected by the new deadline).
-            $this->notifyExtension(
-                $project,
-                $extension,
-                $isAdmin ? ExtensionStatusChanged::APPROVED : ExtensionStatusChanged::SUBMITTED
-            );
+            // Admin-created pending/rejected follow the same channels as staff
+            // submissions / admin rejections respectively.
+            $notifyStatus = $isAdmin
+                ? ($status === 'approved' ? ExtensionStatusChanged::APPROVED
+                    : ($status === 'rejected' ? ExtensionStatusChanged::REJECTED : ExtensionStatusChanged::SUBMITTED))
+                : ExtensionStatusChanged::SUBMITTED;
+
+            $this->notifyExtension($project, $extension, $notifyStatus);
+
+            $responseMessage = $isAdmin
+                ? ($status === 'approved'
+                    ? "Extension #{$nextExtensionNumber} created and approved"
+                    : ($status === 'rejected'
+                        ? "Extension #{$nextExtensionNumber} created and rejected"
+                        : "Extension #{$nextExtensionNumber} created and pending approval"))
+                : "Extension #{$nextExtensionNumber} submitted for admin approval";
 
             return response()->json([
                 'success' => true,
-                'message' => $isAdmin
-                    ? "Extension #{$nextExtensionNumber} created and approved"
-                    : "Extension #{$nextExtensionNumber} submitted for admin approval",
+                'message' => $responseMessage,
                 'extension' => $this->formatExtension($extension),
             ], 201);
 
@@ -138,7 +195,7 @@ class ProjectExtensionController extends Controller
     {
         try {
             $extensions = $project->extensions()
-                ->with('approver')
+                ->with(['approver', 'attachments'])
                 ->orderBy('extension_number', 'asc')
                 ->get()
                 ->map(fn ($ext) => $this->formatExtension($ext));
@@ -167,6 +224,8 @@ class ProjectExtensionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
             }
 
+            $extension->load(['approver', 'attachments']);
+
             return response()->json([
                 'success' => true,
                 'extension' => $this->formatExtension($extension),
@@ -183,17 +242,21 @@ class ProjectExtensionController extends Controller
     /**
      * Update an extension. Behavior branches by role:
      *
-     * STAFF: may edit ONLY their own extension while it is 'pending' or
-     *        'rejected'. Can change new_end_date/reason. Can NEVER set
-     *        status directly — that field is stripped from their payload
-     *        regardless of what's submitted. Editing a 'rejected'
-     *        extension resets it to 'pending' for re-review.
+     * STAFF: may edit ONLY their OWN extension while it is 'pending' (still
+     *        undecided — in-place edits are fine). Can change
+     *        new_end_date/reason. Can NEVER set status directly — that field
+     *        is stripped from their payload regardless of what's submitted.
+     *        Rejected rows are IMMUTABLE for staff (Decision 14): the only
+     *        way back to review is Resubmit, which creates a NEW row.
      *
      * ADMIN: may edit any extension's details AND status. Transitioning
-     *        status -> 'approved' is the moment planned_end_date /
-     *        extension_count get applied to the project. Transitioning
-     *        to 'rejected' leaves the project untouched (extension stays
-     *        visible in history so staff can revise and resubmit it).
+     *        status -> 'approved' applies the deadline to the project and
+     *        re-anchors/supersedes the pending queue (Decision 2).
+     *        Transitioning the ACTIVE approved to pending/rejected reverts
+     *        the project deadline AND restores the baseline snapshot
+     *        (Phase 2.5). Non-active approved rows cannot be reverted
+     *        (Decision 11). Admin new_end_date is capped at 2030 AND must be
+     *        after the live deadline (Decision 8).
      */
     public function update(Request $request, Project $project, ProjectExtension $extension)
     {
@@ -206,32 +269,40 @@ class ProjectExtensionController extends Controller
             $isAdmin = $user->role === 'admin';
 
             if (!$isAdmin) {
-                // Staff guard: only their own extension, and only while
-                // it's still pending or rejected (not yet approved).
-                if ((int) $extension->approved_by_user_id === (int) $user->id && $extension->isApproved()) {
-                    // Defensive: an already-approved extension is locked
-                    // for staff regardless of who originally submitted it.
-                }
-
-                if (!in_array($extension->status, ['pending', 'rejected'], true)) {
+                // Staff guard (Decision 14): only their OWN extension, and only
+                // while it's still PENDING (undecided — in-place edits are fine).
+                // Rejected rows are immutable: the only way back to review is
+                // Resubmit, which creates a NEW row so the audit trail is kept.
+                if ($extension->created_by_user_id !== $user->id) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'This extension has already been approved and can no longer be edited.',
+                        'message' => 'You can only edit your own extension requests.',
+                    ], 403);
+                }
+                if ($extension->status !== 'pending') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $extension->isApproved()
+                            ? 'This extension has already been approved and can no longer be edited.'
+                            : 'A rejected extension cannot be edited directly. Use "Resubmit" to send a revised request.',
                     ], 403);
                 }
 
                 $validated = $request->validate([
                     'new_end_date' => [
                         'sometimes', 'required', 'date_format:Y-m-d',
-                        'after:' . $project->planned_end_date->format('Y-m-d'),
+                        // Editing an existing extension may legitimately keep its
+                        // date equal to the live deadline (the active approved
+                        // extension IS the deadline) — allow equality here. New
+                        // requests still require strictly-after (validateExtension).
+                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                         'before_or_equal:2030-12-31',
                     ],
                     'reason' => 'sometimes|required|string|min:5|max:500',
+                    'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
                 ]);
 
                 // status is intentionally never read from the staff payload.
-                $wasRejected = $extension->isRejected();
-
                 DB::beginTransaction();
 
                 if (isset($validated['new_end_date'])) {
@@ -242,15 +313,8 @@ class ProjectExtensionController extends Controller
                 if (isset($validated['reason'])) {
                     $extension->reason = $validated['reason'];
                 }
-
-                if ($wasRejected) {
-                    // Resubmitting a rejected request puts it back to pending.
-                    // Clear the old rejection reason — it applied to the
-                    // PREVIOUS version of this request, not the revised one.
-                    $extension->status = 'pending';
-                    $extension->approved_by_user_id = null;
-                    $extension->approved_at = null;
-                    $extension->rejection_reason = null;
+                if (array_key_exists('reason_category', $validated)) {
+                    $extension->reason_category = $validated['reason_category'];
                 }
 
                 $extension->save();
@@ -259,25 +323,16 @@ class ProjectExtensionController extends Controller
                 ActivityLog::create([
                     'user_id' => auth()->id(),
                     'project_id' => $project->id,
-                    'action' => $wasRejected ? 'Resubmit Extension' : 'Update Extension',
-                    'description' => auth()->user()->name . " " . ($wasRejected
-                            ? "resubmitted extension #{$extension->extension_number} for project: {$project->title}"
-                            : "updated extension #{$extension->extension_number} for project: {$project->title}"),
+                    'action' => 'Update Extension',
+                    'description' => auth()->user()->name
+                        . " updated extension #{$extension->extension_number} for project: {$project->title}",
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
 
-                // A resubmitted (previously rejected) request goes back to
-                // pending — re-notify the admins for review.
-                if ($wasRejected) {
-                    $this->notifyExtension($project, $extension, ExtensionStatusChanged::SUBMITTED);
-                }
-
                 return response()->json([
                     'success' => true,
-                    'message' => $wasRejected
-                        ? 'Extension request revised and resubmitted for approval'
-                        : 'Extension request updated',
+                    'message' => 'Extension request updated',
                     'extension' => $this->formatExtension($extension),
                 ]);
             }
@@ -286,21 +341,64 @@ class ProjectExtensionController extends Controller
             $validated = $request->validate([
                 'new_end_date' => [
                     'sometimes', 'required', 'date_format:Y-m-d',
+                    // Decision 8: admin can never set a date BEFORE the live
+                    // deadline — equality is allowed when editing an existing
+                    // extension (its own date may be the deadline itself).
+                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                     'before_or_equal:2030-12-31',
                 ],
                 'reason' => 'sometimes|required|string|min:5|max:500',
+                'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
                 'status' => 'sometimes|required|in:pending,approved,rejected',
-                // Required ONLY when the admin is setting status to
-                // rejected — staff need this to know what to fix before
-                // resubmitting via the edit-mode flow.
+                // Required ONLY when the admin is setting status to rejected —
+                // staff need this to know what to fix before resubmitting.
                 'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                // Partial approval (Decision 7): nullable granted date.
+                'approved_new_end_date' => [
+                    'sometimes', 'nullable', 'date_format:Y-m-d',
+                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                    'before_or_equal:2030-12-31',
+                ],
             ]);
 
             DB::beginTransaction();
 
+            $wasApproved = $extension->isApproved();
             $transitioningToApproved = isset($validated['status'])
                 && $validated['status'] === 'approved'
-                && !$extension->isApproved();
+                && !$wasApproved;
+            $isReverting = isset($validated['status'])
+                && in_array($validated['status'], ['pending', 'rejected'], true)
+                && $wasApproved;
+
+            // Decision 11: only the ACTIVE (latest approved) extension can be
+            // reverted. Reverting a non-active approved is blocked.
+            if ($isReverting) {
+                $activeApproved = $this->activeApproved($project);
+                if (!$activeApproved || $activeApproved->id !== $extension->id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Only the active approved extension can be reverted. Clean up older approved extensions by reverting them in reverse order.',
+                    ], 403);
+                }
+            }
+
+            // Partial approval sanity check: the granted date cannot exceed
+            // the requested new_end_date (an admin grants LESS, never more).
+            // When the admin does not resubmit a new_end_date, the extension's
+            // existing requested date is the ceiling.
+            $requestedEndDate = $validated['new_end_date']
+                ?? $extension->new_end_date->format('Y-m-d');
+            if (isset($validated['approved_new_end_date'])
+                && $validated['approved_new_end_date'] !== null
+                && $validated['approved_new_end_date'] > $requestedEndDate) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The granted end date cannot be later than the requested end date.',
+                ], 422);
+            }
 
             if (isset($validated['new_end_date'])) {
                 $newEndDate = Carbon::parse($validated['new_end_date']);
@@ -309,6 +407,14 @@ class ProjectExtensionController extends Controller
             }
             if (isset($validated['reason'])) {
                 $extension->reason = $validated['reason'];
+            }
+            if (array_key_exists('reason_category', $validated)) {
+                $extension->reason_category = $validated['reason_category'];
+            }
+            if (array_key_exists('approved_new_end_date', $validated)) {
+                // Stored only when explicitly provided. NULL here means "approve
+                // as requested" (granted = new_end_date).
+                $extension->approved_new_end_date = $validated['approved_new_end_date'] ?? null;
             }
             if (isset($validated['status'])) {
                 $extension->status = $validated['status'];
@@ -319,11 +425,11 @@ class ProjectExtensionController extends Controller
                     // PRIOR rejection cycle on this same extension.
                     $extension->rejection_reason = null;
                 } elseif ($validated['status'] === 'rejected') {
-                    // Keep approver fields null/untouched for a rejection —
-                    // it was never approved.
                     $extension->approved_by_user_id = null;
                     $extension->approved_at = null;
                     $extension->rejection_reason = $validated['rejection_reason'];
+                    // A rejected request cannot carry a partial-grant date.
+                    $extension->approved_new_end_date = null;
                 } elseif ($validated['status'] === 'pending') {
                     // Manually reverting to pending (rare, but keep state
                     // clean) — clear both approval and rejection traces.
@@ -335,12 +441,26 @@ class ProjectExtensionController extends Controller
 
             $extension->save();
 
+            // Baseline snapshot restore: reverting the ACTIVE approved rolls
+            // the adjusted baseline back to the previous approved's state
+            // (Phase 2.5 / §4). Runs inside the transaction so a blocked
+            // restore (would lose recorded progress) aborts everything.
+            if ($isReverting) {
+                $this->restoreBaselineForRevert($project, $extension);
+            }
+
             // The project's live deadline/extension_count always reflect the
             // latest APPROVED extension. Recomputing here — instead of only on
             // a ->approved transition — keeps the deadline correct for every
             // admin path: approving, reverting approved -> pending/rejected,
             // and editing an approved extension's new_end_date.
             $this->recomputeProjectDeadline($project);
+
+            // After any approval, the newly-active approved deadline may
+            // overtake other pending proposals (Decision 2).
+            if ($transitioningToApproved || ($wasApproved && ($validated['status'] ?? null) === 'approved')) {
+                $this->resolvePendingQueue($project, $extension);
+            }
 
             DB::commit();
 
@@ -371,17 +491,32 @@ class ProjectExtensionController extends Controller
                 $this->notifyExtension($project, $extension, ExtensionStatusChanged::REJECTED);
             }
 
+            $revertMessage = null;
+            if ($isReverting) {
+                // §4.6: reverting moves the deadline only — it does NOT restore
+                // the adjusted baseline by itself (the extension's snapshot may
+                // be stale). Hint the admin to re-run Generate Adjusted Baseline.
+                $revertMessage = 'Extension reverted. Re-approving later only moves the deadline — re-run "Generate Adjusted Baseline" to rebuild the plan.';
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Extension updated',
-                'extension' => $this->formatExtension($extension),
+                'message' => $revertMessage ?? 'Extension updated',
+                'extension' => $this->formatExtension($extension->load('attachments')),
             ]);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
+            // A blocked baseline restore surfaces here (ValidationException
+            // thrown by restoreBaselineForRevert with a 'baseline' error) —
+            // return its message directly for a clean toast. Roll back the
+            // open transaction (this can fire mid-transaction).
+            DB::rollBack();
+            $errors = $e->errors();
+            $message = $errors['baseline'][0] ?? 'Validation failed';
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors(),
+                'message' => $message,
+                'errors' => $errors,
             ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -394,8 +529,104 @@ class ProjectExtensionController extends Controller
     }
 
     /**
-     * Delete an extension (only if not the active/approved one currently
-     * in effect — unchanged guard from before).
+     * Resubmit a REJECTED extension as a brand-new row (Decision 6).
+     *
+     * Copies the rejected request's details into a NEW extension row (next
+     * extension_number) in 'pending' status; the rejected row is NEVER mutated
+     * and keeps its rejection_reason for the audit trail. Both staff and admin
+     * may resubmit; the new row is always pending (even for admin — it goes
+     * back through review so the rejection lesson stays visible). Staff may
+     * only resubmit their OWN rejected rows (Decision 14).
+     */
+    public function resubmit(Request $request, Project $project, ProjectExtension $extension)
+    {
+        try {
+            if ($extension->project_id !== $project->id) {
+                return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
+            }
+
+            if (!$extension->isRejected()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only a rejected extension can be resubmitted.',
+                ], 422);
+            }
+
+            $user = auth()->user();
+            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only resubmit your own rejected extension requests.',
+                ], 403);
+            }
+
+            $validated = $this->validateExtension($request, $project);
+
+            DB::beginTransaction();
+
+            $maxExtensionNumber = DB::table('project_extensions')
+                ->where('project_id', $project->id)
+                ->max('extension_number') ?? 0;
+            $nextExtensionNumber = $maxExtensionNumber + 1;
+
+            $originalEndDate = $project->planned_end_date;
+            $newEndDate = Carbon::parse($validated['new_end_date']);
+
+            $newExtension = ProjectExtension::create([
+                'project_id' => $project->id,
+                'extension_number' => $nextExtensionNumber,
+                'original_end_date' => $originalEndDate,
+                'new_end_date' => $newEndDate,
+                'duration_days' => $originalEndDate->diffInDays($newEndDate),
+                'reason' => $validated['reason'],
+                'reason_category' => $validated['reason_category'] ?? null,
+                'status' => 'pending',
+                'created_by_user_id' => auth()->id(),
+            ]);
+
+            DB::commit();
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => 'Resubmit Extension',
+                'description' => auth()->user()->name . " resubmitted extension #{$extension->extension_number} as extension #{$nextExtensionNumber} for project: {$project->title}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            // The new pending row re-notifies the admins for review.
+            $this->notifyExtension($project, $newExtension, ExtensionStatusChanged::SUBMITTED);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Extension #{$extension->extension_number} resubmitted as #{$nextExtensionNumber} for review",
+                'extension' => $this->formatExtension($newExtension),
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Extension resubmit error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error resubmitting extension: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete an extension (SOFT delete — Decision 12).
+     *
+     * NO approved extension is directly deletable (Decision 10): it must first
+     * be reverted (→ pending/rejected) then deleted. Staff may soft-delete
+     * pending/rejected requests; admin may soft-delete any non-approved row.
+     * Soft-deleted rows reappear in the admin Archived panel.
      */
     public function destroy(Request $request, Project $project, ProjectExtension $extension)
     {
@@ -404,32 +635,33 @@ class ProjectExtensionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
             }
 
-            // Staff may only delete pending/rejected requests — approved
-            // extensions are locked for staff (UI hides the button too).
             $user = auth()->user();
-            if ($user->role !== 'admin' && $extension->isApproved()) {
+
+            // Decision 10: approved extensions are never directly deletable —
+            // regardless of role. Revert first, then delete.
+            if ($extension->isApproved()) {
+                if ($user->role !== 'admin') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Approved extensions can only be deleted by an administrator.',
+                    ], 403);
+                }
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'Approved extensions can only be deleted by an administrator.',
-                ], 403);
-            }
-
-            // Block deleting the ACTIVE approved extension — the highest-
-            // numbered approved one that currently drives the project's
-            // deadline. (Not merely the highest-numbered row: a rejected row
-            // sitting above the active approved one must not bypass this.)
-            $latestApproved = $project->extensions()
-                ->where('status', 'approved')
-                ->reorder('extension_number', 'desc')
-                ->first();
-
-            if ($extension->isApproved() && $latestApproved && $extension->id === $latestApproved->id) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot delete the active approved extension. Create a new one to replace it.',
+                    'message' => 'Cannot delete an approved extension directly. Revert it first, then delete.',
                 ], 400);
             }
 
+            // Decision 14: staff may only archive their OWN non-approved rows.
+            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only archive your own extension requests.',
+                ], 403);
+            }
+
+            // Staff may only soft-delete pending/rejected/superseded requests.
             $extensionNumber = $extension->extension_number;
             $extension->delete();
 
@@ -462,38 +694,585 @@ class ProjectExtensionController extends Controller
     }
 
     /**
-     * Point the project's live deadline at the latest approved extension.
-     *
-     * Called after any admin status/date change or extension deletion so
-     * planned_end_date and extension_count always reflect the current set
-     * of approved extensions:
-     *   - an approved extension -> planned_end_date = its new_end_date,
-     *   - no approved extensions -> falls back to the original deadline
-     *     (original_planned_end_date, or the earliest extension's
-     *     original_end_date, or the current value as a last resort).
+     * List soft-deleted (archived) extensions for a project. Admin only.
+     * Decision 12 — Archived Extensions panel.
      */
-    private function recomputeProjectDeadline(Project $project): void
+    public function archived(Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $extensions = $project->extensions()
+                ->onlyTrashed()
+                ->with(['approver', 'attachments'])
+                ->orderBy('extension_number', 'asc')
+                ->get()
+                ->map(fn ($ext) => $this->formatExtension($ext));
+
+            return response()->json([
+                'success' => true,
+                'extensions' => $extensions,
+                'total' => $extensions->count(),
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Extension archived error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching archived extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Restore a soft-deleted extension. Admin only. Decision 12.
+     */
+    public function restore(Request $request, Project $project, ProjectExtension $extension)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            if ($extension->project_id !== $project->id) {
+                return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
+            }
+
+            $extensionNumber = $extension->extension_number;
+            $extension->restore();
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => 'Restore Extension',
+                'description' => auth()->user()->name . " restored extension #{$extensionNumber} for project: {$project->title}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Extension #{$extensionNumber} restored",
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Extension restore error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restoring extension: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Permanently delete a soft-deleted extension (hard delete). Admin only.
+     * Decision 12 — Archived panel "Delete Forever" (also the dev/test-data
+     * escape hatch). Removes the row's evidence attachments first so their
+     * physical files are cleaned up.
+     */
+    public function forceDestroy(Request $request, Project $project, ProjectExtension $extension)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            if ($extension->project_id !== $project->id) {
+                return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
+            }
+
+            $extensionNumber = $extension->extension_number;
+
+            DB::transaction(function () use ($extension) {
+                // Delete the record-level evidence (each Attachment model fires
+                // its own deleting hook to remove the physical file).
+                $extension->attachments->each->delete();
+                $extension->forceDelete();
+            });
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => 'Delete Extension',
+                'description' => auth()->user()->name . " permanently deleted extension #{$extensionNumber} from project: {$project->title}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Extension #{$extensionNumber} permanently deleted",
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Extension forceDestroy error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error permanently deleting extension: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk archive (soft-delete) multiple extensions at once. Admin only.
+     * §8 — bulk operations. Each row goes through the SAME guards as the
+     * single-row destroy(): approved extensions are skipped (Decision 10 —
+     * revert first), and any soft-deleted/stale rows are ignored. The project
+     * deadline is recomputed once at the end.
+     */
+    public function bulkDestroy(Request $request, Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $validated = $request->validate([
+                'ids' => ['required', 'array', 'min:1'],
+                'ids.*' => ['required', 'integer'],
+            ]);
+
+            $ids = array_values(array_filter($validated['ids']));
+            $rows = $project->extensions()->whereIn('id', $ids)->get();
+
+            $archived = [];
+            $skipped = [];
+            foreach ($rows as $extension) {
+                // Decision 10: approved extensions are never directly
+                // deletable — revert first, then delete.
+                if ($extension->isApproved()) {
+                    $skipped[] = $extension->extension_number;
+                    continue;
+                }
+                $extension->delete();
+                $archived[] = $extension->extension_number;
+            }
+
+            // Recompute from whatever approved extensions remain.
+            $this->recomputeProjectDeadline($project);
+
+            if (!empty($archived)) {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Delete Extension',
+                    'description' => auth()->user()->name . " bulk-archived extension(s) #" . implode(', #', $archived) . " from project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+            }
+
+            $message = 'Archived extension(s) #' . (implode(', #', $archived) ?: '—');
+            if (!empty($skipped)) {
+                $message .= '. Skipped approved extension(s) #' . implode(', #', $skipped) . ' — revert before deleting.';
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'archived' => count($archived),
+                'skipped' => count($skipped),
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select at least one extension to archive.',
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Extension bulkDestroy error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error archiving extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk permanently-delete (force-delete) multiple ARCHIVED extensions.
+     * Admin only. §8 — bulk operations. Only soft-deleted rows of this project
+     * are eligible; each row's evidence attachments are removed first so their
+     * physical files are cleaned up (mirrors forceDestroy()).
+     */
+    public function bulkForceDestroy(Request $request, Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $validated = $request->validate([
+                'ids' => ['required', 'array', 'min:1'],
+                'ids.*' => ['required', 'integer'],
+            ]);
+
+            $ids = array_values(array_filter($validated['ids']));
+            $rows = $project->extensions()->onlyTrashed()->whereIn('id', $ids)->get();
+
+            $deleted = [];
+            DB::transaction(function () use ($rows, &$deleted) {
+                foreach ($rows as $extension) {
+                    // Record-level evidence first (Attachment deleting hook
+                    // removes the physical file).
+                    $extension->attachments->each->delete();
+                    $extension->forceDelete();
+                    $deleted[] = $extension->extension_number;
+                }
+            });
+
+            if (!empty($deleted)) {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Delete Extension',
+                    'description' => auth()->user()->name . " permanently deleted extension(s) #" . implode(', #', $deleted) . " from project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permanently deleted extension(s) #' . (implode(', #', $deleted) ?: '—'),
+                'deleted' => count($deleted),
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select at least one extension to delete.',
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Extension bulkForceDestroy error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // ===========================================================================
+    // BASELINE SNAPSHOT + RESTORE (Phase 2.5 / §4)
+    // ===========================================================================
+
+    /**
+     * Capture the current baseline schedule state onto the latest APPROVED
+     * extension as a JSON restore point.
+     *
+     * Called from BaselineScheduleController::saveAdjustedBaseline() at the end
+     * of a successful save. The snapshot is the WHOLE table state — a restore
+     * point, not a live mirror. Reverting that approved extension restores
+     * from the PREVIOUS approved's snapshot (see restoreBaselineForRevert).
+     */
+    public static function captureBaselineSnapshot(Project $project): void
     {
         $latestApproved = $project->extensions()
             ->where('status', 'approved')
             ->reorder('extension_number', 'desc')
             ->first();
 
+        if (!$latestApproved) {
+            return;
+        }
+
+        $months = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->orderBy('planned_date', 'asc')
+            ->get();
+
+        $snapshot = $months->map(function (ProjectBaselineSchedule $schedule) {
+            return [
+                'month_label' => $schedule->month_label,
+                'planned_date' => $schedule->planned_date->format('Y-m-d'),
+                'planned_progress_percent' => $schedule->planned_progress_percent,
+                'original_planned_progress_percent' => $schedule->original_planned_progress_percent,
+                'description' => $schedule->description,
+                // Full-fidelity activities so restore recreates them exactly.
+                'activities' => $schedule->activities()
+                    ->get(['activity_name', 'description', 'is_completed'])
+                    ->map(fn ($a) => [
+                        'activity_name' => $a->activity_name,
+                        'description' => $a->description,
+                        'is_completed' => (bool) $a->is_completed,
+                    ])
+                    ->all(),
+            ];
+        })->values()->all();
+
+        $latestApproved->update(['baseline_snapshot' => $snapshot]);
+    }
+
+    /**
+     * Restore the baseline schedule to the state implied by reverting the
+     * ACTIVE approved extension (§4.3/§4.4).
+     *
+     * Direction is critical: we restore from the NEW latest approved (i.e. the
+     * PREVIOUS approved), NOT the reverted extension's own snapshot — the
+     * reverted extension's snapshot is the state being reverted AWAY from.
+     *
+     *  - Previous approved HAS a snapshot → make the live table exactly match it.
+     *  - Previous approved has NO snapshot, or no approved remains → restore
+     *    the original plan (planned = original_planned_progress_percent for
+     *    original rows; delete extension-only rows).
+     *
+     * Blocked (422) if the restore would delete a month with recorded progress
+     * (§4.4). Throws ValidationException so the caller's catch rolls back.
+     */
+    private function restoreBaselineForRevert(Project $project, ProjectExtension $reverted): void
+    {
+        // The approved extension that becomes active after this revert.
+        $previousApproved = $project->extensions()
+            ->where('status', 'approved')
+            ->where('id', '!=', $reverted->id)
+            ->reorder('extension_number', 'desc')
+            ->first();
+
+        $snapshot = $previousApproved?->baseline_snapshot;
+
+        if ($snapshot) {
+            $this->restoreFromSnapshot($project, $snapshot);
+        } else {
+            $this->restoreOriginalPlan($project);
+        }
+    }
+
+    /**
+     * Make the live baseline table exactly match a stored snapshot.
+     *  - Update matching rows (planned_progress_percent, planned_date,
+     *    description, activities).
+     *  - Recreate snapshot rows missing from the DB (they were deleted during a
+     *    later adjustment — safe, since deletion is blocked for progress rows).
+     *  - Delete current rows NOT in the snapshot (created for the reverted
+     *    extension). Blocked if any such row has recorded progress.
+     */
+    private function restoreFromSnapshot(Project $project, array $snapshot): void
+    {
+        $currentRows = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->get()
+            ->keyBy('month_label');
+
+        $snapshotRows = collect($snapshot)->keyBy('month_label');
+
+        // 1. Delete current rows NOT in the snapshot (months created for the
+        //    reverted extension). Guard: no recorded progress (§4.4).
+        $blockedMonths = [];
+        foreach ($currentRows as $label => $row) {
+            if ($snapshotRows->has($label)) {
+                continue;
+            }
+            if ($row->progressHistory()->exists()) {
+                $blockedMonths[] = $label;
+            }
+        }
+
+        if (!empty($blockedMonths)) {
+            throw ValidationException::withMessages([
+                'baseline' => 'Cannot revert — the restore would remove month(s) with recorded progress: ' . implode(', ', $blockedMonths) . '. Archive or delete that progress first.',
+            ]);
+        }
+
+        // 2. Delete current rows not in the snapshot.
+        foreach ($currentRows as $label => $row) {
+            if (!$snapshotRows->has($label)) {
+                $this->deleteBaselineRow($project, $row);
+            }
+        }
+
+        // 3. Update matching rows + recreate missing rows.
+        foreach ($snapshotRows as $label => $snap) {
+            $row = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->where('month_label', $label)
+                ->first();
+
+            if ($row) {
+                $row->update([
+                    'planned_date' => $snap['planned_date'],
+                    'planned_progress_percent' => $snap['planned_progress_percent'],
+                    'original_planned_progress_percent' => $snap['original_planned_progress_percent'],
+                    'description' => $snap['description'] ?? null,
+                ]);
+                $this->syncActivities($project, $row, $snap['activities'] ?? []);
+            } else {
+                // Recreate a row deleted during a later adjustment.
+                $newRow = ProjectBaselineSchedule::create([
+                    'project_id' => $project->id,
+                    'month_label' => $label,
+                    'planned_date' => $snap['planned_date'],
+                    'planned_progress_percent' => $snap['planned_progress_percent'],
+                    'original_planned_progress_percent' => $snap['original_planned_progress_percent'],
+                    'description' => $snap['description'] ?? null,
+                ]);
+                $this->syncActivities($project, $newRow, $snap['activities'] ?? []);
+            }
+        }
+    }
+
+    /**
+     * Restore the ORIGINAL plan when the previous approved was never adjusted
+     * (no snapshot) or no approved remains:
+     *  - Rows that were part of the original plan (original_planned_progress_percent
+     *    NOT NULL) get planned_progress_percent = original_planned_progress_percent.
+     *  - Extension-only rows (original_planned_progress_percent IS NULL) are deleted.
+     */
+    private function restoreOriginalPlan(Project $project): void
+    {
+        $rows = ProjectBaselineSchedule::where('project_id', $project->id)->get();
+
+        $blockedMonths = [];
+        foreach ($rows as $row) {
+            if ($row->original_planned_progress_percent === null) {
+                // Extension-only row: would be deleted — guard on progress.
+                if ($row->progressHistory()->exists()) {
+                    $blockedMonths[] = $row->month_label;
+                }
+            }
+        }
+
+        if (!empty($blockedMonths)) {
+            throw ValidationException::withMessages([
+                'baseline' => 'Cannot revert — the restore would remove month(s) with recorded progress: ' . implode(', ', $blockedMonths) . '. Archive or delete that progress first.',
+            ]);
+        }
+
+        foreach ($rows as $row) {
+            if ($row->original_planned_progress_percent === null) {
+                $this->deleteBaselineRow($project, $row);
+            } else {
+                $row->update([
+                    'planned_progress_percent' => $row->original_planned_progress_percent,
+                    // Restore the frozen original target date too — a manual
+                    // Manage Month edit may have moved it within the month.
+                    'planned_date' => $row->original_planned_date ?? $row->planned_date,
+                    'description' => $row->description,
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Delete a baseline row and its dependents in FK-safe order (mirrors
+     * BaselineScheduleController::deleteBaselineSchedule).
+     */
+    private function deleteBaselineRow(Project $project, ProjectBaselineSchedule $schedule): void
+    {
+        ProjectProgressHistory::where('project_id', $project->id)
+            ->where('baseline_schedule_id', $schedule->id)
+            ->delete();
+        ProjectActivity::where('project_id', $project->id)
+            ->where('baseline_schedule_id', $schedule->id)
+            ->delete();
+        ProjectActivityCarryover::where('project_id', $project->id)
+            ->where(function ($q) use ($schedule) {
+                $q->where('from_baseline_schedule_id', $schedule->id)
+                  ->orWhere('to_baseline_schedule_id', $schedule->id);
+            })
+            ->delete();
+        $schedule->delete();
+    }
+
+    /**
+     * Replace a baseline row's activities to match the snapshot (full-fidelity
+     * restore).
+     */
+    private function syncActivities(Project $project, ProjectBaselineSchedule $schedule, array $activities): void
+    {
+        ProjectActivity::where('project_id', $project->id)
+            ->where('baseline_schedule_id', $schedule->id)
+            ->delete();
+
+        foreach ($activities as $act) {
+            if (empty($act['activity_name'])) {
+                continue;
+            }
+            ProjectActivity::create([
+                'project_id' => $project->id,
+                'baseline_schedule_id' => $schedule->id,
+                'month_label' => $schedule->month_label,
+                'planned_date' => $schedule->planned_date,
+                'activity_name' => $act['activity_name'],
+                'description' => $act['description'] ?? '',
+                'is_completed' => $act['is_completed'] ?? false,
+            ]);
+        }
+    }
+
+    /**
+     * Decision 2: after an approval, re-anchor still-valid pending proposals to
+     * the new live deadline and supersede the obsolete ones.
+     *
+     *  - Pending whose new_end_date is still AFTER the new live deadline →
+     *    re-anchor original_end_date to the new deadline, recompute duration.
+     *  - Pending whose new_end_date <= new live deadline → status becomes
+     *    `superseded` (kept visible in history; not approvable; deletable).
+     */
+    private function resolvePendingQueue(Project $project, ProjectExtension $justApproved): void
+    {
+        $newDeadline = $justApproved->effectiveEndDate();
+
+        $pendings = $project->extensions()
+            ->where('status', 'pending')
+            ->where('id', '!=', $justApproved->id)
+            ->get();
+
+        foreach ($pendings as $pending) {
+            if ($pending->new_end_date->greaterThan($newDeadline)) {
+                $pending->original_end_date = $newDeadline;
+                $pending->duration_days = $pending->original_end_date->diffInDays($pending->new_end_date);
+                $pending->save();
+            } else {
+                $pending->status = 'superseded';
+                $pending->save();
+            }
+        }
+    }
+
+    /**
+     * The latest approved extension (drives the project deadline).
+     */
+    private function activeApproved(Project $project): ?ProjectExtension
+    {
+        return $project->extensions()
+            ->where('status', 'approved')
+            ->reorder('extension_number', 'desc')
+            ->first();
+    }
+
+    /**
+     * Point the project's live deadline at the latest approved extension.
+     *
+     * Called after any admin status/date change or extension deletion so
+     * planned_end_date and extension_count always reflect the current set of
+     * approved extensions:
+     *   - an approved extension -> planned_end_date = its effective date
+     *     (approved_new_end_date when granted, else new_end_date — Decision 7),
+     *   - no approved extensions -> falls back to the original deadline.
+     *   - extension_count = count of APPROVED rows (Decision 6 — not just the
+     *     highest approved number).
+     */
+    private function recomputeProjectDeadline(Project $project): void
+    {
+        $latestApproved = $this->activeApproved($project);
+        $approvedCount = $project->extensions()
+            ->where('status', 'approved')
+            ->count();
+
         $earliestRemaining = $project->extensions()
             ->reorder('extension_number', 'asc')
             ->first();
 
         $project->update([
-            'planned_end_date' => $latestApproved?->new_end_date
+            'planned_end_date' => $latestApproved?->effectiveEndDate()
                 ?? $project->original_planned_end_date
                 ?? $earliestRemaining?->original_end_date
                 ?? $project->planned_end_date,
-            'extension_count' => $latestApproved?->extension_number ?? 0,
+            'extension_count' => $approvedCount,
         ]);
     }
 
     /**
-     * Validation logic for a brand-new extension request.
+     * Validation logic for a brand-new extension request (also used by
+     * resubmit). reason_category is optional but must be one of the defined
+     * EOT grounds when provided.
      */
     private function validateExtension(Request $request, Project $project): array
     {
@@ -505,6 +1284,7 @@ class ProjectExtensionController extends Controller
                 'before_or_equal:2030-12-31',
             ],
             'reason' => 'required|string|min:5|max:500',
+            'reason_category' => 'nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
         ], [
             'new_end_date.required' => 'New end date is required',
             'new_end_date.date_format' => 'New end date must be in format YYYY-MM-DD',
@@ -513,6 +1293,7 @@ class ProjectExtensionController extends Controller
             'reason.required' => 'Reason for extension is required',
             'reason.min' => 'Please provide a detailed reason (at least 5 characters)',
             'reason.max' => 'Reason limited to 500 characters',
+            'reason_category.in' => 'Reason category must be one of: ' . implode(', ', ProjectExtension::REASON_CATEGORIES),
         ]);
     }
 
@@ -543,9 +1324,7 @@ class ProjectExtensionController extends Controller
 
         if ($status === ExtensionStatusChanged::SUBMITTED) {
             // Each submission/resubmission is a distinct review event — bypass
-            // dedupe so a resubmitted request re-notifies the admins. (Only
-            // scan-generated notifications rely on dedupe; SUBMITTED is
-            // always event-driven.)
+            // dedupe so a resubmitted request re-notifies the admins.
             $service->notifyMany($service->admins(), $notification, dedupe: false);
             return;
         }
@@ -569,21 +1348,49 @@ class ProjectExtensionController extends Controller
     }
 
     /**
-     * Consistent JSON shape for an extension, now including status.
+     * Consistent JSON shape for an extension, including status, partial-approval
+     * date, reason category, review-aging, and evidence attachments.
      */
     private function formatExtension(ProjectExtension $ext): array
     {
+        $attachments = $ext->relationLoaded('attachments')
+            ? $ext->attachments
+            : $ext->attachments()->get();
+
         return [
             'id' => $ext->id,
             'extension_number' => $ext->extension_number,
             'original_end_date' => $ext->original_end_date->format('Y-m-d'),
             'new_end_date' => $ext->new_end_date->format('Y-m-d'),
+            // Partial approval (Decision 7): the granted date, when set.
+            'approved_new_end_date' => $ext->approved_new_end_date?->format('Y-m-d') ?? null,
+            // Effective deadline = granted date when present, else requested.
+            'effective_end_date' => $ext->effectiveEndDate()->format('Y-m-d'),
             'duration_days' => $ext->duration_days,
             'reason' => $ext->reason,
+            'reason_category' => $ext->reason_category,
             'status' => $ext->status,
             'rejection_reason' => $ext->rejection_reason,
             'approved_by' => $ext->approver?->email ?? null,
+            // Decision 15: human-friendly approver name for the table.
+            'approved_by_name' => $ext->approver?->name ?? null,
             'approved_at' => $ext->approved_at?->format('Y-m-d H:i:s'),
+            // Review aging (Decision 5): days awaiting review for pendings.
+            'days_awaiting_review' => $ext->isPending() ? $ext->daysAwaitingReview() : 0,
+            // Decision 14/15: requester id (for ownership checks) + name.
+            'created_by_user_id' => $ext->created_by_user_id,
+            'created_by' => $ext->requester?->name ?? null,
+            'created_at' => $ext->created_at?->format('Y-m-d H:i:s'),
+            // Evidence (Decision 4).
+            'attachments_count' => $attachments->count(),
+            'attachments' => $attachments->map(fn ($a) => [
+                'id' => $a->id,
+                'original_name' => $a->original_name,
+                'file_url' => $a->file_url,
+                'display_size' => $a->display_size,
+                'uploaded_by' => $a->uploaded_by,
+                'created_at' => $a->created_at->format('M d, Y H:i'),
+            ])->values()->all(),
         ];
     }
 }
