@@ -163,30 +163,61 @@ function consumePendingToast() {
 // ==================== Error Handling ====================
 
 /**
- * Display inline error messages in the modal
+ * Display inline error messages in the modal.
+ * Accepts either:
+ *   - { field: 'monthLabel'|'plannedDate'|'plannedProgressPercent', message } →
+ *     rendered as red text under that input, or
+ *   - a plain string → rendered in the top error container.
  */
 function showMonthTargetErrors(errors) {
+    const fieldMap = {
+        monthLabel: 'monthLabelError',
+        plannedDate: 'plannedDateError',
+        plannedProgressPercent: 'plannedProgressPercentError'
+    };
+    const generalErrors = [];
+
+    errors.forEach(item => {
+        if (item && typeof item === 'object' && item.field && fieldMap[item.field]) {
+            const el = document.getElementById(fieldMap[item.field]);
+            if (el) {
+                el.textContent = item.message || '';
+                el.style.display = item.message ? 'block' : 'none';
+            }
+        } else {
+            generalErrors.push(typeof item === 'string' ? item : (item && item.message ? item.message : ''));
+        }
+    });
+
     const container = document.getElementById('formErrorContainer');
     const errorList = document.getElementById('errorList');
     errorList.innerHTML = '';
-    
-    errors.forEach(error => {
+
+    generalErrors.forEach(error => {
         const li = document.createElement('li');
         li.textContent = error;
         errorList.appendChild(li);
     });
-    
-    container.style.display = 'block';
+
+    container.style.display = generalErrors.length > 0 ? 'block' : 'none';
 }
 
 /**
- * Clear inline error messages from the modal
+ * Clear inline error messages from the modal (top container + field errors).
  */
 function clearMonthTargetErrors() {
     const container = document.getElementById('formErrorContainer');
     const errorList = document.getElementById('errorList');
     errorList.innerHTML = '';
     container.style.display = 'none';
+
+    ['monthLabelError', 'plannedDateError', 'plannedProgressPercentError'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
+    });
 }
 
 // ==================== DOM Update Utilities ====================

@@ -124,8 +124,17 @@ class ProjectChartService
                     : (strtotime((string) $schedule->planned_date) * 1000);
                 $tickTimestamps[] = $plannedTs;
 
+                // The Original Plan line keeps its FROZEN dates: plot it on
+                // original_planned_date (falling back to planned_date for legacy
+                // rows) so manual edits / adjusted-baseline date changes never
+                // shift the original baseline's shape.
+                $frozenDate = $schedule->original_planned_date ?? $schedule->planned_date;
+                $frozenTs = $frozenDate instanceof \Carbon\Carbon
+                    ? $frozenDate->timestamp * 1000
+                    : (strtotime((string) $frozenDate) * 1000);
+
                 $frozenPlannedData[] = [
-                    'x' => $plannedTs,
+                    'x' => $frozenTs,
                     'y' => $schedule->original_planned_progress_percent !== null
                         ? (float) $schedule->original_planned_progress_percent
                         : null,

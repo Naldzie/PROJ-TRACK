@@ -632,6 +632,44 @@ class ReportExportTest extends TestCase
         $this->assertSame(4, $adjustedCount, 'Adjusted line must continue into the extension month.');
     }
 
+    public function test_summary_scurve_frozen_plan_uses_original_dates(): void
+    {
+        // Live dates were later moved (manual edit / adjusted baseline) but the
+        // frozen Original Plan line must keep plotting on the ORIGINAL dates.
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-01',
+            'planned_date'             => '2026-01-15',
+            'original_planned_date'    => '2026-01-05',
+            'planned_progress_percent' => 40,
+            'original_planned_progress_percent' => 40,
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'               => $this->project->id,
+            'month_label'              => '2026-02',
+            'planned_date'             => '2026-02-20',
+            'original_planned_date'    => '2026-02-15',
+            'planned_progress_percent' => 70,
+            'original_planned_progress_percent' => 70,
+        ]);
+
+        $chartData = app(\App\Services\ProjectDetailService::class)->prepareChartData($this->project);
+
+        $frozen = $chartData['frozen_planned_data'] ?? [];
+        $adjusted = $chartData['adjusted_planned_data'] ?? [];
+
+        $this->assertCount(2, $frozen);
+        $this->assertCount(2, $adjusted);
+
+        // Frozen line plots on the ORIGINAL dates, not the moved live dates.
+        $this->assertSame(\Carbon\Carbon::parse('2026-01-05')->timestamp * 1000, $frozen[0]['x']);
+        $this->assertSame(\Carbon\Carbon::parse('2026-02-15')->timestamp * 1000, $frozen[1]['x']);
+
+        // Adjusted line keeps using the live planned dates.
+        $this->assertSame(\Carbon\Carbon::parse('2026-01-15')->timestamp * 1000, $adjusted[0]['x']);
+        $this->assertSame(\Carbon\Carbon::parse('2026-02-20')->timestamp * 1000, $adjusted[1]['x']);
+    }
+
     public function test_summary_pdf_inline_view_serves_pdf_without_audit_log(): void
     {
         $this->actingAs($this->admin());

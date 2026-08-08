@@ -38,6 +38,7 @@
                                 </label>
                                 <input type="month" id="monthLabel" name="month_label" class="form-control" required
                                        style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
+                                <div id="monthLabelError" style="font-size: 11px; color: #dc2626; margin-top: 4px; display: none;"></div>
                             </div>
 
                             <!-- Target Date Input -->
@@ -47,6 +48,7 @@
                                 </label>
                                 <input type="date" id="plannedDate" name="planned_date" class="form-control" required
                                        style="padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
+                                <div id="plannedDateError" style="font-size: 11px; color: #dc2626; margin-top: 4px; display: none;"></div>
                             </div>
 
                             <!-- Progress % Input -->
@@ -56,6 +58,7 @@
                                 </label>
                                 <input type="number" id="plannedProgressPercent" name="planned_progress_percent" min="0" max="100" step="0.01" value="50"
                                        required style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
+                                <div id="plannedProgressPercentError" style="font-size: 11px; color: #dc2626; margin-top: 4px; display: none;"></div>
                             </div>
                         </div>
                         
