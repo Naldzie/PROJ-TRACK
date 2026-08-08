@@ -941,6 +941,9 @@ class ProjectExtensionController extends Controller
             } else {
                 $row->update([
                     'planned_progress_percent' => $row->original_planned_progress_percent,
+                    // Restore the frozen original target date too — a manual
+                    // Manage Month edit may have moved it within the month.
+                    'planned_date' => $row->original_planned_date ?? $row->planned_date,
                     'description' => $row->description,
                 ]);
             }

@@ -551,6 +551,7 @@ class ProjectExtensionLifecycleTest extends TestCase
             'planned_date'                     => $date,
             'planned_progress_percent'         => $planned,
             'original_planned_progress_percent' => $original,
+            'original_planned_date'            => $original === null ? null : $date,
         ]);
     }
 
@@ -634,15 +635,59 @@ class ProjectExtensionLifecycleTest extends TestCase
             ['status' => 'rejected', 'rejection_reason' => 'Reverted']
         )->assertOk();
 
-        // Extension-only row removed; original rows unchanged.
+        // Extension-only row removed; original rows unchanged (date + % intact).
         $this->assertDatabaseMissing('project_baseline_schedules', [
             'project_id' => $this->project->id,
             'month_label' => '2026-04',
         ]);
-        $this->assertDatabaseHas('project_baseline_schedules', [
+        $march = ProjectBaselineSchedule::where('project_id', $this->project->id)
+            ->where('month_label', '2026-03')
+            ->first();
+        $this->assertNotNull($march);
+        $this->assertSame('2026-03-15', $march->planned_date->toDateString());
+        $this->assertSame('100.00', $march->planned_progress_percent);
+    }
+
+    public function test_reverting_restores_original_planned_date_after_manual_edit(): void
+    {
+        // Original plan with non-trivial target dates (Jan 5, not the 15th).
+        $m1 = $this->baselineRow('2026-01', '2026-01-05', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+
+        $only = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $only->new_end_date,
+            'extension_count'  => 1,
+        ]);
+
+        // Manual Manage Month edit moves the target date within its month.
+        $this->actingAs($this->admin)->patchJson(
+            route('admin.projects.baseline-schedules.update', [$this->project, $m1->id]),
+            [
+                'planned_date' => '2026-01-20',
+                'planned_progress_percent' => 55,
+                'description' => null,
+            ]
+        )->assertOk();
+
+        // Revert the only approved extension -> restores the original plan.
+        $this->actingAs($this->admin)->putJson(
+            route('admin.projects.extensions.update', [$this->project, $only]),
+            ['status' => 'rejected', 'rejection_reason' => 'Reverted']
+        )->assertOk();
+
+        // The target date is frozen back to the original day AND the % too.
+        $jan = ProjectBaselineSchedule::where('project_id', $this->project->id)
+            ->where('month_label', '2026-01')
+            ->first();
+        $this->assertNotNull($jan);
+        $this->assertSame('2026-01-05', $jan->planned_date->toDateString());
+        $this->assertSame('40.00', $jan->planned_progress_percent);
+        $this->assertDatabaseMissing('project_baseline_schedules', [
             'project_id' => $this->project->id,
-            'month_label' => '2026-03',
-            'planned_progress_percent' => '100.00',
+            'month_label' => '2026-01',
+            'planned_date' => '2026-01-20 00:00:00',
         ]);
     }
 

@@ -188,6 +188,7 @@ class BaselineScheduleController extends Controller
 
                 if (!$isExtended) {
                     $scheduleData['original_planned_progress_percent'] = $validated['planned_progress_percent'];
+                    $scheduleData['original_planned_date'] = $validated['planned_date'];
                 }
 
                 // Create new Baseline Schedule entry

@@ -48,6 +48,7 @@ class ProjectBaselineScheduleFactory extends Factory
             return [
                 'planned_progress_percent'          => $progress,
                 'original_planned_progress_percent' => $progress,
+                'original_planned_date'             => $attributes['planned_date'] ?? null,
             ];
         });
     }
@@ -66,6 +67,7 @@ class ProjectBaselineScheduleFactory extends Factory
             'planned_date'                   => $plannedDate,
             'planned_progress_percent'       => $plannedProgress,
             'original_planned_progress_percent' => $plannedProgress,
+            'original_planned_date'          => $plannedDate,
         ]);
     }
 }
