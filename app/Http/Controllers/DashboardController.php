@@ -82,6 +82,16 @@ class DashboardController extends Controller
         $graceDays = (int) Setting::getValue('notification_overdue_grace_days', 7);
         $overdueInspectionCount = $this->overdueInspectionQuery($graceDays)->count();
 
+        // ── PENDING EXTENSION COUNT (DB-level, ALL ongoing) ────────────────
+        // Ongoing, non-archived projects with ≥1 extension request awaiting
+        // admin review. Mirrors ProjectExtension::scopePending() so the pill
+        // and the review workflow stay in sync. Admin-only pill (staff cannot
+        // review/approve extensions).
+        $pendingExtensionCount = Project::where('status', 'Ongoing')
+            ->where('is_archived', false)
+            ->whereHas('extensions', fn ($q) => $q->pending())
+            ->count();
+
         // ── RECENT ACTIVITY FEED ──────────────────────────────────────────────
         // Latest 6 activity log entries. Admins see everything. Staff see
         // visibility='all' entries minus routine deletions and admin-housekeeping
@@ -105,6 +115,7 @@ class DashboardController extends Controller
             'overdueCount',
             'pendingUpdateCount',
             'overdueInspectionCount',
+            'pendingExtensionCount',
             'recentActivities'
         ));
     }
@@ -113,7 +124,7 @@ class DashboardController extends Controller
     {
         // ── VALIDATE TYPE PARAMETER ───────────────────────────────────────
         // Whitelist check — invalid types fall back to 'default' safely.
-        $type = in_array($request->get('type'), ['default', 'overdue', 'atrisk', 'pending', 'inspection_overdue'])
+        $type = in_array($request->get('type'), ['default', 'overdue', 'atrisk', 'pending', 'inspection_overdue', 'pending_extensions'])
             ? $request->get('type')
             : 'default';
 
@@ -160,6 +171,17 @@ class DashboardController extends Controller
             // Ongoing projects with an uninspected baseline month past the grace
             // window — same definition as the overdue-inspection notification scan.
             $projects = $this->overdueInspectionQuery($graceDays)
+                ->with(['contractor', 'category'])
+                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->orderBy('planned_end_date', 'asc')
+                ->get();
+
+        } elseif ($type === 'pending_extensions') {
+            // Ongoing projects with ≥1 extension request awaiting admin review.
+            // Admin-only pill — staff cannot review/approve extensions.
+            $projects = Project::where('status', 'Ongoing')
+                ->where('is_archived', false)
+                ->whereHas('extensions', fn ($q) => $q->pending())
                 ->with(['contractor', 'category'])
                 ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
