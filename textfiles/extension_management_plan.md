@@ -245,7 +245,7 @@ strand the project.
 All phases on `phase-extension-management`. Test each phase before the next
 (Rule 8), inform the user at completion (Rule 10), log here (Rule 11).
 
-### Phase 1 — Queue + guards ⬜ NOT STARTED
+### Phase 1 — Queue + guards ✅ COMPLETE
 - `store()`: remove the one-pending guard (lines 36-44).
 - `update()` admin path: after approval, re-anchor valid pendings +
   mark obsolete pendings `superseded` (Decision 2).
@@ -257,7 +257,7 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Tests: `ProjectExtensionLifecycleTest` — multi-pending, re-anchor,
   supersede, admin-after-rule.
 
-### Phase 2 — Request quality ⬜ NOT STARTED
+### Phase 2 — Request quality ✅ COMPLETE
 - `reason_category` column + dropdown (Decision 3).
 - Evidence attachments (Decision 4): model constants + `attachments()`
   morphMany on `ProjectExtension`, multipart modal (two-step upload),
@@ -267,7 +267,7 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Migrations: `reason_category`, (attachment table already exists).
 - Tests: category persistence, evidence upload/delete, aging badge render.
 
-### Phase 2.5 — Baseline snapshot + restore ⬜ NOT STARTED
+### Phase 2.5 — Baseline snapshot + restore ✅ COMPLETE
 - Migration: `baseline_snapshot` JSON column on `project_extensions`.
 - Capture hook in `saveAdjustedBaseline()` (attaches to latest approved).
 - New restore helper in `ProjectExtensionController` implementing §4.3/§4.4;
@@ -277,7 +277,7 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Tests: snapshot-then-revert → restores previous adjusted plan; no-snapshot →
   original; approved-never-adjusted; block-when-progress.
 
-### Phase 3 — Resubmit-as-new-row + deletion/revert guards ⬜ NOT STARTED
+### Phase 3 — Resubmit-as-new-row + deletion/revert guards ✅ COMPLETE
 - Resubmit = new row (Decision 6): "Resubmit" action on rejected rows,
   copies details into a new row; rejected row untouched.
 - Revert-first delete guard (Decision 10): `destroy()` blocks ANY approved
@@ -287,13 +287,13 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Tests: resubmit history, delete-approved blocked, non-active-revert blocked,
   cascade revert.
 
-### Phase 4 — Partial approval ⬜ NOT STARTED
+### Phase 4 — Partial approval ✅ COMPLETE
 - `approved_new_end_date` column (Decision 7); admin UI field; deadline
   sources + extensions-section card + `recomputeProjectDeadline()` read the
   approved date.
 - Tests: approve-as-requested vs partial-grant deadline behavior.
 
-### Phase 5 — Soft delete + archived panel ⬜ NOT STARTED
+### Phase 5 — Soft delete + archived panel ✅ COMPLETE
 - `SoftDeletes` + `deleted_at` migration (Decision 12).
 - Normal delete → soft; **Archived Extensions** panel (admin): Restore +
   Delete Forever.
@@ -302,7 +302,7 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Tests: soft delete hides row, restore brings it back, permanent delete
   removes it.
 
-### Phase 6 — Contractor + misc ⬜ NOT STARTED
+### Phase 6 — Contractor + misc ✅ COMPLETE
 - Hide "Request Extension" button for contractors (no write routes).
 - Re-approve-after-revert toast hint (see §4.6).
 - Tests: contractor detail page does not render the Request button.
@@ -353,6 +353,17 @@ All phases on `phase-extension-management`. Test each phase before the next
   (see §4) after walking through the current flow with the user.
 - This plan file committed + pushed on `phase-extension-management`.
 - Implementation NOT started.
+
+### 2026-08-08 — Implementation complete (all 6 phases)
+- Backend committed as `e2f5922` (6 modified files + 5 migrations).
+- Frontend wired: modal (reason_category dropdown, partial-approval granted
+  date, Reject toggle, two-step evidence upload), extensions-section
+  (contractor button hidden, admin Archived panel, Resubmit button), JS
+  (superseded badge, aging badge, evidence links, archived load/restore/
+  force-delete, resubmit modal flow).
+- `ProjectExtensionLifecycleTest` now 29 tests; full suite 435 passing.
+- Revert response carries the §4.6 re-run "Generate Adjusted Baseline" hint.
+- Frontend work uncommitted at log time (pending user review).
 
 ---
 

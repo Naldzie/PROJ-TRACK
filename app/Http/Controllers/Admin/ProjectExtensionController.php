@@ -442,9 +442,17 @@ class ProjectExtensionController extends Controller
                 $this->notifyExtension($project, $extension, ExtensionStatusChanged::REJECTED);
             }
 
+            $revertMessage = null;
+            if ($isReverting) {
+                // §4.6: reverting moves the deadline only — it does NOT restore
+                // the adjusted baseline by itself (the extension's snapshot may
+                // be stale). Hint the admin to re-run Generate Adjusted Baseline.
+                $revertMessage = 'Extension reverted. Re-approving later only moves the deadline — re-run "Generate Adjusted Baseline" to rebuild the plan.';
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Extension updated',
+                'message' => $revertMessage ?? 'Extension updated',
                 'extension' => $this->formatExtension($extension->load('attachments')),
             ]);
 

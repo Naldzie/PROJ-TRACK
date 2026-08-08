@@ -9,12 +9,24 @@
             </h4>
             <p style="margin: 0; font-size: 12px; color: #6b7280;">Track project deadline extensions and view extension history</p>
         </div>
-        <button onclick="openRequestExtensionModal()" 
-                style="background: #f59e0b; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
-                onmouseover="this.style.background='#d97706'; this.style.transform='translateY(-2px)';"
-                onmouseout="this.style.background='#f59e0b'; this.style.transform='translateY(0)';">
-            <i class="bi bi-plus-circle"></i> Request Extension
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            @if(auth()->user()->role !== 'contractor')
+                <button onclick="openRequestExtensionModal()" 
+                        style="background: #f59e0b; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
+                        onmouseover="this.style.background='#d97706'; this.style.transform='translateY(-2px)';"
+                        onmouseout="this.style.background='#f59e0b'; this.style.transform='translateY(0)';">
+                    <i class="bi bi-plus-circle"></i> Request Extension
+                </button>
+            @endif
+            @if(auth()->user()->role === 'admin')
+                <button onclick="loadArchivedExtensions()" 
+                        style="background: #f8fafc; color: #374151; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
+                        onmouseover="this.style.background='#eef2ff'; this.style.color='#4f46e5';"
+                        onmouseout="this.style.background='#f8fafc'; this.style.color='#374151';">
+                    <i class="bi bi-archive"></i> Archived Extensions
+                </button>
+            @endif
+        </div>
     </div>
 
     <!-- Deadline Summary -->
@@ -83,6 +95,7 @@
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">From Date</th>
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">To Date</th>
                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Days Added</th>
+                <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Category</th>
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Reason</th>
                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Status</th>
                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Action</th>
@@ -102,3 +115,24 @@
         <div style="font-size: 12px; color: #d1d5db;">Click "Request Extension" to extend the project deadline</div>
     </div>
 </template>
+
+@if(auth()->user()->role === 'admin')
+<!-- Archived Extensions Panel (Decision 12) — admin only. Soft-deleted rows
+     surfaced here for Restore or permanent Delete Forever. -->
+<div id="archivedExtensionsPanel" style="display: none; margin-top: 20px; padding: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h5 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155;">
+            <i class="bi bi-archive me-1" style="color: #64748b;"></i> Archived Extensions
+        </h5>
+        <button type="button" onclick="toggleArchivedPanel()" style="background: transparent; border: none; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer;">
+            <i class="bi bi-x-lg"></i> Close
+        </button>
+    </div>
+    <div id="archivedExtensionsContainer">
+        <div style="text-align: center; padding: 20px; color: #94a3b8; font-size: 13px;">
+            <i class="bi bi-hourglass-split" style="display: block; margin-bottom: 8px; font-size: 24px;"></i>
+            Loading archived extensions...
+        </div>
+    </div>
+</div>
+@endif

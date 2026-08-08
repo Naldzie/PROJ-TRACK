@@ -687,4 +687,36 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertCount(4, $snapshot);
         $this->assertSame('2026-04', $snapshot[3]['month_label']);
     }
+
+    // === Phase 6: contractor read-only (no Request button) ===
+
+    public function test_contractor_extensions_section_hides_request_button(): void
+    {
+        // The extensions-section partial hides the Request Extension button
+        // for contractors (no write routes) and hides the archived panel.
+        $this->actingAs($this->contractorUser);
+        $html = view('projects.project_detail.components.tabs.partials.extensions-section', [
+            'project' => $this->project,
+        ])->render();
+
+        // The Request button (identified by its openRequestExtensionModal
+        // handler) must not render for contractors.
+        $this->assertStringNotContainsString('openRequestExtensionModal()', $html);
+        $this->assertStringNotContainsString('loadArchivedExtensions()', $html);
+        $this->assertStringNotContainsString('archivedExtensionsPanel', $html);
+    }
+
+    public function test_admin_extensions_section_shows_request_button_and_archived_panel(): void
+    {
+        // Same partial for admins shows both the Request button and the
+        // admin-only archived panel.
+        $this->actingAs($this->admin);
+        $html = view('projects.project_detail.components.tabs.partials.extensions-section', [
+            'project' => $this->project,
+        ])->render();
+
+        $this->assertStringContainsString('openRequestExtensionModal()', $html);
+        $this->assertStringContainsString('loadArchivedExtensions()', $html);
+        $this->assertStringContainsString('archivedExtensionsPanel', $html);
+    }
 }

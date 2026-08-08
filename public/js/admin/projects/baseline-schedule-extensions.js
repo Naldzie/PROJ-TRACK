@@ -97,12 +97,28 @@ function reloadExtensionsTable() {
                     const statusStyles = {
                         approved: { bg: '#dcfce7', color: '#166534', label: '✓ Approved' },
                         pending: { bg: '#fef3c7', color: '#92400e', label: '⏳ Pending' },
-                        rejected: { bg: '#fee2e2', color: '#991b1b', label: '✕ Rejected' }
+                        rejected: { bg: '#fee2e2', color: '#991b1b', label: '✕ Rejected' },
+                        superseded: { bg: '#e2e8f0', color: '#475569', label: '↩ Superseded' }
                     };
                     const statusStyle = statusStyles[ext.status] || statusStyles.pending;
                     const statusTitle = (ext.status === 'rejected' && ext.rejection_reason)
                         ? ` title="${ext.rejection_reason.replace(/"/g, '&quot;')}"`
                         : '';
+
+                    // Review aging (Decision 5): days awaiting review for pendings.
+                    let agingBadge = '';
+                    if (ext.status === 'pending' && ext.days_awaiting_review > 0) {
+                        agingBadge = `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px;" title="Days awaiting admin review">${ext.days_awaiting_review}d</span>`;
+                    }
+
+                    // Evidence (Decision 4): count chip + links to each file.
+                    let evidenceCell = '';
+                    if (ext.attachments_count > 0) {
+                        const links = (ext.attachments || []).map(a =>
+                            `<a href="${a.file_url}" target="_blank" style="color:#4f46e5;text-decoration:none;font-size:11px;" title="${(a.original_name || '').replace(/"/g, '&quot;')}"><i class="bi bi-paperclip"></i> ${a.original_name || a.file_url}</a>`
+                        ).join('<br>');
+                        evidenceCell = `<div style="display:inline-flex;align-items:center;gap:4px;color:#4f46e5;font-size:11px;font-weight:600;">${links}</div>`;
+                    }
 
                     // Editable for admin always; for staff only while
                     // pending/rejected. Backend is the real enforcement
@@ -115,20 +131,25 @@ function reloadExtensionsTable() {
                     // requests. Backend enforces the same rules.
                     const isActiveApproved = ext.status === 'approved' && ext.id === activeApprovedId;
                     const canDelete = isAdmin ? !isActiveApproved : (isStaff && (ext.status === 'pending' || ext.status === 'rejected'));
+                    // Resubmit (Decision 6): only rejected rows, staff or admin
+                    // (contractors have no write routes).
+                    const canResubmit = ext.status === 'rejected' && (isAdmin || isStaff);
 
                     row.innerHTML = `
                         <td style="padding: 12px 15px; font-size: 13px; font-weight: 600; color: #667eea;">#${ext.extension_number}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #374151;">${fromDate}</td>
-                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}</td>
+                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}${ext.approved_new_end_date && ext.approved_new_end_date !== ext.new_end_date ? `<div style="font-size:10px;color:#7c3aed;font-weight:600;">Granted: ${new Date(ext.approved_new_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}</td>
                         <td style="padding: 12px 15px; text-align: center; font-size: 13px; font-weight: 600; color: #f59e0b;">+${daysAdded} days</td>
-                        <td style="padding: 12px 15px; font-size: 13px; color: #6b7280;">${ext.reason || 'N/A'}</td>
+                        <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.reason_category ? `<span style="background:#f1f5f9;color:#334155;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${ext.reason_category}</span>` : '<span style="color:#cbd5e1;">—</span>'}</td>
+                        <td style="padding: 12px 15px; font-size: 13px; color: #6b7280;">${ext.reason || 'N/A'}${evidenceCell ? `<div style="margin-top:4px;">${evidenceCell}</div>` : ''}</td>
                         <td style="padding: 12px 15px; text-align: center;">
-                            <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>
+                            <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>${agingBadge}
                         </td>
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}
+                            ${canResubmit ? `<button onclick='openResubmitExtensionModal(${JSON.stringify(ext)})' style="background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Resubmit as a new request"><i class="bi bi-arrow-repeat"></i> Resubmit</button>` : ''}
                             ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;"><i class="bi bi-trash"></i> Delete</button>` : ''}
-                            ${(!canEdit && !canDelete) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
+                            ${(!canEdit && !canDelete && !canResubmit) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
                         </td>
                     `;
                     tbody.appendChild(row);
@@ -212,3 +233,142 @@ function deleteExtension(ext) {
         reloadExtensionsTable();
     });
 }
+
+// ==== ARCHIVED EXTENSIONS PANEL (Decision 12, admin only) ====
+
+/**
+ * Toggle the archived (soft-deleted) extensions panel.
+ */
+window.toggleArchivedPanel = function () {
+    const panel = document.getElementById('archivedExtensionsPanel');
+    if (!panel) return;
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        loadArchivedExtensions();
+    } else {
+        panel.style.display = 'none';
+    }
+};
+
+/**
+ * Load the archived (soft-deleted) extensions list into the panel.
+ */
+window.loadArchivedExtensions = function () {
+    const container = document.getElementById('archivedExtensionsContainer');
+    if (!container) return;
+
+    const projectId = window.projectId;
+    const endpoint = `/admin/projects/${projectId}/extensions/archived`;
+
+    fetch(endpoint, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.success) throw new Error(data.message || 'Failed to load archived extensions');
+
+        const panel = document.getElementById('archivedExtensionsPanel');
+        if (panel) panel.style.display = 'block';
+
+        if (!data.extensions || data.extensions.length === 0) {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No archived extensions.</div>';
+            return;
+        }
+
+        let rows = data.extensions.map(ext => {
+            const fromDate = new Date(ext.original_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            const toDate = new Date(ext.new_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            return `
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
+                    <div style="min-width:0;">
+                        <div style="font-size:13px;font-weight:700;color:#334155;">#${ext.extension_number} <span style="font-weight:500;color:#64748b;">· ${fromDate} → ${toDate}</span></div>
+                        <div style="font-size:12px;color:#94a3b8;">${ext.reason_category ? ext.reason_category + ' · ' : ''}${(ext.reason || 'N/A').substring(0, 60)}${(ext.reason || '').length > 60 ? '…' : ''}</div>
+                    </div>
+                    <div style="white-space:nowrap;">
+                        <button onclick='restoreArchivedExtension(${JSON.stringify(ext)})' style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;margin-right:6px;"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
+                        <button onclick='forceDeleteArchivedExtension(${JSON.stringify(ext)})' style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;"><i class="bi bi-trash"></i> Delete Forever</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = rows;
+    })
+    .catch(error => {
+        console.error('[loadArchivedExtensions] Error:', error);
+        container.innerHTML = `<div style="padding: 20px; text-align: center; color: #dc2626; font-size: 13px;">Error: ${error.message}</div>`;
+    });
+};
+
+/**
+ * Restore a soft-deleted extension (admin only).
+ */
+window.restoreArchivedExtension = function (ext) {
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) return;
+
+    const endpoint = `/admin/projects/${window.projectId}/extensions/${ext.id}/restore`;
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': token,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json().catch(() => ({})))
+    .then(body => {
+        if (body.success) {
+            showToast(`Extension #${ext.extension_number} restored.`, 'success');
+            loadArchivedExtensions();
+            reloadExtensionsTable();
+        } else {
+            showToast(body.message || 'Could not restore this extension.', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('[restoreArchivedExtension] Error:', error);
+        showToast('Could not restore this extension.', 'danger');
+    });
+};
+
+/**
+ * Permanently delete a soft-deleted extension (admin only).
+ */
+window.forceDeleteArchivedExtension = function (ext) {
+    const confirmed = confirm(
+        `Permanently delete extension #${ext.extension_number}?\nThis removes the record AND its evidence files. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) return;
+
+    const endpoint = `/admin/projects/${window.projectId}/extensions/${ext.id}/force`;
+
+    fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': token,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json().catch(() => ({})))
+    .then(body => {
+        if (body.success) {
+            showToast(`Extension #${ext.extension_number} permanently deleted.`, 'success');
+            loadArchivedExtensions();
+        } else {
+            showToast(body.message || 'Could not permanently delete this extension.', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('[forceDeleteArchivedExtension] Error:', error);
+        showToast('Could not permanently delete this extension.', 'danger');
+    });
+};

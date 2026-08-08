@@ -59,6 +59,26 @@
                         </div>
                     </div>
 
+                    <!-- Reason Category (Decision 3) -->
+                    <div class="mb-3">
+                        <label for="reasonCategory" class="form-label">
+                            Reason Category
+                        </label>
+                        <select class="form-control" id="reasonCategory" name="reason_category">
+                            <option value="">Select a category (optional)</option>
+                            <option value="Weather">Weather</option>
+                            <option value="Materials">Materials</option>
+                            <option value="Labor">Labor</option>
+                            <option value="Site access">Site access</option>
+                            <option value="Permits">Permits</option>
+                            <option value="Design change">Design change</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <div class="form-text text-muted">
+                            Categorize the ground for this extension request
+                        </div>
+                    </div>
+
                     <!-- Reason Field -->
                     <div class="mb-3">
                         <label for="reason" class="form-label">
@@ -93,18 +113,50 @@
                         ></textarea>
                     </div>
 
+                    <!-- Partial Approval (Decision 7) — ADMIN ONLY. When an
+                         admin approves with a GRANTED date earlier than the
+                         requested one, that granted date drives the deadline. -->
+                    <div class="mb-3" id="partialApprovalWrapper" style="display: none;">
+                        <label for="approvedNewEndDate" class="form-label">
+                            Granted End Date (Partial Approval)
+                        </label>
+                        <input type="date" class="form-control" id="approvedNewEndDate" name="approved_new_end_date">
+                        <div class="form-text text-muted">
+                            Leave blank to approve exactly as requested. Setting a date here grants LESS time than requested — it cannot exceed the requested end date.
+                        </div>
+                    </div>
+
+                    <!-- Evidence Attachments (Decision 4) — two-step upload.
+                         Files are picked here, then uploaded AFTER the extension
+                         row is created/updated (attachable_id needs the row id). -->
+                    <div class="mb-3">
+                        <label for="extensionEvidenceFiles" class="form-label">
+                            <i class="bi bi-paperclip me-1"></i> Evidence Files (Optional)
+                        </label>
+                        <input type="file" class="form-control" id="extensionEvidenceFiles" name="extension_evidence_files[]" multiple accept="image/*,.pdf">
+                        <div class="mt-2 d-flex flex-wrap gap-1" id="extensionEvidenceFilesPreview"></div>
+                        <div class="form-text text-muted">
+                            Supporting documents (photos, PDFs) for this request. Uploaded after the request is saved.
+                        </div>
+                    </div>
+
                     <!-- Status Field — ADMIN ONLY. Hidden entirely for staff;
                          even if somehow shown, the backend ignores status
                          from a non-admin payload regardless of this UI. -->
                     <div class="mb-3" id="statusFieldWrapper" style="display: none;">
                         <label for="extensionStatus" class="form-label">Status</label>
-                        <select class="form-control" id="extensionStatus" name="status" onchange="toggleRejectionReasonField()">
-                            <option value="pending">Pending</option>
-                            <option value="approved">Approved</option>
-                            <option value="rejected">Rejected</option>
-                        </select>
+                        <div class="d-flex align-items-center gap-2">
+                            <select class="form-control" id="extensionStatus" name="status" onchange="toggleRejectionReasonField()" style="flex: 1;">
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <button type="button" id="extensionRejectBtn" onclick="toggleExtensionReject()" class="btn btn-outline-danger btn-sm" style="white-space: nowrap;">
+                                <i class="fas fa-times me-1"></i>Reject
+                            </button>
+                        </div>
                         <div class="form-text text-muted">
-                            Setting this to "Approved" applies the new deadline to the project immediately.
+                            Setting this to "Approved" applies the new deadline to the project immediately. "Reject" flips it to rejected and requires a reason.
                         </div>
                     </div>
 
@@ -215,6 +267,23 @@ function isAdminContext() {
 window.toggleRejectionReasonField = function () {
     const status = document.getElementById('extensionStatus').value;
     document.getElementById('rejectionReasonWrapper').style.display = status === 'rejected' ? 'block' : 'none';
+    // Partial approval field (Decision 7) — admin only, shown when approving.
+    const partialApprovalWrapper = document.getElementById('partialApprovalWrapper');
+    if (partialApprovalWrapper) {
+        partialApprovalWrapper.style.display = status === 'approved' ? 'block' : 'none';
+    }
+};
+
+/**
+ * Quick "Reject" toggle for admins — flips the status dropdown to rejected
+ * and reveals the mandatory rejection-reason field.
+ */
+window.toggleExtensionReject = function () {
+    const statusSelect = document.getElementById('extensionStatus');
+    statusSelect.value = 'rejected';
+    window.toggleRejectionReasonField();
+    const rejectionReason = document.getElementById('rejectionReason');
+    rejectionReason.focus();
 };
 
 /**
@@ -236,6 +305,20 @@ window.openRequestExtensionModal = function () {
     document.getElementById('newEndDate').value = '';
     document.getElementById('newEndDate').classList.remove('is-valid', 'is-invalid');
 
+    // Reset Phase 2/4/7 fields (Decision 3/7 + evidence).
+    const reasonCategory = document.getElementById('reasonCategory');
+    if (reasonCategory) reasonCategory.value = '';
+    const approvedNewEndDate = document.getElementById('approvedNewEndDate');
+    if (approvedNewEndDate) {
+        approvedNewEndDate.value = '';
+        document.getElementById('partialApprovalWrapper').style.display = 'none';
+    }
+    window._pendingExtensionEvidence = [];
+    const preview = document.getElementById('extensionEvidenceFilesPreview');
+    if (preview) preview.innerHTML = '';
+    const evidenceInput = document.getElementById('extensionEvidenceFiles');
+    if (evidenceInput) evidenceInput.value = '';
+
     new bootstrap.Modal(document.getElementById('requestExtensionModal')).show();
 };
 
@@ -251,9 +334,57 @@ window.openEditExtensionModal = function (extension) {
     document.getElementById('extensionModalTitle').textContent = 'Edit Extension Request';
     document.getElementById('submitExtensionBtnLabel').textContent = 'Save Changes';
 
+    window._extensionResubmit = false;
+
+    // reset below (shared with resubmit mode)
+    _populateExtensionEditFields(extension);
+    new bootstrap.Modal(document.getElementById('requestExtensionModal')).show();
+};
+
+/**
+ * Open the modal in RESUBMIT mode (Decision 6): the rejected row's details are
+ * copied into the form so the user can revise and resubmit as a NEW row.
+ * The rejected row itself is never mutated.
+ */
+window.openResubmitExtensionModal = function (extension) {
+    document.getElementById('extensionEditMode').value = 'resubmit';
+    document.getElementById('extensionEditId').value = extension.id;
+    document.getElementById('extensionModalTitle').textContent = 'Resubmit Extension Request';
+    document.getElementById('submitExtensionBtnLabel').textContent = 'Resubmit for Review';
+    window._extensionResubmit = true;
+
+    _populateExtensionEditFields(extension);
+
+    const pendingNotice = document.getElementById('pendingNotice');
+    pendingNotice.style.display = 'block';
+    pendingNotice.innerHTML = '<i class="fas fa-clock me-1"></i>This resubmits as a NEW request for admin review. The rejected request stays in the history untouched.';
+    const rejectionReasonNotice = document.getElementById('rejectionReasonNotice');
+    if (extension.status === 'rejected' && extension.rejection_reason) {
+        document.getElementById('rejectionReasonText').textContent = extension.rejection_reason;
+        rejectionReasonNotice.style.display = 'block';
+    } else {
+        rejectionReasonNotice.style.display = 'none';
+    }
+
+    new bootstrap.Modal(document.getElementById('requestExtensionModal')).show();
+};
+
+function _populateExtensionEditFields(extension) {
     document.getElementById('newEndDate').value = extension.new_end_date;
     document.getElementById('reason').value = extension.reason || '';
     document.getElementById('details').value = extension.details || '';
+
+    const reasonCategory = document.getElementById('reasonCategory');
+    if (reasonCategory) reasonCategory.value = extension.reason_category || '';
+    const approvedNewEndDate = document.getElementById('approvedNewEndDate');
+    if (approvedNewEndDate) approvedNewEndDate.value = extension.approved_new_end_date || '';
+
+    // Reset pending evidence picks (existing attachments stay on the row).
+    window._pendingExtensionEvidence = [];
+    const evidencePreview = document.getElementById('extensionEvidenceFilesPreview');
+    if (evidencePreview) evidencePreview.innerHTML = '';
+    const evidenceInput = document.getElementById('extensionEvidenceFiles');
+    if (evidenceInput) evidenceInput.value = '';
 
     const statusWrapper = document.getElementById('statusFieldWrapper');
     const pendingNotice = document.getElementById('pendingNotice');
@@ -283,8 +414,6 @@ window.openEditExtensionModal = function (extension) {
             rejectionReasonNotice.style.display = 'none';
         }
     }
-
-    new bootstrap.Modal(document.getElementById('requestExtensionModal')).show();
 };
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -389,10 +518,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = {
             new_end_date: newDateValue,
             reason: reasonInput.value,
-            details: detailsInput.value || null
+            details: detailsInput.value || null,
+            // Decision 3 — structured category (optional).
+            reason_category: document.getElementById('reasonCategory')?.value || null
         };
 
         // Only admin context ever includes status, and only in edit mode.
+        // (Resubmit never carries status — the new row is always pending.)
         if (editMode === 'edit' && isAdminContext()) {
             const selectedStatus = document.getElementById('extensionStatus').value;
             formData.status = selectedStatus;
@@ -405,6 +537,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 formData.rejection_reason = rejectionReasonValue;
+            } else if (selectedStatus === 'approved') {
+                // Decision 7 — partial approval granted date (optional).
+                const approvedNewEndDate = document.getElementById('approvedNewEndDate')?.value;
+                if (approvedNewEndDate) {
+                    formData.approved_new_end_date = approvedNewEndDate;
+                }
             }
         }
 
@@ -413,9 +551,13 @@ document.addEventListener('DOMContentLoaded', function() {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
 
-        const url = editMode === 'edit'
-            ? window.buildExtensionsEndpoint(extensionId)
-            : window.buildExtensionsEndpoint();
+        // Resubmit (Decision 6) posts a new row to the resubmit route.
+        const isResubmit = editMode === 'resubmit';
+        const url = isResubmit
+            ? `${window.buildExtensionsEndpoint(extensionId)}/resubmit`
+            : (editMode === 'edit'
+                ? window.buildExtensionsEndpoint(extensionId)
+                : window.buildExtensionsEndpoint());
         const method = editMode === 'edit' ? 'PUT' : 'POST';
 
         fetch(url, {
@@ -439,19 +581,43 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             queueSuccessMessage(data.message || 'Extension saved successfully!');
 
+            const extension = data.extension;
+            const pendingEvidence = (window._pendingExtensionEvidence || []).filter(Boolean);
+
             extensionForm.reset();
             extensionForm.classList.remove('was-validated');
             newEndDateInput.classList.remove('is-invalid', 'is-valid');
             reasonInput.classList.remove('is-invalid', 'is-valid');
 
-            setTimeout(() => {
-                modal.hide();
-                if (window.reloadExtensionsTable) {
-                    window.reloadExtensionsTable();
-                }
-                sessionStorage.setItem('activeTab', 's-curve-planning');
-                location.reload();
-            }, 600);
+            // Two-step evidence upload (Decision 4): the extension row now has
+            // an id, so pending evidence files can be attached to it.
+            const uploadEvidence = extension && pendingEvidence.length
+                ? Promise.all(pendingEvidence.map(file =>
+                    uploadExtensionEvidence(extension.id, file)))
+                : Promise.resolve();
+
+            uploadEvidence
+                .then(() => {
+                    setTimeout(() => {
+                        modal.hide();
+                        if (window.reloadExtensionsTable) {
+                            window.reloadExtensionsTable();
+                        }
+                        sessionStorage.setItem('activeTab', 's-curve-planning');
+                        location.reload();
+                    }, 600);
+                })
+                .catch(() => {
+                    // Evidence failed but the extension itself saved — still
+                    // reload so the request shows, then let the user retry
+                    // the upload from the Edit modal.
+                    showErrorMessage('Extension saved, but one or more evidence files failed to upload. You can re-add them by editing the request.');
+                    setTimeout(() => {
+                        modal.hide();
+                        sessionStorage.setItem('activeTab', 's-curve-planning');
+                        location.reload();
+                    }, 1200);
+                });
         })
         .catch(error => {
             showErrorMessage(error.message || 'Failed to save extension. Please try again.');
@@ -470,6 +636,71 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             alert('Success: ' + message);
         }
+    }
+
+    // === Evidence upload (Decision 4) ===
+    // Files are held in window._pendingExtensionEvidence until the extension
+    // row is created/updated, then uploaded against its id via the shared
+    // attachment endpoint (context 'extension').
+    window._pendingExtensionEvidence = [];
+
+    const evidenceInput = document.getElementById('extensionEvidenceFiles');
+    const evidencePreview = document.getElementById('extensionEvidenceFilesPreview');
+
+    function renderExtensionEvidencePreview() {
+        if (!evidencePreview) return;
+        evidencePreview.innerHTML = '';
+        (window._pendingExtensionEvidence || []).forEach((file, i) => {
+            const chip = document.createElement('span');
+            chip.style.cssText = 'background:#eef2ff;color:#4f46e5;border:1px solid #c7d2fe;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;';
+            const label = document.createElement('span');
+            label.textContent = file.name;
+            const rm = document.createElement('button');
+            rm.type = 'button';
+            rm.innerHTML = '<i class="bi bi-x"></i>';
+            rm.style.cssText = 'border:none;background:transparent;color:#dc2626;cursor:pointer;font-size:13px;line-height:1;';
+            rm.onclick = () => {
+                window._pendingExtensionEvidence.splice(i, 1);
+                renderExtensionEvidencePreview();
+            };
+            chip.appendChild(label);
+            chip.appendChild(rm);
+            evidencePreview.appendChild(chip);
+        });
+    }
+
+    if (evidenceInput) {
+        evidenceInput.addEventListener('change', function () {
+            Array.from(this.files || []).forEach(file => {
+                window._pendingExtensionEvidence.push(file);
+            });
+            this.value = '';
+            renderExtensionEvidencePreview();
+        });
+    }
+
+    function uploadExtensionEvidence(extensionId, file) {
+        const fd = new FormData();
+        fd.append('project_id', window.projectId);
+        fd.append('attachable_type', 'App\\Models\\ProjectExtension');
+        fd.append('attachable_id', extensionId);
+        fd.append('context', 'extension');
+        fd.append('file', file);
+        const role = window.userRole || (isAdminContext() ? 'admin' : 'staff');
+        return fetch(`/${role}/attachments/upload`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': window.csrfToken,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: fd
+        })
+        .then(response => response.json().catch(() => ({})))
+        .then(data => {
+            if (!data.success) throw new Error((data && data.message) || 'Attachment upload failed');
+            return data;
+        });
     }
 
     function showErrorMessage(message) {
