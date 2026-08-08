@@ -170,6 +170,55 @@ Decision 12 — **Partial approval / soft delete / contractor all included**
   - Contractor: hide the "Request Extension" button for contractors for now
     (trivially reversible if the client later wants contractor submissions).
 
+Decision 13 — **Dedicated Review modal with decision buttons (admin)**
+  Context: admin approve/reject today happens through the same Edit modal that
+  also lets them silently change the request's dates/reason while deciding.
+  Research (OCRflow, Playcode, Google Drive Approvals, AppMaster) is unanimous:
+  deciding and editing must be separate surfaces; the reviewer approves a
+  read-only version so "what was approved" stays provable.
+  Decision: a NEW "Review" action on admin pending rows opens a dedicated
+  modal that shows the request READ-ONLY (requester, dates, days, category,
+  reason, evidence) plus decision controls implemented as BUTTONS:
+  - **Approve as requested** — grants exactly `new_end_date`.
+  - **Approve with less time (partial)** — reveals the granted-date input
+    (≤ requested end date); keeps `new_end_date` as the requested record.
+  - **Reject** — reveals a required rejection reason.
+  The modal POSTs to the existing `admin.projects.extensions.update` route
+  with `{status, approved_new_end_date, rejection_reason}` only — it never
+  touches request content. Reuses `toggleRejectionReasonField()` naming where
+  it makes sense. The existing Edit modal stays for genuine corrections.
+  Consequences: pending rows for admin show Review (decision) + Edit
+  (correction); non-pending rows keep Edit/Resubmit/Archive.
+
+Decision 14 — **Audit-trail-clean workflow: staff edits own PENDING only; REJECTED is Resubmit-only**
+  Context: the code today lets staff in-place-edit a rejected row, which resets
+  it to `pending` and WIPES `rejection_reason` (update() staff path) — a second
+  resurrection path that competes with Decision 6 (resubmit-as-new-row) and
+  destroys the audit trail. Also, the "own extension" claim is NOT actually
+  enforced: `update()` only checks status, so any staff could edit another
+  staff member's pending/rejected row.
+  Decision:
+  - Staff `update()`: guard `created_by_user_id === auth()->id()` (403) AND
+    restrict editable status to `pending` only (drop `rejected`). Editing own
+    pending stays allowed (nothing decided yet → no audit trail to protect).
+  - `resubmit()`: staff may only resubmit their OWN rejected row.
+  - `destroy()`: staff may only archive their OWN pending/rejected rows.
+  - Admin is exempt from all three guards (full authority).
+  Rationale: matches the append-only model from research (decided records are
+  immutable; changes flow through a new submission). Contractors remain
+  read-only (no write routes).
+  Consequences: the rejected→pending in-place reset path is removed entirely;
+  the only way back to review is Resubmit → new row.
+
+Decision 15 — **Extensions table shows Requested By / Approved By**
+  Context: the table can't answer "who asked for this?" today even though
+  `formatExtension()` already returns `created_by` (requester name) and the
+  approver relation exists.
+  Decision: add "Requested By" and "Approved By" columns to the extensions
+  table. Backend only needs `created_by_user_id` + `approved_by_name` added to
+  the payload (the former is also needed for the Decision 14 ownership guards
+  to work in the frontend).
+
 ---
 
 ## 4. BASELINE SNAPSHOT DESIGN (detailed)
@@ -307,6 +356,23 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Re-approve-after-revert toast hint (see §4.6).
 - Tests: contractor detail page does not render the Request button.
 
+### Phase 7 — Review modal + audit-trail-clean workflow 🔄 IN PROGRESS
+- Backend guards (Decision 14): staff `update()` own-pending-only +
+  ownership; `resubmit()`/`destroy()` ownership; admin exempt.
+- `formatExtension()` payload: add `created_by_user_id` + `approved_by_name`
+  (Decision 15).
+- New `review_extension_modal.blade.php` with BUTTON decisions — Approve /
+  Approve-with-less-time (partial) / Reject — request shown read-only
+  (Decision 13). Wired via `openReviewExtensionModal()`; PUTs only
+  status/granted-date/rejection-reason to the existing update route.
+- Extensions table: Review button (admin pending rows), Requested By /
+  Approved By columns, role-aware Edit/Resubmit/Archive visibility.
+- `project_detail.blade.php`: expose `window.authUserId`; include the modal.
+- Tests: staff edits own pending ✓; blocked editing another staff's pending;
+  blocked in-place edit of own rejected (must resubmit); blocked resubmit/
+  archive of another staff's row; review-as-buttons still drives the admin
+  update path.
+
 ---
 
 ## 6. MIGRATIONS (anticipated)
@@ -395,6 +461,18 @@ All phases on `phase-extension-management`. Test each phase before the next
   missing the `X-CSRF-TOKEN` header (toast "CSRF token mismatch"). Added the
   token header (mirrors the force-delete/restore calls).
 - JS verified with `node --check`; extension tests 30 passing.
+
+### 2026-08-08 — Phase 7 planning (Review modal + audit-trail-clean workflow)
+- Researched how other systems run approvals (OCRflow append-only history,
+  Google Drive RESET_APPROVAL pending-editable/approved-locked, Playcode
+  resubmit-as-new-version, AppMaster block-direct-edits, PMWEB EOT partial
+  grant + register). Conclusion: deciding and editing must be separate; a
+  decided record is immutable; changes flow through a new submission.
+- Confirmed current gaps by reading the controller: staff CAN in-place-edit a
+  rejected row back to pending (wiping rejection_reason) despite Decision 6;
+  the "own extension" staff guard checks status only, not ownership.
+- Locked Decisions 13-15 and added Phase 7. Plan updated + committed (this
+  commit). Implementation starts next.
 
 ---
 
