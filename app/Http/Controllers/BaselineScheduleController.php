@@ -909,6 +909,12 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
 
             DB::commit();
 
+            // Extension-management Phase 2.5: after a successful adjusted-
+            // baseline save, snapshot the whole baseline state onto the latest
+            // approved extension as a restore point (used when reverting that
+            // extension). See ProjectExtensionController::captureBaselineSnapshot.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Adjusted baseline saved successfully!'

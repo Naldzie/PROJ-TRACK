@@ -212,6 +212,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
         ->name('staff.projects.extensions.update');
     Route::delete('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'destroy'])
         ->name('staff.projects.extensions.destroy');
+    // NEW: resubmit a rejected extension as a brand-new row (Decision 6) —
+    // the rejected row is never mutated.
+    Route::post('/projects/{project}/extensions/{extension}/resubmit', [ProjectExtensionController::class, 'resubmit'])
+        ->name('staff.projects.extensions.resubmit');
 
     // === CATEGORY ROUTES (READ-ONLY) ===
     Route::get('/categories', [CategoryController::class, 'getCategories'])
@@ -543,12 +547,29 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.extensions.store');
     Route::get('/projects/{project}/extensions', [ProjectExtensionController::class, 'index'])
         ->name('admin.projects.extensions.index');
+    // NEW: archived (soft-deleted) extensions panel — admin only (Decision 12).
+    // Registered BEFORE the {extension} show route so "archived" is not
+    // swallowed as an extension id.
+    Route::get('/projects/{project}/extensions/archived', [ProjectExtensionController::class, 'archived'])
+        ->name('admin.projects.extensions.archived');
     Route::get('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'show'])
         ->name('admin.projects.extensions.show');
     Route::put('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'update'])
         ->name('admin.projects.extensions.update');
     Route::delete('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'destroy'])
         ->name('admin.projects.extensions.destroy');
+    // NEW: resubmit a rejected extension as a brand-new row (Decision 6).
+    Route::post('/projects/{project}/extensions/{extension}/resubmit', [ProjectExtensionController::class, 'resubmit'])
+        ->name('admin.projects.extensions.resubmit');
+    // NEW: archived-panel actions — restore a soft-deleted row, or purge it
+    // permanently (admin only, Decision 12). withTrashed() so the implicit
+    // binding still resolves soft-deleted extension models.
+    Route::post('/projects/{project}/extensions/{extension}/restore', [ProjectExtensionController::class, 'restore'])
+        ->name('admin.projects.extensions.restore')
+        ->withTrashed();
+    Route::delete('/projects/{project}/extensions/{extension}/force', [ProjectExtensionController::class, 'forceDestroy'])
+        ->name('admin.projects.extensions.forceDestroy')
+        ->withTrashed();
 
     // === MILESTONE ROUTES ===
     Route::get('/projects/{projectId}/milestones', [MilestoneController::class, 'index'])

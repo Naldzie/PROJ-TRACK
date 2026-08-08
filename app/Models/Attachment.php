@@ -16,15 +16,18 @@ class Attachment extends Model
 
     // Context classifications for attachment slots on a parent record.
     // 'inspection' = progress evidence, 'issue' = issue evidence,
-    // 'resolution' = issue fix proof, 'risk' = risk evidence.
-    const CONTEXTS = ['inspection', 'issue', 'resolution', 'risk'];
+    // 'resolution' = issue fix proof, 'risk' = risk evidence,
+    // 'extension' = extension-request evidence (Decision 4).
+    const CONTEXTS = ['inspection', 'issue', 'resolution', 'risk', 'extension'];
 
     // The only parent types the controller accepts. Inverse morphMany relations
-    // are wired on these models in Phases C/D of the core-monitoring plan.
+    // are wired on these models in Phases C/D of the core-monitoring plan and the
+    // extension-management plan.
     const ALLOWED_ATTACHABLE_TYPES = [
         ProjectProgressHistory::class,
         Issue::class,
         Risk::class,
+        ProjectExtension::class,
     ];
 
     protected $fillable = [
