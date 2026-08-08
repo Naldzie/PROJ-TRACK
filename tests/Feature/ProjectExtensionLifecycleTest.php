@@ -812,6 +812,154 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertNull($pending->fresh()->baseline_snapshot);
     }
 
+    // === Phase 2.6: ordering lock on manual target edits ===
+
+    private function withApprovedExtension(): ProjectExtension
+    {
+        $approved = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $approved->new_end_date,
+            'extension_count'  => 1,
+        ]);
+        return $approved;
+    }
+
+    private function editTarget(ProjectBaselineSchedule $row, float $percent): \Illuminate\Testing\TestResponse
+    {
+        return $this->actingAs($this->admin)->patchJson(
+            route('admin.projects.baseline-schedules.update', [$this->project, $row->id]),
+            [
+                'planned_date' => $row->planned_date->toDateString(),
+                'planned_progress_percent' => $percent,
+                'description' => null,
+            ]
+        );
+    }
+
+    public function test_update_baseline_schedule_rejects_progress_below_previous_month(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $m2 = $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+        $this->withApprovedExtension();
+
+        $this->editTarget($m2, 30)
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Target progress % must be higher than the previous month (40%). You entered: 30%');
+
+        $this->assertSame('70.00', $m2->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_rejects_progress_equal_to_previous_month(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $m2 = $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+        $this->withApprovedExtension();
+
+        $this->editTarget($m2, 40)->assertStatus(422);
+
+        $this->assertSame('70.00', $m2->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_rejects_progress_above_next_month(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $m2 = $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 90, 90);
+        $this->baselineRow('2026-04', '2026-04-15', 100, 100);
+        $this->withApprovedExtension();
+
+        $this->editTarget($m2, 95)
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Target progress % must be lower than the next month (90%). You entered: 95%');
+
+        $this->assertSame('70.00', $m2->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_rejects_progress_equal_to_next_month(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $m2 = $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 90, 90);
+        $this->baselineRow('2026-04', '2026-04-15', 100, 100);
+        $this->withApprovedExtension();
+
+        $this->editTarget($m2, 90)->assertStatus(422);
+
+        $this->assertSame('70.00', $m2->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_accepts_progress_strictly_between_neighbors(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $m2 = $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 90, 90);
+        $this->baselineRow('2026-04', '2026-04-15', 100, 100);
+        $approved = $this->withApprovedExtension();
+
+        $this->editTarget($m2, 85)->assertOk();
+
+        $this->assertSame('85.00', $m2->fresh()->planned_progress_percent);
+
+        $snapshot = $approved->fresh()->baseline_snapshot;
+        $this->assertNotNull($snapshot);
+        $this->assertSame(85.0, (float) $snapshot[1]['planned_progress_percent']);
+        // The frozen original column is never overwritten by the edit.
+        $this->assertSame(70.0, (float) $snapshot[1]['original_planned_progress_percent']);
+    }
+
+    public function test_update_baseline_schedule_first_month_has_no_lower_bound(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->withApprovedExtension();
+
+        // No previous month -> only the upper bound applies.
+        $this->editTarget($m1, 65)->assertOk();
+        $this->assertSame('65.00', $m1->fresh()->planned_progress_percent);
+
+        // Equal to the next month is still rejected.
+        $this->editTarget($m1, 70)->assertStatus(422);
+        $this->assertSame('65.00', $m1->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_last_month_has_no_upper_bound(): void
+    {
+        $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $m3 = $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+        $this->withApprovedExtension();
+
+        // No next month -> only the lower bound applies.
+        $this->editTarget($m3, 95)->assertOk();
+        $this->assertSame('95.00', $m3->fresh()->planned_progress_percent);
+
+        // Equal to the previous month is still rejected.
+        $this->editTarget($m3, 70)->assertStatus(422);
+        $this->assertSame('95.00', $m3->fresh()->planned_progress_percent);
+    }
+
+    public function test_update_baseline_schedule_rejects_progress_below_original_previous_month(): void
+    {
+        // Original plan reaches 100% before the extension period starts.
+        $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+        $extMonth = $this->baselineRow('2026-04', '2026-04-15', 100, null);
+        $this->withApprovedExtension();
+
+        // Regression: the previous bound must include ORIGINAL (pre-extension)
+        // months too, so a manual edit cannot dip below the 100% original plan.
+        $this->editTarget($extMonth, 85)
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Target progress % must be higher than the previous month (100%). You entered: 85%');
+
+        $this->assertSame('100.00', $extMonth->fresh()->planned_progress_percent);
+    }
+
     // === Phase 6: contractor read-only (no Request button) ===
 
     public function test_contractor_extensions_section_hides_request_button(): void

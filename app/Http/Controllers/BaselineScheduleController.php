@@ -461,20 +461,33 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 ], 422);
             }
 
-            // FIXED: only compare against OTHER extension-added rows (original_planned_progress_percent
-            // IS NULL), matching the same extension-only sequence used in storeBaselineSchedule().
-            // Comparing against original (pre-extension) rows here was the bug — this row was never
-            // validated against those rows at creation time, so it shouldn't be on edit either.
+            // Ordering lock: the edited target must stay strictly between its
+            // chronological neighbors across the WHOLE timeline (original AND
+            // extension rows), using the live planned_progress_percent values.
+            // max()/min() return null when there is no neighbor, so the first
+            // month only has an upper bound and the last month only a lower one.
             $previousMax = ProjectBaselineSchedule::where('project_id', $project->id)
                 ->where('id', '!=', $schedule->id)
-                ->whereNull('original_planned_progress_percent')
                 ->where('planned_date', '<', $validated['planned_date'])
-                ->max('planned_progress_percent') ?? 0;
+                ->max('planned_progress_percent');
+            $nextMin = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->where('id', '!=', $schedule->id)
+                ->where('planned_date', '>', $validated['planned_date'])
+                ->min('planned_progress_percent');
 
-            if ($validated['planned_progress_percent'] <= $previousMax) {
+            $newPercent = (float) $validated['planned_progress_percent'];
+
+            if ($previousMax !== null && $newPercent <= (float) $previousMax) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Target progress % must be higher than the previous extension-period month (' . $previousMax . '%). You entered: ' . $validated['planned_progress_percent'] . '%'
+                    'message' => 'Target progress % must be higher than the previous month (' . $previousMax . '%). You entered: ' . $newPercent . '%'
+                ], 422);
+            }
+
+            if ($nextMin !== null && $newPercent >= (float) $nextMin) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Target progress % must be lower than the next month (' . $nextMin . '%). You entered: ' . $newPercent . '%'
                 ], 422);
             }
 
