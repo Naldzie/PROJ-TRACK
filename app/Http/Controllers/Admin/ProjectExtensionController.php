@@ -242,11 +242,12 @@ class ProjectExtensionController extends Controller
     /**
      * Update an extension. Behavior branches by role:
      *
-     * STAFF: may edit ONLY their own extension while it is 'pending' or
-     *        'rejected'. Can change new_end_date/reason. Can NEVER set
-     *        status directly — that field is stripped from their payload
-     *        regardless of what's submitted. Editing a 'rejected'
-     *        extension resets it to 'pending' for re-review.
+     * STAFF: may edit ONLY their OWN extension while it is 'pending' (still
+     *        undecided — in-place edits are fine). Can change
+     *        new_end_date/reason. Can NEVER set status directly — that field
+     *        is stripped from their payload regardless of what's submitted.
+     *        Rejected rows are IMMUTABLE for staff (Decision 14): the only
+     *        way back to review is Resubmit, which creates a NEW row.
      *
      * ADMIN: may edit any extension's details AND status. Transitioning
      *        status -> 'approved' applies the deadline to the project and
@@ -268,12 +269,22 @@ class ProjectExtensionController extends Controller
             $isAdmin = $user->role === 'admin';
 
             if (!$isAdmin) {
-                // Staff guard: only their own extension, and only while
-                // it's still pending or rejected (not yet approved).
-                if (!in_array($extension->status, ['pending', 'rejected'], true)) {
+                // Staff guard (Decision 14): only their OWN extension, and only
+                // while it's still PENDING (undecided — in-place edits are fine).
+                // Rejected rows are immutable: the only way back to review is
+                // Resubmit, which creates a NEW row so the audit trail is kept.
+                if ($extension->created_by_user_id !== $user->id) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'This extension has already been approved and can no longer be edited.',
+                        'message' => 'You can only edit your own extension requests.',
+                    ], 403);
+                }
+                if ($extension->status !== 'pending') {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $extension->isApproved()
+                            ? 'This extension has already been approved and can no longer be edited.'
+                            : 'A rejected extension cannot be edited directly. Use "Resubmit" to send a revised request.',
                     ], 403);
                 }
 
@@ -292,8 +303,6 @@ class ProjectExtensionController extends Controller
                 ]);
 
                 // status is intentionally never read from the staff payload.
-                $wasRejected = $extension->isRejected();
-
                 DB::beginTransaction();
 
                 if (isset($validated['new_end_date'])) {
@@ -308,41 +317,22 @@ class ProjectExtensionController extends Controller
                     $extension->reason_category = $validated['reason_category'];
                 }
 
-                if ($wasRejected) {
-                    // Resubmitting a rejected request puts it back to pending.
-                    // Clear the old rejection reason — it applied to the
-                    // PREVIOUS version of this request, not the revised one.
-                    $extension->status = 'pending';
-                    $extension->approved_by_user_id = null;
-                    $extension->approved_at = null;
-                    $extension->rejection_reason = null;
-                }
-
                 $extension->save();
                 DB::commit();
 
                 ActivityLog::create([
                     'user_id' => auth()->id(),
                     'project_id' => $project->id,
-                    'action' => $wasRejected ? 'Resubmit Extension' : 'Update Extension',
-                    'description' => auth()->user()->name . " " . ($wasRejected
-                            ? "resubmitted extension #{$extension->extension_number} for project: {$project->title}"
-                            : "updated extension #{$extension->extension_number} for project: {$project->title}"),
+                    'action' => 'Update Extension',
+                    'description' => auth()->user()->name
+                        . " updated extension #{$extension->extension_number} for project: {$project->title}",
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
 
-                // A resubmitted (previously rejected) request goes back to
-                // pending — re-notify the admins for review.
-                if ($wasRejected) {
-                    $this->notifyExtension($project, $extension, ExtensionStatusChanged::SUBMITTED);
-                }
-
                 return response()->json([
                     'success' => true,
-                    'message' => $wasRejected
-                        ? 'Extension request revised and resubmitted for approval'
-                        : 'Extension request updated',
+                    'message' => 'Extension request updated',
                     'extension' => $this->formatExtension($extension),
                 ]);
             }
@@ -545,7 +535,8 @@ class ProjectExtensionController extends Controller
      * extension_number) in 'pending' status; the rejected row is NEVER mutated
      * and keeps its rejection_reason for the audit trail. Both staff and admin
      * may resubmit; the new row is always pending (even for admin — it goes
-     * back through review so the rejection lesson stays visible).
+     * back through review so the rejection lesson stays visible). Staff may
+     * only resubmit their OWN rejected rows (Decision 14).
      */
     public function resubmit(Request $request, Project $project, ProjectExtension $extension)
     {
@@ -559,6 +550,14 @@ class ProjectExtensionController extends Controller
                     'success' => false,
                     'message' => 'Only a rejected extension can be resubmitted.',
                 ], 422);
+            }
+
+            $user = auth()->user();
+            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only resubmit your own rejected extension requests.',
+                ], 403);
             }
 
             $validated = $this->validateExtension($request, $project);
@@ -652,6 +651,14 @@ class ProjectExtensionController extends Controller
                     'success' => false,
                     'message' => 'Cannot delete an approved extension directly. Revert it first, then delete.',
                 ], 400);
+            }
+
+            // Decision 14: staff may only archive their OWN non-approved rows.
+            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You can only archive your own extension requests.',
+                ], 403);
             }
 
             // Staff may only soft-delete pending/rejected/superseded requests.
@@ -1227,9 +1234,13 @@ class ProjectExtensionController extends Controller
             'status' => $ext->status,
             'rejection_reason' => $ext->rejection_reason,
             'approved_by' => $ext->approver?->email ?? null,
+            // Decision 15: human-friendly approver name for the table.
+            'approved_by_name' => $ext->approver?->name ?? null,
             'approved_at' => $ext->approved_at?->format('Y-m-d H:i:s'),
             // Review aging (Decision 5): days awaiting review for pendings.
             'days_awaiting_review' => $ext->isPending() ? $ext->daysAwaitingReview() : 0,
+            // Decision 14/15: requester id (for ownership checks) + name.
+            'created_by_user_id' => $ext->created_by_user_id,
             'created_by' => $ext->requester?->name ?? null,
             'created_at' => $ext->created_at?->format('Y-m-d H:i:s'),
             // Evidence (Decision 4).

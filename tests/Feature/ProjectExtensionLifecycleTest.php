@@ -1153,4 +1153,147 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertStringContainsString('archivedExtensionsPanel', $html);
         $this->assertStringContainsString('archivedExtensionsBtn', $html);
     }
+
+    // === Phase 7: audit-trail-clean workflow (Decision 14) ===
+
+    private function otherStaff(): User
+    {
+        return User::create([
+            'name' => 'Lifecycle Other Staff',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+    }
+
+    public function test_staff_can_edit_own_pending_extension(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+
+        $this->actingAs($this->staff)->putJson(
+            route('staff.projects.extensions.update', [$this->project, $pending]),
+            ['reason' => 'Revised justification for the delay']
+        )->assertOk();
+
+        $this->assertSame('Revised justification for the delay', $pending->fresh()->reason);
+        $this->assertSame('pending', $pending->fresh()->status);
+    }
+
+    public function test_staff_cannot_edit_another_staffs_pending_extension(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+        $other = $this->otherStaff();
+
+        $this->actingAs($other)->putJson(
+            route('staff.projects.extensions.update', [$this->project, $pending]),
+            ['reason' => 'Attempted to hijack this request']
+        )->assertStatus(403)
+            ->assertJsonPath('message', 'You can only edit your own extension requests.');
+
+        $this->assertSame($this->staff->id, $pending->fresh()->created_by_user_id);
+    }
+
+    public function test_staff_cannot_edit_own_rejected_extension_in_place(): void
+    {
+        // Decision 14: a rejected row is immutable — the ONLY way back to
+        // review is Resubmit (new row). In-place editing would wipe the
+        // rejection reason and break the audit trail.
+        $rejected = $this->extension(1, 'rejected', 1);
+        $rejected->update(['rejection_reason' => 'Needs more justification']);
+
+        $this->actingAs($this->staff)->putJson(
+            route('staff.projects.extensions.update', [$this->project, $rejected]),
+            ['new_end_date' => $this->project->planned_end_date->copy()->addMonths(2)->format('Y-m-d')]
+        )->assertStatus(403)
+            ->assertJsonPath('message', 'A rejected extension cannot be edited directly. Use "Resubmit" to send a revised request.');
+
+        $this->assertSame('rejected', $rejected->fresh()->status);
+        $this->assertSame('Needs more justification', $rejected->fresh()->rejection_reason);
+    }
+
+    public function test_staff_cannot_resubmit_another_staffs_rejected_extension(): void
+    {
+        $rejected = $this->extension(1, 'rejected', 1);
+        $rejected->update(['rejection_reason' => 'Needs more justification']);
+        $other = $this->otherStaff();
+
+        $this->actingAs($other)->postJson(
+            route('staff.projects.extensions.resubmit', [$this->project, $rejected]),
+            ['new_end_date' => $this->project->planned_end_date->copy()->addMonths(2)->format('Y-m-d')]
+        )->assertStatus(403)
+            ->assertJsonPath('message', 'You can only resubmit your own rejected extension requests.');
+
+        $this->assertSame('rejected', $rejected->fresh()->status);
+    }
+
+    public function test_staff_cannot_archive_another_staffs_extension(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+        $other = $this->otherStaff();
+
+        $this->actingAs($other)->deleteJson(
+            route('staff.projects.extensions.destroy', [$this->project, $pending])
+        )->assertStatus(403)
+            ->assertJsonPath('message', 'You can only archive your own extension requests.');
+
+        $this->assertDatabaseHas('project_extensions', ['id' => $pending->id]);
+    }
+
+    public function test_admin_can_review_pending_extension_through_update(): void
+    {
+        // The Review modal drives the existing admin update route — approving
+        // a pending request applies the deadline and records the approver.
+        $pending = $this->extension(1, 'pending', 1);
+
+        $this->actingAs($this->admin)->putJson(
+            route('admin.projects.extensions.update', [$this->project, $pending]),
+            ['status' => 'approved']
+        )->assertOk();
+
+        $this->assertSame('approved', $pending->fresh()->status);
+        $this->assertSame($this->admin->id, $pending->fresh()->approved_by_user_id);
+        $this->assertSame(1, $this->project->fresh()->extension_count);
+    }
+
+    public function test_admin_can_reject_pending_extension_with_reason_through_update(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+
+        $this->actingAs($this->admin)->putJson(
+            route('admin.projects.extensions.update', [$this->project, $pending]),
+            ['status' => 'rejected', 'rejection_reason' => 'Insufficient schedule analysis']
+        )->assertOk();
+
+        $this->assertSame('rejected', $pending->fresh()->status);
+        $this->assertSame('Insufficient schedule analysis', $pending->fresh()->rejection_reason);
+    }
+
+    public function test_admin_can_partially_approve_through_update(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+        $granted = $this->project->planned_end_date->copy()->addDays(10)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->putJson(
+            route('admin.projects.extensions.update', [$this->project, $pending]),
+            ['status' => 'approved', 'approved_new_end_date' => $granted]
+        )->assertOk();
+
+        $this->assertSame('approved', $pending->fresh()->status);
+        $this->assertSame(Carbon::parse($granted)->format('Y-m-d'), $pending->fresh()->approved_new_end_date?->format('Y-m-d'));
+    }
+
+    public function test_extension_index_payload_includes_requester_and_approver(): void
+    {
+        $approved = $this->extension(1, 'approved', 1);
+        $approved->update(['approved_by_user_id' => $this->admin->id, 'approved_at' => now()]);
+
+        $response = $this->actingAs($this->staff)->getJson(
+            route('staff.projects.extensions.index', $this->project)
+        )->assertOk();
+
+        $data = $response->json('extensions.0');
+        $this->assertSame($this->staff->id, $data['created_by_user_id']);
+        $this->assertSame('Lifecycle Staff', $data['created_by']);
+        $this->assertSame('Lifecycle Admin', $data['approved_by_name']);
+    }
 }

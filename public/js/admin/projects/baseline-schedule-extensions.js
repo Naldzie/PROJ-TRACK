@@ -121,22 +121,31 @@ function reloadExtensionsTable() {
                     }
 
                     // Editable for admin always; for staff only while
-                    // pending/rejected. Backend is the real enforcement
-                    // point regardless — this just controls button visibility.
+                    // PENDING and OWNED by them (Decision 14). Backend is the
+                    // real enforcement point regardless — this just controls
+                    // button visibility.
                     const isAdmin = window.routePrefix === 'admin.projects';
                     const isStaff = window.routePrefix === 'staff.projects';
-                    const canEdit = isAdmin || ext.status === 'pending' || ext.status === 'rejected';
+                    const isOwner = Number(ext.created_by_user_id) === Number(window.authUserId);
+                    // Admin may edit any row (corrections); staff may edit their
+                    // own pending request only. Rejected is NOT editable —
+                    // Resubmit is the only way back to review.
+                    const canEdit = isAdmin || (isStaff && isOwner && ext.status === 'pending');
                     // Delete: admin may delete any row EXCEPT the active
-                    // approved extension; staff may delete pending/rejected
-                    // requests. Backend enforces the same rules.
+                    // approved extension; staff may delete their OWN
+                    // pending/rejected requests (Decision 14).
                     const isActiveApproved = ext.status === 'approved' && ext.id === activeApprovedId;
-                    const canDelete = isAdmin ? !isActiveApproved : (isStaff && (ext.status === 'pending' || ext.status === 'rejected'));
-                    // Resubmit (Decision 6): only rejected rows, staff or admin
-                    // (contractors have no write routes).
-                    const canResubmit = ext.status === 'rejected' && (isAdmin || isStaff);
+                    const canDelete = isAdmin ? !isActiveApproved : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
+                    // Resubmit (Decision 6): only rejected rows; staff may only
+                    // resubmit their OWN (Decision 14). Admin may resubmit any.
+                    const canResubmit = ext.status === 'rejected' && (isAdmin || (isStaff && isOwner));
+                    // Review (Decision 13): admin decides on pending requests
+                    // via the dedicated Review modal.
+                    const canReview = isAdmin && ext.status === 'pending';
 
                     row.innerHTML = `
                         <td style="padding: 12px 15px; font-size: 13px; font-weight: 600; color: #667eea;">#${ext.extension_number}</td>
+                        <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.created_by || '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #374151;">${fromDate}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}${ext.approved_new_end_date && ext.approved_new_end_date !== ext.new_end_date ? `<div style="font-size:10px;color:#7c3aed;font-weight:600;">Granted: ${new Date(ext.approved_new_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}</td>
                         <td style="padding: 12px 15px; text-align: center; font-size: 13px; font-weight: 600; color: #f59e0b;">+${daysAdded} days</td>
@@ -145,11 +154,13 @@ function reloadExtensionsTable() {
                         <td style="padding: 12px 15px; text-align: center;">
                             <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>${agingBadge}
                         </td>
+                        <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${ext.status === 'approved' ? (ext.approved_by_name || ext.approved_by || '<span style="color:#cbd5e1;">—</span>') : '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
+                            ${canReview ? `<button onclick='openReviewExtensionModal(${JSON.stringify(ext)})' style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Approve, partially approve, or reject this request"><i class="bi bi-gavel"></i> Review</button>` : ''}
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}
                             ${canResubmit ? `<button onclick='openResubmitExtensionModal(${JSON.stringify(ext)})' style="background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Resubmit as a new request"><i class="bi bi-arrow-repeat"></i> Resubmit</button>` : ''}
                             ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Move to Archived Extensions (reversible)"><i class="bi bi-archive"></i> Archive</button>` : ''}
-                            ${(!canEdit && !canDelete && !canResubmit) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
+                            ${(!canEdit && !canDelete && !canResubmit && !canReview) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
                         </td>
                     `;
                     tbody.appendChild(row);

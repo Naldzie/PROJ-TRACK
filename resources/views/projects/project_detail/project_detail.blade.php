@@ -93,6 +93,9 @@
 <!-- Include project extension modal (only if baseline exists) -->
 @if($hasBaseline)
 @include('projects.project_detail.components.modals.request_extension_modal')
+@if(auth()->user()->role === 'admin')
+@include('projects.project_detail.components.modals.review_extension_modal')
+@endif
 @endif
 
 <!-- Include issues modal -->
@@ -106,6 +109,7 @@ const projectId = window.projectId;
 const csrfToken = '{{ csrf_token() }}';
 window.csrfToken = csrfToken;
 window.userRole = '{{ auth()->user()->role }}';
+window.authUserId = {{ auth()->id() }};
 
 // Build the correct API base URL based on user role
 function getIssuesApiUrl(action = '') {
