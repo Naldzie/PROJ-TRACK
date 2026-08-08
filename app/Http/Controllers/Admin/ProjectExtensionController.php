@@ -226,7 +226,11 @@ class ProjectExtensionController extends Controller
                 $validated = $request->validate([
                     'new_end_date' => [
                         'sometimes', 'required', 'date_format:Y-m-d',
-                        'after:' . $project->planned_end_date->format('Y-m-d'),
+                        // Editing an existing extension may legitimately keep its
+                        // date equal to the live deadline (the active approved
+                        // extension IS the deadline) — allow equality here. New
+                        // requests still require strictly-after (validateExtension).
+                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                         'before_or_equal:2030-12-31',
                     ],
                     'reason' => 'sometimes|required|string|min:5|max:500',
@@ -293,9 +297,10 @@ class ProjectExtensionController extends Controller
             $validated = $request->validate([
                 'new_end_date' => [
                     'sometimes', 'required', 'date_format:Y-m-d',
-                    // Decision 8: admin can never set a date before the live
-                    // deadline — mirrors the staff branch.
-                    'after:' . $project->planned_end_date->format('Y-m-d'),
+                    // Decision 8: admin can never set a date BEFORE the live
+                    // deadline — equality is allowed when editing an existing
+                    // extension (its own date may be the deadline itself).
+                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                     'before_or_equal:2030-12-31',
                 ],
                 'reason' => 'sometimes|required|string|min:5|max:500',
@@ -307,7 +312,7 @@ class ProjectExtensionController extends Controller
                 // Partial approval (Decision 7): nullable granted date.
                 'approved_new_end_date' => [
                     'sometimes', 'nullable', 'date_format:Y-m-d',
-                    'after:' . $project->planned_end_date->format('Y-m-d'),
+                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                     'before_or_equal:2030-12-31',
                 ],
             ]);

@@ -148,7 +148,7 @@ function reloadExtensionsTable() {
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}
                             ${canResubmit ? `<button onclick='openResubmitExtensionModal(${JSON.stringify(ext)})' style="background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Resubmit as a new request"><i class="bi bi-arrow-repeat"></i> Resubmit</button>` : ''}
-                            ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;"><i class="bi bi-trash"></i> Delete</button>` : ''}
+                            ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Move to Archived Extensions (reversible)"><i class="bi bi-archive"></i> Archive</button>` : ''}
                             ${(!canEdit && !canDelete && !canResubmit) ? '<span style="color: #d1d5db; font-size: 11px;">—</span>' : ''}
                         </td>
                     `;
@@ -193,24 +193,59 @@ function reloadProjectData() {
 }
 
 /**
- * Delete an extension via the role-aware DELETE endpoint.
+ * Build the role-aware extension endpoint. With an extension id appended for
+ * row-level operations (edit/delete); without, the collection endpoint.
+ */
+function buildExtensionsEndpoint(extensionId = '') {
+    const routePrefix = window.routePrefix;
+    const base = routePrefix === 'admin.projects'
+        ? `/admin/projects/${window.projectId}/extensions`
+        : (routePrefix === 'staff.projects'
+            ? `/staff/projects/${window.projectId}/extensions`
+            : `/contractor/projects/${window.projectId}/extensions`);
+    return extensionId ? `${base}/${extensionId}` : base;
+}
+
+/**
+ * Archive an extension via the role-aware DELETE endpoint.
+ * Archive-first flow: the DELETE endpoint soft-deletes the row — it moves to
+ * the admin-only "Archived Extensions" panel and can be Restored. Permanent
+ * deletion is only possible from that panel (forceDestroy). Confirmation uses
+ * the shared delete-confirmation modal.
  * Success: queue a success toast and reload, matching the baseline
  * toast-after-reload pattern. Failure (incl. the backend's guard
  * rejection): show an inline danger toast and refresh the table.
  */
 function deleteExtension(ext) {
-    const confirmed = confirm(
-        `Delete extension #${ext.extension_number} (${ext.status})?\nThis cannot be undone.`
-    );
-    if (!confirmed) return;
+    const statusLabel = ext.status.charAt(0).toUpperCase() + ext.status.slice(1);
+    const message =
+        `Extension <strong>#${ext.extension_number}</strong> (${statusLabel}) will be moved to the ` +
+        `<strong>Archived Extensions</strong> panel.` +
+        `<br><br>It can be <strong>restored</strong> at any time from that panel. ` +
+        `It will NOT be permanently deleted now — only archived extensions can be permanently deleted.`;
 
-    console.log(`[deleteExtension] Deleting extension #${ext.extension_number}...`);
+    showDeleteConfirmation(
+        `Archive Extension #${ext.extension_number}`,
+        message,
+        function () { performArchiveExtension(ext); }
+    );
+}
+
+function performArchiveExtension(ext) {
+    console.log(`[performArchiveExtension] Archiving extension #${ext.extension_number}...`);
+
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) {
+        showToast('Error: CSRF token not found. Please refresh the page and try again.', 'danger');
+        return;
+    }
 
     fetch(buildExtensionsEndpoint(ext.id), {
         method: 'DELETE',
         headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': token,
             'X-Requested-With': 'XMLHttpRequest'
         }
     })
@@ -220,16 +255,16 @@ function deleteExtension(ext) {
     })
     .then(({ ok, body }) => {
         if (ok) {
-            queueToastAfterReload(`Extension #${ext.extension_number} deleted.`, 'success');
+            queueToastAfterReload(`Extension #${ext.extension_number} archived.`, 'success');
             setTimeout(() => window.location.reload(), 600);
         } else {
-            showToast(body.message || `Could not delete extension #${ext.extension_number}.`, 'danger');
+            showToast(body.message || `Could not archive extension #${ext.extension_number}.`, 'danger');
             reloadExtensionsTable();
         }
     })
     .catch(error => {
-        console.error('[deleteExtension] Error:', error);
-        showToast('Could not delete this extension.', 'danger');
+        console.error('[performArchiveExtension] Error:', error);
+        showToast('Could not archive this extension.', 'danger');
         reloadExtensionsTable();
     });
 }
@@ -337,13 +372,24 @@ window.restoreArchivedExtension = function (ext) {
 
 /**
  * Permanently delete a soft-deleted extension (admin only).
+ * Only available on already-archived extensions — the archive-first flow
+ * ensures nothing is hard-deleted straight from the live table. Uses the
+ * shared delete-confirmation modal.
  */
 window.forceDeleteArchivedExtension = function (ext) {
-    const confirmed = confirm(
-        `Permanently delete extension #${ext.extension_number}?\nThis removes the record AND its evidence files. This cannot be undone.`
-    );
-    if (!confirmed) return;
+    const message =
+        `Permanently delete extension <strong>#${ext.extension_number}</strong>?` +
+        `<br><br>This <strong>removes the record AND its evidence files</strong> from the system. ` +
+        `This action cannot be undone.`;
 
+    showDeleteConfirmation(
+        `Permanently Delete Extension #${ext.extension_number}`,
+        message,
+        function () { performForceDeleteArchivedExtension(ext); }
+    );
+};
+
+function performForceDeleteArchivedExtension(ext) {
     const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
     if (!token) return;
 
@@ -368,7 +414,7 @@ window.forceDeleteArchivedExtension = function (ext) {
         }
     })
     .catch(error => {
-        console.error('[forceDeleteArchivedExtension] Error:', error);
+        console.error('[performForceDeleteArchivedExtension] Error:', error);
         showToast('Could not permanently delete this extension.', 'danger');
     });
-};
+}

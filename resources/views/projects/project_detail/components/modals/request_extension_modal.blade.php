@@ -448,11 +448,17 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        // Edit-mode allows the extension's own date to equal the live deadline
+        // (the active approved extension IS the deadline); new requests still
+        // require a strictly later date.
+        const isEditing = document.getElementById('extensionEditMode').value === 'edit';
+        const invalid = isEditing ? selectedDate < currentDeadline : selectedDate <= currentDeadline;
+
         const timeDiff = Math.abs(selectedDate - currentDeadline);
         const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
         durationDaysSpan.textContent = daysDiff;
 
-        if (selectedDate <= currentDeadline) {
+        if (invalid) {
             newEndDateInput.classList.add('is-invalid');
             document.getElementById('newEndDateError').textContent = 'New end date must be after current deadline.';
         } else {
@@ -494,11 +500,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Note: for edit-mode this still compares against the project's
-        // CURRENT live deadline. Since only one pending extension can
-        // exist at a time and approved ones aren't editable, this stays
-        // correct for every editable case.
-        if (newDate <= currentDate) {
+        // Editing an existing extension may legitimately keep a date equal to
+        // the CURRENT live deadline — the active approved extension IS the
+        // deadline (its own new_end_date set planned_end_date). Only block a
+        // date strictly BEFORE it in edit mode; new/resubmit still require
+        // strictly after.
+        const isEditing = editMode === 'edit';
+        if (isEditing ? newDate < currentDate : newDate <= currentDate) {
             newEndDateInput.classList.add('is-invalid');
             document.getElementById('newEndDateError').textContent = 'New date must be after current deadline';
             return;
@@ -743,13 +751,19 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('currentDeadlineDisplay').textContent = currentDeadline;
         document.getElementById('originalDeadlineDisplay').textContent = originalDeadline;
 
+        // Edit mode may keep a date equal to the live deadline (the active
+        // approved extension IS the deadline) — so min = deadline. New
+        // requests (create/resubmit) must be strictly after — min = +1 day.
+        const isEditing = document.getElementById('extensionEditMode').value === 'edit';
         let minDate = new Date(currentDeadline);
         if (isNaN(minDate.getTime())) {
             console.warn('Could not parse date:', currentDeadline);
             return;
         }
 
-        minDate.setDate(minDate.getDate() + 1);
+        if (!isEditing) {
+            minDate.setDate(minDate.getDate() + 1);
+        }
         const minDateString = minDate.getFullYear() + '-' +
                             String(minDate.getMonth() + 1).padStart(2, '0') + '-' +
                             String(minDate.getDate()).padStart(2, '0');

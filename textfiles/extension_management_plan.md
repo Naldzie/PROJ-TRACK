@@ -365,6 +365,37 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Revert response carries the §4.6 re-run "Generate Adjusted Baseline" hint.
 - Frontend work uncommitted at log time (pending user review).
 
+### 2026-08-08 — Bug-fix round 1: edit-guard equality + archive-first delete
+- **Edit guard equality bug**: editing an existing extension whose
+  `new_end_date` equals the live deadline (the active approved extension IS
+  the deadline) was rejected with "New end date must be after current
+  deadline." Fixed both sides to allow equality in edit mode while keeping
+  strict `after:` for new/resubmit requests:
+  - Backend `ProjectExtensionController::update()` — `new_end_date` (staff +
+    admin) and `approved_new_end_date` changed `after:` → `after_or_equal:`.
+  - Modal JS `recalculateExtensionDuration`/`submitExtension` — equality
+    allowed when `extensionEditMode === 'edit'`; create/resubmit stay strict.
+  - Second layer: the date input's native `min` was `deadline + 1`, so
+    `checkValidity()` failed ("Please provide a valid end date.") before the
+    custom guard ran — `updateModalDeadlines()` now sets `min = deadline` in
+    edit mode, `deadline + 1` otherwise.
+  - Regression test added: `test_admin_editing_active_approved_can_keep_its_own_date_equal_to_live_deadline`.
+    Suite now 436 passing (1570 assertions).
+- **Archive-first delete UX**: backend was already archive-first
+  (`destroy()` soft-deletes; `forceDestroy()` only reachable on archived
+  rows), but the UI said "Delete", used native `confirm()`, and warned "cannot
+  be undone" on the reversible step. Reworked `baseline-schedule-extensions.js`:
+  - Live-table button renamed **Delete → Archive** (reversible wording,
+    reuse of the shared `delete-confirmation-modal` component).
+  - `forceDeleteArchivedExtension` (archived panel) also now uses the shared
+    confirm modal.
+  - Added the previously-missing `buildExtensionsEndpoint()` helper (the old
+    `deleteExtension` referenced it but it was never defined — latent bug).
+- **CSRF 419 on archive**: `performArchiveExtension`'s DELETE request was
+  missing the `X-CSRF-TOKEN` header (toast "CSRF token mismatch"). Added the
+  token header (mirrors the force-delete/restore calls).
+- JS verified with `node --check`; extension tests 30 passing.
+
 ---
 
 END OF PLAN FILE
