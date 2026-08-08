@@ -72,14 +72,33 @@
                     </button>
                 </div>
 
-                <!-- Partial approval granted date (Decision 7 / 13) -->
+                <!-- Partial approval (Decision 7 / 13) — two-way: admin can
+                     enter the granted date OR the number of approved days. -->
                 <div class="mb-2" id="reviewPartialWrapper" style="display: none;">
-                    <label for="reviewGrantedDate" class="form-label">
-                        Granted End Date (Partial Approval)
+                    <label class="form-label">
+                        Approve with Less Time (Partial Approval)
                     </label>
-                    <input type="date" class="form-control form-control-sm" id="reviewGrantedDate">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <label for="reviewGrantedDate" class="form-label">
+                                Granted End Date
+                            </label>
+                            <input type="date" class="form-control form-control-sm" id="reviewGrantedDate"
+                                   onchange="syncReviewPartialApproval('date')">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="reviewGrantedDays" class="form-label">
+                                Additional Days Approved
+                            </label>
+                            <input type="number" class="form-control form-control-sm" id="reviewGrantedDays"
+                                   min="1" step="1" placeholder="e.g. 14"
+                                   oninput="syncReviewPartialApproval('days')">
+                        </div>
+                    </div>
                     <div class="form-text text-muted">
-                        Grant LESS time than requested (must be after the current deadline and not after the requested end date). Leave the default to approve the full requested amount.
+                        Grant LESS time than requested. Set the granted end date <strong>or</strong> type the
+                        approved extra days — they stay in sync. Must be after the current deadline and not after
+                        the requested end date. Leave unchanged to approve the full requested amount.
                     </div>
                     <div class="invalid-feedback" id="reviewGrantedDateError">
                         Granted date must be after the current deadline and not after the requested end date.
@@ -180,11 +199,100 @@ window.openReviewExtensionModal = function (extension) {
     setReviewDecision('');
     document.getElementById('reviewGrantedDate').value = '';
     document.getElementById('reviewGrantedDate').classList.remove('is-invalid', 'is-valid');
+    document.getElementById('reviewGrantedDays').value = '';
     document.getElementById('reviewRejectionReason').value = '';
     document.getElementById('reviewRejectionReason').classList.remove('is-invalid', 'is-valid');
     document.getElementById('reviewSubmitBtn').disabled = true;
 
+    // Prefill partial approval defaults: granted date = requested end date and
+    // days = requested duration, so "Approve with Less Time" starts at the full
+    // amount and the admin only lowers it (or leaves it for a full grant).
+    _prefillReviewPartial();
+
     new bootstrap.Modal(document.getElementById('reviewExtensionModal')).show();
+};
+
+/**
+ * Read the project's current (live) deadline from the extensions-section
+ * data attributes, as a Date. Used to convert between granted date and
+ * approved additional days.
+ */
+function reviewCurrentDeadline() {
+    const projectData = document.querySelector('[data-project-current-deadline]');
+    return reviewParseDate(projectData?.dataset.projectCurrentDeadline || null);
+}
+
+/**
+ * Prefill the two-way partial inputs from the request under review:
+ * granted date = requested end date, days = requested duration.
+ */
+function _prefillReviewPartial() {
+    const ext = _reviewExtension;
+    if (!ext) return;
+
+    const grantedInput = document.getElementById('reviewGrantedDate');
+    const daysInput = document.getElementById('reviewGrantedDays');
+
+    grantedInput.value = ext.new_end_date || '';
+
+    const current = reviewCurrentDeadline();
+    const requested = reviewParseDate(ext.new_end_date);
+    if (current) {
+        grantedInput.min = current.getFullYear() + '-' +
+            String(current.getMonth() + 1).padStart(2, '0') + '-' +
+            String(current.getDate()).padStart(2, '0');
+    }
+    if (current && requested) {
+        const days = Math.ceil((requested - current) / (1000 * 60 * 60 * 24));
+        daysInput.value = days > 0 ? days : '';
+    } else {
+        daysInput.value = ext.duration_days || '';
+    }
+}
+
+/**
+ * Keep the granted date and the approved additional-days inputs in sync.
+ * `from` is 'date' or 'days' — whichever field the admin changed.
+ */
+window.syncReviewPartialApproval = function (from) {
+    const grantedInput = document.getElementById('reviewGrantedDate');
+    const daysInput = document.getElementById('reviewGrantedDays');
+    const current = reviewCurrentDeadline();
+    const ext = _reviewExtension;
+    const requested = reviewParseDate(ext?.new_end_date);
+    const errorEl = document.getElementById('reviewGrantedDateError');
+
+    if (from === 'days') {
+        const days = parseInt(daysInput.value, 10);
+        if (current && Number.isFinite(days) && days > 0) {
+            const granted = new Date(current.getTime());
+            granted.setDate(granted.getDate() + days);
+            grantedInput.value = granted.getFullYear() + '-' +
+                String(granted.getMonth() + 1).padStart(2, '0') + '-' +
+                String(granted.getDate()).padStart(2, '0');
+        } else if (!daysInput.value) {
+            grantedInput.value = '';
+        }
+    } else {
+        const granted = reviewParseDate(grantedInput.value);
+        if (current && granted) {
+            const days = Math.ceil((granted - current) / (1000 * 60 * 60 * 24));
+            daysInput.value = days > 0 ? days : '';
+        } else if (!grantedInput.value) {
+            daysInput.value = '';
+        }
+    }
+
+    // Inline validation, mirroring the backend rules.
+    grantedInput.classList.remove('is-invalid');
+    const granted = reviewParseDate(grantedInput.value);
+    if (current && granted && granted < current) {
+        grantedInput.classList.add('is-invalid');
+        errorEl.textContent = 'Granted date must be after the current deadline.';
+    } else if (requested && granted && granted > requested) {
+        grantedInput.classList.add('is-invalid');
+        errorEl.textContent = 'Granted date cannot be later than the requested end date.';
+    }
 };
 
 /**
@@ -247,11 +355,17 @@ window.submitReviewExtension = function () {
         const grantedValue = document.getElementById('reviewGrantedDate').value;
         const granted = reviewParseDate(grantedValue);
         const requested = reviewParseDate(ext.new_end_date);
+        const current = reviewCurrentDeadline();
         const grantedInput = document.getElementById('reviewGrantedDate');
 
         if (!granted) {
             grantedInput.classList.add('is-invalid');
             document.getElementById('reviewGrantedDateError').textContent = 'Please choose a granted end date.';
+            return;
+        }
+        if (current && granted < current) {
+            grantedInput.classList.add('is-invalid');
+            document.getElementById('reviewGrantedDateError').textContent = 'Granted date must be after the current deadline.';
             return;
         }
         if (granted > requested) {
