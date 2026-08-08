@@ -13,8 +13,8 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Carbon\Carbon;
 use Tests\TestCase;
-
 /**
  * ============================================================================
  * ProjectExtensionLifecycleTest
@@ -100,6 +100,105 @@ class ProjectExtensionLifecycleTest extends TestCase
 
         $this->assertSame(2, $this->project->extensions()->pending()->count());
         $this->assertSame(0, $this->project->fresh()->extension_count);
+    }
+
+    // === Admin create with explicit status (pending / rejected / partial) ===
+
+    public function test_admin_default_create_is_auto_approved_and_moves_deadline(): void
+    {
+        $newDate = $this->project->planned_end_date->copy()->addMonths(2)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            ['new_end_date' => $newDate, 'reason' => 'Design change scope']
+        )->assertCreated();
+
+        $this->assertSame(1, $this->project->extensions()->approved()->count());
+        $this->assertSame(1, $this->project->fresh()->extension_count);
+        $this->assertTrue($this->project->fresh()->planned_end_date->equalTo(Carbon::parse($newDate)));
+    }
+
+    public function test_admin_can_create_pending_extension_that_does_not_move_deadline(): void
+    {
+        $newDate = $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d');
+        $before = $this->project->planned_end_date;
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            ['new_end_date' => $newDate, 'reason' => 'Awaiting procurement confirmation', 'status' => 'pending']
+        )->assertCreated();
+
+        $this->assertSame(1, $this->project->extensions()->pending()->count());
+        $this->assertSame(0, $this->project->fresh()->extension_count);
+        $this->assertTrue($this->project->fresh()->planned_end_date->equalTo($before));
+    }
+
+    public function test_admin_can_create_rejected_extension_with_reason(): void
+    {
+        $newDate = $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            [
+                'new_end_date'    => $newDate,
+                'reason'          => 'Unsupported scope change',
+                'status'          => 'rejected',
+                'rejection_reason' => 'Insufficient justification for the requested extension',
+            ]
+        )->assertCreated();
+
+        $ext = $this->project->extensions()->first();
+        $this->assertSame('rejected', $ext->status);
+        $this->assertSame('Insufficient justification for the requested extension', $ext->rejection_reason);
+        $this->assertSame(0, $this->project->fresh()->extension_count);
+    }
+
+    public function test_admin_create_rejected_requires_rejection_reason(): void
+    {
+        $newDate = $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            ['new_end_date' => $newDate, 'reason' => 'Unsupported', 'status' => 'rejected']
+        )->assertStatus(422);
+    }
+
+    public function test_admin_can_create_partially_approved_extension(): void
+    {
+        $requested = $this->project->planned_end_date->copy()->addMonths(2);
+        $granted   = $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            [
+                'new_end_date'       => $requested->format('Y-m-d'),
+                'reason'             => 'Partial grant for weather delay',
+                'status'             => 'approved',
+                'approved_new_end_date' => $granted,
+            ]
+        )->assertCreated();
+
+        $ext = $this->project->extensions()->first();
+        $this->assertSame('approved', $ext->status);
+        $this->assertTrue($ext->approved_new_end_date->equalTo(Carbon::parse($granted)));
+        // Effective deadline = granted date (Decision 7).
+        $this->assertTrue($this->project->fresh()->planned_end_date->equalTo(Carbon::parse($granted)));
+    }
+
+    public function test_admin_create_granted_date_cannot_exceed_requested_date(): void
+    {
+        $requested = $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d');
+        $granted   = $this->project->planned_end_date->copy()->addMonths(3)->format('Y-m-d');
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.store', $this->project),
+            [
+                'new_end_date'       => $requested,
+                'reason'             => 'Over-grant attempt',
+                'status'             => 'approved',
+                'approved_new_end_date' => $granted,
+            ]
+        )->assertStatus(422);
     }
 
     public function test_approving_one_extension_supersedes_obsolete_pending_and_reanchors_valid_one(): void

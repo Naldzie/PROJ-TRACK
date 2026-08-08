@@ -48,6 +48,26 @@ class ProjectExtensionController extends Controller
 
             $isAdmin = auth()->user()->role === 'admin';
 
+            // Admin may pick the review status at creation time (defaults to
+            // approved, preserving the auto-approve behavior); staff always
+            // create pending. Partial approval + rejection reason are admin-only.
+            if ($isAdmin) {
+                $validated = array_merge($validated, $request->validate([
+                    'status' => 'sometimes|nullable|in:pending,approved,rejected',
+                    'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                    'approved_new_end_date' => [
+                        'sometimes', 'nullable', 'date_format:Y-m-d',
+                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                        'before_or_equal:2030-12-31',
+                    ],
+                ], [
+                    'approved_new_end_date.after_or_equal' => 'The granted end date cannot be before the current deadline (' . $project->planned_end_date->format('M d, Y') . '). Granting less time still moves the deadline forward, never backward.',
+                ]));
+            }
+
+            $status = $isAdmin ? ($validated['status'] ?? 'approved') : 'pending';
+            $rejectionReason = $status === 'rejected' ? ($validated['rejection_reason'] ?? null) : null;
+
             DB::beginTransaction();
 
             $maxExtensionNumber = DB::table('project_extensions')
@@ -59,6 +79,21 @@ class ProjectExtensionController extends Controller
             $newEndDate = Carbon::parse($validated['new_end_date']);
             $durationDays = $originalEndDate->diffInDays($newEndDate);
 
+            // Partial approval (Decision 7): an admin approving with a GRANTED
+            // date earlier than the requested one stores that date here. It can
+            // never exceed the requested new_end_date.
+            $approvedNewEndDate = null;
+            if ($isAdmin && $status === 'approved' && !empty($validated['approved_new_end_date'])) {
+                $approvedNewEndDate = Carbon::parse($validated['approved_new_end_date']);
+                if ($approvedNewEndDate->greaterThan($newEndDate)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'The granted end date cannot be later than the requested end date.',
+                    ], 422);
+                }
+            }
+
             $extension = ProjectExtension::create([
                 'project_id' => $project->id,
                 'extension_number' => $nextExtensionNumber,
@@ -67,16 +102,20 @@ class ProjectExtensionController extends Controller
                 'duration_days' => $durationDays,
                 'reason' => $validated['reason'],
                 'reason_category' => $validated['reason_category'] ?? null,
-                'status' => $isAdmin ? 'approved' : 'pending',
-                'approved_by_user_id' => $isAdmin ? auth()->user()->id : null,
-                'approved_at' => $isAdmin ? now() : null,
+                'status' => $status,
+                'rejection_reason' => $rejectionReason,
+                'approved_new_end_date' => $approvedNewEndDate,
+                'approved_by_user_id' => ($isAdmin && $status === 'approved') ? auth()->id() : null,
+                'approved_at' => ($isAdmin && $status === 'approved') ? now() : null,
                 'created_by_user_id' => auth()->id(),
             ]);
 
             // Push the change to the project itself once the extension is
-            // actually approved. For admin this happens immediately; for staff
-            // it happens later in update()/approve.
-            if ($isAdmin) {
+            // actually approved. For admin this happens immediately when the
+            // status is approved; for staff it happens later in update()/approve.
+            // An admin creating a pending/rejected extension leaves the project
+            // untouched (same as a staff submission).
+            if ($isAdmin && $status === 'approved') {
                 // A freshly auto-approved admin extension becomes the active
                 // approved — re-anchor any remaining pending proposals and
                 // supersede the obsolete ones (Decision 2), then point the
@@ -87,14 +126,20 @@ class ProjectExtensionController extends Controller
 
             DB::commit();
 
-            // Audit the submission. Admin submissions are auto-approved;
-            // staff submissions sit pending until an admin approves them.
+            // Audit the submission. Admin submissions are auto-approved by
+            // default but may be created pending/rejected; staff submissions
+            // sit pending until an admin approves them.
+            $logAction = $isAdmin
+                ? ($status === 'approved' ? 'Approve Extension'
+                    : ($status === 'rejected' ? 'Reject Extension' : 'Request Extension'))
+                : 'Request Extension';
+
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
-                'action' => $isAdmin ? 'Approve Extension' : 'Request Extension',
+                'action' => $logAction,
                 'description' => auth()->user()->name . ($isAdmin
-                        ? " approved extension #{$nextExtensionNumber} for project: {$project->title}"
+                        ? " {$logAction} extension #{$nextExtensionNumber} for project: {$project->title}"
                         : " requested extension #{$nextExtensionNumber} ({$durationDays} days) for project: {$project->title}"),
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
@@ -102,17 +147,26 @@ class ProjectExtensionController extends Controller
 
             // Notify: staff submissions go to admins; admin auto-approvals go to
             // the project contractor (who is affected by the new deadline).
-            $this->notifyExtension(
-                $project,
-                $extension,
-                $isAdmin ? ExtensionStatusChanged::APPROVED : ExtensionStatusChanged::SUBMITTED
-            );
+            // Admin-created pending/rejected follow the same channels as staff
+            // submissions / admin rejections respectively.
+            $notifyStatus = $isAdmin
+                ? ($status === 'approved' ? ExtensionStatusChanged::APPROVED
+                    : ($status === 'rejected' ? ExtensionStatusChanged::REJECTED : ExtensionStatusChanged::SUBMITTED))
+                : ExtensionStatusChanged::SUBMITTED;
+
+            $this->notifyExtension($project, $extension, $notifyStatus);
+
+            $responseMessage = $isAdmin
+                ? ($status === 'approved'
+                    ? "Extension #{$nextExtensionNumber} created and approved"
+                    : ($status === 'rejected'
+                        ? "Extension #{$nextExtensionNumber} created and rejected"
+                        : "Extension #{$nextExtensionNumber} created and pending approval"))
+                : "Extension #{$nextExtensionNumber} submitted for admin approval";
 
             return response()->json([
                 'success' => true,
-                'message' => $isAdmin
-                    ? "Extension #{$nextExtensionNumber} created and approved"
-                    : "Extension #{$nextExtensionNumber} submitted for admin approval",
+                'message' => $responseMessage,
                 'extension' => $this->formatExtension($extension),
             ], 201);
 
