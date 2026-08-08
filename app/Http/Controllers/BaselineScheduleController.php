@@ -218,12 +218,17 @@ class BaselineScheduleController extends Controller
                     'user_id' => auth()->id(),
                     'project_id' => $project->id,
                     'action' => 'Create Baseline Schedule',
-                    'description' => auth()->user()->name . " set {$validated['month_label']} target ({$validated['planned_progress_percent']}%) for project: {$project->title}",
+                    'description' => auth()->user()->name . " set {$validated['month_label']} target ({$validated['planned_progress_percent']}%) for project: {$project->title} (baseline snapshot updated)",
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
 
                 DB::commit();
+
+                // Extension-management Phase 2.5: keep the approved extension's
+                // baseline snapshot in sync with any manual store so a later
+                // revert restores the exact state the user built (Add Month Target).
+                \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
                 return response()->json([
                     'success' => true,
@@ -484,10 +489,15 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Update Baseline Schedule',
-                'description' => auth()->user()->name . " updated {$schedule->month_label} target to {$validated['planned_progress_percent']}% for project: {$project->title}",
+                'description' => auth()->user()->name . " updated {$schedule->month_label} target to {$validated['planned_progress_percent']}% for project: {$project->title} (baseline snapshot updated)",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
+
+            // Extension-management Phase 2.5: keep the approved extension's
+            // baseline snapshot in sync with manual edits (Manage Month modal)
+            // so a later revert restores the exact state the user built.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
             return response()->json([
                 'success' => true,
@@ -975,12 +985,17 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Delete Baseline Schedule',
-                'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title}",
+                'description' => auth()->user()->name . " deleted {$monthLabel} baseline target for project: {$project->title} (baseline snapshot updated)",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
 
             DB::commit();
+
+            // Extension-management Phase 2.5: keep the approved extension's
+            // baseline snapshot in sync with deletions so a later revert
+            // restores the exact state the user built.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
             return response()->json([
                 'success' => true,

@@ -256,6 +256,8 @@ function performArchiveExtension(ext) {
     .then(({ ok, body }) => {
         if (ok) {
             queueToastAfterReload(`Extension #${ext.extension_number} archived.`, 'success');
+            // Persist the current tab so the reload doesn't bounce back to overview.
+            sessionStorage.setItem('activeTab', 's-curve-planning');
             setTimeout(() => window.location.reload(), 600);
         } else {
             showToast(body.message || `Could not archive extension #${ext.extension_number}.`, 'danger');
@@ -304,12 +306,20 @@ window.loadArchivedExtensions = function () {
         if (!data.success) throw new Error(data.message || 'Failed to load archived extensions');
 
         const panel = document.getElementById('archivedExtensionsPanel');
-        if (panel) panel.style.display = 'block';
+        const btn = document.getElementById('archivedExtensionsBtn');
+        const hasArchived = data.extensions && data.extensions.length > 0;
 
-        if (!data.extensions || data.extensions.length === 0) {
+        // Show the Archived Extensions button only when at least one row exists.
+        if (btn) btn.style.display = hasArchived ? '' : 'none';
+
+        if (!hasArchived) {
+            // Auto-close the panel when nothing is archived anymore.
+            if (panel) panel.style.display = 'none';
             container.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No archived extensions.</div>';
             return;
         }
+
+        if (panel) panel.style.display = 'block';
 
         let rows = data.extensions.map(ext => {
             const fromDate = new Date(ext.original_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});

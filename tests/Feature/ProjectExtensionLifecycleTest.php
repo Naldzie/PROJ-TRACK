@@ -713,6 +713,105 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertSame('2026-04', $snapshot[3]['month_label']);
     }
 
+    public function test_store_baseline_schedule_captures_snapshot_on_latest_approved(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+
+        $approved = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $approved->new_end_date,
+            'extension_count'  => 1,
+        ]);
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.baseline-schedules.store', $this->project),
+            [
+                'planned_date' => '2026-04-15',
+                'month_label' => '2026-04',
+                'planned_progress_percent' => 100,
+                'description' => null,
+                'activities' => [],
+            ]
+        )->assertOk();
+
+        $snapshot = $approved->fresh()->baseline_snapshot;
+        $this->assertNotNull($snapshot);
+        $this->assertCount(4, $snapshot);
+        $this->assertSame('2026-04', $snapshot[3]['month_label']);
+    }
+
+    public function test_update_baseline_schedule_captures_snapshot_on_latest_approved(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+
+        $approved = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $approved->new_end_date,
+            'extension_count'  => 1,
+        ]);
+
+        $this->actingAs($this->admin)->patchJson(
+            route('admin.projects.baseline-schedules.update', [$this->project, $m1->id]),
+            [
+                'planned_date' => '2026-01-20',
+                'planned_progress_percent' => 55,
+                'description' => null,
+            ]
+        )->assertOk();
+
+        $snapshot = $approved->fresh()->baseline_snapshot;
+        $this->assertNotNull($snapshot);
+        $this->assertSame(55.0, (float) $snapshot[0]['planned_progress_percent']);
+        // The frozen original column is never overwritten by the edit.
+        $this->assertSame(40.0, (float) $snapshot[0]['original_planned_progress_percent']);
+    }
+
+    public function test_delete_baseline_schedule_captures_snapshot_on_latest_approved(): void
+    {
+        $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+        $this->baselineRow('2026-02', '2026-02-15', 70, 70);
+        $this->baselineRow('2026-03', '2026-03-15', 100, 100);
+
+        $approved = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $approved->new_end_date,
+            'extension_count'  => 1,
+        ]);
+
+        $this->actingAs($this->admin)->deleteJson(
+            route('admin.projects.baseline-schedules.destroy', [$this->project, $m1->id])
+        )->assertOk();
+
+        $snapshot = $approved->fresh()->baseline_snapshot;
+        $this->assertNotNull($snapshot);
+        $labels = array_column($snapshot, 'month_label');
+        $this->assertSame(['2026-02', '2026-03'], $labels);
+    }
+
+    public function test_baseline_mutations_do_not_write_snapshot_without_approved_extension(): void
+    {
+        $this->baselineRow('2026-01', '2026-01-15', 40, 40);
+
+        // Only a pending extension exists — not approved, so no snapshot target.
+        $pending = $this->extension(1, 'pending', 1);
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.baseline-schedules.store', $this->project),
+            [
+                'planned_date' => '2026-02-15',
+                'month_label' => '2026-02',
+                'planned_progress_percent' => 70,
+                'description' => null,
+                'activities' => [],
+            ]
+        )->assertOk();
+
+        $this->assertNull($pending->fresh()->baseline_snapshot);
+    }
+
     // === Phase 6: contractor read-only (no Request button) ===
 
     public function test_contractor_extensions_section_hides_request_button(): void
@@ -731,17 +830,35 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertStringNotContainsString('archivedExtensionsPanel', $html);
     }
 
-    public function test_admin_extensions_section_shows_request_button_and_archived_panel(): void
+    public function test_admin_extensions_section_hides_archived_button_when_none_archived(): void
     {
-        // Same partial for admins shows both the Request button and the
-        // admin-only archived panel.
+        // Same partial for admins shows the Request button and the admin-only
+        // archived panel, but the Archived Extensions toggle button must be
+        // hidden while there are no soft-deleted extensions.
         $this->actingAs($this->admin);
         $html = view('projects.project_detail.components.tabs.partials.extensions-section', [
             'project' => $this->project,
         ])->render();
 
         $this->assertStringContainsString('openRequestExtensionModal()', $html);
-        $this->assertStringContainsString('loadArchivedExtensions()', $html);
         $this->assertStringContainsString('archivedExtensionsPanel', $html);
+        $this->assertStringNotContainsString('archivedExtensionsBtn', $html);
+    }
+
+    public function test_admin_extensions_section_shows_archived_button_when_one_archived(): void
+    {
+        // With at least one soft-deleted extension the Archived Extensions
+        // toggle button renders for admins.
+        $archived = $this->extension(1, 'approved', 1);
+        $archived->delete(); // soft-delete -> appears in the archived panel
+
+        $this->actingAs($this->admin);
+        $html = view('projects.project_detail.components.tabs.partials.extensions-section', [
+            'project' => $this->project,
+        ])->render();
+
+        $this->assertStringContainsString('openRequestExtensionModal()', $html);
+        $this->assertStringContainsString('archivedExtensionsPanel', $html);
+        $this->assertStringContainsString('archivedExtensionsBtn', $html);
     }
 }

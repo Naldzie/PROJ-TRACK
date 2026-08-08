@@ -18,8 +18,8 @@
                     <i class="bi bi-plus-circle"></i> Request Extension
                 </button>
             @endif
-            @if(auth()->user()->role === 'admin')
-                <button onclick="loadArchivedExtensions()" 
+            @if(auth()->user()->role === 'admin' && $project->extensions()->onlyTrashed()->exists())
+                <button id="archivedExtensionsBtn" onclick="loadArchivedExtensions()" 
                         style="background: #f8fafc; color: #374151; border: 1px solid #cbd5e1; padding: 10px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
                         onmouseover="this.style.background='#eef2ff'; this.style.color='#4f46e5';"
                         onmouseout="this.style.background='#f8fafc'; this.style.color='#374151';">

@@ -250,10 +250,12 @@ function generateAutoDistribution() {
     // If last existing month already covers the end date, no extension needed
     if (lastDate >= endDate) return;
 
-    // Generate month labels from the month after last to the end date
+    // Generate month labels from the month after last to the end date.
+    // Normalize the cursor to the 1st of the next month so day-of-month
+    // rollover (e.g. Mar 31 + 1 month -> May 1, skipping April) can't skip
+    // an entire month when the last baseline month ends on the 31st.
     var extensionMonths = [];
-    var cursor = new Date(lastDate);
-    cursor.setMonth(cursor.getMonth() + 1);
+    var cursor = new Date(lastDate.getFullYear(), lastDate.getMonth() + 1, 1);
 
     while (cursor <= endDate) {
         var year = cursor.getFullYear();
