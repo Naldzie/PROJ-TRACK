@@ -1296,4 +1296,143 @@ class ProjectExtensionLifecycleTest extends TestCase
         $this->assertSame('Lifecycle Staff', $data['created_by']);
         $this->assertSame('Lifecycle Admin', $data['approved_by_name']);
     }
+
+    // === §8 bulk operations (admin only): bulk archive + bulk force-delete ===
+
+    public function test_bulk_archive_soft_deletes_selected_non_approved_extensions(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+        $rejected = $this->extension(2, 'rejected', 2);
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkDestroy', $this->project),
+            ['ids' => [$pending->id, $rejected->id]]
+        )->assertOk();
+
+        $this->assertSoftDeleted('project_extensions', ['id' => $pending->id]);
+        $this->assertSoftDeleted('project_extensions', ['id' => $rejected->id]);
+
+        // Both show up in the archived panel.
+        $this->actingAs($this->admin)->getJson(
+            route('admin.projects.extensions.archived', $this->project)
+        )->assertOk()->assertJsonCount(2, 'extensions');
+    }
+
+    public function test_bulk_archive_skips_approved_extensions(): void
+    {
+        $approved = $this->extension(1, 'approved', 1);
+        $this->project->update([
+            'planned_end_date' => $approved->new_end_date,
+            'extension_count'  => 1,
+        ]);
+        $pending = $this->extension(2, 'pending', 2);
+
+        $response = $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkDestroy', $this->project),
+            ['ids' => [$approved->id, $pending->id]]
+        )->assertOk();
+
+        // Approved row untouched; pending archived; response mentions the skip.
+        $this->assertDatabaseHas('project_extensions', ['id' => $approved->id, 'deleted_at' => null]);
+        $this->assertSoftDeleted('project_extensions', ['id' => $pending->id]);
+        $this->assertSame(1, $response->json('skipped'));
+        $this->assertSame(1, $response->json('archived'));
+    }
+
+    public function test_bulk_archive_is_admin_only(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+
+        // Admin route group middleware redirects non-admins away (302),
+        // so the controller's 403 guard is defense-in-depth here.
+        $this->actingAs($this->staff)->postJson(
+            route('admin.projects.extensions.bulkDestroy', $this->project),
+            ['ids' => [$pending->id]]
+        )->assertStatus(302);
+
+        $this->assertDatabaseHas('project_extensions', ['id' => $pending->id]);
+    }
+
+    public function test_bulk_archive_requires_at_least_one_id(): void
+    {
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkDestroy', $this->project),
+            ['ids' => []]
+        )->assertStatus(422);
+    }
+
+    public function test_bulk_force_delete_permanently_removes_archived_extensions(): void
+    {
+        Storage::fake('public');
+        $rejectedA = $this->extension(1, 'rejected', 1);
+        $rejectedB = $this->extension(2, 'rejected', 2);
+
+        // Archive both first.
+        $this->actingAs($this->admin)->deleteJson(
+            route('admin.projects.extensions.destroy', [$this->project, $rejectedA])
+        )->assertOk();
+        $this->actingAs($this->admin)->deleteJson(
+            route('admin.projects.extensions.destroy', [$this->project, $rejectedB])
+        )->assertOk();
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkForceDestroy', $this->project),
+            ['ids' => [$rejectedA->id, $rejectedB->id]]
+        )->assertOk();
+
+        $this->assertDatabaseMissing('project_extensions', ['id' => $rejectedA->id]);
+        $this->assertDatabaseMissing('project_extensions', ['id' => $rejectedB->id]);
+        $this->assertSame(0, $this->project->extensions()->withTrashed()->count());
+    }
+
+    public function test_bulk_force_delete_only_touches_soft_deleted_rows(): void
+    {
+        $archived = $this->extension(1, 'rejected', 1);
+        $live = $this->extension(2, 'pending', 2);
+
+        $this->actingAs($this->admin)->deleteJson(
+            route('admin.projects.extensions.destroy', [$this->project, $archived])
+        )->assertOk();
+
+        // The live pending row is NOT soft-deleted, so bulk force-delete
+        // must leave it alone even if its id is passed.
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkForceDestroy', $this->project),
+            ['ids' => [$archived->id, $live->id]]
+        )->assertOk();
+
+        $this->assertDatabaseMissing('project_extensions', ['id' => $archived->id]);
+        $this->assertDatabaseHas('project_extensions', ['id' => $live->id]);
+    }
+
+    public function test_bulk_force_delete_is_admin_only(): void
+    {
+        $rejected = $this->extension(1, 'rejected', 1);
+        $this->actingAs($this->admin)->deleteJson(
+            route('admin.projects.extensions.destroy', [$this->project, $rejected])
+        )->assertOk();
+
+        $this->actingAs($this->staff)->postJson(
+            route('admin.projects.extensions.bulkForceDestroy', $this->project),
+            ['ids' => [$rejected->id]]
+        )->assertStatus(302);
+
+        $this->assertDatabaseHas('project_extensions', ['id' => $rejected->id]);
+    }
+
+    public function test_bulk_archive_logs_activity(): void
+    {
+        $pending = $this->extension(1, 'pending', 1);
+
+        $this->actingAs($this->admin)->postJson(
+            route('admin.projects.extensions.bulkDestroy', $this->project),
+            ['ids' => [$pending->id]]
+        )->assertOk();
+
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id'    => $this->admin->id,
+            'project_id' => $this->project->id,
+            'action'     => 'Delete Extension',
+        ]);
+    }
 }

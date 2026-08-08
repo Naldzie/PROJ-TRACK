@@ -552,6 +552,12 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     // swallowed as an extension id.
     Route::get('/projects/{project}/extensions/archived', [ProjectExtensionController::class, 'archived'])
         ->name('admin.projects.extensions.archived');
+    // NEW: bulk archive / bulk permanent-delete (admin only, §8 bulk ops).
+    // Registered before {extension} routes so "bulk-*" is not treated as an id.
+    Route::post('/projects/{project}/extensions/bulk-delete', [ProjectExtensionController::class, 'bulkDestroy'])
+        ->name('admin.projects.extensions.bulkDestroy');
+    Route::post('/projects/{project}/extensions/bulk-force-delete', [ProjectExtensionController::class, 'bulkForceDestroy'])
+        ->name('admin.projects.extensions.bulkForceDestroy');
     Route::get('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'show'])
         ->name('admin.projects.extensions.show');
     Route::put('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'update'])

@@ -56,7 +56,9 @@
                 // existing order clauses first, guaranteeing this actually
                 // sorts descending instead of just hoping to.
                 $latestExtension = $project->extensions()->where('status', 'approved')->reorder('extension_number', 'desc')->first();
-                $currentDeadline = $latestExtension?->new_end_date ?? $project->original_planned_end_date;
+                // Decision 7: the deadline reflects the GRANTED date (partial
+                // approvals), not the requested date.
+                $currentDeadline = $latestExtension?->effectiveEndDate() ?? $project->original_planned_end_date;
             @endphp
             <div style="font-size: 14px; font-weight: 700; color: #0c4a6e;">{{ $currentDeadline?->format('F d, Y') ?? 'Not Set' }}</div>
         </div>
@@ -77,6 +79,18 @@
     </div>
 
     <!-- Extensions Table or Empty State -->
+    @if(auth()->user()->role === 'admin')
+    <!-- Bulk actions bar (§8 bulk ops, admin only) — hidden until rows selected -->
+    <div id="extensionsBulkBar" style="display: none; align-items: center; gap: 10px; padding: 10px 14px; margin-bottom: 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px;">
+        <span style="font-size: 12px; font-weight: 600; color: #4338ca;">
+            <span id="extensionsBulkCount">0</span> selected
+        </span>
+        <button type="button" onclick="archiveSelectedExtensions()" style="background: #4f46e5; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;" title="Move selected extensions to the Archived panel (reversible)">
+            <i class="bi bi-archive"></i> Archive Selected
+        </button>
+        <button type="button" onclick="clearExtensionSelection()" style="background: transparent; color: #6366f1; border: none; font-size: 12px; font-weight: 600; cursor: pointer;">Clear</button>
+    </div>
+    @endif
     <div id="extensionsTableContainer">
         <!-- Will be loaded via AJAX -->
         <div style="text-align: center; padding: 40px; color: #9ca3af;">
@@ -91,6 +105,11 @@
     <table style="width: 100%; border-collapse: collapse;">
         <thead>
             <tr style="background: #f3f4f6; border-bottom: 2px solid #d1d5db;">
+                @if(auth()->user()->role === 'admin')
+                <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase; width: 40px;">
+                    <input type="checkbox" id="extensionsSelectAll" title="Select all" style="cursor: pointer; width: 14px; height: 14px;">
+                </th>
+                @endif
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Extension #</th>
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Requested By</th>
                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">From Date</th>
@@ -126,9 +145,14 @@
         <h5 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155;">
             <i class="bi bi-archive me-1" style="color: #64748b;"></i> Archived Extensions
         </h5>
-        <button type="button" onclick="toggleArchivedPanel()" style="background: transparent; border: none; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer;">
-            <i class="bi bi-x-lg"></i> Close
-        </button>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" id="archivedBulkDeleteBtn" onclick="forceDeleteSelectedArchived()" style="display: none; background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Permanently delete selected archived extensions (cannot be undone)">
+                <i class="bi bi-trash"></i> Delete Selected (<span id="archivedBulkCount">0</span>)
+            </button>
+            <button type="button" onclick="toggleArchivedPanel()" style="background: transparent; border: none; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer;">
+                <i class="bi bi-x-lg"></i> Close
+            </button>
+        </div>
     </div>
     <div id="archivedExtensionsContainer">
         <div style="text-align: center; padding: 20px; color: #94a3b8; font-size: 13px;">

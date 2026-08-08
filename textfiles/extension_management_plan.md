@@ -398,14 +398,33 @@ All phases on `phase-extension-management`. Test each phase before the next
 
 ## 8. FLAGGED FOR FUTURE (deferred)
 
-- **Bulk operations** (bulk revert/delete of extensions) — user deferred to
-  the next enhancement.
+- **Bulk operations** — bulk archive/delete of extensions IS IMPLEMENTED
+  (admin, Aug 8 2026, routes `bulkDestroy`/`bulkForceDestroy`); bulk REVERT
+  remains deferred.
 - **Pending-proposal preview** on the S-Curve (dashed line showing what the
   deadline would be if a pending request were approved) — "good addition,
   not for now."
 - Cleanup of an incorrectly-approved OLDER extension is currently awkward
   (requires cascading reversion); a targeted admin "force-delete approved"
   may be revisited with the bulk operations work.
+- **Working-days / calendar-aware EOT calculation (POSSIBLE ADDITION, if time
+  allows)** — the current duration/deadline math is pure CALENDAR days
+  (`duration_days` = `diffInDays`, no calendar concept anywhere in `app/`).
+  Industry EOT tools (WeBuild, Commnia, Buildlogic, PMWeb; FIDIC Sub-Clause
+  8.4) count EOT in WORKING days — excluding rest days (Sunday, and often
+  Saturday for Philippine/DPWH-style contracts) and public holidays — and
+  auto-compute the new completion date from the granted working-day count
+  (skipping non-working days, landing on the next working day).
+  Deferred because extension management is one module of a larger capstone
+  system, not the main focus. If revisited:
+    - Add a project/contract calendar (rest days config + holiday list).
+    - Compute requested duration in working days; convert a granted working-day
+      count back to an end date that skips non-working days.
+    - Decide: Sunday-only vs Saturday+Sunday rest days; manual per-project
+      holiday list vs shared national list; shift approval date to next working
+      day or allow as-is.
+  Not pursuing for now — noted as a future possible enhancement in
+  `gaps_and_features_missing.txt` too.
 
 ---
 
@@ -492,6 +511,46 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Tests: `ProjectExtensionLifecycleTest` 50 → 59 (9 new Phase 7 tests); full
   suite 466 passing (1676 assertions). Committed as `0d296ae` on
   `feature/baseline-original-planned-date`.
+
+### 2026-08-08 — Bug-fix round 2: partial-grant display + admin superuser + bulk ops
+- **Days Added column bug**: row-level "Days Added" was computed from the
+  REQUESTED `new_end_date` (31d) instead of the GRANTED `effective_end_date`
+  (15d) after a partial approval. Fixed in
+  `baseline-schedule-extensions.js` (line 89): now diffs against
+  `effective_end_date`. Also updated the archived panel's date range.
+- **Deadline cards bug**: the extensions-section "Current Deadline" +
+  "Total Extension Days" cards used `$latestExtension?->new_end_date`
+  (requested) instead of `effectiveEndDate()` (granted). Fixed in
+  `extensions-section.blade.php` — both cards now reflect the partial-granted
+  date (Decision 7, applied to the cards too).
+- **To Date column display**: the granted date is now the PRIMARY To Date;
+  when partial, the originally-requested date renders underneath as a small
+  "Requested: …" note (was the reverse).
+- **Admin = superuser (confirmed decision)**: admin keeps full edit/override
+  on ANY row (pending/approved/rejected, any owner), including in-place edits
+  and reverting approved rows via the Edit modal's status dropdown. Review
+  button stays pending-only (it is a decision surface, not a revert surface).
+  No code change needed — backend + JS already treated admin as unrestricted.
+  This is provisional pending client/consultant/panel sign-off; if they later
+  require strict audit trails, revisit locking approved rows (see §8).
+- **Bulk archive/delete (admin)**: added a bulk-operation endpoint (admin-only)
+  archiving multiple extensions at once, plus bulk "Delete Forever" in the
+  archived panel. Addresses §8 item 1 (bulk operations) for archive/delete;
+  bulk revert deferred.
+
+### 2026-08-08 — Working-days enhancement noted (deferred, not implemented)
+- Researched industry EOT systems (WeBuild, Commnia, Buildlogic, PMWeb, Procore,
+  Jira, FIDIC Sub-Clause 8.4) to assess whether extension management was
+  "good enough" for the capstone. Verdict: core lifecycle (queue, evidence,
+  partial approval, snapshot revert, notifications, audit) is strong.
+- The one fundamental gap vs. industry is WORKING-DAYS / calendar-aware EOT
+  calculation (currently pure calendar days). Deferred by the user because
+  extension management is one module, not the main focus — recorded in §8 and
+  in `gaps_and_features_missing.txt` as a possible addition if time allows.
+- Other industry features noted but not pursued: two-way clarification
+  comments on pending requests, review-SLA overdue escalation, EOT register
+  analytics dashboard, financial-compensation bundling, forensic delay
+  analysis (out of scope).
 
 ---
 

@@ -85,12 +85,18 @@ function reloadExtensionsTable() {
                     if (index % 2 === 0) row.style.background = '#f9fafb';
                     row.style.borderBottom = '1px solid #e5e7eb';
                     
-                    // Calculate days added
-                    const daysAdded = Math.ceil((new Date(ext.new_end_date) - new Date(ext.original_end_date)) / (1000 * 60 * 60 * 24));
+                    // Calculate days added — always against the EFFECTIVE date
+                    // (granted when partially approved, else requested) so a
+                    // partial grant of 15/31 days shows +15, matching the cards.
+                    const effectiveDate = ext.effective_end_date || ext.new_end_date;
+                    const daysAdded = Math.ceil((new Date(effectiveDate) - new Date(ext.original_end_date)) / (1000 * 60 * 60 * 24));
                     
                     // Format dates as readable strings
                     const fromDate = new Date(ext.original_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-                    const toDate = new Date(ext.new_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+                    const toDate = new Date(effectiveDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+                    // Partial approval (Decision 7): granted differs from what
+                    // was requested — show the original ask as the small note.
+                    const isPartialGrant = ext.approved_new_end_date && ext.approved_new_end_date !== ext.new_end_date;
 
                     // Status badge — reflects the real status from the
                     // backend instead of a hardcoded "Approved".
@@ -144,10 +150,11 @@ function reloadExtensionsTable() {
                     const canReview = isAdmin && ext.status === 'pending';
 
                     row.innerHTML = `
+                        ${isAdmin ? `<td style="padding: 12px 15px; text-align: center;"><input type="checkbox" class="extension-row-checkbox" value="${ext.id}" data-number="${ext.extension_number}" data-status="${ext.status}" style="cursor: pointer; width: 14px; height: 14px;"></td>` : ''}
                         <td style="padding: 12px 15px; font-size: 13px; font-weight: 600; color: #667eea;">#${ext.extension_number}</td>
                         <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.created_by || '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #374151;">${fromDate}</td>
-                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}${ext.approved_new_end_date && ext.approved_new_end_date !== ext.new_end_date ? `<div style="font-size:10px;color:#7c3aed;font-weight:600;">Granted: ${new Date(ext.approved_new_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}</td>
+                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}${isPartialGrant ? `<div style="font-size:10px;color:#7c3aed;font-weight:600;">Requested: ${new Date(ext.new_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}</td>
                         <td style="padding: 12px 15px; text-align: center; font-size: 13px; font-weight: 600; color: #f59e0b;">+${daysAdded} days</td>
                         <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.reason_category ? `<span style="background:#f1f5f9;color:#334155;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${ext.reason_category}</span>` : '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #6b7280;">${ext.reason || 'N/A'}${evidenceCell ? `<div style="margin-top:4px;">${evidenceCell}</div>` : ''}</td>
@@ -169,6 +176,11 @@ function reloadExtensionsTable() {
                 // Clear container and insert table
                 container.innerHTML = '';
                 container.appendChild(tableClone);
+
+                if (window.routePrefix === 'admin.projects') {
+                    wireExtensionSelectionHandlers();
+                    updateExtensionSelection();
+                }
                 
                 console.log('[reloadExtensionsTable] Table rendered successfully with', data.extensions.length, 'extensions');
             } catch (error) {
@@ -191,6 +203,133 @@ function reloadExtensionsTable() {
     .catch(error => {
         console.error('[reloadExtensionsTable] Fetch error:', error);
         container.innerHTML = '<div style="color: #ef4444; padding: 20px; text-align: center; font-size: 13px;">Error loading extensions: ' + error.message + '</div>';
+    });
+}
+
+/**
+ * Wire the bulk-selection checkboxes (admin only, §8 bulk ops):
+ * the "Select All" header checkbox and per-row checkboxes. Row checkboxes are
+ * rendered inside the template clone, so they need a fresh pass each reload.
+ */
+function wireExtensionSelectionHandlers() {
+    const selectAll = document.getElementById('extensionsSelectAll');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.onchange = function () {
+            document.querySelectorAll('.extension-row-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateExtensionSelection();
+        };
+    }
+
+    document.querySelectorAll('.extension-row-checkbox').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const selectAllEl = document.getElementById('extensionsSelectAll');
+            if (selectAllEl) {
+                const boxes = document.querySelectorAll('.extension-row-checkbox');
+                selectAllEl.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
+            }
+            updateExtensionSelection();
+        });
+    });
+}
+
+/**
+ * Update the bulk action bar based on the selected row checkboxes. Only rows
+ * that are actually deletable (non-approved) are counted/enabled — approved
+ * rows are excluded since they must be reverted first (Decision 10).
+ */
+function updateExtensionSelection() {
+    const bar = document.getElementById('extensionsBulkBar');
+    if (!bar) return;
+
+    const selected = getSelectedExtensionIds();
+    const countEl = document.getElementById('extensionsBulkCount');
+    if (countEl) countEl.textContent = selected.length;
+
+    bar.style.display = selected.length > 0 ? 'flex' : 'none';
+}
+
+/**
+ * Collect the ids (and statuses) of the currently selected row checkboxes.
+ */
+function getSelectedExtensionIds() {
+    return Array.from(document.querySelectorAll('.extension-row-checkbox:checked'))
+        .map(cb => ({
+            id: Number(cb.value),
+            number: Number(cb.dataset.number),
+            status: cb.dataset.status,
+        }));
+}
+
+/**
+ * Clear all selections and hide the bulk bar.
+ */
+window.clearExtensionSelection = function () {
+    document.querySelectorAll('.extension-row-checkbox').forEach(cb => { cb.checked = false; });
+    const selectAll = document.getElementById('extensionsSelectAll');
+    if (selectAll) selectAll.checked = false;
+    updateExtensionSelection();
+};
+
+/**
+ * Bulk-archive the selected extensions (admin only). Approved rows are
+ * excluded from the payload — the backend skips them anyway.
+ */
+window.archiveSelectedExtensions = function () {
+    const selected = getSelectedExtensionIds().filter(s => s.status !== 'approved');
+    if (selected.length === 0) {
+        showToast('No eligible extensions selected. Approved extensions must be reverted before archiving.', 'danger');
+        return;
+    }
+
+    const labels = selected.map(s => '#' + s.number).join(', ');
+    showDeleteConfirmation(
+        `Archive ${selected.length} Extension${selected.length > 1 ? 's' : ''}`,
+        `Move extension(s) <strong>${labels}</strong> to the <strong>Archived Extensions</strong> panel?` +
+        `<br><br>They can be <strong>restored</strong> at any time from that panel. They will NOT be permanently deleted now.`,
+        function () { performBulkArchive(selected); }
+    );
+};
+
+function performBulkArchive(selected) {
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) {
+        showToast('Error: CSRF token not found. Please refresh the page and try again.', 'danger');
+        return;
+    }
+
+    const endpoint = `/admin/projects/${window.projectId}/extensions/bulk-delete`;
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': token,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ ids: selected.map(s => s.id) })
+    })
+    .then(response => {
+        return response.json().catch(() => ({}))
+            .then(body => ({ ok: response.ok, body }));
+    })
+    .then(({ ok, body }) => {
+        if (ok) {
+            queueToastAfterReload(body.message || 'Extensions archived.', 'success');
+            sessionStorage.setItem('activeTab', 's-curve-planning');
+            setTimeout(() => window.location.reload(), 600);
+        } else {
+            showToast(body.message || 'Could not archive the selected extensions.', 'danger');
+            reloadExtensionsTable();
+        }
+    })
+    .catch(error => {
+        console.error('[performBulkArchive] Error:', error);
+        showToast('Could not archive the selected extensions.', 'danger');
+        reloadExtensionsTable();
     });
 }
 
@@ -326,20 +465,30 @@ window.loadArchivedExtensions = function () {
         if (!hasArchived) {
             // Auto-close the panel when nothing is archived anymore.
             if (panel) panel.style.display = 'none';
+            const bulkBtn = document.getElementById('archivedBulkDeleteBtn');
+            if (bulkBtn) bulkBtn.style.display = 'none';
             container.innerHTML = '<div style="padding: 20px; text-align: center; color: #94a3b8; font-size: 13px;">No archived extensions.</div>';
             return;
         }
 
         if (panel) panel.style.display = 'block';
 
+        const bulkBtn = document.getElementById('archivedBulkDeleteBtn');
+        const bulkCount = document.getElementById('archivedBulkCount');
+        if (bulkBtn) { bulkBtn.style.display = 'none'; }
+        if (bulkCount) { bulkCount.textContent = '0'; }
+
         let rows = data.extensions.map(ext => {
             const fromDate = new Date(ext.original_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-            const toDate = new Date(ext.new_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            const toDate = new Date(ext.effective_end_date || ext.new_end_date).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
             return `
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
-                    <div style="min-width:0;">
-                        <div style="font-size:13px;font-weight:700;color:#334155;">#${ext.extension_number} <span style="font-weight:500;color:#64748b;">· ${fromDate} → ${toDate}</span></div>
-                        <div style="font-size:12px;color:#94a3b8;">${ext.reason_category ? ext.reason_category + ' · ' : ''}${(ext.reason || 'N/A').substring(0, 60)}${(ext.reason || '').length > 60 ? '…' : ''}</div>
+                    <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+                        <input type="checkbox" class="archived-row-checkbox" value="${ext.id}" data-number="${ext.extension_number}" style="cursor: pointer; width: 14px; height: 14px; flex-shrink: 0;">
+                        <div style="min-width:0;">
+                            <div style="font-size:13px;font-weight:700;color:#334155;">#${ext.extension_number} <span style="font-weight:500;color:#64748b;">· ${fromDate} → ${toDate}</span></div>
+                            <div style="font-size:12px;color:#94a3b8;">${ext.reason_category ? ext.reason_category + ' · ' : ''}${(ext.reason || 'N/A').substring(0, 60)}${(ext.reason || '').length > 60 ? '…' : ''}</div>
+                        </div>
                     </div>
                     <div style="white-space:nowrap;">
                         <button onclick='restoreArchivedExtension(${JSON.stringify(ext)})' style="background:#dcfce7;color:#166534;border:1px solid #bbf7d0;padding:5px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;margin-right:6px;"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
@@ -350,12 +499,93 @@ window.loadArchivedExtensions = function () {
         }).join('');
 
         container.innerHTML = rows;
+
+        // Wire archived-row checkboxes to the bulk delete button.
+        wireArchivedSelectionHandlers();
     })
     .catch(error => {
         console.error('[loadArchivedExtensions] Error:', error);
         container.innerHTML = `<div style="padding: 20px; text-align: center; color: #dc2626; font-size: 13px;">Error: ${error.message}</div>`;
     });
 };
+
+/**
+ * Wire the archived-panel bulk-delete checkboxes (admin only).
+ */
+function wireArchivedSelectionHandlers() {
+    document.querySelectorAll('.archived-row-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateArchivedSelection);
+    });
+    updateArchivedSelection();
+}
+
+function updateArchivedSelection() {
+    const bulkBtn = document.getElementById('archivedBulkDeleteBtn');
+    const countEl = document.getElementById('archivedBulkCount');
+    if (!bulkBtn || !countEl) return;
+
+    const count = document.querySelectorAll('.archived-row-checkbox:checked').length;
+    countEl.textContent = count;
+    bulkBtn.style.display = count > 0 ? '' : 'none';
+}
+
+/**
+ * Bulk permanent-delete selected archived extensions (admin only).
+ */
+window.forceDeleteSelectedArchived = function () {
+    const selected = Array.from(document.querySelectorAll('.archived-row-checkbox:checked'))
+        .map(cb => ({ id: Number(cb.value), number: Number(cb.dataset.number) }));
+    if (selected.length === 0) {
+        showToast('No archived extensions selected.', 'danger');
+        return;
+    }
+
+    const labels = selected.map(s => '#' + s.number).join(', ');
+    showDeleteConfirmation(
+        `Permanently Delete ${selected.length} Extension${selected.length > 1 ? 's' : ''}`,
+        `Permanently delete archived extension(s) <strong>${labels}</strong>?` +
+        `<br><br>This <strong>removes the records AND their evidence files</strong> from the system. This action cannot be undone.`,
+        function () { performBulkForceDeleteArchived(selected); }
+    );
+};
+
+function performBulkForceDeleteArchived(selected) {
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) {
+        showToast('Error: CSRF token not found. Please refresh the page and try again.', 'danger');
+        return;
+    }
+
+    const endpoint = `/admin/projects/${window.projectId}/extensions/bulk-force-delete`;
+
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': token,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: JSON.stringify({ ids: selected.map(s => s.id) })
+    })
+    .then(response => {
+        return response.json().catch(() => ({}))
+            .then(body => ({ ok: response.ok, body }));
+    })
+    .then(({ ok, body }) => {
+        if (ok) {
+            showToast(body.message || 'Archived extensions permanently deleted.', 'success');
+            loadArchivedExtensions();
+            reloadExtensionsTable();
+        } else {
+            showToast(body.message || 'Could not permanently delete the selected extensions.', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('[performBulkForceDeleteArchived] Error:', error);
+        showToast('Could not permanently delete the selected extensions.', 'danger');
+    });
+}
 
 /**
  * Restore a soft-deleted extension (admin only).

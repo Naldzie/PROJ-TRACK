@@ -814,6 +814,144 @@ class ProjectExtensionController extends Controller
         }
     }
 
+    /**
+     * Bulk archive (soft-delete) multiple extensions at once. Admin only.
+     * §8 — bulk operations. Each row goes through the SAME guards as the
+     * single-row destroy(): approved extensions are skipped (Decision 10 —
+     * revert first), and any soft-deleted/stale rows are ignored. The project
+     * deadline is recomputed once at the end.
+     */
+    public function bulkDestroy(Request $request, Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $validated = $request->validate([
+                'ids' => ['required', 'array', 'min:1'],
+                'ids.*' => ['required', 'integer'],
+            ]);
+
+            $ids = array_values(array_filter($validated['ids']));
+            $rows = $project->extensions()->whereIn('id', $ids)->get();
+
+            $archived = [];
+            $skipped = [];
+            foreach ($rows as $extension) {
+                // Decision 10: approved extensions are never directly
+                // deletable — revert first, then delete.
+                if ($extension->isApproved()) {
+                    $skipped[] = $extension->extension_number;
+                    continue;
+                }
+                $extension->delete();
+                $archived[] = $extension->extension_number;
+            }
+
+            // Recompute from whatever approved extensions remain.
+            $this->recomputeProjectDeadline($project);
+
+            if (!empty($archived)) {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Delete Extension',
+                    'description' => auth()->user()->name . " bulk-archived extension(s) #" . implode(', #', $archived) . " from project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+            }
+
+            $message = 'Archived extension(s) #' . (implode(', #', $archived) ?: '—');
+            if (!empty($skipped)) {
+                $message .= '. Skipped approved extension(s) #' . implode(', #', $skipped) . ' — revert before deleting.';
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'archived' => count($archived),
+                'skipped' => count($skipped),
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select at least one extension to archive.',
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Extension bulkDestroy error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error archiving extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Bulk permanently-delete (force-delete) multiple ARCHIVED extensions.
+     * Admin only. §8 — bulk operations. Only soft-deleted rows of this project
+     * are eligible; each row's evidence attachments are removed first so their
+     * physical files are cleaned up (mirrors forceDestroy()).
+     */
+    public function bulkForceDestroy(Request $request, Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $validated = $request->validate([
+                'ids' => ['required', 'array', 'min:1'],
+                'ids.*' => ['required', 'integer'],
+            ]);
+
+            $ids = array_values(array_filter($validated['ids']));
+            $rows = $project->extensions()->onlyTrashed()->whereIn('id', $ids)->get();
+
+            $deleted = [];
+            DB::transaction(function () use ($rows, &$deleted) {
+                foreach ($rows as $extension) {
+                    // Record-level evidence first (Attachment deleting hook
+                    // removes the physical file).
+                    $extension->attachments->each->delete();
+                    $extension->forceDelete();
+                    $deleted[] = $extension->extension_number;
+                }
+            });
+
+            if (!empty($deleted)) {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Delete Extension',
+                    'description' => auth()->user()->name . " permanently deleted extension(s) #" . implode(', #', $deleted) . " from project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'all',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Permanently deleted extension(s) #' . (implode(', #', $deleted) ?: '—'),
+                'deleted' => count($deleted),
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select at least one extension to delete.',
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Extension bulkForceDestroy error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     // ===========================================================================
     // BASELINE SNAPSHOT + RESTORE (Phase 2.5 / §4)
     // ===========================================================================
