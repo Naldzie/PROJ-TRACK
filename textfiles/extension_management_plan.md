@@ -356,7 +356,7 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Re-approve-after-revert toast hint (see §4.6).
 - Tests: contractor detail page does not render the Request button.
 
-### Phase 7 — Review modal + audit-trail-clean workflow 🔄 IN PROGRESS
+### Phase 7 — Review modal + audit-trail-clean workflow ✅ COMPLETE
 - Backend guards (Decision 14): staff `update()` own-pending-only +
   ownership; `resubmit()`/`destroy()` ownership; admin exempt.
 - `formatExtension()` payload: add `created_by_user_id` + `approved_by_name`
@@ -473,6 +473,25 @@ All phases on `phase-extension-management`. Test each phase before the next
   the "own extension" staff guard checks status only, not ownership.
 - Locked Decisions 13-15 and added Phase 7. Plan updated + committed (this
   commit). Implementation starts next.
+
+### 2026-08-08 — Phase 7 implemented
+- Backend: staff `update()` now requires ownership + pending-only; removed the
+  rejected→pending in-place reset path (dead code). `resubmit()`/`destroy()`
+  enforce ownership for staff; admin exempt. `formatExtension()` adds
+  `created_by_user_id` + `approved_by_name`.
+- New `review_extension_modal.blade.php` (admin only): read-only request
+  summary + three decision BUTTONS (Approve as Requested / Approve with Less
+  Time / Reject) → PUTs only decision fields to the existing admin update
+  route. Included from `project_detail.blade.php` behind
+  `@if(auth()->user()->role === 'admin')`.
+- Extensions table: Requested By + Approved By columns; admin Review button on
+  pending rows; Edit/Resubmit/Archive visibility is now role- AND
+  ownership-aware (`created_by_user_id === window.authUserId`).
+- `NotificationTest::test_staff_resubmission_re_notifies_admins` updated to
+  use the Resubmit route (the old in-place rejected-edit path is gone).
+- Tests: `ProjectExtensionLifecycleTest` 50 → 59 (9 new Phase 7 tests); full
+  suite 466 passing (1676 assertions). Committed as `0d296ae` on
+  `feature/baseline-original-planned-date`.
 
 ---
 
