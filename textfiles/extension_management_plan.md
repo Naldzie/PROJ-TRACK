@@ -1,9 +1,10 @@
 # EXTENSION MANAGEMENT — COMPREHENSIVE UPGRADE PLAN
 
-CSPC PMU System — `phase-extension-management` branch (off `main`)
+CSPC PMU System — `phase-extension-activity-log` branch (off `main`)
 
-Status: 📋 PLAN CREATED — implementation not started
-Branch: `phase-extension-management` (created off `main` after `phase-ui-polish` was merged)
+Status: Phases 1–7 ✅ COMPLETE (merged via `feature/baseline-original-planned-date` + `phase-extension-management`).
+Phase 8 (extension ↔ activity-log integration) ✅ COMPLETE — implemented + tested on `phase-extension-activity-log`.
+Branch: `phase-extension-activity-log` (created off `main` for Phase 8)
 
 Rules: textfiles/active_reference/project_context_and_development_rules.txt (Rule 8/10/11/12)
 
@@ -219,6 +220,37 @@ Decision 15 — **Extensions table shows Requested By / Approved By**
   the payload (the former is also needed for the Decision 14 ownership guards
   to work in the frontend).
 
+Decision 16 — **Three-tier activity-log visibility for extension entries**
+  Context: the extension lifecycle is already logged (all 9 controller
+  methods, `visibility => 'all'`), but the entries surface identically to
+  staff AND contractor feeds. Research (Outworx, Sankofa, Procore, Aprolio,
+  Xenett, Uku, Modulos) shows a consistent tier model: admin sees everything;
+  internal roles (staff) see most but not admin housekeeping; external roles
+  (contractor) see operational transparency only. CRITICAL finding: the
+  current `visibility` enum is `['all','admin_only']` and
+  `ActivityLog::scopeVisibleTo()` hides `admin_only` from BOTH staff and
+  contractor — a two-value model cannot express "staff yes, contractor no."
+  Decision: add a THIRD visibility value `'staff'` (admin + staff see it;
+  contractor does not). Requires an ALTER migration on the enum + one scope
+  change. Visibility matrix for extension entries:
+    - `all`          → Request, Resubmit, Approve, Update, Adjust Baseline,
+                       Reject (action ONLY — reason NOT in the description).
+    - `staff` (new)  → Supersede, Delete/Archive, Revert.
+    - `admin_only`   → Restore, Force-Delete, bulk operations.
+  Rejection reason: kept OUT of the `all` Reject description — the requester
+  (staff) already gets it via the extension row (`rejection_reason`) and the
+  ExtensionStatusChanged notification; contractors see the action but not the
+  internal rationale (matches research: decision rationale is internal,
+  operational status is shared).
+  Consequences: (1) one ALTER on `activity_logs.visibility`; (2)
+  `scopeVisibleTo` updated so staff sees `all` + `staff`, contractor sees
+  `all` only; (3) `AttachmentController::upload()/delete()` currently omit
+  `visibility` (NULL) so non-admins see NO attachment activity — fix to
+  `'all'`; (4) distinct `Revert Extension` / `Supersede Extension` action
+  labels (today a revert logs "Update Extension" or misleadingly
+  "Reject Extension"). Free-text only — NO `extension_id` schema link (per
+  discussion, keeping the log decoupled from the record).
+
 ---
 
 ## 4. BASELINE SNAPSHOT DESIGN (detailed)
@@ -373,6 +405,37 @@ All phases on `phase-extension-management`. Test each phase before the next
   archive of another staff's row; review-as-buttons still drives the admin
   update path.
 
+### Phase 8 — Extension ↔ activity-log integration ✅ COMPLETE
+- **Migration**: ALTER `activity_logs.visibility` enum
+  (`['all','admin_only']` → `['all','staff','admin_only']`), default `all`.
+- **`ActivityLog::scopeVisibleTo()`**: staff → `whereIn('visibility',
+  ['all','staff'])`; contractor → `where('visibility','all')`; admin unchanged.
+  `forDashboard()` unchanged (its `Delete%` / housekeeping exclusions already
+  keep "Delete Extension" out of the staff dashboard feed — the existing
+  ActivityVisibilityTest assertions stay valid).
+- **Distinct `Revert Extension` action**: in admin `update()`, when
+  `$isReverting` log action = 'Revert Extension' (today it logs "Update
+  Extension" or misleadingly "Reject Extension"). Visibility `staff`.
+- **`Supersede Extension` entries**: in `resolvePendingQueue()`, log one entry
+  per superseded pending (visibility `staff`), so the queue cleanup is
+  traceable.
+- **`Reject Extension` description**: drop the appended `rejection_reason`
+  (Decision 16) — action stays `all`, rationale lives on the record +
+  notification.
+- **Attachment evidence fix**: `AttachmentController::upload()`/`delete()`
+  add `'visibility' => 'all'` (currently NULL → invisible to non-admins), and
+  enrich the description with the evidence context when
+  `context === 'extension'` ("evidence for extension #N").
+- **Admin filter dropdown**: `admin/login.blade.php` (activity-log page) —
+  add the extension actions to the hardcoded filter list so admins can filter
+  the audit trail by extension lifecycle.
+- **Tests**: new `ExtensionActivityLogTest` — per-action labels across the
+  full lifecycle; visibility tiers (staff sees `all`+`staff`, contractor sees
+  `all` only, admin sees everything incl. `admin_only`); attachment upload/
+  delete logs visible to staff/contractor; revert + supersede labels.
+  Existing `ProjectExtensionLifecycleTest` (59 tests) and
+  `ActivityVisibilityTest` must keep passing.
+
 ---
 
 ## 6. MIGRATIONS (anticipated)
@@ -382,6 +445,8 @@ All phases on `phase-extension-management`. Test each phase before the next
 3. ADD `approved_new_end_date` (date, nullable) to `project_extensions`.
 4. ADD `baseline_snapshot` (json, nullable) to `project_extensions`.
 5. ADD `deleted_at` (timestamp, nullable) to `project_extensions` (soft deletes).
+6. ALTER `activity_logs.visibility` enum → add `'staff'` (Phase 8,
+   Decision 16).
 
 ---
 
@@ -390,6 +455,9 @@ All phases on `phase-extension-management`. Test each phase before the next
 - Backend: `php artisan test --filter=ProjectExtensionLifecycleTest` (+ any
   new test files per phase); full suite `composer test` at the end of each
   phase (Rule 8).
+- Phase 8: `php artisan test --filter=ExtensionActivityLogTest`, plus
+  `--filter=ActivityVisibilityTest` and `--filter=ProjectExtensionLifecycleTest`
+  to confirm no visibility-scope regressions.
 - `node --check` on all edited JS files.
 - Browser verification per Rule 8 (queue + supersede badges, evidence
   upload, snapshot revert restore, archived panel, contractor button hidden).
@@ -551,6 +619,52 @@ All phases on `phase-extension-management`. Test each phase before the next
   comments on pending requests, review-SLA overdue escalation, EOT register
   analytics dashboard, financial-compensation bundling, forensic delay
   analysis (out of scope).
+
+### 2026-08-09 — Phase 8 planning: extension ↔ activity-log integration
+- Researched how other systems tier activity-log visibility across roles
+  (Outworx: forensic audit log owner-only vs broad activity card; Sankofa:
+  role-scoped project views; Procore: Internal/External permission templates
+  + gated activity streams; Aprolio: Admin/Staff/Client; Xenett: delete logs
+  admin-only; Uku: own-only default for non-admins; Modulos: notifications vs
+  durable logs; Aptli: inline record timelines + admin-only global page).
+- Confirmed our single `activity_logs` store feeding multiple surfaces
+  (admin log page, dashboard feeds, overview feed, sidebars) matches the
+  mainstream pattern — no separate feed table needed.
+- Discovered `scopeVisibleTo()` hides `admin_only` from BOTH staff and
+  contractor → a third `'staff'` visibility value is required for "staff yes,
+  contractor no" (Decision 16).
+- Locked Decision 16 + Phase 8; user chose free-text only (no `extension_id`
+  schema link) and feeds-only for staff (no dedicated staff log page).
+- Possible future ActivityLog enhancements recorded separately in
+  `textfiles/activity_log_enhancements.md`.
+- Branch `phase-extension-activity-log` created off `main`. Plan committed +
+  pushed (this commit); implementation NOT started.
+
+### 2026-08-09 — Phase 8 implemented + tested
+- Migration `2026_08_09_000000_add_staff_visibility_to_activity_logs_table.php`
+  (enum → `['all','staff','admin_only']`, default `all`; down() moves `staff`
+  rows back to `all`).
+- `ActivityLog::scopeVisibleTo()`: staff → `['all','staff']`, contractor →
+  `['all']`, admin unchanged. `forDashboard()` untouched.
+- `ProjectExtensionController`:
+  - admin `update()`: distinct `Revert Extension` action when `$isReverting`
+    (visibility `staff`); rejection reason no longer appended to the `all`
+    Reject description (Decision 16).
+  - `resolvePendingQueue()`: logs `Supersede Extension` per superseded pending
+    (visibility `staff`).
+  - `destroy()` → `staff`, `restore()` → `admin_only`, `forceDestroy()` →
+    `admin_only`, `bulkDestroy()`/`bulkForceDestroy()` → `admin_only`.
+- `AttachmentController::upload()/delete()`: added `visibility => 'all'`
+  (was NULL → invisible to all non-admins) + extension-evidence label
+  ("evidence for extension #N") in the description.
+- `admin/login.blade.php` activity-log filter: added Request/Approve/Reject/
+  Update/Revert/Supersede/Resubmit/Delete/Restore Extension + Adjust Baseline.
+- Tests: new `ExtensionActivityLogTest` (12 tests, 53 assertions) covering
+  lifecycle labels, three-tier visibility scopes, reject-reason privacy,
+  attachment evidence logging, and the overview feed. Full suite: 493 passing
+  (1774 assertions). `ProjectExtensionLifecycleTest`, `ActivityVisibilityTest`,
+  `ContractorDashboardTest`, `OverviewTest` all green.
+- Implementation uncommitted at log time (pending user review, Rule 10/12).
 
 ---
 

@@ -120,7 +120,7 @@
     </div>
 
     <div class="mt-3">
-        {{ $notifications->links() }}
+        {{ $notifications->links('pagination::bootstrap-5') }}
     </div>
 </div>
 

@@ -587,7 +587,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
             <div class="select-wrap">
                 <select name="action" class="form-select" style="width:170px" id="actionSelect" onchange="triggerAutoSubmit(this)">
                     <option value="">All actions</option>
-                    @foreach(['Login','Logout','Create Project','Update Project','Delete Project','Create Category','Update Category','Delete Category','Create User','Delete User'] as $act)
+                    @foreach(['Login','Logout','Create Project','Update Project','Delete Project','Create Category','Update Category','Delete Category','Create User','Delete User','Request Extension','Approve Extension','Reject Extension','Update Extension','Revert Extension','Supersede Extension','Resubmit Extension','Delete Extension','Restore Extension','Adjust Baseline'] as $act)
                         <option value="{{ $act }}" {{ request('action') == $act ? 'selected' : '' }}>{{ $act }}</option>
                     @endforeach
                 </select>
