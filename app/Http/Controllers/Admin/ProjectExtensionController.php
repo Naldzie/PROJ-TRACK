@@ -467,20 +467,25 @@ class ProjectExtensionController extends Controller
             $logAction = 'Update Extension';
             if ($transitioningToApproved) {
                 $logAction = 'Approve Extension';
+            } elseif ($isReverting) {
+                $logAction = 'Revert Extension';
             } elseif (($validated['status'] ?? null) === 'rejected') {
                 $logAction = 'Reject Extension';
             }
 
+            // Phase 8 (Decision 16): visibility is tiered — operational actions
+            // (Approve/Reject/Update) are shared ('all'); a revert is internal
+            // decision detail (staff tier). The rejection reason is deliberately
+            // kept OFF the shared description — the requester gets it via the
+            // record + ExtensionStatusChanged notification; contractors see the
+            // action but not the internal rationale.
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => $logAction,
-                'description' => auth()->user()->name . " {$logAction} for project: {$project->title}"
-                    . (($validated['status'] ?? null) === 'rejected' && !empty($validated['rejection_reason'])
-                        ? ' — ' . $validated['rejection_reason']
-                        : ''),
+                'description' => auth()->user()->name . " {$logAction} for project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'all',
+                'visibility' => $isReverting ? 'staff' : 'all',
             ]);
 
             // Notify on approve/reject: the requester (created_by_user_id) + the
@@ -676,7 +681,8 @@ class ProjectExtensionController extends Controller
                 'action' => 'Delete Extension',
                 'description' => auth()->user()->name . " deleted extension #{$extensionNumber} from project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'all',
+                // Phase 8 (Decision 16): archiving is internal — staff + admin only.
+                'visibility' => 'staff',
             ]);
 
             return response()->json([
@@ -748,7 +754,8 @@ class ProjectExtensionController extends Controller
                 'action' => 'Restore Extension',
                 'description' => auth()->user()->name . " restored extension #{$extensionNumber} for project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'all',
+                // Phase 8 (Decision 16): admin housekeeping — admin only.
+                'visibility' => 'admin_only',
             ]);
 
             return response()->json([
@@ -797,7 +804,8 @@ class ProjectExtensionController extends Controller
                 'action' => 'Delete Extension',
                 'description' => auth()->user()->name . " permanently deleted extension #{$extensionNumber} from project: {$project->title}",
                 'ip_address' => request()->ip(),
-                'visibility' => 'all',
+                // Phase 8 (Decision 16): admin housekeeping — admin only.
+                'visibility' => 'admin_only',
             ]);
 
             return response()->json([
@@ -859,7 +867,8 @@ class ProjectExtensionController extends Controller
                     'action' => 'Delete Extension',
                     'description' => auth()->user()->name . " bulk-archived extension(s) #" . implode(', #', $archived) . " from project: {$project->title}",
                     'ip_address' => request()->ip(),
-                    'visibility' => 'all',
+                    // Phase 8 (Decision 16): bulk ops are admin housekeeping.
+                    'visibility' => 'admin_only',
                 ]);
             }
 
@@ -928,7 +937,8 @@ class ProjectExtensionController extends Controller
                     'action' => 'Delete Extension',
                     'description' => auth()->user()->name . " permanently deleted extension(s) #" . implode(', #', $deleted) . " from project: {$project->title}",
                     'ip_address' => request()->ip(),
-                    'visibility' => 'all',
+                    // Phase 8 (Decision 16): bulk ops are admin housekeeping.
+                    'visibility' => 'admin_only',
                 ]);
             }
 
@@ -1222,6 +1232,18 @@ class ProjectExtensionController extends Controller
             } else {
                 $pending->status = 'superseded';
                 $pending->save();
+
+                // Phase 8: log the queue cleanup so the supersede is traceable.
+                // Staff tier — internal bookkeeping, not shown to contractors.
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Supersede Extension',
+                    'description' => auth()->user()->name
+                        . " superseded extension #{$pending->extension_number} (overtaken by extension #{$justApproved->extension_number} approval) for project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'staff',
+                ]);
             }
         }
     }

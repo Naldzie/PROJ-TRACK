@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ActivityLog;
 use App\Models\Attachment;
 use App\Models\Project;
+use App\Models\ProjectExtension;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -83,13 +84,23 @@ class AttachmentController extends Controller
                 'uploaded_by'     => Auth::user()->name ?? Auth::user()->email,
             ]);
 
-            // Audit the upload. project_id population on activity_logs is Phase B.
+            // Audit the upload. Phase 8 (Decision 16): always 'all' visibility
+            // (was NULL before, which hid ALL attachment activity from
+            // non-admins), and label extension evidence so the feed names the
+            // extension it belongs to.
+            $contextLabel = $validated['context'] === 'extension'
+                && $attachable instanceof ProjectExtension
+                ? " evidence for extension #{$attachable->extension_number}"
+                : ' attachment';
+
             ActivityLog::create([
                 'user_id'     => Auth::id(),
                 'project_id'  => $project->id,
                 'action'      => 'Upload Attachment',
-                'description' => Auth::user()->name . ' uploaded an attachment to project "' . $project->title . '".',
+                'description' => Auth::user()->name . ' uploaded' . $contextLabel
+                    . ' to project "' . $project->title . '".',
                 'ip_address'  => $request->ip(),
+                'visibility'  => 'all',
             ]);
 
             return response()->json([
@@ -136,14 +147,22 @@ class AttachmentController extends Controller
             $projectTitle   = $attachment->project->title ?? 'Unknown Project';
             $actorName      = Auth::user()->name ?? Auth::user()->email;
 
+            // Phase 8 (Decision 16): label extension evidence so the feed names
+            // the extension it belonged to (parent may be soft-deleted → null).
+            $contextLabel = $attachment->context === 'extension'
+                && $attachment->attachable instanceof ProjectExtension
+                ? ' (evidence for extension #' . $attachment->attachable->extension_number . ')'
+                : '';
+
             $attachment->delete();
 
             ActivityLog::create([
                 'user_id'     => Auth::id(),
                 'project_id'  => $attachment->project_id,
                 'action'      => 'Delete Attachment',
-                'description' => "{$actorName} deleted attachment \"{$attachmentName}\" from project \"{$projectTitle}\".",
+                'description' => "{$actorName} deleted attachment \"{$attachmentName}\"{$contextLabel} from project \"{$projectTitle}\".",
                 'ip_address'  => request()->ip(),
+                'visibility'  => 'all',
             ]);
 
             return response()->json([

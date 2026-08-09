@@ -30,7 +30,9 @@ class ActivityLog extends Model
 
     /**
      * Scope a query to only include logs visible to the given role.
-     * Admins see everything. Everyone else only sees visibility = 'all'.
+     * Admins see everything. Staff (internal) see 'all' + 'staff' tiers.
+     * External roles (contractor) only see visibility = 'all'
+     * (Phase 8 / Decision 16).
      */
     public function scopeVisibleTo($query, $role)
     {
@@ -38,7 +40,7 @@ class ActivityLog extends Model
             return $query;
         }
 
-        return $query->where('visibility', 'all');
+        return $query->whereIn('visibility', $role === 'staff' ? ['all', 'staff'] : ['all']);
     }
 
     /**
