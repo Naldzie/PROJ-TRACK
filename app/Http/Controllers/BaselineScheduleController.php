@@ -799,6 +799,7 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'months.*.planned_progress_percent' => 'required|numeric|between:0,100',
                 'months.*.description'           => 'nullable|string',
                 'months.*.activities'            => 'nullable|array',
+                'months.*.activities.*.id'            => 'nullable|integer',
                 'months.*.activities.*.activity_name' => 'required_with:months.*.activities|string|max:255',
                 'months.*.activities.*.description'  => 'nullable|string',
                 'removed_ids'                    => 'nullable|array',
@@ -881,18 +882,41 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                         // never updated here — it stays frozen as the original plan.
                     ]);
 
-                    // Sync activities
+                    // Sync activities — diff-based upsert that PRESERVES activity
+                    // ids and is_completed. Matched rows are updated in place;
+                    // only rows the user actually removed are deleted (their
+                    // carryover logs cascade away, matching remove-month semantics).
                     if (!empty($monthData['activities'])) {
-                        // Delete existing activities for this month
-                        ProjectActivity::where('project_id', $project->id)
-                            ->where('month_label', $schedule->month_label)
+                        $existingActivities = ProjectActivity::where('project_id', $project->id)
                             ->where('baseline_schedule_id', $schedule->id)
-                            ->delete();
+                            ->get();
 
-                        // Insert new activities
+                        $keptActivityIds = [];
+
                         foreach ($monthData['activities'] as $act) {
-                            if (!empty($act['activity_name'])) {
-                                ProjectActivity::create([
+                            if (empty($act['activity_name'])) {
+                                continue;
+                            }
+
+                            // Prefer an explicit id round-tripped from the modal;
+                            // fall back to a name match for legacy/new rows.
+                            $match = null;
+                            if (!empty($act['id'])) {
+                                $match = $existingActivities->firstWhere('id', (int) $act['id']);
+                            }
+                            if (!$match) {
+                                $match = $existingActivities->firstWhere('activity_name', $act['activity_name']);
+                            }
+
+                            if ($match) {
+                                $match->update([
+                                    'activity_name' => $act['activity_name'],
+                                    'description'   => $act['description'] ?? '',
+                                    'planned_date'  => $monthData['planned_date'],
+                                ]);
+                                $keptActivityIds[] = $match->id;
+                            } else {
+                                $newActivity = ProjectActivity::create([
                                     'project_id'           => $project->id,
                                     'baseline_schedule_id' => $schedule->id,
                                     'month_label'          => $schedule->month_label,
@@ -901,8 +925,15 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                                     'description'          => $act['description'] ?? '',
                                     'is_completed'         => false,
                                 ]);
+                                $keptActivityIds[] = $newActivity->id;
                             }
                         }
+
+                        // Delete existing rows the user removed from the month.
+                        ProjectActivity::where('project_id', $project->id)
+                            ->where('baseline_schedule_id', $schedule->id)
+                            ->whereNotIn('id', $keptActivityIds)
+                            ->delete();
                     }
 
                     $submittedIds[] = $schedule->id;

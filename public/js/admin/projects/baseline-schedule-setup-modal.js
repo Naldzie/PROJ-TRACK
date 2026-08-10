@@ -210,7 +210,7 @@ function openAdjustBaselineModal() {
                 description:                  m.description || '',
                 has_actual_progress:          m.has_actual_progress || false,
                 activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
-                    return { activity_name: a.activity_name, description: a.description || '' };
+                    return { id: a.id || null, activity_name: a.activity_name, description: a.description || '' };
                 }),
                 isNew:                        false
             };
@@ -516,7 +516,11 @@ function onSetupBaselineDone() {
                     planned_progress_percent:     m.planned_progress_percent,
                     description:                  m.description || '',
                     activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
-                        return { activity_name: a.activity_name, description: a.description || '' };
+                        return {
+                            id:             a.id || null,
+                            activity_name:  a.activity_name,
+                            description:    a.description || ''
+                        };
                     })
                 };
             }),
@@ -644,11 +648,14 @@ function addSetupBaselineMonth() {
     activityRows.forEach(row => {
         const nameInput = row.querySelector('.setup-activity-name');
         const descInput = row.querySelector('.setup-activity-desc');
+        const idInput   = row.querySelector('.setup-activity-id');
         const name      = nameInput ? nameInput.value.trim() : '';
         if (name) {
+            const origId = idInput && idInput.value ? parseInt(idInput.value, 10) : NaN;
             activities.push({
-                activity_name: name,
-                description:   descInput ? descInput.value.trim() : '',
+                id:             Number.isInteger(origId) ? origId : null,
+                activity_name:  name,
+                description:    descInput ? descInput.value.trim() : '',
             });
         }
     });
@@ -871,6 +878,8 @@ function editSetupBaselineMonth(index) {
                 ' style="display: grid; grid-template-columns: 1fr 1fr 36px; gap: 8px;' +
                 ' padding: 10px; background: white; border-radius: 8px;' +
                 ' border: 1px solid #d1fae5; align-items: start;">' +
+                '<input type="hidden" class="setup-activity-id" value="' + (act.id || '') + '"' +
+                '/>' +
                 '<input type="text" class="setup-activity-name" value="' + escapeHtml(act.activity_name || '') + '"' +
                 ' placeholder="Activity name (e.g. Safety inspection)"' +
                 ' style="width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;' +
@@ -947,6 +956,8 @@ function addSetupActivityRow() {
              style="display: grid; grid-template-columns: 1fr 1fr 36px; gap: 8px;
                     padding: 10px; background: white; border-radius: 8px;
                     border: 1px solid #d1fae5; align-items: start;">
+            <!-- Original activity id (empty for newly-added rows) -->
+            <input type="hidden" class="setup-activity-id" value="">
             <!-- Activity name -->
             <input type="text" class="setup-activity-name"
                    placeholder="Activity name (e.g. Safety inspection)"
