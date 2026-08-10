@@ -319,7 +319,7 @@
                                 <i class="bi bi-graph-up-arrow"></i> Record Progress
                             </button>
                             @endif
-                            @if($latestProgress)
+                            @if($latestProgress && (auth()->user()->role === 'admin' || $plan->month_label === $latestProgressMonth))
                             <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}', {{ $loop->last ? '1' : '0' }})"
                                     style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Edit Latest Progress Record"
@@ -337,6 +337,7 @@
                                 <i class="bi bi-arrow-right-circle"></i> ↗ Carry Over
                             </button>
                             @endif
+                            @if(!$latestProgress)
                             @php
                                 $manageMode = ($project->extension_count > 0 && !$latestProgress) ? 'edit' : 'activities-only';
                             @endphp
@@ -347,6 +348,8 @@
                                     onmouseout="this.style.background='#f0f0f0';">
                                 <i class="bi bi-pencil-square"></i> Manage Month
                             </button>
+                            @endif
+                            @if(auth()->user()->role === 'admin' || (!$latestProgress && $plan->original_planned_progress_percent === null))
                             <button onclick="deleteMonthTarget({{ $plan->id }})" 
                                     style="flex: 1; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Delete Month Target"
@@ -354,6 +357,7 @@
                                     onmouseout="this.style.background='#fee2e2'; this.style.borderColor='#fca5a5';">
                                 <i class="bi bi-trash"></i> Delete
                             </button>
+                            @endif
                         </div>
                     </div>
                 </div>

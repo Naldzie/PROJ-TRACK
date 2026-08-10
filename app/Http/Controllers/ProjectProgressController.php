@@ -2,29 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Attachment;
+use App\Models\PredictionHistory;
 use App\Models\Project;
 use App\Models\ProjectActivity;
-use App\Models\ProjectProgressHistory;
 use App\Models\ProjectBaselineSchedule;
-use App\Models\ActivityLog;
-use App\Models\PredictionHistory;
+use App\Models\ProjectProgressHistory;
 use App\Services\ProjectDetailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Auth;
 
 /**
  * ProjectProgressController
- * 
+ *
  * Handles all ProjectProgressHistory (monthly recorded progress) operations:
  * - Creating progress records (actual % vs planned %)
  * - Editing existing progress records
  * - Deleting progress records with audit trail
  * - Recording monthly progress with variance calculation
- * 
+ *
  * Moved from ProjectController as part of Phase 2 refactor (April 2026)
  */
 class ProjectProgressController extends Controller
@@ -55,7 +53,7 @@ class ProjectProgressController extends Controller
             'user_id' => auth()->id(),
             'project_id' => $project->id,
             'action' => 'Create Progress Record',
-            'description' => auth()->user()->name . " recorded {$request->progress_percentage}% progress for project: {$project->title}",
+            'description' => auth()->user()->name." recorded {$request->progress_percentage}% progress for project: {$project->title}",
             'ip_address' => request()->ip(),
             'visibility' => 'all',
         ]);
@@ -63,7 +61,7 @@ class ProjectProgressController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Progress record saved successfully',
-            'record' => $record
+            'record' => $record,
         ]);
     }
 
@@ -85,10 +83,28 @@ class ProjectProgressController extends Controller
             ->where('id', $progressId)
             ->firstOrFail();
 
-        $newProgressPercent = (float) $request->progress_percentage;
-        $isMonthlyRecord = !empty($record->month_label) || !empty($record->baseline_schedule_id);
+        // Non-admin users may only edit the LATEST progress record (mirrors the
+        // delete rule and keeps historical actuals immutable for trend/AI data).
+        // Admin retains full edit access for corrections and audit.
+        if (auth()->user() && auth()->user()->role !== 'admin') {
+            $latest = ProjectProgressHistory::where('project_id', $project->id)
+                ->orderByDesc('month_label')
+                ->orderByRaw('COALESCE(inspection_date, "0000-00-00") DESC')
+                ->orderByDesc('id')
+                ->first();
 
-        if ($isMonthlyRecord && !empty($record->month_label)) {
+            if (! $latest || $latest->id !== $record->id) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Only the latest progress record can be edited.',
+                ], 403);
+            }
+        }
+
+        $newProgressPercent = (float) $request->progress_percentage;
+        $isMonthlyRecord = ! empty($record->month_label) || ! empty($record->baseline_schedule_id);
+
+        if ($isMonthlyRecord && ! empty($record->month_label)) {
             $maxRecordedActual = ProjectProgressHistory::where('project_id', $project->id)
                 ->where('id', '!=', $record->id)
                 ->where('month_label', '<=', $record->month_label)
@@ -101,7 +117,7 @@ class ProjectProgressController extends Controller
             if ($newProgressPercent < $maxRecordedActual) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Actual progress % cannot be lower than the highest recorded progress ({$maxRecordedActual}%). You entered: {$newProgressPercent}%"
+                    'message' => "Actual progress % cannot be lower than the highest recorded progress ({$maxRecordedActual}%). You entered: {$newProgressPercent}%",
                 ], 422);
             }
         }
@@ -126,13 +142,13 @@ class ProjectProgressController extends Controller
                 $plannedProgressPercent = $record->planned_progress_percent;
 
                 $baselineSchedule = null;
-                if (!empty($record->baseline_schedule_id)) {
+                if (! empty($record->baseline_schedule_id)) {
                     $baselineSchedule = ProjectBaselineSchedule::where('project_id', $project->id)
                         ->where('id', $record->baseline_schedule_id)
                         ->first();
                 }
 
-                if (!$baselineSchedule && !empty($record->month_label)) {
+                if (! $baselineSchedule && ! empty($record->month_label)) {
                     $baselineSchedule = ProjectBaselineSchedule::where('project_id', $project->id)
                         ->where('month_label', $record->month_label)
                         ->first();
@@ -152,11 +168,11 @@ class ProjectProgressController extends Controller
                 $updatePayload['status'] = $this->getProgressStatus($variancePercent);
 
                 // Sync activity completion if activity_ids provided and month_label exists
-                if ($request->has('activity_ids') && !empty($record->month_label)) {
+                if ($request->has('activity_ids') && ! empty($record->month_label)) {
                     $activityIds = $request->activity_ids ?? [];
 
                     // Mark submitted activities as completed
-                    if (!empty($activityIds)) {
+                    if (! empty($activityIds)) {
                         ProjectActivity::whereIn('id', $activityIds)
                             ->where('project_id', $project->id)
                             ->where('month_label', $record->month_label)
@@ -170,7 +186,7 @@ class ProjectProgressController extends Controller
                         ->update(['is_completed' => false]);
 
                     // Update the record's activity_id JSON array
-                    $updatePayload['activity_id'] = !empty($activityIds) ? $activityIds : null;
+                    $updatePayload['activity_id'] = ! empty($activityIds) ? $activityIds : null;
                 }
             }
 
@@ -181,7 +197,7 @@ class ProjectProgressController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Edit Progress Record',
-                'description' => auth()->user()->name . " edited progress record for project: {$project->title}" . (!empty($record->month_label) ? " ({$record->month_label})" : ''),
+                'description' => auth()->user()->name." edited progress record for project: {$project->title}".(! empty($record->month_label) ? " ({$record->month_label})" : ''),
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
@@ -192,7 +208,7 @@ class ProjectProgressController extends Controller
             $this->autoCompleteOnFullProgress($project, $request->inspection_date);
 
             // Sync prediction history actual_next with the edited value
-            if ($isMonthlyRecord && !empty($record->month_label)) {
+            if ($isMonthlyRecord && ! empty($record->month_label)) {
                 $this->syncPredictionHistoryActual($project, $record->month_label);
             }
 
@@ -210,7 +226,7 @@ class ProjectProgressController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to update progress record: ' . $e->getMessage()
+                'message' => 'Failed to update progress record: '.$e->getMessage(),
             ], 422);
         }
     }
@@ -218,10 +234,10 @@ class ProjectProgressController extends Controller
     public function destroyProgress(Project $project, $progressId)
     {
         // Admin-only deletion
-        if (!auth()->user() || auth()->user()->role !== 'admin') {
+        if (! auth()->user() || auth()->user()->role !== 'admin') {
             return response()->json([
                 'success' => false,
-                'message' => 'Only admin users can delete progress records.'
+                'message' => 'Only admin users can delete progress records.',
             ], 403);
         }
 
@@ -238,10 +254,10 @@ class ProjectProgressController extends Controller
             ->orderByDesc('id')
             ->first();
 
-        if (!$latest || $latest->id !== $record->id) {
+        if (! $latest || $latest->id !== $record->id) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only the latest progress record can be deleted.'
+                'message' => 'Only the latest progress record can be deleted.',
             ], 422);
         }
 
@@ -252,7 +268,7 @@ class ProjectProgressController extends Controller
             // not referenced by any other remaining progress record for the same month.
             $activityIds = $record->activity_id ?? [];
 
-            if (!empty($activityIds) && !empty($record->month_label)) {
+            if (! empty($activityIds) && ! empty($record->month_label)) {
                 foreach ($activityIds as $activityId) {
                     // Check if any OTHER progress record (excluding this one) for the
                     // same month still references this activity
@@ -262,10 +278,11 @@ class ProjectProgressController extends Controller
                         ->get()
                         ->contains(function ($other) use ($activityId) {
                             $otherIds = $other->activity_id ?? [];
+
                             return in_array($activityId, $otherIds);
                         });
 
-                    if (!$otherRecordRefs) {
+                    if (! $otherRecordRefs) {
                         // No remaining record references this activity — revert it
                         ProjectActivity::where('id', $activityId)
                             ->where('project_id', $project->id)
@@ -290,7 +307,7 @@ class ProjectProgressController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Delete Progress Record',
-                'description' => auth()->user()->name . " deleted a progress record for project: {$project->title}" . (!empty($record->month_label) ? " ({$record->month_label})" : ''),
+                'description' => auth()->user()->name." deleted a progress record for project: {$project->title}".(! empty($record->month_label) ? " ({$record->month_label})" : ''),
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
@@ -310,7 +327,7 @@ class ProjectProgressController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Progress record deleted successfully'
+                'message' => 'Progress record deleted successfully',
             ]);
 
         } catch (\Exception $e) {
@@ -318,7 +335,7 @@ class ProjectProgressController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to delete progress record: ' . $e->getMessage()
+                'message' => 'Failed to delete progress record: '.$e->getMessage(),
             ], 422);
         }
     }
@@ -332,7 +349,7 @@ class ProjectProgressController extends Controller
             'activity_ids' => 'nullable|array',
             'activity_ids.*' => 'integer|exists:project_activities,id',
             'actual_progress_percent' => 'required|numeric|between:0,100',
-            'remarks' => 'nullable|string'
+            'remarks' => 'nullable|string',
         ]);
 
         // The inspection date must fall within the selected month, otherwise a
@@ -345,15 +362,15 @@ class ProjectProgressController extends Controller
         $allowedMonths = [$validated['month_label']];
 
         if ($project->baselineSchedules()->max('month_label') === $validated['month_label']) {
-            $allowedMonths[] = \Illuminate\Support\Carbon::parse($validated['month_label'] . '-01')
+            $allowedMonths[] = \Illuminate\Support\Carbon::parse($validated['month_label'].'-01')
                 ->addMonth()
                 ->format('Y-m');
         }
 
-        if (!in_array($inspectionMonth, $allowedMonths, true)) {
+        if (! in_array($inspectionMonth, $allowedMonths, true)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Inspection date does not match the selected month.'
+                'message' => 'Inspection date does not match the selected month.',
             ], 422);
         }
 
@@ -365,16 +382,16 @@ class ProjectProgressController extends Controller
             $maxRecordedActual = ProjectProgressHistory::where('project_id', $project->id)
                 ->where('month_label', '<=', $validated['month_label'])
                 ->max('actual_progress_percent') ?? 0;
-            
+
             if ($validated['actual_progress_percent'] < $maxRecordedActual) {
                 throw new \Exception("Actual progress % cannot be lower than the highest recorded progress ({$maxRecordedActual}%). You entered: {$validated['actual_progress_percent']}%");
             }
 
             // Step 1: Update PROJECT_ACTIVITIES with completion status
             $activityIds = $validated['activity_ids'] ?? [];
-            
+
             // Mark all submitted activities as completed (if any)
-            if (!empty($activityIds)) {
+            if (! empty($activityIds)) {
                 ProjectActivity::whereIn('id', $activityIds)
                     ->where('project_id', $project->id)
                     ->update(['is_completed' => true]);
@@ -398,14 +415,14 @@ class ProjectProgressController extends Controller
                 'actual_progress_percent' => $actualProgressPercent,
                 'planned_progress_percent' => $plannedProgressPercent,
                 'variance_percent' => $variancePercent,
-                'activity_id' => !empty($activityIds) ? $activityIds : null,
+                'activity_id' => ! empty($activityIds) ? $activityIds : null,
                 'month_number' => intval(explode('-', $validated['month_label'])[1]), // Extract month from "2026-01"
                 'recorded_by' => auth()->user()->id,
                 'remarks' => $validated['remarks'] ?? null,
                 // Backward compatibility fields
                 'progress_percentage' => $actualProgressPercent,
                 'status' => $this->getProgressStatus($variancePercent),
-                'inspection_date' => $validated['inspection_date']
+                'inspection_date' => $validated['inspection_date'],
             ]);
 
             DB::commit();
@@ -417,7 +434,7 @@ class ProjectProgressController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Record Monthly Progress',
-                'description' => auth()->user()->name . " recorded {$actualProgressPercent}% actual progress for project: {$project->title} ({$validated['month_label']}) — " . $this->getProgressStatus($variancePercent),
+                'description' => auth()->user()->name." recorded {$actualProgressPercent}% actual progress for project: {$project->title} ({$validated['month_label']}) — ".$this->getProgressStatus($variancePercent),
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
@@ -461,18 +478,18 @@ class ProjectProgressController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to record monthly progress: ' . $e->getMessage()
+                'message' => 'Failed to record monthly progress: '.$e->getMessage(),
             ], 422);
         }
     }
 
     /**
      * Determine progress status based on variance
-     * 
-     * @param float $variancePercent
+     *
+     * @param  float  $variancePercent
      * @return string (Behind|OnTrack|Ahead)
      */
     private function getProgressStatus($variancePercent)
@@ -482,6 +499,7 @@ class ProjectProgressController extends Controller
         } elseif ($variancePercent > 5) {
             return 'Ahead';
         }
+
         return 'OnTrack';
     }
 
@@ -491,9 +509,7 @@ class ProjectProgressController extends Controller
      * Called by: recordMonthlyProgress(), editProgressRecord()
      * Non-blocking: failures are logged, never break the main operation.
      *
-     * @param Project $project
-     * @param string  $inspectionDate Inspection date that achieved 100%
-     * @return void
+     * @param  string  $inspectionDate  Inspection date that achieved 100%
      */
     private function autoCompleteOnFullProgress(Project $project, string $inspectionDate): void
     {
@@ -511,13 +527,13 @@ class ProjectProgressController extends Controller
                     'user_id' => auth()->id(),
                     'project_id' => $project->id,
                     'action' => 'Project Auto-Completed',
-                    'description' => auth()->user()->name . " marked {$project->title} as Completed (reached 100% actual progress).",
+                    'description' => auth()->user()->name." marked {$project->title} as Completed (reached 100% actual progress).",
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
             }
         } catch (\Exception $e) {
-            \Log::error('Failed to auto-complete project: ' . $e->getMessage());
+            \Log::error('Failed to auto-complete project: '.$e->getMessage());
         }
     }
 
@@ -558,7 +574,7 @@ class ProjectProgressController extends Controller
                 ->orderByDesc('id')
                 ->first();
 
-            if (!$latestPrediction) {
+            if (! $latestPrediction) {
                 return;
             }
 
@@ -575,7 +591,7 @@ class ProjectProgressController extends Controller
             Log::warning('Failed to sync prediction history actual_next', [
                 'project_id' => $project->id,
                 'month_label' => $monthLabel,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -603,7 +619,7 @@ class ProjectProgressController extends Controller
         } catch (\Exception $e) {
             Log::warning('Failed to prune prediction history on empty progress', [
                 'project_id' => $project->id,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }

@@ -199,11 +199,13 @@
                                         @endif
                                     </td>
                                     <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
+                                        @if(auth()->user()->role === 'admin' || $loop->first)
                                         <button onclick="openEditProgressModal({{ $history->id }}, '{{ $history->month_label }}')"
                                                 style="background: #dbeafe; color: #0369a1; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; margin-right: 4px;"
                                                 title="Edit Record">
                                             <i class="bi bi-pencil"></i>
                                         </button>
+                                        @endif
                                         @if(auth()->user()->role === 'admin' && $loop->first)
                                         <button onclick="deleteProgressRecord({{ $history->id }})"
                                                 style="background: #fee2e2; color: #dc2626; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"

@@ -2,24 +2,23 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\ProjectActivity;
 use App\Models\ProjectBaselineSchedule;
-use App\Models\ActivityLog;
+use App\Models\ProjectProgressHistory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
 /**
  * ProjectActivityController
- * 
+ *
  * Handles all ProjectActivity (monthly activity checklists) operations:
  * - Retrieving activities for a specific month
  * - Creating new activities
  * - Deleting activities
  * - Toggling activity completion status
  * - Dashboard activity display
- * 
+ *
  * Moved from ProjectController as part of Phase 2 refactor (April 2026)
  */
 class ProjectActivityController extends Controller
@@ -28,11 +27,11 @@ class ProjectActivityController extends Controller
     {
         try {
             $monthLabel = $request->query('month_label');
-            
-            if (!$monthLabel) {
+
+            if (! $monthLabel) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'month_label query parameter is required'
+                    'message' => 'month_label query parameter is required',
                 ], 422);
             }
 
@@ -41,13 +40,13 @@ class ProjectActivityController extends Controller
                 ->where('month_label', $monthLabel)
                 ->orderBy('activity_name', 'asc')
                 ->get()
-                ->map(function($activity) {
+                ->map(function ($activity) {
                     return [
                         'id' => $activity->id,
                         'activity_name' => $activity->activity_name,
                         'description' => $activity->description,
                         'is_completed' => (bool) $activity->is_completed,
-                        'month_label' => $activity->month_label
+                        'month_label' => $activity->month_label,
                     ];
                 });
 
@@ -64,13 +63,13 @@ class ProjectActivityController extends Controller
                 'activities' => $activities,
                 'planned_progress_percent' => $plannedProgressPercent,
                 'month_date' => $monthDate,
-                'count' => $activities->count()
+                'count' => $activities->count(),
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error fetching activities: ' . $e->getMessage()
+                'message' => 'Error fetching activities: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -81,7 +80,7 @@ class ProjectActivityController extends Controller
             $validated = $request->validate([
                 'activity_name' => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'month_label' => 'required|string|regex:/^\d{4}-\d{2}(-\d{2})?/'
+                'month_label' => 'required|string|regex:/^\d{4}-\d{2}(-\d{2})?/',
             ]);
 
             // Get Baseline Schedule for this month to get the planned date
@@ -89,10 +88,22 @@ class ProjectActivityController extends Controller
                 ->where('month_label', $validated['month_label'])
                 ->first();
 
-            if (!$baselineSchedule) {
+            if (! $baselineSchedule) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No baseline schedule exists for this month. Create one first.'
+                    'message' => 'No baseline schedule exists for this month. Create one first.',
+                ], 422);
+            }
+
+            // Frozen month guard: once actual progress has been recorded for a
+            // month, its activity checklist is locked. Leftover work leaves via
+            // Carry Over; new scope must be added to future months instead.
+            if (ProjectProgressHistory::where('project_id', $project->id)
+                ->where('month_label', $validated['month_label'])
+                ->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This month already has recorded progress and its activities can no longer be changed.',
                 ], 422);
             }
 
@@ -103,14 +114,14 @@ class ProjectActivityController extends Controller
                 'activity_name' => $validated['activity_name'],
                 'description' => $validated['description'],
                 'month_label' => $validated['month_label'],
-                'is_completed' => false
+                'is_completed' => false,
             ]);
 
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Add Checklist Item',
-                'description' => auth()->user()->name . " added activity \"{$activity->activity_name}\" for project: {$project->title} ({$validated['month_label']})",
+                'description' => auth()->user()->name." added activity \"{$activity->activity_name}\" for project: {$project->title} ({$validated['month_label']})",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
@@ -118,13 +129,13 @@ class ProjectActivityController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Activity created successfully',
-                'activity' => $activity
+                'activity' => $activity,
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error creating activity: ' . $e->getMessage()
+                'message' => 'Error creating activity: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -139,7 +150,19 @@ class ProjectActivityController extends Controller
             if ($activity->is_completed) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot delete a completed activity.'
+                    'message' => 'Cannot delete a completed activity.',
+                ], 422);
+            }
+
+            // Frozen month guard: a month that already has recorded progress is
+            // locked. Deleting here would also orphan activity_id references in
+            // the progress history JSON (breaking name resolution), so reject.
+            if (ProjectProgressHistory::where('project_id', $project->id)
+                ->where('month_label', $activity->month_label)
+                ->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This month already has recorded progress and its activities can no longer be changed.',
                 ], 422);
             }
 
@@ -151,20 +174,20 @@ class ProjectActivityController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Delete Checklist Item',
-                'description' => auth()->user()->name . " deleted activity \"{$activityName}\" from project: {$project->title}",
+                'description' => auth()->user()->name." deleted activity \"{$activityName}\" from project: {$project->title}",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Activity deleted successfully'
+                'message' => 'Activity deleted successfully',
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting activity: ' . $e->getMessage()
+                'message' => 'Error deleting activity: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -175,10 +198,10 @@ class ProjectActivityController extends Controller
             $projectId = $request->query('project_id');
             $monthLabel = $request->query('month_label');
 
-            if (!$projectId || !$monthLabel) {
+            if (! $projectId || ! $monthLabel) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'project_id and month_label parameters are required'
+                    'message' => 'project_id and month_label parameters are required',
                 ], 422);
             }
 
@@ -190,26 +213,26 @@ class ProjectActivityController extends Controller
                 ->where('month_label', $monthLabel)
                 ->orderBy('activity_name', 'asc')
                 ->get()
-                ->map(function($activity) {
+                ->map(function ($activity) {
                     return [
                         'id' => $activity->id,
                         'activity_name' => $activity->activity_name,
                         'description' => $activity->description,
                         'is_completed' => (bool) $activity->is_completed,
-                        'month_label' => $activity->month_label
+                        'month_label' => $activity->month_label,
                     ];
                 });
 
             return response()->json([
                 'success' => true,
                 'activities' => $activities,
-                'count' => $activities->count()
+                'count' => $activities->count(),
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error fetching activities: ' . $e->getMessage()
+                'message' => 'Error fetching activities: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -218,12 +241,12 @@ class ProjectActivityController extends Controller
     {
         try {
             $validated = $request->validate([
-                'is_completed' => 'required|boolean'
+                'is_completed' => 'required|boolean',
             ]);
 
             $activity = ProjectActivity::findOrFail($activityId);
             $activity->update([
-                'is_completed' => $validated['is_completed']
+                'is_completed' => $validated['is_completed'],
             ]);
 
             $statusWord = $validated['is_completed'] ? 'completed' : 'reopened';
@@ -233,7 +256,7 @@ class ProjectActivityController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $activity->project_id,
                 'action' => 'Update Checklist Item',
-                'description' => auth()->user()->name . " marked \"{$activity->activity_name}\" as {$statusWord} for project: {$projectTitle}",
+                'description' => auth()->user()->name." marked \"{$activity->activity_name}\" as {$statusWord} for project: {$projectTitle}",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
@@ -245,14 +268,14 @@ class ProjectActivityController extends Controller
                     'id' => $activity->id,
                     'activity_name' => $activity->activity_name,
                     'is_completed' => (bool) $activity->is_completed,
-                    'month_label' => $activity->month_label
-                ]
+                    'month_label' => $activity->month_label,
+                ],
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error updating activity: ' . $e->getMessage()
+                'message' => 'Error updating activity: '.$e->getMessage(),
             ], 500);
         }
     }
