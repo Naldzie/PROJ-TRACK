@@ -71,6 +71,9 @@ var setupEditingIndex = null;
 /** True when the modal is in adjust-baseline mode (post-extension redistribution). */
 var setupAdjustMode = false;
 
+/** True when the modal is in edit-original mode (admin correcting the locked original plan). */
+var setupEditOriginalMode = false;
+
 /** Tracks IDs of months removed by the user in adjust mode, sent as removed_ids. */
 var setupRemovedIds = [];
 
@@ -197,6 +200,7 @@ function openAdjustBaselineModal() {
 
         // Populate local months from server data
         setupAdjustMode = true;
+        setupEditOriginalMode = false;
         setupRemovedIds = [];
         setupLocalMonths = data.months.map(function (m) {
             return {
@@ -263,6 +267,112 @@ function openAdjustBaselineModal() {
     .catch(function (err) {
         if (typeof showToast === 'function') {
             showToast('Error loading baseline: ' + err.message, 'error');
+        }
+    });
+}
+
+/**
+ * Open the Set Up Baseline modal in EDIT-ORIGINAL mode (admin only).
+ *
+ * Pre-populates ONLY the original-baseline months (rows that were part of
+ * the locked original plan — original_planned_progress_percent AND
+ * original_planned_date both set) plus their activities, so an admin can
+ * correct the frozen plan. Extension months are NOT shown here — they are
+ * managed via the Generate Adjusted Baseline flow. Months with recorded
+ * actual progress are locked.
+ */
+function openEditOriginalBaselineModal() {
+    var token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) {
+        if (typeof showToast === 'function') {
+            showToast('Session expired. Please refresh the page.', 'error');
+        }
+        return;
+    }
+
+    // Fetch the original baseline months from the server
+    fetch(buildBaselineScheduleEndpoint() + '/original', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token }
+    })
+    .then(function (response) {
+        if (!response.ok) return response.json().then(function (d) { throw new Error(d.message || 'HTTP ' + response.status); });
+        return response.json();
+    })
+    .then(function (data) {
+        if (!data.success) {
+            if (typeof showToast === 'function') showToast(data.message || 'Failed to load original baseline data.', 'error');
+            return;
+        }
+
+        // Populate local months from the returned ORIGINAL months only
+        setupAdjustMode = false;
+        setupEditOriginalMode = true;
+        setupRemovedIds = [];
+        setupLocalMonths = data.months.map(function (m) {
+            return {
+                scheduleId:                   m.id,
+                month_label:                  m.month_label,
+                planned_date:                 m.original_planned_date || m.planned_date,
+                planned_progress_percent:     m.original_planned_progress_percent !== null
+                                                  ? parseFloat(m.original_planned_progress_percent)
+                                                  : (parseFloat(m.planned_progress_percent) || 0),
+                original_planned_progress_percent: m.original_planned_progress_percent !== null
+                                                  ? parseFloat(m.original_planned_progress_percent)
+                                                  : null,
+                original_planned_date:        m.original_planned_date || null,
+                description:                  m.description || '',
+                has_actual_progress:          m.has_actual_progress || false,
+                activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
+                    return { id: a.id || null, activity_name: a.activity_name, description: a.description || '' };
+                }),
+                isNew:                        false
+            };
+        });
+
+        setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
+            return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+        }, 0);
+
+        // Open the modal pre-populated
+        if (!setupModalInstance) {
+            setupModalInstance = new bootstrap.Modal(document.getElementById('setupBaselineModal'));
+        }
+
+        // Update modal title and button text for edit-original mode
+        var titleEl = document.getElementById('setupModalTitle');
+        if (titleEl) titleEl.textContent = 'Edit Original Baseline';
+        var iconEl = document.getElementById('setupModalTitleIcon');
+        if (iconEl) iconEl.className = 'bi bi-pencil-square';
+        var doneBtn = document.getElementById('setupDoneBtn');
+        if (doneBtn) {
+            doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Save Original Baseline';
+        }
+        var warningEl = document.getElementById('setupWarningNotice');
+        if (warningEl) {
+            warningEl.innerHTML =
+                '<i class="bi bi-info-circle-fill" style="color: #0369a1; font-size: 16px; flex-shrink: 0; margin-top: 0;"></i>' +
+                '<div>' +
+                '<div style="font-weight: 700; color: #075985; font-size: 12px; margin-bottom: 2px;">Editing the Locked Original Baseline</div>' +
+                '<div style="color: #075985; font-size: 11px; line-height: 1.4;">' +
+                'This corrects the frozen original plan — the live AND the frozen original values update together. ' +
+                'Months with recorded progress are <strong>locked</strong> (yellow background). ' +
+                'Extension months are not shown here; manage them with Generate Adjusted Baseline.</div></div>';
+            warningEl.style.background = '#f0f9ff';
+            warningEl.style.border = '1px solid #bae6fd';
+            warningEl.style.borderLeft = '4px solid #0ea5e9';
+        }
+
+        setupEditingIndex = null;
+        resetSetupForm();
+        renderSetupMonthList(setupLocalMonths);
+        updateSetupProgress(setupLocalMonths);
+        updateSetupSCurvePreview();
+        setupModalInstance.show();
+    })
+    .catch(function (err) {
+        if (typeof showToast === 'function') {
+            showToast('Error loading original baseline: ' + err.message, 'error');
         }
     });
 }
@@ -446,10 +556,14 @@ function onSetupBaselineCancel() {
 
     // Has months — confirm before discarding
     var count = setupLocalMonths.length;
-    var title = setupAdjustMode ? 'Discard Adjusted Baseline?' : 'Discard Unsaved Baseline?';
-    var msg = setupAdjustMode
-        ? 'You have <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' in the adjusted plan. Changes will be lost if you continue.'
-        : 'You have added <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' that ' + (count > 1 ? 'have' : 'has') + ' not been saved yet. If you continue, this data will be lost.';
+    var title = setupEditOriginalMode
+        ? 'Discard Original Baseline Edits?'
+        : (setupAdjustMode ? 'Discard Adjusted Baseline?' : 'Discard Unsaved Baseline?');
+    var msg = setupEditOriginalMode
+        ? 'You have <strong>' + count + '</strong> original month target' + (count > 1 ? 's' : '') + ' with unsaved edits. Changes will be lost if you continue.'
+        : (setupAdjustMode
+            ? 'You have <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' in the adjusted plan. Changes will be lost if you continue.'
+            : 'You have added <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' that ' + (count > 1 ? 'have' : 'has') + ' not been saved yet. If you continue, this data will be lost.');
     showDeleteConfirmation(
         title,
         msg,
@@ -458,6 +572,7 @@ function onSetupBaselineCancel() {
             setupCurrentMaxPercent = 0;
             setupEditingIndex = null;
             setupAdjustMode = false;
+            setupEditOriginalMode = false;
             setupRemovedIds = [];
             setupProjectEndDate = null;
             resetModalUIToDefaults();
@@ -467,6 +582,32 @@ function onSetupBaselineCancel() {
             if (setupModalInstance) setupModalInstance.hide();
         }
     );
+}
+
+/**
+ * Build the bulk-save payload (months + removed_ids) shared by the
+ * adjust-baseline and edit-original modes.
+ */
+function buildSetupUpsertPayload() {
+    return {
+        months: setupLocalMonths.map(function (m) {
+            return {
+                id:                           m.scheduleId || null,
+                month_label:                  m.month_label,
+                planned_date:                 m.planned_date,
+                planned_progress_percent:     m.planned_progress_percent,
+                description:                  m.description || '',
+                activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
+                    return {
+                        id:             a.id || null,
+                        activity_name:  a.activity_name,
+                        description:    a.description || ''
+                    };
+                })
+            };
+        }),
+        removed_ids: setupRemovedIds
+    };
 }
 
 /**
@@ -499,35 +640,21 @@ function onSetupBaselineDone() {
         return; // no server call, no page reload
     }
 
-    // ── Adjust-baseline mode: POST to dedicated endpoint ──────────────────
-    if (setupAdjustMode) {
+    // ── Adjust-baseline / edit-original modes: POST to dedicated endpoint ──
+    if (setupAdjustMode || setupEditOriginalMode) {
         var token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
         var doneBtn = document.getElementById('setupDoneBtn');
+        var doneLabel = setupEditOriginalMode ? 'Save Original Baseline' : 'Save Adjusted Baseline';
+        var endpoint = setupEditOriginalMode
+            ? buildBaselineScheduleEndpoint() + '/original/save'
+            : buildBaselineScheduleEndpoint() + '/adjust/save';
         doneBtn.disabled = true;
         doneBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
 
         // Build payload: months + removed_ids
-        var payload = {
-            months: setupLocalMonths.map(function (m) {
-                return {
-                    id:                           m.scheduleId || null,
-                    month_label:                  m.month_label,
-                    planned_date:                 m.planned_date,
-                    planned_progress_percent:     m.planned_progress_percent,
-                    description:                  m.description || '',
-                    activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
-                        return {
-                            id:             a.id || null,
-                            activity_name:  a.activity_name,
-                            description:    a.description || ''
-                        };
-                    })
-                };
-            }),
-            removed_ids: setupRemovedIds
-        };
+        var payload = buildSetupUpsertPayload();
 
-        fetch(buildBaselineScheduleEndpoint() + '/adjust/save', {
+        fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -547,24 +674,25 @@ function onSetupBaselineDone() {
         .then(function (data) {
             if (data.success) {
                 if (typeof queueToastAfterReload === 'function') {
-                    queueToastAfterReload(data.message || 'Adjusted baseline saved successfully!', 'success');
+                    queueToastAfterReload(data.message || 'Baseline updated successfully!', 'success');
                 }
                 setupAdjustMode = false;
+                setupEditOriginalMode = false;
                 setupRemovedIds = [];
                 setupProjectEndDate = null;
                 if (setupModalInstance) setupModalInstance.hide();
                 sessionStorage.setItem('activeTab', 's-curve-planning');
                 setTimeout(function () { location.reload(); }, 600);
             } else {
-                showSetupErrors([data.message || 'Failed to save adjusted baseline.']);
+                showSetupErrors([data.message || 'Failed to save baseline.']);
                 doneBtn.disabled = false;
-                doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Save Adjusted Baseline';
+                doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>' + doneLabel;
             }
         })
         .catch(function (err) {
             showSetupErrors(['Error saving: ' + err.message]);
             doneBtn.disabled = false;
-            doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Save Adjusted Baseline';
+            doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>' + doneLabel;
         });
 
         return;
@@ -793,8 +921,8 @@ function addSetupBaselineMonth() {
  * @param {number} index — position in setupLocalMonths to remove
  */
 function removeSetupBaselineMonth(index) {
-    // In adjust mode, track removed DB records for server deletion
-    if (setupAdjustMode) {
+    // In adjust / edit-original modes, track removed DB records for server deletion
+    if (setupAdjustMode || setupEditOriginalMode) {
         var removedMonth = setupLocalMonths[index];
         if (removedMonth && removedMonth.scheduleId) {
             if (setupRemovedIds.indexOf(removedMonth.scheduleId) === -1) {
@@ -1100,9 +1228,11 @@ function renderSetupMonthList(months) {
 
     // ── Empty state ───────────────────────────────────────────────────────────
     if (months.length === 0) {
-        var emptyMsg = setupAdjustMode
-            ? 'No months loaded. Try refreshing the page.'
-            : 'No months added yet. Add your first month on the left.';
+        var emptyMsg = setupEditOriginalMode
+            ? 'No original baseline months found.'
+            : (setupAdjustMode
+                ? 'No months loaded. Try refreshing the page.'
+                : 'No months added yet. Add your first month on the left.');
         listEl.innerHTML = `
             <div id="setupMonthListEmpty"
                  style="padding: 30px; text-align: center; color: #9ca3af; font-size: 12px;">
@@ -1121,7 +1251,7 @@ function renderSetupMonthList(months) {
         const origPct      = month.original_planned_progress_percent !== null && month.original_planned_progress_percent !== undefined
                              ? parseFloat(month.original_planned_progress_percent) : null;
         const is100        = pct >= 100;
-        const isLocked     = setupAdjustMode && month.has_actual_progress;
+        const isLocked     = (setupAdjustMode || setupEditOriginalMode) && month.has_actual_progress;
         const rowBg        = isLocked ? '#fefce8' : (is100 ? '#f0fdf4' : (index % 2 === 0 ? '#f9fafb' : 'white'));
         const percentColor = is100 ? '#16a34a' : '#667eea';
         const activityCount = month.activities ? month.activities.length : 0;
@@ -1481,6 +1611,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             setupEditingIndex = null;
             setupAdjustMode = false;
+            setupEditOriginalMode = false;
             setupRemovedIds = [];
             setupProjectEndDate = null;
             // Clear caller context to prevent stale state on re-open

@@ -513,6 +513,11 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.baseline-schedules.adjust');
     Route::post('/projects/{project}/baseline-schedules/adjust/save', [BaselineScheduleController::class, 'saveAdjustedBaseline'])
         ->name('admin.projects.baseline-schedules.adjust.save');
+    // Admin-only "Edit Original Baseline" — corrects the locked original plan
+    Route::get('/projects/{project}/baseline-schedules/original', [BaselineScheduleController::class, 'getOriginalBaselineMonths'])
+        ->name('admin.projects.baseline-schedules.original');
+    Route::post('/projects/{project}/baseline-schedules/original/save', [BaselineScheduleController::class, 'saveEditedOriginalBaseline'])
+        ->name('admin.projects.baseline-schedules.original.save');
 
     // === ACTIVITIES: CRUD ROUTES ===
     Route::post('/projects/{project}/activities', [ProjectActivityController::class, 'storeActivity'])

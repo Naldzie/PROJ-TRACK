@@ -59,13 +59,21 @@
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
                         <i class="bi bi-flag"></i> Set Up Baseline
                     </button>
-                @elseif($project->extension_count > 0)
-                    <button class="btn-primary" onclick="openAddMonthTargetModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
-                        <i class="bi bi-plus-circle"></i> Add Month Target
-                    </button>
-                    <button class="btn-primary" onclick="openAdjustBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
-                        <i class="bi bi-arrow-repeat"></i> Generate Adjusted Baseline
-                    </button>
+                @else
+                    {{-- Admin-only: re-open the Set Up Baseline modal to correct the locked original plan (B3.2). --}}
+                    @if(auth()->user()->role === 'admin')
+                        <button class="btn-primary" onclick="openEditOriginalBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
+                            <i class="bi bi-pencil-square"></i> Edit Original Baseline
+                        </button>
+                    @endif
+                    @if($project->extension_count > 0)
+                        <button class="btn-primary" onclick="openAddMonthTargetModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
+                            <i class="bi bi-plus-circle"></i> Add Month Target
+                        </button>
+                        <button class="btn-primary" onclick="openAdjustBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
+                            <i class="bi bi-arrow-repeat"></i> Generate Adjusted Baseline
+                        </button>
+                    @endif
                 @endif
             @endcan
         </div>

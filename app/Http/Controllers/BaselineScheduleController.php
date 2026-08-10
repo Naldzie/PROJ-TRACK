@@ -406,6 +406,7 @@ class BaselineScheduleController extends Controller
                         'month_label' => $month['month_label'],
                         'planned_progress_percent' => $month['planned_progress_percent'],
                         'original_planned_progress_percent' => $month['planned_progress_percent'],
+                        'original_planned_date' => $month['planned_date'],
                         'description' => $month['description'] ?? null,
                         'created_at' => $now,
                     ]);
@@ -1070,6 +1071,470 @@ class BaselineScheduleController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error saving adjusted baseline: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Return ONLY original-baseline months for the admin "Edit Original
+     * Baseline" mode of the Set Up Baseline modal.
+     *
+     * Original-baseline months are rows where BOTH frozen columns are set
+     * (original_planned_progress_percent AND original_planned_date NOT NULL) —
+     * they were part of the originally locked plan. Extension-only rows are
+     * excluded: they are managed via the Generate Adjusted Baseline flow.
+     */
+    public function getOriginalBaselineMonths(Project $project)
+    {
+        if (auth()->user() && auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only admins can edit the original baseline.',
+            ], 403);
+        }
+
+        try {
+            $months = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->whereNotNull('original_planned_progress_percent')
+                ->whereNotNull('original_planned_date')
+                ->orderBy('planned_date', 'asc')
+                ->get()
+                ->map(function ($schedule) {
+                    return [
+                        'id'                            => $schedule->id,
+                        'month_label'                   => $schedule->month_label,
+                        'planned_date'                  => $schedule->planned_date->format('Y-m-d'),
+                        'planned_progress_percent'      => $schedule->planned_progress_percent,
+                        'original_planned_progress_percent' => $schedule->original_planned_progress_percent,
+                        'original_planned_date'         => $schedule->original_planned_date?->format('Y-m-d'),
+                        'description'                   => $schedule->description ?? '',
+                        'has_actual_progress'           => $schedule->progressHistory()->exists(),
+                        'activities'                    => $schedule->activities()
+                            ->orderBy('id', 'asc')
+                            ->get(['id', 'activity_name', 'description'])
+                            ->map(fn ($activity) => [
+                                'id'            => $activity->id,
+                                'activity_name' => $activity->activity_name,
+                                'description'   => $activity->description ?? '',
+                            ])
+                            ->values(),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'months' => $months,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching original baseline months: '.$e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Admin-only: bulk-save an edited ORIGINAL baseline.
+     *
+     * This is the correction path for the locked original plan. Unlike the
+     * adjust-baseline flow it:
+     *   • operates ONLY on original-baseline months (both frozen columns
+     *     NOT NULL) and their activities — extension months are untouched;
+     *   • updates BOTH the live (planned_date / planned_progress_percent) AND
+     *     the frozen (original_planned_date / original_planned_progress_percent)
+     *     columns, so a corrected original plan stays internally consistent;
+     *   • locks months that already have recorded actual progress (their
+     *     actuals feed the S-curve / AI trend and must not be rewritten).
+     *
+     * In one DB transaction: DELETE removed original months (guarded against
+     * progress), diff-based UPSERT the submitted original months + activities
+     * (preserving activity identity / is_completed), then re-validate the
+     * whole original sequence (strictly increasing %, final original month = 100%).
+     */
+    public function saveEditedOriginalBaseline(Request $request, Project $project)
+    {
+        if (auth()->user() && auth()->user()->role !== 'admin') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only admins can edit the original baseline.',
+            ], 403);
+        }
+
+        try {
+            $validated = $request->validate([
+                'months' => 'required|array',
+                'months.*.id' => 'nullable|integer',
+                'months.*.month_label' => 'required|string|regex:/^\d{4}-\d{2}$/',
+                'months.*.planned_date' => 'required|date',
+                'months.*.planned_progress_percent' => 'required|numeric|between:0,100',
+                'months.*.description' => 'nullable|string',
+                'months.*.activities' => 'nullable|array',
+                'months.*.activities.*.id' => 'nullable|integer',
+                'months.*.activities.*.activity_name' => 'required_with:months.*.activities|string|max:255',
+                'months.*.activities.*.description' => 'nullable|string',
+                'removed_ids' => 'nullable|array',
+                'removed_ids.*' => 'integer|exists:project_baseline_schedules,id',
+            ]);
+
+            $projectStart = $project->planned_start_date;
+            $projectEnd = $project->planned_end_date;
+
+            if (! $projectStart || ! $projectEnd) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Set the project planned start and end dates before editing the baseline.',
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // ── 1. DELETE months the admin removed (original rows only, no progress) ──
+            if (! empty($validated['removed_ids'])) {
+                foreach ($validated['removed_ids'] as $removeId) {
+                    $schedule = ProjectBaselineSchedule::where('project_id', $project->id)
+                        ->where('id', $removeId)
+                        ->first();
+
+                    if (! $schedule) {
+                        continue;
+                    }
+
+                    // Only original-baseline months are in scope for this endpoint
+                    if ($schedule->original_planned_progress_percent === null || $schedule->original_planned_date === null) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Only original baseline months can be removed here. Extension months are managed via Generate Adjusted Baseline.',
+                        ], 422);
+                    }
+
+                    // Guard: cannot delete a month with actual progress
+                    if ($schedule->progressHistory()->exists()) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Cannot remove "'.$schedule->month_label.'" — it already has recorded progress.',
+                        ], 422);
+                    }
+
+                    // Cascade delete (same order as deleteBaselineSchedule)
+                    ProjectProgressHistory::where('project_id', $project->id)
+                        ->where('baseline_schedule_id', $schedule->id)
+                        ->delete();
+                    ProjectActivity::where('project_id', $project->id)
+                        ->where('baseline_schedule_id', $schedule->id)
+                        ->delete();
+                    ProjectActivityCarryover::where('project_id', $project->id)
+                        ->where(function ($q) use ($schedule) {
+                            $q->where('from_baseline_schedule_id', $schedule->id)
+                                ->orWhere('to_baseline_schedule_id', $schedule->id);
+                        })
+                        ->delete();
+                    $schedule->delete();
+                    $changed = true;
+                }
+            }
+
+            // ── 2. UPSERT each submitted original month ────────────────────────────
+            $submittedIds = [];
+
+            // Tracks whether ANY row was actually changed. When the admin opens
+            // the modal and saves without editing anything, we short-circuit so
+            // no DB writes, ActivityLog, or extension snapshot are produced.
+            $changed = false;
+
+            foreach ($validated['months'] as $monthData) {
+                $scheduleId = $monthData['id'] ?? null;
+
+                // Timeline bounds: the baseline IS the plan
+                $plannedDate = \Carbon\Carbon::parse($monthData['planned_date']);
+                if ($plannedDate->lt($projectStart)) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Target date {$monthData['planned_date']} is before the project's planned start date ({$projectStart->format('Y-m-d')}).",
+                    ], 422);
+                }
+                if ($plannedDate->gt($projectEnd)) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Target date {$monthData['planned_date']} is after the project's planned end date ({$projectEnd->format('Y-m-d')}).",
+                    ], 422);
+                }
+
+                // Rule A: date must fall within the selected month
+                $dateMonth = substr($monthData['planned_date'], 0, 7);
+                if ($dateMonth !== $monthData['month_label']) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Target date must fall within '.$monthData['month_label'].'.',
+                    ], 422);
+                }
+
+                if ($scheduleId) {
+                    // ── EXISTING original month — UPDATE ────────────────────────────
+                    $schedule = ProjectBaselineSchedule::where('project_id', $project->id)
+                        ->where('id', $scheduleId)
+                        ->first();
+
+                    if (! $schedule) {
+                        continue;
+                    }
+
+                    // Only original-baseline months are in scope
+                    if ($schedule->original_planned_progress_percent === null || $schedule->original_planned_date === null) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => '"'.$schedule->month_label.'" is not an original baseline month and cannot be edited here.',
+                        ], 422);
+                    }
+
+                    // Guard: months with actual progress are immutable
+                    if ($schedule->progressHistory()->exists()) {
+                        $submittedIds[] = $schedule->id;
+                        continue;
+                    }
+
+                    // Compute submitted vs. DB state. In this mode the payload's
+                    // planned_* fields carry the FROZEN original values (the modal
+                    // seeds from original_planned_*), so diff them against the DB's
+                    // original_* columns.
+                    $submittedDate = \Carbon\Carbon::parse($monthData['planned_date'])->format('Y-m-d');
+                    $submittedPct = (float) $monthData['planned_progress_percent'];
+                    $submittedDesc = trim((string) ($monthData['description'] ?? ''));
+
+                    $currentOriginalDate = $schedule->original_planned_date?->format('Y-m-d');
+                    $currentOriginalPct = (float) $schedule->original_planned_progress_percent;
+                    $currentLiveDate = $schedule->planned_date?->format('Y-m-d');
+                    $currentLivePct = (float) $schedule->planned_progress_percent;
+
+                    // A row is "diverged" when the adjusted baseline redistributed
+                    // the live curve away from the frozen original (date or percent).
+                    // For diverged rows we ONLY correct the frozen original and leave
+                    // the live/adjusted curve untouched, so the adjusted baseline
+                    // doesn't have to be regenerated after this edit.
+                    $diverged = $currentLivePct !== $currentOriginalPct || $currentLiveDate !== $currentOriginalDate;
+
+                    // Diff: skip the row entirely when the frozen original is unchanged.
+                    if ($submittedPct === $currentOriginalPct
+                        && $submittedDate === $currentOriginalDate
+                        && $submittedDesc === trim((string) $schedule->description)) {
+                        $submittedIds[] = $schedule->id;
+                        continue;
+                    }
+
+                    // Correct the frozen original columns — and, only when the live
+                    // columns still mirror the original plan (not diverged), update
+                    // them together so the plan stays in lockstep.
+                    $updateData = [
+                        'original_planned_date' => $submittedDate,
+                        'original_planned_progress_percent' => $submittedPct,
+                        'description' => $submittedDesc,
+                    ];
+
+                    if (! $diverged) {
+                        $updateData['planned_date'] = $submittedDate;
+                        $updateData['planned_progress_percent'] = $submittedPct;
+                    }
+
+                    $schedule->update($updateData);
+                    $changed = true;
+
+                    // Sync activities — diff-based upsert preserving identity and
+                    // is_completed (same strategy as saveAdjustedBaseline). Activity
+                    // dates follow the schedule's LIVE date so diverged rows keep
+                    // their adjusted placement.
+                    if (! empty($monthData['activities'])) {
+                        $existingActivities = ProjectActivity::where('project_id', $project->id)
+                            ->where('baseline_schedule_id', $schedule->id)
+                            ->get();
+
+                        $keptActivityIds = [];
+                        $liveDate = $schedule->planned_date->format('Y-m-d');
+
+                        foreach ($monthData['activities'] as $act) {
+                            if (empty($act['activity_name'])) {
+                                continue;
+                            }
+
+                            $match = null;
+                            if (! empty($act['id'])) {
+                                $match = $existingActivities->firstWhere('id', (int) $act['id']);
+                            }
+                            if (! $match) {
+                                $match = $existingActivities->firstWhere('activity_name', $act['activity_name']);
+                            }
+
+                            if ($match) {
+                                $match->update([
+                                    'activity_name' => $act['activity_name'],
+                                    'description' => $act['description'] ?? '',
+                                    'planned_date' => $liveDate,
+                                ]);
+                                $keptActivityIds[] = $match->id;
+                            } else {
+                                $newActivity = ProjectActivity::create([
+                                    'project_id' => $project->id,
+                                    'baseline_schedule_id' => $schedule->id,
+                                    'month_label' => $schedule->month_label,
+                                    'planned_date' => $liveDate,
+                                    'activity_name' => $act['activity_name'],
+                                    'description' => $act['description'] ?? '',
+                                    'is_completed' => false,
+                                ]);
+                                $keptActivityIds[] = $newActivity->id;
+                            }
+                        }
+
+                        ProjectActivity::where('project_id', $project->id)
+                            ->where('baseline_schedule_id', $schedule->id)
+                            ->whereNotIn('id', $keptActivityIds)
+                            ->delete();
+                    }
+
+                    $submittedIds[] = $schedule->id;
+
+                } else {
+                    // ── NEW original month — CREATE (both columns written) ─────────
+                    $exists = ProjectBaselineSchedule::where('project_id', $project->id)
+                        ->where(function ($q) use ($monthData) {
+                            $q->where('planned_date', $monthData['planned_date'])
+                                ->orWhere('month_label', $monthData['month_label']);
+                        })
+                        ->exists();
+                    if ($exists) {
+                        DB::rollBack();
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'A target for '.$monthData['planned_date'].' / '.$monthData['month_label'].' already exists.',
+                        ], 422);
+                    }
+
+                    $schedule = ProjectBaselineSchedule::create([
+                        'project_id' => $project->id,
+                        'month_label' => $monthData['month_label'],
+                        'planned_date' => $monthData['planned_date'],
+                        'planned_progress_percent' => $monthData['planned_progress_percent'],
+                        'original_planned_progress_percent' => $monthData['planned_progress_percent'],
+                        'original_planned_date' => $monthData['planned_date'],
+                        'description' => $monthData['description'] ?? '',
+                    ]);
+
+                    $changed = true;
+
+                    if (! empty($monthData['activities'])) {
+                        foreach ($monthData['activities'] as $act) {
+                            if (! empty($act['activity_name'])) {
+                                ProjectActivity::create([
+                                    'project_id' => $project->id,
+                                    'baseline_schedule_id' => $schedule->id,
+                                    'month_label' => $schedule->month_label,
+                                    'planned_date' => $monthData['planned_date'],
+                                    'activity_name' => $act['activity_name'],
+                                    'description' => $act['description'] ?? '',
+                                    'is_completed' => false,
+                                ]);
+                            }
+                        }
+                    }
+
+                    $submittedIds[] = $schedule->id;
+                }
+            }
+
+            // ── 3. Validate the edited ORIGINAL sequence ─────────────────────────
+            // The admin is correcting the frozen original plan, so validate the
+            // ORIGINAL curve (not the live one — a redistributed adjusted baseline
+            // may legitimately differ while its original plan stays consistent).
+            $allMonths = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->whereIn('id', $submittedIds)
+                ->orderBy('original_planned_date', 'asc')
+                ->get();
+
+            $prevPercent = -1;
+            foreach ($allMonths as $m) {
+                $originalPct = (float) $m->original_planned_progress_percent;
+                if ($originalPct <= $prevPercent) {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Original progress % must be strictly increasing. "'.$m->month_label.'" ('.$originalPct.'%) is not higher than the previous month ('.$prevPercent.'%).',
+                    ], 422);
+                }
+                $prevPercent = $originalPct;
+            }
+
+            // The ORIGINAL plan is a self-contained 0→100 curve, so its final
+            // month must always reach 100% (same rule as initial setup).
+            $lastMonth = $allMonths->last();
+            if ($lastMonth && (float) $lastMonth->original_planned_progress_percent < 100) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The last original month "'.$lastMonth->month_label.'" must reach 100%. Currently at '.$lastMonth->original_planned_progress_percent.'%.',
+                ], 422);
+            }
+
+            // ── 4. No-op short-circuit ────────────────────────────────────────────
+            // Nothing changed (no removals, no original edits, no new months):
+            // skip the ActivityLog and the extension snapshot entirely.
+            if (! $changed) {
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'No changes detected. Nothing was saved.',
+                ]);
+            }
+
+            ActivityLog::create([
+                'user_id' => auth()->id(),
+                'project_id' => $project->id,
+                'action' => 'Edit Original Baseline',
+                'description' => auth()->user()->name
+                    ." edited the locked original baseline for project: {$project->title}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            DB::commit();
+
+            // Extension-management Phase 2.5: snapshot the corrected baseline so a
+            // later revert restores the state the admin built.
+            \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Original baseline updated successfully!',
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error: '.collect($e->errors())->flatten()->first(),
+            ], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error saving edited original baseline', [
+                'project_id' => $project->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error saving edited original baseline: '.$e->getMessage(),
             ], 500);
         }
     }
