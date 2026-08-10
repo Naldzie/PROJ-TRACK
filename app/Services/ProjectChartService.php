@@ -316,7 +316,108 @@ class ProjectChartService
     }
 
     // Detect missing months, overdue months, and decreasing anomalies
-    private function buildQualityChecks(Collection $baselineSchedules, Collection $progressHistory): array
+    // Prepare the Risk Flags & Alerts payload for the Progress tab.
+    // Called by: ProjectController::getChartData()
+    // Calls: buildQualityChecks(), AIPredictionPresenter (via controller)
+    // Builds the red (critical) and yellow (warning) flag lists from real data:
+    // overdue missing months, decreasing-progress anomalies, AI deadline-miss,
+    // missing months, and the next high-target pending month.
+    public function prepareQualityChecks(Project $project, array $aiPrediction = []): array
+    {
+        $baselineSchedules = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->orderBy('planned_date', 'asc')
+            ->get();
+
+        if ($baselineSchedules->isEmpty()) {
+            return [
+                'ready'     => false,
+                'has_flags' => false,
+                'critical'  => [],
+                'warnings'  => [],
+            ];
+        }
+
+        $progressHistory = ProjectProgressHistory::where('project_id', $project->id)
+            ->orderBy('inspection_date', 'asc')
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        $checks = $this->buildQualityChecks($baselineSchedules, $progressHistory);
+
+        $critical = [];
+        $warnings = [];
+
+        // -- Critical: overdue inspection months (no record, date already passed) --
+        if (!empty($checks['overdue_missing_months'])) {
+            $critical[] = [
+                'icon'    => 'bi-exclamation-circle-fill',
+                'title'   => 'Overdue Inspections',
+                'message' => 'No progress recorded for: ' . implode(', ', $checks['overdue_missing_months']),
+                'action'  => 'Action Required: Conduct inspection and record progress immediately',
+            ];
+        }
+
+        // -- Critical: decreasing-progress anomalies (actual % dropped vs previous month) --
+        foreach ($checks['decreasing_anomalies'] as $anomaly) {
+            $critical[] = [
+                'icon'    => 'bi-exclamation-circle-fill',
+                'title'   => 'Progress Regression Detected',
+                'message' => $anomaly['month'] . ': actual dropped from ' . $anomaly['previous'] . '% to ' . $anomaly['current'] . '%',
+                'action'  => 'Action Required: Review the recording and underlying work',
+            ];
+        }
+
+        // -- Critical: projected deadline miss from the AI completion forecast --
+        $predictedDelayDays = (int) ($aiPrediction['predicted_delay_days'] ?? 0);
+        if ($predictedDelayDays > 0) {
+            $critical[] = [
+                'icon'    => 'bi-calendar-x-fill',
+                'title'   => 'Projected Deadline Miss',
+                'message' => 'At current pace, project will finish ~' . $predictedDelayDays . ' days late',
+                'action'  => 'Action Required: Accelerate execution or request an extension',
+            ];
+        }
+
+        // -- Warning: missing months that are not yet overdue --
+        $notOverdueMissing = array_values(array_diff($checks['missing_months'], $checks['overdue_missing_months']));
+        if (!empty($notOverdueMissing)) {
+            $warnings[] = [
+                'icon'    => 'bi-exclamation-triangle-fill',
+                'title'   => 'Missing Monthly Records',
+                'message' => 'No progress recorded yet for: ' . implode(', ', $notOverdueMissing),
+                'action'  => 'Monitor: Schedule inspections for these months',
+            ];
+        }
+
+        // -- Warning: next pending month with a high target --
+        $recordedMonths = $progressHistory->pluck('month_label')->filter()->unique()->values();
+        $nextPending = $baselineSchedules
+            ->filter(fn ($schedule) => !$recordedMonths->contains($schedule->month_label))
+            ->first();
+
+        if ($nextPending && $nextPending->planned_date && $nextPending->planned_date->gte(now()->startOfDay())) {
+            $target = (float) $nextPending->planned_progress_percent;
+            if ($target >= 25) {
+                $warnings[] = [
+                    'icon'    => 'bi-bullseye',
+                    'title'   => 'Critical Phase Approaching',
+                    'message' => 'Next baseline month (' . $this->overviewService->formatMonthLabelForDisplay($nextPending->month_label) . ') requires ' . round($target, 1) . '% progress',
+                    'action'  => 'Monitor: Prepare resources in advance',
+                ];
+            }
+        }
+
+        return [
+            'ready'     => true,
+            'has_flags' => !empty($critical) || !empty($warnings),
+            'critical'  => $critical,
+            'warnings'  => $warnings,
+        ];
+    }
+
+    // Compute the underlying risk checks (missing/overdue months + decreasing anomalies).
+    // Called by: prepareQualityChecks()
+    public function buildQualityChecks(Collection $baselineSchedules, Collection $progressHistory): array
     {
         $recordedMonths = $progressHistory->pluck('month_label')->filter()->unique()->values();
         $expectedMonths = $baselineSchedules->pluck('month_label')->filter()->unique()->values();

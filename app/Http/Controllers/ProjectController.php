@@ -246,6 +246,8 @@ class ProjectController extends Controller
 
         $forecastData = $service->prepareForecastData($chartData, $aiPrediction);
 
+        $qualityChecks = $service->prepareQualityChecks($project, $aiPrediction);
+
         return response()->json([
             'success'             => true,
             'charts'              => $chartData,
@@ -253,6 +255,7 @@ class ProjectController extends Controller
             'polynomial_forecast' => $forecastData['polynomial_forecast'],
             'completion_forecast' => $forecastData['completion_forecast'],
             'trends'              => $trendData,
+            'quality_checks'      => $qualityChecks,
         ]);
     }
 

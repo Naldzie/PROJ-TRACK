@@ -64,6 +64,43 @@
       bug). RiskRegisterTest now 35 tests; full suite 372 passing.
 
 ===============================================================================
+  COMPLETED — PROGRESS TAB RISK FLAGS & ALERTS (real data)
+===============================================================================
+
+  Status: ✅ COMPLETE — implemented on branch phase-9-risk-flags-real-data
+  Branch: phase-9-risk-flags-real-data (from main)
+  Test:   tests/Feature/RiskFlagsTest.php (9 tests)
+
+  Replaced the hardcoded mock "Risk Flags & Alerts" card on the Progress tab
+  (progress.blade.php:577-623 was pure static text — "February & March both
+  behind schedule (Avg -3%)", "~45 days late" — identical for every project)
+  with real, project-specific flags computed from DB data + the AI forecast.
+
+  Data source: ProjectChartService::prepareQualityChecks() (new, public
+  wrapper; buildQualityChecks() promoted from private). Returned through
+  ProjectDetailService::prepareQualityChecks() → ProjectController::
+  getChartData() as `quality_checks` in the existing chart-data AJAX payload.
+
+  Flags rendered (red Critical Issues / yellow Warnings):
+    • Overdue Inspections     — baseline months whose planned_date passed with
+                                no progress record (critical).
+    • Progress Regression     — actual % dropped vs previous month (critical).
+    • Projected Deadline Miss — from AI forecast predicted_delay_days > 0
+                                (critical); uses the AI completion forecast,
+                                NOT getCompletionDelay() (completed-only) or
+                                the naive linear getEstimatedCompletionDate().
+    • Missing Monthly Records — missing months not yet overdue (warning).
+    • Critical Phase Approaching — next pending month with a ≥25% target (warning).
+  Empty state: "No risk flags — project is on track". ready=false when no
+  baseline schedule exists.
+
+  Files: app/Services/ProjectChartService.php, app/Services/
+  ProjectDetailService.php, app/Http/Controllers/ProjectController.php,
+  resources/views/projects/project_detail/components/tabs/progress.blade.php,
+  tests/Feature/RiskFlagsTest.php. Full suite green: 557 passed / 1993 assertions.
+
+
+===============================================================================
   NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: Activity Log
   UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)
 ===============================================================================

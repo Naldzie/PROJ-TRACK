@@ -388,6 +388,9 @@ function loadProgressChartData() {
         if (completionForecast.schedule_aware_shifted || completionForecast.eac_time_shifted) {
             initCompletionForecastChart(completionForecast);
         }
+
+        // Render Risk Flags & Alerts from the same AJAX response
+        renderRiskFlags(response.quality_checks || {});
     })
     .catch(() => showChartError('An error occurred loading the chart.'));
 }
@@ -400,6 +403,80 @@ function showChartError(msg) {
                 <i class="bi bi-x-circle"></i> ${msg}
             </div>`;
     }
+}
+
+// Render the Risk Flags & Alerts card from the chart-data AJAX response.
+// Called by: loadProgressChartData()
+// Renders red "Critical Issues" and yellow "Warnings" lists, or an empty state.
+function renderRiskFlags(checks) {
+    const content = document.getElementById('riskFlagsContent');
+    if (!content) return;
+
+    // No baseline data yet — nothing meaningful to flag.
+    if (!checks.ready) {
+        content.innerHTML = `
+            <div style="color:#6b7280; font-size:13px; padding: 4px 2px;">
+                <i class="bi bi-info-circle"></i> No baseline schedule yet — add monthly targets to enable risk flagging.
+            </div>`;
+        return;
+    }
+
+    if (!checks.has_flags) {
+        content.innerHTML = `
+            <div style="display:flex; align-items:center; gap:10px; padding:12px 15px;
+                        background:rgba(22,163,74,0.06); border-left:4px solid #16a34a; border-radius:4px;">
+                <i class="bi bi-check-circle-fill" style="color:#16a34a; font-size:16px;"></i>
+                <div style="font-weight:600; color:#111827; font-size:13px;">No risk flags — project is on track</div>
+            </div>`;
+        return;
+    }
+
+    const critical = checks.critical || [];
+    const warnings = checks.warnings || [];
+
+    function flagCard(flag) {
+        return `
+            <div style="padding: 12px 15px; background: rgba(220, 38, 38, 0.05); border-left: 4px solid #dc2626; border-radius: 4px;">
+                <div style="font-weight: 600; color: #111827; font-size: 13px;">
+                    <i class="bi ${flag.icon || 'bi-exclamation-circle-fill'}" style="margin-right: 6px;"></i> ${flag.title}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 4px;">${flag.message}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 6px;">${flag.action}</div>
+            </div>`;
+    }
+
+    function warningCard(flag) {
+        return `
+            <div style="padding: 12px 15px; background: rgba(245, 158, 11, 0.05); border-left: 4px solid #f59e0b; border-radius: 4px;">
+                <div style="font-weight: 600; color: #111827; font-size: 13px;">
+                    <i class="bi ${flag.icon || 'bi-exclamation-triangle-fill'}" style="margin-right: 6px;"></i> ${flag.title}
+                </div>
+                <div style="font-size: 12px; color: #666; margin-top: 4px;">${flag.message}</div>
+                <div style="font-size: 11px; color: #999; margin-top: 6px;">${flag.action}</div>
+            </div>`;
+    }
+
+    let html = '';
+    if (critical.length > 0) {
+        html += `
+            <div style="margin-bottom: 20px;">
+                <div style="font-size: 12px; font-weight: 700; color: #dc2626; text-transform: uppercase; margin-bottom: 12px;">
+                    <i class="bi bi-exclamation-circle-fill" style="margin-right: 6px;"></i> Critical Issues
+                </div>
+                <div style="display: grid; gap: 10px;">${critical.map(flagCard).join('')}</div>
+            </div>`;
+    }
+    if (warnings.length > 0) {
+        html += `
+            <div>
+                <div style="font-size: 12px; font-weight: 700; color: #f59e0b; text-transform: uppercase; margin-bottom: 12px;">
+                    <i class="bi bi-exclamation-triangle-fill" style="margin-right: 6px;"></i> Warnings
+                </div>
+                <div style="display: grid; gap: 10px;">${warnings.map(warningCard).join('')}</div>
+            </div>`;
+    }
+
+    content.innerHTML = html;
 }
 
 function initSCurveChart(charts) {
@@ -574,50 +651,17 @@ function buildMonthlySummaryTable(monthlySummary) {
     </div>
 </div>
 
-<!-- ==================== RISK FLAGS DASHBOARD (NEW) ==================== -->
+<!-- ==================== RISK FLAGS DASHBOARD (real data from chart-data AJAX) ==================== -->
 <div class="card" style="margin-bottom: 20px;">
     <div class="card-header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white;">
         <h3 style="margin: 0; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
             <i class="bi bi-shield-exclamation" style="font-size: 20px;"></i> Risk Flags & Alerts
         </h3>
     </div>
-    <div style="padding: 20px;">
-        <!-- RED FLAGS -->
-        <div style="margin-bottom: 20px;">
-            <div style="font-size: 12px; font-weight: 700; color: #dc2626; text-transform: uppercase; margin-bottom: 12px;">
-                <i class="bi bi-exclamation-circle-fill" style="margin-right: 6px;"></i> Critical Issues
-            </div>
-            <div style="display: grid; gap: 10px;">
-                <div style="padding: 12px 15px; background: rgba(220, 38, 38, 0.05); border-left: 4px solid #dc2626; border-radius: 4px;">
-                    <div style="font-weight: 600; color: #111827; font-size: 13px;">📊 Variance Behind for 2+ Consecutive Months</div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">February & March both behind schedule (Avg -3%)</div>
-                    <div style="font-size: 11px; color: #999; margin-top: 6px;">🔴 Action Required: Review scope and resource allocation</div>
-                </div>
-                <div style="padding: 12px 15px; background: rgba(220, 38, 38, 0.05); border-left: 4px solid #dc2626; border-radius: 4px;">
-                    <div style="font-weight: 600; color: #111827; font-size: 13px;">📅 Projected Deadline Miss</div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">At current pace, project will finish ~45 days late</div>
-                    <div style="font-size: 11px; color: #999; margin-top: 6px;">🔴 Action Required: Accelerate execution or extend deadline</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- YELLOW FLAGS -->
-        <div>
-            <div style="font-size: 12px; font-weight: 700; color: #f59e0b; text-transform: uppercase; margin-bottom: 12px;">
-                <i class="bi bi-exclamation-triangle-fill" style="margin-right: 6px;"></i> Warnings
-            </div>
-            <div style="display: grid; gap: 10px;">
-                <div style="padding: 12px 15px; background: rgba(245, 158, 11, 0.05); border-left: 4px solid #f59e0b; border-radius: 4px;">
-                    <div style="font-weight: 600; color: #111827; font-size: 13px;">📉 Variance Trending Negative</div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Gap widening: Jan -1% → Feb -2% → Mar -3%</div>
-                    <div style="font-size: 11px; color: #999; margin-top: 6px;">🟡 Monitor: Check for systemic issues</div>
-                </div>
-                <div style="padding: 12px 15px; background: rgba(245, 158, 11, 0.05); border-left: 4px solid #f59e0b; border-radius: 4px;">
-                    <div style="font-weight: 600; color: #111827; font-size: 13px;">🎯 Critical Phase Approaching</div>
-                    <div style="font-size: 12px; color: #666; margin-top: 4px;">Next baseline month (April) requires 25% progress (high target)</div>
-                    <div style="font-size: 11px; color: #999; margin-top: 6px;">🟡 Monitor: Prepare resources in advance</div>
-                </div>
-            </div>
+    <div style="padding: 20px;" id="riskFlagsContent">
+        <div id="riskFlagsLoading" style="display: flex; align-items: center; gap: 10px; color: #6b7280; font-size: 13px;">
+            <div class="spinner-border spinner-border-sm text-warning" role="status"></div>
+            <span>Checking for risk flags...</span>
         </div>
     </div>
 </div>

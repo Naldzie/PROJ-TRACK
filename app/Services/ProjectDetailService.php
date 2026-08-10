@@ -62,6 +62,11 @@ class ProjectDetailService
         ];
     }
 
+    public function prepareQualityChecks(Project $project, array $aiPrediction = []): array
+    {
+        return $this->chartService->prepareQualityChecks($project, $aiPrediction);
+    }
+
     public function prepareTrendData(Project $project): array
     {
         return $this->chartService->prepareTrendData($project);
