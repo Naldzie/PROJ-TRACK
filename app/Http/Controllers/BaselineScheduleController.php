@@ -750,6 +750,14 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                         'original_planned_progress_percent' => $schedule->original_planned_progress_percent,
                         'description'                     => $schedule->description ?? '',
                         'has_actual_progress'             => $schedule->progressHistory()->exists(),
+                        'activities'                      => $schedule->activities()
+                            ->orderBy('id', 'asc')
+                            ->get(['id', 'activity_name', 'description'])
+                            ->map(fn ($activity) => [
+                                'activity_name' => $activity->activity_name,
+                                'description'   => $activity->description ?? '',
+                            ])
+                            ->values(),
                     ];
                 });
 

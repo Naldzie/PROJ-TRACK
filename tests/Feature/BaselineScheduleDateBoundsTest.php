@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Project;
+use App\Models\ProjectActivity;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\User;
 use Carbon\Carbon;
@@ -363,5 +364,72 @@ class BaselineScheduleDateBoundsTest extends TestCase
         $response->assertStatus(302);
         $response->assertSessionHasErrors('planned_start_date');
         $this->assertDatabaseCount('projects', 0);
+    }
+
+    // ──── Adjust-baseline endpoint: existing activities must round-trip ────
+
+    public function test_adjust_endpoint_returns_existing_activities(): void
+    {
+        $project = $this->projectBetween('2026-01-15', '2026-10-15');
+
+        $schedule = ProjectBaselineSchedule::factory()->create([
+            'project_id'                     => $project->id,
+            'month_label'                    => '2026-03',
+            'planned_date'                   => '2026-03-15',
+            'planned_progress_percent'       => 50,
+            'original_planned_progress_percent' => 50,
+            'original_planned_date'          => '2026-03-15',
+        ]);
+
+        ProjectActivity::create([
+            'project_id'           => $project->id,
+            'baseline_schedule_id' => $schedule->id,
+            'month_label'          => '2026-03',
+            'activity_name'        => 'Site clearing',
+            'description'          => 'Prepare the site',
+            'is_completed'         => false,
+        ]);
+
+        ProjectActivity::create([
+            'project_id'           => $project->id,
+            'baseline_schedule_id' => $schedule->id,
+            'month_label'          => '2026-03',
+            'activity_name'        => 'Survey',
+            'description'          => '',
+            'is_completed'         => false,
+        ]);
+
+        $response = $this->actingAs($this->admin)->getJson(
+            route('admin.projects.baseline-schedules.adjust', $project)
+        );
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $months = $response->json('months');
+        $this->assertCount(1, $months);
+        $this->assertSame([
+            ['activity_name' => 'Site clearing', 'description' => 'Prepare the site'],
+            ['activity_name' => 'Survey', 'description' => ''],
+        ], $months[0]['activities']);
+    }
+
+    public function test_adjust_endpoint_returns_empty_activities_for_month_without_any(): void
+    {
+        $project = $this->projectBetween('2026-01-15', '2026-10-15');
+
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'                     => $project->id,
+            'month_label'                    => '2026-03',
+            'planned_date'                   => '2026-03-15',
+            'planned_progress_percent'       => 50,
+            'original_planned_progress_percent' => 50,
+            'original_planned_date'          => '2026-03-15',
+        ]);
+
+        $response = $this->actingAs($this->admin)->getJson(
+            route('admin.projects.baseline-schedules.adjust', $project)
+        );
+
+        $response->assertOk();
+        $this->assertSame([], $response->json('months.0.activities'));
     }
 }

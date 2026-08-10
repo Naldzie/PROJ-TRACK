@@ -209,7 +209,9 @@ function openAdjustBaselineModal() {
                                                   : null,
                 description:                  m.description || '',
                 has_actual_progress:          m.has_actual_progress || false,
-                activities:                   [],
+                activities:                   (m.activities || []).filter(function (a) { return a.activity_name; }).map(function (a) {
+                    return { activity_name: a.activity_name, description: a.description || '' };
+                }),
                 isNew:                        false
             };
         });
