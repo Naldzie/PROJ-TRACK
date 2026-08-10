@@ -859,6 +859,15 @@ class ProjectExtensionLifecycleTest extends TestCase
 
     public function test_store_baseline_schedule_captures_snapshot_on_latest_approved(): void
     {
+        // Anchor the project timeline to the fixed months used below so the
+        // new target (2026-04-15) falls within the (extended) planned end date.
+        $this->project->update([
+            'planned_start_date'         => '2026-01-01',
+            'planned_end_date'           => '2026-03-31',
+            'original_planned_start_date' => '2026-01-01',
+            'original_planned_end_date'   => '2026-03-31',
+        ]);
+
         $m1 = $this->baselineRow('2026-01', '2026-01-15', 40, 40);
         $this->baselineRow('2026-02', '2026-02-15', 70, 70);
         $this->baselineRow('2026-03', '2026-03-15', 100, 100);
@@ -937,6 +946,14 @@ class ProjectExtensionLifecycleTest extends TestCase
 
     public function test_baseline_mutations_do_not_write_snapshot_without_approved_extension(): void
     {
+        // Anchor the project timeline to the fixed months used below.
+        $this->project->update([
+            'planned_start_date'         => '2026-01-01',
+            'planned_end_date'           => '2026-03-31',
+            'original_planned_start_date' => '2026-01-01',
+            'original_planned_end_date'   => '2026-03-31',
+        ]);
+
         $this->baselineRow('2026-01', '2026-01-15', 40, 40);
 
         // Only a pending extension exists — not approved, so no snapshot target.

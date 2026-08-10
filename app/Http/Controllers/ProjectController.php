@@ -434,6 +434,48 @@ class ProjectController extends Controller
         $data['status'] = $data['status'] ?? 'Planned';
         $data['is_archived'] = false;
 
+        // === VALIDATE BASELINE TARGETS AGAINST PROJECT TIMELINE ===
+        // The baseline IS the plan — every target must fall within the
+        // project's planned start/end dates. Fails fast BEFORE the project
+        // is created so nothing is written when the plan is out of bounds.
+        $baselineScheduleTargets = $request->input('baseline_schedule_targets');
+
+        if ($baselineScheduleTargets) {
+            if (is_string($baselineScheduleTargets)) {
+                $baselineScheduleTargets = json_decode($baselineScheduleTargets, true);
+            }
+
+            if (is_array($baselineScheduleTargets) && count($baselineScheduleTargets) > 0) {
+                $projectStart = !empty($data['planned_start_date']) ? \Carbon\Carbon::parse($data['planned_start_date']) : null;
+                $projectEnd   = !empty($data['planned_end_date']) ? \Carbon\Carbon::parse($data['planned_end_date']) : null;
+
+                if (!$projectStart || !$projectEnd) {
+                    return back()->withErrors([
+                        'planned_start_date' => 'Set the project planned start and end dates before adding baseline targets.'
+                    ])->withInput();
+                }
+
+                foreach ($baselineScheduleTargets as $target) {
+                    $plannedDate = !empty($target['planned_date']) ? \Carbon\Carbon::parse($target['planned_date']) : null;
+                    if (!$plannedDate) {
+                        return back()->withErrors([
+                            'baseline_schedule_targets' => 'Each baseline target requires a planned date.'
+                        ])->withInput();
+                    }
+                    if ($plannedDate->lt($projectStart)) {
+                        return back()->withErrors([
+                            'baseline_schedule_targets' => "Baseline target {$target['planned_date']} is before the project's planned start date ({$projectStart->format('Y-m-d')})."
+                        ])->withInput();
+                    }
+                    if ($plannedDate->gt($projectEnd)) {
+                        return back()->withErrors([
+                            'baseline_schedule_targets' => "Baseline target {$target['planned_date']} is after the project's planned end date ({$projectEnd->format('Y-m-d')})."
+                        ])->withInput();
+                    }
+                }
+            }
+        }
+
         // Use a transaction so proposal + project are saved atomically
         $project = DB::transaction(function () use ($data, $request) {
 
@@ -551,6 +593,18 @@ class ProjectController extends Controller
             if ($monthLabel && $progressPercent) {
                 // Convert month input (YYYY-MM) to date
                 $plannedDate = \Carbon\Carbon::createFromFormat('Y-m', $monthLabel)->endOfMonth();
+
+                // Bound the legacy target to the project timeline as well
+                $projectStart = $project->planned_start_date;
+                $projectEnd   = $project->planned_end_date;
+
+                if ($projectStart && $projectEnd) {
+                    if ($plannedDate->lt($projectStart) || $plannedDate->gt($projectEnd)) {
+                        return back()->withErrors([
+                            'baseline_schedule_month' => "Baseline target {$plannedDate->format('Y-m-d')} is outside the project's planned timeline ({$projectStart->format('Y-m-d')} to {$projectEnd->format('Y-m-d')})."
+                        ])->withInput();
+                    }
+                }
 
                 ProjectBaselineSchedule::create([
                     'project_id'                        => $project->id,

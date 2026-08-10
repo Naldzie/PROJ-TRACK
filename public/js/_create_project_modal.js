@@ -90,6 +90,8 @@ function openBaselineSetupModal() {
     window.__setupModalContext = {
         mode: 'return-data',
         existingMonths: window._baselineSetupMonths || [],
+        startDate: document.getElementById('plannedStartDate')?.value || null,
+        endDate: document.getElementById('plannedEndDate')?.value || null,
         onDone: function(months) {
             window._baselineSetupMonths = months;
             updateBaselineSetupButton();

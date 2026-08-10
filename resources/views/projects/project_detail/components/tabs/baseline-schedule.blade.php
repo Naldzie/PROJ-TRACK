@@ -39,7 +39,9 @@
 </script>
 
 <!-- PROJECT PROGRESS BASELINE TAB (Replaces Milestones) -->
-<div id="s-curve-planning" class="tab-content" data-project-start-date="{{ $project->planned_start_date?->toDateString() ?? $project->actual_start_date?->toDateString() ?? '' }}">
+<div id="s-curve-planning" class="tab-content"
+     data-project-start-date="{{ $project->planned_start_date?->toDateString() ?? $project->actual_start_date?->toDateString() ?? '' }}"
+     data-project-end-date="{{ $project->planned_end_date?->toDateString() ?? '' }}">
 
 <!-- ==================== PROJECT PROGRESS BASELINE SETUP SECTION ==================== -->
 <div class="s-curve-planning-section">

@@ -111,6 +111,15 @@ function openAddMonthTargetModal() {
     // Set month and date inputs
     monthInput.value = nextMonth;
     dateInput.value = nextDate;
+
+    // Bound the date picker to the project timeline (start .. current end)
+    const planningSection = document.getElementById('s-curve-planning');
+    if (planningSection) {
+        const projStart = planningSection.getAttribute('data-project-start-date');
+        const projEnd = planningSection.getAttribute('data-project-end-date');
+        if (projStart) dateInput.setAttribute('min', projStart);
+        if (projEnd) dateInput.setAttribute('max', projEnd);
+    }
     
     // Calculate and set default progress value (highest planned target from existing cards)
     let highestProgress = 0;
@@ -163,6 +172,15 @@ function openEditMonthTargetModal(scheduleId, plannedDate, plannedProgressPercen
     document.getElementById('plannedProgressPercent').value = plannedProgressPercent;
     const descInput = document.getElementById('description');
     if (descInput) descInput.value = description || '';
+
+    // Bound the date picker to the project timeline (start .. current end)
+    const planningSection = document.getElementById('s-curve-planning');
+    if (planningSection) {
+        const projStart = planningSection.getAttribute('data-project-start-date');
+        const projEnd = planningSection.getAttribute('data-project-end-date');
+        if (projStart) document.getElementById('plannedDate').setAttribute('min', projStart);
+        if (projEnd) document.getElementById('plannedDate').setAttribute('max', projEnd);
+    }
 
     // Month label is locked in edit mode — the row's month never changes
     const monthInput = document.getElementById('monthLabel');
@@ -363,6 +381,22 @@ function saveMonthTarget() {
             errors.push({ field: 'plannedDate', message: 'Target date must fall within ' + formatMonthLabel(monthLabel) + '.' });
         }
     }
+
+    // Rule BOUNDS: target date must fall within the project timeline.
+    // The baseline IS the plan, so a target may not precede the planned start
+    // date nor extend past the CURRENT (post-extension) planned end date.
+    if (plannedDate) {
+        const planningSection = document.getElementById('s-curve-planning');
+        const projStart = planningSection?.getAttribute('data-project-start-date');
+        const projEnd = planningSection?.getAttribute('data-project-end-date');
+
+        if (projStart && plannedDate < projStart) {
+            errors.push({ field: 'plannedDate', message: 'Target date must not be before the project\'s planned start date (' + projStart + ').' });
+        }
+        if (projEnd && plannedDate > projEnd) {
+            errors.push({ field: 'plannedDate', message: 'Target date must not be after the project\'s planned end date (' + projEnd + ').' });
+        }
+    }
     
     // Collect existing month labels for Rules B and C
     var existingMonthLabels = [];
@@ -509,6 +543,20 @@ function saveMonthTargetEdit() {
         var dateMonth = plannedDate.substring(0, 7);
         if (dateMonth !== editMonth) {
             errors.push({ field: 'plannedDate', message: 'Target date must fall within ' + formatMonthLabel(editMonth) + '.' });
+        }
+    }
+
+    // Rule BOUNDS (edit): date must stay within the project timeline
+    if (plannedDate) {
+        const planningSection = document.getElementById('s-curve-planning');
+        const projStart = planningSection?.getAttribute('data-project-start-date');
+        const projEnd = planningSection?.getAttribute('data-project-end-date');
+
+        if (projStart && plannedDate < projStart) {
+            errors.push({ field: 'plannedDate', message: 'Target date must not be before the project\'s planned start date (' + projStart + ').' });
+        }
+        if (projEnd && plannedDate > projEnd) {
+            errors.push({ field: 'plannedDate', message: 'Target date must not be after the project\'s planned end date (' + projEnd + ').' });
         }
     }
 

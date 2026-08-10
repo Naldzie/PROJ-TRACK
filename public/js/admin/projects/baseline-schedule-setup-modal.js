@@ -77,6 +77,42 @@ var setupRemovedIds = [];
 /** The original planned_end_date from the project, used to generate extension months up to. */
 var setupProjectEndDate = null;
 
+// ─── DATE BOUNDS (project timeline) ──────────────────────────────────────────
+
+/**
+ * Resolve the project timeline bounds for month target dates.
+ *
+ * The baseline IS the plan, so every target date must fall within the
+ * project's planned start/end dates. The bounds are read from:
+ *   - __setupModalContext.startDate / .endDate  (create-project / return-data flow)
+ *   - #s-curve-planning data attributes          (project detail / save-immediately flow)
+ *
+ * Returns { min, max } as 'YYYY-MM-DD' strings (both possibly null when the
+ * project has no planned dates yet).
+ */
+function getSetupDateBounds() {
+    var ctx = window.__setupModalContext || null;
+    var minDate = null;
+    var maxDate = null;
+
+    if (ctx && (ctx.startDate || ctx.endDate)) {
+        if (ctx.startDate) minDate = ctx.startDate;
+        if (ctx.endDate) maxDate = ctx.endDate;
+    } else {
+        var planning = document.getElementById('s-curve-planning');
+        if (planning) {
+            if (planning.getAttribute('data-project-start-date')) {
+                minDate = planning.getAttribute('data-project-start-date');
+            }
+            if (planning.getAttribute('data-project-end-date')) {
+                maxDate = planning.getAttribute('data-project-end-date');
+            }
+        }
+    }
+
+    return { min: minDate, max: maxDate };
+}
+
 // ─── OPEN / CLOSE ─────────────────────────────────────────────────────────────
 
 /**
@@ -636,6 +672,19 @@ function addSetupBaselineMonth() {
         }
     }
 
+    // Rule BOUNDS: target date must fall within the project timeline.
+    // The baseline IS the plan, so a target may not precede the planned start
+    // date nor extend past the CURRENT (post-extension) planned end date.
+    if (plannedDate) {
+        var bounds = getSetupDateBounds();
+        if (bounds.min && plannedDate < bounds.min) {
+            errors.push('Target date must not be before the project\'s planned start date (' + bounds.min + ').');
+        }
+        if (bounds.max && plannedDate > bounds.max) {
+            errors.push('Target date must not be after the project\'s planned end date (' + bounds.max + ').');
+        }
+    }
+
     // Reject duplicate month within the local plan (skip when editing same month)
     if (monthLabel && !(setupEditingIndex !== null && setupLocalMonths[setupEditingIndex] && setupLocalMonths[setupEditingIndex].month_label === monthLabel)) {
         if (setupLocalMonths.some(m => m.month_label === monthLabel)) {
@@ -797,13 +846,17 @@ function editSetupBaselineMonth(index) {
     // Lock the month input — user cannot change which month they're editing
     monthInput.setAttribute('readonly', true);
 
-    // Constrain planned_date to this month's date range
+    // Constrain planned_date to this month's date range, intersected with the
+    // project timeline (start .. current end) so edit mode stays within bounds.
     var parts = month.month_label.split('-');
     var year = parseInt(parts[0], 10);
     var mon = parseInt(parts[1], 10);
     var lastDay = new Date(year, mon, 0).getDate();
-    dateInput.setAttribute('min', year + '-' + String(mon).padStart(2, '0') + '-01');
-    dateInput.setAttribute('max', year + '-' + String(mon).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0'));
+    var bounds = getSetupDateBounds();
+    var monthMin = year + '-' + String(mon).padStart(2, '0') + '-01';
+    var monthMax = year + '-' + String(mon).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
+    dateInput.setAttribute('min', bounds.min && bounds.min > monthMin ? bounds.min : monthMin);
+    dateInput.setAttribute('max', bounds.max && bounds.max < monthMax ? bounds.max : monthMax);
 
     // Populate activities
     var container = document.getElementById('setupActivitiesContainer');
@@ -1268,8 +1321,19 @@ function resetSetupForm() {
     monthInput.value = '';
     monthInput.removeAttribute('readonly');
     dateInput.value = '';
-    dateInput.removeAttribute('min');
-    dateInput.removeAttribute('max');
+    // Bound the date picker to the project timeline (start .. current end).
+    // The baseline IS the plan, so targets must fall within project dates.
+    var bounds = getSetupDateBounds();
+    if (bounds.min) {
+        dateInput.setAttribute('min', bounds.min);
+    } else {
+        dateInput.removeAttribute('min');
+    }
+    if (bounds.max) {
+        dateInput.setAttribute('max', bounds.max);
+    } else {
+        dateInput.removeAttribute('max');
+    }
     document.getElementById('setupProgressPercent').value = '';
     document.getElementById('setupDescription').value     = '';
 

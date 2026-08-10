@@ -112,6 +112,36 @@ class BaselineScheduleController extends Controller
                 ], 422);
             }
 
+            // Rule BOUNDS: target must fall within the project timeline.
+            // The baseline IS the plan, so targets may not precede the planned
+            // start date nor extend past the CURRENT (post-extension) planned
+            // end date.
+            $projectStart = $project->planned_start_date;
+            $projectEnd   = $project->planned_end_date;
+
+            if (!$projectStart || !$projectEnd) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Set the project planned start and end dates before adding a month target.'
+                ], 422);
+            }
+
+            $newDate = \Carbon\Carbon::parse($validated['planned_date']);
+
+            if ($newDate->lt($projectStart)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Target date must not be before the project's planned start date ({$projectStart->format('Y-m-d')})."
+                ], 422);
+            }
+
+            if ($newDate->gt($projectEnd)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Target date must not be after the project's planned end date ({$projectEnd->format('Y-m-d')})."
+                ], 422);
+            }
+
             // Rules B & C: chronological ordering and before-start guard
             $dateRange = ProjectBaselineSchedule::where('project_id', $project->id)
                 ->selectRaw('MIN(planned_date) as earliest, MAX(planned_date) as latest')
@@ -302,6 +332,36 @@ public function storeInitialBaselineSetup(Request $request, Project $project)
                 'success' => false,
                 'message' => 'Duplicate months detected in the submitted plan.'
             ], 422);
+        }
+
+        // ── Bound months to the project timeline ──────────────────────────────
+        // The baseline IS the plan, so every target must fall within the
+        // project's planned start/end dates. Uses the CURRENT (post-extension)
+        // planned_end_date so extension-generated months stay valid.
+        $projectStart = $project->planned_start_date;
+        $projectEnd   = $project->planned_end_date;
+
+        if (!$projectStart || !$projectEnd) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Set the project planned start and end dates before locking a baseline.'
+            ], 422);
+        }
+
+        foreach ($months as $month) {
+            $plannedDate = \Carbon\Carbon::parse($month['planned_date']);
+            if ($plannedDate->lt($projectStart)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Target date {$month['planned_date']} is before the project's planned start date ({$projectStart->format('Y-m-d')})."
+                ], 422);
+            }
+            if ($plannedDate->gt($projectEnd)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Target date {$month['planned_date']} is after the project's planned end date ({$projectEnd->format('Y-m-d')})."
+                ], 422);
+            }
         }
 
         // ── Enforce strictly increasing progress ──────────────────────────────
