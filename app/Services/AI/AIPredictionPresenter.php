@@ -336,6 +336,14 @@ class AIPredictionPresenter
             'assessment_data'        => [],
             'completion_multi'       => [],
             'next_prediction'        => null,
+            'next_prediction_low'    => null,
+            'next_prediction_high'   => null,
+            'next_prediction_margin' => null,
+            'forecast_reliability'   => null,
+            'next_prediction_reliability' => null,
+            'completion_reliability' => null,
+            'reliability_factors'    => [],
+            'fit_quality_label'      => 'Curve Fit Quality',
             'next_planned_progress'  => null,
             'next_is_current_month'  => false,
             'current_month_index'    => 0,
@@ -377,6 +385,13 @@ class AIPredictionPresenter
         $statistics        = $prediction['statistics'];
         $completion        = $prediction['completion'] ?? [];
         $completionMulti   = $prediction['completion_multi'] ?? [];
+
+        // Phase 14: forecast reliability block (weighted evidence score).
+        $reliability          = $prediction['reliability'] ?? null;
+        $nextReliability      = $reliability['next_prediction'] ?? null;
+        $completionReliability = $reliability['completion'] ?? null;
+        $fitQualityLabel      = $reliability['fit_quality_label'] ?? 'Curve Fit Quality';
+        $reliabilityFactors   = $this->flattenReliabilityFactors($nextReliability);
 
         $currentProgress   = $currentState['progress'];
         $currentMonthIndex = $currentState['month_index'];
@@ -743,6 +758,7 @@ class AIPredictionPresenter
                 'similar_projects_count' => $regression['similar_projects_count'] ?? null,
                 'similar_projects_disclaimer' => $regression['similar_projects_disclaimer'] ?? null,
                 'synthetic_points_count' => $regression['synthetic_points_count'] ?? null,
+                'fit_quality_label'  => $fitQualityLabel,
             ],
 
             'completion_multi'       => $completionMulti,
@@ -766,6 +782,38 @@ class AIPredictionPresenter
             'forecast_data'          => $forecast,
             'assessment_data'        => $assessment,
             'next_prediction'        => $nextPrediction['progress'],
+
+            /*
+            |------------------------------------------------------------------
+            | Next-Month Prediction Band (Phase 14 Step 1)
+            |------------------------------------------------------------------
+            |
+            | The next-month forecast is a range (point ± margin), never a
+            | bare single %. Keys stay additive — next_prediction remains the
+            | scalar for backward compatibility.
+            |
+            */
+
+            'next_prediction_low'    => $nextPrediction['progress_low'] ?? null,
+            'next_prediction_high'   => $nextPrediction['progress_high'] ?? null,
+            'next_prediction_margin' => $nextPrediction['margin'] ?? null,
+
+            /*
+            |------------------------------------------------------------------
+            | Forecast Reliability (Phase 14)
+            |------------------------------------------------------------------
+            |
+            | Weighted, explainable reliability for the next-month prediction
+            | and the completion estimate, plus a flattened factor list for the
+            | "why" tooltip. Existing keys (completion_confidence, etc.) stay.
+            |
+            */
+
+            'forecast_reliability'      => $reliability,
+            'next_prediction_reliability' => $nextReliability,
+            'completion_reliability'    => $completionReliability,
+            'reliability_factors'       => $reliabilityFactors,
+            'fit_quality_label'         => $fitQualityLabel,
             'next_planned_progress'  => $this->getNextPlannedProgress($project),
             'next_is_current_month'  => $nextIsCurrentMonth,
             'current_month_index'    => $currentMonthIndex,
@@ -777,6 +825,47 @@ class AIPredictionPresenter
     | Display Calculation Helpers
     |==========================================================================
     */
+
+    /**
+     * ------------------------------------------------------------------------
+     * Flatten Reliability Factors
+     * ------------------------------------------------------------------------
+     *
+     * Turns the reliability block's per-factor breakdown into a blade-friendly
+     * list (factor name, score, detail) for the "why" tooltip on the next-month
+     * forecast card.
+     *
+     * Used By
+     * -------
+     * presentNormal()
+     */
+    private function flattenReliabilityFactors(?array $reliability): array
+    {
+        $factors = $reliability['factors'] ?? [];
+
+        $labels = [
+            'backtest'  => 'Backtest accuracy',
+            'data'      => 'Data sufficiency',
+            'horizon'   => 'Forecast horizon',
+            'agreement' => 'Method agreement',
+        ];
+
+        $flattened = [];
+
+        foreach ($labels as $key => $label) {
+            if (!isset($factors[$key])) {
+                continue;
+            }
+
+            $flattened[] = [
+                'factor' => $label,
+                'score'  => $factors[$key]['score'] ?? 0,
+                'detail' => $factors[$key]['detail'] ?? '',
+            ];
+        }
+
+        return $flattened;
+    }
 
     /**
      * ------------------------------------------------------------------------

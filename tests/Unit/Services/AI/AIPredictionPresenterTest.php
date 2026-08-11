@@ -246,6 +246,9 @@ class AIPredictionPresenterTest extends TestCase
             'analysis_text', 'ai_generated_at',
             'regression_info', 'forecast_data', 'assessment_data',
             'next_prediction', 'current_month_index',
+            'next_prediction_low', 'next_prediction_high', 'next_prediction_margin',
+            'forecast_reliability', 'next_prediction_reliability',
+            'completion_reliability', 'reliability_factors', 'fit_quality_label',
         ];
 
         foreach ($expectedKeys as $key) {
@@ -352,6 +355,97 @@ class AIPredictionPresenterTest extends TestCase
 
         // y = 2(6) + 1 = 13
         $this->assertEquals(13.0, $result['next_prediction']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Normal prediction exposes the Phase 14 forecast reliability block
+     * ------------------------------------------------------------------------
+     */
+    public function test_normal_prediction_has_reliability_block(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $result = $this->presenter->present($project);
+
+        $this->assertIsArray($result['forecast_reliability']);
+        $this->assertEquals('Curve Fit Quality', $result['fit_quality_label']);
+        $this->assertArrayHasKey('next_prediction', $result['forecast_reliability']);
+        $this->assertArrayHasKey('completion', $result['forecast_reliability']);
+
+        $this->assertIsArray($result['next_prediction_reliability']);
+        $this->assertContains($result['next_prediction_reliability']['level'], ['High', 'Medium', 'Low']);
+        $this->assertGreaterThanOrEqual(0, $result['next_prediction_reliability']['score']);
+        $this->assertLessThanOrEqual(100, $result['next_prediction_reliability']['score']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Normal prediction exposes the next-month band (point ± margin)
+     * ------------------------------------------------------------------------
+     */
+    public function test_normal_prediction_has_band(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $result = $this->presenter->present($project);
+
+        $this->assertNotNull($result['next_prediction_low']);
+        $this->assertNotNull($result['next_prediction_high']);
+        $this->assertGreaterThanOrEqual(0, $result['next_prediction_low']);
+        $this->assertLessThanOrEqual(100, $result['next_prediction_high']);
+        $this->assertGreaterThanOrEqual(2.0, $result['next_prediction_margin']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * The flattened reliability factor list powers the "why" tooltip
+     * ------------------------------------------------------------------------
+     */
+    public function test_normal_prediction_has_flattened_factors(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $result = $this->presenter->present($project);
+
+        $labels = array_column($result['reliability_factors'], 'factor');
+        $this->assertContains('Backtest accuracy', $labels);
+        $this->assertContains('Data sufficiency', $labels);
+        $this->assertContains('Forecast horizon', $labels);
+
+        foreach ($result['reliability_factors'] as $factor) {
+            $this->assertArrayHasKey('score', $factor);
+            $this->assertArrayHasKey('detail', $factor);
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Insufficient-data fallback carries neutral reliability placeholders
+     * ------------------------------------------------------------------------
+     */
+    public function test_insufficient_data_has_reliability_placeholders(): void
+    {
+        $project = $this->createProjectWithInsufficientData(observations: 1);
+
+        $result = $this->presenter->present($project);
+
+        $this->assertNull($result['forecast_reliability']);
+        $this->assertNull($result['next_prediction_reliability']);
+        $this->assertNull($result['completion_reliability']);
+        $this->assertCount(0, $result['reliability_factors']);
+        $this->assertEquals('Curve Fit Quality', $result['fit_quality_label']);
+        $this->assertNull($result['next_prediction_low']);
+        $this->assertNull($result['next_prediction_high']);
     }
 
     /**
