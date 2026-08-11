@@ -36,6 +36,7 @@ class CompletionComparisonService
         $polynomial = $this->completionService->estimatePolynomial(
             $analysis,
             $totalPlannedMonths,
+            $currentMonthIndex,
             $plannedEndDate,
             $baselineSchedules
         );

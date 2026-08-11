@@ -322,6 +322,32 @@ class AIPredictionServiceTest extends TestCase
         $this->assertEquals('Excellent', $report['regression']['fit_quality']);
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Fix H: next-month prediction is floored at the latest actual progress
+     * ------------------------------------------------------------------------
+     *
+     * A declining dataset (y = [80, 70, 60, 50, 40], slope = -10) predicts
+     * next month at 30, below the current 40. The monotonic clamp must
+     * report next month at >= current progress, so 40.0.
+     */
+    public function test_next_prediction_floored_at_latest_actual(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [80, 70, 60, 50, 40]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(40.0, $report['current_state']['progress']);
+        $this->assertGreaterThanOrEqual(
+            $report['current_state']['progress'],
+            $report['next_prediction']['progress']
+        );
+        $this->assertEquals(40.0, $report['next_prediction']['progress']);
+    }
+
     /*
     |==========================================================================
     | Edge Cases

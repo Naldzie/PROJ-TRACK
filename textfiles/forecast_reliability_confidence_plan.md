@@ -2,9 +2,11 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — branch `phase-14-forecast-reliability` created; Step 0
-        (polynomial estimator fix + Fix H clamps) implementing first. Commit
-        cadence: plan/docs committed on the branch; code steps implemented and
+Status: 🔄 IN PROGRESS — Step 0 (polynomial estimator fix + Fix H clamps)
+        COMPLETE, tested (565 tests green), and verified on project 142
+        (agreement Moderate 29d). Code staged on the branch, NOT yet merged.
+        Next: Step 1 — prediction interval + history range columns.
+        Commit cadence: plan/docs committed on the branch; code steps implemented and
         tested per step but NOT committed until review per Rule 10/12.
 Date: August 11, 2026
 Branch (for implementation): `phase-14-forecast-reliability` (from main)
@@ -377,6 +379,54 @@ A panel/capstone defense question is highly likely:
       (or a sane future date), and agreement between schedule-aware +
       earned_schedule = Moderate (was Low/427d due to the past date).
 
+  Step 0 — DONE ✓ (Aug 11, 2026) — commit <pending review>
+    All four code changes implemented and tested. Nothing merged yet (Rule 12).
+    Actual results:
+    • CompletionEstimationService::estimatePolynomial() — new param
+      int $currentMonthIndex; future-guard (root <= currentMonthIndex → null)
+      + a < 0 descending-branch rejection (f'(root) < 0 → null).
+    • CompletionComparisonService::estimateAll() passes currentMonthIndex
+      through (CompletionComparisonService.php:36).
+    • AIPredictionService::predictNextMonth() — floor at latest actual:
+      max(latestActual, min(100, predicted)); call site passes $currentProgress
+      (computed once at AIPredictionService.php:252, duplicate removed).
+    • ForecastService::generateFutureForecast() — new optional param
+      float $latestActual = 0 (backward compatible); forecast months are
+      non-decreasing, seeded from the current actual progress.
+    Tests added:
+    • NEW tests/Unit/Services/AI/CompletionEstimationServiceTest.php (5 cases:
+      past-root → null; root-at-current-month → null; a<0 descending-tail →
+      null; healthy S-curve still predicts ~2027-04-05; non-polynomial → null).
+    • ForecastServiceTest: forecast never decreases month-over-month; first
+      forecast month floored at latest actual.
+    • AIPredictionServiceTest: next prediction floored at latest actual.
+    Live verification (project 142, same pipeline as §3.5):
+    • BEFORE: polynomial → 2026-04-22 (index -4.7825, PAST), agreement Low/427d.
+    • AFTER:  polynomial → NULL; schedule_aware 2027-05-25 (14.333);
+      earned_schedule 2027-06-23 (15.261); agreement MODERATE, spread 29 days.
+    Full suite: 565 passed (2021 assertions).
+
+  ==============================================================================
+  STEP 0 — SIMPLER TERMS EXPLANATION (for the user/capstone defense)
+  ==============================================================================
+  The problem: the app estimated when a project would finish three ways. One
+  method (polynomial) could return a finish date that was already in the past,
+  or a "curve" that went up then down. A project's progress can't go down, so
+  those dates were nonsense and made the overall estimate look unreliable.
+
+  The fix (3 small safety rules):
+  1. No past dates — if the math says the project finished at or before
+     "now" (the latest real progress data), we refuse to print a date.
+  2. No shrinking curves — if the fitted curve bends downward after its peak,
+     we refuse to extrapolate it at all; it doesn't represent real progress.
+  3. No going backwards — the "next month" forecast and every future month are
+     never lower than where the project already is (progress only goes up).
+
+  Result on the example project (142): the nonsense past date disappeared,
+  and the two trustworthy methods now agree within 29 days (Moderate) instead
+  of disagreeing by 427 days (Low). The S-curve chart line is untouched — it
+  only visualizes the past, it doesn't predict.
+
   Step 1 — Prediction interval + history range columns
     • NEW migration: nullable predicted_low / predicted_high on
       prediction_history.
@@ -429,6 +479,7 @@ A panel/capstone defense question is highly likely:
     app/Services/AI/ForecastReliabilityService.php
     tests/Unit/Services/AI/ForecastReliabilityServiceTest.php
     database/migrations/xxxx_add_prediction_range_to_prediction_history_table.php
+    tests/Unit/Services/AI/CompletionEstimationServiceTest.php  (Step 0 — 5 cases)
     textfiles/forecast_reliability_confidence_plan.md        (this plan)
     textfiles/active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt (Step 8)
 
@@ -437,14 +488,13 @@ A panel/capstone defense question is highly likely:
     app/Services/AI/AIPredictionPresenter.php
     app/Services/AI/AIExplanationService.php
     app/Services/AI/CompletionEstimationService.php        (Step 0: future-guard
-                                                             + a<0 rejection)
+                                                              + a<0 rejection)
     app/Services/AI/CompletionComparisonService.php        (Step 0: pass currentMonthIndex)
     app/Services/AI/ForecastService.php                    (Step 0: non-decreasing forecast)
     resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
     public/css/admin/projects/ (reliability badge styles)
-    tests/Unit/Services/AI/AIPredictionServiceTest.php
+    tests/Unit/Services/AI/AIPredictionServiceTest.php     (Step 0: next-month floor)
     tests/Unit/Services/AI/AIPredictionPresenterTest.php
-    tests/Unit/Services/AI/CompletionEstimationServiceTest.php  (Step 0 cases)
     tests/Unit/Services/AI/ForecastServiceTest.php              (Step 0 monotonic cases)
     textfiles/prediction_history_fix_plan.md                    (range-columns addendum)
     textfiles/summary_of_next_work.txt
@@ -654,9 +704,11 @@ Full suite regression: all V1 + V2 tests still pass (no key removal).
      agreement may drop to the two schedule-anchored methods if polynomial
      remains unsound (S-curve overlay stays).
   7. Step 0 folds in Fix H (Decision 8): the poly future-guard, the
-     predictNextMonth() floor clamp, and the non-decreasing ForecastService
-     are implemented together. progress_inspection_refactor_plan.md marks
-     Fix H as handled here.
+      predictNextMonth() floor clamp, and the non-decreasing ForecastService
+      are implemented together. progress_inspection_refactor_plan.md marks
+      Fix H as handled here. Step 0 is COMPLETE (see §7 "Step 0 — DONE");
+      next session starts at Step 1 (prediction interval + history range
+      columns), which requires the new nullable predicted_low/high migration.
 
 ===============================================================================
   END OF PHASE 14 PLAN

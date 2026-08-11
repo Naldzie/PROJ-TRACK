@@ -113,6 +113,7 @@ class CompletionEstimationService
     public function estimatePolynomial(
         array $analysis,
         int $totalPlannedMonths,
+        int $currentMonthIndex,
         ?Carbon $plannedEndDate = null,
         ?Collection $baselineSchedules = null
     ): ?array {
@@ -155,6 +156,24 @@ class CompletionEstimationService
         }
 
         $estimationIndex = $x;
+
+        // Future-guard: never report a completion date at or before the
+        // current data point (the polynomial root may be negative or fall
+        // inside the observed window).
+        if ($estimationIndex <= $currentMonthIndex) {
+            return null;
+        }
+
+        // Descending-branch rejection: cumulative progress is monotonic, so a
+        // root where f'(x) < 0 means 100% is crossed on the curve's downward
+        // tail (a<0 cubic that peaks then bends down) — that extrapolation is
+        // meaningless, reject it.
+        $derivativeAtRoot = 3 * $a * $estimationIndex * $estimationIndex
+            + 2 * $b * $estimationIndex + $c;
+
+        if ($derivativeAtRoot < 0) {
+            return null;
+        }
 
         if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
             return null;

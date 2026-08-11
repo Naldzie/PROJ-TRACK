@@ -247,17 +247,23 @@ class AIPredictionService
         $currentMonthIndex =
             $dataset['statistics']['current_month_index'];
 
+        // Latest actual progress is the monotonic floor for all short-term
+        // predictions and forecasts (Fix H).
+        $currentProgress = end($dataset['y']);
+
         $predictedNextProgress =
             $this->predictNextMonth(
                 $analysis,
-                $currentMonthIndex
+                $currentMonthIndex,
+                $currentProgress
             );
 
         $forecast =
             $this->forecastService->generateFutureForecast(
                 $project,
                 $analysis,
-                $currentMonthIndex
+                $currentMonthIndex,
+                $currentProgress
             );
 
         $comparison =
@@ -269,8 +275,6 @@ class AIPredictionService
             $this->assessmentService->assess(
                 $comparison
             );
-
-        $currentProgress = end($dataset['y']);
 
         $completion = $this->estimateCompletion(
             $project,
@@ -539,7 +543,8 @@ class AIPredictionService
      */
     private function predictNextMonth(
         array $analysis,
-        int $currentMonthIndex
+        int $currentMonthIndex,
+        float $currentProgress
     ): float {
 
         $method = $analysis['regression_method'] ?? 'slr';
@@ -561,7 +566,9 @@ class AIPredictionService
                 );
         }
 
-        return max(0, min(100, $predicted));
+        // Fix H: clamp is monotonic — next month can never be reported at a
+        // lower value than the latest actual progress.
+        return max($currentProgress, min(100, $predicted));
     }
 
     /**

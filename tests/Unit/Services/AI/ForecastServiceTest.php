@@ -403,6 +403,78 @@ class ForecastServiceTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * Fix H: forecast is monotonic — predicted progress never decreases
+     * ------------------------------------------------------------------------
+     *
+     * A declining dataset produces a negative regression slope, so raw
+     * month-over-month predictions fall. Cumulative progress can't decline,
+     * so each forecast month must be >= the previous one.
+     */
+    public function test_forecast_never_decreases_month_over_month(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 8,
+            actualProgress: [90, 80, 70, 60, 50, 40, 30, 20]
+        );
+
+        $analysis = $this->buildAnalysis($project);
+
+        $forecast = $this->forecastService->generateFutureForecast(
+            $project,
+            $analysis,
+            currentMonthIndex: 4,
+            latestActual: 50
+        );
+
+        $this->assertGreaterThan(0, count($forecast));
+
+        $previous = 0.0;
+        foreach ($forecast as $record) {
+            $this->assertGreaterThanOrEqual(
+                $previous,
+                $record['predicted_progress'],
+                "month {$record['month_index']} must not decrease"
+            );
+            $previous = $record['predicted_progress'];
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Fix H: first forecast month is floored at the latest actual progress
+     * ------------------------------------------------------------------------
+     *
+     * With latestActual = 50 and a negative slope (raw predictions 50, 40,
+     * 30, 20), the monotonic floor seeded at 50 holds every forecast month
+     * at >= 50.
+     */
+    public function test_forecast_first_month_floored_at_latest_actual(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 8,
+            actualProgress: [90, 80, 70, 60, 50, 40, 30, 20]
+        );
+
+        $analysis = $this->buildAnalysis($project);
+
+        $forecast = $this->forecastService->generateFutureForecast(
+            $project,
+            $analysis,
+            currentMonthIndex: 4,
+            latestActual: 50
+        );
+
+        foreach ($forecast as $record) {
+            $this->assertGreaterThanOrEqual(
+                50.0,
+                $record['predicted_progress'],
+                "month {$record['month_index']} must stay at or above 50"
+            );
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * Forecast clamps over-100 predictions to 100
      * ------------------------------------------------------------------------
      *
