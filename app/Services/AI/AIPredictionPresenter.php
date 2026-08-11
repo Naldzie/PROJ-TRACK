@@ -420,13 +420,15 @@ class AIPredictionPresenter
                 $hasActual = $latest->actual_next !== null;
 
                 return [
-                    'month_label' => $latest->month_label,
-                    'month'       => \Carbon\Carbon::parse($latest->month_label . '-01')->format('M Y'),
-                    'predicted'   => $latest->predicted_next,
-                    'actual'      => $hasActual ? $latest->actual_next : null,
-                    'variance'    => $hasActual ? round($latest->actual_next - $latest->predicted_next, 2) : null,
-                    'method'      => $latest->regression_method,
-                    'pending'     => !$hasActual,
+                    'month_label'    => $latest->month_label,
+                    'month'          => \Carbon\Carbon::parse($latest->month_label . '-01')->format('M Y'),
+                    'predicted'      => $latest->predicted_next,
+                    'predicted_low'  => $latest->predicted_low,
+                    'predicted_high' => $latest->predicted_high,
+                    'actual'         => $hasActual ? $latest->actual_next : null,
+                    'variance'       => $hasActual ? round($latest->actual_next - $latest->predicted_next, 2) : null,
+                    'method'         => $latest->regression_method,
+                    'pending'        => !$hasActual,
                 ];
             })
             ->sortByDesc('month_label')

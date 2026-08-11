@@ -165,6 +165,9 @@ class AIPredictionTabRenderTest extends TestCase
         $this->assertModeRender($html, 'Linear (SLR)');
         $this->assertStringContainsString('Forecast Reliability', $html);
         $this->assertStringContainsString('reliability-hint', $html);
+
+        // Prediction History table shows the saved band under the point.
+        $this->assertMatchesRegularExpression('/\(\d+(?:\.\d+)?[\x{2013}-]\d+(?:\.\d+)?%\)/u', $html);
     }
 
     /*

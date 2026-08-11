@@ -827,6 +827,11 @@
                                     </td>
                                     <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
                                         {{ $row['predicted'] }}%
+                                        @if (($row['predicted_low'] ?? null) !== null && ($row['predicted_high'] ?? null) !== null)
+                                            <span style="display: block; font-size: 11px; color: #6b7280; font-weight: 500;">
+                                                ({{ round($row['predicted_low'], 1) }}–{{ round($row['predicted_high'], 1) }}%)
+                                            </span>
+                                        @endif
                                     </td>
                                     <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
                                         {{ $row['pending'] ? '—' : $row['actual'] . '%' }}

@@ -661,6 +661,10 @@ class AIPredictionPresenterTest extends TestCase
         $this->assertEquals('May 2026', $history[0]['month']);
         $this->assertEquals(4.5, $history[0]['actual']);
         $this->assertFalse($history[0]['pending']);
+        $this->assertNotNull($history[0]['predicted_low']);
+        $this->assertNotNull($history[0]['predicted_high']);
+        $this->assertLessThanOrEqual($history[0]['predicted_high'], $history[0]['predicted']);
+        $this->assertLessThanOrEqual($history[0]['predicted'], $history[0]['predicted_low']);
         $this->assertArrayNotHasKey('predicted_evolution', $history[0]);
         $this->assertArrayNotHasKey('prediction_count', $history[0]);
         $this->assertFalse($history->contains(fn ($h) => $h['month'] === 'Jun 2026'));
