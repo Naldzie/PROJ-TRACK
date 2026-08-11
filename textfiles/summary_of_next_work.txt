@@ -108,8 +108,13 @@
   ⭐ NEW PLANNED WORK (Aug 11, 2026) — AI MODULE: FORECAST RELIABILITY
   & PREDICTION CONFIDENCE REBASE (V2 PHASE 14)
   --------------------------------------------------------------------------------
-  Status: 📋 PLANNED — implementation NOT started.
+  Status: 🔄 IN PROGRESS — Steps 0-7 IMPLEMENTED + committed on branch
+  phase-14-forecast-reliability (a13037d, 739610d, 26d5ffe, 366414d, bf3ca66,
+  901fa07, 9b29563, f4bcfed). Full suite 608 passed (2209 assertions).
+  At Step 8 (logs & docs) before final review (Step 9 = present branch for
+  approval before merging — Rule 12).
   Plan:  textfiles/forecast_reliability_confidence_plan.md
+  Log:   textfiles/active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt
 
   Why: R² is presented as "prediction confidence", but R² only measures how
   well the curve fits PAST data — it says nothing about whether the NEXT
@@ -118,20 +123,24 @@
   prediction_history (predicted vs actual) — but confidence wording was
   never rebased onto it.
 
-  Scope summary:
+  Scope summary (all IMPLEMENTED):
     • NEW ForecastReliabilityService — weighted, explainable reliability
       score (0-100, High/Medium/Low) per forecast built from:
       backtest accuracy (prediction_history) 40% + real data sufficiency
       30% + forecast horizon 15% + cross-method agreement 15%, with hard
       floors (R² < 0.50 → Low) and an honesty cap (High requires evidence:
-      ≥3 fulfilled predictions OR ≥6 real observations).
+      ≥3 fulfilled predictions OR ≥6 real observations). Includes an additive
+      next-month prediction RANGE (point ± margin) via a new nullable
+      next_prediction_low/high/margin + next_prediction_range migration.
     • R² stays on screen but is relabeled "Curve Fit Quality (matches past
       data only)" — it keeps its legitimate model-selection job.
-    • Applied to: next-month prediction card + Estimated Completion card.
-    • Presenter/Blade prompt wording updated; all existing report keys kept
-      (backward compatible).
+    • Applied to: next-month prediction card + Estimated Completion card
+      (both show level + score/100 badge with a hover "why" tooltip).
+    • Presenter/Blade prompt wording updated (AIExplanationService now
+      prompts with the reliability block, not R²); all existing report keys
+      kept (backward compatible).
   Branch (on implementation): phase-14-forecast-reliability (from main).
-  Step 8 of the plan = inform for review before merging (Rule 12).
+  Step 9 of the plan = inform for review before merging (Rule 12).
 
 ===============================================================================
   SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING

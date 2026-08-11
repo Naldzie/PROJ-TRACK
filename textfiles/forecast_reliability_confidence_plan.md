@@ -2,11 +2,13 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-5 COMPLETE and committed (a13037d Step 0,
+Status: 🔄 IN PROGRESS — Steps 0-7 COMPLETE and committed (a13037d Step 0,
         739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4,
-        901fa07 Step 5). Test counts: Step 0 565, Step 1 569, Step 2 591,
-        Step 3 595, Step 4 599, Step 5 599 (Blade-only change).
-        Next: Step 6 — AIExplanationService prompt update.
+        901fa07 Step 5, 9b29563 Step 6, f4bcfed Step 7). Test counts:
+        Step 0 565, Step 1 569, Step 2 591, Step 3 595, Step 4 599,
+        Step 5 599 (Blade-only), Step 6 603 (4 new AIExplanationServiceTest),
+        Step 7 608 (5 new AIPredictionTabRenderTest). Test counts:
+        Step 8 — logs & docs.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -660,9 +662,44 @@ A panel/capstone defense question is highly likely:
     • Update buildPrompt() + a test asserting the prompt contains the
       reliability/accuracy stats.
 
+  Step 6 — DONE ✓ (Aug 11, 2026) — commit 9b29563
+    Updated app/Services/AI/AIExplanationService.php buildPrompt():
+    • New FORECAST RELIABILITY block is now the trust statement handed to
+      the model — next-month reliability (label + /100), completion estimate
+      (label + /100), and the four weighted factors (Prediction history /
+      Data / Forecast horizon / Method agreement, each "score/100 — detail")
+      rendered by a new private buildReliabilityText() helper.
+    • R² line RELABELED from "- R²: 0.954 (Fit Quality: Excellent fit)" to
+      "Curve Fit Quality (matches past data only): R² = 0.954 (Excellent fit)"
+      so curve fit is never presented as forecast accuracy.
+    • Null reliability block degrades to "N/A — insufficient data for a
+      reliability estimate".
+    New test file tests/Unit/Services/AI/AIExplanationServiceTest.php (4 tests,
+    11 assertions) exercising the private buildPrompt() via reflection — no
+    HTTP, consistent with the codebase's no-mocking convention.
+    Full suite: 603 passed (2187 assertions).
+
   Step 7 — CSS badge polish + browser verification
     • Badge colors, tooltip, responsive layout; verify insufficient-data,
       completed, SLR, polynomial, and supplement-mode projects.
+
+  Step 7 — DONE ✓ (Aug 11, 2026) — commit f4bcfed
+    The badge colors, hover/focus tooltip, and responsive layout were already
+    shipped as part of Step 5's blade style block (pure CSS, no JS). For the
+    multi-mode verification we replaced a one-off browser pass with a durable,
+    repeatable render test:
+    tests/Feature/AIPredictionTabRenderTest.php (5 tests, 22 assertions) feeds
+    the REAL AIPredictionPresenter output into the REAL ai-prediction.blade.php
+    (the exact variable contract ProjectDetailService uses) for every mode:
+    • Completed project → "Project Completed" marker.
+    • Insufficient data → "Insufficient Data" marker.
+    • Normal SLR (strictly linear data, SLR wins) → "Linear (SLR)" + "Forecast
+      Reliability" + "reliability-hint" tooltip.
+    • Polynomial (curved data, cubic wins) → "Polynomial (Cubic)".
+    • Supplement (1 real obs + 3 similar completed projects) → data_source
+      'hybrid' + "Cross-Project Supplement" badge.
+    Every mode asserts no "Prediction Confidence" wording remains.
+    Full suite: 608 passed (2209 assertions).
 
   Step 8 — Logs & docs (Rule 11)
     • Update this plan's status; add progress log
