@@ -2,9 +2,10 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-1 COMPLETE and committed (a13037d Step 0,
-        <step1> Step 1). Steps 0-1 tested green (Step 0: 565; Step 1: 569).
-        Next: Step 2 — ForecastReliabilityService + unit tests.
+Status: 🔄 IN PROGRESS — Steps 0-2 COMPLETE and committed (a13037d Step 0,
+        <step1> Step 1, <step2> Step 2). Test counts: Step 0 565, Step 1 569,
+        Step 2 591.
+        Next: Step 3 — AIPredictionService integration.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -450,6 +451,35 @@ A panel/capstone defense question is highly likely:
   Note: the website doesn't show the band yet — Step 1 is the math and the
   storage. The UI shows it in Step 5.
 
+  ==============================================================================
+  STEP 2 — SIMPLER TERMS EXPLANATION (for the user/capstone defense)
+  ==============================================================================
+  The problem: the app called the curve fit (R²) "confidence". But fitting
+  the past well doesn't mean the future prediction is right. We need a trust
+  score built from REAL evidence, not from a prettiness metric.
+
+  The fix (Step 2): a new score from 0-100 called FORECAST RELIABILITY, made
+  of four weighted, auditable parts:
+  1. Backtest (40 pts) — how often our past predictions were right. If we
+     said "next month 50%" and reality was 50.5%, that's an accurate hit;
+     within 5% is "close". If our promised range (Step 1 band) actually
+     contained the real number, that counts too.
+  2. Data (30 pts) — how many REAL progress records back the forecast
+     (more months of actual data = more trustworthy; borrowed synthetic
+     points from similar projects don't count).
+  3. Horizon (15 pts) — next month is the most reliable; a finish date many
+     months away is less so.
+  4. Agreement (15 pts) — for completion dates only: when the three
+     estimation methods agree within a few days, trust rises.
+
+  Honesty rules:
+  • If the curve fits badly (R² < 0.50) or there's almost no data, the score
+    is automatically Low no matter what the other parts say.
+  • A project can't claim "High" reliability unless we've already seen ≥3
+    real predictions come true OR it has ≥6 months of real data.
+  • Result: a colored badge (green/yellow/red) with a "why" breakdown, so a
+    panelist can read exactly where trust comes from.
+
   Step 1 — Prediction interval + history range columns
     • NEW migration: nullable predicted_low / predicted_high on
       prediction_history.
@@ -494,6 +524,41 @@ A panel/capstone defense question is highly likely:
       plus new coverage-based backtest scoring (actual in band).
     • Pure unit tests — no database.
 
+  Step 2 — DONE ✓ (Aug 11, 2026) — commit <step2>
+    Implemented and tested; full suite 591 tests green (2107 assertions),
+    +22 new (62 assertions).
+    Actual results:
+    • NEW app/Services/AI/ForecastReliabilityService.php — pure math service
+      (no DB). Weights W_BACKTEST 40 / W_DATA 30 / W_HORIZON 15 /
+      W_AGREEMENT 15 as class constants. Returns the §5 shape:
+      level / score / floors.blocked+reason / factors (backtest, data,
+      horizon, agreement — each score+detail).
+    • computeForNextPrediction(): horizon always 1 → 100; agreement factor
+      neutral (60, "N/A (next-month forecast)"). Floors: R² < 0.50 → Low;
+      realObs < 2 → Low ("Too little data").
+    • computeForCompletion(): returns NULL when estimated_index is null
+      (guarded N/A — caller handles). Agreement scored from context
+      (High 100 / Moderate 70 / Low 40 / N/A 60 / valid_count < 2 → 60).
+    • Backtest factor (Decision 7): point accuracy formulas from §5
+      (fulfilled ≥3: accurate/close blend clamped to 100; 1-2: max(0,
+      100 − avgVariance×10); 0: neutral 60) PLUS coverage — fulfilled rows
+      that carry a band are scored on % whose actual landed inside
+      predicted_low..predicted_high, blended 60/40 with the point score so a
+      narrow-yet-hit band scores best. Legacy point-only rows score on
+      accuracy alone (no coverage text).
+    • Data factor buckets (real obs): ≥8→100, ≥6→85, ≥4→70, ≥2→40, else→20.
+    • Horizon completion buckets: ≤3→100, ≤6→85, ≤12→65, ≤24→45, else→25.
+    • Honesty cap: computed High is downgraded to Medium unless
+      fulfilled ≥ 3 OR realObs ≥ 6.
+    • Level thresholds: ≥80 High, ≥55 Medium, else Low (rounded weighted sum).
+    Tests (22 in ForecastReliabilityServiceTest): backtest all branches +
+      coverage blend + legacy point-only; data each bucket (via completion
+      mode — next-prediction floors realObs<2); horizon next-month always
+      100 + each completion bucket; agreement High/Moderate/Low/N/A/<2 valid;
+      both floors; null estimate; honesty cap (capped + allowed with 3
+      fulfilled); weighted-score boundaries (100 High / 60 Medium / 40 Low);
+      result-shape contract.
+
   Step 3 — AIPredictionService integration
     • Add constructor dependency + reliability block to reports.
     • Update tests/Unit/Services/AI/AIPredictionServiceTest.php constructor.
@@ -530,7 +595,7 @@ A panel/capstone defense question is highly likely:
   NEW:
     app/Services/AI/ForecastReliabilityService.php
     tests/Unit/Services/AI/ForecastReliabilityServiceTest.php
-    database/migrations/xxxx_add_prediction_range_to_prediction_history_table.php
+    database/migrations/2026_08_11_000001_add_prediction_range_to_prediction_history_table.php
     tests/Unit/Services/AI/CompletionEstimationServiceTest.php  (Step 0 — 5 cases)
     textfiles/forecast_reliability_confidence_plan.md        (this plan)
     textfiles/active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt (Step 8)
@@ -759,9 +824,10 @@ Full suite regression: all V1 + V2 tests still pass (no key removal).
   7. Step 0 folds in Fix H (Decision 8): the poly future-guard, the
       predictNextMonth() floor clamp, and the non-decreasing ForecastService
       are implemented together. progress_inspection_refactor_plan.md marks
-      Fix H as handled here. Steps 0-1 are COMPLETE (see §7 "Step 0 — DONE"
-      and "Step 1 — DONE"); next session starts at Step 2 (NEW
-      ForecastReliabilityService + unit tests).
+      Fix H as handled here. Steps 0-2 are COMPLETE (see §7 "Step 0 — DONE",
+      "Step 1 — DONE", "Step 2 — DONE"); next session starts at Step 3
+      (AIPredictionService integration: add ForecastReliabilityService as a
+      constructor dependency + reliability block in reports).
 
 ===============================================================================
   END OF PHASE 14 PLAN
