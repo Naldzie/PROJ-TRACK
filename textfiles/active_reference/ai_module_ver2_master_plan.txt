@@ -903,6 +903,47 @@
   ═══════════════════════════════════════════════════════════════════════════
 
 
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║ PHASE 14 (ADDENDUM, Aug 11 2026) — Forecast Reliability &               ║
+  ║ Prediction Confidence Rebase                                             ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Objective
+  ---------
+  Remove the misleading use of R² as "prediction confidence" and replace it
+  with a weighted, explainable FORECAST RELIABILITY signal built from real
+  evidence. R² is relabeled "Curve Fit Quality (matches past data only)".
+
+  Why Now
+  -------
+  R² measures curve fit to past data only — it does NOT measure whether the
+  next prediction is correct (see polynomial_over_optimism_findings.txt:
+  Project 138 had R² 0.9989 yet predicted the wrong direction). Phase 7
+  built prediction_history as the real accuracy signal, but the confidence
+  wording was never rebased onto it. Highly likely capstone defense question.
+
+  Direction
+  ---------
+  NEW ForecastReliabilityService computes a reliability score (0-100) and
+  level (High/Medium/Low) per forecast from:
+    • Backtest accuracy (prediction_history)  40%
+    • Real data sufficiency (excl. synthetic) 30%
+    • Forecast horizon                         15%
+    • Cross-method agreement                   15%
+  With hard floors (R² < 0.50 → Low) and an honesty cap (High requires
+  ≥3 fulfilled predictions OR ≥6 real observations).
+
+  Applied to: next-month prediction card + Estimated Completion card.
+  All existing report/presenter keys stay (backward compatible).
+
+  Full plan: textfiles/forecast_reliability_confidence_plan.md
+  Branch:    phase-14-forecast-reliability (from main)
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+  ═══════════════════════════════════════════════════════════════════════════
+
+
 ================================================================================
   IMPLEMENTATION ORDER & DEPENDENCIES
 ================================================================================
@@ -1080,6 +1121,14 @@
 
     10. Phase 9 (Contractor Performance Tracking) follows Phase 8. They are
         independent — Phase 9 can proceed if Phase 8 is paused.
+
+    11. Phase 14 (ADDENDUM, Aug 11 2026) — Forecast Reliability & Prediction
+        Confidence Rebase is PLANNED. See
+        textfiles/forecast_reliability_confidence_plan.md. It removes the
+        R²-as-confidence wording across the AI Prediction UI and the Gemini
+        prompt, replacing it with a weighted reliability score built on the
+        prediction-history backtest. Recommended BEFORE Phases 9-13 since it
+        touches the face of the AI module and is a likely defense question.
 
 ================================================================================
   END OF VERSION 2 MASTER PLAN

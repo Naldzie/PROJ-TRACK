@@ -2,6 +2,16 @@ PHASE 6 - ESTIMATED COMPLETION GAUGE
 ========================================
 Implemented: 2026-07-27
 
+RELATIONSHIP TO PHASE 14 (added Aug 11, 2026)
+---------------------------------------------
+The gauge's health color today is driven by the progress gap only. Under
+the planned V2 Phase 14 — "Forecast Reliability & Prediction Confidence
+Rebase" (textfiles/forecast_reliability_confidence_plan.md) — the gauge
+card will pair this gap-based color with the new weighted reliability
+badge (High/Medium/Low), so "ahead/behind" (gap) is shown SEPARATELY from
+"how much we trust the forecast" (reliability). Both convey different
+truths and should not be merged into one number.
+
 PURPOSE
 -------
 Add a visual speedometer/gauge to the AI Prediction tab for quick-glance

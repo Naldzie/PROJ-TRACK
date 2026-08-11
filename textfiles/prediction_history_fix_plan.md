@@ -13,6 +13,21 @@ Status: ✅ COMPLETE — v1 fix implemented & verified (commits 238f8ee, 6911f13
 
 Date: July 31, 2026
 
+> ⚠️ RELATIONSHIP TO LATER WORK (added Aug 11, 2026): the `prediction_history`
+> table built here is the **backtest data source** for the planned "Forecast
+> Reliability" feature (V2 Phase 14). The Phase 14 reliability score uses
+> these rows (predicted vs actual) as its strongest factor (40% weight).
+> See: textfiles/forecast_reliability_confidence_plan.md. Keep the one-row-
+> per-(project, predicted month) keep-latest semantics intact — the
+> reliability backtest assumes one honest prediction per month.
+
+> ⚠️ RANGE COLUMNS (Phase 14, Aug 11 2026): per the "never a single point
+> estimate" finding (proven live on Project 142), Phase 14 stores the
+> next-month prediction as a BAND. It adds nullable `predicted_low` /
+> `predicted_high` to this table (decimal 5,2). Existing rows stay point-only
+> (nulls) until re-saved; the backtest then scores point accuracy AND
+> coverage (% of fulfilled months whose actual fell inside the band).
+
 ## 1. PROBLEM STATEMENT
 
 The `prediction_history` table (Phase 7) auto-saves one prediction per inspection month, and

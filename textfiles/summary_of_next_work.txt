@@ -1,7 +1,7 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 6, 2026
+  Last Updated: August 11, 2026
 ===============================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
@@ -105,6 +105,34 @@
   UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)
 ===============================================================================
 
+  ⭐ NEW PLANNED WORK (Aug 11, 2026) — AI MODULE: FORECAST RELIABILITY
+  & PREDICTION CONFIDENCE REBASE (V2 PHASE 14)
+  --------------------------------------------------------------------------------
+  Status: 📋 PLANNED — implementation NOT started.
+  Plan:  textfiles/forecast_reliability_confidence_plan.md
+
+  Why: R² is presented as "prediction confidence", but R² only measures how
+  well the curve fits PAST data — it says nothing about whether the NEXT
+  prediction is right. This is a well-known statistical trap (and a likely
+  capstone defense question). The module already has the honest signal —
+  prediction_history (predicted vs actual) — but confidence wording was
+  never rebased onto it.
+
+  Scope summary:
+    • NEW ForecastReliabilityService — weighted, explainable reliability
+      score (0-100, High/Medium/Low) per forecast built from:
+      backtest accuracy (prediction_history) 40% + real data sufficiency
+      30% + forecast horizon 15% + cross-method agreement 15%, with hard
+      floors (R² < 0.50 → Low) and an honesty cap (High requires evidence:
+      ≥3 fulfilled predictions OR ≥6 real observations).
+    • R² stays on screen but is relabeled "Curve Fit Quality (matches past
+      data only)" — it keeps its legitimate model-selection job.
+    • Applied to: next-month prediction card + Estimated Completion card.
+    • Presenter/Blade prompt wording updated; all existing report keys kept
+      (backward compatible).
+  Branch (on implementation): phase-14-forecast-reliability (from main).
+  Step 8 of the plan = inform for review before merging (Rule 12).
+
 ===============================================================================
   SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING
 
@@ -158,10 +186,18 @@
 
 ===============================================================================
   SECTION 2 — AI MODULE V2 REMAINING PHASES
-================================================================================
+===============================================================================
 
   Plan: active_reference/ai_module_ver2_master_plan.txt
   Recommended Order: 9 → 10 → 11 → 12 → 13 (Phase 8 COMPLETE — see below)
+
+  NOTE: Phase 14 — Forecast Reliability & Prediction Confidence Rebase is
+        PLANNED (Aug 11, 2026). Full plan:
+        textfiles/forecast_reliability_confidence_plan.md.
+        It replaces all R²-as-confidence wording with a weighted reliability
+        score built on the prediction-history backtest. Consider doing it
+        BEFORE Phase 9-13 since it touches the AI Prediction UI everyone
+        sees and is a probable defense question.
 
   NOTE: Phase 8 (Cross-Project Historical Regression) is COMPLETE —
         implemented + health-gauge fixes merged into main (merge 5d8dfc3).

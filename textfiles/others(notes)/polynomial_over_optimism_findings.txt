@@ -240,5 +240,30 @@
   line should not appear on the chart.
 
 ===============================================================================
+  11. UPDATE (Aug 11, 2026) — SETTLED BY FORECAST RELIABILITY (PHASE 14)
+===============================================================================
+
+  This exact over-optimism case (Project 138: R² 0.9989 yet 3 days AHEAD
+  while months behind plan) is the canonical argument for the planned
+  V2 Phase 14 — "Forecast Reliability & Prediction Confidence Rebase"
+  (textfiles/forecast_reliability_confidence_plan.md):
+
+    • It proves R² is a fit metric, not a confidence metric: an almost
+      perfect fit still produced the wrong direction.
+    • Phase 14 demotes R² to a display-only "Curve Fit Quality" label and
+      introduces a weighted FORECAST RELIABILITY score whose top factor
+      (40%) is backtest accuracy from prediction_history — i.e., the model
+      only "earns" trust for predictions that LATER proved correct.
+    • It also keeps the conclusion above intact at the UI level: the
+      confidence/date badge for a late project must not look "safe"
+      merely because the polynomial fits well.
+
+  Suggested defense answer (paired with §3/§9 numbers): cite Project 138 —
+  "an R² of 0.9989 looked perfect, but the model said ahead-of-schedule for
+  a project that was behind every month, so we stopped using R² as
+  confidence and started measuring whether past predictions actually came
+  true."
+
+===============================================================================
   END OF FINDINGS DOCUMENT
 ===============================================================================
