@@ -10,6 +10,7 @@ use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
 use App\Services\AI\CompletionEstimationService;
+use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\ForecastService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
@@ -63,6 +64,7 @@ class AIPredictionServiceTest extends TestCase
         $completionService = new CompletionEstimationService();
         $completionComparisonService = new CompletionComparisonService($completionService);
         $historicalSimilarityService = new HistoricalSimilarityService();
+        $reliabilityService = new ForecastReliabilityService();
 
         $this->predictionService = new AIPredictionService(
             $datasetBuilder,
@@ -73,7 +75,8 @@ class AIPredictionServiceTest extends TestCase
             $assessmentService,
             $completionService,
             $completionComparisonService,
-            $historicalSimilarityService
+            $historicalSimilarityService,
+            $reliabilityService
         );
     }
 
@@ -456,6 +459,94 @@ class AIPredictionServiceTest extends TestCase
         $this->assertNotEquals($firstId, $juneRows[0]->id);
         $this->assertNotNull($juneRows[0]->predicted_low);
         $this->assertNotNull($juneRows[0]->predicted_high);
+    }
+
+    /*
+    |==========================================================================
+    | Phase 14 Step 3 — Forecast Reliability Block
+    |==========================================================================
+    */
+
+    /**
+     * The full report carries the 'reliability' block with the next_prediction
+     * score, the completion score (populated when a completion exists), and the
+     * curve-fit quality label.
+     */
+    public function test_prediction_report_includes_reliability_block(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11],
+            overrides: ['planned_end_date' => Carbon::parse(now()->addMonths(6)->format('Y-m-d'))]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertArrayHasKey('reliability', $report);
+        $this->assertArrayHasKey('next_prediction', $report['reliability']);
+        $this->assertArrayHasKey('completion', $report['reliability']);
+        $this->assertEquals('Curve Fit Quality', $report['reliability']['fit_quality_label']);
+    }
+
+    /**
+     * The next-month reliability is a weighted score with level, score (0-100)
+     * and the auditable factor breakdown (backtest / data / horizon).
+     */
+    public function test_reliability_next_prediction_is_scored(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $next = $report['reliability']['next_prediction'];
+        $this->assertContains($next['level'], ['High', 'Medium', 'Low']);
+        $this->assertGreaterThanOrEqual(0, $next['score']);
+        $this->assertLessThanOrEqual(100, $next['score']);
+        $this->assertArrayHasKey('factors', $next);
+        foreach (['backtest', 'data', 'horizon', 'agreement'] as $factor) {
+            $this->assertArrayHasKey($factor, $next['factors'], "Missing factor: {$factor}");
+        }
+    }
+
+    /**
+     * When a completion estimate exists, the completion reliability is
+     * populated (not null) with the same score shape as next_prediction.
+     */
+    public function test_reliability_completion_populated_when_estimate_exists(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 10,
+            actualProgress: [1.00, 2.00, 4.00, 7.00, 12.00, 18.00, 25.00, 33.00, 39.00, 45.00],
+            overrides: ['planned_end_date' => Carbon::parse(now()->addMonths(6)->format('Y-m-d'))]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $completion = $report['reliability']['completion'];
+        $this->assertNotNull($completion);
+        $this->assertContains($completion['level'], ['High', 'Medium', 'Low']);
+        $this->assertGreaterThanOrEqual(0, $completion['score']);
+        $this->assertLessThanOrEqual(100, $completion['score']);
+        $this->assertArrayHasKey('floors', $completion);
+    }
+
+    /**
+     * The minimal report (insufficient data) still carries a neutral
+     * reliability block so every consumer sees the same keys.
+     */
+    public function test_minimal_report_includes_neutral_reliability_block(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertArrayHasKey('reliability', $report);
+        $this->assertNull($report['reliability']['next_prediction']);
+        $this->assertNull($report['reliability']['completion']);
+        $this->assertEquals('Curve Fit Quality', $report['reliability']['fit_quality_label']);
     }
 
     /*

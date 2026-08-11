@@ -11,6 +11,7 @@ use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
 use App\Services\AI\CompletionEstimationService;
+use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\ForecastService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
@@ -63,6 +64,7 @@ class AIPredictionPresenterTest extends TestCase
         $completionService = new CompletionEstimationService();
         $completionComparisonService = new CompletionComparisonService($completionService);
         $historicalSimilarityService = new HistoricalSimilarityService();
+        $reliabilityService = new ForecastReliabilityService();
 
         $predictionService = new AIPredictionService(
             $datasetBuilder,
@@ -73,7 +75,8 @@ class AIPredictionPresenterTest extends TestCase
             $assessmentService,
             $completionService,
             $completionComparisonService,
-            $historicalSimilarityService
+            $historicalSimilarityService,
+            $reliabilityService
         );
 
         $recommendationEngine = new RecommendationEngine();

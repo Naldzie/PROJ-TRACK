@@ -12,6 +12,7 @@ use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\ProjectAssessmentService;
 use App\Services\AI\CompletionEstimationService;
 use App\Services\AI\CompletionComparisonService;
+use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Models\PredictionHistory;
 use Carbon\Carbon;
@@ -147,6 +148,16 @@ class AIPredictionService
 
     /**
      * ------------------------------------------------------------------------
+     * Forecast Reliability Service (Phase 14)
+     * ------------------------------------------------------------------------
+     *
+     * Computes the weighted, explainable reliability score (0-100) and
+     * level (High/Medium/Low) for next-month and completion forecasts.
+     */
+    private ForecastReliabilityService $reliabilityService;
+
+    /**
+     * ------------------------------------------------------------------------
      * Constructor
      * ------------------------------------------------------------------------
      *
@@ -162,7 +173,8 @@ class AIPredictionService
         ProjectAssessmentService $assessmentService,
         CompletionEstimationService $completionService,
         CompletionComparisonService $completionComparisonService,
-        HistoricalSimilarityService $historicalSimilarityService
+        HistoricalSimilarityService $historicalSimilarityService,
+        ForecastReliabilityService $reliabilityService
     ) {
         $this->datasetBuilder = $datasetBuilder;
         $this->regressionService = $regressionService;
@@ -173,6 +185,7 @@ class AIPredictionService
         $this->completionService = $completionService;
         $this->completionComparisonService = $completionComparisonService;
         $this->historicalSimilarityService = $historicalSimilarityService;
+        $this->reliabilityService = $reliabilityService;
     }
 
     /**
@@ -241,8 +254,11 @@ class AIPredictionService
         $analysis = $this->runRegression($dataset);
 
         // Pass synthetic points count through analysis so completion estimation
-        // methods can compute real-only observation count for confidence
-        $analysis['synthetic_points_count'] = $dataset['statistics']['synthetic_points_count'] ?? 0;
+        // methods can compute real-only observation count for confidence.
+        // Read from the dataset top-level key (set by HistoricalSimilarityService
+        // in supplement/fallback mode); statistics.synthetic_points_count is
+        // never populated (Phase 8 findings, Phase 14 plan §13.5).
+        $analysis['synthetic_points_count'] = $dataset['synthetic_points_count'] ?? 0;
 
         $currentMonthIndex =
             $dataset['statistics']['current_month_index'];
@@ -298,6 +314,18 @@ class AIPredictionService
             $currentProgress
         );
 
+        // Phase 14 Step 3: forecast reliability (weighted evidence score).
+        // Next-month: horizon = 1, agreement neutral. Completion: horizon from
+        // the completion index, agreement from the multi-method comparison.
+        $reliability = $this->buildReliabilityBlock(
+            $project,
+            $analysis,
+            $dataset,
+            $currentMonthIndex,
+            $completion,
+            $completionMulti
+        );
+
         $report = $this->buildPredictionReport(
             $dataset,
             $analysis,
@@ -307,7 +335,8 @@ class AIPredictionService
             $assessment,
             $completion,
             $completionMulti,
-            $nextPredictionBand
+            $nextPredictionBand,
+            $reliability
         );
 
         $this->savePredictionHistory(
@@ -390,6 +419,82 @@ class AIPredictionService
             $currentProgress,
             $project->baselineSchedules
         );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Forecast Reliability Block (Phase 14 Step 3)
+     * ------------------------------------------------------------------------
+     *
+     * Assembles the reliability context for the next-month prediction and the
+     * completion estimate and computes a weighted, explainable reliability
+     * score via ForecastReliabilityService.
+     *
+     * Real observation count = observation_count − synthetic_points_count.
+     * Per the Phase 8 findings, synthetic count is read from the dataset's
+     * top-level 'synthetic_points_count' (what the presenter-ready regression
+     * block exposes), NOT statistics.synthetic_points_count (never set).
+     *
+     * Returns null (guarded N/A) when completion is missing so the caller can
+     * present a plain N/A for the completion reliability card.
+     */
+    private function buildReliabilityBlock(
+        Project $project,
+        array $analysis,
+        array $dataset,
+        int $currentMonthIndex,
+        ?array $completion,
+        ?array $completionMulti
+    ): array {
+
+        $observationCount = (int) ($dataset['statistics']['observation_count'] ?? 0);
+        $syntheticCount = (int) ($dataset['synthetic_points_count'] ?? 0);
+        $realObsCount = max(0, $observationCount - $syntheticCount);
+
+        $predictionHistory = PredictionHistory::where('project_id', $project->id)
+            ->whereNotNull('actual_next')
+            ->get(['predicted_next', 'actual_next', 'predicted_low', 'predicted_high'])
+            ->map(function ($row) {
+                return [
+                    'predicted_next' => $row->predicted_next,
+                    'actual_next'    => $row->actual_next,
+                    'predicted_low'  => $row->predicted_low,
+                    'predicted_high' => $row->predicted_high,
+                ];
+            })
+            ->all();
+
+        $nextPrediction = $this->reliabilityService->computeForNextPrediction([
+            'r_squared'          => $analysis['r_squared'] ?? 0,
+            'real_obs_count'     => $realObsCount,
+            'prediction_history' => $predictionHistory,
+        ]);
+
+        $completionReliability = null;
+
+        if ($completion !== null
+            && isset($completion['estimated_completion_index'])
+            && $completion['estimated_completion_index'] !== null
+        ) {
+            $comparison = $completionMulti['comparison'] ?? [];
+
+            $completionReliability = $this->reliabilityService->computeForCompletion([
+                'r_squared'          => $analysis['r_squared'] ?? 0,
+                'real_obs_count'     => $realObsCount,
+                'prediction_history' => $predictionHistory,
+                'estimated_index'    => $completion['estimated_completion_index'],
+                'current_index'      => $currentMonthIndex,
+                'agreement'          => $comparison['agreement'] ?? 'N/A',
+                'valid_count'        => (int) ($comparison['valid_count'] ?? 0),
+                'spread_days'        => (int) ($comparison['spread_days'] ?? 0),
+            ]);
+        }
+
+        return [
+            'next_prediction'   => $nextPrediction,
+            'completion'        => $completionReliability,
+            'fit_quality_label' => 'Curve Fit Quality',
+        ];
     }
 
     // Attempt to supplement or replace dataset with cross-project historical data
@@ -812,7 +917,8 @@ class AIPredictionService
         array $assessment,
         ?array $completion = null,
         ?array $completionMulti = null,
-        ?array $nextPredictionBand = null
+        ?array $nextPredictionBand = null,
+        ?array $reliability = null
     ): array {
 
         /*
@@ -935,6 +1041,23 @@ class AIPredictionService
 
             /*
             |--------------------------------------------------------------------------
+            | Forecast Reliability (Phase 14)
+            |--------------------------------------------------------------------------
+            |
+            | Weighted, explainable reliability score for the next-month
+            | prediction and the completion estimate (or null when no
+            | completion exists). R² is relabeled as curve-fit quality only.
+            |
+            */
+
+            'reliability' => $reliability ?? [
+                'next_prediction'   => null,
+                'completion'        => null,
+                'fit_quality_label' => 'Curve Fit Quality',
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
             | Dataset Statistics
             |--------------------------------------------------------------------------
             */
@@ -1030,6 +1153,12 @@ class AIPredictionService
                     'agreement'     => 'N/A',
                     'valid_count'   => 0,
                 ],
+            ],
+
+            'reliability' => [
+                'next_prediction'   => null,
+                'completion'        => null,
+                'fit_quality_label' => 'Curve Fit Quality',
             ],
 
             'statistics' => $dataset['statistics'],
