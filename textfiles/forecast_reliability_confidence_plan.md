@@ -2,13 +2,13 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-7 COMPLETE and committed (a13037d Step 0,
+Status: 🔄 IN PROGRESS — Steps 0-8 COMPLETE and committed (a13037d Step 0,
         739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4,
-        901fa07 Step 5, 9b29563 Step 6, f4bcfed Step 7). Test counts:
-        Step 0 565, Step 1 569, Step 2 591, Step 3 595, Step 4 599,
-        Step 5 599 (Blade-only), Step 6 603 (4 new AIExplanationServiceTest),
-        Step 7 608 (5 new AIPredictionTabRenderTest). Test counts:
-        Step 8 — logs & docs.
+        901fa07 Step 5, 9b29563 Step 6, f4bcfed Step 7, c732035 Step 8).
+        Test counts: Step 0 565, Step 1 569, Step 2 591, Step 3 595,
+        Step 4 599, Step 5 599 (Blade-only), Step 6 603 (4 new
+        AIExplanationServiceTest), Step 7 608 (5 new AIPredictionTabRenderTest),
+        Step 8 608 (docs only). Next: Step 9 — present branch for review.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -706,9 +706,25 @@ A panel/capstone defense question is highly likely:
       (active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt);
       refresh summary_of_next_work.txt.
 
+  Step 8 — DONE ✓ (Aug 11, 2026) — commit c732035
+    • Plan status header updated (Steps 0-8 DONE, next = Step 9).
+    • NEW textfiles/active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt
+      — Phase 14 progress log (summary, files created/modified, per-step test
+      counts, design decisions 1-8, open items).
+    • textfiles/summary_of_next_work.txt Phase 14 block refreshed from
+      PLANNED → IN PROGRESS (Steps 0-7 implemented, suite 608 green, at
+      Step 8/9 before review). Full suite unchanged: 608 passed.
+
   Step 9 — Inform for review (Rule 10 + Rule 12)
     • Stop before merging; present branch phase-14-forecast-reliability
       for approval.
+
+  Step 9 — DONE ✓ (Aug 11, 2026) — branch presented for review, NOT merged
+    Present the phase-14-forecast-reliability branch (9 commits:
+    a13037d→c732035) for approval before merging (Rule 12). Merge only on
+    explicit approval. After approval also: run the browser click-through
+    (date-simulator widget) as a final UX pass, and apply the Step 1 range
+    migration to staging/production alongside the deploy.
 
 ===============================================================================
   8. FILES TOUCHED
