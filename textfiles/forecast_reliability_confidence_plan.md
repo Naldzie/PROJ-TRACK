@@ -3,7 +3,7 @@
 CSPC PMU System — AI Module Version 2 follow-up
 
 Status: 🔄 IN PROGRESS — Steps 0-2 COMPLETE and committed (a13037d Step 0,
-        <step1> Step 1, <step2> Step 2). Test counts: Step 0 565, Step 1 569,
+        739610d Step 1, 26d5ffe Step 2). Test counts: Step 0 565, Step 1 569,
         Step 2 591.
         Next: Step 3 — AIPredictionService integration.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
@@ -487,7 +487,7 @@ A panel/capstone defense question is highly likely:
       savePredictionHistory() persists low/high on keep-latest rows.
     • Tests: margin math (RMSE/backtest/floor), clamping, migration runs.
 
-  Step 1 — DONE ✓ (Aug 11, 2026) — commit <step1>
+  Step 1 — DONE ✓ (Aug 11, 2026) — commit 739610d
     Implemented and tested; 569 tests green (2045 assertions).
     Actual results:
     • NEW database/migrations/2026_08_11_000001_add_prediction_range_
@@ -524,7 +524,7 @@ A panel/capstone defense question is highly likely:
       plus new coverage-based backtest scoring (actual in band).
     • Pure unit tests — no database.
 
-  Step 2 — DONE ✓ (Aug 11, 2026) — commit <step2>
+  Step 2 — DONE ✓ (Aug 11, 2026) — commit 26d5ffe
     Implemented and tested; full suite 591 tests green (2107 assertions),
     +22 new (62 assertions).
     Actual results:
