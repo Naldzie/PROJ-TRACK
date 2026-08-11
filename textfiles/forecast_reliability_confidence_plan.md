@@ -2,10 +2,11 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-3 COMPLETE and committed (a13037d Step 0,
-        739610d Step 1, 26d5ffe Step 2, 366414d Step 3). Test counts:
-        Step 0 565, Step 1 569, Step 2 591, Step 3 595.
-        Next: Step 4 — AIPredictionPresenter output.
+Status: 🔄 IN PROGRESS — Steps 0-4 COMPLETE and committed (a13037d Step 0,
+        739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4).
+        Test counts: Step 0 565, Step 1 569, Step 2 591, Step 3 595,
+        Step 4 599.
+        Next: Step 5 — Blade relabel + reliability badges + tooltips.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -598,6 +599,27 @@ A panel/capstone defense question is highly likely:
   Step 4 — AIPredictionPresenter output
     • Add forecast_reliability + label keys; keep old keys.
     • Update AIPredictionPresenterTest.
+
+  Step 4 — DONE ✓ (Aug 11, 2026) — commit bf3ca66
+    Implemented and tested; full suite 599 tests green (2176 assertions),
+    +4 new (44 assertions) on top of Step 3's 595.
+    Actual results:
+    • presentNormal() passes the reliability block through and adds:
+        forecast_reliability (pass-through { next_prediction, completion,
+        fit_quality_label }), next_prediction_reliability (score shape or
+        null), completion_reliability (or null), reliability_factors (a
+        flattened factor list — Backtest accuracy / Data sufficiency /
+        Forecast horizon / Method agreement, each score+detail — for the
+        "why" tooltip), and fit_quality_label = 'Curve Fit Quality'.
+    • Next-month band keys exposed: next_prediction_low / next_prediction_high
+      / next_prediction_margin (additive; next_prediction stays the scalar).
+    • regression_info gains fit_quality_label = 'Curve Fit Quality'.
+    • ALL existing keys (completion_confidence, certainty_label,
+      regression_info, next_prediction, etc.) unchanged — backward compatible.
+    • presentInsufficientData() carries the neutral reliability placeholders
+      (null reliability + label) so the blade always sees the same keys.
+    Tests: AIPredictionPresenterTest — reliability block shape, next-month
+      band presence, flattened factor list, insufficient-data placeholders.
 
   Step 5 — Blade relabel + reliability badges + tooltips
     • Update ai-prediction.blade.php; browser-verify (date-simulator widget)
