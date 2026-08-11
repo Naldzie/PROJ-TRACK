@@ -2,10 +2,10 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-2 COMPLETE and committed (a13037d Step 0,
-        739610d Step 1, 26d5ffe Step 2). Test counts: Step 0 565, Step 1 569,
-        Step 2 591.
-        Next: Step 3 — AIPredictionService integration.
+Status: 🔄 IN PROGRESS — Steps 0-3 COMPLETE and committed (a13037d Step 0,
+        739610d Step 1, 26d5ffe Step 2, 366414d Step 3). Test counts:
+        Step 0 565, Step 1 569, Step 2 591, Step 3 595.
+        Next: Step 4 — AIPredictionPresenter output.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -562,6 +562,38 @@ A panel/capstone defense question is highly likely:
   Step 3 — AIPredictionService integration
     • Add constructor dependency + reliability block to reports.
     • Update tests/Unit/Services/AI/AIPredictionServiceTest.php constructor.
+
+  Step 3 — DONE ✓ (Aug 11, 2026) — commit 366414d
+    Implemented and tested; full suite 595 tests green (2132 assertions),
+    +4 new (25 assertions) on top of Step 2's 591.
+    Actual results:
+    • AIPredictionService gains ForecastReliabilityService as a 10th
+      constructor dependency (own dependencies: none — Laravel auto-resolves).
+    • NEW private buildReliabilityBlock(project, analysis, dataset,
+      currentMonthIndex, completion, completionMulti): computes real
+      observation count = observation_count − synthetic_points_count
+      (top-level dataset key, per §13.5), pulls fulfilled prediction_history
+      rows, then calls computeForNextPrediction() (horizon 1 / agreement
+      neutral) and computeForCompletion() (guarded N/A when the completion
+      estimate is null) — same context shape the service's unit tests use.
+    • generatePrediction() assembles the block after estimateAllCompletions()
+      and passes it into buildPredictionReport(); the report gains the
+      'reliability' key { next_prediction, completion, fit_quality_label }.
+    • buildMinimalReport() carries the same neutral reliability block so every
+      consumer sees identical keys (backward compatible).
+    • FIX (plan §13.5): $analysis['synthetic_points_count'] now reads the
+      dataset top-level key (set by HistoricalSimilarityService in
+      supplement/fallback mode) instead of statistics.synthetic_points_count
+      (never populated), so completion-estimation real-obs counts are correct
+      in supplement mode.
+    • Also fixed a brace/body formatting glitch in applyCrossProjectData().
+    Tests: AIPredictionServiceTest constructor updated (10th arg) + 4 new
+      cases (report includes reliability block; next_prediction scored with
+      factor breakdown; completion populated when estimate exists; minimal
+      report neutral block). AIPredictionPresenterTest, AIIntegrationTest and
+      CrossProjectSupplementIntegrationTest constructors updated to the 10-arg
+      signature (they were the 38 failing callers).
+    Note: Presenter/Blade still ignore the block — exposed in Step 4.
 
   Step 4 — AIPredictionPresenter output
     • Add forecast_reliability + label keys; keep old keys.
