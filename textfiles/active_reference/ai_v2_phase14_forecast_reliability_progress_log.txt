@@ -218,6 +218,14 @@
    • The Step 1 range migration must be applied on the staging/production
      DB alongside the deploy.
 
+   Follow-up (Aug 11, 2026 — commit 8de6382): the Prediction History table
+     "Predicted" column now also shows the saved band under the point
+     (e.g. "35% / (33–37%)"). Presenter history rows expose predicted_low /
+     predicted_high; blade renders them muted under the point when present
+     (legacy point-only rows show just the point). Covered by extended
+     assertions in AIPredictionPresenterTest + AIPredictionTabRenderTest.
+     Full suite 608 passed (2216 assertions).
+
 ================================================================================
   END OF PHASE 14 PROGRESS LOG
 ================================================================================
