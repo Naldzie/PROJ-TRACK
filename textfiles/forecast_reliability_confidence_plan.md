@@ -2,11 +2,11 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-4 COMPLETE and committed (a13037d Step 0,
-        739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4).
-        Test counts: Step 0 565, Step 1 569, Step 2 591, Step 3 595,
-        Step 4 599.
-        Next: Step 5 — Blade relabel + reliability badges + tooltips.
+Status: 🔄 IN PROGRESS — Steps 0-5 COMPLETE and committed (a13037d Step 0,
+        739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4,
+        901fa07 Step 5). Test counts: Step 0 565, Step 1 569, Step 2 591,
+        Step 3 595, Step 4 599, Step 5 599 (Blade-only change).
+        Next: Step 6 — AIExplanationService prompt update.
         Commit cadence (revised Aug 11, 2026, per user): log, test, commit
         AND push after EACH step — steps no longer wait for review before
         committing; review happens at the end (Step 9).
@@ -624,6 +624,37 @@ A panel/capstone defense question is highly likely:
   Step 5 — Blade relabel + reliability badges + tooltips
     • Update ai-prediction.blade.php; browser-verify (date-simulator widget)
       on a project with 2+ inspected months.
+
+  Step 5 — DONE ✓ (Aug 11, 2026) — commit 901fa07
+    Implemented; full suite 599 tests green (2176 assertions — Blade-only
+    change, no test impact). Verified by rendering the live tab end-to-end.
+    Actual results:
+    • Key Metrics row: "Prediction Confidence" box RELABELED → "Forecast
+      Reliability": headline is now the reliability score /100 with a
+      green/yellow/red level badge + "why" tooltip; R² demoted to a small
+      "curve fit — matches past data only" footnote (with cross-project
+      disclaimer when supplement mode).
+    • Next-Month Prediction box: point shown with its RANGE (point ± margin,
+      e.g. 67.6% – 71.6%) + small reliability badge (level · score/100) +
+      hover "why" tooltip listing the factor breakdown.
+    • Estimated Completion card: the R²-driven completion_confidence badge is
+      replaced by the completion_reliability badge (level · score/100 + "why"
+      tooltip with factors); completion_confidence remains as a fallback when
+      reliability is null.
+    • Model Summary: fit-quality line now reads "Curve Fit Quality (matches
+      past data only): ..." using the presenter label.
+    • New pure-CSS hover/focus tooltip (.reliability-hint / .reliability-tooltip)
+      added to the blade's style block — no JS.
+    Live verification (render_ai_tab.php, dev DB pmu_system4):
+    • Project 5: next-month reliability Medium 69/100 (band 67.6–71.6);
+      completion reliability Medium 75/100 — agreement factor "All 2 methods
+      agree (High, spread 15 days)" confirming Decision 5: the poly future-
+      guard removed the bad method and the pair agrees at High.
+    • Project 137: Medium 78/100; null completion reliability renders the
+      plain fallback cleanly.
+    • Confirmed no "Prediction Confidence" wording remains in the HTML.
+    Migration note: the Step 1 range migration was applied to the dev DB
+    (php artisan migrate) so the live tab queries work.
 
   Step 6 — AIExplanationService prompt update
     • Update buildPrompt() + a test asserting the prompt contains the
