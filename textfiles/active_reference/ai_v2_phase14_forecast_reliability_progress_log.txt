@@ -1,0 +1,231 @@
+================================================================================
+  AI MODULE VERSION 2 — PHASE 14 PROGRESS LOG
+  Forecast Reliability & Prediction Confidence Rebase
+  CSPC PMU System
+================================================================================
+
+   Date Completed:  Aug 11, 2026 (Steps 0-7)
+   Branch:          phase-14-forecast-reliability (from main)
+   Plan:            textfiles/forecast_reliability_confidence_plan.md
+   Summary:         textfiles/summary_of_next_work.txt (§ Phase 14)
+
+   Previous Phase:  Phase 8 — Cross-Project Historical Regression
+   Status:          🔄 IN PROGRESS — Steps 0-7 implemented & committed.
+                    Step 8 (this log + summary refresh) in progress.
+                    Step 9 = inform for review before merging (Rule 12).
+
+
+================================================================================
+  1. PHASE SUMMARY
+================================================================================
+
+  Objective:
+    Replace all "R² as prediction confidence" wording with an honest,
+    explainable FORECAST RELIABILITY score. R² measures how well the curve
+    fits PAST data — it says nothing about whether the NEXT prediction is
+    right (a well-known statistical trap and a likely capstone defense
+    question). The prediction_history backtest already holds the honest
+    signal; Phase 14 rebases the UI, presenter, and AI prompt onto it.
+
+  Key Changes:
+    • NEW ForecastReliabilityService — weighted, explainable reliability
+      (0-100, High/Medium/Low) per forecast:
+        Backtest accuracy (prediction_history)  40%
+        Real data sufficiency                    30%
+        Forecast horizon                         15%
+        Cross-method agreement                   15%
+      Hard floor: R² < 0.50 → Low. Honesty cap: High requires evidence
+      (≥3 fulfilled predictions OR ≥6 real observations).
+    • Next-month forecast gains an additive PREDICTION RANGE (point ± margin,
+      lower/upper bounds + margin) via new nullable DB columns — the point
+      stays a scalar, backward compatible.
+    • R² is RELABELED "Curve Fit Quality (matches past data only)" — kept for
+      its legitimate model-selection job, never shown as forecast trust.
+    • Applied to: Next-Month Prediction card + Estimated Completion card.
+    • AIExplanationService prompt now leads with the reliability block
+      (label + /100 + the four factor scores) and demotes R² to a curve-fit
+      note.
+
+  Status: ✅ STEPS 0-7 COMPLETE — full suite 608 passed (2209 assertions).
+
+
+================================================================================
+  2. FILES CREATED
+================================================================================
+
+  [NEW] app/Services/AI/ForecastReliabilityService.php
+    • reliabilityReport(Project, prediction): returns
+      next_reliability + completion_reliability ({score, label}),
+      factors (flat list with key/label/score/detail for the "why" tooltip),
+      fit_quality_label = 'Curve Fit Quality'.
+
+  [NEW] database/migrations/xxxx_..._add_prediction_range_columns_to_projects.php
+    • projects += next_prediction_low, next_prediction_high,
+      next_prediction_margin (nullable decimal). Applied to dev DB
+      (php artisan migrate) so the live tab queries work.
+
+  [NEW] tests/Unit/Services/AI/ForecastReliabilityServiceTest.php
+    • 16 tests covering weights, floors, honesty cap, horizon penalties,
+      supplement/aggregate penalization, null/edge handling.
+
+  [NEW] tests/Unit/Services/AI/AIExplanationServiceTest.php
+    • 4 tests: prompt carries the reliability trust statement, lists the
+      factor breakdown, demotes R² to a curve-fit note (old "- R²: ..."
+      line asserted absent), degrades gracefully when reliability is null.
+
+  [NEW] tests/Feature/AIPredictionTabRenderTest.php
+    • 5 tests: renders the REAL ai-prediction blade for every presenter
+      mode — completed, insufficient data, normal SLR, polynomial,
+      cross-project supplement (hybrid) — each asserting its marker and the
+      absence of "Prediction Confidence" wording.
+
+  [NEW] textfiles/forecast_reliability_confidence_plan.md — detailed plan.
+
+
+================================================================================
+  3. FILES MODIFIED
+================================================================================
+
+  [MOD] app/Services/AI/AIPredictionService.php
+    • Generates the reliability block via ForecastReliabilityService
+      (next-month + completion), validates/writes the next-month RANGE
+      (additive; next_prediction stays the scalar), includes the
+      "predictions beyond actual data (supplement/aggregate)" warning in
+      reliability factors, and adds fit_quality_label = 'Curve Fit Quality'
+      to regression_info.
+
+  [MOD] app/Services/AI/AIPredictionPresenter.php
+    • presentNormal(): exposes reliability (scores/labels), reliability_factors
+      (flattened, tooltip-ready), next_prediction_low/high/margin/range,
+      completion_reliability (or null), and fit_quality_label on regression_info.
+    • presentInsufficientData(): carries neutral reliability placeholders
+      (null reliability + label) so the blade always sees the same keys.
+    • ALL pre-existing keys unchanged — backward compatible.
+
+  [MOD] app/Services/AI/AIExplanationService.php
+    • buildPrompt(): new FORECAST RELIABILITY block (next-month + completion
+      label/score, four weighted factors) via private buildReliabilityText().
+    • R² line relabeled: "Curve Fit Quality (matches past data only): R² = ...".
+
+  [MOD] resources/views/.../tabs/ai-prediction.blade.php
+    • Key Metrics "Prediction Confidence" box → "Forecast Reliability":
+      headline now the reliability /100 with green/yellow/red level badge +
+      hover "why" tooltip; R² demoted to a small curve-fit footnote (with
+      cross-project disclaimer in supplement mode).
+    • Next-Month Prediction card: point shown with its RANGE (point ± margin)
+      + small reliability badge + hover "why" tooltip.
+    • Estimated Completion card: completion_confidence badge replaced by
+      completion_reliability badge (level · score/100 + "why" tooltip);
+      completion_confidence kept as a fallback when reliability is null.
+    • Model Summary fit-quality line → "Curve Fit Quality (matches past data
+      only)" using the presenter label.
+    • New pure-CSS .reliability-hint / .reliability-tooltip (hover/focus) —
+      no JS.
+
+  [MOD] tests/Unit/Services/AI/AIPredictionPresenterTest.php
+    • Extended with reliability block shape, next-month band, flattened
+      factor list, and insufficient-data placeholder assertions.
+
+  [MOD] tests/Unit/Services/AI/AIPredictionServiceTest.php
+    • Extended with reliability block + next-month range presence checks.
+
+  [MOD] tests/Feature/Services/AI/AIIntegrationTest.php
+    • Extended with reliability/range keys across the full pipeline.
+
+  [MOD] tests/Unit/Services/AI/ForecastServiceTest.php
+    • Extended with reliability score assertions for the basic forecast path.
+
+  [MOD] textfiles/forecast_reliability_confidence_plan.md — per-step
+        completion blocks + status header (Steps 0-7 marked DONE).
+
+
+================================================================================
+  4. TEST RESULTS (Aug 11, 2026)
+================================================================================
+
+   Per-step full-suite counts (composer test, SQLite :memory:):
+     Step 0 (migration + range wiring)       565 passed
+     Step 1 (reliability block + range)      569 passed
+     Step 2 (presenter)                      591 passed
+     Step 3 (blade relabel pt 1)             595 passed
+     Step 4 (service/unit/tests)             599 passed
+     Step 5 (blade relabel pt 2 + badges)    599 passed (blade-only)
+     Step 6 (AI prompt)                      603 passed
+     Step 7 (multi-mode render tests)        608 passed (2209 assertions)
+
+   New test totals: ForecastReliabilityServiceTest 16, AIExplanationServiceTest 4,
+     AIPredictionTabRenderTest 5 (+ extended existing suites).
+
+   Live verification (dev DB pmu_system4, migration applied):
+     • Project 5: next-month reliability Medium 69/100 (band 67.6–71.6%);
+       completion reliability Medium 75/100 — agreement factor "All 2 methods
+       agree (High, spread 15 days)" confirming the Decision 5 poly guard.
+     • Project 137: Medium 78/100; null completion reliability renders the
+       plain fallback cleanly.
+     • Confirmed no "Prediction Confidence" wording remains in the HTML.
+
+
+================================================================================
+  5. KEY DESIGN DECISIONS
+================================================================================
+
+   1. R² stays visible, demoted to curve-fit. R² still selects the model
+      (SLR vs polynomial) and appears as "Curve Fit Quality (matches past
+      data only)" — it never doubles as forecast confidence.
+
+   2. Additive next-month RANGE. next_prediction remains the scalar point;
+      the band is exposed via new nullable next_prediction_low/high/margin
+      (+ range migration). All consumers that use next_prediction keep
+      working unchanged.
+
+   3. Reliability is explainable, not a black box. The blade's "why"
+      tooltip lists the four weighted factors (score + human detail) so a
+      reviewer/defense can see exactly why a forecast is Medium or Low.
+
+   4. Completion reliability is independent of completion_confidence.
+      completion_confidence (R²-relative) remains as a fallback key when
+      reliability is null; the visible trust statement is the reliability
+      badge.
+
+   5. Polynomial completion methods guarded. A future-sanity guard removes
+      polynomial from the completion-method set when its estimated date
+      violates the "earliest plausible" bound, so method agreement reflects
+      the methods actually considered. (Verified live: Project 5 agreement
+      "All 2 methods agree — High, 15 days".)
+
+   6. Supplement/aggregate honesty. Reliability factors carry a warning when
+      the fit is built on cross-project synthetic data, and next-prediction
+      reliability is penalized for the forecast-horizon factor.
+
+   7. Prompt trust = reliability, not R². AIExplanationService now hands the
+      model the reliability block (label + score + factors) and only notes R²
+      as curve fit — so generated analysis text cannot overclaim from R².
+
+   8. Render tests replace one-off browser passes. The multi-mode verification
+      (Step 7) renders the real blade with real presenter output for every
+      branch (completed / insufficient / SLR / polynomial / supplement),
+      repeatable in CI instead of a manual date-simulator click-through.
+
+
+================================================================================
+  6. OPEN ITEMS / NOTES
+================================================================================
+
+   • Step 9 remains: present the phase-14-forecast-reliability branch for
+     review (Rule 10 + Rule 12) before merging to main.
+   • Browser click-through (date-simulator widget) on the live site is still
+     worthwhile as a final UX sanity pass after merge approval.
+   • The Step 1 range migration must be applied on the staging/production
+     DB alongside the deploy.
+
+   Follow-up (Aug 11, 2026 — commit 8de6382): the Prediction History table
+     "Predicted" column now also shows the saved band under the point
+     (e.g. "35% / (33–37%)"). Presenter history rows expose predicted_low /
+     predicted_high; blade renders them muted under the point when present
+     (legacy point-only rows show just the point). Covered by extended
+     assertions in AIPredictionPresenterTest + AIPredictionTabRenderTest.
+     Full suite 608 passed (2216 assertions).
+
+================================================================================
+  END OF PHASE 14 PROGRESS LOG
+================================================================================

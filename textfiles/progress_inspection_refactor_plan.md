@@ -9,6 +9,13 @@ Status: ✅ REFACTOR IMPLEMENTED & VERIFIED — 2026-08-01 (Option A: stop-using
         that the new month-match guard could break; Fix H = prediction can drop
         below current progress). See §3, §4, §6.
 
+> ⚠️ FIX H SETTLED (Aug 11, 2026): Fix H is folded into V2 Phase 14 Step 0 —
+> "Forecast Reliability & Prediction Confidence Rebase" (Decision 8 in
+> textfiles/forecast_reliability_confidence_plan.md). Together with the
+> estimatePolynomial() future-guard, Step 0 floors predictNextMonth() at the
+> latest actual and makes ForecastService non-decreasing. Implemented on branch
+> phase-14-forecast-reliability. Do NOT re-implement Fix H separately.
+
 Date: August 1, 2026
 
 ## 1. PROBLEM SUMMARY

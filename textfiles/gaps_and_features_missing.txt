@@ -94,7 +94,24 @@
        the AI Prediction tab shows an accuracy table with Accurate/Close/
        Off badges + summary stats. Gemini prompt now uses real accuracy
        stats instead of raw R².
-     - See: done/ai_module_ver2_planandlogs/v2_phase7_prediction_history_plan.txt
+      - See: done/ai_module_ver2_planandlogs/v2_phase7_prediction_history_plan.txt
+
+  6b. [PLAN] R² PRESENTED AS PREDICTION CONFIDENCE (statistically incorrect)
+     - R² (coefficient of determination) only measures how well the fitted
+       curve matches PAST data. It does NOT measure whether the NEXT
+       prediction is right. Yet the AI Prediction tab uses R² as the basis
+       for completion_confidence / certainty_label ("R²: 0.95 — Excellent
+       fit" wording in UI + Gemini prompt).
+     - Proof it can mislead (in-house): Project 138 had polynomial R²
+       0.9989 but predicted the project 3 days AHEAD while it was behind
+       plan every month — see others(notes)/polynomial_over_optimism_findings.txt.
+     - PLANNED FIX (V2 Phase 14, Aug 11 2026): weighted FORECAST
+       RELIABILITY score (0-100, High/Medium/Low) from backtest accuracy
+       (prediction_history) + real data sufficiency + forecast horizon +
+       cross-method agreement, with hard floors and an honesty cap. R² is
+       relabeled "Curve Fit Quality (matches past data only)".
+     - Full plan: textfiles/forecast_reliability_confidence_plan.md
+     - Status: 📋 PLANNED — implementation not started.
 
 
 ================================================================================

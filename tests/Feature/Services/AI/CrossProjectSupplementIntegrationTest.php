@@ -9,6 +9,7 @@ use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
 use App\Services\AI\CompletionEstimationService;
+use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\ForecastService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
@@ -55,6 +56,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $completionService = new CompletionEstimationService();
         $completionComparisonService = new CompletionComparisonService($completionService);
         $this->historicalSimilarityService = new HistoricalSimilarityService();
+        $reliabilityService = new ForecastReliabilityService();
         $this->predictionService = new AIPredictionService(
             $this->datasetBuilder,
             $this->regressionService,
@@ -64,7 +66,8 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             $this->assessmentService,
             $completionService,
             $completionComparisonService,
-            $this->historicalSimilarityService
+            $this->historicalSimilarityService,
+            $reliabilityService
         );
         $this->presenter = new AIPredictionPresenter(
             $this->predictionService,

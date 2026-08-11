@@ -132,6 +132,7 @@ class AIExplanationService
         $statistics     = $prediction['statistics'];
         $assessment     = $prediction['assessment'];
         $completionMulti = $prediction['completion_multi'] ?? [];
+        $reliability     = $prediction['reliability'] ?? null;
 
         $currentProgress = $currentState['progress'] ?? 0;
         $rSquared        = $regression['r_squared'] ?? 0;
@@ -141,6 +142,9 @@ class AIExplanationService
         $regMethod       = $regression['regression_method'] ?? 'slr';
         $regEquation     = $regression['equation'] ?? 'N/A';
         $methodReason    = $regression['method_reason'] ?? '';
+
+        // Forecast reliability (Phase 14) — weighted, explainable trust signal
+        $reliabilityText = $this->buildReliabilityText($reliability);
 
         // Prediction history accuracy (Phase 7)
         $historyAccuracy = '';
@@ -222,10 +226,10 @@ PROJECT OVERVIEW:
 REGRESSION MODEL:
 - Method: {$regMethod}
 - Equation: {$regEquation}
-- R²: {$rSquared} (Fit Quality: {$fitQuality})
+- Curve Fit Quality (matches past data only): R² = {$rSquared} ({$fitQuality})
 - Based on {$obsCount} monthly progress observations
 - Selection Reason: {$methodReason}
-{$historyAccuracy}
+{$reliabilityText}{$historyAccuracy}
 RISK ASSESSMENT:
 - Overall Risk Level: {$riskLevel}
 - Trend: {$trend}{$completionMultiText}{$issuesText}
@@ -238,6 +242,70 @@ Write in a professional, neutral tone. Cover:
 Do NOT make specific recommendations or suggest corrective actions.
 Do NOT mention that you are an AI or that this is an AI-generated analysis.
 Write as if you are a human project analyst reporting to management.";
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Reliability Text
+     * ------------------------------------------------------------------------
+     *
+     * Renders the Phase 14 forecast-reliability block into a prompt-friendly
+     * summary. The weighted reliability scores are the trust statement for the
+     * AI; R² is intentionally demoted to a "curve fit, matches past data only"
+     * note so the model never treats curve fit as forecast accuracy.
+     *
+     * Uses: reliability array from AIPredictionService
+     */
+    private function buildReliabilityText(?array $reliability): string
+    {
+        if (empty($reliability)) {
+            return "\nFORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate";
+        }
+
+        $factorTitles = [
+            'backtest_accuracy' => 'Prediction history',
+            'data_sufficiency'  => 'Data',
+            'forecast_horizon'  => 'Forecast horizon',
+            'method_agreement'  => 'Method agreement',
+        ];
+
+        $lines = ['FORECAST RELIABILITY:'];
+
+        if (isset($reliability['next_reliability'])) {
+            $lines[] = sprintf(
+                '- Next-month forecast: %s (%d/100)',
+                $reliability['next_reliability']['label'],
+                $reliability['next_reliability']['score']
+            );
+        }
+
+        if (isset($reliability['completion_reliability'])) {
+            $lines[] = sprintf(
+                '- Completion estimate: %s (%d/100)',
+                $reliability['completion_reliability']['label'],
+                $reliability['completion_reliability']['score']
+            );
+        }
+
+        $byKey = [];
+        foreach ($reliability['factors'] ?? [] as $factor) {
+            $byKey[$factor['key']] = $factor;
+        }
+
+        foreach ($factorTitles as $key => $title) {
+            $factor = $byKey[$key] ?? null;
+            if (!$factor) {
+                continue;
+            }
+            $lines[] = sprintf(
+                '- %s: %d/100 — %s',
+                $title,
+                $factor['score'],
+                $factor['detail']
+            );
+        }
+
+        return "\n" . implode("\n", $lines);
     }
 
     /**

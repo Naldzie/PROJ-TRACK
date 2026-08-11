@@ -7,6 +7,20 @@ Status: 📋 DRAFT — planned, NOT started. User intends to build other missing
 
 Date: August 1, 2026
 
+> ⚠️ RELATED PLANNED WORK (added Aug 11, 2026): V2 Phase 14 — "Forecast
+> Reliability & Prediction Confidence Rebase"
+> (textfiles/forecast_reliability_confidence_plan.md) replaces the R²-as-
+> confidence wording with a weighted reliability score. Two links to this
+> plan:
+> - The reliability **data** factor must use the REAL observation count
+>   (observation_count minus synthetic_points_count), fixing the known
+>   key-path bug (AIPredictionService.php:245) so confidence and the
+>   reliability score agree in supplement mode.
+> - Option **A3 (prediction interval)** below naturally extends the
+>   reliability factor breakdown into a visible range; the cross-project
+>   P25/P50/P75 aggregate bands can feed it.
+> Suggested order: implement Phase 14 before or together with A2/A3.
+
 Reference:
 - textfiles/active_reference/phase8_cross_project_regression_plan.txt
 - textfiles/active_reference/ai_v2_phase8_cross_project_progress_log.txt

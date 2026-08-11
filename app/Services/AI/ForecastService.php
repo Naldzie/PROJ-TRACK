@@ -76,7 +76,8 @@ class ForecastService
     public function generateFutureForecast(
         Project $project,
         array $analysis,
-        int $currentMonthIndex
+        int $currentMonthIndex,
+        float $latestActual = 0
     ): array {
 
         /*
@@ -90,6 +91,11 @@ class ForecastService
             ->values();
 
         $forecast = [];
+
+        // Fix H: cumulative progress is monotonic — each forecast month forms
+        // a floor for the next, seeded from the latest actual progress so the
+        // first forecast month can never dip below where the project already is.
+        $floor = max(0, $latestActual);
 
         /*
         |--------------------------------------------------------------------------
@@ -156,8 +162,10 @@ class ForecastService
             |--------------------------------------------------------------------------
             */
 
+            // Fix H: clamp is monotonic — progress can never decrease from
+            // one forecast month to the next.
             $predictedProgress = max(
-                0,
+                $floor,
                 min(100, $predictedProgress)
             );
 
@@ -177,6 +185,8 @@ class ForecastService
                 ),
 
             ];
+
+            $floor = round($predictedProgress, 2);
         }
 
         return $forecast;

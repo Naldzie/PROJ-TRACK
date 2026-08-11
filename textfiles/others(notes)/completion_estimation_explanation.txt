@@ -163,6 +163,24 @@ Also known as: Earned Schedule-based Estimate at Completion (EAC_time)
 
   If R² < 0.50 → return null (no estimate — "Not enough data")
 
+  ⚠️ UPDATE (Aug 11, 2026): The R²-based confidence wording above is being
+  REBASED. R² only measures curve fit to PAST data — it is NOT proof the
+  estimate is accurate (Project 138 had R² 0.9989 yet predicted the wrong
+  direction). The planned "Forecast Reliability" feature (V2 Phase 14)
+  replaces this with a weighted reliability score: backtest accuracy
+  (prediction history) 40% + real data sufficiency 30% + forecast horizon
+  15% + cross-method agreement 15%, with R² demoted to a fit floor
+  (< 0.50 → Low). R² stays on screen but is relabeled
+  "Curve Fit Quality (matches past data only)".
+  See: textfiles/forecast_reliability_confidence_plan.md
+
+  Suggested defense answer if asked "why not use R² as confidence?":
+  "R² tells us how well the curve matches the history we already have — it
+  says nothing about the future. Our reliability indicator instead tracks
+  how often past predictions actually came true (prediction history), how
+  much real data exists, how far ahead we are forecasting, and whether the
+  three completion methods agree. That is the honest trust signal."
+
 
 6. STRENGTHS (For Capstone Defense)
 ================================================================================

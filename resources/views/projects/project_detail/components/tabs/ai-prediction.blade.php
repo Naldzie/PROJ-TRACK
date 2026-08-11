@@ -212,6 +212,9 @@
                             <div style="font-size: 28px; color: #667eea; font-weight: 700;">
                                 {{ $prediction['next_prediction'] }}%
                             </div>
+                            <div style="font-size: 12px; color: #667eea; font-weight: 600; margin-top: 2px;">
+                                {{ round($prediction['next_prediction_low'] ?? $prediction['next_prediction'] - 2.0, 1) }}% – {{ round($prediction['next_prediction_high'] ?? $prediction['next_prediction'] + 2.0, 1) }}%
+                            </div>
                             <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
                                 @if ($prediction['next_planned_progress'] !== null)
                                     @if ($prediction['next_is_current_month'] ?? false)
@@ -223,6 +226,35 @@
                                     Predicted: {{ $prediction['next_prediction'] }}%
                                 @endif
                             </div>
+
+                            @php $nextRel = $prediction['next_prediction_reliability'] ?? null; @endphp
+                            @if ($nextRel)
+                            <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px;">
+                                <span style="font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+                                    @if ($nextRel['level'] === 'High') background: #d1fae5; color: #065f46;
+                                    @elseif ($nextRel['level'] === 'Medium') background: #fef3c7; color: #92400e;
+                                    @else background: #fee2e2; color: #991b1b;
+                                    @endif">
+                                    {{ $nextRel['level'] }} · {{ $nextRel['score'] }}/100
+                                </span>
+                                <span class="reliability-hint" tabindex="0">
+                                    <i class="bi bi-question-circle" style="color: #6b7280;"></i>
+                                    <span class="reliability-tooltip">
+                                        <strong>Forecast Reliability — why?</strong>
+                                        @if (!empty($nextRel['floors']['reason']))
+                                            <div style="color: #991b1b; margin-top: 4px;">{{ $nextRel['floors']['reason'] }}</div>
+                                        @else
+                                            @foreach ($prediction['reliability_factors'] ?? [] as $factor)
+                                                <div style="margin-top: 4px;">
+                                                    {{ $factor['factor'] }}: <strong>{{ $factor['score'] }}</strong>
+                                                    <span style="display:block; color:#6b7280; font-size:11px;">{{ $factor['detail'] }}</span>
+                                                </div>
+                                            @endforeach
+                                        @endif
+                                    </span>
+                                </span>
+                            </div>
+                            @endif
                         @else
                             <div style="font-size: 18px; color: #9ca3af; font-weight: 600;">
                                 N/A
@@ -233,17 +265,50 @@
                         @endif
                     </div>
 
-                    {{-- Prediction Confidence box --}}
+                    {{-- Forecast Reliability box --}}
                     <div style="background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb;">
                         <div style="font-size: 11px; color: #6b7280; margin-bottom: 8px; font-weight: 600; text-transform: uppercase;">
-                            Prediction Confidence
+                            Forecast Reliability
                         </div>
-                        @if (!($prediction['is_insufficient_data'] ?? false) && $prediction['regression_info'] !== null)
-                            <div style="font-size: 28px; color: #10b981; font-weight: 700;">
-                                {{ round($prediction['regression_info']['r_squared'] * 100, 1) }}%
+                        @php $nextRel = $prediction['next_prediction_reliability'] ?? null; @endphp
+                        @if (!($prediction['is_insufficient_data'] ?? false) && $nextRel)
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span style="font-size: 28px; font-weight: 700;
+                                    @if ($nextRel['level'] === 'High') color: #10b981;
+                                    @elseif ($nextRel['level'] === 'Medium') color: #f59e0b;
+                                    @else color: #ef4444;
+                                    @endif">
+                                    {{ $nextRel['score'] }}
+                                </span>
+                                <span style="font-size: 13px; font-weight: 600;
+                                    @if ($nextRel['level'] === 'High') color: #065f46;
+                                    @elseif ($nextRel['level'] === 'Medium') color: #92400e;
+                                    @else color: #991b1b;
+                                    @endif">
+                                    / 100
+                                </span>
+                                <span class="reliability-hint" tabindex="0" style="margin-left: auto;">
+                                    <i class="bi bi-question-circle" style="color: #6b7280;"></i>
+                                    <span class="reliability-tooltip">
+                                        <strong>Forecast Reliability — why?</strong>
+                                        @if (!empty($nextRel['floors']['reason']))
+                                            <div style="color: #991b1b; margin-top: 4px;">{{ $nextRel['floors']['reason'] }}</div>
+                                        @else
+                                            @foreach ($prediction['reliability_factors'] ?? [] as $factor)
+                                                <div style="margin-top: 4px;">
+                                                    {{ $factor['factor'] }}: <strong>{{ $factor['score'] }}</strong>
+                                                    <span style="display:block; color:#6b7280; font-size:11px;">{{ $factor['detail'] }}</span>
+                                                </div>
+                                            @endforeach
+                                        @endif
+                                    </span>
+                                </span>
                             </div>
                             <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
-                                {{ $prediction['regression_info']['fit_quality'] }} — based on {{ $prediction['regression_info']['observation_count'] }} progress records
+                                <span style="font-weight:600; color:#1f2937;">{{ $nextRel['level'] }}</span> trust in the next-month forecast
+                            </div>
+                            <div style="font-size: 11px; color: #9ca3af; margin-top: 6px; border-top: 1px dashed #e5e7eb; padding-top: 6px;">
+                                {{ $prediction['regression_info']['fit_quality'] ?? 'N/A' }} curve fit — matches past data only
                                 @if (($prediction['regression_info']['data_source'] ?? 'actual') !== 'actual')
                                     <br><span style="color: #f59e0b;">{{ $prediction['regression_info']['similar_projects_disclaimer'] ?? '' }}</span>
                                 @endif
@@ -344,14 +409,15 @@
                         <strong>Equation:</strong> {{ $regInfo['equation'] }}
                     </div>
 
-                    {{-- Fit Quality --}}
+                    {{-- Curve Fit Quality (matches past data only) --}}
                     <div style="font-size: 14px; color: #3730a3; line-height: 1.6; margin-bottom: 10px;">
-                        Based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records
+                        <strong>{{ $prediction['fit_quality_label'] ?? 'Curve Fit Quality' }} (matches past data only):</strong>
+                        based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records
                         @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
                             from <strong>{{ $regInfo['similar_projects_count'] ?? 0 }}</strong> similar historical projects,
                         @endif
-                        the model explains <strong>{{ round($regInfo['r_squared'] * 100, 1) }}%</strong> 
-                        of the observed progress trend (<strong>R² = {{ number_format($regInfo['r_squared'], 3) }}</strong>), 
+                        the model explains <strong>{{ round($regInfo['r_squared'] * 100, 1) }}%</strong>
+                        of the observed progress trend (<strong>R² = {{ number_format($regInfo['r_squared'], 3) }}</strong>),
                         indicating a <strong>{{ $regInfo['fit_quality'] }}</strong> fit.
                     </div>
 
@@ -537,7 +603,37 @@
                         </div>
                         @if ($prediction['estimated_completion'] ?? null)
                         <div style="margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;">
-                            @if ($prediction['completion_confidence'] ?? null)
+                            @php $compRel = $prediction['completion_reliability'] ?? null; @endphp
+                            @if ($compRel)
+                            <span class="reliability-hint" tabindex="0" style="font-size: 10px; padding: 1px 8px; border-radius: 8px; font-weight: 600; cursor: help;
+                                @if ($compRel['level'] === 'High') background: #d1fae5; color: #065f46;
+                                @elseif ($compRel['level'] === 'Medium') background: #fef3c7; color: #92400e;
+                                @else background: #fee2e2; color: #991b1b;
+                                @endif">
+                                {{ $compRel['level'] }} reliability · {{ $compRel['score'] }}/100
+                                <span class="reliability-tooltip">
+                                    <strong>Completion Reliability — why?</strong>
+                                    @if (!empty($compRel['floors']['reason']))
+                                        <div style="color: #991b1b; margin-top: 4px;">{{ $compRel['floors']['reason'] }}</div>
+                                    @else
+                                        @foreach (($compRel['factors'] ?? []) as $fkey => $factor)
+                                            @php
+                                                $flabel = match ($fkey) {
+                                                    'backtest' => 'Backtest accuracy',
+                                                    'data' => 'Data sufficiency',
+                                                    'horizon' => 'Forecast horizon',
+                                                    default => 'Method agreement',
+                                                };
+                                            @endphp
+                                            <div style="margin-top: 4px;">
+                                                {{ $flabel }}: <strong>{{ $factor['score'] }}</strong>
+                                                <span style="display:block; color:#6b7280; font-size:11px;">{{ $factor['detail'] }}</span>
+                                            </div>
+                                        @endforeach
+                                    @endif
+                                </span>
+                            </span>
+                            @elseif ($prediction['completion_confidence'] ?? null)
                             <span style="font-size: 10px; padding: 1px 8px; border-radius: 8px; font-weight: 600;
                                 @if ($prediction['completion_confidence'] === 'High') background: #d1fae5; color: #065f46;
                                 @elseif ($prediction['completion_confidence'] === 'Medium') background: #fef3c7; color: #92400e;
@@ -731,6 +827,11 @@
                                     </td>
                                     <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
                                         {{ $row['predicted'] }}%
+                                        @if (($row['predicted_low'] ?? null) !== null && ($row['predicted_high'] ?? null) !== null)
+                                            <span style="display: block; font-size: 11px; color: #6b7280; font-weight: 500;">
+                                                ({{ round($row['predicted_low'], 1) }}–{{ round($row['predicted_high'], 1) }}%)
+                                            </span>
+                                        @endif
                                     </td>
                                     <td style="padding: 8px 12px; text-align: right; color: #374151; font-weight: 600;">
                                         {{ $row['pending'] ? '—' : $row['actual'] . '%' }}
@@ -826,5 +927,46 @@ console.log('[Phase 8] Prediction regression_info:', @json($prediction['regressi
         #ai-prediction > div:first-child {
             grid-template-columns: 1fr !important;
         }
+    }
+
+    /* Phase 14: forecast-reliability "why" tooltip (pure CSS hover/focus) */
+    #ai-prediction .reliability-hint {
+        position: relative;
+        cursor: help;
+        outline: none;
+    }
+
+    #ai-prediction .reliability-tooltip {
+        display: none;
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        min-width: 220px;
+        max-width: 300px;
+        padding: 10px 12px;
+        background: #1f2937;
+        color: #f9fafb;
+        font-size: 12px;
+        line-height: 1.5;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        z-index: 20;
+        text-align: left;
+    }
+
+    #ai-prediction .reliability-tooltip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 6px solid transparent;
+        border-top-color: #1f2937;
+    }
+
+    #ai-prediction .reliability-hint:hover .reliability-tooltip,
+    #ai-prediction .reliability-hint:focus .reliability-tooltip {
+        display: block;
     }
 </style>

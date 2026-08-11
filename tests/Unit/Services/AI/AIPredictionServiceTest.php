@@ -10,6 +10,7 @@ use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
 use App\Services\AI\CompletionComparisonService;
 use App\Services\AI\CompletionEstimationService;
+use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\ForecastService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Services\AI\ProjectAssessmentService;
@@ -63,6 +64,7 @@ class AIPredictionServiceTest extends TestCase
         $completionService = new CompletionEstimationService();
         $completionComparisonService = new CompletionComparisonService($completionService);
         $historicalSimilarityService = new HistoricalSimilarityService();
+        $reliabilityService = new ForecastReliabilityService();
 
         $this->predictionService = new AIPredictionService(
             $datasetBuilder,
@@ -73,7 +75,8 @@ class AIPredictionServiceTest extends TestCase
             $assessmentService,
             $completionService,
             $completionComparisonService,
-            $historicalSimilarityService
+            $historicalSimilarityService,
+            $reliabilityService
         );
     }
 
@@ -320,6 +323,230 @@ class AIPredictionServiceTest extends TestCase
         // Regression
         $this->assertEquals(10, $report['regression']['observation_count']);
         $this->assertEquals('Excellent', $report['regression']['fit_quality']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Fix H: next-month prediction is floored at the latest actual progress
+     * ------------------------------------------------------------------------
+     *
+     * A declining dataset (y = [80, 70, 60, 50, 40], slope = -10) predicts
+     * next month at 30, below the current 40. The monotonic clamp must
+     * report next month at >= current progress, so 40.0.
+     */
+    public function test_next_prediction_floored_at_latest_actual(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [80, 70, 60, 50, 40]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(40.0, $report['current_state']['progress']);
+        $this->assertGreaterThanOrEqual(
+            $report['current_state']['progress'],
+            $report['next_prediction']['progress']
+        );
+        $this->assertEquals(40.0, $report['next_prediction']['progress']);
+    }
+
+    /*
+    |==========================================================================
+    | Phase 14 Step 1 — Next-Month Prediction Band
+    |==========================================================================
+    */
+
+    /**
+     * Known dataset: polynomial selected (R² 0.9991), next = 50.77.
+     * No fulfilled history rows and RMSE ~0.46 → margin falls to the 2.0%
+     * floor → band 48.77–52.77.
+     */
+    public function test_next_prediction_report_includes_band(): void
+    {
+        $project = $this->createProjectWithKnownDataset();
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(50.77, $report['next_prediction']['progress']);
+        $this->assertEquals(48.77, $report['next_prediction']['progress_low']);
+        $this->assertEquals(52.77, $report['next_prediction']['progress_high']);
+        $this->assertEquals(2.0, $report['next_prediction']['margin']);
+    }
+
+    /**
+     * Fulfilled history rows with large forecast error widen the margin
+     * above the RMSE/floor: margin = max(RMSE, backtestAvgAbsError, 2.0).
+     */
+    public function test_backtest_error_widens_margin(): void
+    {
+        $project = $this->createProjectWithKnownDataset();
+
+        // Simulate past forecasts that were 8% off on average.
+        foreach ([1, 2, 3] as $i) {
+            PredictionHistory::create([
+                'project_id'           => $project->id,
+                'month_label'          => '2025-' . str_pad((string) $i, 2, '0', STR_PAD_LEFT),
+                'regression_method'    => 'slr',
+                'current_progress'     => $i * 10,
+                'predicted_next'       => 20.0,
+                'actual_next'          => 20.0 + 8.0 * ($i % 2 === 0 ? 1 : -1),
+                'r_squared'            => 0.9,
+                'regression_snapshot'  => ['slope' => 1, 'intercept' => 0],
+            ]);
+        }
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(8.0, $report['next_prediction']['margin']);
+        $this->assertEquals(50.77 - 8.0, $report['next_prediction']['progress_low']);
+        $this->assertEquals(50.77 + 8.0, $report['next_prediction']['progress_high']);
+    }
+
+    /**
+     * Band is clamped to [0, 100]: a point near the bounds never spills out.
+     */
+    public function test_band_is_clamped_to_0_100(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 10,
+            actualProgress: [5, 15, 30, 50, 75, 95, 100, 100, 100, 100]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertGreaterThanOrEqual(0, $report['next_prediction']['progress_low']);
+        $this->assertLessThanOrEqual(100, $report['next_prediction']['progress_high']);
+        $this->assertLessThanOrEqual(
+            100,
+            $report['next_prediction']['progress_high']
+        );
+    }
+
+    /**
+     * savePredictionHistory persists the band (predicted_low/high) on the
+     * keep-latest row, and keep-latest refresh updates them in place.
+     */
+    public function test_prediction_history_persists_and_refreshes_band(): void
+    {
+        $project = $this->createMonthAlignedProject();
+
+        $this->predictionService->generatePrediction($project);
+
+        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $this->assertCount(1, $rows);
+        $this->assertNotNull($rows[0]->predicted_low);
+        $this->assertNotNull($rows[0]->predicted_high);
+        $this->assertLessThanOrEqual(
+            $rows[0]->predicted_next,
+            $rows[0]->predicted_low
+        );
+        $this->assertGreaterThanOrEqual(
+            $rows[0]->predicted_next,
+            $rows[0]->predicted_high
+        );
+
+        // A second inspection changes the forecast; the same row is refreshed
+        // with a new band (keep-latest), not duplicated.
+        $firstId = $rows[0]->id;
+        $this->createProgressRecord($project, '2026-05', 4.0, '2026-05-15');
+        $this->predictionService->generatePrediction($project);
+
+        $juneRows = PredictionHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-06')
+            ->get();
+        $this->assertCount(1, $juneRows);
+        $this->assertNotEquals($firstId, $juneRows[0]->id);
+        $this->assertNotNull($juneRows[0]->predicted_low);
+        $this->assertNotNull($juneRows[0]->predicted_high);
+    }
+
+    /*
+    |==========================================================================
+    | Phase 14 Step 3 — Forecast Reliability Block
+    |==========================================================================
+    */
+
+    /**
+     * The full report carries the 'reliability' block with the next_prediction
+     * score, the completion score (populated when a completion exists), and the
+     * curve-fit quality label.
+     */
+    public function test_prediction_report_includes_reliability_block(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11],
+            overrides: ['planned_end_date' => Carbon::parse(now()->addMonths(6)->format('Y-m-d'))]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertArrayHasKey('reliability', $report);
+        $this->assertArrayHasKey('next_prediction', $report['reliability']);
+        $this->assertArrayHasKey('completion', $report['reliability']);
+        $this->assertEquals('Curve Fit Quality', $report['reliability']['fit_quality_label']);
+    }
+
+    /**
+     * The next-month reliability is a weighted score with level, score (0-100)
+     * and the auditable factor breakdown (backtest / data / horizon).
+     */
+    public function test_reliability_next_prediction_is_scored(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $next = $report['reliability']['next_prediction'];
+        $this->assertContains($next['level'], ['High', 'Medium', 'Low']);
+        $this->assertGreaterThanOrEqual(0, $next['score']);
+        $this->assertLessThanOrEqual(100, $next['score']);
+        $this->assertArrayHasKey('factors', $next);
+        foreach (['backtest', 'data', 'horizon', 'agreement'] as $factor) {
+            $this->assertArrayHasKey($factor, $next['factors'], "Missing factor: {$factor}");
+        }
+    }
+
+    /**
+     * When a completion estimate exists, the completion reliability is
+     * populated (not null) with the same score shape as next_prediction.
+     */
+    public function test_reliability_completion_populated_when_estimate_exists(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 10,
+            actualProgress: [1.00, 2.00, 4.00, 7.00, 12.00, 18.00, 25.00, 33.00, 39.00, 45.00],
+            overrides: ['planned_end_date' => Carbon::parse(now()->addMonths(6)->format('Y-m-d'))]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $completion = $report['reliability']['completion'];
+        $this->assertNotNull($completion);
+        $this->assertContains($completion['level'], ['High', 'Medium', 'Low']);
+        $this->assertGreaterThanOrEqual(0, $completion['score']);
+        $this->assertLessThanOrEqual(100, $completion['score']);
+        $this->assertArrayHasKey('floors', $completion);
+    }
+
+    /**
+     * The minimal report (insufficient data) still carries a neutral
+     * reliability block so every consumer sees the same keys.
+     */
+    public function test_minimal_report_includes_neutral_reliability_block(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertArrayHasKey('reliability', $report);
+        $this->assertNull($report['reliability']['next_prediction']);
+        $this->assertNull($report['reliability']['completion']);
+        $this->assertEquals('Curve Fit Quality', $report['reliability']['fit_quality_label']);
     }
 
     /*
