@@ -2,12 +2,12 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Step 0 (polynomial estimator fix + Fix H clamps)
-        COMPLETE, tested (565 tests green), and verified on project 142
-        (agreement Moderate 29d). Code staged on the branch, NOT yet merged.
-        Next: Step 1 — prediction interval + history range columns.
-        Commit cadence: plan/docs committed on the branch; code steps implemented and
-        tested per step but NOT committed until review per Rule 10/12.
+Status: 🔄 IN PROGRESS — Steps 0-1 COMPLETE and committed (a13037d Step 0,
+        <step1> Step 1). Steps 0-1 tested green (Step 0: 565; Step 1: 569).
+        Next: Step 2 — ForecastReliabilityService + unit tests.
+        Commit cadence (revised Aug 11, 2026, per user): log, test, commit
+        AND push after EACH step — steps no longer wait for review before
+        committing; review happens at the end (Step 9).
 Date: August 11, 2026
 Branch (for implementation): `phase-14-forecast-reliability` (from main)
 Plan file: textfiles/forecast_reliability_confidence_plan.md (this file)
@@ -427,12 +427,64 @@ A panel/capstone defense question is highly likely:
   of disagreeing by 427 days (Low). The S-curve chart line is untouched — it
   only visualizes the past, it doesn't predict.
 
+  ==============================================================================
+  STEP 1 — SIMPLER TERMS EXPLANATION (for the user/capstone defense)
+  ==============================================================================
+  The problem: the "Next Month Prediction" box showed ONE exact number, like
+  72%. A single number looks certain, but the curve fit is only an estimate —
+  the real value could easily be 69 or 75. Estimating standards (AACE RP
+  104R-19) say: never present one point; present a RANGE with the expected
+  accuracy.
+
+  The fix (Step 1):
+  1. The next-month prediction is now a BAND — e.g. "50.8% (48.8% – 52.8%)".
+  2. The width of the band is honest: it's the LARGEST of three things:
+     • how loosely the fitted curve matches the past months (residual RMSE),
+     • how wrong our past predictions were (backtest average error),
+     • a minimum of 2% so new projects don't show an impossibly tiny range.
+  3. The band never goes below 0% or above 100%.
+  4. The band is SAVED into the prediction history table, so later we can
+     score whether reality actually landed INSIDE the range we promised
+     (coverage) — that becomes part of the reliability score in Step 2.
+
+  Note: the website doesn't show the band yet — Step 1 is the math and the
+  storage. The UI shows it in Step 5.
+
   Step 1 — Prediction interval + history range columns
     • NEW migration: nullable predicted_low / predicted_high on
       prediction_history.
     • AIPredictionService predicts next-month band (point ± margin, §5) and
       savePredictionHistory() persists low/high on keep-latest rows.
     • Tests: margin math (RMSE/backtest/floor), clamping, migration runs.
+
+  Step 1 — DONE ✓ (Aug 11, 2026) — commit <step1>
+    Implemented and tested; 569 tests green (2045 assertions).
+    Actual results:
+    • NEW database/migrations/2026_08_11_000001_add_prediction_range_
+      to_prediction_history_table.php — nullable predicted_low / predicted_high
+      (decimal 5,2) on prediction_history; existing rows stay valid (nulls).
+    • app/Models/PredictionHistory.php — predicted_low/predicted_high added to
+      fillable + float casts.
+    • AIPredictionService:
+      - computeNextMonthBand(): margin = max(fitResidualRMSE,
+        backtestAvgAbsError, 2.0) [%]; low/high clamped to [0,100].
+      - fitResidualRMSE(): RMSE of the selected regression's residuals.
+      - backtestAvgAbsError(): mean |actual − predicted| over fulfilled
+        prediction_history rows (0 when none).
+      - buildPredictionReport(): next_prediction now carries progress_low /
+        progress_high / margin (fallback low = max(0, point−2.0),
+        high = min(100, point+2.0), margin 2.0 when band is null).
+      - savePredictionHistory(): new optional ?array $nextPredictionBand param;
+        persists predicted_low/high on create AND on the keep-latest in-place
+        refresh (legacy nulls untouched).
+    Tests added (AIPredictionServiceTest): report includes band on known
+    dataset (next 50.77 → 48.77–52.77, margin 2.0); backtest error widens
+    margin (3 fulfilled rows 8% off → 8.0); band clamped to 0-100;
+    history persists + keep-latest refresh updates the band.
+    Note: PredictionHistory::create in tests must supply regression_method +
+    regression_snapshot (NOT NULL columns).
+    Frontend NOT yet updated — the band stays backend-only until Step 5
+    (Presenter flattens next_prediction to a scalar at AIPredictionPresenter.php:768).
 
   Step 2 — ForecastReliabilityService + unit tests
     • NEW  app/Services/AI/ForecastReliabilityService.php
@@ -485,6 +537,7 @@ A panel/capstone defense question is highly likely:
 
   MODIFIED:
     app/Services/AI/AIPredictionService.php
+    app/Models/PredictionHistory.php                   (Step 1: band columns)
     app/Services/AI/AIPredictionPresenter.php
     app/Services/AI/AIExplanationService.php
     app/Services/AI/CompletionEstimationService.php        (Step 0: future-guard
@@ -706,9 +759,9 @@ Full suite regression: all V1 + V2 tests still pass (no key removal).
   7. Step 0 folds in Fix H (Decision 8): the poly future-guard, the
       predictNextMonth() floor clamp, and the non-decreasing ForecastService
       are implemented together. progress_inspection_refactor_plan.md marks
-      Fix H as handled here. Step 0 is COMPLETE (see §7 "Step 0 — DONE");
-      next session starts at Step 1 (prediction interval + history range
-      columns), which requires the new nullable predicted_low/high migration.
+      Fix H as handled here. Steps 0-1 are COMPLETE (see §7 "Step 0 — DONE"
+      and "Step 1 — DONE"); next session starts at Step 2 (NEW
+      ForecastReliabilityService + unit tests).
 
 ===============================================================================
   END OF PHASE 14 PLAN

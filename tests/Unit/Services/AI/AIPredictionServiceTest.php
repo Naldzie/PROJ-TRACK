@@ -350,6 +350,116 @@ class AIPredictionServiceTest extends TestCase
 
     /*
     |==========================================================================
+    | Phase 14 Step 1 — Next-Month Prediction Band
+    |==========================================================================
+    */
+
+    /**
+     * Known dataset: polynomial selected (R² 0.9991), next = 50.77.
+     * No fulfilled history rows and RMSE ~0.46 → margin falls to the 2.0%
+     * floor → band 48.77–52.77.
+     */
+    public function test_next_prediction_report_includes_band(): void
+    {
+        $project = $this->createProjectWithKnownDataset();
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(50.77, $report['next_prediction']['progress']);
+        $this->assertEquals(48.77, $report['next_prediction']['progress_low']);
+        $this->assertEquals(52.77, $report['next_prediction']['progress_high']);
+        $this->assertEquals(2.0, $report['next_prediction']['margin']);
+    }
+
+    /**
+     * Fulfilled history rows with large forecast error widen the margin
+     * above the RMSE/floor: margin = max(RMSE, backtestAvgAbsError, 2.0).
+     */
+    public function test_backtest_error_widens_margin(): void
+    {
+        $project = $this->createProjectWithKnownDataset();
+
+        // Simulate past forecasts that were 8% off on average.
+        foreach ([1, 2, 3] as $i) {
+            PredictionHistory::create([
+                'project_id'           => $project->id,
+                'month_label'          => '2025-' . str_pad((string) $i, 2, '0', STR_PAD_LEFT),
+                'regression_method'    => 'slr',
+                'current_progress'     => $i * 10,
+                'predicted_next'       => 20.0,
+                'actual_next'          => 20.0 + 8.0 * ($i % 2 === 0 ? 1 : -1),
+                'r_squared'            => 0.9,
+                'regression_snapshot'  => ['slope' => 1, 'intercept' => 0],
+            ]);
+        }
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertEquals(8.0, $report['next_prediction']['margin']);
+        $this->assertEquals(50.77 - 8.0, $report['next_prediction']['progress_low']);
+        $this->assertEquals(50.77 + 8.0, $report['next_prediction']['progress_high']);
+    }
+
+    /**
+     * Band is clamped to [0, 100]: a point near the bounds never spills out.
+     */
+    public function test_band_is_clamped_to_0_100(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 10,
+            actualProgress: [5, 15, 30, 50, 75, 95, 100, 100, 100, 100]
+        );
+
+        $report = $this->predictionService->generatePrediction($project);
+
+        $this->assertGreaterThanOrEqual(0, $report['next_prediction']['progress_low']);
+        $this->assertLessThanOrEqual(100, $report['next_prediction']['progress_high']);
+        $this->assertLessThanOrEqual(
+            100,
+            $report['next_prediction']['progress_high']
+        );
+    }
+
+    /**
+     * savePredictionHistory persists the band (predicted_low/high) on the
+     * keep-latest row, and keep-latest refresh updates them in place.
+     */
+    public function test_prediction_history_persists_and_refreshes_band(): void
+    {
+        $project = $this->createMonthAlignedProject();
+
+        $this->predictionService->generatePrediction($project);
+
+        $rows = PredictionHistory::where('project_id', $project->id)->get();
+        $this->assertCount(1, $rows);
+        $this->assertNotNull($rows[0]->predicted_low);
+        $this->assertNotNull($rows[0]->predicted_high);
+        $this->assertLessThanOrEqual(
+            $rows[0]->predicted_next,
+            $rows[0]->predicted_low
+        );
+        $this->assertGreaterThanOrEqual(
+            $rows[0]->predicted_next,
+            $rows[0]->predicted_high
+        );
+
+        // A second inspection changes the forecast; the same row is refreshed
+        // with a new band (keep-latest), not duplicated.
+        $firstId = $rows[0]->id;
+        $this->createProgressRecord($project, '2026-05', 4.0, '2026-05-15');
+        $this->predictionService->generatePrediction($project);
+
+        $juneRows = PredictionHistory::where('project_id', $project->id)
+            ->where('month_label', '2026-06')
+            ->get();
+        $this->assertCount(1, $juneRows);
+        $this->assertNotEquals($firstId, $juneRows[0]->id);
+        $this->assertNotNull($juneRows[0]->predicted_low);
+        $this->assertNotNull($juneRows[0]->predicted_high);
+    }
+
+    /*
+    |==========================================================================
     | Edge Cases
     |==========================================================================
     */
