@@ -55,8 +55,16 @@ class HistoricalSimilarityService
             return 'none';
         }
 
+        // A4 (v2.5 §3 A4 / v2.6 §5.6): a brand-new project with 0 observations
+        // can still show a clearly-labeled CATEGORY BASELINE estimate when it
+        // has a planned duration (the pool-quality gate lives downstream — if
+        // fewer than MIN_SIMILAR_PROJECTS usable curves exist,
+        // buildAggregateCurve() returns [] and generateFallbackDataset()
+        // returns null, so the pipeline falls through to the existing
+        // Insufficient Data path). No planned duration → nothing to anchor a
+        // baseline curve to → 'none'.
         if ($observationCount === 0) {
-            return 'none';
+            return $this->getTotalPlannedMonths($project) > 0 ? 'fallback' : 'none';
         }
 
         if ($observationCount === 1) {
@@ -633,7 +641,12 @@ class HistoricalSimilarityService
             'y' => $y,
             'statistics' => [
                 'observation_count'   => count($x),
-                'current_month_index' => count($x),
+                // A4: a 0-obs project is at the START of its plan (month 1),
+                // NOT at the end. The full 1..P synthetic curve still spans
+                // the whole plan so the shape renders; current month 1 makes
+                // downstream read current progress = y[0] (class curve at
+                // month 1) and forecast from month 1 forward.
+                'current_month_index' => 1,
             ],
             'data_source'           => 'similar_projects',
             'similar_projects_count' => $similarCount,

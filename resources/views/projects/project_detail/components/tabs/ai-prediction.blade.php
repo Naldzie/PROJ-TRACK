@@ -398,7 +398,11 @@
                             @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
                                 <span style="font-size: 11px; background: #f59e0b; color: white; padding: 3px 10px; border-radius: 12px; font-weight: 600;">
                                     <i class="bi bi-diagram-3" style="margin-right: 4px;"></i>
-                                    {{ $regInfo['data_source'] === 'cross_project_fallback' ? 'Cross-Project Fallback' : 'Cross-Project Supplement' }}
+                                    @if ($regInfo['data_source'] === 'similar_projects')
+                                        Category Baseline
+                                    @else
+                                        Cross-Project Supplement
+                                    @endif
                                 </span>
                             @endif
                         </span>

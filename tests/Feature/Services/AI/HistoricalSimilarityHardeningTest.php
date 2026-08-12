@@ -309,6 +309,39 @@ class HistoricalSimilarityHardeningTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * v2.6 4.4 + A4 — a 0-obs category-baseline fallback (data_source
+     * 'similar_projects', 0 real observations) is labeled "Category baseline
+     * estimate", never a "blend" of the project's own curve
+     * ------------------------------------------------------------------------
+     */
+    public function test_presenter_uses_category_baseline_wording_for_zero_obs_fallback(): void
+    {
+        $categoryId = $this->makeCategory('Baseline Wording')->id;
+        $this->seedSimilarCompletedProjects($categoryId, count: 3);
+
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'approved_budget'      => 5000000.00,
+            'planned_duration_days' => 730,
+        ]);
+
+        $presented = $this->presenter->present($target);
+
+        $this->assertSame('similar_projects', $presented['regression_info']['data_source']);
+
+        $display = $presented['regression_info']['fit_quality_display'];
+        $this->assertStringContainsString('Category baseline estimate', $display);
+        $this->assertStringContainsString('3 similar projects', $display);
+        $this->assertStringNotContainsString('Excellent', $display);
+
+        $disclaimer = $presented['regression_info']['similar_projects_disclaimer'] ?? '';
+        $this->assertStringContainsString('Category baseline estimate', $disclaimer);
+        $this->assertStringContainsString('not a statement about this project\'s own history', $disclaimer);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * v2.6 4.4 — pure project history keeps the raw fit-quality wording
      * ------------------------------------------------------------------------
      */

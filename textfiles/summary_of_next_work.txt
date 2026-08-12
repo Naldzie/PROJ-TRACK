@@ -114,7 +114,8 @@
 
     v2.6 Phase 1 — Honest fixes ✅ ALL DONE
         4.1 X-axis merge ✅ · 4.2 pool gate ✅ · 4.3 null-safe scoring ✅
-        · 4.4 honest fit wording ✅   (Plan: regression_v2_6_..._plan.md)
+        · 4.4 honest fit wording ✅ · A4 0-obs category baseline ✅
+        (Plan: regression_v2_6_..._plan.md)
 
     C7 — Accuracy-by-data_source logging ✅ DONE (Aug 13 2026)
         prediction_history.data_source persisted on save + refresh; aggregate
@@ -122,9 +123,11 @@
         /dev/prediction-accuracy. Enables empirical k tuning for Phase 2.
         Plan: textfiles/regression_v2_5_cross_project_expansion_plan.md
 
-    A4 — 0-obs category baseline ('fallback' via shouldSupplement) — product
-        decision needed (clear "category baseline, not project-specific" label)
-        = v2.6 §5.6. Plan: regression_v2_5_plan §3 A4
+    A4 — 0-obs category baseline ✅ DONE (Aug 13 2026)
+        shouldSupplement → 'fallback' for 0 obs + planned duration; category
+        baseline curve labeled "not project-specific"; current_month_index = 1;
+        falls back to Insufficient Data when no pool. = v2.6 §5.6.
+        Plan: regression_v2_5_plan §3 A4
 
     v2.6 Phase 2 — Reference-class prior + range (THE fix for "supplement-only /
         not by all projects"): regression on real points only + similarity-
@@ -136,8 +139,8 @@
     B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)
 
   ▸ Out of scope NOW (recorded in v2.6 plan, not implemented): Steps 1–5
-    (safety valves) + v2.6 Phase 1 are DONE; v2.6 Phase 2 (blend/range) is the
-    next uncommitted work, pending the branch review + A4 decision.
+    (safety valves) + v2.6 Phase 1 (+ A4) are DONE; v2.6 Phase 2 (blend/range)
+    is the next uncommitted work, pending the branch review.
 
 ===============================================================================
 
@@ -151,6 +154,8 @@
         v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
         theme as merged Phase 14; closes live "score-40 still borrowed" bug;
         warmest context; branch + plan edits already half-done (uncommitted).
+        Status Aug 13 2026: Step 5, v2.6 Phase 1, C7, and A4 all DONE — next
+        uncommitted work is v2.6 Phase 2 (blend + range).
      2. CORE MONITORING Phase E — AI ↔ baseline linkage (small prep; enables
         future Phase 10 loop). Plan: core_monitoring_completion_plan.md
      3. AI PHASE 9 → 10 — Contractor Performance Tracking → AI-Powered

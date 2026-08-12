@@ -1263,9 +1263,13 @@ class AIPredictionService
         if (isset($regression['data_source']) && $regression['data_source'] !== 'project_history') {
             $count = $regression['similar_projects_count'] ?? 0;
             if ($regression['data_source'] === 'similar_projects') {
+                // A4 (v2.6 §5.6): 0-obs fallback — the curve is the category
+                // reference, NOT the project's own trend. Wording must stay
+                // "category baseline estimate", never project-specific.
                 $regression['similar_projects_disclaimer'] =
-                    'Prediction based entirely on ' . $count
-                    . ' similar completed project(s) in this category.';
+                    'Category baseline estimate based on ' . $count
+                    . ' similar completed project(s) in this category — '
+                    . 'not a statement about this project\'s own history.';
             } elseif ($regression['data_source'] === 'hybrid') {
                 $synthCount = $regression['synthetic_points_count'] ?? 0;
                 $regression['similar_projects_disclaimer'] =

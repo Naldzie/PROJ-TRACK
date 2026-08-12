@@ -97,14 +97,26 @@ single number.
 - Where: `AIPredictionPresenter` output + ai-prediction.blade.php.
 - Effort: LOW-MEDIUM. Risk: LOW (additive display).
 
-#### A4 — Fallback for brand-new (0-obs) projects
+#### A4 — Fallback for brand-new (0-obs) projects  ✅ DONE (Aug 13 2026)
 `HistoricalSimilarityService::generateFallbackDataset()` exists and builds a
-full synthetic curve, but is UNREACHABLE because `shouldSupplement()` returns
-`none` for 0 observations. Product choice: let a 0-obs project show a
-clearly-labeled "category baseline" curve instead of a blank "Insufficient Data".
-
-- Where: `HistoricalSimilarityService::shouldSupplement()` + UI + presenter.
-- Effort: LOW. Risk: LOW (guarded by clear disclaimer). Product decision needed.
+full synthetic curve, but was UNREACHABLE because `shouldSupplement()` returned
+`none` for 0 observations. Product decision (Aug 13 2026): a 0-obs project
+with a valid pool shows a clearly-labeled "category baseline" curve.
+- shouldSupplement(): 0 obs + planned duration → 'fallback'; 0 obs + no
+  planned duration → 'none'. Pool gate is downstream (buildAggregateCurve
+  returns [] if < MIN_SIMILAR_PROJECTS usable curves → fallback null →
+  existing Insufficient Data path).
+- generateFallbackDataset(): current_month_index = 1 (project at start, not
+  end of plan) so downstream reads y[0] and forecasts from month 1.
+- Honest labeling: data_source 'similar_projects' with 0 real obs →
+  "Category baseline estimate (N similar projects) — not project-specific";
+  blade badge "Category Baseline" (dead 'cross_project_fallback' check removed);
+  disclaimer "not a statement about this project's own history".
+- Reliability: untouched — Phase 14 real_obs_count = obs − synthetic = 0 →
+  floor confidence automatically.
+- Tests: CrossProjectSupplementIntegrationTest (zero-obs fallback/no-pool +
+  A4 e2e + baseline render), HistoricalSimilarityHardeningTest
+  (presenter category-baseline wording). Full suite 627 passed / 2353.
 
 ### B. Benchmark / insight layer (no regression change)
 

@@ -5,7 +5,8 @@ CSPC PMU System — AI Module follow-up to V2.5 (safety valves, C8) and Phase 8
 
 Status: 🔄 IN PROGRESS — Phase 1 ALL DONE (4.1 X-axis merge ✅, 4.2 pool
         gate ✅ via V2.5 Step 5, 4.3 null-safe scoring ✅, 4.4 honest fit
-        wording ✅ — all Aug 13 2026 on branch fix/cross-project-safety-valves).
+        wording ✅, A4 0-obs category baseline ✅ — all Aug 13 2026 on branch
+        fix/cross-project-safety-valves).
         NEXT: Phase 2 (reference-class prior + range). V2.5 safety-valves
         plan Steps 1-5 ALL DONE.
 
@@ -262,9 +263,13 @@ _plan §3 A1).
       - ForecastReliabilityService: additionally shrink the reliability score
         when the class band is wide or N is small (honest).
 
-  5.6 0-obs fallback (A4) — product decision needed
-      - Allow shouldSupplement() to return 'fallback' for 0-obs, with a clear
-        UI label "category baseline estimate — not project-specific".
+  5.6 0-obs fallback (A4)  ✅ DONE (Aug 13 2026)
+      - shouldSupplement() returns 'fallback' for 0-obs (when planned
+        duration > 0); generateFallbackDataset() shows a clearly-labeled
+        "category baseline estimate (N similar projects) — not
+        project-specific" curve. current_month_index fixed to 1 (project at
+        start). Falls back to Insufficient Data when < MIN_SIMILAR_PROJECTS
+        usable curves or no planned duration.
 
   Math note: all Phase 2 math is implementable in plain PHP (weighted median,
   interpolation, simple shrinkage) — no statistics library required.
@@ -376,7 +381,7 @@ _plan §3 A1).
   [x] Phase 1: hybrid X monotonic; month 1 single; fit wording honest.
   [ ] Phase 2: blend weight w behaves (sparse→class, rich→own).
   [ ] P25/P75 band surfaces in presenter/blade for hybrid modes.
-  [ ] 0-obs fallback labelled (if approved).
+  [x] 0-obs fallback labelled (approved → implemented Aug 13 2026).
   [ ] Full suite green after each phase.
   [ ] Branch(es) presented for review (Rule 10 + Rule 12) before merging.
 

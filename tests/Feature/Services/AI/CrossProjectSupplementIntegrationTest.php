@@ -237,15 +237,87 @@ class CrossProjectSupplementIntegrationTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
-     * Zero observations → shouldSupplement returns 'none'
+     * Zero observations → 'fallback' when planned duration exists (A4)
      * ------------------------------------------------------------------------
+     *
+     * v2.5 §3 A4 / v2.6 §5.6: a brand-new project with 0 observations shows a
+     * clearly-labeled category baseline instead of blank Insufficient Data —
+     * BUT only when there is a planned duration to anchor the curve to.
      */
-    public function test_zero_observations_returns_none(): void
+    public function test_zero_observations_with_planned_duration_returns_fallback(): void
     {
         $categoryId = $this->makeCategory('Zero Category')->id;
-        $target = Project::factory()->create(['status' => 'Ongoing', 'category_id' => $categoryId]);
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'planned_duration_days' => 730,
+        ]);
+
+        $this->assertSame('fallback', $this->historicalSimilarityService->shouldSupplement($target, 0));
+    }
+
+    public function test_zero_observations_without_planned_duration_returns_none(): void
+    {
+        $categoryId = $this->makeCategory('Zero Category')->id;
+        $target = Project::factory()->create([
+            'status'                => 'Ongoing',
+            'category_id'           => $categoryId,
+            'planned_duration_days' => null,
+        ]);
 
         $this->assertSame('none', $this->historicalSimilarityService->shouldSupplement($target, 0));
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * A4 end-to-end: 0-obs + valid pool → category baseline curve
+     * ------------------------------------------------------------------------
+     */
+    public function test_zero_observations_with_pool_renders_category_baseline(): void
+    {
+        $categoryId = $this->makeCategory('Baseline Category')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'approved_budget'      => 5000000.00,
+            'planned_duration_days' => 730,
+        ]);
+
+        $this->assertSame('fallback', $this->historicalSimilarityService->shouldSupplement($target, 0));
+
+        $report = $this->predictionService->generatePrediction($target);
+
+        $this->assertSame('similar_projects', $report['regression']['data_source']);
+        // A4 fix: a 0-obs project sits at month 1 (start), not at the end of
+        // its plan — so current progress reads the class curve at month 1.
+        $this->assertSame(1, $report['current_state']['month_index']);
+        $this->assertGreaterThan(0, $report['current_state']['progress']);
+        $this->assertSame(3, $report['regression']['similar_projects_count']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * A4 honesty: no pool → still falls through to project_history/insufficient
+     * ------------------------------------------------------------------------
+     */
+    public function test_zero_observations_without_pool_degrades_gracefully(): void
+    {
+        $categoryId = $this->makeCategory('No Pool Category')->id;
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'planned_duration_days' => 730,
+        ]);
+
+        $this->assertSame(0, $this->historicalSimilarityService->getSimilarProjectsCountFor($target));
+
+        $report = $this->predictionService->generatePrediction($target);
+
+        // buildAggregateCurve() returns [] (< MIN_SIMILAR_PROJECTS usable
+        // curves) → generateFallbackDataset() null → own data / minimal path.
+        $this->assertSame('project_history', $report['regression']['data_source'] ?? 'project_history');
     }
 
     /**

@@ -1090,7 +1090,21 @@ class AIPredictionPresenter
 
         $count = (int) ($regression['similar_projects_count'] ?? 0);
 
+        // A4 (v2.6 §5.6): a pure category-baseline fallback (data_source
+        // 'similar_projects' with 0 real observations) is NOT a "blend" — the
+        // curve is entirely the category reference. Real obs =
+        // observation_count − synthetic_points_count, which is 0 exactly when
+        // the fallback replaced an empty dataset.
         if ($dataSource === 'similar_projects') {
+            $realObs = (int) ($regression['observation_count'] ?? 0)
+                - (int) ($regression['synthetic_points_count'] ?? 0);
+
+            if ($realObs <= 0) {
+                return $count > 0
+                    ? "Category baseline estimate ({$count} similar projects) — not project-specific"
+                    : 'Category baseline estimate — not project-specific';
+            }
+
             return $count > 0
                 ? "Model blended with category reference curve ({$count} similar projects)"
                 : 'Model blended with category reference curve';
