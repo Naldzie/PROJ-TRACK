@@ -108,12 +108,13 @@
   ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 12 2026)
   --------------------------------------------------------------------------------
   Branch: fix/cross-project-safety-valves (HEAD d6bdea6, pushed). V2.5 Steps 1–5
-  DONE (Step 5 = MIN_SIMILARITY_SCORE 50, committed). Everything below is the
-  remaining regression-module work IN ORDER.
+  DONE (Step 5 = MIN_SIMILARITY_SCORE 50, committed). v2.6 Phase 1 §4.1 (X-axis
+  merge) DONE too. Everything below is the remaining regression-module work
+  IN ORDER.
 
-    v2.6 Phase 1 — Honest fixes (small, low risk)  ⬜ NEXT
-        4.1 X-axis merge bug  → 4.2 pool gate + honest class reporting
-        → 4.3 fit wording   → 4.4 null-safe scoring
+    v2.6 Phase 1 — Honest fixes (small, low risk)  ⬜ PARTIAL (4.1 + 4.2 DONE)
+        4.1 X-axis merge bug ✅  ·  4.2 pool gate ✅ (V2.5 Step 5 covers it)
+        → 4.3 null-safe scoring (NEXT)  → 4.4 honest fit wording
         Plan: textfiles/regression_v2_6_cross_project_prior_flow_plan.md
 
     C7 — Accuracy-by-data_source logging (needed BEFORE Phase 2 blend tuning;

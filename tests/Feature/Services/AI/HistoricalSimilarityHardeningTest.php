@@ -171,9 +171,9 @@ class HistoricalSimilarityHardeningTest extends TestCase
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
                 'approved_budget'      => 5000000.00,
-                // Large fixed duration → supplement target = 8 → ≥6 synthetic
-                // points prepended, so merged X has distinct month indexes
-                // (avoids the all-identical-X edge for a 1-obs short project).
+                // Large fixed planned duration → merged X spans ~24 months
+                // (monotonic 1..P, v2.6 §4.1) → regression has distinct
+                // month indexes (avoids the all-identical-X edge).
                 'planned_duration_days' => 730,
             ]
         );

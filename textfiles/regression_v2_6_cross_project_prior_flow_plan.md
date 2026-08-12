@@ -3,9 +3,11 @@
 CSPC PMU System — AI Module follow-up to V2.5 (safety valves, C8) and Phase 8
 (Cross-Project Historical Regression).
 
-Status: 🗂 DRAFT — researched (Aug 12, 2026), NOT started. Phase 1 fixes the
-        flaws found in V2.5; Phase 2 adopts the industry-standard "reference
-        class as a prior" flow for the regression module.
+Status: 🔄 IN PROGRESS — Phase 1 §4.1 DONE (monotonic X-axis merge, Aug 13
+        2026, on branch fix/cross-project-safety-valves). Phase 1 §4.2 is
+        largely satisfied by V2.5 Step 5 (MIN_SIMILARITY_SCORE 50, DONE).
+        Remaining: 4.3 (null-safe scoring), 4.4 (honest fit wording), then
+        Phase 2. V2.5 safety-valves plan Steps 1-5 ALL DONE.
 
 Date: August 12, 2026
 Branch (for implementation): `fix/cross-project-prior-flow` (new, from main)
@@ -166,7 +168,7 @@ _plan §3 A1).
 ===============================================================================
   File (primary): app/Services/AI/HistoricalSimilarityService.php
 
-  4.1 Fix the hybrid X-axis merge (bug found during code review)
+  4.1 Fix the hybrid X-axis merge (bug found during code review)  ✅ DONE
       - generateSupplementDataset(): do NOT restart real x at 1. Synthetic
         points fill months BEFORE the first real month only for months with no
         real record; real points keep month_index = real month.
@@ -175,6 +177,14 @@ _plan §3 A1).
         real points OVERWRITING the synthetic value at their own month.
       - Effect: regression no longer double-counts month 1; forecast tail
         ordered correctly.
+      - Implemented Aug 13 2026 (HistoricalSimilarityService::generateSupplementDataset
+        rebuilds progressByMonth from the synthetic 1..P fill, overwrites real
+        months, ksorts → monotonic X). Downstream current progress now reads
+        $dataset['y'][current_month_index - 1] instead of end($dataset['y'])
+        (AIPredictionService x2) so hybrid mode keeps the REAL last value.
+      - Test: test_supplement_merge_x_is_monotonic_with_real_value_at_own_month
+        (CrossProjectSupplementIntegrationTest). Full suite 616 passed /
+        2309 assertions.
 
   4.2 Pool-quality gate (continue V2.5 Step 5)
       - MIN_SIMILARITY_SCORE on RAW score before recency (see safety-valves

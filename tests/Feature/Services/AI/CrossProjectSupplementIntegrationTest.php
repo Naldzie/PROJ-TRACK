@@ -119,10 +119,11 @@ class CrossProjectSupplementIntegrationTest extends TestCase
      *
      * Verifies the whole cross-project pipeline still works after the
      * inspection_date refactor: shouldSupplement picks 'supplement', the
-     * dataset is prepended with synthetic points, the report is tagged
-     * data_source 'hybrid', and the current progress stays the real value.
+     * dataset is augmented with synthetic points (v2.6 §4.1 monotonic merge),
+     * the report is tagged data_source 'hybrid', and the current progress
+     * stays the real value.
      */
-    public function test_supplement_mode_prepends_synthetic_points_and_tags_hybrid(): void
+    public function test_supplement_mode_augments_dataset_and_tags_hybrid(): void
     {
         $categoryId = $this->makeCategory()->id;
         $this->seedSimilarCompletedProjects($categoryId);
@@ -134,10 +135,9 @@ class CrossProjectSupplementIntegrationTest extends TestCase
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
                 'approved_budget'      => 5000000.00,
-                // Large fixed duration → supplement target 8 → ≥6 synthetic
-                // points prepended so merged X has distinct month indexes
-                // (guards against the random planned_duration_days making
-                // needed=1, which would merge to all-identical X and crash).
+                // Large fixed planned duration → the merged X spans ~24
+                // months (1..P monotonic, v2.6 §4.1), so regression has
+                // plenty of distinct month indexes (no all-identical-X crash).
                 'planned_duration_days' => 730,
             ]
         );
@@ -160,6 +160,53 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $this->assertFalse($presented['is_insufficient_data']);
         $this->assertSame('hybrid', $presented['regression_info']['data_source']);
         $this->assertGreaterThan(0, $presented['regression_info']['synthetic_points_count']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * v2.6 §4.1 — merged X-axis is MONOTONIC 1..P with the real value at its
+     * own month (no duplicated month 1, no synthetic restart at 1)
+     * ------------------------------------------------------------------------
+     */
+    public function test_supplement_merge_x_is_monotonic_with_real_value_at_own_month(): void
+    {
+        $categoryId = $this->makeCategory()->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 2,
+            actualProgress: [5.0, 12.0],
+            overrides: [
+                'status'               => 'Ongoing',
+                'category_id'          => $categoryId,
+                'approved_budget'      => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
+        );
+
+        $dataset = $this->datasetBuilder->buildDataset($target);
+        $supplement = $this->historicalSimilarityService->generateSupplementDataset($target, $dataset);
+
+        $this->assertNotNull($supplement);
+
+        $x = $supplement['x'];
+        $y = $supplement['y'];
+
+        // Real months 1..2 land at their own month (5.0 and 12.0) — NOT
+        // shifted up by a synthetic prefix.
+        $this->assertSame(5.0, $y[0]);
+        $this->assertSame(12.0, $y[1]);
+
+        // X is strictly increasing 1..P — no repeated month 1.
+        for ($i = 1; $i < count($x); $i++) {
+            $this->assertGreaterThan($x[$i - 1], $x[$i]);
+        }
+        $this->assertSame(1.0, $x[0]);
+
+        // The last real month points into the tail: current_month_index is
+        // preserved, so predictions anchor on the real 12.0, not synthetic.
+        $this->assertSame(2, $supplement['statistics']['current_month_index']);
+        $this->assertEquals(12.0, $y[$supplement['statistics']['current_month_index'] - 1]);
     }
 
     /**

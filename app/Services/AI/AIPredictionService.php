@@ -264,8 +264,13 @@ class AIPredictionService
             $dataset['statistics']['current_month_index'];
 
         // Latest actual progress is the monotonic floor for all short-term
-        // predictions and forecasts (Fix H).
-        $currentProgress = end($dataset['y']);
+        // predictions and forecasts (Fix H). In hybrid mode the merged X is
+        // monotonic 1..P with synthetic fill, so the REAL current value is the
+        // one at current_month_index — not end($dataset['y']), which would be
+        // the last synthetic point of the forecast tail.
+        $currentProgress = empty($dataset['y'])
+            ? 0
+            : ($dataset['y'][max(0, $currentMonthIndex - 1)] ?? end($dataset['y']));
 
         $predictedNextProgress =
             $this->predictNextMonth(
@@ -927,14 +932,16 @@ class AIPredictionService
         |--------------------------------------------------------------------------
         |
         | The regression dataset is already normalized and sorted
-        | chronologically. Therefore, the final Y value represents the
-        | project's latest cumulative actual progress.
+        | chronologically. In hybrid mode the merged X is monotonic 1..P with
+        | synthetic fill, so the REAL current value is the one at
+        | current_month_index — not end(), which would be the last synthetic
+        | point of the forecast tail.
         |
         */
 
         $currentProgress = empty($dataset['y'])
             ? 0
-            : end($dataset['y']);
+            : ($dataset['y'][max(0, $currentMonthIndex - 1)] ?? end($dataset['y']));
 
         return [
 

@@ -599,37 +599,55 @@ class HistoricalSimilarityService
         }
 
         $realCount = $realDataset['statistics']['observation_count'] ?? 0;
-        $target = $this->getSupplementTarget($project);
-        $needed = $target - $realCount;
 
-        if ($needed <= 0) {
+        if ($realCount <= 0) {
             return null;
         }
 
-        $synthetic = $this->generateSyntheticPoints($aggregate, $project, $needed);
+        $totalPlannedMonths = $this->getTotalPlannedMonths($project);
+
+        if ($totalPlannedMonths <= 0) {
+            return null;
+        }
+
+        // v2.6 §4.1: build the FULL planned span 1..P, keeping the X-axis
+        // monotonic. Synthetic rows fill every planned month; real
+        // observations then OVERWRITE their own month so month 1 is never
+        // duplicated and the forecast tail stays ordered. (No more prepend
+        // of synthetic 1..needed in front of a real dataset that restarts
+        // at 1 — the old merged X was non-monotonic with month 1 doubled.)
+        $synthetic = $this->generateSyntheticPoints($aggregate, $project, $totalPlannedMonths);
 
         if (empty($synthetic)) {
             return null;
         }
 
-        // Prepend synthetic points to real data
-        $x = array_merge(
-            array_map(fn ($p) => (float) $p['month_index'], $synthetic),
-            $realDataset['x']
-        );
+        $progressByMonth = [];
+        foreach ($synthetic as $point) {
+            $progressByMonth[(int) $point['month_index']] = (float) $point['progress'];
+        }
 
-        $y = array_merge(
-            array_map(fn ($p) => $p['progress'], $synthetic),
-            $realDataset['y']
-        );
+        // Overwrite with the real observations at their own month index.
+        $realX = $realDataset['x'] ?? [];
+        $realY = $realDataset['y'] ?? [];
+        foreach ($realX as $i => $monthIndex) {
+            $progressByMonth[(int) $monthIndex] = (float) ($realY[$i] ?? 0);
+        }
+
+        ksort($progressByMonth);
+
+        // Monotonic X = 1..P; synthetic count = months that real data did
+        // not cover (used by reliability to derive real-only observations).
+        $x = array_keys($progressByMonth);
+        $y = array_values($progressByMonth);
+        $combinedCount = count($x);
+        $syntheticCount = max(0, $combinedCount - $realCount);
 
         $similarCount = $this->findSimilarProjects($project)->count();
 
-        $combinedCount = count($x);
-
         return [
-            'x'                     => $x,
-            'y'                     => $y,
+            'x'                     => array_map(fn ($m) => (float) $m, $x),
+            'y'                     => array_map(fn ($v) => (float) $v, $y),
             'records'               => $realDataset['records'] ?? collect(),
             'statistics'            => [
                 'observation_count'   => $combinedCount,
@@ -638,7 +656,7 @@ class HistoricalSimilarityService
             'data_source'           => 'hybrid',
             'similar_projects_count' => $similarCount,
             'similar_projects_details' => $this->getSimilarProjectsDetails($project),
-            'synthetic_points_count' => count($synthetic),
+            'synthetic_points_count' => $syntheticCount,
         ];
     }
 }
