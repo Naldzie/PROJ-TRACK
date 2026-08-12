@@ -19,6 +19,9 @@ Reference Documents:
 - textfiles/regression_v2_5_cross_project_expansion_plan.md (§3 C8, §7)
 - textfiles/active_reference/project_context_and_development_rules.txt
 - app/Services/AI/HistoricalSimilarityService.php (the file being changed)
+- textfiles/regression_v2_6_cross_project_prior_flow_plan.md
+  (NEXT step after this plan — replaces the whole flow with a reference-class
+   prior + honest hybrid; Step 5 below feeds its §4 Phase 1 pool-quality gate)
 
 ===============================================================================
   1. PROBLEM STATEMENT
@@ -427,6 +430,10 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   • The Step 4 console.log writes per-similar-project breakdowns to the
     browser console; a `similar_projects_details` summary could later feed a
     small "Similar projects used" table on the AI Prediction tab (deferred).
+  • Step 5's score-40 example (category 30 + workers 10 still borrowed) and the
+    deeper flaws in this flow are analyzed in
+    regression_v2_6_cross_project_prior_flow_plan.md (§3 findings, §11 note) —
+    that plan is the next step after this one.
 
 ===============================================================================
   11. CONVERSATION CONTINUATION GUIDE
@@ -437,7 +444,9 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     2. Implement Step 5: pick MIN_SIMILARITY_SCORE value (default 50) with the
        user (Decision 5), make seeding deterministic, add the Step 5 tests,
        run full suite.
-    3. Present branch for review; merge to main only on explicit approval.
+    3. Continue from Step 5 into regression_v2_6_cross_project_prior_flow_plan.md
+       (Phase 1 honest fixes + Phase 2 reference-class prior / blend).
+    4. Present branch(es) for review; merge to main only on explicit approval.
     Confirm files with the user (Rule 1) before editing, since code may have
     changed since this plan was written.
 

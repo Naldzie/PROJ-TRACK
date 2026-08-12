@@ -1,7 +1,7 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 11, 2026
+  Last Updated: August 12, 2026
 ===============================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
@@ -101,18 +101,78 @@
 
 
 ===============================================================================
-  NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: Activity Log
-  UI for Staff, Report Generation refinements, AI Phase 9 contractor tracking)
+  NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: AI Phase 9
+  contractor tracking, Core Phase E, Activity Log UI for Staff)
 ===============================================================================
 
-  ⭐ NEW PLANNED WORK (Aug 11, 2026) — AI MODULE: FORECAST RELIABILITY
+  ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 12 2026)
+  --------------------------------------------------------------------------------
+  Branch: fix/cross-project-safety-valves (HEAD d6bdea6, pushed). V2.5 Steps 1–4
+  DONE. Everything below is the remaining regression-module work IN ORDER.
+
+    Step 5 — MIN_SIMILARITY_SCORE gate  ⬜ PENDING (Decision 5, default 50)
+        Filter RAW score (> 0 today) in HistoricalSimilarityService:92 BEFORE
+        the recency multiplier; needs deterministic test seeding.
+        Plan: textfiles/cross_project_safety_valves_plan.md
+
+    v2.6 Phase 1 — Honest fixes (small, low risk)
+        4.1 X-axis merge bug  → 4.2 pool gate + honest class reporting
+        → 4.3 fit wording   → 4.4 null-safe scoring
+        Plan: textfiles/regression_v2_6_cross_project_prior_flow_plan.md
+
+    C7 — Accuracy-by-data_source logging (needed BEFORE Phase 2 blend tuning;
+        do NOT hard-code a blend we cannot validate)
+        Plan: textfiles/regression_v2_5_cross_project_expansion_plan.md
+
+    A4 — 0-obs category baseline ('fallback' via shouldSupplement) — product
+        decision needed (clear "category baseline, not project-specific" label)
+        = v2.6 §5.6. Plan: regression_v2_5_plan §3 A4
+
+    v2.6 Phase 2 — Reference-class prior + range (THE fix for "supplement-only /
+        not by all projects"): regression on real points only + similarity-
+        weighted class curve + blend w·own+(1−w)·class → A3 P25/P75 range →
+        5.5 reliability-from-homogeneity. v2.6 §5
+
+    A2 — Completion fallback for implausible fits (v2.5 §3 A2)
+
+    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)
+
+  ▸ Out of scope NOW (recorded in v2.6 plan, not implemented): nothing here is
+    committed yet except Steps 1–4; v2.6 plan file is UNTRACKED.
+
+===============================================================================
+
+  🗺️ OVERALL PRIORITIZATION DECISION (Aug 12, 2026) — KEEP THIS ORDER
+  --------------------------------------------------------------------------------
+  Reviewed ALL deferred/future work (regression + non-regression). Decision:
+  FINISH the regression thread first (list above, as-is), THEN core Phase E,
+  THEN AI Phase 9→10, then the rest.
+
+     1. REGRESSION MODULE — finish fully (Step 5 → v2.6 Phase 1 → C7 → A4 →
+        v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
+        theme as merged Phase 14; closes live "score-40 still borrowed" bug;
+        warmest context; branch + plan edits already half-done (uncommitted).
+     2. CORE MONITORING Phase E — AI ↔ baseline linkage (small prep; enables
+        future Phase 10 loop). Plan: core_monitoring_completion_plan.md
+     3. AI PHASE 9 → 10 — Contractor Performance Tracking → AI-Powered
+        Recommendations (highest capstone demonstration value; Phase 10
+        feedback loop flagged future-capstone-worthy). Phases 11/12/13 after.
+     4. LOWEST PRIORITY (safe to defer) — regression polish A2/B5/B6 (covered
+        in step 1 tail), MLR, Project Comparison, Bulk Ops, User Activity
+        Summary, Project Templates, Data Export/Import, Job Queue use, Dead
+        Code Cleanup, Activity Log UI for Staff.
+
+  Reference: active_reference/ai_module_ver2_master_plan.txt (Phases 9-13),
+    textfiles/core_monitoring_completion_plan.md (Phase E),
+    textfiles/gaps_and_features_missing.txt (V2 + non-AI gaps),
+    textfiles/summary_of_next_work.txt SECTION 2-4.
+
+===============================================================================
+
+  ⭐ DONE (Aug 11-12, 2026) — AI MODULE: FORECAST RELIABILITY
   & PREDICTION CONFIDENCE REBASE (V2 PHASE 14)
   --------------------------------------------------------------------------------
-  Status: 🔄 IN PROGRESS — Steps 0-7 IMPLEMENTED + committed on branch
-  phase-14-forecast-reliability (a13037d, 739610d, 26d5ffe, 366414d, bf3ca66,
-  901fa07, 9b29563, f4bcfed). Full suite 608 passed (2209 assertions).
-  At Step 8 (logs & docs) before final review (Step 9 = present branch for
-  approval before merging — Rule 12).
+  Status: ✅ COMPLETE — merged into main @ a45a156.
   Plan:  textfiles/forecast_reliability_confidence_plan.md
   Log:   textfiles/active_reference/ai_v2_phase14_forecast_reliability_progress_log.txt
 
@@ -280,9 +340,12 @@
      ("Issues & Risks") via a toggle. High-level risks notify admins + the
      project's contractor. Plan: risk_register_plan.txt
 
-  Report Generation
+  Report Generation  ✅ COMPLETE (gaps #10) — merged into main
      PDF of S-Curve chart, Excel of progress history,
      project summary doc, extension history report
+     (R1 Excel + R2 PDF summary + R3 S-Curve 1:1 + PDF viewer shipped;
+     Excel exports frozen pending corruption report resolution — see §6.4 of
+     textfiles/report_generation_plan.md)
 
   In-App Notification System  ✅ COMPLETE (gaps #12)
      Deadline reminders (30/14/7 + overdue), overdue inspection alerts
@@ -372,6 +435,8 @@
     active_reference/ai_module_ver2_master_plan.txt
     active_reference/ai_v2_phase1_progress_log.txt
     active_reference/project_context_and_development_rules.txt
+    cross_project_safety_valves_plan.md             — V2.5 safety valves (Steps 1–4 done, Step 5 pending)
+    regression_v2_6_cross_project_prior_flow_plan.md — v2.6 prior/blend plan (Phase 1 + Phase 2)
 
   Future / Feature Ideas:
     gaps_and_features_missing.txt
