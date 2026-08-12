@@ -116,8 +116,10 @@
         4.1 X-axis merge ✅ · 4.2 pool gate ✅ · 4.3 null-safe scoring ✅
         · 4.4 honest fit wording ✅   (Plan: regression_v2_6_..._plan.md)
 
-    C7 — Accuracy-by-data_source logging (needed BEFORE Phase 2 blend tuning;
-        do NOT hard-code a blend we cannot validate)
+    C7 — Accuracy-by-data_source logging ✅ DONE (Aug 13 2026)
+        prediction_history.data_source persisted on save + refresh; aggregate
+        query AIPredictionService::predictionAccuracyByDataSource(); dev view
+        /dev/prediction-accuracy. Enables empirical k tuning for Phase 2.
         Plan: textfiles/regression_v2_5_cross_project_expansion_plan.md
 
     A4 — 0-obs category baseline ('fallback' via shouldSupplement) — product

@@ -837,6 +837,9 @@ if (app()->environment() !== 'production') {
 
         Route::post('/notifications/clear', [App\Http\Controllers\Admin\DevNotificationController::class, 'clear'])
             ->name('notifications.clear');
+
+        Route::get('/prediction-accuracy', [App\Http\Controllers\Admin\DevPredictionAccuracyController::class, 'index'])
+            ->name('prediction-accuracy.index');
     });
 }
 

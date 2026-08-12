@@ -121,10 +121,19 @@ similar projects of this type" → feeds RecommendationEngine.
 
 ### C. Hardening / analytics (improves every use above)
 
-#### C7 — Track prediction accuracy by data_source
+#### C7 — Track prediction accuracy by data_source  ✅ DONE (Aug 13 2026)
 Log each prediction with its `data_source`; later compare error rates of
 supplemented vs actual-only predictions to validate/tune weights & thresholds.
 (Phase 8 log Open Item Q6.)
+- PredictionHistory gains nullable `data_source` (project_history / hybrid /
+  similar_projects). savePredictionHistory records it on create AND refresh;
+  legacy rows stay null (grouped as project_history).
+- AIPredictionService::predictionAccuracyByDataSource() aggregates fulfilled
+  rows per source: count, accurate_count (<2 variance, Phase 7 convention),
+  accuracy_percent, avg_abs_error, avg_variance.
+- Dev view: GET /dev/prediction-accuracy → JSON breakdown (non-production).
+- Tests: tests/Feature/Services/AI/PredictionAccuracyByDataSourceTest.php
+  (4 tests). Full suite 623 passed / 2339 assertions.
 
 #### C8 — Recency weighting + MIN_SIMILAR_PROJECTS gate
 - Add a `MIN_SIMILAR_PROJECTS` constant (default 3): if fewer similar completed

@@ -350,7 +350,8 @@ class AIPredictionService
             $currentProgress,
             $predictedNextProgress,
             $currentMonthIndex,
-            $nextPredictionBand
+            $nextPredictionBand,
+            $dataset['data_source'] ?? 'project_history'
         );
 
         return $report;
@@ -779,6 +780,70 @@ class AIPredictionService
 
     /**
      * ------------------------------------------------------------------------
+     * Prediction Accuracy By Data Source (C7)
+     * ------------------------------------------------------------------------
+     *
+     * Compares forecast error rates across the modes that produced each
+     * prediction: project_history (own data), hybrid (own + similar),
+     * similar_projects (borrowed only). This is the empirical evidence for
+     * tuning similarity weights / thresholds and the Phase 2 blend weight k —
+     * predictions are logged with their data_source at save time.
+     *
+     * Counts only fulfilled rows (predicted month has a recorded actual).
+     * 'accurate' mirrors the Phase 7 convention: |actual − predicted| < 2.
+     *
+     * Returns an array keyed by data_source:
+     *   {
+     *     'project_history' => [
+     *         'count'            => int,
+     *         'accurate_count'   => int,
+     *         'accuracy_percent' => float|null,   // null when count = 0
+     *         'avg_abs_error'    => float|null,   // null when count = 0
+     *         'avg_variance'     => float|null,   // mean actual − predicted
+     *     ], ...}
+     */
+    public function predictionAccuracyByDataSource(): array
+    {
+        $rows = PredictionHistory::whereNotNull('actual_next')
+            ->get(['data_source', 'predicted_next', 'actual_next']);
+
+        return $rows->groupBy(fn ($row) => $row->data_source ?? 'project_history')
+            ->map(function ($group) {
+                $count = $group->count();
+
+                if ($count === 0) {
+                    return [
+                        'count'            => 0,
+                        'accurate_count'   => 0,
+                        'accuracy_percent' => null,
+                        'avg_abs_error'    => null,
+                        'avg_variance'     => null,
+                    ];
+                }
+
+                $absErrorSum = $group->sum(
+                    fn ($row) => abs((float) $row->actual_next - (float) $row->predicted_next)
+                );
+                $varianceSum = $group->sum(
+                    fn ($row) => (float) $row->actual_next - (float) $row->predicted_next
+                );
+                $accurate = $group->filter(
+                    fn ($row) => abs((float) $row->actual_next - (float) $row->predicted_next) < 2
+                )->count();
+
+                return [
+                    'count'            => $count,
+                    'accurate_count'   => $accurate,
+                    'accuracy_percent' => round($accurate / $count * 100, 1),
+                    'avg_abs_error'    => round($absErrorSum / $count, 2),
+                    'avg_variance'     => round($varianceSum / $count, 2),
+                ];
+            })
+            ->all();
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * Save Prediction History
      * ------------------------------------------------------------------------
      *
@@ -804,7 +869,8 @@ class AIPredictionService
         float $currentProgress,
         float $predictedNextProgress,
         int $currentMonthIndex,
-        ?array $nextPredictionBand = null
+        ?array $nextPredictionBand = null,
+        string $dataSource = 'project_history'
     ): void {
 
         if ($currentProgress >= 100) {
@@ -873,6 +939,7 @@ class AIPredictionService
 
             $existing->update([
                 'regression_method'   => $analysis['regression_method'] ?? 'slr',
+                'data_source'         => $dataSource,
                 'current_progress'    => round($currentProgress, 2),
                 'predicted_next'      => round($predictedNextProgress, 2),
                 'predicted_low'       => $nextPredictionBand['progress_low'] ?? null,
@@ -889,6 +956,7 @@ class AIPredictionService
             'month_label'          => $monthLabel,
             'baseline_schedule_id' => $baselineScheduleId,
             'regression_method'    => $analysis['regression_method'] ?? 'slr',
+            'data_source'          => $dataSource,
             'current_progress'     => round($currentProgress, 2),
             'predicted_next'       => round($predictedNextProgress, 2),
             'predicted_low'        => $nextPredictionBand['progress_low'] ?? null,

@@ -18,6 +18,7 @@ class PredictionHistory extends Model
         'month_label',
         'baseline_schedule_id',
         'regression_method',
+        'data_source',
         'current_progress',
         'predicted_next',
         'predicted_low',
