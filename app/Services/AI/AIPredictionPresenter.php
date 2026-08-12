@@ -758,6 +758,7 @@ class AIPredictionPresenter
                 'coefficients'       => $regression['coefficients'] ?? null,
                 'data_source'        => $regression['data_source'] ?? 'project_history',
                 'similar_projects_count' => $regression['similar_projects_count'] ?? null,
+                'similar_projects_details' => $regression['similar_projects_details'] ?? null,
                 'similar_projects_disclaimer' => $regression['similar_projects_disclaimer'] ?? null,
                 'synthetic_points_count' => $regression['synthetic_points_count'] ?? null,
                 'fit_quality_label'  => $fitQualityLabel,

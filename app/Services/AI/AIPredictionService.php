@@ -1177,6 +1177,10 @@ class AIPredictionService
             $regression['similar_projects_count'] = $dataset['similar_projects_count'];
         }
 
+        if (isset($dataset['similar_projects_details'])) {
+            $regression['similar_projects_details'] = $dataset['similar_projects_details'];
+        }
+
         if (isset($dataset['synthetic_points_count'])) {
             $regression['synthetic_points_count'] = $dataset['synthetic_points_count'];
         }

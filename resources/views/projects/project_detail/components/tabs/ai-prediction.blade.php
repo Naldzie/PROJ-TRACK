@@ -901,6 +901,24 @@ function regenerateAnalysis(projectId) {
 }
 
 console.log('[Phase 8] Prediction regression_info:', @json($prediction['regression_info'] ?? null));
+
+// Cross-project debug (C8): when supplemental/fallback data activates, log
+// every similar project used, its similarity score, and the score breakdown.
+(function () {
+    const regInfo = @json($prediction['regression_info'] ?? null);
+    const dataSource = regInfo && regInfo.data_source ? regInfo.data_source : 'project_history';
+
+    if (dataSource === 'project_history') {
+        return; // cross-project not active — nothing to log
+    }
+
+    const similarProjects = (regInfo && regInfo.similar_projects_details) || [];
+    console.log('[Cross-Project] data_source = ' + dataSource + ' | ' + similarProjects.length + ' similar project(s) found.');
+    similarProjects.forEach(function (sp) {
+        console.log('  • ' + sp.code + ' | ' + sp.title + ' | score: ' + sp.score + ' | usable: ' + sp.usable);
+        console.log('      breakdown ' + JSON.stringify(sp.breakdown) + ' | recency: ' + sp.recency);
+    });
+})();
 </script>
 
 <style>

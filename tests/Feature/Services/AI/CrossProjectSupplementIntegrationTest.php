@@ -123,7 +123,15 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $target = $this->createProjectWithHistory(
             months: 1,
             actualProgress: [5.0],
-            overrides: ['status' => 'Ongoing', 'category_id' => $categoryId]
+            overrides: [
+                'status'               => 'Ongoing',
+                'category_id'          => $categoryId,
+                // Large fixed duration → supplement target 8 → ≥6 synthetic
+                // points prepended so merged X has distinct month indexes
+                // (guards against the random planned_duration_days making
+                // needed=1, which would merge to all-identical X and crash).
+                'planned_duration_days' => 730,
+            ]
         );
 
         // 1 observation < threshold → supplement

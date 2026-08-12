@@ -2,7 +2,10 @@
 
 CSPC PMU System — AI Module follow-up to Phase 8 (Cross-Project Historical Regression)
 
-Status: 📋 DRAFT — plan written. Implementation NOT started.
+Status: 🔄 IN PROGRESS — Steps 1-4 IMPLEMENTED (uncommitted, pending commit+push);
+        Step 5 (MIN_SIMILARITY_SCORE) DOCUMENTED as the next step (not yet
+        implemented). Full suite green (614 passed / 2276 assertions).
+        Present branch for review later (Rule 12).
 Date: August 13, 2026
 Branch (for implementation): `fix/cross-project-safety-valves` (from main)
 Branch includes: this plan file only (commit 1). Code + tests land as later
@@ -149,6 +152,38 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   OPTIONAL: skip if a minimal change is preferred. Listed as its own step so
   it can be dropped (and documented as deferred) without touching Steps 1-2.
 
+  -------------------------------------------------------------------------------
+  Step 4 — [IMPLEMENTED] Similar-project audit details + dev console.log (C8)
+  -------------------------------------------------------------------------------
+  Purpose: make WHICH similar projects were actually used visible to the
+  developer (and auditable), instead of just a count.
+
+  Files touched:
+  • app/Services/AI/HistoricalSimilarityService.php
+  • app/Services/AI/AIPredictionService.php
+  • app/Services/AI/AIPredictionPresenter.php
+  • resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+
+  (1) Extracted computeSimilarityScore() into computeSimilarityBreakdown()
+      (returns per-factor points category/budget/duration/contractor/workers,
+      same total — pure refactor, math unchanged, tests stayed green).
+  (2) Added public getSimilarProjectsDetails(Project): for every similar
+      project returns id/code/title, final score with recency multiplier,
+      usable flag, and the per-factor breakdown.
+  (3) Both dataset generators attach 'similar_projects_details' to their
+      dataset (generateFallbackDataset + generateSupplementDataset).
+  (4) AIPredictionService passes the key through; AIPredictionPresenter
+      exposes it in regression_info.similar_projects_details.
+  (5) The AI Prediction tab logs a [Cross-Project] block to the browser
+      console when data_source is hybrid / similar_projects (NEVER for plain
+      project_history) — seeded exactly by the new test.
+
+  Also fixed (latent flake found by new test): a 1-obs project with short
+  planned duration could make getSupplementTarget() return 2 → only 1
+  synthetic point → merged X = [1,1] → "all X identical" regression crash.
+  Tests were made deterministic (planned_duration_days=730); production math
+  untouched.
+
 ===============================================================================
   STEP 1 — SIMPLER TERMS EXPLANATION
 ===============================================================================
@@ -177,6 +212,59 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   construction is being done NOW, not a decade ago.
 
 ===============================================================================
+  STEP 4 — SIMPLER TERMS EXPLANATION
+===============================================================================
+  When the app borrows from similar projects, it used to only say how many it
+  used ("4 similar project(s)"). Now it ALSO keeps a detailed receipt for each
+  one: the project name, its similarity score, and WHY it scored that way
+  (same type +30, similar budget +25, similar schedule +20, same contractor
+  +15, similar crew size +10 — out of 100). That receipt is written to the
+  developer console on the AI Prediction tab so we can see exactly which past
+  projects influenced a forecast and how strongly.
+
+===============================================================================
+  STEP 5 — [PLANNED, NOT YET IMPLEMENTED] MIN_SIMILARITY_SCORE gate
+===============================================================================
+  Problem the user spotted in the Step 4 console log: a deliberately very
+  DIFFERENT project (different budget, different schedule) still scored 40
+  (category 30 + workers 10) and was still used for supplementation. The
+  reason: findSimilarProjects() keeps EVERY candidate with score > 0
+  (HistoricalSimilarityService.php:92) — and since category match alone is 30,
+  a project only needs to be the SAME TYPE to qualify. There is no minimum
+  similarity score.
+
+  Fix: add a raw-score floor so "similar" means genuinely similar.
+
+  (1) Add constant:
+      private const MIN_SIMILARITY_SCORE = 50;   // value TBD — see Decision 5
+  (2) In findSimilarProjects(), compute the RAW score first, filter with
+      `rawScore >= MIN_SIMILARITY_SCORE`, THEN multiply by recency only to
+      REORDER (so an old-but-genuinely-similar project is never disqualified,
+      honoring the recency comment "never disqualifies a match").
+  (3) Everything downstream inherits it automatically — getSimilarProjectsDetails(),
+      buildAggregateCurve(), getSimilarProjectsCountFor(), console.log, disclaimer.
+  (4) One choke point: no caller changes.
+
+  Effect: the score-40 case above is excluded → fewer usable curves → the
+  MIN_SIMILARITY_PROJECTS gate trips → project runs on its OWN data
+  (data_source 'project_history') instead of borrowing from weakly-similar
+  projects.
+
+  NOTE — makes existing tests non-deterministic: the factory seeds RANDOM
+  budget/duration, so seeded "similar" projects can score anywhere from 30-100.
+  Tests MUST seed matching budget/duration/workers/contractor on both target
+  and candidates to guarantee high scores (see Step 5 tests in §5).
+
+  WARNING — data-quality tradeoff: budget/duration/workers return 0 when null
+  on either side, so a genuinely similar project missing that metadata could
+  also fall below the threshold. Threshold 50 still admits category-only + a
+  partial secondary match. Threshold value options:
+    40 = category + workers only          → does NOT fix the user's case
+    50 = category + full duration match   → excludes the score-40 case
+    55 = category + full budget match     → stricter
+    75 = category + budget + duration     → strictest ("near-identical scope")
+
+===============================================================================
   5. TESTING STRATEGY (Rule 8 — test each step before next)
 ===============================================================================
 
@@ -203,6 +291,26 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     • Two identical candidates differing only in actual_end_date → the newer
       one scores higher (appears first in findSimilarProjects()).
 
+  Step 4 tests (DONE — in HistoricalSimilarityHardeningTest.php):
+    • test_similar_project_details_flow_to_presenter_in_hybrid_mode — details
+      (id/code/title/score/usable/recency/breakdown) reach regression_info
+      in the presenter when cross-project activates.
+    • Determinism fix: the 3 supplement-path tests now pin
+      planned_duration_days=730 to avoid the all-identical-X flake.
+
+  Step 5 tests (when implemented):
+    • Deterministic seeding FIRST: fix approved_budget, planned_duration_days,
+      estimated_workers, contractor_id on BOTH the target and the seeded
+      candidates so scores are guaranteed ≥ threshold (the factory currently
+      randomizes them → any threshold makes the existing tests flaky).
+    • A candidate below MIN_SIMILARITY_SCORE is excluded from
+      findSimilarProjects(), getSimilarProjectsDetails() and the aggregate
+      (and is NOT counted toward MIN_SIMILAR_PROJECTS).
+    • Threshold applies to the RAW score: an old project with raw 100×recency
+      0.5 = 50 still passed (recency only reorders, never disqualifies).
+    • Update the existing CrossProjectSupplementIntegrationTest seeding to
+      matching scope data so behavior is unchanged by the gate.
+
   Existing tests that MUST stay green (verified against current code):
     • CrossProjectSupplementIntegrationTest::test_supplement_mode_prepends...
       seeds exactly 3 similar projects with 6 months each = 3 usable curves,
@@ -223,11 +331,17 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     tests/Feature/Services/AI/HistoricalSimilarityHardeningTest.php
 
   MODIFIED:
-    app/Services/AI/HistoricalSimilarityService.php      (Steps 1-3)
+    app/Services/AI/HistoricalSimilarityService.php      (Steps 1-4 + Step 5 when done)
+    app/Services/AI/AIPredictionService.php              (Step 4 passthrough)
+    app/Services/AI/AIPredictionPresenter.php            (Step 4 expose details)
+    resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php (Step 4 console.log)
+
+  WILL CHANGE IN STEP 5:
+    app/Services/AI/HistoricalSimilarityService.php      (MIN_SIMILARITY_SCORE filter)
 
   NO CHANGES NEEDED:
-    AIPredictionService / AIPredictionPresenter / Blade / routes / schema —
-    the null-fallback path already exists (AIPredictionService.php:523).
+    routes / schema / migrations. The null-fallback path already exists
+    (AIPredictionService.php:523).
 
 ===============================================================================
   7. BACKWARD COMPATIBILITY
@@ -277,16 +391,22 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     Decision: include as Step 3, droppable without touching Steps 1-2.
     Rationale: reorders (not disqualifies) matched projects; scope-control.
 
+  Decision 5 — [PENDING] MIN_SIMILARITY_SCORE threshold value
+    Context: user found a score-40 project (category 30 + workers 10 only)
+      still being used for supplementation — no minimum score exists today.
+    Options: 40 / 50 / 55 / 75 (see Step 5 breakdown table above).
+    Status: NOT decided — awaiting user choice. Default leaning: 50.
+    Note: must be applied to the RAW score BEFORE the recency multiplier so
+      recency continues to reorder only (matching the existing comment).
+
 ===============================================================================
   9. VERIFICATION & ACCEPTANCE
 ===============================================================================
 
-  [ ] Step 1 unit/integration tests pass (gate cases).
-  [ ] Step 2 scale-ratio test passes.
-  [ ] Full suite green BEFORE and AFTER (composer test).
+  [x] Steps 1-4 implemented; full suite green (614 passed / 2276 assertions).
+  [ ] Step 5 (MIN_SIMILARITY_SCORE) implemented + tests + full suite green.
   [ ] Live check (dev DB pmu_system4): a sparse project whose category has
-      < 3 completed projects now reports data_source 'project_history'
-      (or Insufficient Data) instead of 'hybrid'.
+      < 3 usable similar projects reports data_source 'project_history'.
   [ ] Live check: a category with ≥ 3 completed projects still supplements.
   [ ] Branch presented for review (Rule 10 + Rule 12) before merging.
 
@@ -301,18 +421,23 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     plan stays math-only.
   • config/ai.php: MIN_SIMILAR_PROJECTS, MIN_SCALE_RATIO, and the Phase 14
     reliability thresholds all join config/ai.php in Phase 12 (Architectural
-    Enhancements).
+    Enhancements). Step 5's MIN_SIMILARITY_SCORE should join them too.
+  • Step 5 blocked on Decision 5 (threshold value) + deterministic test
+    seeding. Do NOT implement until the threshold is chosen.
+  • The Step 4 console.log writes per-similar-project breakdowns to the
+    browser console; a `similar_projects_details` summary could later feed a
+    small "Similar projects used" table on the AI Prediction tab (deferred).
 
 ===============================================================================
   11. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
   Next session:
-    1. Create branch fix/cross-project-safety-valves (this file is commit 1).
-    2. Implement Step 1 → test → inform → commit.
-    3. Implement Step 2 → test → inform → commit.
-    4. Implement Step 3 (optional) → test → inform → commit.
-    5. Present branch for review; merge to main only on explicit approval.
+    1. Steps 1-4 already committed on fix/cross-project-safety-valves.
+    2. Implement Step 5: pick MIN_SIMILARITY_SCORE value (default 50) with the
+       user (Decision 5), make seeding deterministic, add the Step 5 tests,
+       run full suite.
+    3. Present branch for review; merge to main only on explicit approval.
     Confirm files with the user (Rule 1) before editing, since code may have
     changed since this plan was written.
 

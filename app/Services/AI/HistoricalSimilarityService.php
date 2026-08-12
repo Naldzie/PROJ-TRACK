@@ -19,6 +19,16 @@ class HistoricalSimilarityService
 
     private const MIN_OBSERVATIONS_FOR_CURVE = 4;
 
+    // Minimum number of USABLE similar curves required before the aggregate
+    // is trusted. One or two curves are not a real reference-class pattern.
+    private const MIN_SIMILAR_PROJECTS = 3;
+
+    // Floors/caps for scaling the borrowed curve onto the project's own
+    // trajectory. The floor prevents a tiny first observation from
+    // flattening the whole curve into a meaningless near-flat line.
+    private const MIN_SCALE_RATIO = 0.5;
+    private const MAX_SCALE_RATIO = 5.0;
+
     private const AGGREGATE_INTERVAL = 5;
 
     private ?Collection $similarProjects = null;
@@ -74,6 +84,10 @@ class HistoricalSimilarityService
 
         $scored = $candidates->map(function ($candidate) use ($project) {
             $score = $this->computeSimilarityScore($project, $candidate);
+            // Recency weight: recently-completed projects better represent
+            // today's construction patterns than old ones. Reorders which
+            // candidates feed the aggregate (never disqualifies a match).
+            $score *= $this->recencyFactor($candidate);
             return ['project' => $candidate, 'score' => $score];
         })->filter(fn ($item) => $item['score'] > 0);
 
@@ -84,6 +98,38 @@ class HistoricalSimilarityService
         $this->similarProjects = $result;
 
         return $result;
+    }
+
+    // Audit details for every similar project: name, final score, and the
+    // per-factor score breakdown + recency multiplier. Used by the dev
+    // console.log on the AI Prediction tab when cross-project data activates.
+    public function getSimilarProjectsDetails(Project $project): array
+    {
+        $details = [];
+
+        foreach ($this->findSimilarProjects($project) as $candidate) {
+            $breakdown = $this->computeSimilarityBreakdown($project, $candidate);
+            $rawScore  = (float) array_sum($breakdown);
+            $recency   = $this->recencyFactor($candidate);
+
+            $details[] = [
+                'id'        => $candidate->id,
+                'code'      => $candidate->code,
+                'title'     => $candidate->title,
+                'score'     => round($rawScore * $recency, 2),
+                'recency'   => round($recency, 3),
+                'usable'    => $candidate->progressHistory()->count() >= self::MIN_OBSERVATIONS_FOR_CURVE,
+                'breakdown' => [
+                    'category'   => round($breakdown['category'], 2),
+                    'budget'     => round($breakdown['budget'], 2),
+                    'duration'   => round($breakdown['duration'], 2),
+                    'contractor' => round($breakdown['contractor'], 2),
+                    'workers'    => round($breakdown['workers'], 2),
+                ],
+            ];
+        }
+
+        return $details;
     }
 
     // Count how many similar projects were found
@@ -112,7 +158,11 @@ class HistoricalSimilarityService
             return $obsCount >= self::MIN_OBSERVATIONS_FOR_CURVE;
         });
 
-        if ($validCurves->isEmpty()) {
+        // Safety valve (C8): refuse to borrow when too few usable curves
+        // exist. Both dataset generators build from this aggregate, so they
+        // return null here and AIPredictionService falls back to the
+        // project's own data (data_source stays 'project_history').
+        if ($validCurves->count() < self::MIN_SIMILAR_PROJECTS) {
             $this->aggregateCurve = [];
             return [];
         }
@@ -202,8 +252,9 @@ class HistoricalSimilarityService
         // Use median ratio to scale aggregate curve
         $scaleRatio = !empty($ratios) ? $this->medianOfArray($ratios) : 1.0;
 
-        // Clamp scale ratio to reasonable range (0.2 to 5.0)
-        $scaleRatio = max(0.2, min(5.0, $scaleRatio));
+        // Clamp scale ratio to reasonable range (MIN_SCALE_RATIO to MAX_SCALE_RATIO)
+        // The floor stops a tiny first observation from flattening the curve.
+        $scaleRatio = max(self::MIN_SCALE_RATIO, min(self::MAX_SCALE_RATIO, $scaleRatio));
 
         $syntheticPoints = [];
         for ($i = 1; $i <= $targetCount; $i++) {
@@ -225,16 +276,22 @@ class HistoricalSimilarityService
         return $syntheticPoints;
     }
 
-    // Compute a similarity score between two projects (0.0 to 1.0)
+    // Compute a similarity score between two projects (0.0 to 100.0)
     private function computeSimilarityScore(Project $target, Project $candidate): float
     {
-        $score = 0.0;
+        return (float) array_sum($this->computeSimilarityBreakdown($target, $candidate));
+    }
 
+    // Per-factor similarity breakdown (category/budget/duration/contractor/workers).
+    // Shared by computeSimilarityScore() (sums the points) and
+    // getSimilarProjectsDetails() (exposes the audit breakdown for the dev log).
+    private function computeSimilarityBreakdown(Project $target, Project $candidate): array
+    {
         // Category match (mandatory — already filtered in query)
-        $score += self::SIMILARITY_WEIGHT_CATEGORY;
+        $category = self::SIMILARITY_WEIGHT_CATEGORY;
 
         // Budget proximity
-        $score += $this->proximityScore(
+        $budget = $this->proximityScore(
             (float) ($target->approved_budget ?? 0),
             (float) ($candidate->approved_budget ?? 0),
             self::BUDGET_TOLERANCE,
@@ -242,7 +299,7 @@ class HistoricalSimilarityService
         );
 
         // Duration proximity
-        $score += $this->proximityScore(
+        $duration = $this->proximityScore(
             (float) ($target->planned_duration_days ?? 0),
             (float) ($candidate->planned_duration_days ?? 0),
             self::DURATION_TOLERANCE,
@@ -250,22 +307,21 @@ class HistoricalSimilarityService
         );
 
         // Contractor match (bonus)
-        if (
+        $contractor = (
             $target->contractor_id !== null
             && $candidate->contractor_id !== null
             && $target->contractor_id === $candidate->contractor_id
-        ) {
-            $score += self::SIMILARITY_WEIGHT_CONTRACTOR;
-        }
+        ) ? self::SIMILARITY_WEIGHT_CONTRACTOR : 0;
 
         // Workers proximity (if both non-null)
+        $workers = 0;
         if (
             $target->estimated_workers !== null
             && $candidate->estimated_workers !== null
             && $target->estimated_workers > 0
             && $candidate->estimated_workers > 0
         ) {
-            $score += $this->proximityScore(
+            $workers = $this->proximityScore(
                 (float) $target->estimated_workers,
                 (float) $candidate->estimated_workers,
                 self::WORKERS_TOLERANCE,
@@ -273,7 +329,44 @@ class HistoricalSimilarityService
             );
         }
 
-        return $score;
+        return [
+            'category'   => (float) $category,
+            'budget'     => (float) $budget,
+            'duration'   => (float) $duration,
+            'contractor' => (float) $contractor,
+            'workers'    => (float) $workers,
+        ];
+    }
+
+    // Compute a recency multiplier (1.0 to 0.5) from a completed project's
+    // actual_end_date. Full weight within FULL_WEIGHT_YEARS; decays linearly
+    // to 0.5 at DECAY_END_YEARS. Missing date → full weight.
+    // Used by: findSimilarProjects() to order which candidates feed the
+    // aggregate curve (newer projects are treated as more representative).
+    private function recencyFactor(Project $candidate): float
+    {
+        $constFullWeightYears = 2.0;
+        $constDecayEndYears    = 5.0;
+
+        $endDate = $candidate->actual_end_date;
+
+        if (!$endDate) {
+            return 1.0;
+        }
+
+        $yearsOld = max(0, $endDate->diffInYears(\Illuminate\Support\Carbon::now()));
+
+        if ($yearsOld <= $constFullWeightYears) {
+            return 1.0;
+        }
+
+        if ($yearsOld >= $constDecayEndYears) {
+            return 0.5;
+        }
+
+        $span = $constDecayEndYears - $constFullWeightYears;
+
+        return 1.0 - (($yearsOld - $constFullWeightYears) / $span) * 0.5;
     }
 
     // Calculate proximity score: full weight if within tolerance, partial beyond
@@ -477,6 +570,7 @@ class HistoricalSimilarityService
             ],
             'data_source'           => 'similar_projects',
             'similar_projects_count' => $similarCount,
+            'similar_projects_details' => $this->getSimilarProjectsDetails($project),
             'synthetic_points_count' => count($x),
         ];
     }
@@ -529,6 +623,7 @@ class HistoricalSimilarityService
             ],
             'data_source'           => 'hybrid',
             'similar_projects_count' => $similarCount,
+            'similar_projects_details' => $this->getSimilarProjectsDetails($project),
             'synthetic_points_count' => count($synthetic),
         ];
     }
