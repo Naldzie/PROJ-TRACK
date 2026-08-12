@@ -93,6 +93,11 @@ class HistoricalSimilarityHardeningTest extends TestCase
      * Seed completed similar projects (same category) with a usable curve.
      * A project is "usable" only when it has >= MIN_OBSERVATIONS_FOR_CURVE
      * (4) progress records, so the gate must count these, not raw matches.
+     *
+     * Step 5: completed projects must also exceed MIN_SIMILARITY_SCORE on the
+     * RAW similarity score (category 30 + budget 25 + duration 20 = 75 here),
+     * so they are seeded with matching budget/duration, not random factory
+     * values that would leave them category-only (score 30, below threshold).
      */
     private function seedSimilarCompletedProjects(int $categoryId, int $count = 3, int $months = 6): void
     {
@@ -104,8 +109,10 @@ class HistoricalSimilarityHardeningTest extends TestCase
                     range(1, $months)
                 ),
                 overrides: [
-                    'status'     => 'Completed',
-                    'category_id' => $categoryId,
+                    'status'                => 'Completed',
+                    'category_id'           => $categoryId,
+                    'approved_budget'       => 5000000.00,
+                    'planned_duration_days' => 730,
                 ]
             );
         }
@@ -124,7 +131,12 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = $this->createProjectWithHistory(
             months: 1,
             actualProgress: [5.0],
-            overrides: ['status' => 'Ongoing', 'category_id' => $categoryId]
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
         );
 
         // The mode is still 'supplement', but the generator must refuse.
@@ -158,6 +170,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
+                'approved_budget'      => 5000000.00,
                 // Large fixed duration → supplement target = 8 → ≥6 synthetic
                 // points prepended, so merged X has distinct month indexes
                 // (avoids the all-identical-X edge for a 1-obs short project).
@@ -191,7 +204,12 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = $this->createProjectWithHistory(
             months: 1,
             actualProgress: [5.0],
-            overrides: ['status' => 'Ongoing', 'category_id' => $categoryId]
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
         );
 
         // Matches = 3, but usable curves = 2 → gate must refuse.
@@ -219,6 +237,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
+                'approved_budget'      => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -280,6 +299,58 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $this->assertEquals(5.0, $points[0]['progress']);
         $this->assertEquals(5.0, $points[1]['progress']);
         $this->assertEquals(5.0, $points[2]['progress']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * STEP 5 (MIN_SIMILARITY_SCORE) — category-only match (RAW 30) is rejected;
+     * a well-matched project (RAW 75) passes even though old (recency 0.5)
+     * ------------------------------------------------------------------------
+     *
+     * The threshold filters on the RAW score BEFORE the recency multiplier:
+     * a weak but recent match (category only, 30) is excluded, while an old
+     * but well-matched project (category+budget+duration, 75 × 0.5 = 37.5
+     * final) stays eligible — recency only reorders, never disqualifies.
+     */
+    public function test_step5_min_score_rejects_category_only_but_keeps_strong_match(): void
+    {
+        $categoryId = $this->makeCategory('Step5 Category')->id;
+
+        // Weak match: same category, wildly different budget + duration.
+        Project::factory()->create([
+            'status'                => 'Completed',
+            'category_id'           => $categoryId,
+            'approved_budget'       => 100000.00,
+            'planned_duration_days' => 220,
+        ]);
+
+        // Strong match: same category + budget + duration, but old (6 yrs).
+        $oldStrong = Project::factory()->create([
+            'status'                => 'Completed',
+            'category_id'           => $categoryId,
+            'approved_budget'       => 5000000.00,
+            'planned_duration_days' => 730,
+            'actual_end_date'       => now()->subYears(6),
+        ]);
+
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'approved_budget'      => 5000000.00,
+            'planned_duration_days' => 730,
+        ]);
+
+        $similar = $this->historicalSimilarityService->findSimilarProjects($target);
+
+        // Only the strong match survives the RAW >= 50 gate (75 raw); the
+        // category-only one (30 raw) is gone even though its final recency
+        // would have been full weight.
+        $this->assertCount(1, $similar);
+        $this->assertSame($oldStrong->id, $similar->first()->id);
+
+        $details = $this->historicalSimilarityService->getSimilarProjectsDetails($target);
+        $this->assertCount(1, $details);
+        $this->assertEquals(75.0, $details[0]['breakdown']['category'] + $details[0]['breakdown']['budget'] + $details[0]['breakdown']['duration']);
     }
 
     /**

@@ -23,6 +23,13 @@ class HistoricalSimilarityService
     // is trusted. One or two curves are not a real reference-class pattern.
     private const MIN_SIMILAR_PROJECTS = 3;
 
+    // Minimum RAW similarity score (before the recency multiplier) required
+    // for a completed project to be considered "similar". A category match
+    // alone is worth 30 points and is NOT enough — the candidate must also
+    // match on budget, duration, workers, or contractor. Recency only
+    // reorders candidates (it never disqualifies).
+    private const MIN_SIMILARITY_SCORE = 50;
+
     // Floors/caps for scaling the borrowed curve onto the project's own
     // trajectory. The floor prevents a tiny first observation from
     // flattening the whole curve into a meaningless near-flat line.
@@ -83,13 +90,20 @@ class HistoricalSimilarityService
             ->get();
 
         $scored = $candidates->map(function ($candidate) use ($project) {
-            $score = $this->computeSimilarityScore($project, $candidate);
-            // Recency weight: recently-completed projects better represent
-            // today's construction patterns than old ones. Reorders which
-            // candidates feed the aggregate (never disqualifies a match).
-            $score *= $this->recencyFactor($candidate);
+            $rawScore = $this->computeSimilarityScore($project, $candidate);
+
+            // Step 5 safety valve: require a minimum RAW similarity score.
+            // Category match alone (30) is not enough — the candidate must
+            // also match budget/duration/workers/contractor. Filtering on the
+            // raw score BEFORE the recency multiplier keeps old-but-perfect
+            // matches eligible; recency only reorders, never disqualifies.
+            if ($rawScore < self::MIN_SIMILARITY_SCORE) {
+                return null;
+            }
+
+            $score = $rawScore * $this->recencyFactor($candidate);
             return ['project' => $candidate, 'score' => $score];
-        })->filter(fn ($item) => $item['score'] > 0);
+        })->filter(fn ($item) => $item !== null);
 
         $sorted = $scored->sortByDesc('score')->values();
 

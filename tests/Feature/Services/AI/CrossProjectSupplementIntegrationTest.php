@@ -90,6 +90,11 @@ class CrossProjectSupplementIntegrationTest extends TestCase
     /**
      * Seed completed projects (same category) with history so an aggregate
      * curve exists for the target project to draw synthetic points from.
+     *
+     * Step 5: completed projects must exceed MIN_SIMILARITY_SCORE on the RAW
+     * similarity score (category 30 + budget 25 + duration 20 = 75 here), so
+     * budget/duration are fixed to match the targets, not random factory
+     * values that would leave them category-only (score 30, below threshold).
      */
     private function seedSimilarCompletedProjects(int $categoryId, int $count = 3): void
     {
@@ -98,8 +103,10 @@ class CrossProjectSupplementIntegrationTest extends TestCase
                 months: 6,
                 actualProgress: [10, 25, 45, 65, 85, 100],
                 overrides: [
-                    'status'     => 'Completed',
-                    'category_id' => $categoryId,
+                    'status'                => 'Completed',
+                    'category_id'           => $categoryId,
+                    'approved_budget'       => 5000000.00,
+                    'planned_duration_days' => 730,
                 ]
             );
         }
@@ -126,6 +133,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
+                'approved_budget'      => 5000000.00,
                 // Large fixed duration → supplement target 8 → ≥6 synthetic
                 // points prepended so merged X has distinct month indexes
                 // (guards against the random planned_duration_days making

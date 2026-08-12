@@ -2,10 +2,10 @@
 
 CSPC PMU System — AI Module follow-up to Phase 8 (Cross-Project Historical Regression)
 
-Status: 🔄 IN PROGRESS — Steps 1-4 IMPLEMENTED (uncommitted, pending commit+push);
-        Step 5 (MIN_SIMILARITY_SCORE) DOCUMENTED as the next step (not yet
-        implemented). Full suite green (614 passed / 2276 assertions).
-        Present branch for review later (Rule 12).
+Status: 🔄 IN PROGRESS — Steps 1-5 IMPLEMENTED (Steps 1-4 in commit d6bdea6;
+        Step 5 in a follow-up commit on this branch). Full suite green
+        (615 passed / 2280 assertions). Present branch for review later
+        (Rule 12). After Step 5, the next plan is v2.6 (reference-class prior).
 Date: August 13, 2026
 Branch (for implementation): `fix/cross-project-safety-valves` (from main)
 Branch includes: this plan file only (commit 1). Code + tests land as later
@@ -226,7 +226,7 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   projects influenced a forecast and how strongly.
 
 ===============================================================================
-  STEP 5 — [PLANNED, NOT YET IMPLEMENTED] MIN_SIMILARITY_SCORE gate
+  STEP 5 — [IMPLEMENTED] MIN_SIMILARITY_SCORE gate (threshold 50)
 ===============================================================================
   Problem the user spotted in the Step 4 console log: a deliberately very
   DIFFERENT project (different budget, different schedule) still scored 40
@@ -239,11 +239,11 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   Fix: add a raw-score floor so "similar" means genuinely similar.
 
   (1) Add constant:
-      private const MIN_SIMILARITY_SCORE = 50;   // value TBD — see Decision 5
+      private const MIN_SIMILARITY_SCORE = 50;   // chosen per Decision 5
   (2) In findSimilarProjects(), compute the RAW score first, filter with
-      `rawScore >= MIN_SIMILARITY_SCORE`, THEN multiply by recency only to
-      REORDER (so an old-but-genuinely-similar project is never disqualified,
-      honoring the recency comment "never disqualifies a match").
+      `rawScore < MIN_SIMILARITY_SCORE → exclude`, THEN multiply by recency
+      only to REORDER (so an old-but-genuinely-similar project is never
+      disqualified, honoring the recency comment "never disqualifies a match").
   (3) Everything downstream inherits it automatically — getSimilarProjectsDetails(),
       buildAggregateCurve(), getSimilarProjectsCountFor(), console.log, disclaimer.
   (4) One choke point: no caller changes.
@@ -301,18 +301,19 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     • Determinism fix: the 3 supplement-path tests now pin
       planned_duration_days=730 to avoid the all-identical-X flake.
 
-  Step 5 tests (when implemented):
-    • Deterministic seeding FIRST: fix approved_budget, planned_duration_days,
-      estimated_workers, contractor_id on BOTH the target and the seeded
-      candidates so scores are guaranteed ≥ threshold (the factory currently
-      randomizes them → any threshold makes the existing tests flaky).
-    • A candidate below MIN_SIMILARITY_SCORE is excluded from
-      findSimilarProjects(), getSimilarProjectsDetails() and the aggregate
-      (and is NOT counted toward MIN_SIMILAR_PROJECTS).
-    • Threshold applies to the RAW score: an old project with raw 100×recency
-      0.5 = 50 still passed (recency only reorders, never disqualifies).
-    • Update the existing CrossProjectSupplementIntegrationTest seeding to
-      matching scope data so behavior is unchanged by the gate.
+  Step 5 tests (IMPLEMENTED — in HistoricalSimilarityHardeningTest.php):
+    • Deterministic seeding FIRST (done): approved_budget 5000000.00 +
+      planned_duration_days 730 fixed on BOTH the target and every seeded
+      candidate → raw score = category 30 + budget 25 + duration 20 = 75
+      (guaranteed ≥ threshold; factory no longer randomizes them).
+    • test_step5_min_score_rejects_category_only_but_keeps_strong_match: a
+      category-only candidate (raw 30) is excluded while an old-but-strong
+      match (raw 75 × recency 0.5 = 37.5 final) still passes — proves the
+      gate filters RAW before the recency multiplier.
+    • The three supplement-path integrations
+      (HistoricalSimilarityHardening, CrossProjectSupplementIntegration,
+      AIPredictionTabRenderTest::test_supplement_mode_tab_renders) all reseeded
+      with matching budget/duration so the gate does not change their outcome.
 
   Existing tests that MUST stay green (verified against current code):
     • CrossProjectSupplementIntegrationTest::test_supplement_mode_prepends...
@@ -394,20 +395,25 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
     Decision: include as Step 3, droppable without touching Steps 1-2.
     Rationale: reorders (not disqualifies) matched projects; scope-control.
 
-  Decision 5 — [PENDING] MIN_SIMILARITY_SCORE threshold value
+  Decision 5 — [DECIDED: 50] MIN_SIMILARITY_SCORE threshold value
     Context: user found a score-40 project (category 30 + workers 10 only)
       still being used for supplementation — no minimum score exists today.
     Options: 40 / 50 / 55 / 75 (see Step 5 breakdown table above).
-    Status: NOT decided — awaiting user choice. Default leaning: 50.
-    Note: must be applied to the RAW score BEFORE the recency multiplier so
-      recency continues to reorder only (matching the existing comment).
+    Status: DECIDED Aug 13, 2026 — 50 (user accepted the assistant's
+      recommendation). Rationale: 40 does NOT fix the user's case; 50 requires
+      at least a duration or budget match on top of category (kills score-40)
+      without being as strict as 75 (which would require near-identical scope).
+    Note: applied to the RAW score BEFORE the recency multiplier so recency
+      continues to reorder only (matching the existing comment).
 
 ===============================================================================
   9. VERIFICATION & ACCEPTANCE
 ===============================================================================
 
   [x] Steps 1-4 implemented; full suite green (614 passed / 2276 assertions).
-  [ ] Step 5 (MIN_SIMILARITY_SCORE) implemented + tests + full suite green.
+  [x] Step 5 (MIN_SIMILARITY_SCORE = 50) implemented + tests; full suite green
+      (615 passed / 2280 assertions, including
+      test_step5_min_score_rejects_category_only_but_keeps_strong_match).
   [ ] Live check (dev DB pmu_system4): a sparse project whose category has
       < 3 usable similar projects reports data_source 'project_history'.
   [ ] Live check: a category with ≥ 3 completed projects still supplements.
@@ -425,8 +431,6 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
   • config/ai.php: MIN_SIMILAR_PROJECTS, MIN_SCALE_RATIO, and the Phase 14
     reliability thresholds all join config/ai.php in Phase 12 (Architectural
     Enhancements). Step 5's MIN_SIMILARITY_SCORE should join them too.
-  • Step 5 blocked on Decision 5 (threshold value) + deterministic test
-    seeding. Do NOT implement until the threshold is chosen.
   • The Step 4 console.log writes per-similar-project breakdowns to the
     browser console; a `similar_projects_details` summary could later feed a
     small "Similar projects used" table on the AI Prediction tab (deferred).
@@ -440,13 +444,12 @@ the Phase 8 log as "recommended before defense" and have never been fixed:
 ===============================================================================
 
   Next session:
-    1. Steps 1-4 already committed on fix/cross-project-safety-valves.
-    2. Implement Step 5: pick MIN_SIMILARITY_SCORE value (default 50) with the
-       user (Decision 5), make seeding deterministic, add the Step 5 tests,
-       run full suite.
-    3. Continue from Step 5 into regression_v2_6_cross_project_prior_flow_plan.md
+    1. Steps 1-5 committed on fix/cross-project-safety-valves (Step 5
+       MIN_SIMILARITY_SCORE = 50, Decision 5 settled, seeding deterministic,
+       full suite 615 passed / 2280 assertions).
+    2. Continue from Step 5 into regression_v2_6_cross_project_prior_flow_plan.md
        (Phase 1 honest fixes + Phase 2 reference-class prior / blend).
-    4. Present branch(es) for review; merge to main only on explicit approval.
+    3. Present branch(es) for review; merge to main only on explicit approval.
     Confirm files with the user (Rule 1) before editing, since code may have
     changed since this plan was written.
 

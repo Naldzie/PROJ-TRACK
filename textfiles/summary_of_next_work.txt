@@ -107,15 +107,11 @@
 
   ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 12 2026)
   --------------------------------------------------------------------------------
-  Branch: fix/cross-project-safety-valves (HEAD d6bdea6, pushed). V2.5 Steps 1–4
-  DONE. Everything below is the remaining regression-module work IN ORDER.
+  Branch: fix/cross-project-safety-valves (HEAD d6bdea6, pushed). V2.5 Steps 1–5
+  DONE (Step 5 = MIN_SIMILARITY_SCORE 50, committed). Everything below is the
+  remaining regression-module work IN ORDER.
 
-    Step 5 — MIN_SIMILARITY_SCORE gate  ⬜ PENDING (Decision 5, default 50)
-        Filter RAW score (> 0 today) in HistoricalSimilarityService:92 BEFORE
-        the recency multiplier; needs deterministic test seeding.
-        Plan: textfiles/cross_project_safety_valves_plan.md
-
-    v2.6 Phase 1 — Honest fixes (small, low risk)
+    v2.6 Phase 1 — Honest fixes (small, low risk)  ⬜ NEXT
         4.1 X-axis merge bug  → 4.2 pool gate + honest class reporting
         → 4.3 fit wording   → 4.4 null-safe scoring
         Plan: textfiles/regression_v2_6_cross_project_prior_flow_plan.md
@@ -137,8 +133,9 @@
 
     B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)
 
-  ▸ Out of scope NOW (recorded in v2.6 plan, not implemented): nothing here is
-    committed yet except Steps 1–4; v2.6 plan file is UNTRACKED.
+  ▸ Out of scope NOW (recorded in v2.6 plan, not implemented): nothing below
+    is committed yet — Steps 1–5 (safety valves) are DONE; v2.6 Phase 1 onward
+    is the next uncommitted work.
 
 ===============================================================================
 
@@ -148,7 +145,7 @@
   FINISH the regression thread first (list above, as-is), THEN core Phase E,
   THEN AI Phase 9→10, then the rest.
 
-     1. REGRESSION MODULE — finish fully (Step 5 → v2.6 Phase 1 → C7 → A4 →
+     1. REGRESSION MODULE — finish fully (Step 5 DONE → v2.6 Phase 1 → C7 → A4 →
         v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
         theme as merged Phase 14; closes live "score-40 still borrowed" bug;
         warmest context; branch + plan edits already half-done (uncommitted).
@@ -435,7 +432,7 @@
     active_reference/ai_module_ver2_master_plan.txt
     active_reference/ai_v2_phase1_progress_log.txt
     active_reference/project_context_and_development_rules.txt
-    cross_project_safety_valves_plan.md             — V2.5 safety valves (Steps 1–4 done, Step 5 pending)
+    cross_project_safety_valves_plan.md             — V2.5 safety valves (Steps 1–5 done)
     regression_v2_6_cross_project_prior_flow_plan.md — v2.6 prior/blend plan (Phase 1 + Phase 2)
 
   Future / Feature Ideas:

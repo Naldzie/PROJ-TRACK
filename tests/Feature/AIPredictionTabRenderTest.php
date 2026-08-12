@@ -213,8 +213,10 @@ class AIPredictionTabRenderTest extends TestCase
                 months: 6,
                 actualProgress: [10, 25, 45, 65, 85, 100],
                 overrides: [
-                    'status'      => 'Completed',
-                    'category_id' => $category->id,
+                    'status'                => 'Completed',
+                    'category_id'           => $category->id,
+                    'approved_budget'       => 5000000.00,
+                    'planned_duration_days' => 730,
                 ]
             );
         }
@@ -222,7 +224,12 @@ class AIPredictionTabRenderTest extends TestCase
         $target = $this->createProjectWithHistory(
             months: 1,
             actualProgress: [5.0],
-            overrides: ['status' => 'Ongoing', 'category_id' => $category->id]
+            overrides: [
+                'status'               => 'Ongoing',
+                'category_id'          => $category->id,
+                'approved_budget'      => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
         );
 
         $presented = $this->presenter->present($target);
