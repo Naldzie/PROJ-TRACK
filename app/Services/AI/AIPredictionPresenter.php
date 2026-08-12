@@ -746,6 +746,11 @@ class AIPredictionPresenter
                 'intercept'          => $regression['intercept'] ?? null,
                 'r_squared'          => $regression['r_squared'],
                 'fit_quality'        => $regression['fit_quality'],
+                // v2.6 4.4 — honest fit wording: when the model is blended
+                // with similar projects, the synthetic-derived R² must NOT be
+                // presented as "Excellent curve fit". The blade shows this
+                // display string instead of the raw fit_quality classification.
+                'fit_quality_display' => $this->presentFitQualityDisplay($regression),
                 'observation_count'  => $regression['observation_count'],
                 'regression_method'  => $regression['regression_method'] ?? 'slr',
                 'method_reason'      => $regression['method_reason'] ?? null,
@@ -1060,6 +1065,41 @@ class AIPredictionPresenter
             return 'High';
         }
         return 'Critical';
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Present Fit Quality Display (v2.6 4.4)
+     * ------------------------------------------------------------------------
+     *
+     * When the regression was blended with similar completed projects
+     * (data_source 'hybrid' or 'similar_projects'), the synthetic-derived R²
+     * is NOT a statement about the project's own history — so presenting it
+     * as "Excellent curve fit" would be misleading. Returns a reference-class
+     * wording ("Model blended with category reference curve (N=3 similar
+     * projects)") instead. For a project's own history, the raw
+     * fit_quality classification is returned unchanged.
+     */
+    private function presentFitQualityDisplay(array $regression): string
+    {
+        $dataSource = $regression['data_source'] ?? 'project_history';
+
+        if ($dataSource === 'project_history') {
+            return (string) ($regression['fit_quality'] ?? 'N/A');
+        }
+
+        $count = (int) ($regression['similar_projects_count'] ?? 0);
+
+        if ($dataSource === 'similar_projects') {
+            return $count > 0
+                ? "Model blended with category reference curve ({$count} similar projects)"
+                : 'Model blended with category reference curve';
+        }
+
+        // hybrid
+        return $count > 0
+            ? "Model blended with category reference curve ({$count} similar projects)"
+            : 'Model blended with category reference curve';
     }
 
     /**

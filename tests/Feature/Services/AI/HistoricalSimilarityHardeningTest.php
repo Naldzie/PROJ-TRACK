@@ -222,6 +222,117 @@ class HistoricalSimilarityHardeningTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * v2.6 4.3 (null-safe similarity) — missing metadata neither tanks a
+     * genuine match nor lets category-only through
+     * ------------------------------------------------------------------------
+     *
+     * Two candidates, SAME category as the target, duration data on both.
+     * The target has NO budget recorded, so budget must be omitted from the
+     * denominator: a candidate with a partial-but-real duration match must
+     * NOT be silently excluded (old additive scoring: 30 + 15.38 = 45 < 50),
+     * while a candidate whose ONLY match is category still can't pass.
+     */
+    public function test_null_safe_similarity_does_not_tank_partial_match_and_blocks_category_only(): void
+    {
+        $categoryId = $this->makeCategory('NullSafe Category')->id;
+
+        // Partial duration match (ratio 1000/730 = 1.37 → ~15.38 of 20 pts),
+        // NO budget recorded on either side.
+        $partial = Project::factory()->create([
+            'status'                => 'Completed',
+            'category_id'           => $categoryId,
+            'approved_budget'       => null,
+            'planned_duration_days' => 1000,
+        ]);
+
+        // Category-only: duration recorded but very far off (ratio 0.08 → 0).
+        $categoryOnly = Project::factory()->create([
+            'status'                => 'Completed',
+            'category_id'           => $categoryId,
+            'approved_budget'       => null,
+            'planned_duration_days' => 60,
+        ]);
+
+        $target = Project::factory()->create([
+            'status'               => 'Ongoing',
+            'category_id'          => $categoryId,
+            'approved_budget'      => null,
+            'planned_duration_days' => 730,
+        ]);
+
+        $similar = $this->historicalSimilarityService->findSimilarProjects($target);
+
+        // Only the partial-duration match survives: its normalized score
+        // (earned / available × 100, budget excluded from the denominator)
+        // clears MIN_SIMILARITY_SCORE. The category-only candidate is gone —
+        // it fails the "at least one non-category match" requirement.
+        $this->assertCount(1, $similar);
+        $this->assertSame($partial->id, $similar->first()->id);
+
+        $details = $this->historicalSimilarityService->getSimilarProjectsDetails($target);
+        $this->assertCount(1, $details);
+        $this->assertSame(0.0, $details[0]['breakdown']['budget']);
+        $this->assertGreaterThan(0.0, $details[0]['breakdown']['duration']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * v2.6 4.4 (honest fit wording) — blended models never present the
+     * synthetic R² as "Excellent curve fit"
+     * ------------------------------------------------------------------------
+     */
+    public function test_presenter_uses_blend_wording_when_data_source_is_not_project_history(): void
+    {
+        $categoryId = $this->makeCategory('FitWording Category')->id;
+        $this->seedSimilarCompletedProjects($categoryId, count: 3);
+
+        $target = $this->createProjectWithHistory(
+            months: 1,
+            actualProgress: [5.0],
+            overrides: [
+                'status'               => 'Ongoing',
+                'category_id'          => $categoryId,
+                'approved_budget'      => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
+        );
+
+        $presented = $this->presenter->present($target);
+
+        $this->assertSame('hybrid', $presented['regression_info']['data_source']);
+
+        $display = $presented['regression_info']['fit_quality_display'];
+        $this->assertStringContainsString('Model blended with category reference curve', $display);
+        $this->assertStringContainsString('3 similar projects', $display);
+        $this->assertStringNotContainsString('Excellent', $display);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * v2.6 4.4 — pure project history keeps the raw fit-quality wording
+     * ------------------------------------------------------------------------
+     */
+    public function test_presenter_keeps_raw_fit_wording_for_project_history(): void
+    {
+        $categoryId = $this->makeCategory('FitWording History')->id;
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: ['status' => 'Ongoing', 'category_id' => $categoryId]
+        );
+
+        $presented = $this->presenter->present($target);
+
+        $this->assertSame('project_history', $presented['regression_info']['data_source']);
+        $this->assertSame(
+            $presented['regression_info']['fit_quality'],
+            $presented['regression_info']['fit_quality_display']
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * DETAILS — every similar project (name/score/breakdown) reaches the
      * presenter when cross-project activates, for the blade console.log
      * ------------------------------------------------------------------------

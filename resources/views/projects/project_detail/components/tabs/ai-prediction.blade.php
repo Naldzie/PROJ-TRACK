@@ -308,7 +308,7 @@
                                 <span style="font-weight:600; color:#1f2937;">{{ $nextRel['level'] }}</span> trust in the next-month forecast
                             </div>
                             <div style="font-size: 11px; color: #9ca3af; margin-top: 6px; border-top: 1px dashed #e5e7eb; padding-top: 6px;">
-                                {{ $prediction['regression_info']['fit_quality'] ?? 'N/A' }} curve fit — matches past data only
+                                {{ $prediction['regression_info']['fit_quality_display'] ?? ($prediction['regression_info']['fit_quality'] ?? 'N/A') }} curve fit — matches past data only
                                 @if (($prediction['regression_info']['data_source'] ?? 'actual') !== 'actual')
                                     <br><span style="color: #f59e0b;">{{ $prediction['regression_info']['similar_projects_disclaimer'] ?? '' }}</span>
                                 @endif
@@ -411,14 +411,18 @@
 
                     {{-- Curve Fit Quality (matches past data only) --}}
                     <div style="font-size: 14px; color: #3730a3; line-height: 1.6; margin-bottom: 10px;">
-                        <strong>{{ $prediction['fit_quality_label'] ?? 'Curve Fit Quality' }} (matches past data only):</strong>
-                        based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records
-                        @if (($regInfo['data_source'] ?? 'actual') !== 'actual')
-                            from <strong>{{ $regInfo['similar_projects_count'] ?? 0 }}</strong> similar historical projects,
+                        @if (($regInfo['data_source'] ?? 'project_history') === 'project_history')
+                            <strong>{{ $prediction['fit_quality_label'] ?? 'Curve Fit Quality' }} (matches past data only):</strong>
+                            based on <strong>{{ $regInfo['observation_count'] }}</strong> monthly progress records,
+                            the model explains <strong>{{ round($regInfo['r_squared'] * 100, 1) }}%</strong>
+                            of the observed progress trend (<strong>R² = {{ number_format($regInfo['r_squared'], 3) }}</strong>),
+                            indicating a <strong>{{ $regInfo['fit_quality'] }}</strong> fit.
+                        @else
+                            <strong>{{ $prediction['fit_quality_label'] ?? 'Curve Fit Quality' }} (matches past data only):</strong>
+                            {{ $regInfo['fit_quality_display'] ?? 'Model blended with category reference curve' }}
+                            (R² = {{ number_format($regInfo['r_squared'], 3) }} on the blended dataset -
+                            <strong>not</strong> a statement about this project's own history alone).
                         @endif
-                        the model explains <strong>{{ round($regInfo['r_squared'] * 100, 1) }}%</strong>
-                        of the observed progress trend (<strong>R² = {{ number_format($regInfo['r_squared'], 3) }}</strong>),
-                        indicating a <strong>{{ $regInfo['fit_quality'] }}</strong> fit.
                     </div>
 
                     {{-- R² Comparison (shown when polynomial was considered) --}}

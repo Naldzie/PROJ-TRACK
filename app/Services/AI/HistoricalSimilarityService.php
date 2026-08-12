@@ -23,10 +23,12 @@ class HistoricalSimilarityService
     // is trusted. One or two curves are not a real reference-class pattern.
     private const MIN_SIMILAR_PROJECTS = 3;
 
-    // Minimum RAW similarity score (before the recency multiplier) required
-    // for a completed project to be considered "similar". A category match
-    // alone is worth 30 points and is NOT enough — the candidate must also
-    // match on budget, duration, workers, or contractor. Recency only
+    // Minimum similarity score (before the recency multiplier) required for a
+    // completed project to be considered "similar". Scored on the factors BOTH
+    // projects record (v2.6 4.3: a field missing on either side is omitted
+    // from the denominator, so lack of metadata never silently tanks a match).
+    // A category match alone is never enough — the candidate must also match
+    // on budget, duration, workers, or contractor (v2.6 4.3). Recency only
     // reorders candidates (it never disqualifies).
     private const MIN_SIMILARITY_SCORE = 50;
 
@@ -90,13 +92,27 @@ class HistoricalSimilarityService
             ->get();
 
         $scored = $candidates->map(function ($candidate) use ($project) {
+            $breakdown = $this->computeSimilarityBreakdown($project, $candidate);
+            $earned    = (float) array_sum($breakdown);
+
+            // v2.6 4.3 + Step 5: a category match alone is NEVER enough — the
+            // candidate must earn points on at least one comparable non-category
+            // factor (budget/duration/workers/contractor). Without this, the
+            // denominator shrink below would admit a pure category match.
+            if (($earned - (float) $breakdown['category']) <= 0) {
+                return null;
+            }
+
+            // v2.6 4.3 null-safe scoring: the score is earned points divided by
+            // the weight of factors BOTH projects actually record (fields
+            // missing on either side are omitted from the denominator). Missing
+            // metadata therefore never silently tanks a genuine match — but a
+            // weak candidate still can't clear the minimum.
             $rawScore = $this->computeSimilarityScore($project, $candidate);
 
-            // Step 5 safety valve: require a minimum RAW similarity score.
-            // Category match alone (30) is not enough — the candidate must
-            // also match budget/duration/workers/contractor. Filtering on the
-            // raw score BEFORE the recency multiplier keeps old-but-perfect
-            // matches eligible; recency only reorders, never disqualifies.
+            // Step 5 safety valve: require a minimum similarity score. Filtering
+            // on the raw score BEFORE the recency multiplier keeps old-but-
+            // perfect matches eligible; recency only reorders, never disqualifies.
             if ($rawScore < self::MIN_SIMILARITY_SCORE) {
                 return null;
             }
@@ -123,7 +139,7 @@ class HistoricalSimilarityService
 
         foreach ($this->findSimilarProjects($project) as $candidate) {
             $breakdown = $this->computeSimilarityBreakdown($project, $candidate);
-            $rawScore  = (float) array_sum($breakdown);
+            $rawScore  = $this->computeSimilarityScore($project, $candidate);
             $recency   = $this->recencyFactor($candidate);
 
             $details[] = [
@@ -290,10 +306,47 @@ class HistoricalSimilarityService
         return $syntheticPoints;
     }
 
-    // Compute a similarity score between two projects (0.0 to 100.0)
+    // Compute a similarity score between two projects (0.0 to 100.0),
+    // normalized to the factors BOTH projects actually record (v2.6 4.3).
+    // earned points / available weight * 100. When data is absent on either
+    // side, that factor is omitted from the denominator, so missing metadata
+    // neither fakes a match nor silently tanks a genuine one.
     private function computeSimilarityScore(Project $target, Project $candidate): float
     {
-        return (float) array_sum($this->computeSimilarityBreakdown($target, $candidate));
+        $earned = (float) array_sum($this->computeSimilarityBreakdown($target, $candidate));
+        $available = $this->availableSimilarityWeight($target, $candidate);
+
+        if ($available <= 0) {
+            return 0.0;
+        }
+
+        return round($earned / $available * 100, 2);
+    }
+
+    // Total weight of factors that BOTH projects actually record. Fields that
+    // are absent (null / <= 0) on either side are excluded, so the score is
+    // always compared against what was actually comparable (v2.6 4.3).
+    private function availableSimilarityWeight(Project $target, Project $candidate): int
+    {
+        $available = self::SIMILARITY_WEIGHT_CATEGORY;
+
+        if ((float) ($target->approved_budget ?? 0) > 0 && (float) ($candidate->approved_budget ?? 0) > 0) {
+            $available += self::SIMILARITY_WEIGHT_BUDGET;
+        }
+
+        if ((float) ($target->planned_duration_days ?? 0) > 0 && (float) ($candidate->planned_duration_days ?? 0) > 0) {
+            $available += self::SIMILARITY_WEIGHT_DURATION;
+        }
+
+        if ($target->contractor_id !== null && $candidate->contractor_id !== null) {
+            $available += self::SIMILARITY_WEIGHT_CONTRACTOR;
+        }
+
+        if ((int) ($target->estimated_workers ?? 0) > 0 && (int) ($candidate->estimated_workers ?? 0) > 0) {
+            $available += self::SIMILARITY_WEIGHT_WORKERS;
+        }
+
+        return $available;
     }
 
     // Per-factor similarity breakdown (category/budget/duration/contractor/workers).

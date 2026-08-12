@@ -3,11 +3,11 @@
 CSPC PMU System — AI Module follow-up to V2.5 (safety valves, C8) and Phase 8
 (Cross-Project Historical Regression).
 
-Status: 🔄 IN PROGRESS — Phase 1 §4.1 DONE (monotonic X-axis merge, Aug 13
-        2026, on branch fix/cross-project-safety-valves). Phase 1 §4.2 is
-        largely satisfied by V2.5 Step 5 (MIN_SIMILARITY_SCORE 50, DONE).
-        Remaining: 4.3 (null-safe scoring), 4.4 (honest fit wording), then
-        Phase 2. V2.5 safety-valves plan Steps 1-5 ALL DONE.
+Status: 🔄 IN PROGRESS — Phase 1 ALL DONE (4.1 X-axis merge ✅, 4.2 pool
+        gate ✅ via V2.5 Step 5, 4.3 null-safe scoring ✅, 4.4 honest fit
+        wording ✅ — all Aug 13 2026 on branch fix/cross-project-safety-valves).
+        NEXT: Phase 2 (reference-class prior + range). V2.5 safety-valves
+        plan Steps 1-5 ALL DONE.
 
 Date: August 12, 2026
 Branch (for implementation): `fix/cross-project-prior-flow` (new, from main)
@@ -193,16 +193,30 @@ _plan §3 A1).
         UI can say "blended from N similar projects, curve spread X" instead of
         implying one confident curve.
 
-  4.3 Null-safe similarity
+  4.3 Null-safe similarity  ✅ DONE (Aug 13 2026)
       - proximityScore() returns 0 when target or candidate missing a field.
         Missing data should neither fake a match nor silently tank one; decide a
         neutral/bypass handling (e.g. factor omitted from the denominator when
         data is absent) — documented tradeoff in Decision Log.
+      - DECIDED (Decision 7): score = earned / availableWeight × 100, where
+        availableWeight = total weight of factors BOTH projects record (absent
+        field excluded from the denominator). PLUS: earned non-category points
+        must be > 0 (category alone NEVER passes, regardless of normalization).
+        Implemented in HistoricalSimilarityService (computeSimilarityScore +
+        availableSimilarityWeight + findSimilarProjects gate).
+      - Test: test_null_safe_similarity_does_not_tank_partial_match_and_blocks_category_only
+        (HistoricalSimilarityHardeningTest). Full suite 619 passed / 2320.
 
-  4.4 Honest fit wording in hybrid/similar_projects modes
+  4.4 Honest fit wording in hybrid/similar_projects modes  ✅ DONE (Aug 13 2026)
       - Presenter: when data_source != project_history, do NOT present the
         synthetic-derived R² as "Excellent curve fit". Show e.g. "Model blended
         with category reference curve (N=3 similar projects)".
+      - Implemented: AIPredictionPresenter::presentFitQualityDisplay() → new
+        regression_info.fit_quality_display key; ai-prediction.blade.php shows
+        it in the trust summary AND the curve-fit block (blended branch also
+        adds "not a statement about this project's own history alone").
+      - Tests: test_presenter_uses_blend_wording_when_data_source_is_not_project_history,
+        test_presenter_keeps_raw_fit_wording_for_project_history.
 
 ===============================================================================
   5. PHASE 2 — REFERENCE-CLASS PRIOR + RANGE (THE BETTER FLOW)
@@ -347,13 +361,19 @@ _plan §3 A1).
     Note: do NOT hard-code a blend we cannot validate.
 
   Decision 5 — MIN_SIMILARITY_SCORE value (carried from V2.5).
-    Status: PENDING user choice; default 50. Do NOT implement until chosen.
+    Status: DECIDED = 50 (V2.5 Decision 5, chosen by user Aug 13 2026),
+    implemented in V2.5 Step 5.
+
+  Decision 6 — [DECIDED: 7] Null-safe scoring design (§4.3).
+    Status: DECIDED + implemented Aug 13 2026 (Decision 7 in V2.5 numbering,
+    recorded here as the v2.6 §4.3 decision). See §4.3 for the earned /
+    availableWeight × 100 formula + the non-category-earned > 0 guard.
 
 ===============================================================================
   10. VERIFICATION & ACCEPTANCE
 ===============================================================================
 
-  [ ] Phase 1: hybrid X monotonic; month 1 single; fit wording honest.
+  [x] Phase 1: hybrid X monotonic; month 1 single; fit wording honest.
   [ ] Phase 2: blend weight w behaves (sparse→class, rich→own).
   [ ] P25/P75 band surfaces in presenter/blade for hybrid modes.
   [ ] 0-obs fallback labelled (if approved).
@@ -380,9 +400,9 @@ _plan §3 A1).
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  Next session: decide MIN_SIMILARITY_SCORE (V2.5 Decision 5) → land Phase 1 →
-  present branch → approve A4 product question → implement Phase 2 blend +
-  range → tune k via backtest → present branch.
+  Next: Present this branch (fix/cross-project-safety-valves) for review
+  (Rule 12) → approve A4 product question → implement Phase 2 blend + range →
+  tune k via backtest → present branch.
   Confirm files with the user (Rule 1) before editing.
 
 ===============================================================================
