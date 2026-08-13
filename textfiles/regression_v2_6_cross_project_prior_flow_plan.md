@@ -6,9 +6,15 @@ CSPC PMU System — AI Module follow-up to V2.5 (safety valves, C8) and Phase 8
 Status: 🔄 IN PROGRESS — Phase 1 ALL DONE (4.1 X-axis merge ✅, 4.2 pool
         gate ✅ via V2.5 Step 5, 4.3 null-safe scoring ✅, 4.4 honest fit
         wording ✅, A4 0-obs category baseline ✅ — all Aug 13 2026 on branch
-        fix/cross-project-safety-valves).
-        NEXT: Phase 2 (reference-class prior + range). V2.5 safety-valves
-        plan Steps 1-5 ALL DONE.
+        fix/cross-project-safety-valves; A4 health-overview honesty follow-up
+        merged to main @ baee8ff).
+        NEXT: Phase 2 (reference-class prior + range) — STARTED Aug 13 2026 on
+        branch fix/cross-project-prior-flow (this branch). Scope decisions made
+        (Aug 13 2026): (1) the blend applies to ALL projects, not just sparse
+        (closes §1 root limitation; rich projects converge to their own model
+        as w→1); (2) blend schedule w = obs/(obs + k) with k = 4 default
+        (Decision 4), refined later via C7 backtest. V2.5 safety-valves plan
+        Steps 1-5 ALL DONE.
 
 Date: August 12, 2026
 Branch (for implementation): `fix/cross-project-prior-flow` (new, from main)
@@ -361,9 +367,13 @@ _plan §3 A1).
   Decision 4 — Blending schedule.
     Options: shrinkage w = obs/(obs+k); or clamp(obs/threshold,0,1); or fixed
     steps.
-    Decision: PENDING — tune with a backtest (log data_source + error, so we can
-    choose k empirically). Revisit after C7-style accuracy tracking exists.
-    Note: do NOT hard-code a blend we cannot validate.
+    Decision: DECIDED Aug 13 2026 — w = obs/(obs + k) with a DEFAULT k = 4,
+    meaning the halfway point (w = 0.50) sits at 4 real observations
+    (8 obs → w = 0.67; 20 obs → w = 0.83). k starts as a reasoned default,
+    NOT hard-coded blindly: it is to be refined with a backtest over the C7
+    accuracy-by-data_source logs (compare k ∈ {2,3,4,5,6} against historical
+    predicted vs. actual), with the chosen value logged in this Decision Log.
+    The blend itself applies to ALL projects (Decision 8), not only sparse ones.
 
   Decision 5 — MIN_SIMILARITY_SCORE value (carried from V2.5).
     Status: DECIDED = 50 (V2.5 Decision 5, chosen by user Aug 13 2026),
@@ -373,6 +383,13 @@ _plan §3 A1).
     Status: DECIDED + implemented Aug 13 2026 (Decision 7 in V2.5 numbering,
     recorded here as the v2.6 §4.3 decision). See §4.3 for the earned /
     availableWeight × 100 formula + the non-category-earned > 0 guard.
+
+  Decision 8 — Blend scope: ALL projects, not sparse-only. DECIDED Aug 13 2026
+    (user). Cross-project comparison is valuable for every project; rich
+    projects are barely moved because w → 1. This explicitly replaces the
+    V2.5 "supplement for sparse projects ONLY" limitation (§1). Consequence:
+    predicted numbers for normal projects shift slightly toward the class at
+    small w, and the "own-data fallback" becomes the w = 1 special case.
 
 ===============================================================================
   10. VERIFICATION & ACCEPTANCE
@@ -405,9 +422,11 @@ _plan §3 A1).
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  Next: Present this branch (fix/cross-project-safety-valves) for review
-  (Rule 12) → approve A4 product question → implement Phase 2 blend + range →
-  tune k via backtest → present branch.
+  Next: Phase 2 implementation on branch fix/cross-project-prior-flow:
+  (1) own regression on real points only (2) similarity-weighted class curve
+  (3) blend w·own + (1−w)·class with k = 4 across ALL projects (4) P25/P75
+  range output (5) reliability-from-homogeneity. Scope + k decided Aug 13 2026.
+  Then present branch for review (Rule 12) and tune k via C7 backtest.
   Confirm files with the user (Rule 1) before editing.
 
 ===============================================================================
