@@ -285,7 +285,8 @@ Branch: `core/ai-baseline-linkage` (from `core/issue-lifecycle`)
 
 - **Fix H** — non-monotonic polynomial: next prediction can drop below current
   progress; completion can solve to a past date. See
-  `textfiles/progress_inspection_refactor_plan.md` §3 + v2.5 Option A2.
+  `textfiles/progress_inspection_refactor_plan.md` §3 + v2.5 Option A2
+  (A2 class-derived completion fallback implemented ✅ Aug 13, 2026).
 - **Phase 8 open items** — health gauge at gap=0; `completion_multi` render in
   supplement mode.
 - **Phase 10 (future)** — AI-powered recommendations. When built, the groundwork

@@ -734,6 +734,14 @@
                                         </span>
                                     </div>
                                 @endif
+                                @if (($m['fallback_method'] ?? null) === 'class_aggregate')
+                                    <div style="margin-top: 6px; font-size: 11px; color: #7c3aed;">
+                                        <i class="bi bi-graph-up-arrow"></i> Class-derived estimate
+                                        @if (in_array('schedule_aware', $m['blend_partners'] ?? [], true))
+                                            (blended w/ schedule-aware)
+                                        @endif
+                                    </div>
+                                @endif
                             @else
                                 <div style="font-size: 14px; color: #9ca3af; font-weight: 600;">
                                     N/A

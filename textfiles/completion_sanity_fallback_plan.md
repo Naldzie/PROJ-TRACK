@@ -5,9 +5,11 @@ CSPC PMU System — AI Module. Option A2 of
 implemented together with Fix H item 3 of
 `textfiles/progress_inspection_refactor_plan.md` (§3 Fix H, lines 312-315).
 
-Status: 🔵 PLANNED — plan-only commit on an isolated branch. No code yet.
+Status: ✅ IMPLEMENTED (Aug 13 2026) — full suite green (642 passed /
+        2413 assertions). Committed on
+        `feature/a2-completion-sanity-fallback` and reviewed per Rule 12.
 Date: August 13, 2026
-Branch (for implementation): `feature/a2-completion-sanity-fallback` (from main)
+Branch: `feature/a2-completion-sanity-fallback` (from main)
 Plan file: textfiles/completion_sanity_fallback_plan.md (this file)
 
 Reference Documents:
@@ -220,3 +222,37 @@ Step 4 — UI honesty
      MAX_REASONABLE_MONTHS.
   3. Backward compat — null class reference → existing behavior byte-for-byte.
   4. Honesty flag — fallback answers carry `fallback_method`, surfaced in UI.
+
+===============================================================================
+  9. IMPLEMENTATION LOG
+===============================================================================
+
+- 📝 2026-08-13 — Plan created (plan-only commit `8674dc2` on branch
+  `feature/a2-completion-sanity-fallback`).
+- ✅ 2026-08-13 — IMPLEMENTED (Steps 1–4 + tests), in order:
+  - Step 1 — `CompletionEstimationService`:
+    • `estimateFromClassReference()` — class-months-to-go estimator anchored to
+      the project's own timeline, bounded by the same future-guard and
+      MAX_REASONABLE_MONTHS semantics as the own-model solvers, optional
+      schedule-aware blend, `fallback_method`/`blend_partners` flags.
+    • `interpolateClassPosition()` — maps current progress onto the class
+      median curve (with interpolation); null when the class never reached that
+      progress (project outran its class — no evidence, honest N/A).
+    • `isPolynomialSelected()` — true only when the polynomial was SELECTED and
+      cleared MIN_R2_FOR_ESTIMATE, so the fallback fires only for the
+      implausible branches, not for "not selected / low R²" (which stay null).
+  - Step 2 — `CompletionComparisonService::estimateAll()`:
+    • New optional `?array $classReference` param (backward compatible).
+    • Schedule-aware is computed first; when the polynomial completion is null
+      AND isPolynomialSelected() AND a class reference exists, the polynomial
+      method is substituted with the class-derived (possibly blended) answer.
+  - Step 3 — `AIPredictionService::estimateAllCompletions()`:
+    • Passes the blend-context reference when available, else builds one via
+      HistoricalSimilarityService::buildClassReference() so supplement/hybrid
+      modes also get the fallback wiring.
+  - Step 4 — `ai-prediction.blade.php`: "Class-derived estimate" note (with
+    "blended w/ schedule-aware" tag) on fallback answers.
+  - Tests: 4 new unit tests in CompletionEstimationServiceTest (T1–T5 split)
+    + 2 new integration tests in CrossProjectSupplementIntegrationTest (T6/T7:
+    class fallback substitutes an implausible polynomial with valid_count = 3;
+    no-class backward-compat null). Full suite: **642 passed / 2413 assertions**.

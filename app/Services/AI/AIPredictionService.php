@@ -339,7 +339,8 @@ class AIPredictionService
             $project,
             $analysis,
             $currentMonthIndex,
-            $currentProgress
+            $currentProgress,
+            $blendContext['reference'] ?? null
         );
 
         // Phase 14 Step 3: forecast reliability (weighted evidence score).
@@ -431,7 +432,8 @@ class AIPredictionService
         Project $project,
         array $analysis,
         int $currentMonthIndex,
-        float $currentProgress
+        float $currentProgress,
+        ?array $classReference = null
     ): ?array {
 
         if ($this->completionComparisonService === null) {
@@ -442,12 +444,29 @@ class AIPredictionService
             return null;
         }
 
+        // A2 sanity fallback: prefer the reference already built for the blend
+        // context, else build one for the class-covering modes so every
+        // implausible-polynomial case has a shot at an honest answer.
+        if ($classReference === null) {
+            $totalPlannedMonths = $this->historicalSimilarityService->getPlannedMonths($project);
+
+            if ($totalPlannedMonths > 0) {
+                $built = $this->historicalSimilarityService->buildClassReference(
+                    $project,
+                    $totalPlannedMonths
+                );
+
+                $classReference = empty($built) ? null : $built;
+            }
+        }
+
         return $this->completionComparisonService->estimateAll(
             $project->planned_end_date,
             $analysis,
             $currentMonthIndex,
             $currentProgress,
-            $project->baselineSchedules
+            $project->baselineSchedules,
+            $classReference
         );
     }
 

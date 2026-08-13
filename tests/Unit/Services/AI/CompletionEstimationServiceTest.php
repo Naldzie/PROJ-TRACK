@@ -189,4 +189,141 @@ class CompletionEstimationServiceTest extends TestCase
 
         $this->assertNull($result);
     }
+
+    /**
+     * ============================================================================
+     * A2 — Completion sanity fallback (estimateFromClassReference)
+     * ============================================================================
+     */
+
+    /**
+     * ------------------------------------------------------------------------
+     * T1 — Class median crossing current progress yields a future completion
+     * ------------------------------------------------------------------------
+     *
+     * Class median reaches ~70% at month 6 of a 12-month plan. A project at
+     * 70% after month 6 has ~6 class months left → completion at index 12
+     * (from currentMonthIndex 6). Blended with nothing, the estimate must be
+     * in the future and flagged class_aggregate.
+     */
+    public function test_class_reference_produces_future_completion(): void
+    {
+        $median = [1 => 10, 2 => 20, 3 => 32, 4 => 46, 5 => 58, 6 => 70, 7 => 80, 8 => 88, 9 => 94, 10 => 98, 11 => 99, 12 => 100];
+        $reference = ['median' => $median];
+
+        $result = $this->service->estimateFromClassReference(
+            $reference,
+            currentProgress: 70.0,
+            currentMonthIndex: 6,
+            totalPlannedMonths: 12,
+            plannedEndDate: Carbon::parse('2027-03-31')
+        );
+
+        $this->assertNotNull($result);
+        $this->assertGreaterThan(6, $result['estimated_completion_index']);
+        $this->assertEquals('class_aggregate', $result['fallback_method']);
+        $this->assertEquals(['class_aggregate'], $result['blend_partners']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T2 — Bound: class curve behind current progress clamps to sane horizon
+     * ------------------------------------------------------------------------
+     *
+     * Class median peaks at 60% (never reaches 70%). The project has already
+     * outrun its class, so the class has no evidence it can finish — the
+     * fallback must NOT invent a date; it stays null.
+     */
+    public function test_class_reference_never_reaching_progress_returns_null(): void
+    {
+        $median = [1 => 8, 2 => 16, 3 => 25, 4 => 34, 5 => 44, 6 => 50, 7 => 55, 8 => 58, 9 => 60];
+        $reference = ['median' => $median];
+
+        $result = $this->service->estimateFromClassReference(
+            $reference,
+            currentProgress: 70.0,
+            currentMonthIndex: 9,
+            totalPlannedMonths: 9,
+            plannedEndDate: Carbon::parse('2026-12-31')
+        );
+
+        $this->assertNull($result);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T3 — Blend: schedule-aware index present → mean of the two
+     * ------------------------------------------------------------------------
+     *
+     * Class reaches 70% at month 8 of 12 → class months-to-go = 4 → class index
+     * 10 (from currentMonthIndex 6). Schedule-aware index 12. Blended index
+     * must be 11.0 and blend_partners lists both sources.
+     */
+    public function test_class_reference_blends_with_schedule_aware(): void
+    {
+        $median = [1 => 10, 2 => 20, 3 => 32, 4 => 46, 5 => 58, 6 => 65, 7 => 68, 8 => 70, 9 => 80, 10 => 88, 11 => 95, 12 => 100];
+        $reference = ['median' => $median];
+
+        $result = $this->service->estimateFromClassReference(
+            $reference,
+            currentProgress: 70.0,
+            currentMonthIndex: 6,
+            totalPlannedMonths: 12,
+            plannedEndDate: Carbon::parse('2027-03-31'),
+            blendIndex: 12.0
+        );
+
+        $this->assertNotNull($result);
+        $this->assertEquals(11.0, round($result['estimated_completion_index'], 4));
+        $this->assertEquals(
+            ['class_aggregate', 'schedule_aware'],
+            $result['blend_partners']
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T4 — Past-date bound: class months-to-go collapses to zero
+     * ------------------------------------------------------------------------
+     *
+     * Class reaches current progress only at its very last planned month →
+     * classMonthsToGo = 0 → the anchored index lands exactly at the current
+     * month → rejected (never a past/now date).
+     */
+    public function test_class_reference_past_date_rejected(): void
+    {
+        $median = [1 => 2, 2 => 5, 3 => 8, 4 => 11, 5 => 14, 6 => 17, 7 => 20, 8 => 22, 9 => 25, 10 => 27, 11 => 29, 12 => 30];
+        $reference = ['median' => $median];
+
+        $result = $this->service->estimateFromClassReference(
+            $reference,
+            currentProgress: 30.0,
+            currentMonthIndex: 12,
+            totalPlannedMonths: 12,
+            plannedEndDate: Carbon::parse('2026-12-31')
+        );
+
+        $this->assertNull($result);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T5 — isPolynomialSelected distinguishes implausible-from-selected
+     * ------------------------------------------------------------------------
+     *
+     * A selected polynomial with adequate R² → true (fallback warranted).
+     * An SLR fit or a low-R² polynomial → false (plain N/A, no fallback).
+     */
+    public function test_is_polynomial_selected(): void
+    {
+        $selected = $this->polynomialAnalysis(0.0, 0.0, 10.0, 0.0, rSquared: 0.90);
+        $this->assertTrue($this->service->isPolynomialSelected($selected));
+
+        $slr = $this->polynomialAnalysis(0.0, 0.0, 10.0, 0.0);
+        $slr['regression_method'] = 'slr';
+        $this->assertFalse($this->service->isPolynomialSelected($slr));
+
+        $lowR2 = $this->polynomialAnalysis(0.0, 0.0, 10.0, 0.0, rSquared: 0.30);
+        $this->assertFalse($this->service->isPolynomialSelected($lowR2));
+    }
 }
