@@ -1,7 +1,9 @@
 # Phase 2 — Reference-Class Blend (Summary for Review)
 
-**Status:** Implemented, all 635 tests passing (2,394 assertions).
+**Status:** ✅ IMPLEMENTED + MERGED to main Aug 13 2026 — full suite 635 tests passing (2,394 assertions).
 **Decision 8:** the blend applies to ALL projects with ≥2 real observations and a usable category class — not just sparse ones. It replaces the old "2..threshold" supplement path.
+**Code:** commits 11570c1 (scope decisions) + a0f301d (code) on `fix/cross-project-prior-flow`, merged into main.
+**Log:** `textfiles/active_reference/ai_v2_phase2_blend_progress_log.txt`
 
 ---
 
@@ -96,8 +98,9 @@ Exposed in the response as `result['blend']` when the blend is active.
 ---
 
 ### Review checklist
-- [ ] Blend only activates for own real data (≥2 obs) + usable class (≥3 usable curves, similarity gate).
-- [ ] Hybrid / similar_projects (0-1 obs) behavior untouched.
-- [ ] Band widens, never wrongly narrows.
-- [ ] Reliability shrink is honest and bounded.
-- [ ] Disclaimer wording matches each `data_source`.
+- [x] Blend only activates for own real data (≥2 obs) + usable class (≥3 usable curves, similarity gate).
+- [x] Hybrid / similar_projects (0-1 obs) behavior untouched.
+- [x] Band widens, never wrongly narrows.
+- [x] Reliability shrink is honest and bounded.
+- [x] Disclaimer wording matches each `data_source`.
+- [x] Full suite green (635 passed / 2394 assertions) + merged to main.

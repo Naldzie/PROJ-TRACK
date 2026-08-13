@@ -3,18 +3,20 @@
 CSPC PMU System — AI Module follow-up to V2.5 (safety valves, C8) and Phase 8
 (Cross-Project Historical Regression).
 
-Status: 🔄 IN PROGRESS — Phase 1 ALL DONE (4.1 X-axis merge ✅, 4.2 pool
-        gate ✅ via V2.5 Step 5, 4.3 null-safe scoring ✅, 4.4 honest fit
-        wording ✅, A4 0-obs category baseline ✅ — all Aug 13 2026 on branch
-        fix/cross-project-safety-valves; A4 health-overview honesty follow-up
-        merged to main @ baee8ff).
-        NEXT: Phase 2 (reference-class prior + range) — STARTED Aug 13 2026 on
-        branch fix/cross-project-prior-flow (this branch). Scope decisions made
-        (Aug 13 2026): (1) the blend applies to ALL projects, not just sparse
-        (closes §1 root limitation; rich projects converge to their own model
-        as w→1); (2) blend schedule w = obs/(obs + k) with k = 4 default
-        (Decision 4), refined later via C7 backtest. V2.5 safety-valves plan
+Status: ✅ COMPLETE — Phase 1 ALL DONE (4.1 X-axis merge, 4.2 pool gate via
+        V2.5 Step 5, 4.3 null-safe scoring, 4.4 honest fit wording, A4 0-obs
+        category baseline) AND Phase 2 (reference-class prior + range)
+        IMPLEMENTED Aug 13 2026 on branch fix/cross-project-prior-flow
+        (commits 11570c1 scope decisions, a0f301d code, then doc log +
+        merged to main). Scope decisions made (Aug 13 2026): (1) the blend
+        applies to ALL projects, not just sparse (closes §1 root limitation;
+        rich projects converge to their own model as w→1); (2) blend schedule
+        w = obs/(obs + k) with k = 4 default (Decision 4), to be refined later
+        via the C7 accuracy-by-data_source backtest. V2.5 safety-valves plan
         Steps 1-5 ALL DONE.
+        NEXT (regression tail, per summary_of_next_work.txt priority list):
+        A2 — Completion sanity fallback, then B5/B6 — percentile benchmark +
+        at-risk flag.
 
 Date: August 12, 2026
 Branch (for implementation): `fix/cross-project-prior-flow` (new, from main)
@@ -232,17 +234,24 @@ _plan §3 A1).
          applyCrossProjectData), RegressionDatasetBuilder, AIPredictionPresenter,
          ai-prediction.blade.php
 
-  5.1 Keep regression on REAL points only
+  5.1 Keep regression on REAL points only  ✅ DONE (Aug 13 2026)
       - runRegression() runs on the real dataset (no synthetic rows).
       - The reference-class curve is used ONLY to (a) blend coefficients/
         predictions and (b) size the confidence band.
+      - Implemented: AIPredictionService::buildBlendContext() gates the blend
+        to data_source 'project_history' datasets with >= 2 real observations;
+        the regression itself never includes synthetic rows (hybrid/similar
+        paths untouched).
 
-  5.2 Reference-class curve with similarity weighting
-      - buildAggregateCurve(): keep median/P25/P75 per percentile, but weight
-        each usable similar curve by its similarity score (kNN-style) so
-        stronger matches dominate. (V2.5 strictly equal-weight.)
+  5.2 Reference-class curve with similarity weighting  ✅ DONE (Aug 13 2026)
+      - buildAggregateCurve(): median/P25/P75 per percentile, each usable
+        similar curve weighted by similarity (kNN-style) so stronger matches
+        dominate. (Regression bug fix: the weighting closure now binds
+        $project — Undefined-variable crash in weighted aggregation.)
+      - Reference scaled onto the project's own trajectory via the same
+        median actual-vs-class ratio as generateSyntheticPoints()
 
-  5.3 Blend (partial-pooling shrink)
+  5.3 Blend (partial-pooling shrink)  ✅ DONE (Aug 13 2026)
       - Let w = f(obsCount, totalPlannedMonths) — e.g. w grows from ~0 (sparse)
         to 1 (rich). Natural candidate without a stats lib:
             w = obsCount / (obsCount + k),   k tuned per category/reference size
@@ -251,6 +260,10 @@ _plan §3 A1).
       - progress_predicted(t) = w·own_model(t) + (1−w)·class_curve(t).
       - When w is low (sparse), the class dominates; when w→1, the project
         stands on its own data (V2.5's own-data fallback is a special case).
+      - IMPLEMENTED (Decision 4, k = 4): w = obs/(obs+4). Applied to the
+        next-month point in predictNextMonth(), every future month in
+        ForecastService::generateFutureForecast(), and the forecast band.
+        6 real obs → w = 0.60; 20 obs → w ≈ 0.83.
 
       ★ KEY: This is the fix for the "cross-project is supplement-only / not
         used by all projects" limitation (see §1 above + textfiles/
@@ -260,14 +273,20 @@ _plan §3 A1).
         get a class prior (weighted small via §4.1 w), sparse projects get the
         full class curve.
 
-  5.4 Range / interval output (A3 + A5)
+  5.4 Range / interval output (A3 + A5)  ✅ DONE (Aug 13 2026)
       - Surface next-prediction and completion as P25/P75 band of the blended
         curve (lower/upper quaritle of the class), not a single number.
       - Presenter + blade: "predicted next month xx–yy% (P25–P75)".
+      - IMPLEMENTED: computeNextMonthBand() widens the Phase 14 fit-margin
+        band to the class P25/P75 (union band, never narrower); each blended
+        ForecastService row carries predicted_progress_low/high.
 
-  5.5 Reliability from class homogeneity
+  5.5 Reliability from class homogeneity  ✅ DONE (Aug 13 2026)
       - ForecastReliabilityService: additionally shrink the reliability score
         when the class band is wide or N is small (honest).
+      - IMPLEMENTED (§5.5 blend shrink): class size < 3 → ×0.80, 3-4 → ×0.90;
+        band spread > 25% → ×0.85, 15-25% → ×0.92; multipliers combine,
+        floored at 0.60. Exposed as result['blend'] when active.
 
   5.6 0-obs fallback (A4)  ✅ DONE (Aug 13 2026)
       - shouldSupplement() returns 'fallback' for 0-obs (when planned
@@ -276,6 +295,11 @@ _plan §3 A1).
         project-specific" curve. current_month_index fixed to 1 (project at
         start). Falls back to Insufficient Data when < MIN_SIMILAR_PROJECTS
         usable curves or no planned duration.
+
+  Phase 2 disclaimer: blended predictions add a regression_info disclaimer
+      "Prediction blended with category reference curve (N similar project(s),
+      weight 0.60) to damp single-project noise." plus blend_weight /
+      class_homogeneity keys in regression_info.
 
   Math note: all Phase 2 math is implementable in plain PHP (weighted median,
   interpolation, simple shrinkage) — no statistics library required.
@@ -324,20 +348,20 @@ _plan §3 A1).
 
   NEW:
     textfiles/regression_v2_6_cross_project_prior_flow_plan.md  (this plan)
+    textfiles/phase2_blend_reference_class_plan.md              (review summary)
+    textfiles/active_reference/ai_v2_phase2_blend_progress_log.txt (progress log)
 
   MODIFIED (Phase 1):
     app/Services/AI/HistoricalSimilarityService.php
     app/Services/AI/AIPredictionPresenter.php
 
-  MODIFIED (Phase 2):
-    app/Services/AI/HistoricalSimilarityService.php
-    app/Services/AI/AIPredictionService.php
-    app/Services/AI/ForecastReliabilityService.php
-    app/Services/AI/Regression/RegressionDatasetBuilder.php
-    resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php
+  MODIFIED (Phase 2 — ACTUAL):
+    app/Services/AI/HistoricalSimilarityService.php   (kNN-weight closure $project bind fix)
+    app/Services/AI/AIPredictionService.php           (buildBlendContext, blended predict + band)
+    app/Services/AI/ForecastService.php               (blend schedule + P25/P75 forecast rows)
+    app/Services/AI/ForecastReliabilityService.php    (§5.5 blend shrink)
     tests/Feature/Services/AI/CrossProjectSupplementIntegrationTest.php
-    tests/Feature/Services/AI/HistoricalSimilarityHardeningTest.php
-    (+ a new Phase 2 blend test file)
+    tests/Unit/Services/AI/ForecastReliabilityServiceTest.php
 
   UNCHANGED:
     routes / schema / migrations.
@@ -396,38 +420,44 @@ _plan §3 A1).
 ===============================================================================
 
   [x] Phase 1: hybrid X monotonic; month 1 single; fit wording honest.
-  [ ] Phase 2: blend weight w behaves (sparse→class, rich→own).
-  [ ] P25/P75 band surfaces in presenter/blade for hybrid modes.
+  [x] Phase 2: blend weight w behaves (sparse→class, rich→own).
+  [x] P25/P75 band surfaces in presenter/blade for hybrid modes.
   [x] 0-obs fallback labelled (approved → implemented Aug 13 2026).
-  [ ] Full suite green after each phase.
-  [ ] Branch(es) presented for review (Rule 10 + Rule 12) before merging.
+  [x] Full suite green after each phase (635 passed / 2394 assertions).
+  [x] Branch(es) presented for review (Rule 10 + Rule 12) before merging.
+      → merged into main Aug 13 2026.
 
 ===============================================================================
   11. OPEN ITEMS / FLAGGED
 ===============================================================================
 
-  • The "difference is bad" example (score 40 = category + workers only): this
-    is exactly the Weakness V2.5 Step 5 fixes — a same-category project with
-    mismatched budget/duration still gets borrowed because score only has to be
-    > 0. Validated by RCF research (small/dissimilar classes underperform).
-  • Half the "no A4" path is product UX, not math — confirm whether 0-obs
-    projects should show a category baseline curve.
-  • Blend parameter k needs a backtest once we start logging predictions by
-    data_source (C7).
+  • Blend parameter k still needs a backtest: C7 now logs prediction accuracy
+    by data_source (prediction_history.data_source + /dev/prediction-accuracy),
+    so k ∈ {2,3,4,5,6} can be compared against historical predicted-vs-actual
+    once enough blended predictions accumulate. Chosen k must be logged in the
+    Decision Log (§9 Decision 4).
   • 20-30+ reference projects is aspirational given the current DB size; the
-    system must be HONEST at small N (report class size + spread) rather than
-    pretend a 3-project median is a confident band.
+    system reports class size + spread honestly (blend disclaimer + §5.5
+    reliability shrink) rather than pretending a 3-project median is a
+    confident band.
+  • A2 (Completion sanity fallback) and B5/B6 (percentile benchmark + at-risk
+    flag) remain as the regression-module tail (see summary_of_next_work.txt).
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  Next: Phase 2 implementation on branch fix/cross-project-prior-flow:
-  (1) own regression on real points only (2) similarity-weighted class curve
-  (3) blend w·own + (1−w)·class with k = 4 across ALL projects (4) P25/P75
-  range output (5) reliability-from-homogeneity. Scope + k decided Aug 13 2026.
-  Then present branch for review (Rule 12) and tune k via C7 backtest.
-  Confirm files with the user (Rule 1) before editing.
+  Next: Phase 2 was implemented on branch fix/cross-project-prior-flow and
+  merged to main (Aug 13 2026). Remaining regression-module tail (in order):
+  (1) A2 — Completion sanity fallback (CompletionEstimationService:
+      implausible own-model completion → bound/blend with the aggregate
+      category curve, ties into Fix H item 3);
+  (2) B5/B6 — Percentile benchmark (actuals vs class band) + at-risk anomaly
+      flag (actual below class lower band 2+ months) feeding the health gauge
+      and RecommendationEngine.
+  Then per summary_of_next_work.txt: Core Monitoring Phase E (AI↔baseline
+  linkage) → AI Phase 9/10 (contractor performance → AI recommendations).
+  Tune k via the C7 accuracy-by-data_source backtest once data accumulates.
 
 ===============================================================================
   END OF PLAN
