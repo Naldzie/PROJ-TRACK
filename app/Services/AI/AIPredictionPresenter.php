@@ -551,6 +551,22 @@ class AIPredictionPresenter
 
         /*
         |--------------------------------------------------------------------------
+        | Pure Category Baseline (A4, v2.6 §5.6)
+        |--------------------------------------------------------------------------
+        |
+        | data_source 'similar_projects' with 0 real observations = the curve is
+        | 100% the category reference, NOT the project's own health. The health
+        | overview (gap, status, trend, gauge) must therefore stay honest —
+        | "no actual progress data yet" — while the baseline curve + next-month
+        | band still render below, clearly labeled.
+        |
+        */
+
+        $dataSource       = (string) ($regression['data_source'] ?? 'project_history');
+        $isCategoryBaseline = $dataSource === 'similar_projects' && $realObsCount <= 0;
+
+        /*
+        |--------------------------------------------------------------------------
         | Determine Trend
         |--------------------------------------------------------------------------
         |
@@ -580,6 +596,57 @@ class AIPredictionPresenter
 
         /*
         |--------------------------------------------------------------------------
+        | Honest Health Override for Pure Category Baseline (A4)
+        |--------------------------------------------------------------------------
+        |
+        | The health overview must reflect the project's REAL state. With 0 real
+        | observations there is no actual progress, no measurable gap-to-plan,
+        | and no trend — the baseline curve is a reference, not the project's
+        | own performance (Rule: never present a borrowed curve as the
+        | project's own health).
+        |
+        */
+
+        if ($isCategoryBaseline) {
+            // Real progress (0 records → 0%), not the baseline's month-1 value.
+            $currentProgress = (float) $project->getProgressPercentage();
+            $progressGap     = round($expectedProgress - $currentProgress, 1);
+            $overallRisk     = 'unknown';
+            $statusDisplay   = 'NO ACTUAL DATA';
+            $statusColor     = '#9ca3af';
+            $trend           = 'N/A';
+            $trendLabel      = 'Not enough data to determine a trend';
+            $earlySpeed      = 0;
+            $recentSpeed     = 0;
+            $healthConfidence = 'Low';
+
+            // Certainty "Good data, strong fit" would be misleading — the R²
+            // describes a fit to the category reference, not this project.
+            $certaintyLabel  = 'Category baseline estimate';
+
+            // The timeline "Est. Completion" must not show a finish date
+            // extrapolated from the borrowed curve — there is no real data
+            // behind it.
+            $completion['estimated_completion_date'] = null;
+            $completion['predicted_delay_days']      = 0;
+            $completion['completion_confidence']     = null;
+            $completionReliability                   = null;
+
+            // Never let stale cached AI analysis text claim this project has
+            // real observed progress — force the honest static baseline text.
+            $latestAi = null;
+            $analysisText = 'No actual progress observations recorded for this project yet. '
+                . 'The estimate below is a category baseline reference built from '
+                . $syntheticCount . ' synthetic curve points across '
+                . (int) ($regression['similar_projects_count'] ?? 0)
+                . ' similar completed projects in this category — it is NOT a '
+                . 'statement about this project\'s own performance. Record monthly '
+                . 'inspections to replace it with a project-specific forecast.';
+            $aiGeneratedAt = null;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
         | Generate Recommendations
         |--------------------------------------------------------------------------
         |
@@ -603,18 +670,21 @@ class AIPredictionPresenter
         | Uses: Project::aiSolutions() relationship
         */
 
-        $latestAi = $project->aiSolutions()->first();
-        if ($latestAi && $latestAi->analysis_text) {
-            $analysisText = $latestAi->analysis_text;
-            $aiGeneratedAt = $latestAi->created_at;
-        } else {
-            $analysisText = $this->generateAnalysisText(
-                $project,
-                $currentProgress,
-                $expectedProgress,
-                $statusDisplay
-            );
-            $aiGeneratedAt = null;
+        $latestAi = null;
+        if (!$isCategoryBaseline) {
+            $latestAi = $project->aiSolutions()->first();
+            if ($latestAi && $latestAi->analysis_text) {
+                $analysisText = $latestAi->analysis_text;
+                $aiGeneratedAt = $latestAi->created_at;
+            } else {
+                $analysisText = $this->generateAnalysisText(
+                    $project,
+                    $currentProgress,
+                    $expectedProgress,
+                    $statusDisplay
+                );
+                $aiGeneratedAt = null;
+            }
         }
 
         /*
@@ -634,6 +704,11 @@ class AIPredictionPresenter
             'is_mockup'              => true,
             'is_completed'           => false,
             'is_insufficient_data'   => false,
+            // A4 (v2.6 §5.6): pure category-baseline (data_source
+            // 'similar_projects', 0 real observations). Health overview stays
+            // honest (status 'NO ACTUAL DATA', grey gauge, no trend) while the
+            // baseline curve + next-month band render below as a reference.
+            'is_category_baseline'   => $isCategoryBaseline,
 
             /*
             |------------------------------------------------------------------

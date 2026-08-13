@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Project;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
@@ -240,5 +241,58 @@ class AIPredictionTabRenderTest extends TestCase
 
         $this->assertModeRender($html, 'Cross-Project Supplement');
         $this->assertStringContainsString('Forecast Reliability', $html);
+    }
+
+    /*
+    |==========================================================================
+    | Mode 6 — Pure category baseline (0 real observations)
+    |==========================================================================
+    */
+
+    public function test_category_baseline_tab_renders_honest_health_explanation(): void
+    {
+        $category = Category::create([
+            'name'        => 'Render Baseline Category',
+            'description' => 'Test category',
+            'is_active'   => true,
+        ]);
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->createProjectWithHistory(
+                months: 6,
+                actualProgress: [20, 40, 60, 80, 90, 100],
+                overrides: [
+                    'status'                => 'Completed',
+                    'category_id'           => $category->id,
+                    'approved_budget'       => 5000000.00,
+                    'planned_duration_days' => 730,
+                ]
+            );
+        }
+
+        // The exact project 142 situation: ongoing, zero progress records,
+        // same category pool → pure category-baseline reference curve.
+        $target = Project::factory()->create([
+            'status'                => 'Ongoing',
+            'category_id'           => $category->id,
+            'approved_budget'       => 5000000.00,
+            'planned_duration_days' => 730,
+        ]);
+
+        $presented = $this->presenter->present($target);
+        $this->assertTrue($presented['is_category_baseline']);
+        $this->assertSame('similar_projects', $presented['regression_info']['data_source']);
+
+        $html = $this->renderTab($target, $presented);
+
+        $this->assertStringContainsString('CATEGORY BASELINE (no actual progress data)', $html);
+        $this->assertStringContainsString('No Actual Data', $html);
+        $this->assertStringContainsString('No actual progress observations recorded', $html);
+
+        // Borrowed baseline numbers must not masquerade as the project's own.
+        $this->assertStringNotContainsString('Steady progress', $html);
+        $this->assertStringNotContainsString('Regenerate Analysis', $html);
+        $this->assertStringNotContainsString('Completion Estimation Comparison', $html);
+        $this->assertStringNotContainsString('Model Summary', $html);
     }
 }

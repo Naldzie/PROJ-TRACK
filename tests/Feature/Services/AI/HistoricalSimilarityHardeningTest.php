@@ -342,6 +342,51 @@ class HistoricalSimilarityHardeningTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * A4 — a pure category-baseline (0 real observations) must NOT present the
+     * borrowed curve as the project's own health: status is "NO ACTUAL DATA",
+     * no risk/trend/confidence, real 0% progress, no completion estimate, and
+     * the analysis text explicitly disclaims that the curve is a reference.
+     * ------------------------------------------------------------------------
+     */
+    public function test_pure_category_baseline_health_overview_is_honest(): void
+    {
+        $categoryId = $this->makeCategory('A4 Baseline Honest')->id;
+        $this->seedSimilarCompletedProjects($categoryId, count: 3);
+
+        $target = Project::factory()->create([
+            'status'                => 'Ongoing',
+            'category_id'           => $categoryId,
+            'approved_budget'       => 5000000.00,
+            'planned_duration_days' => 730,
+        ]);
+
+        $presented = $this->presenter->present($target);
+
+        $this->assertTrue($presented['is_category_baseline']);
+        $this->assertSame('similar_projects', $presented['regression_info']['data_source']);
+
+        // Health overview reflects the project's REAL state, not the curve.
+        $this->assertSame('NO ACTUAL DATA', $presented['status']);
+        $this->assertSame('unknown', $presented['risk_level']);
+        $this->assertSame('N/A', $presented['trend']);
+        $this->assertEquals(0.0, $presented['current_progress']);
+        $this->assertSame('Low', $presented['health_confidence']);
+        $this->assertSame('Category baseline estimate', $presented['certainty_label']);
+
+        // Nothing derived from the borrowed curve may be surfaced as a forecast.
+        $this->assertNull($presented['estimated_completion']);
+        $this->assertFalse($presented['can_estimate_completion']);
+        $this->assertSame(0, $presented['predicted_delay_days']);
+        $this->assertNull($presented['completion_reliability']);
+        $this->assertNull($presented['ai_generated_at']);
+
+        // The explanation must explicitly separate the reference from reality.
+        $this->assertStringContainsString('No actual progress observations recorded', $presented['analysis_text']);
+        $this->assertStringContainsString('NOT a statement about this project', $presented['analysis_text']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * v2.6 4.4 — pure project history keeps the raw fit-quality wording
      * ------------------------------------------------------------------------
      */

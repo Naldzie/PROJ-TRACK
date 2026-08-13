@@ -48,13 +48,22 @@
         <!-- ONGOING PROJECT PREDICTION VIEW -->
         
         <!-- STATUS CARD -->
+        @php
+            $_gap = max(-20, min(20, $prediction['progress_gap'] ?? 0));
+            $_riskColors = ['Low' => '#10b981', 'Moderate' => '#eab308', 'High' => '#f97316', 'Critical' => '#ef4444'];
+            $_gaugeColor = $_riskColors[$prediction['risk_level']] ?? '#6b7280';
+            $_insufficient = $prediction['is_insufficient_data'] ?? false;
+            // A4: pure category-baseline → health overview shows honest
+            // "no actual data" state (grey), NOT the baseline-derived gauge.
+            $_noData = $_insufficient || ($prediction['is_category_baseline'] ?? false);
+        @endphp
         <div class="card" style="margin-bottom: 20px; border-left: 4px solid 
-            @if ($prediction['is_insufficient_data'] ?? false) #9ca3af;
+            @if ($_noData) #9ca3af;
             @elseif ($prediction['status'] === 'ON TRACK') #10b981;
             @else #f59e0b;
             @endif">
             <div class="card-header" style="background: 
-                @if ($prediction['is_insufficient_data'] ?? false)
+                @if ($_noData)
                     linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
                 @elseif ($prediction['status'] === 'ON TRACK') 
                     linear-gradient(135deg, #10b981 0%, #059669 100%);
@@ -66,6 +75,9 @@
                     @if ($prediction['is_insufficient_data'] ?? false)
                         <i class="bi bi-question-circle" style="margin-right: 8px;"></i>
                         INSUFFICIENT DATA - Intelligent Prediction Summary
+                    @elseif (($prediction['is_category_baseline'] ?? false) && ($prediction['status'] ?? '') === 'NO ACTUAL DATA')
+                        <i class="bi bi-diagram-3" style="margin-right: 8px;"></i>
+                        CATEGORY BASELINE (no actual progress data) - Intelligent Prediction Summary
                     @elseif ($prediction['status'] === 'ON TRACK')
                         <i class="bi bi-check-lg" style="margin-right: 8px;"></i>
                         {{ $prediction['status'] }} - Intelligent Prediction Summary
@@ -81,20 +93,16 @@
 
             <div style="padding: 25px;">
                 <!-- Estimated Completion Gauge -->
-                @php
-                    $_gap = max(-20, min(20, $prediction['progress_gap'] ?? 0));
-                    $_riskColors = ['Low' => '#10b981', 'Moderate' => '#eab308', 'High' => '#f97316', 'Critical' => '#ef4444'];
-                    $_gaugeColor = $_riskColors[$prediction['risk_level']] ?? '#6b7280';
-                    $_insufficient = $prediction['is_insufficient_data'] ?? false;
-                @endphp
                 <div style="margin-bottom: 30px; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; padding: 20px;">
                     <div style="display: flex; align-items: center; justify-content: center; gap: 40px; flex-wrap: wrap;">
                         <!-- Gauge visual -->
                         <div style="position: relative; width: 260px; height: 260px; flex-shrink: 0;">
-                            @if ($_insufficient)
+                            @if ($_noData)
                             <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#f3f4f6;border-radius:50%;">
-                                <i class="bi bi-question-circle" style="font-size:36px;color:#9ca3af;"></i>
-                                <div style="font-size:14px;color:#9ca3af;font-weight:600;margin-top:8px;">Insufficient Data</div>
+                                <i class="bi bi-diagram-3" style="font-size:36px;color:#9ca3af;"></i>
+                                <div style="font-size:14px;color:#9ca3af;font-weight:600;margin-top:8px;">
+                                    @if (($_insufficient)) Insufficient Data @else No Actual Data @endif
+                                </div>
                             </div>
                             @else
                             <div id="project-health-gauge" style="width:260px;height:260px;"></div>
@@ -116,8 +124,8 @@
                             <div style="display: flex; flex-direction: column; gap: 8px;">
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
                                     <span style="font-size: 12px; color: #6b7280;">Progress Gap</span>
-                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_insufficient ? '#9ca3af' : ($prediction['progress_gap'] <= 0 ? '#10b981' : ($prediction['progress_gap'] < 10 ? '#eab308' : '#ef4444')) }};">
-                                        @if ($_insufficient) N/A
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_noData ? '#9ca3af' : ($prediction['progress_gap'] <= 0 ? '#10b981' : ($prediction['progress_gap'] < 10 ? '#eab308' : '#ef4444')) }};">
+                                        @if ($_noData) N/A
                                         @elseif (($prediction['progress_gap'] ?? 0) > 0)+{{ $prediction['progress_gap'] }}%
                                         @else {{ $prediction['progress_gap'] }}%
                                         @endif
@@ -125,16 +133,16 @@
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
                                     <span style="font-size: 12px; color: #6b7280;">Schedule Status</span>
-                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_insufficient ? '#9ca3af' : $_gaugeColor }};">
-                                        @if ($_insufficient) N/A
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_noData ? '#9ca3af' : $_gaugeColor }};">
+                                        @if ($_noData) N/A
                                         @else {{ $prediction['status'] }}
                                         @endif
                                     </span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
                                     <span style="font-size: 12px; color: #6b7280;">Confidence</span>
-                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_insufficient ? '#9ca3af' : ($prediction['health_confidence'] === 'High' ? '#10b981' : ($prediction['health_confidence'] === 'Medium' ? '#eab308' : ($prediction['health_confidence'] === 'Low' ? '#ef4444' : '#6b7280'))) }};">
-                                        @if ($_insufficient) N/A
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_noData ? '#9ca3af' : ($prediction['health_confidence'] === 'High' ? '#10b981' : ($prediction['health_confidence'] === 'Medium' ? '#eab308' : ($prediction['health_confidence'] === 'Low' ? '#ef4444' : '#6b7280'))) }};">
+                                        @if ($_noData) N/A
                                         @elseif ($prediction['health_confidence']) {{ $prediction['health_confidence'] }}
                                         @else N/A
                                         @endif
@@ -145,7 +153,7 @@
                     </div>
                 </div>
 
-                @if (!$_insufficient)
+                @if (!$_noData)
                 <script>
                 (function(){
                     var gap = {{ $_gap }};
@@ -195,7 +203,11 @@
                             {{ $prediction['current_progress'] }}%
                         </div>
                         <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
-                            Expected: {{ $prediction['expected_progress'] }}%
+                            @if ($_noData)
+                                No actual progress data yet
+                            @else
+                                Expected: {{ $prediction['expected_progress'] }}%
+                            @endif
                         </div>
                     </div>
 
@@ -208,7 +220,7 @@
                                 Next Month Prediction
                             @endif
                         </div>
-                        @if (!($prediction['is_insufficient_data'] ?? false) && $prediction['next_prediction'] !== null)
+                        @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && $prediction['next_prediction'] !== null)
                             <div style="font-size: 28px; color: #667eea; font-weight: 700;">
                                 {{ $prediction['next_prediction'] }}%
                             </div>
@@ -271,7 +283,7 @@
                             Forecast Reliability
                         </div>
                         @php $nextRel = $prediction['next_prediction_reliability'] ?? null; @endphp
-                        @if (!($prediction['is_insufficient_data'] ?? false) && $nextRel)
+                        @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && $nextRel)
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span style="font-size: 28px; font-weight: 700;
                                     @if ($nextRel['level'] === 'High') color: #10b981;
@@ -362,7 +374,7 @@
                     <div id="analysis-text" style="font-size: 14px; color: #78350f; line-height: 1.6;">
                         {{ $prediction['analysis_text'] }}
                     </div>
-                    @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false))
+                    @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false))
                         <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px;">
                             <button id="regenerate-btn" onclick="regenerateAnalysis({{ $project->id }})" style="font-size: 13px; padding: 6px 14px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">
                                 <i class="bi bi-arrow-repeat" style="margin-right: 4px;"></i> Regenerate Analysis
@@ -374,7 +386,7 @@
                     @endif
                 </div>
 
-                @if (!($prediction['is_insufficient_data'] ?? false) && $prediction['regression_info'] !== null)
+                @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && $prediction['regression_info'] !== null)
                 {{-- Regression Summary --}}
                 @php
                     $regInfo = $prediction['regression_info'];
@@ -502,6 +514,7 @@
                 </div>
                 @endif
 
+                @if (!$_noData)
                 <!-- Progress Comparison (Early vs Recent) -->
                 <div style="background: #f3f4f6; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
                     <div style="font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
@@ -522,6 +535,7 @@
                         </div>
                     </div>
                 </div>
+                @endif
 
                 <!-- Behind Milestone Alert -->
                 @if ($prediction['behind_milestone'])
@@ -537,6 +551,7 @@
                     </div>
                 @endif
 
+                @if (!$_noData)
                 <!-- Recommendations -->
                 <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 15px;">
                     <div style="font-size: 13px; font-weight: 600; color: #166534; margin-bottom: 12px;">
@@ -572,6 +587,7 @@
                         </ul>
                     @endif
                 </div>
+                @endif
             </div>
         </div>
 
@@ -671,7 +687,7 @@
             </div>
         </div>
 
-        @if (!($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['comparison']['valid_count'] ?? 0) >= 2)
+        @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false) && ($prediction['completion_multi']['comparison']['valid_count'] ?? 0) >= 2)
         <!-- Multi-Method Completion Card -->
         <div class="card" style="margin-bottom: 20px;">
             <div class="card-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
@@ -769,7 +785,7 @@
                 <!-- End Collapsible Section -->
 
         {{-- Prediction History Card --}}
-        @if (!($prediction['is_insufficient_data'] ?? false) && !empty($prediction['prediction_history']))
+        @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && !empty($prediction['prediction_history']))
         <div class="card" style="margin-bottom: 20px;">
             <div class="card-header" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white;">
                 <span class="card-title">
