@@ -27,10 +27,21 @@ class CompletionComparisonService
         array $analysis,
         int $currentMonthIndex,
         float $currentProgress,
-        Collection $baselineSchedules
+        Collection $baselineSchedules,
+        ?array $classReference = null
     ): array {
 
         $totalPlannedMonths = $baselineSchedules->count();
+
+        // Method 2: Schedule-Aware (existing constant-lag method) — computed
+        // first because the polynomial sanity fallback blends against it.
+        $scheduleAware = $this->completionService->estimate(
+            $plannedEndDate,
+            $analysis,
+            $currentMonthIndex,
+            $baselineSchedules,
+            $currentProgress
+        );
 
         // Method 1: Polynomial (Newton-Raphson)
         $polynomial = $this->completionService->estimatePolynomial(
@@ -41,14 +52,33 @@ class CompletionComparisonService
             $baselineSchedules
         );
 
-        // Method 2: Schedule-Aware (existing constant-lag method)
-        $scheduleAware = $this->completionService->estimate(
-            $plannedEndDate,
-            $analysis,
-            $currentMonthIndex,
-            $baselineSchedules,
-            $currentProgress
-        );
+        // A2 sanity fallback: when the project's own polynomial completion is
+        // implausible (past date / descending tail / absurd horizon) but the
+        // polynomial WAS a selected, well-fitted model, estimate how long
+        // similar projects took from currentProgress% → 100% via the aggregate
+        // class curve, blended with the schedule-aware index, and use that as
+        // the polynomial method's answer (flagged fallback_method).
+        if ($polynomial === null
+            && $this->completionService->isPolynomialSelected($analysis)
+            && !empty($classReference)
+        ) {
+            $scheduleAwareIndex = $scheduleAware !== null
+                ? (float) $scheduleAware['estimated_completion_index']
+                : null;
+
+            $polynomial = $this->completionService->estimateFromClassReference(
+                $classReference,
+                $currentProgress,
+                $currentMonthIndex,
+                $totalPlannedMonths,
+                $plannedEndDate,
+                $baselineSchedules,
+                $scheduleAwareIndex,
+                (float) ($analysis['r_squared'] ?? 0.0),
+                (int) ($analysis['observation_count'] ?? 0),
+                (int) ($analysis['synthetic_points_count'] ?? 0)
+            );
+        }
 
         // Method 3: Earned Schedule EAC_time (standard ES formula)
         $earnedSchedule = $this->completionService->estimateEarnedSchedule(

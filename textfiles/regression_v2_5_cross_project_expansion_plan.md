@@ -80,7 +80,7 @@ smooth the weird polynomial tails.
 - Effort: HIGH. Risk: HIGH — changes every prediction, biggest behavioral shift.
 - Note: overlaps with the decision in Fix H (fall back to SLR vs. clamp).
 
-#### A2 — Completion sanity fallback (ties into Fix H)
+#### A2 — Completion sanity fallback (ties into Fix H)  ✅ DONE (Aug 13 2026)
 When the project's own model produces an implausible completion (e.g. project 142
 polynomial → past date, or absurd month count), estimate "how long similar
 projects took to go from X% → 100%" from the aggregate and blend/bound the answer.
@@ -88,6 +88,10 @@ projects took to go from X% → 100%" from the aggregate and blend/bound the ans
 - Where: `CompletionEstimationService::estimatePolynomial()` (and friends).
 - Effort: MEDIUM. Risk: MEDIUM (only affects the implausible branch).
 - Directly complements Fix H item 3 in the refactor plan.
+- IMPLEMENTED: `estimateFromClassReference()` substitutes a class-derived,
+  bounded estimate (optionally blended with schedule-aware) whenever a
+  well-fitted own polynomial completion is implausible AND a usable class
+  exists. Not-selected / low-R² stays null. See `completion_sanity_fallback_plan.md`.
 
 #### A3 — Prediction interval / confidence band
 The aggregate already carries median/lower/upper quartiles. Surface the

@@ -12,9 +12,10 @@
    Review doc:      textfiles/phase2_blend_reference_class_plan.md
 
    Previous Phase:  v2.6 Phase 1 (honest fixes) + A4 (0-obs category baseline)
-   Status:          ✅ COMPLETE — code committed (a0f301d) + merged to main.
-                    Next regression tail: A2 (completion sanity fallback),
-                    then B5/B6 (percentile benchmark + at-risk flag).
+Status:          ✅ COMPLETE — code committed (a0f301d) + merged to main.
+                     Regression tail A2 (completion sanity fallback) DONE
+                     (Aug 13 2026); next: B5/B6 (percentile benchmark +
+                     at-risk flag).
 
 
 ================================================================================
@@ -139,8 +140,9 @@
     by data_source (prediction_history.data_source + /dev/prediction-accuracy),
     so k ∈ {2,3,4,5,6} can be tuned against predicted-vs-actual once enough
     blended predictions accumulate. Chosen k → Decision Log (v2.6 §9 D4).
-  • Next regression tail: A2 (Completion sanity fallback) then B5/B6
-    (percentile benchmark + at-risk flag) — see summary_of_next_work.txt.
+  • Next regression tail after A2 ✅ (completion sanity fallback DONE Aug 13,
+    2026 — see completion_sanity_fallback_plan.md): B5/B6 (percentile
+    benchmark + at-risk flag) — see summary_of_next_work.txt.
 
 ================================================================================
   END OF LOG

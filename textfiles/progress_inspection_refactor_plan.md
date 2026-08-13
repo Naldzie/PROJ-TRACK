@@ -326,8 +326,10 @@ Open questions:
 Cross-project tie-in: Option A2 of
 `textfiles/regression_v2_5_cross_project_expansion_plan.md` is the
 cross-project flavored version of item 3 above (fall back to the aggregate
-category curve when the own-model completion is implausible). Implement A2
-together with Fix H so the two paths don't conflict.
+category curve when the own-model completion is implausible). A2 was
+implemented together with Fix H item 3 (✅ Aug 13 2026, see
+`textfiles/completion_sanity_fallback_plan.md`) so the two paths don't
+conflict.
 
 ---
 
@@ -481,8 +483,9 @@ Branch: `refactor/inspection-date-consolidation` (from main). Commit pending.
   month-match guard), Fix H (next-month prediction can drop below current
   progress; also breaks completion estimation).
 - ✅ 2026-08-01: Fixes **A–G** IMPLEMENTED — see the log below (branch
-  `fix/progress-additional-fixes`). Only **Fix H** remains fully OPEN (deferred;
-  see §3 + the v2.5 plan Option A2).
+  `fix/progress-additional-fixes`). **Fix H** item 3's cross-project side
+  (Option A2 — class-derived completion sanity fallback) was IMPLEMENTED
+  ✅ 2026-08-13 (see §3 + `textfiles/completion_sanity_fallback_plan.md`).
 
 ### ADDITIONAL FIXES A–G IMPLEMENTED (2026-08-01)
 

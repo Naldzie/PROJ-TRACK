@@ -440,7 +440,8 @@ _plan §3 A1).
     system reports class size + spread honestly (blend disclaimer + §5.5
     reliability shrink) rather than pretending a 3-project median is a
     confident band.
-  • A2 (Completion sanity fallback) and B5/B6 (percentile benchmark + at-risk
+  • A2 (Completion sanity fallback) — ✅ DONE (Aug 13 2026), see
+    completion_sanity_fallback_plan.md. B5/B6 (percentile benchmark + at-risk
     flag) remain as the regression-module tail (see summary_of_next_work.txt).
 
 ===============================================================================
@@ -448,11 +449,10 @@ _plan §3 A1).
 ===============================================================================
 
   Next: Phase 2 was implemented on branch fix/cross-project-prior-flow and
-  merged to main (Aug 13 2026). Remaining regression-module tail (in order):
-  (1) A2 — Completion sanity fallback (CompletionEstimationService:
-      implausible own-model completion → bound/blend with the aggregate
-      category curve, ties into Fix H item 3);
-  (2) B5/B6 — Percentile benchmark (actuals vs class band) + at-risk anomaly
+  merged to main (Aug 13 2026). A2 (completion sanity fallback) was implemented
+  on feature/a2-completion-sanity-fallback (Aug 13 2026). Remaining
+  regression-module tail (in order):
+  (1) B5/B6 — Percentile benchmark (actuals vs class band) + at-risk anomaly
       flag (actual below class lower band 2+ months) feeding the health gauge
       and RecommendationEngine.
   Then per summary_of_next_work.txt: Core Monitoring Phase E (AI↔baseline

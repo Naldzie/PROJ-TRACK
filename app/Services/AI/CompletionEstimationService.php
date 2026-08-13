@@ -217,6 +217,164 @@ class CompletionEstimationService
         ];
     }
 
+    // True when the polynomial was selected AND its fit clears the R² bar —
+    // i.e. the implausible branches (future-guard, descending tail, absurd
+    // horizon) are what made estimatePolynomial() return null. Used by
+    // CompletionComparisonService::estimateAll() to decide a class fallback is
+    // warranted (A2) instead of plain "method N/A".
+    // Called by: CompletionComparisonService::estimateAll()
+    public function isPolynomialSelected(array $analysis): bool
+    {
+        return (($analysis['regression_method'] ?? 'slr') === 'polynomial')
+            && (float) ($analysis['r_squared'] ?? 0.0) >= self::MIN_R2_FOR_ESTIMATE;
+    }
+
+    // Class-based completion sanity fallback (A2 — cross-project aggregate).
+    // Called by: CompletionComparisonService::estimateAll() when the polynomial
+    //            completion is implausible (past date / descending tail / absurd
+    //            horizon) and a usable class reference exists.
+    // Uses: interpolateClassPosition() to map current progress → class-relative
+    //       elapsed month, then indexToDate() + classifyConfidence() as usual.
+    // Answers: "similar projects took from currentProgress% to 100% about N
+    //           months" and anchors that onto the project's own timeline.
+    public function estimateFromClassReference(
+        array $classReference,
+        float $currentProgress,
+        int $currentMonthIndex,
+        int $totalPlannedMonths,
+        ?Carbon $plannedEndDate = null,
+        ?Collection $baselineSchedules = null,
+        ?float $blendIndex = null,
+        float $rSquared = 0.0,
+        int $observationCount = 0,
+        int $syntheticCount = 0
+    ): ?array {
+
+        if ($currentProgress >= 100.0) {
+            return null;
+        }
+
+        $median = $classReference['median'] ?? [];
+
+        if (empty($median) || $totalPlannedMonths <= 0) {
+            return null;
+        }
+
+        $classPosition = $this->interpolateClassPosition($median, $currentProgress);
+
+        if ($classPosition === null) {
+            return null;
+        }
+
+        // Months remaining in CLASS time, then anchored onto project time.
+        $classMonthsToGo = $totalPlannedMonths - $classPosition;
+
+        if ($classMonthsToGo < 0) {
+            return null;
+        }
+
+        $estimationIndex = (float) $currentMonthIndex + $classMonthsToGo;
+
+        $blendPartners = ['class_aggregate'];
+
+        // A2 §3.2 step 5: blend with the schedule-aware index when present.
+        if ($blendIndex !== null && $blendIndex > $currentMonthIndex) {
+            $estimationIndex = ($estimationIndex + $blendIndex) / 2;
+            $blendPartners[] = 'schedule_aware';
+        }
+
+        // Same bounds as the own-model solvers: never a past date, never an
+        // absurd horizon.
+        if ($estimationIndex <= $currentMonthIndex) {
+            return null;
+        }
+
+        if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
+            return null;
+        }
+
+        if ($baselineSchedules && $baselineSchedules->isNotEmpty()) {
+            $estimatedDate = $this->indexToDate($estimationIndex, $baselineSchedules);
+        } else if ($plannedEndDate) {
+            $extraMonths = $estimationIndex - $totalPlannedMonths;
+            $estimatedDate = $plannedEndDate->copy()
+                ->addMonths((int) $extraMonths)
+                ->addDays((int) round(($extraMonths - (int) $extraMonths) * 30));
+        } else {
+            return null;
+        }
+
+        $absoluteDiff = (int) round(
+            abs($estimatedDate->diffInDays($plannedEndDate))
+        );
+
+        $predictedDelayDays = $estimatedDate->isAfter($plannedEndDate)
+            ? $absoluteDiff
+            : -$absoluteDiff;
+
+        $plannedEndIndex = max($totalPlannedMonths, 1);
+
+        $completionConfidence = $this->classifyConfidence(
+            $rSquared,
+            $observationCount,
+            $estimationIndex,
+            $plannedEndIndex,
+            $syntheticCount
+        );
+
+        return [
+            'estimated_completion_index' => round($estimationIndex, 4),
+            'estimated_completion_date'  => $estimatedDate,
+            'predicted_delay_days'       => $predictedDelayDays,
+            'completion_confidence'      => $completionConfidence,
+            'fallback_method'            => 'class_aggregate',
+            'blend_partners'             => $blendPartners,
+        ];
+    }
+
+    // Map a progress value onto the class median curve: returns the class-relative
+    // month (with interpolation) where similar projects reached that progress.
+    // Returns null when the class curve never reaches currentProgress within its
+    // planned duration (the class has no evidence the project can finish).
+    private function interpolateClassPosition(array $median, float $progress): ?float
+    {
+        $months = array_keys($median);
+
+        if (empty($months)) {
+            return null;
+        }
+
+        $first = $median[$months[0]] ?? 0;
+
+        if ($progress <= $first) {
+            return (float) $months[0];
+        }
+
+        $lastMonth = $months[count($months) - 1];
+        $lastValue = $median[$lastMonth] ?? 0;
+
+        if ($progress > $lastValue) {
+            return null;
+        }
+
+        for ($i = 0; $i < count($months) - 1; $i++) {
+            $m0 = $months[$i];
+            $m1 = $months[$i + 1];
+            $v0 = (float) ($median[$m0] ?? 0);
+            $v1 = (float) ($median[$m1] ?? 0);
+
+            if ($progress >= $v0 && $progress <= $v1) {
+                $fraction = ($v1 - $v0) > 0
+                    ? ($progress - $v0) / ($v1 - $v0)
+                    : 0;
+
+                return $m0 + $fraction;
+            }
+        }
+
+        return null;
+    }
+
     // Estimate completion using standard Earned Schedule EAC_time formula.
     // Called by: CompletionComparisonService::estimateAll()
     // Uses: findEffectivePosition(), indexToDate(), classifyConfidence()

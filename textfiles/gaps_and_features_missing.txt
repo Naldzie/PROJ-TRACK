@@ -56,8 +56,9 @@
        is small or its band is wide (§5.5). data_source 'blended' with honest
        disclaimer. The old sparse-only supplement now handles 0-obs 'fallback'
        (A4, category baseline) and 1-obs 'hybrid' only.
-     - Remaining regression-module tail: A2 (completion sanity fallback) and
-       B5/B6 (percentile benchmark + at-risk flag) — see summary_of_next_work.txt.
+     - Remaining regression-module tail: A2 (completion sanity fallback) ✅ DONE
+       (Aug 13, 2026 — see completion_sanity_fallback_plan.md) and B5/B6
+       (percentile benchmark + at-risk flag) — see summary_of_next_work.txt.
      - See: active_reference/phase8_cross_project_regression_plan.txt,
        active_reference/ai_v2_phase8_cross_project_progress_log.txt,
        active_reference/ai_v2_phase2_blend_progress_log.txt
@@ -497,9 +498,10 @@
     7. Custom Dashboard Widgets — improves UX, modern PM practice
 
   Medium-term / V2 Remaining:
-    8. Cross-project regression tail — A2 completion sanity fallback + B5/B6
-       percentile benchmark / at-risk flag (supplement + fallback + blend now
-       live; summary_of_next_work.txt is the authoritative ordered list)
+    8. Cross-project regression tail — A2 completion sanity fallback ✅ DONE
+       (Aug 13, 2026) + B5/B6 percentile benchmark / at-risk flag (supplement
+       + fallback + blend now live; summary_of_next_work.txt is the
+       authoritative ordered list)
     9. AI-powered recommendations (Phase 10) — after Phase 9 contractor data
 
 ================================================================================

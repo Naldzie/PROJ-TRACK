@@ -42,6 +42,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
     private AIPredictionService $predictionService;
     private AIPredictionPresenter $presenter;
     private HistoricalSimilarityService $historicalSimilarityService;
+    private CompletionComparisonService $completionComparisonService;
 
     protected function setUp(): void
     {
@@ -54,7 +55,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $this->comparisonService = new BaselineComparisonService();
         $this->assessmentService = new ProjectAssessmentService();
         $completionService = new CompletionEstimationService();
-        $completionComparisonService = new CompletionComparisonService($completionService);
+        $this->completionComparisonService = new CompletionComparisonService($completionService);
         $this->historicalSimilarityService = new HistoricalSimilarityService();
         $reliabilityService = new ForecastReliabilityService();
         $this->predictionService = new AIPredictionService(
@@ -65,7 +66,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             $this->comparisonService,
             $this->assessmentService,
             $completionService,
-            $completionComparisonService,
+            $this->completionComparisonService,
             $this->historicalSimilarityService,
             $reliabilityService
         );
@@ -412,5 +413,124 @@ class CrossProjectSupplementIntegrationTest extends TestCase
 
         // Blend weight w = obs/(obs+4) → 6 real obs → 0.6.
         $this->assertEqualsWithDelta(0.6, $report['regression']['blend_weight'], 0.01);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * A2 — implausible polynomial completion falls back to the class curve
+     * (T6/T7, tied to Fix H item 3)
+     * ------------------------------------------------------------------------
+     *
+     * A polynomial that would otherwise emit a past completion date (or a
+     * descending tail) must NOT leave the polynomial method "N/A" when a usable
+     * category class exists. CompletionComparisonService substitutes a class-
+     * derived estimate (flagged fallback_method) blended with schedule-aware so
+     * the comparison keeps a full 3-method valid_count and a sane spread.
+     *
+     * Coefficients mirror the unit test's descending-tail cubic (a=-0.1,
+     * b=0.6, c=28.8, d=-144.2) — root in the FUTURE but f'(x)<0 → the own-model
+     * path rejects it, so the fallback must kick in.
+     */
+    public function test_a2_class_fallback_substitutes_implausible_polynomial(): void
+    {
+        $categoryId = $this->makeCategory('A2 Category')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 12,
+            actualProgress: [2, 4, 8, 15, 24, 35, 49, 63, 77, 86, 89, 92],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 360,
+            ]
+        );
+
+        $analysis = [
+            'regression_method'     => 'polynomial',
+            'a'                     => -0.1,
+            'b'                     => 0.6,
+            'c'                     => 28.8,
+            'd'                     => -144.2,
+            'r_squared'             => 0.9983,
+            'observation_count'     => 12,
+            'synthetic_points_count'=> 0,
+        ];
+
+        // Class pool must actually be usable (aggregate non-empty)
+        $reference = $this->historicalSimilarityService->buildClassReference(
+            $target,
+            $target->baselineSchedules->count()
+        );
+        $this->assertNotEmpty($reference['median'] ?? []);
+
+        // currentProgress = 50 is inside the class band (median caps ~59.59 for
+        // this pool), so the class fallback has evidence to anchor on. The
+        // coefficients are what make the OWN polynomial implausible.
+        $result = $this->completionComparisonService->estimateAll(
+            $target->planned_end_date,
+            $analysis,
+            9,
+            50.0,
+            $target->baselineSchedules,
+            $reference
+        );
+
+        // T6: the polynomial method is NOT N/A — it carries a class-derived
+        // fallback, and all three methods contribute to the comparison.
+        $poly = $result['methods']['polynomial'];
+        $this->assertNotNull($poly);
+        $this->assertSame('class_aggregate', $poly['fallback_method'] ?? null);
+        $this->assertGreaterThan(9, $poly['estimated_completion_index']);
+
+        // T7: valid_count stays 3 and the spread/agreement reflect the bounded
+        // dates (no 408-day past-date artifact).
+        $this->assertSame(3, $result['comparison']['valid_count']);
+        $this->assertGreaterThan(0, $result['comparison']['earliest_date']->diffInDays($result['comparison']['latest_date']));
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * A2 — no class reference → backward-compatible null (no fallback)
+     * ------------------------------------------------------------------------
+     *
+     * When estimateAll() is called without a class reference the implausible
+     * polynomial still returns null, exactly as before A2.
+     */
+    public function test_a2_without_class_reference_keeps_null_polynomial(): void
+    {
+        $categoryId = $this->makeCategory('A2 No Class')->id;
+        $target = $this->createProjectWithHistory(
+            months: 12,
+            actualProgress: [2, 4, 8, 15, 24, 35, 49, 63, 77, 86, 89, 92],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 360,
+            ]
+        );
+
+        $analysis = [
+            'regression_method'      => 'polynomial',
+            'a'                      => -0.1,
+            'b'                      => 0.6,
+            'c'                      => 28.8,
+            'd'                      => -144.2,
+            'r_squared'              => 0.9983,
+            'observation_count'      => 12,
+            'synthetic_points_count' => 0,
+        ];
+
+        $result = $this->completionComparisonService->estimateAll(
+            $target->planned_end_date,
+            $analysis,
+            9,
+            92.0,
+            $target->baselineSchedules
+        );
+
+        $this->assertNull($result['methods']['polynomial']);
     }
 }
