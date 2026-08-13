@@ -77,7 +77,9 @@ class ForecastService
         Project $project,
         array $analysis,
         int $currentMonthIndex,
-        float $latestActual = 0
+        float $latestActual = 0,
+        ?array $blendReference = null,
+        ?float $blendWeight = null
     ): array {
 
         /*
@@ -96,6 +98,15 @@ class ForecastService
         // a floor for the next, seeded from the latest actual progress so the
         // first forecast month can never dip below where the project already is.
         $floor = max(0, $latestActual);
+
+        // Phase 2 (v2.6 §5.3): blend schedule. When a class reference is
+        // available, progress(t) = w·own(t) + (1−w)·class(t), with the P25/P75
+        // band blended the same way. w = obs/(obs+k); no reference → own model
+        // only (existing behaviour, data_source project_history).
+        $useBlend = $blendReference !== null
+            && !empty($blendReference)
+            && $blendWeight !== null
+            && $blendWeight > 0;
 
         /*
         |--------------------------------------------------------------------------
@@ -153,6 +164,30 @@ class ForecastService
                     );
             }
 
+            $predictedLow  = null;
+            $predictedHigh = null;
+
+            // Blend with the class reference band (Phase 2 §5.3/§5.4):
+            //   point(t) = w·own(t) + (1−w)·classMedian(t)
+            //   low/high = w·own(t) + (1−w)·classLower/Upper(t)
+            // The monotonic floor and the 0..100 clamps still apply.
+            if ($useBlend && isset($blendReference['median'][$monthIndex])) {
+                $classMedian = $blendReference['median'][$monthIndex] ?? null;
+                $classLower  = $blendReference['lower'][$monthIndex] ?? $classMedian;
+                $classUpper  = $blendReference['upper'][$monthIndex] ?? $classMedian;
+
+                if ($classMedian !== null) {
+                    $predictedProgress = ($blendWeight * $predictedProgress)
+                        + ((1 - $blendWeight) * $classMedian);
+
+                    $predictedLow = ($blendWeight * $predictedProgress)
+                        + ((1 - $blendWeight) * $classLower);
+
+                    $predictedHigh = ($blendWeight * $predictedProgress)
+                        + ((1 - $blendWeight) * $classUpper);
+                }
+            }
+
             /*
             |--------------------------------------------------------------------------
             | Regression may predict values outside the valid
@@ -169,6 +204,17 @@ class ForecastService
                 min(100, $predictedProgress)
             );
 
+            // Blend-derived P25/P75 band, clamped to [0, 100] (forecast rows
+            // keep the monotonic floor for the point, but the band may dip
+            // below so the uncertainty range is honest).
+            $clampedLow = $predictedLow !== null
+                ? round(max(0, min(100, $predictedLow)), 2)
+                : null;
+
+            $clampedHigh = $predictedHigh !== null
+                ? round(max(0, min(100, $predictedHigh)), 2)
+                : null;
+
             $forecast[] = [
 
                 'month_index' => $monthIndex,
@@ -183,6 +229,12 @@ class ForecastService
                     $predictedProgress,
                     2
                 ),
+
+                // Phase 2 §5.4: P25/P75 band on each forecast row when the
+                // blend is active (else null — own-model rows keep the
+                // single value the previous UI already handles).
+                'predicted_progress_low'  => $clampedLow,
+                'predicted_progress_high' => $clampedHigh,
 
             ];
 

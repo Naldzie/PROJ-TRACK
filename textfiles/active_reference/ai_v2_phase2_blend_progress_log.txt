@@ -1,0 +1,147 @@
+================================================================================
+  AI MODULE VERSION 2 — PHASE 2 PROGRESS LOG
+  Reference-Class Prior + Range (the "blend")
+  CSPC PMU System
+================================================================================
+
+   Date Completed:  Aug 13, 2026
+   Branch:          fix/cross-project-prior-flow (from main)
+   Plan:            textfiles/regression_v2_6_cross_project_prior_flow_plan.md
+                    (§5 Phase 2; Phase 1 + A4 done on fix/cross-project-safety-valves)
+   Summary:         textfiles/summary_of_next_work.txt (priority list)
+   Review doc:      textfiles/phase2_blend_reference_class_plan.md
+
+   Previous Phase:  v2.6 Phase 1 (honest fixes) + A4 (0-obs category baseline)
+   Status:          ✅ COMPLETE — code committed (a0f301d) + merged to main.
+                    Next regression tail: A2 (completion sanity fallback),
+                    then B5/B6 (percentile benchmark + at-risk flag).
+
+
+================================================================================
+  1. PHASE SUMMARY
+================================================================================
+
+  Objective (v2.6 §5, Decision 8):
+    Fix the "cross-project is supplement-only / not used by all projects"
+    limitation. Instead of fabricating synthetic observations and regressing
+    over a merged set, the pipeline now:
+      (1) fits the project's OWN regression on REAL points ONLY (§5.1),
+      (2) builds a similarity-weighted reference-class curve (median + P25/P75)
+          from similar completed projects (§5.2),
+      (3) BLENDS every forecast point toward the class:
+          progress(t) = w·own(t) + (1−w)·class(t),  w = obs/(obs+4) (§5.3),
+      (4) reports next-month and forecast rows as a P25/P75 RANGE (§5.4),
+      (5) shrinks the Phase 14 reliability score when the class is small or
+          its band is wide — honest uncertainty (§5.5).
+
+  Scope decisions (Aug 13 2026, user):
+    • Decision 8 — the blend applies to ALL projects (>= 2 real obs + a usable
+      class), not just sparse ones. Rich projects barely move (w → 1).
+    • Decision 4 — blend schedule w = obs/(obs + k), k = 4 default (halfway
+      at 4 real observations); k to be refined via the C7 backtest.
+
+  Status: ✅ COMPLETE — full suite 635 passed (2394 assertions).
+
+
+================================================================================
+  2. KEY CHANGES
+================================================================================
+
+  [MOD] app/Services/AI/HistoricalSimilarityService.php
+    • BUG FIX (was crashing cross-project blend tests): the kNN-weight
+      aggregation closure in buildAggregateCurve() referenced $project but only
+      bound $percentiles → "Undefined variable $project". Now
+      use ($percentiles, $project).
+
+  [MOD] app/Services/AI/AIPredictionService.php
+    • NEW buildBlendContext(Project, dataset): returns the class reference +
+      weight when data_source == 'project_history' AND real observations >= 2
+      AND a usable class exists (>= MIN_SIMILAR_PROJECTS usable curves, class
+      gate, planned duration > 0). Returns null otherwise → pipeline keeps the
+      existing project_history / hybrid / similar_projects behaviour.
+    • generatePrediction(): when blendContext is non-null, tags the dataset
+      data_source 'blended', sets blend_weight / class_homogeneity /
+      similar_projects_count/details, passes the context into predictNextMonth,
+      computeNextMonthBand, ForecastService, and buildReliabilityBlock.
+    • predictNextMonth(): next-month point = w·own + (1−w)·classMedian (§5.3);
+      monotonic floor at latest actual still applies (Fix H).
+    • computeNextMonthBand(): widens the Phase 14 fit-margin band to the class
+      P25/P75 of the same month (UNION band — never narrower) (§5.4).
+    • enrichRegressionWithCrossProjectMeta(): forwards blend_weight +
+      class_homogeneity into regression_info and emits the honest blended
+      disclaimer ("Prediction blended with category reference curve (N similar
+      project(s), weight 0.60) to damp single-project noise.").
+
+  [MOD] app/Services/AI/ForecastService.php
+    • generateFutureForecast() accepts ?array $blendReference, ?float
+      $blendWeight; each future month is blended point/low/high via
+      w·own + (1−w)·class median/lower/upper; new per-row keys
+      predicted_progress_low / predicted_progress_high (null when no blend →
+      own-model rows unchanged). Monotonic floor + 0..100 clamps preserved.
+
+  [MOD] app/Services/AI/ForecastReliabilityService.php
+    • §5.5 blend shrink in finalize(): class size < 3 → ×0.80, 3-4 → ×0.90;
+      band spread > 25% → ×0.85, 15-25% → ×0.92; multipliers combine,
+      floored at 0.60; never increases the score. Context keys class_used /
+      class_count / class_homogeneity. Exposed as result['blend'] when active.
+
+
+================================================================================
+  3. FILES CREATED
+================================================================================
+
+  [NEW] textfiles/phase2_blend_reference_class_plan.md
+    • Review/summary doc: plain-English explainer of the blend, weight table,
+      P25/P75, data_source types, §5.5 shrink table, files touched, tests.
+
+  [NEW] textfiles/active_reference/ai_v2_phase2_blend_progress_log.txt
+    • This log.
+
+
+================================================================================
+  4. FILES MODIFIED
+================================================================================
+
+  [MOD] app/Services/AI/HistoricalSimilarityService.php   (closure bind fix)
+  [MOD] app/Services/AI/AIPredictionService.php           (blend pipeline)
+  [MOD] app/Services/AI/ForecastService.php               (blend + band rows)
+  [MOD] app/Services/AI/ForecastReliabilityService.php    (§5.5 shrink)
+
+  [MOD] tests/Unit/Services/AI/ForecastReliabilityServiceTest.php
+    • +5 tests: blend absent when class not used; small class shrinks;
+      wide band shrinks; multipliers combine; healthy class no shrink.
+      (27 tests total in the class.)
+
+  [MOD] tests/Feature/Services/AI/CrossProjectSupplementIntegrationTest.php
+    • test_threshold_reached_returns_none — target budget pinned (10M vs class
+      5M) so the similarity gate deterministically FAILS → data_source stays
+      'project_history' (guards the no-class path; was flaky on random budget).
+    • NEW test_phase2_blend_applies_when_class_matches — target matches class
+      (5M budget / 730 days) → data_source 'blended', blend_weight ≈ 0.6
+      (6 obs → w = 6/10). (10 tests total in the class.)
+
+
+================================================================================
+  5. VERIFICATION
+================================================================================
+
+  • php artisan test --filter=ForecastReliabilityServiceTest  → 27 passed.
+  • php artisan test --filter=CrossProjectSupplementIntegrationTest → 10 passed.
+  • php -l on all edited services (no syntax errors).
+  • composer test → FULL SUITE 635 passed / 2394 assertions, 0 failures.
+
+
+================================================================================
+  6. OPEN ITEMS / NOTES
+================================================================================
+
+  • k (blend schedule) is a reasoned default (k = 4). C7 now records accuracy
+    by data_source (prediction_history.data_source + /dev/prediction-accuracy),
+    so k ∈ {2,3,4,5,6} can be tuned against predicted-vs-actual once enough
+    blended predictions accumulate. Chosen k → Decision Log (v2.6 §9 D4).
+  • Next regression tail: A2 (Completion sanity fallback) then B5/B6
+    (percentile benchmark + at-risk flag) — see summary_of_next_work.txt.
+
+================================================================================
+  END OF LOG
+================================================================================

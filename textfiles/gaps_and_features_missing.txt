@@ -1,6 +1,6 @@
 ﻿================================================================================
   GAPS & MISSING FEATURES — CSPC PMU SYSTEM
-  Last updated: August 8, 2026 (working-days EOT noted as possible addition)
+   Last updated: August 13, 2026 (v2.6 Phase 2 blend + C7 + A4 logged)
 ================================================================================
 
   Purpose: Document features that are not yet implemented but may be
@@ -37,7 +37,7 @@
      - Working; only adjustments if needed.
      - See: active_reference/ai_module_ver2_master_plan.txt (Phases 3, 3.5, 6)
 
-  2. [DONE-PARTIAL] CROSS-PROJECT HISTORICAL REGRESSION
+  2. [DONE] CROSS-PROJECT HISTORICAL REGRESSION
      - Use similar completed projects' progress as proxy for new projects
      - Addresses "Insufficient Data" fallback for projects with <2 observations
      - Similarity criteria: category, budget range, duration, contractor
@@ -46,16 +46,21 @@
        ±40%, contractor bonus), builds aggregate curve (P25/P50/P75),
        generates scaled synthetic points. data_source = 'hybrid' /
        'similar_projects' shown in the Prediction Report.
-     - LIMITATION confirmed: only 'supplement' mode is active. The
-       'fallback' mode (aggregate curve as sole dataset replacing
-       "Insufficient Data" for <2 obs) exists in code
-       (generateFallbackDataset) but is UNUSED — shouldSupplement() maps
-       0 obs → 'none' and 1 obs → 'supplement'. This matches the
-       observation that the current implementation is just a supplement.
+     - UPGRADED (V2.6 Phase 2, Aug 13 2026, merged to main): the reference-
+       class BLEND. The pipeline regresses on REAL points only, then blends
+       every forecast point toward a similarity-weighed class curve:
+       progress(t) = w·own + (1−w)·class with w = obs/(obs+4). Applies to ALL
+       projects (>= 2 real obs + usable class), not just sparse ones (Decision
+       8); rich projects converge to their own model as w→1. Next-month and
+       forecast rows carry a P25/P75 range; reliability shrinks when the class
+       is small or its band is wide (§5.5). data_source 'blended' with honest
+       disclaimer. The old sparse-only supplement now handles 0-obs 'fallback'
+       (A4, category baseline) and 1-obs 'hybrid' only.
+     - Remaining regression-module tail: A2 (completion sanity fallback) and
+       B5/B6 (percentile benchmark + at-risk flag) — see summary_of_next_work.txt.
      - See: active_reference/phase8_cross_project_regression_plan.txt,
-       active_reference/ai_v2_phase8_cross_project_progress_log.txt
-     - Remaining polish (v2.5, non-blocking): MIN_SIMILAR_PROJECTS gate,
-       ratio floor, health gauge at gap=0, completion_multi in supplement mode
+       active_reference/ai_v2_phase8_cross_project_progress_log.txt,
+       active_reference/ai_v2_phase2_blend_progress_log.txt
 
   3. [V2] MULTIPLE LINEAR REGRESSION (MLR)
      - Additional independent variables: budget utilization, issue density,
@@ -96,7 +101,7 @@
        stats instead of raw R².
       - See: done/ai_module_ver2_planandlogs/v2_phase7_prediction_history_plan.txt
 
-  6b. [PLAN] R² PRESENTED AS PREDICTION CONFIDENCE (statistically incorrect)
+  6b. [DONE] R² PRESENTED AS PREDICTION CONFIDENCE (statistically incorrect)
      - R² (coefficient of determination) only measures how well the fitted
        curve matches PAST data. It does NOT measure whether the NEXT
        prediction is right. Yet the AI Prediction tab uses R² as the basis
@@ -105,13 +110,15 @@
      - Proof it can mislead (in-house): Project 138 had polynomial R²
        0.9989 but predicted the project 3 days AHEAD while it was behind
        plan every month — see others(notes)/polynomial_over_optimism_findings.txt.
-     - PLANNED FIX (V2 Phase 14, Aug 11 2026): weighted FORECAST
-       RELIABILITY score (0-100, High/Medium/Low) from backtest accuracy
-       (prediction_history) + real data sufficiency + forecast horizon +
-       cross-method agreement, with hard floors and an honesty cap. R² is
-       relabeled "Curve Fit Quality (matches past data only)".
+     - FIXED (V2 Phase 14, Aug 11 2026): weighted FORECAST RELIABILITY score
+       (0-100, High/Medium/Low) from backtest accuracy (prediction_history)
+       + real data sufficiency + forecast horizon + cross-method agreement,
+       with hard floors and an honesty cap. R² is relabeled "Curve Fit
+       Quality (matches past data only)".
      - Full plan: textfiles/forecast_reliability_confidence_plan.md
-     - Status: 📋 PLANNED — implementation not started.
+     - Status: ✅ DONE — implemented + merged to main (a45a156); Phase 2 blend
+       (§5.5) further shrinks reliability when a class band is wide/noisy.
+     - Last updated: August 8, 2026 → August 13, 2026 (cross-project blend + A4 + C7 logged)
 
 
 ================================================================================
@@ -490,8 +497,9 @@
     7. Custom Dashboard Widgets — improves UX, modern PM practice
 
   Medium-term / V2 Remaining:
-    8. Cross-project 'fallback' mode — wire generateFallbackDataset() so
-       <2-observation projects use the aggregate curve (supplement is live)
+    8. Cross-project regression tail — A2 completion sanity fallback + B5/B6
+       percentile benchmark / at-risk flag (supplement + fallback + blend now
+       live; summary_of_next_work.txt is the authoritative ordered list)
     9. AI-powered recommendations (Phase 10) — after Phase 9 contractor data
 
 ================================================================================

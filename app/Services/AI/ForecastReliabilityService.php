@@ -75,6 +75,10 @@ class ForecastReliabilityService
      *         'actual_next'    => float,
      *         'predicted_low'  => float|null,
      *         'predicted_high' => float|null ]
+     *   'class_used'        bool    (Phase 2) prediction was blended with the
+     *                               category reference curve.
+     *   'class_count'       int     number of similar curves in the class.
+     *   'class_homogeneity' float   mean P25-P75 band width across the plan (%).
      *
      * Horizon is always 1 month → 100. Agreement factor is neutral (60).
      */
@@ -97,7 +101,7 @@ class ForecastReliabilityService
             'agreement' => ['score' => 60, 'detail' => 'N/A (next-month forecast)'],
         ];
 
-        return $this->finalize($factors, $history, $realObs);
+        return $this->finalize($factors, $history, $realObs, $context);
     }
 
     /**
@@ -142,7 +146,7 @@ class ForecastReliabilityService
             'agreement' => $this->scoreAgreement($context),
         ];
 
-        return $this->finalize($factors, $history, $realObs);
+        return $this->finalize($factors, $history, $realObs, $context);
     }
 
     /**
@@ -323,7 +327,7 @@ class ForecastReliabilityService
      * Combine Factors into a Final Score + Level
      * ------------------------------------------------------------------------
      */
-    private function finalize(array $factors, array $history, int $realObs): array
+    private function finalize(array $factors, array $history, int $realObs, array $context = []): array
     {
         $score = (int) round(
             $factors['backtest']['score'] * self::W_BACKTEST / 100
@@ -331,6 +335,14 @@ class ForecastReliabilityService
             + $factors['horizon']['score'] * self::W_HORIZON / 100
             + $factors['agreement']['score'] * self::W_AGREEMENT / 100
         );
+
+        // Phase 2 (v2.6 §5.5): when the prediction was blended with the
+        // category reference curve, shrink the score when the class is small
+        // or its band is wide — the extrapolation is anchored to a noisy
+        // reference, so honesty demands a modest confidence discount.
+        $blend = $this->blendShrink($context);
+
+        $score = (int) round($score * $blend['multiplier']);
 
         $level = $this->classifyLevel($score);
 
@@ -346,11 +358,75 @@ class ForecastReliabilityService
             $level = 'Medium';
         }
 
-        return [
+        $result = [
             'level'   => $level,
             'score'   => $score,
             'floors'  => ['blocked' => false, 'reason' => null],
             'factors' => $factors,
+        ];
+
+        if ($blend['used']) {
+            $result['blend'] = $blend;
+        }
+
+        return $result;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Blend Shrink (Phase 2, v2.6 §5.5)
+     * ------------------------------------------------------------------------
+     *
+     * Multiplier on the weighted score when a category reference blend is in
+     * play. Class size and band spread both discount confidence:
+     *   • count < 3  → ×0.80      small, fragile class
+     *   • count < 5  → ×0.90
+     *   • spread > 25% → ×0.85    wide band → weak class anchor
+     *   • spread > 15% → ×0.92
+     *
+     * Multipliers combine multiplicatively, floored at 0.60. Never increases
+     * the score (multiplier <= 1.0). Returns ['used' => false] when no class.
+     */
+    private function blendShrink(array $context): array
+    {
+        $used = (bool) ($context['class_used'] ?? false);
+
+        if (! $used) {
+            return ['used' => false, 'multiplier' => 1.0];
+        }
+
+        $count = (int) ($context['class_count'] ?? 0);
+        $spread = (float) ($context['class_homogeneity'] ?? 0);
+
+        $multiplier = 1.0;
+        $reasons = [];
+
+        if ($count > 0 && $count < 3) {
+            $multiplier *= 0.80;
+            $reasons[] = "class of {$count} curves";
+        } elseif ($count >= 3 && $count < 5) {
+            $multiplier *= 0.90;
+            $reasons[] = "class of {$count} curves";
+        }
+
+        if ($spread > 25) {
+            $multiplier *= 0.85;
+            $reasons[] = "wide class band ({$spread}%)";
+        } elseif ($spread > 15) {
+            $multiplier *= 0.92;
+            $reasons[] = "wide class band ({$spread}%)";
+        }
+
+        $multiplier = max(0.60, $multiplier);
+
+        return [
+            'used'        => true,
+            'count'       => $count,
+            'homogeneity' => round($spread, 1),
+            'multiplier'  => round($multiplier, 3),
+            'detail'      => empty($reasons)
+                ? 'Blended with category reference curve'
+                : 'Shrink: ' . implode(', ', $reasons),
         ];
     }
 

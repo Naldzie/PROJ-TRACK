@@ -1,7 +1,7 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 12, 2026
+  Last Updated: August 13, 2026
 ===============================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
@@ -105,12 +105,14 @@
   contractor tracking, Core Phase E, Activity Log UI for Staff)
 ===============================================================================
 
-  ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 12 2026)
+  ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 13 2026)
   --------------------------------------------------------------------------------
-  Branch: fix/cross-project-safety-valves (pushed). V2.5 Steps 1–5 DONE (Step 5 =
-  MIN_SIMILARITY_SCORE 50). v2.6 Phase 1 ALL DONE (4.1 X-axis merge, 4.2 pool
-  gate via Step 5, 4.3 null-safe scoring, 4.4 honest fit wording). Everything
-  below is the remaining regression-module work IN ORDER.
+  Branch: fix/cross-project-prior-flow (pushed, merged to main Aug 13 2026).
+  V2.5 Steps 1–5 DONE (Step 5 = MIN_SIMILARITY_SCORE 50). v2.6 Phase 1 ALL
+  DONE (4.1 X-axis merge, 4.2 pool gate via Step 5, 4.3 null-safe scoring,
+  4.4 honest fit wording). v2.6 Phase 2 (reference-class blend + P25/P75
+  range) IMPLEMENTED + merged (code a0f301d). Everything below is the
+  REGRESSION-MODULE TAIL, in order.
 
     v2.6 Phase 1 — Honest fixes ✅ ALL DONE
         4.1 X-axis merge ✅ · 4.2 pool gate ✅ · 4.3 null-safe scoring ✅
@@ -129,18 +131,35 @@
         falls back to Insufficient Data when no pool. = v2.6 §5.6.
         Plan: regression_v2_5_plan §3 A4
 
-    v2.6 Phase 2 — Reference-class prior + range (THE fix for "supplement-only /
-        not by all projects"): regression on real points only + similarity-
-        weighted class curve + blend w·own+(1−w)·class → A3 P25/P75 range →
-        5.5 reliability-from-homogeneity. v2.6 §5
+    v2.6 Phase 2 — Reference-class prior + range ✅ DONE + MERGED (Aug 13 2026,
+        commit a0f301d on fix/cross-project-prior-flow)
+        Own regression on real points only (§5.1) + similarity-weighted class
+        curve (§5.2) + blend w·own+(1−w)·class w=obs/(obs+4), applies to ALL
+        projects (Decision 8) (§5.3) + P25/P75 next-month & forecast band
+        (§5.4) + reliability-from-homogeneity shrink (§5.5). Regression-meta
+        disclaimer "blended with category reference curve (N similar, weight
+        w)". Full suite 635 passed / 2394 assertions. Plan: textfiles/
+        regression_v2_6_cross_project_prior_flow_plan.md; log:
+        textfiles/active_reference/ai_v2_phase2_blend_progress_log.txt
 
-    A2 — Completion fallback for implausible fits (v2.5 §3 A2)
+    A2 — Completion fallback for implausible fits (v2.5 §3 A2)  ⬜ NEXT
+        When the project's own model yields an implausible completion
+        (polynomial → past date or absurd month count), estimate "how long
+        similar projects took to go from X% → 100%" via the aggregate and
+        blend/bound the answer. Ties into Fix H item 3.
+        Where: CompletionEstimationService::estimatePolynomial() + friends.
+        Effort: MEDIUM · Risk: MEDIUM (implausible branch only).
 
-    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)
+    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)  ⬜ after A2
+        B5: actuals vs aggregate median/P25/P75 → "your progress is in the Nth
+        percentile of similar completed projects" (feeds health gauge).
+        B6: actual below the category lower band for 2+ consecutive months →
+        "behind similar projects of this type" flag (feeds RecommendationEngine).
 
-  ▸ Out of scope NOW (recorded in v2.6 plan, not implemented): Steps 1–5
-    (safety valves) + v2.6 Phase 1 (+ A4) are DONE; v2.6 Phase 2 (blend/range)
-    is the next uncommitted work, pending the branch review.
+  ▸ Status Aug 13 2026: the v2.6 thread (Steps 1–5 + Phase 1 + C7 + A4 +
+    Phase 2 blend) is COMPLETE and merged to main. The regression-module tail
+    (A2 → B5/B6) is the next uncommitted work; after that, core Phase E → AI
+    Phase 9/10 (see overall prioritization below).
 
 ===============================================================================
 
@@ -154,8 +173,9 @@
         v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
         theme as merged Phase 14; closes live "score-40 still borrowed" bug;
         warmest context; branch + plan edits already half-done (uncommitted).
-        Status Aug 13 2026: Step 5, v2.6 Phase 1, C7, and A4 all DONE — next
-        uncommitted work is v2.6 Phase 2 (blend + range).
+        Status Aug 13 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
+        (blend + range) ALL DONE & merged into main (a0f301d) — next
+        uncommitted work is A2 (completion sanity fallback).
      2. CORE MONITORING Phase E — AI ↔ baseline linkage (small prep; enables
         future Phase 10 loop). Plan: core_monitoring_completion_plan.md
      3. AI PHASE 9 → 10 — Contractor Performance Tracking → AI-Powered
