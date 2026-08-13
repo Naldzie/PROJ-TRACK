@@ -260,6 +260,23 @@ class AIPredictionService
         // never populated (Phase 8 findings, Phase 14 plan §13.5).
         $analysis['synthetic_points_count'] = $dataset['synthetic_points_count'] ?? 0;
 
+        // Phase 2 (v2.6 §5.1-§5.5, Decision 8): reference-class BLEND.
+        // When the dataset is the project's OWN real data (>= 2 observations)
+        // and a usable class reference exists, predictions are pulled toward
+        // the class curve by w = obs/(obs+k), the next-month + forecast band
+        // widens to the class P25/P75, and data_source becomes 'blended'.
+        // Regression itself always fits the real points ONLY (§5.1).
+        $blendContext = $this->buildBlendContext($project, $dataset);
+
+        if ($blendContext !== null) {
+            $dataset['data_source'] = 'blended';
+            $dataset['similar_projects_count'] = $blendContext['similar_projects_count'];
+            $dataset['similar_projects_details'] = $blendContext['similar_projects_details'];
+            $dataset['blend_weight'] = round($blendContext['weight'], 3);
+            $dataset['class_homogeneity'] = $blendContext['homogeneity'];
+            $dataset['synthetic_points_count'] = 0;
+        }
+
         $currentMonthIndex =
             $dataset['statistics']['current_month_index'];
 
@@ -276,15 +293,19 @@ class AIPredictionService
             $this->predictNextMonth(
                 $analysis,
                 $currentMonthIndex,
-                $currentProgress
+                $currentProgress,
+                $blendContext
             );
 
         // Phase 14 Step 1: next month is reported as a band (point ± margin).
+        // Phase 2 §5.4: in blended mode the band also widens to the class
+        // P25/P75 of the same month.
         $nextPredictionBand = $this->computeNextMonthBand(
             $project,
             $dataset,
             $analysis,
-            $predictedNextProgress
+            $predictedNextProgress,
+            $blendContext
         );
 
         $forecast =
@@ -292,7 +313,9 @@ class AIPredictionService
                 $project,
                 $analysis,
                 $currentMonthIndex,
-                $currentProgress
+                $currentProgress,
+                $blendContext['reference'] ?? null,
+                $blendContext['weight'] ?? null
             );
 
         $comparison =
@@ -328,7 +351,8 @@ class AIPredictionService
             $dataset,
             $currentMonthIndex,
             $completion,
-            $completionMulti
+            $completionMulti,
+            $blendContext
         );
 
         $report = $this->buildPredictionReport(
@@ -450,7 +474,8 @@ class AIPredictionService
         array $dataset,
         int $currentMonthIndex,
         ?array $completion,
-        ?array $completionMulti
+        ?array $completionMulti,
+        ?array $blendContext = null
     ): array {
 
         $observationCount = (int) ($dataset['statistics']['observation_count'] ?? 0);
@@ -470,10 +495,19 @@ class AIPredictionService
             })
             ->all();
 
+        // Phase 2 (v2.6 §5.5): expose the class reference for the reliability
+        // shrink when the prediction was blended.
+        $classUsed = $blendContext !== null;
+        $classCount = $blendContext['similar_projects_count'] ?? 0;
+        $classHomogeneity = $blendContext['homogeneity'] ?? 0;
+
         $nextPrediction = $this->reliabilityService->computeForNextPrediction([
             'r_squared'          => $analysis['r_squared'] ?? 0,
             'real_obs_count'     => $realObsCount,
             'prediction_history' => $predictionHistory,
+            'class_used'         => $classUsed,
+            'class_count'        => $classCount,
+            'class_homogeneity'  => $classHomogeneity,
         ]);
 
         $completionReliability = null;
@@ -493,6 +527,9 @@ class AIPredictionService
                 'agreement'          => $comparison['agreement'] ?? 'N/A',
                 'valid_count'        => (int) ($comparison['valid_count'] ?? 0),
                 'spread_days'        => (int) ($comparison['spread_days'] ?? 0),
+                'class_used'         => $classUsed,
+                'class_count'        => $classCount,
+                'class_homogeneity'  => $classHomogeneity,
             ]);
         }
 
@@ -531,6 +568,75 @@ class AIPredictionService
         }
 
         return $supplement;
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Phase 2 — Reference-Class Blend Context (v2.6 §5.1-§5.5)
+     * ------------------------------------------------------------------------
+     *
+     * Builds the class reference + shrink weight for a project whose dataset
+     * is its OWN real data (>= 2 observations) and a usable class exists.
+     *
+     * Returns null when blending does not apply, so the pipeline keeps the
+     * existing project_history behaviour:
+     *   • Sparse datasets replaced by hybrid/similar_projects (Phase 1 paths
+     *     are untouched — they already carry their own honest wording).
+     *   • Fewer than MIN_SIMILAR_PROJECTS usable curves (class gate).
+     *   • No planned duration (nothing to anchor the reference band to).
+     *
+     * When non-null, the caller tags the dataset data_source 'blended' and the
+     * prediction/forecast/band/reliability all consume the context.
+     */
+    private function buildBlendContext(Project $project, array $dataset): ?array
+    {
+        $dataSource = $dataset['data_source'] ?? 'project_history';
+
+        // The blend replaces the old 2..threshold supplement ONLY for a
+        // project's own real dataset (Decision 8: applies to all projects,
+        // not just sparse). Hybrid (1-obs supplement) and similar_projects
+        // (0-obs fallback) keep their Phase 1 behaviour.
+        if ($dataSource !== 'project_history') {
+            return null;
+        }
+
+        $realObservations =
+            (int) ($dataset['statistics']['observation_count'] ?? 0)
+            - (int) ($dataset['synthetic_points_count'] ?? 0);
+
+        if ($realObservations < 2) {
+            return null;
+        }
+
+        $totalPlannedMonths = $this->historicalSimilarityService->getPlannedMonths($project);
+
+        if ($totalPlannedMonths <= 0) {
+            return null;
+        }
+
+        $reference = $this->historicalSimilarityService->buildClassReference(
+            $project,
+            $totalPlannedMonths
+        );
+
+        if (empty($reference)) {
+            return null;
+        }
+
+        // Partial-pooling shrink weight w = obs/(obs+k), k default 4.
+        $weight = $this->historicalSimilarityService->blendWeight($realObservations);
+
+        $reference['similar_projects_count'] = $reference['similar_projects_count'] ?? null;
+        $reference['homogeneity'] = $reference['homogeneity'] ?? null;
+
+        return [
+            'reference'              => $reference,
+            'weight'                 => $weight,
+            'similar_projects_count' => $reference['similar_projects_count'],
+            'similar_projects_details' => $this->historicalSimilarityService->getSimilarProjectsDetails($project),
+            'homogeneity'            => $reference['homogeneity'],
+            'real_observations'      => $realObservations,
+        ];
     }
 
     /**
@@ -665,7 +771,8 @@ class AIPredictionService
     private function predictNextMonth(
         array $analysis,
         int $currentMonthIndex,
-        float $currentProgress
+        float $currentProgress,
+        ?array $blendContext = null
     ): float {
 
         $method = $analysis['regression_method'] ?? 'slr';
@@ -685,6 +792,20 @@ class AIPredictionService
                     $analysis,
                     $currentMonthIndex + 1
                 );
+        }
+
+        // Phase 2 (v2.6 §5.3): blend the own-model next-month point with the
+        // reference-class median at the same month index:
+        //   predicted(t) = w·own(t) + (1−w)·classMedian(t)
+        $nextMonthIndex = $currentMonthIndex + 1;
+
+        if ($blendContext !== null) {
+            $classMedian = $blendContext['reference']['median'][$nextMonthIndex] ?? null;
+
+            if ($classMedian !== null) {
+                $predicted = ($blendContext['weight'] * $predicted)
+                    + ((1 - $blendContext['weight']) * $classMedian);
+            }
         }
 
         // Fix H: clamp is monotonic — next month can never be reported at a
@@ -713,7 +834,8 @@ class AIPredictionService
         Project $project,
         array $dataset,
         array $analysis,
-        float $predictedNextProgress
+        float $predictedNextProgress,
+        ?array $blendContext = null
     ): array {
         $margin = max(
             $this->fitResidualRMSE($dataset, $analysis),
@@ -721,12 +843,46 @@ class AIPredictionService
             2.0
         );
 
+        $low  = max(0, $predictedNextProgress - $margin);
+        $high = min(100, $predictedNextProgress + $margin);
+
+        // Phase 2 (v2.6 §5.4): in blended mode widen the band to the class
+        // P25/P75 of the same next month. The blended low/high are
+        //   w·own + (1−w)·classLower   and   w·own + (1−w)·classUpper
+        // and the final band is the union of the fit-margin band and the
+        // class band, so sparse/similar projects get an honest RANGE.
+        if ($blendContext !== null) {
+            $nextMonthIndex = $this->currentMonthIndexForBand($dataset);
+
+            $classLower = $blendContext['reference']['lower'][$nextMonthIndex] ?? null;
+            $classUpper = $blendContext['reference']['upper'][$nextMonthIndex] ?? null;
+
+            if ($classLower !== null || $classUpper !== null) {
+                $w = $blendContext['weight'];
+
+                $blendedLow = ($w * $predictedNextProgress)
+                    + ((1 - $w) * ($classLower ?? $predictedNextProgress));
+
+                $blendedHigh = ($w * $predictedNextProgress)
+                    + ((1 - $w) * ($classUpper ?? $predictedNextProgress));
+
+                $low  = min($low, max(0, $blendedLow));
+                $high = max($high, min(100, $blendedHigh));
+            }
+        }
+
         return [
             'progress'       => round($predictedNextProgress, 2),
-            'progress_low'   => round(max(0, $predictedNextProgress - $margin), 2),
-            'progress_high'  => round(min(100, $predictedNextProgress + $margin), 2),
+            'progress_low'   => round($low, 2),
+            'progress_high'  => round($high, 2),
             'margin'         => round($margin, 2),
         ];
+    }
+
+    // Next month's index for band lookups (current_month_index + 1).
+    private function currentMonthIndexForBand(array $dataset): int
+    {
+        return (int) ($dataset['statistics']['current_month_index'] ?? 0) + 1;
     }
 
     // RMSE of the selected regression model's residuals over observed months.
@@ -1260,6 +1416,14 @@ class AIPredictionService
             $regression['synthetic_points_count'] = $dataset['synthetic_points_count'];
         }
 
+        if (isset($dataset['blend_weight'])) {
+            $regression['blend_weight'] = $dataset['blend_weight'];
+        }
+
+        if (isset($dataset['class_homogeneity'])) {
+            $regression['class_homogeneity'] = $dataset['class_homogeneity'];
+        }
+
         if (isset($regression['data_source']) && $regression['data_source'] !== 'project_history') {
             $count = $regression['similar_projects_count'] ?? 0;
             if ($regression['data_source'] === 'similar_projects') {
@@ -1275,6 +1439,15 @@ class AIPredictionService
                 $regression['similar_projects_disclaimer'] =
                     'Prediction supplemented with data from ' . $count
                     . ' similar completed project(s) (' . $synthCount . ' additional data point(s)).';
+            } elseif ($regression['data_source'] === 'blended') {
+                // Phase 2 (Decision 8): own real data blended against the
+                // category reference curve. Shrink weight w = obs/(obs+4)
+                // controls how strongly the class curve steers the forecast.
+                $weight = $regression['blend_weight'] ?? 0;
+                $regression['similar_projects_disclaimer'] =
+                    'Prediction blended with category reference curve (' . $count
+                    . ' similar project(s), weight ' . number_format($weight, 2)
+                    . ') to damp single-project noise.';
             }
         }
 

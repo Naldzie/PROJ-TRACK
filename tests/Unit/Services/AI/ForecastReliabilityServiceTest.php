@@ -413,4 +413,110 @@ class ForecastReliabilityServiceTest extends TestCase
             $this->assertArrayHasKey('detail', $result['factors'][$factor]);
         }
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Phase 2 (v2.6 §5.5) — blend shrink
+    |--------------------------------------------------------------------------
+    */
+
+    public function test_blend_not_present_when_class_not_used(): void
+    {
+        $result = $this->service->computeForNextPrediction($this->nextContext());
+
+        $this->assertArrayNotHasKey('blend', $result);
+        // Score unchanged by the absent blend (multiplier 1.0):
+        // backtest 60 + data 100 + horizon 100 + agreement 60 = 78.
+        $this->assertSame(78, $result['score']);
+    }
+
+    public function test_blend_small_class_shrinks_score(): void
+    {
+        // backtest 100 + data 100 + horizon 100 + agreement 100 = 100.
+        // class_count = 2 → ×0.80 → 80.
+        $result = $this->service->computeForCompletion($this->completionContext([
+            'real_obs_count'     => 8,
+            'estimated_index'    => 6,
+            'current_index'      => 4,
+            'agreement'          => 'High',
+            'valid_count'        => 3,
+            'spread_days'        => 10,
+            'prediction_history' => [
+                ['predicted_next' => 50, 'actual_next' => 50],
+                ['predicted_next' => 55, 'actual_next' => 55],
+                ['predicted_next' => 60, 'actual_next' => 60],
+            ],
+            'class_used'         => true,
+            'class_count'        => 2,
+            'class_homogeneity'  => 8,
+        ]));
+
+        $this->assertSame(80, $result['score']);
+        $this->assertSame(0.8, $result['blend']['multiplier']);
+        $this->assertStringContainsString('Shrink: class of 2 curves', $result['blend']['detail']);
+    }
+
+    public function test_blend_wide_band_shrinks_score(): void
+    {
+        // Same perfect 100 baseline; spread 30 → ×0.85 → 85.
+        $result = $this->service->computeForCompletion($this->completionContext([
+            'real_obs_count'     => 8,
+            'estimated_index'    => 6,
+            'current_index'      => 4,
+            'agreement'          => 'High',
+            'valid_count'        => 3,
+            'spread_days'        => 10,
+            'prediction_history' => [
+                ['predicted_next' => 50, 'actual_next' => 50],
+                ['predicted_next' => 55, 'actual_next' => 55],
+                ['predicted_next' => 60, 'actual_next' => 60],
+            ],
+            'class_used'         => true,
+            'class_count'        => 6,
+            'class_homogeneity'  => 30,
+        ]));
+
+        $this->assertSame(85, $result['score']);
+        $this->assertSame(0.85, $result['blend']['multiplier']);
+        $this->assertStringContainsString('wide class band (30%)', $result['blend']['detail']);
+    }
+
+    public function test_blend_shrink_multipliers_combine(): void
+    {
+        // count = 2 (×0.80) and spread = 30 (×0.85) → 0.68 (above the 0.60
+        // floor, so it is preserved).
+        $result = $this->service->computeForCompletion($this->completionContext([
+            'real_obs_count'     => 8,
+            'estimated_index'    => 6,
+            'current_index'      => 4,
+            'agreement'          => 'High',
+            'valid_count'        => 3,
+            'spread_days'        => 10,
+            'prediction_history' => [
+                ['predicted_next' => 50, 'actual_next' => 50],
+                ['predicted_next' => 55, 'actual_next' => 55],
+                ['predicted_next' => 60, 'actual_next' => 60],
+            ],
+            'class_used'         => true,
+            'class_count'        => 2,
+            'class_homogeneity'  => 30,
+        ]));
+
+        $this->assertSame(0.68, $result['blend']['multiplier']);
+        // round(100 × 0.68) = 68
+        $this->assertSame(68, $result['score']);
+    }
+
+    public function test_blend_healthy_class_no_shrink(): void
+    {
+        // count = 8, spread = 10 → no discount → multiplier 1.0, no shrink detail.
+        $result = $this->service->computeForNextPrediction($this->nextContext([
+            'class_used'        => true,
+            'class_count'       => 8,
+            'class_homogeneity' => 10,
+        ]));
+
+        $this->assertSame(1.0, $result['blend']['multiplier']);
+        $this->assertSame('Blended with category reference curve', $result['blend']['detail']);
+    }
 }

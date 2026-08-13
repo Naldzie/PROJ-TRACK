@@ -40,6 +40,13 @@ class HistoricalSimilarityService
 
     private const AGGREGATE_INTERVAL = 5;
 
+    // Phase 2 (v2.6 §5.3) blend schedule: w = obs / (obs + k). The class
+    // reference enters as a BAYESIAN-style prior/shinkage: a sparse project's
+    // forecast is mostly the class curve, a rich project's forecast is mostly
+    // its own regression. k = 4 means w reaches 0.50 at 4 real observations
+    // (Decision 4 — refined later via the C7 backtest).
+    private const BLEND_K = 4;
+
     private ?Collection $similarProjects = null;
 
     private ?array $aggregateCurve = null;
@@ -71,18 +78,15 @@ class HistoricalSimilarityService
             return 'supplement';
         }
 
-        $totalPlannedMonths = $this->getTotalPlannedMonths($project);
-
-        if ($totalPlannedMonths <= 0) {
-            return 'none';
-        }
-
-        $threshold = max(2, (int) ceil($totalPlannedMonths / 3));
-
-        if ($observationCount < $threshold) {
-            return 'supplement';
-        }
-
+        // Phase 2 (v2.6 §5.1/§5.3, Decision 8): every project with >= 2 real
+        // observations is now handled by the reference-class BLEND — its own
+        // regression fits on REAL points only, and predictions are pulled
+        // toward the class curve by w = obs/(obs+k). No synthetic rows are
+        // injected for obs >= 2 (the old '2 .. threshold' supplement path is
+        // intentionally retired in favor of the blend). The blend activates
+        // in AIPredictionService when a usable class reference exists; with
+        // no pool it falls back to project_history. Only the 0-obs 'fallback'
+        // and 1-obs 'supplement' (hybrid) paths keep their synthetic datasets.
         return 'none';
     }
 
@@ -207,43 +211,223 @@ class HistoricalSimilarityService
 
         $percentiles = range(0, 100, self::AGGREGATE_INTERVAL);
 
-        $allCurves = $validCurves->map(function ($candidate) use ($percentiles) {
-            return $this->normalizeToPercentile($candidate, $percentiles);
-        })->filter(fn ($curve) => !empty($curve));
+        // v2.6 Phase 2 §5.2 (kNN-style weighting): each usable curve carries
+        // its similarity weight (final score = raw × recency), so stronger
+        // matches dominate the aggregate. Pairs of [percentile => value] with
+        // their weight are gathered, then the weighted median/P25/P75 is
+        // computed per percentile.
+        $weightedCurves = $validCurves->map(function ($candidate) use ($percentiles, $project) {
+            $curve = $this->normalizeToPercentile($candidate, $percentiles);
 
-        if ($allCurves->isEmpty()) {
+            if (empty($curve)) {
+                return null;
+            }
+
+            $weight = $this->computeSimilarityScore($project, $candidate)
+                * $this->recencyFactor($candidate);
+
+            return [
+                'curve'  => $curve,
+                'weight' => max(0.01, $weight),
+            ];
+        })->filter(fn ($entry) => $entry !== null);
+
+        if ($weightedCurves->isEmpty()) {
             $this->aggregateCurve = [];
             return [];
         }
 
         $aggregate = [];
         foreach ($percentiles as $pct) {
-            $values = $allCurves->map(fn ($curve) => $curve[$pct] ?? null)
-                ->filter(fn ($v) => $v !== null)
+            $weightedValues = $weightedCurves
+                ->map(fn ($entry) => [
+                    'value'  => $entry['curve'][$pct] ?? null,
+                    'weight' => $entry['weight'],
+                ])
+                ->filter(fn ($v) => $v['value'] !== null)
                 ->values()
                 ->toArray();
 
-            if (empty($values)) {
+            if (empty($weightedValues)) {
                 $aggregate[$pct] = ['median' => null, 'lower' => null, 'upper' => null];
                 continue;
             }
 
-            sort($values);
-            $count = count($values);
-            $median = $this->medianOfArray($values);
-            $lower  = $values[(int) floor($count * 0.25)];
-            $upper  = $values[(int) floor($count * 0.75)];
-
             $aggregate[$pct] = [
-                'median' => round($median, 2),
-                'lower'  => round($lower, 2),
-                'upper'  => round($upper, 2),
+                'median' => round($this->weightedPercentile($weightedValues, 0.50), 2),
+                'lower'  => round($this->weightedPercentile($weightedValues, 0.25), 2),
+                'upper'  => round($this->weightedPercentile($weightedValues, 0.75), 2),
             ];
         }
 
         $this->aggregateCurve = $aggregate;
 
         return $aggregate;
+    }
+
+    // Weighted percentile (kNN-style, v2.6 §5.2): sorts (value, weight) pairs
+    // by value, walks cumulative weight, and returns the value whose
+    // cumulative weight reaches `fraction` of the total. Equal weights
+    // reproduce the earlier equal-weight median/quartile behaviour.
+    private function weightedPercentile(array $weightedValues, float $fraction): ?float
+    {
+        if (empty($weightedValues)) {
+            return null;
+        }
+
+        uasort($weightedValues, fn ($a, $b) => $a['value'] <=> $b['value']);
+        $weightedValues = array_values($weightedValues);
+
+        $totalWeight = array_sum(array_column($weightedValues, 'weight'));
+
+        if ($totalWeight <= 0) {
+            return null;
+        }
+
+        $target = $totalWeight * $fraction;
+
+        $cumulative = 0.0;
+
+        foreach ($weightedValues as $index => $pair) {
+            $previousCumulative = $cumulative;
+            $cumulative += $pair['weight'];
+
+            if ($cumulative >= $target || $index === count($weightedValues) - 1) {
+                $prevValue = $weightedValues[$index - 1]['value'] ?? $pair['value'];
+
+                // Interpolate within the crossing interval for a smooth
+                // percentile (matches equal-weight median-of-array rounding).
+                if ($cumulative > $previousCumulative) {
+                    $fractionWithin = ($target - $previousCumulative)
+                        / ($cumulative - $previousCumulative);
+
+                    return $prevValue
+                        + ($pair['value'] - $prevValue) * max(0, min(1, $fractionWithin));
+                }
+
+                return $pair['value'];
+            }
+        }
+
+        return ($weightedValues[count($weightedValues) - 1]['value'] ?? null);
+    }
+
+    // Phase 2 (v2.6 §5.3): partial-pooling shrink weight w = obs / (obs + k).
+    // A project with 0 real observations → w = 0 (pure class); 4 real obs →
+    // w = 0.50 (half/half); 20 obs → w ≈ 0.83 (mostly own). k tuned via the
+    // C7 backtest (Decision 4, default 4).
+    public function blendWeight(int $observationCount): float
+    {
+        $obs = max(0, $observationCount);
+
+        return $obs / ($obs + self::BLEND_K);
+    }
+
+    // Phase 2 (v2.6 §5.2/§5.4): build the reference-class curve as a
+    // month-aligned SCALED band [median/lower/upper at every planned month]
+    // that the prediction pipeline blends against. Returns [] (no class) when
+    // fewer than MIN_SIMILAR_PROJECTS usable curves exist or the project has
+    // no planned duration.
+    //
+    // The raw aggregate is percentile-based (0..100% of plan). We map each
+    // planned month to its percentile, interpolate median/lower/upper, then
+    // SCALE the whole band onto the project's own trajectory using the same
+    // median actual-vs-class ratio as generateSyntheticPoints() — so a small
+    // project's class reference sits near its own progress level instead of
+    // being an absolute % of an unrelated category.
+    public function buildClassReference(Project $project, int $totalPlannedMonths): array
+    {
+        $aggregate = $this->buildAggregateCurve($project);
+
+        if (empty($aggregate) || $totalPlannedMonths <= 0) {
+            return [];
+        }
+
+        // Real observations for the scale ratio (same as generateSyntheticPoints)
+        $history = $project->progressHistory()
+            ->orderBy('month_label')
+            ->get();
+
+        $actualX = [];
+        $actualY = [];
+
+        foreach ($history->values() as $index => $record) {
+            $actualX[] = (float) ($index + 1);
+            $actualY[] = (float) $record->actual_progress_percent;
+        }
+
+        $ratios = [];
+        foreach ($actualX as $i => $x) {
+            $pct = ($x / $totalPlannedMonths) * 100;
+            $aggValue = $this->interpolateAggregate($aggregate, $pct);
+            if ($aggValue !== null && $aggValue > 0 && $actualY[$i] > 0) {
+                $ratios[] = $actualY[$i] / $aggValue;
+            }
+        }
+
+        $scaleRatio = !empty($ratios) ? $this->medianOfArray($ratios) : 1.0;
+        $scaleRatio = max(self::MIN_SCALE_RATIO, min(self::MAX_SCALE_RATIO, $scaleRatio));
+
+        $reference = [
+            'median' => [],
+            'lower'  => [],
+            'upper'  => [],
+        ];
+
+        for ($i = 1; $i <= $totalPlannedMonths; $i++) {
+            $pct = ($i / $totalPlannedMonths) * 100;
+            $band = $this->interpolateAggregateBand($aggregate, $pct);
+
+            if ($band === null) {
+                continue;
+            }
+
+            $reference['median'][$i] = round(max(0, min(100, $band['median'] * $scaleRatio)), 2);
+            $reference['lower'][$i]  = round(max(0, min(100, ($band['lower'] ?? $band['median']) * $scaleRatio)), 2);
+            $reference['upper'][$i]  = round(max(0, min(100, ($band['upper'] ?? $band['median']) * $scaleRatio)), 2);
+        }
+
+        // Class homogeneity (spread): mean band width across the plan's months.
+        // Wide band / small pool → lower reliability (v2.6 §5.5).
+        $spread = $this->aggregateBandSpread($reference);
+
+        $reference['similar_projects_count'] = $validCount = $this->countUsableCurves($project);
+
+        // Group homogeneity (mean P25-P75 width as % of progress) for the
+        // reliability shrink.
+        $reference['homogeneity'] = $spread;
+
+        return $reference;
+    }
+
+    // Mean of (upper - lower) across a month-aligned reference band. Used by
+    // buildClassReference() and consumed by reliability for the §5.5 shrink.
+    public function aggregateBandSpread(array $reference): ?float
+    {
+        $widths = [];
+
+        foreach (($reference['median'] ?? []) as $month => $median) {
+            $lower = $reference['lower'][$month] ?? null;
+            $upper = $reference['upper'][$month] ?? null;
+
+            if ($lower !== null && $upper !== null) {
+                $widths[] = $upper - $lower;
+            }
+        }
+
+        return empty($widths) ? null : round(array_sum($widths) / count($widths), 2);
+    }
+
+    // Number of similar completed projects whose curve is usable for the
+    // aggregate (>= MIN_OBSERVATIONS_FOR_CURVE) — the honest "N similar
+    // projects" reported to the UI.
+    public function countUsableCurves(Project $project): int
+    {
+        return $this->findSimilarProjects($project)
+            ->filter(fn ($candidate) =>
+                $candidate->progressHistory()->count() >= self::MIN_OBSERVATIONS_FOR_CURVE
+            )
+            ->count();
     }
 
     // Generate synthetic dataset points from the aggregate curve
@@ -560,6 +744,60 @@ class HistoricalSimilarityService
         return $lowerVal + ($upperVal - $lowerVal) * $fraction;
     }
 
+    // Interpolate the FULL aggregate band (median/lower/upper) at a given
+    // percentile. Used by buildClassReference() (Phase 2 §5.2/§5.4) so the
+    // blend has a P25/P75 range, not just a median point.
+    private function interpolateAggregateBand(array $aggregateCurve, float $percentile): ?array
+    {
+        $keys = array_keys($aggregateCurve);
+        sort($keys);
+
+        if (empty($keys)) {
+            return null;
+        }
+
+        if ($percentile <= $keys[0]) {
+            return $aggregateCurve[$keys[0]];
+        }
+
+        if ($percentile >= $keys[count($keys) - 1]) {
+            return $aggregateCurve[$keys[count($keys) - 1]];
+        }
+
+        $lowerKey = null;
+        $upperKey = null;
+
+        foreach ($keys as $key) {
+            if ($key <= $percentile) {
+                $lowerKey = $key;
+            }
+            if ($key >= $percentile && $upperKey === null) {
+                $upperKey = $key;
+            }
+        }
+
+        if ($lowerKey === null || $upperKey === null || $lowerKey === $upperKey) {
+            return $aggregateCurve[$lowerKey ?? $upperKey];
+        }
+
+        $fraction = ($percentile - $lowerKey) / ($upperKey - $lowerKey);
+
+        $result = [];
+
+        foreach (['median', 'lower', 'upper'] as $key) {
+            $lowerVal = $aggregateCurve[$lowerKey][$key] ?? null;
+            $upperVal = $aggregateCurve[$upperKey][$key] ?? null;
+
+            if ($lowerVal === null || $upperVal === null) {
+                $result[$key] = $lowerVal ?? $upperVal;
+            } else {
+                $result[$key] = $lowerVal + ($upperVal - $lowerVal) * $fraction;
+            }
+        }
+
+        return $result;
+    }
+
     // Get total planned months from baseline schedules
     private function getTotalPlannedMonths(Project $project): int
     {
@@ -577,6 +815,13 @@ class HistoricalSimilarityService
         }
 
         return 0;
+    }
+
+    // Public wrapper for the planned-month count, consumed by
+    // AIPredictionService to build the class reference band (§5.2).
+    public function getPlannedMonths(Project $project): int
+    {
+        return $this->getTotalPlannedMonths($project);
     }
 
     // Calculate median of a numeric array

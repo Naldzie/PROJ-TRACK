@@ -355,13 +355,62 @@ class CrossProjectSupplementIntegrationTest extends TestCase
                 'category_id'          => $categoryId,
                 // 180 days → 6 planned months → threshold max(2, 6/3)=2
                 'planned_duration_days' => 180,
+                // budget intentionally far from the seeded class (5M) so the
+                // similarity gate deterministically fails (BUDGET_TOLERANCE
+                // 0.20) — this test guards the NO-class path.
+                'approved_budget'      => 9999999.99,
             ]
         );
 
-        // 6 observations ≥ max(2, ceil(plannedMonths/3)) → none
+        // 6 observations ≥ max(2, ceil(plannedMonths/3)) → no supplement
         $this->assertSame('none', $this->historicalSimilarityService->shouldSupplement($target, 6));
 
         $report = $this->predictionService->generatePrediction($target);
+
+        // The target's budget (10M) and 180-day duration are both outside the
+        // class tolerances (5M / 730 days), so the similarity gate fails and
+        // NO class reference exists → the blend stays off and the project keeps
+        // pure project_history. (Positive blend coverage lives in
+        // test_phase2_blend_applies_when_class_matches.)
         $this->assertSame('project_history', $report['regression']['data_source'] ?? 'project_history');
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Phase 2 (Decision 8) — blend applies even when the supplement threshold
+     * is reached, PROVIDED a usable category class exists.
+     * ------------------------------------------------------------------------
+     */
+    public function test_phase2_blend_applies_when_class_matches(): void
+    {
+        $categoryId = $this->makeCategory('Blend Category')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 730,
+            ]
+        );
+
+        // 6 observations ≥ max(2, ceil(plannedMonths/3)) → no supplement
+        $this->assertSame('none', $this->historicalSimilarityService->shouldSupplement($target, 6));
+
+        $report = $this->predictionService->generatePrediction($target);
+
+        // Decision 8: the Phase 2 blend replaces the old sparse-only supplement
+        // — a project with enough own data AND a usable category class is
+        // blended (data_source 'blended'), pulling the next-month prediction,
+        // forecast band, and reliability toward the class curve.
+        $this->assertSame('blended', $report['regression']['data_source'] ?? 'project_history');
+        $this->assertArrayHasKey('blend_weight', $report['regression']);
+        $this->assertGreaterThan(0, $report['regression']['blend_weight']);
+
+        // Blend weight w = obs/(obs+4) → 6 real obs → 0.6.
+        $this->assertEqualsWithDelta(0.6, $report['regression']['blend_weight'], 0.01);
     }
 }
