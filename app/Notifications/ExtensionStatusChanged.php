@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -32,7 +33,37 @@ class ExtensionStatusChanged extends Notification
 
     public function via($notifiable): array
     {
-        return ['database'];
+        return ['database', 'mail'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        $statusLabel = ucfirst($this->status);
+        $title = "Extension {$statusLabel} — {$this->projectTitle}";
+
+        $lines = [
+            'Project'   => $this->projectTitle,
+            'Extension' => $this->extensionNumber ? '#' . $this->extensionNumber : '—',
+            'Status'    => $statusLabel,
+        ];
+
+        if ($this->status === self::REJECTED) {
+            $lines['Rejection reason'] = $this->rejectionReason ?? 'Not provided';
+        }
+
+        return (new MailMessage)
+            ->subject($title)
+            ->view('emails.notification', [
+                'notifTitle'    => $title,
+                'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
+                'intro'         => match ($this->status) {
+                    self::SUBMITTED => 'A new project extension request has been submitted and requires your review.',
+                    self::APPROVED  => 'Your project extension request has been approved.',
+                    self::REJECTED  => 'Your project extension request was rejected. See the reason below.',
+                    default         => 'The status of a project extension request has changed.',
+                },
+                'lines'         => $lines,
+            ]);
     }
 
     public function toDatabase($notifiable): array

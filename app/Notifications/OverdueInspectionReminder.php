@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -27,7 +28,27 @@ class OverdueInspectionReminder extends Notification
 
     public function via($notifiable): array
     {
-        return ['database'];
+        return ['database', 'mail'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        $month = $this->monthDisplay ?: $this->monthLabel;
+        $title = 'Overdue Inspection — ' . $this->projectTitle;
+
+        return (new MailMessage)
+            ->subject($title)
+            ->view('emails.notification', [
+                'notifTitle'    => $title,
+                'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
+                'intro'         => 'A scheduled inspection month has passed without recorded progress for this project.',
+                'lines'         => [
+                    'Project'          => $this->projectTitle,
+                    'Inspection month' => $month,
+                    'Planned date'     => $this->plannedDate,
+                    'Status'           => 'Overdue',
+                ],
+            ]);
     }
 
     public function toDatabase($notifiable): array

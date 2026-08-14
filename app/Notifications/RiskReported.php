@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -26,7 +27,26 @@ class RiskReported extends Notification
 
     public function via($notifiable): array
     {
-        return ['database'];
+        return ['database', 'mail'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        $title = "High Risk Reported — {$this->projectTitle}";
+
+        return (new MailMessage)
+            ->subject($title)
+            ->view('emails.notification', [
+                'notifTitle'    => $title,
+                'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
+                'intro'         => 'A high-level risk has been reported on a project you are involved with. Please review immediately.',
+                'lines'         => [
+                    'Project'  => $this->projectTitle,
+                    'Risk'     => $this->riskName,
+                    'Severity' => 'High',
+                    'Status'   => 'Open',
+                ],
+            ]);
     }
 
     public function toDatabase($notifiable): array

@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -26,7 +27,26 @@ class IssueReported extends Notification
 
     public function via($notifiable): array
     {
-        return ['database'];
+        return ['database', 'mail'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        $title = "Issue Reported ({$this->severity}) — {$this->projectTitle}";
+
+        return (new MailMessage)
+            ->subject($title)
+            ->view('emails.notification', [
+                'notifTitle'    => $title,
+                'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
+                'intro'         => 'A new issue has been reported on a project you are involved with.',
+                'lines'         => [
+                    'Project' => $this->projectTitle,
+                    'Issue'   => $this->issueName,
+                    'Severity' => $this->severity,
+                    'Status'  => 'Open',
+                ],
+            ]);
     }
 
     public function toDatabase($notifiable): array

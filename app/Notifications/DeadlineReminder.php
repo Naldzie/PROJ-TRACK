@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -27,7 +28,38 @@ class DeadlineReminder extends Notification
 
     public function via($notifiable): array
     {
-        return ['database'];
+        return ['database', 'mail'];
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        $overdue = $this->bucket === 'overdue';
+
+        $title = $overdue
+            ? 'Project Overdue — ' . $this->projectTitle
+            : 'Deadline Reminder — ' . $this->projectTitle;
+
+        $lines = [
+            'Project'          => $this->projectTitle,
+            'Planned end date' => $this->plannedEndDate,
+        ];
+
+        if ($overdue) {
+            $lines['Status'] = 'Overdue by ' . abs($this->daysRemaining) . ' day(s)';
+        } else {
+            $lines['Days remaining'] = (string) $this->daysRemaining;
+        }
+
+        return (new MailMessage)
+            ->subject($title)
+            ->view('emails.notification', [
+                'notifTitle'    => $title,
+                'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
+                'intro'         => $overdue
+                    ? 'This project has passed its planned end date and is now overdue. Please review immediately.'
+                    : "This project's deadline is approaching. Please ensure completion within the remaining time.",
+                'lines'         => $lines,
+            ]);
     }
 
     public function toDatabase($notifiable): array
