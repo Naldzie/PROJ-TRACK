@@ -56,7 +56,19 @@ h1 { font-size: clamp(28px, 3.2vw, 42px); letter-spacing: -.06em; line-height: 1
 .metric {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 13px; padding: 16px; box-shadow: var(--shadow-sm);
+  position: relative; overflow: hidden;
 }
+.metric::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--indigo);
+  opacity: .8;
+}
+.metric:nth-child(2)::after { background: var(--green); }
+.metric:nth-child(3)::after { background: var(--amber); }
+.metric:nth-child(4)::after { background: var(--coral); }
 .metric-top {
   display: flex; align-items: center; justify-content: space-between;
   color: var(--muted); font-size: 11px;
@@ -155,7 +167,12 @@ tr.row-disabled { opacity: 0.55; }
   display: grid; place-items: center;
   color: var(--indigo-deep); background: var(--indigo-soft);
   font-size: 11px; font-weight: 800;
-  flex-shrink: 0;
+  flex-shrink: 0; position: relative; overflow: hidden;
+}
+.user-avatar .avatar-initials { position: relative; }
+.user-avatar img.avatar-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: inherit; z-index: 1;
 }
 .user-avatar.coral { background: var(--coral-soft); color: oklch(45% .12 32); }
 .user-avatar.gray { background: oklch(91% .018 273); color: var(--muted); }
@@ -201,6 +218,11 @@ tr.row-disabled { opacity: 0.55; }
 .selected-profile .user-avatar { width: 42px; height: 42px; border-radius: 13px; }
 .selected-profile strong { display: block; font-size: 13px; }
 .selected-profile small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+.selected-avatar {
+  width: 42px; height: 42px; border-radius: 13px; object-fit: cover;
+  background: var(--indigo-soft); flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.6); box-shadow: 0 0 0 2px oklch(53% .195 275 / .25);
+}
 .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .profile-stat {
   padding: 10px; border-radius: 9px; background: var(--canvas);
@@ -425,11 +447,12 @@ dialog::backdrop { background: oklch(24% .035 273 / .38); }
             }
             $tone = $user->is_active ? 'coral' : 'gray';
           @endphp
-          <tr class="{{ $user->is_active ? '' : 'row-disabled' }}" data-id="{{ $contractor->id }}">
+          <tr class="{{ $user->is_active ? '' : 'row-disabled' }}" data-id="{{ $contractor->id }}" data-photo="{{ $photo }}">
             <td>
               <div class="user-cell">
                 <div class="user-avatar {{ $tone === 'coral' ? 'coral' : '' }} {{ $tone === 'gray' ? 'gray' : '' }}">
-                  {{ $initials ?: '?' }}
+                  @if($photo)<img class="avatar-img" src="{{ $photo }}" alt="" loading="lazy" onerror="this.remove()">@endif
+                  <span class="avatar-initials">{{ $initials ?: '?' }}</span>
                 </div>
                 <div>
                   <strong>{{ $user->name ?? 'Pending' }}</strong>
@@ -645,11 +668,16 @@ function renderProfile(id) {
   const avatarClass = row.querySelector('.user-avatar')?.className || 'user-avatar';
   const contractorId = row.querySelector('.id-chip')?.textContent || 'N/A';
   const company = row.querySelectorAll('.email')[1]?.textContent || '—';
+  const photo = row.dataset.photo || '';
+
+  const avatarEl = photo
+    ? `<img class="selected-avatar" src="${photo}" alt="${name}" onerror="this.remove()">`
+    : `<div class="${avatarClass}" style="width:42px;height:42px;border-radius:13px;">${avatar}</div>`;
 
   document.getElementById('selectedLabel').textContent = isActive ? 'Active profile' : 'Disabled profile';
   document.getElementById('profileCard').innerHTML = `
     <div class="selected-profile">
-      <div class="${avatarClass}" style="width:42px;height:42px;border-radius:13px;">${avatar}</div>
+      ${avatarEl}
       <div>
         <strong>${name}</strong>
         <small>${email}</small>
@@ -717,8 +745,10 @@ document.addEventListener('click', function(e){
   fetch(`/admin/contractors/${id}`)
   .then(res => res.json())
   .then(data => {
-    document.getElementById('view_photo').src =
-      data.profile_photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name ?? 'Contractor')}`;
+    const viewPhoto = document.getElementById('view_photo');
+    const avatarUrl = data.profile_photo || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name ?? 'Contractor')}`;
+    viewPhoto.src = avatarUrl;
+    viewPhoto.onerror = () => { viewPhoto.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name ?? 'Contractor')}`; };
     document.getElementById('view_name').innerText = data.name ?? 'Pending';
     document.getElementById('view_email').innerText = data.email ?? '-';
     document.getElementById('view_id').innerText = data.contractor_id ?? '-';
