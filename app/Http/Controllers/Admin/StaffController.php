@@ -192,14 +192,24 @@ class StaffController extends Controller
             ? (str_starts_with($user->profile_photo, 'http')
                 ? $user->profile_photo
                 : asset('storage/' . $user->profile_photo))
-            : 'https://ui-avatars.com/api/?name=' . urlencode($user->name);
+            : 'https://ui-avatars.com/api/?name=' . urlencode($user->name ?? 'User');
+
+        // When the user hasn't signed in yet and has no name, show the first
+        // two letters of their email as a placeholder (e.g. ne@... → NE).
+        $displayName = $user->name;
+        if (!$displayName && $user->email) {
+            $displayName = strtoupper(substr(explode('@', $user->email)[0], 0, 2));
+        }
+        if (!$displayName) {
+            $displayName = 'No name yet';
+        }
 
         if ($user->role === 'admin') {
 
             return response()->json([
                 'id' => $user->id,
                 'email' => $user->email,
-                'name' => $user->name ?? 'N/A',
+                'name' => $displayName,
                 'profile_photo' => $profilePhoto,
                 'is_active' => $user->is_active,
 
@@ -216,7 +226,7 @@ class StaffController extends Controller
             return response()->json([
                 'id' => $user->id,
                 'email' => $user->email,
-                'name' => $user->name ?? 'N/A',
+                'name' => $displayName,
                 'profile_photo' => $profilePhoto,
                 'is_active' => $user->is_active,
 
