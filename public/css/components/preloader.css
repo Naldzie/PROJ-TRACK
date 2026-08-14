@@ -1,0 +1,123 @@
+/* ============================================================
+   PROJ-TRACK Preloader
+   Full-screen overlay shown while page content loads.
+   ============================================================ */
+
+:root {
+    --pt-navy-deep:  #071120;
+    --pt-navy:       #0b1d33;
+    --pt-amber:      #f2a93b;
+    --pt-white-70:   rgba(255, 255, 255, 0.7);
+    --pt-white-55:   rgba(255, 255, 255, 0.55);
+    --pt-white-30:   rgba(255, 255, 255, 0.3);
+}
+
+.pt-preloader {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(7, 21, 39, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 400ms ease-in-out, backdrop-filter 400ms ease-in-out, visibility 0s linear 0s;
+}
+
+.pt-preloader__inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 24px;
+    text-align: center;
+    max-width: 320px;
+}
+
+/* ---- Brand ---- */
+.pt-preloader__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pt-preloader__mark {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.pt-preloader__name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 3.5px;
+    text-transform: uppercase;
+    color: #ffffff;
+}
+
+/* ---- Chart ---- */
+.pt-preloader__chart {
+    width: 200px;
+    height: auto;
+    display: block;
+}
+
+.pt-preloader__crane {
+    fill: none;
+    stroke: var(--pt-white-30);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.pt-preloader__bar {
+    fill: var(--pt-amber);
+    opacity: 0.15;
+    animation: pt-bar-pulse 1.6s ease-in-out infinite;
+}
+
+/* Negative delays keep every bar visible from the start while preserving
+   the 0.15s left-to-right stagger the animation loop repeats. */
+.pt-preloader__bar:nth-child(1) { animation-delay: -1.60s; }
+.pt-preloader__bar:nth-child(2) { animation-delay: -1.45s; }
+.pt-preloader__bar:nth-child(3) { animation-delay: -1.30s; }
+.pt-preloader__bar:nth-child(4) { animation-delay: -1.15s; }
+.pt-preloader__bar:nth-child(5) { animation-delay: -1.00s; }
+
+@keyframes pt-bar-pulse {
+    0%, 100% { opacity: 0.15; }
+    50%      { opacity: 1; }
+}
+
+/* ---- Label ---- */
+.pt-preloader__label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--pt-white-55);
+}
+
+/* ---- Hidden (fade-out complete) ---- */
+.pt-preloader.pt-preloader--hidden {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+    visibility: hidden;
+    transition: opacity 400ms ease-in-out, backdrop-filter 400ms ease-in-out, visibility 0s linear 400ms;
+    pointer-events: none;
+}
+
+/* ---- Reduced motion: static bars, no pulsing ---- */
+@media (prefers-reduced-motion: reduce) {
+    .pt-preloader__bar {
+        animation: none;
+        opacity: 0.85;
+    }
+}

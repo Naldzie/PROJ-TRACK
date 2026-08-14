@@ -1,4 +1,12 @@
 /* ============================================================================
+   ⚠️  SUPERSEDED — KEPT ON DISK FOR REFERENCE ONLY (NOT LINKED BY ANY LAYOUT)
+   This stylesheet was replaced by public/css/layouts/sidebar.css (the
+   collapsible sidebar redesign: desktop icon-rail + mobile off-canvas drawer,
+   paired with public/js/layouts/sidebar.js). The three role layouts now link
+   sidebar.css instead of this file. Do not restore the link unless reverting
+   the redesign.
+   ----------------------------------------------------------------------------
+   (Original header, for context)
    Layouts — responsive sidebar (shared by app / stafflayouts / contractorlayouts)
    ----------------------------------------------------------------------------
    On small screens the fixed 260px sidebar slides off-canvas. A hamburger

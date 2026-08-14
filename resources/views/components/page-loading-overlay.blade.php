@@ -1,4 +1,12 @@
 {{--
+    ⚠️  SUPERSEDED — KEPT ON DISK FOR REFERENCE ONLY (NO LONGER INCLUDED)
+    This component was replaced by components/preloader.blade.php (the branded
+    PROJ-TRACK preloader: crane SVG + bars, paired with
+    public/css/components/preloader.css + public/js/components/preloader.js).
+    The three role layouts now include components.preloader instead of this
+    partial. Do not restore the include unless reverting the redesign.
+
+    (Original header, for context)
     components/page-loading-overlay.blade.php
     ─────────────────────────────────────────────────────────────────────────────
     Always-on page-loading overlay that masks the render of every page.

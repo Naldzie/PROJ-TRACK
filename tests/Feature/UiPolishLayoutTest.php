@@ -12,14 +12,20 @@ use Tests\TestCase;
  * UiPolishLayoutTest
  * ============================================================================
  *
- * Locks down the Phase D cross-cutting UI-polish changes:
+ * Locks down the Phase D cross-cutting UI-polish changes + the teammate
+ * layout redesign (feature/teammate-layout-design):
  *   - The legacy bottom-right toast (`#toast`, local `showToast(text)`) has
  *     been removed from the four live pages (admin.email, staff.email,
  *     contractor.email, admin.rating) in favour of the shared
  *     `components/toast` (top-right `#toastContainer`, typed showToast).
- *   - The three layouts now include the shared responsive sidebar assets
- *     (public/css/layouts/responsive.css + public/js/layouts/sidebar.js)
- *     and a hamburger `.sidebar-toggle` button.
+ *   - The three layouts now use the redesigned collapsible sidebar
+ *     (public/css/layouts/sidebar.css + public/js/layouts/sidebar.js,
+ *     `#sidebarToggle` hamburger), the branded preloader
+ *     (components.preloader + css/components/preloader.css +
+ *     js/components/preloader.js), the shared SweetAlert2 theme
+ *     (css/layouts/sweetalert-theme.css), the 20-min inactivity auto-logout
+ *     (components.inactivity_logout), and the restored notification bell
+ *     (notifications.partials.bell).
  *
  * Run With
  * --------
@@ -67,17 +73,23 @@ class UiPolishLayoutTest extends TestCase
 
     /**
      * Shared assertions for a rendered page: shared toast present, legacy toast
-     * absent, responsive sidebar wired in via the layout.
+     * absent, redesigned sidebar (sidebar.css + #sidebarToggle), branded
+     * preloader, SweetAlert2 theme, restored notification bell, and the
+     * inactivity auto-logout wired in via the layout.
      */
     private function assertPhaseDPolish(\Illuminate\Testing\TestResponse $response): void
     {
         $response->assertOk()
             ->assertSee('id="toastContainer"', false)
-            ->assertSee('css/layouts/responsive.css', false)
+            ->assertSee('css/layouts/sidebar.css', false)
             ->assertSee('js/layouts/sidebar.js', false)
-            ->assertSee('class="sidebar-toggle"', false)
-            ->assertSee('id="pageLoadingOverlay"', false)
-            ->assertSee('data-auto-hide="load"', false)
+            ->assertSee('id="sidebarToggle"', false)
+            ->assertSee('css/components/preloader.css', false)
+            ->assertSee('js/components/preloader.js', false)
+            ->assertSee('id="pt-preloader"', false)
+            ->assertSee('css/layouts/sweetalert-theme.css', false)
+            ->assertSee('notification-bell', false)
+            ->assertSee('Session Ending Soon', false)
             ->assertDontSee('<div class="toast" id="toast"', false);
     }
 
@@ -109,7 +121,7 @@ class UiPolishLayoutTest extends TestCase
         );
     }
 
-    public function test_admin_projects_page_renders_page_loading_overlay(): void
+    public function test_admin_projects_page_renders_branded_preloader(): void
     {
         $this->assertPhaseDPolish(
             $this->actingAs($this->admin)->get(route('admin.projects'))

@@ -3,7 +3,7 @@
 <head>
     <title>Admin</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
+    <link rel="icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=3">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     {{--  DIRECT CSS--}}
@@ -12,9 +12,11 @@
     <link rel="stylesheet" href="{{ asset('css/admin/projects/project-detail.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/projects.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}">
-    {{-- RESPONSIVE SIDEBAR (shared) --}}
-    <link rel="stylesheet" href="{{ asset('css/layouts/responsive.css') }}">
-
+    {{-- PRELOADER --}}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ asset('css/components/preloader.css') }}">
 
     {{-- VITE CSS 
      @vite(['resources/css/app.css', 'resources/js/app.js'])
@@ -223,17 +225,21 @@
             box-shadow: 0 2px 12px rgba(0,0,0,0.06);
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/layouts/sidebar.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/layouts/sweetalert-theme.css') }}">
 </head>
 <body>
 
-{{-- ALWAYS-ON PAGE LOADING OVERLAY (masks page render until assets finish) --}}
-@include('components.page-loading-overlay')
+@include('components.preloader')
 
 <!-- SIDEBAR -->
 <div class="sidebar">
     <div class="sidebar-brand">
-        <div class="brand-title">PROJ-TRACK SYSTEM</div>
-        <div class="brand-sub">CSPC &mdash; PMU</div>
+        <div class="brand-mark"><img src="{{ asset('faviconpmu.png') }}" alt="PROJ-TRACK logo"></div>
+        <div>
+            <div class="brand-title">PROJ-TRACK SYSTEM</div>
+            <div class="brand-sub">CSPC &mdash; PMU</div>
+        </div>
     </div>
 
     <span class="nav-section-label">Main</span>
@@ -299,7 +305,7 @@
 
 <!-- TOPBAR -->
 <div class="topbar">
-    <button type="button" class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle navigation">
+    <button type="button" id="sidebarToggle" class="sidebar-toggle" aria-label="Toggle navigation" aria-expanded="true" title="Toggle navigation">
         <i class="bi bi-list"></i>
     </button>
     <div class="profile-section">
@@ -324,9 +330,6 @@
 <div class="content">
     @yield('content')
 </div>
-
-<!-- RESPONSIVE SIDEBAR BACKDROP -->
-<div class="sidebar-backdrop" onclick="closeSidebar()"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -373,15 +376,21 @@
 {{-- CREATE/EDIT PROJECTS MODAL MULTI PAGE FORM NAVIGATION JS FUNCTION --}}
 <script src="{{ asset('js/admin/projects/form-navigation.js') }}"></script>
 
+{{-- PRELOADER SCRIPT --}}
+<script src="{{ asset('js/components/preloader.js') }}"></script>
+
 {{-- GLOBAL TOAST NOTIFICATION --}}
 @include('components.toast')
-
-{{-- RESPONSIVE SIDEBAR TOGGLE (shared) --}}
-<script src="{{ asset('js/layouts/sidebar.js') }}"></script>
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')
 @include('components.dev_date_widget')
 @endif
+
+{{-- COLLAPSIBLE SIDEBAR --}}
+<script src="{{ asset('js/layouts/sidebar.js') }}"></script>
+
+{{-- AUTO LOGOUT ON 20 MIN INACTIVITY --}}
+@include('components.inactivity_logout')
 </body>
 </html>
