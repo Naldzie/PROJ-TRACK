@@ -25,6 +25,30 @@
 }
 * { box-sizing: border-box; }
 
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.page-head h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin: 0;
+  color: var(--ink);
+}
+.page-head .breadcrumb {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.page-head .breadcrumb a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
 .overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -37,7 +61,19 @@
   border-radius: 13px;
   padding: 15px 16px;
   box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
 }
+.metric::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--blue);
+  opacity: .8;
+}
+.metric:nth-child(2)::after { background: var(--purple); }
+.metric:nth-child(3)::after { background: var(--green); }
 .metric-top {
   display: flex;
   align-items: center;
@@ -180,8 +216,8 @@
 .message {
   position: relative;
   display: grid;
-  grid-template-columns: 35px minmax(0,1fr) auto;
-  gap: 11px;
+  grid-template-columns: 38px minmax(0,1fr) auto;
+  gap: 12px;
   padding: 15px 18px;
   border-bottom: 1px solid var(--line);
   transition: background .2s var(--ease);
@@ -199,8 +235,8 @@
   background: var(--blue);
 }
 .message-avatar {
-  width: 33px;
-  height: 33px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
   background: var(--blue-soft);
   color: var(--blue);
@@ -208,6 +244,14 @@
   place-items: center;
   font-size: 11px;
   font-weight: 800;
+  overflow: hidden;
+}
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+  border-radius: 10px;
 }
 .message-main { min-width: 0; }
 .message-top {
@@ -591,17 +635,26 @@
   .toolbar-right { width: 100%; }
   .search-wrap { flex: 1; }
   .mail-search { width: 100%; }
-  .message { grid-template-columns: 33px minmax(0,1fr); }
+  .message { grid-template-columns: 38px minmax(0,1fr); }
   .message-actions { display: none; }
 }
 @media (max-width: 480px) {
   .overview { grid-template-columns: 1fr 1fr; gap: 8px; }
   .metric { padding: 13px; }
   .metric-value { font-size: 22px; }
-  .message { padding: 14px 13px; gap: 9px; }
+  .page-head h1 { font-size: 19px; }
+  .message { padding: 14px 13px; gap: 10px; }
   .message-snippet { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 }
 </style>
+
+<!-- PAGE HEAD -->
+<div class="page-head">
+  <div>
+    <h1>Email Reports</h1>
+    <div class="breadcrumb"><a href="{{ route('admin.dashboard') }}">Dashboard</a> &nbsp;/&nbsp; Email</div>
+  </div>
+</div>
 
 <!-- OVERVIEW METRICS -->
 <section class="overview" aria-label="Message summary">
@@ -719,21 +772,25 @@
           <span>Today</span>
         </div>
         <div class="mini-list">
-          @forelse($recentActivity as $i => $log)
-          @php $colors = ['var(--blue)', 'var(--gold)', 'var(--green)', 'var(--purple)']; @endphp
+          @forelse($recentActivity as $i => $re)
+          @php
+            $colors = ['var(--blue)', 'var(--gold)', 'var(--green)', 'var(--purple)'];
+            $statusText = $re->opened_at ? 'opened by' : ($re->delivered_at ? 'delivered to' : 'sent to');
+            $recipient = $re->contractor?->company_name ?: ($re->recipient_email ?: 'contractor');
+          @endphp
           <div class="mini-item">
             <span class="mini-dot" style="background:{{ $colors[$i % 4] }}"></span>
             <div>
-              <p>{{ $log->description }}</p>
-              <small>{{ $log->created_at->diffForHumans() }} · {{ $log->user?->name ?? 'System' }}</small>
+              <p>Report {{ $statusText }} {{ $recipient }}</p>
+              <small>{{ \Illuminate\Support\Str::limit($re->subject, 42) }} · {{ $re->sent_at?->diffForHumans() ?? '' }}</small>
             </div>
           </div>
           @empty
           <div class="mini-item">
             <span class="mini-dot" style="background:var(--blue)"></span>
             <div>
-              <p>Reports sent to contractors</p>
-              <small>{{ now()->format('M d, Y') }}</small>
+              <p>No email activity yet</p>
+              <small>Waiting for reports</small>
             </div>
           </div>
           @endforelse
@@ -746,13 +803,6 @@
             </div>
           </div>
           @endif
-          <div class="mini-item">
-            <span class="mini-dot" style="background:var(--green)"></span>
-            <div>
-              <p>System operational</p>
-              <small>Monitoring enabled</small>
-            </div>
-          </div>
         </div>
       </div>
     </section>

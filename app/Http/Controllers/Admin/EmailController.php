@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\ActivityLog;
 use App\Models\EmailTracking;
 use App\Models\Project;
 use App\Models\Setting;
@@ -46,8 +45,8 @@ class EmailController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        $recentActivity = ActivityLog::with('user')
-            ->orderBy('created_at', 'desc')
+        $recentActivity = EmailTracking::with(['project', 'contractor'])
+            ->orderBy('sent_at', 'desc')
             ->take(5)
             ->get();
 
