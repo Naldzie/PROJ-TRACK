@@ -251,7 +251,6 @@ body.sidebar-collapsed .sidebar-footer .btn-logout[title]:hover::after {
     border-bottom: 1px solid rgba(96, 165, 250, 0.25);
     box-shadow: 0 6px 20px -10px rgba(10, 20, 50, 0.22);
     transition: margin-left var(--sd-time) var(--sd-ease);
-    overflow: hidden;
 }
 
 /* Nav toggle button */
