@@ -13,9 +13,18 @@ use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
+    // True when the Google flow runs inside a popup opened from the login page.
+    private bool $popup = false;
+
     // ================= GOOGLE REDIRECT =================
     public function redirectToGoogle(Request $request)
     {
+        // Remember that this flow was started from a popup so the callback
+        // can respond with a close-popup page instead of a full-page redirect.
+        if ($request->query('popup') === '1') {
+            session()->flash('google_login_popup', true);
+        }
+
         return Socialite::driver('google')
             ->with(['prompt' => 'select_account'])
             ->redirect();
@@ -25,8 +34,15 @@ class AuthController extends Controller
     public function handleGoogleCallback()
     {
         try {
+            // True when this login was opened from a popup window.
+            $this->popup = request()->query('popup') === '1'
+                || session()->pull('google_login_popup') === true;
+
             // ── Lockout check ──────────────────────────────────────────────
             if ($this->isLockedOut()) {
+                if ($this->popup) {
+                    return $this->popupResult(false, null, 'You are currently locked out.');
+                }
                 return redirect()->route('login')
                     ->with('error', 'You are currently locked out.')
                     ->with('lockout_until', session('login_lock_until'));
@@ -101,14 +117,23 @@ class AuthController extends Controller
             }
 
             // ── Redirect ───────────────────────────────────────────────────
-            return match($user->role) {
-                'admin'      => redirect('/admin/dashboard'),
-                'staff'      => redirect('/staff/dashboard'),
-                'contractor' => redirect('/contractor/dashboard'),
-                default      => redirect()->route('login')->with('error', 'Invalid role.'),
+            $redirect = match($user->role) {
+                'admin'      => url('/admin/dashboard'),
+                'staff'      => url('/staff/dashboard'),
+                'contractor' => url('/contractor/dashboard'),
+                default      => url('/login'),
             };
 
+            if ($this->popup) {
+                return $this->popupResult(true, $redirect, null);
+            }
+
+            return redirect($redirect);
+
         } catch (\Exception $e) {
+            if ($this->popup) {
+                return $this->popupResult(false, null, 'Google login failed.');
+            }
             return redirect()->route('login')->with('error', 'Google login failed.');
         }
     }
@@ -137,16 +162,25 @@ class AuthController extends Controller
                 86400 => '24 hours',
             };
 
+            $flashMessage = "Too many failed attempts. You are locked out for {$humanTime}.";
+
+            if ($this->popup) {
+                return $this->popupResult(false, null, $flashMessage);
+            }
             return redirect()->route('login')
-                ->with('error', "Too many failed attempts. You are locked out for {$humanTime}.")
+                ->with('error', $flashMessage)
                 ->with('lockout_until', $until);
         }
 
         $nextTier     = collect(array_keys(self::LOCKOUT_TIERS))->first(fn($t) => $t > $totalFails);
         $untilLockout = $nextTier - $totalFails;
 
-        return redirect()->route('login')
-            ->with('error', "{$message} ({$untilLockout} attempt(s) before next lockout.)");
+        $flashMessage = "{$message} ({$untilLockout} attempt(s) before next lockout.)";
+
+        if ($this->popup) {
+            return $this->popupResult(false, null, $flashMessage);
+        }
+        return redirect()->route('login')->with('error', $flashMessage);
     }
 
     private function isLockedOut(): bool
@@ -179,5 +213,55 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()->route('login');
+    }
+
+    // ================= POPUP RESULT (loaded inside the auth popup) =================
+    // Tells the opener (login page) whether sign-in succeeded, hands it the
+    // dashboard URL when successful, then closes the popup window.
+    private function popupResult(bool $success, ?string $redirect, ?string $error): \Illuminate\Http\Response
+    {
+        $payload = json_encode([
+            'type'     => 'google-auth',
+            'success'  => $success,
+            'redirect' => $redirect,
+            'error'    => $error,
+        ]);
+
+        $html = <<<HTML
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8">
+            <meta name="robots" content="noindex">
+            <title>Sign-in complete</title>
+        </head>
+        <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F8FAFF;font-family:'Segoe UI',sans-serif;color:#172033">
+            <div style="text-align:center;padding:0 24px">
+                <p style="font-size:15px;font-weight:600;margin:0 0 6px">{$this->popupStatusLabel($success)}</p>
+                <p style="font-size:12px;color:#64748B;margin:0">You can close this window.</p>
+            </div>
+            <script>
+                (function () {
+                    var origin = window.location.origin;
+                    try {
+                        if (window.opener) {
+                            window.opener.postMessage({$payload}, origin);
+                        }
+                    } catch (e) {
+                        /* ignore cross-origin / closed-opener errors */
+                    }
+                    window.close();
+                })();
+            </script>
+        </body>
+        </html>
+        HTML;
+
+        return response($html)->header('Content-Type', 'text/html');
+    }
+
+    private function popupStatusLabel(bool $success): string
+    {
+        return $success ? 'Sign-in successful.' : 'Sign-in failed.';
     }
 }
