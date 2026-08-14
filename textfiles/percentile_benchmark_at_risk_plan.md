@@ -5,10 +5,14 @@ CSPC PMU System — AI Module. Options B5/B6 of
 125-136). The final slice of the regression-module tail (A2 was the previous
 slice).
 
-Status: 🔵 PLANNED — plan-only commit on an isolated branch. No code yet.
-Date: August 13, 2026
+Status: ✅ IMPLEMENTED — commits `cd16289` (plan) + `1727879` (code) on
+  `feature/b56-percentile-at-risk`, plus a post-review fix (see §8 Decision 5
+  and §8 Decision 6) that is the tail of this branch (uncommitted at plan-edit
+  time). Full suite green: 656 tests / 2485 assertions.
+Date: August 13, 2026 (plan) — implementation reviewed/patched August 14, 2026
 Branch (for implementation): `feature/b56-percentile-at-risk` (from main)
 Plan file: textfiles/percentile_benchmark_at_risk_plan.md (this file)
+Defense notes: textfiles/b56_defense_notes.txt
 
 Reference Documents:
 - textfiles/regression_v2_5_cross_project_expansion_plan.md (§3 B5/B6)
@@ -199,11 +203,25 @@ Step 5 — RecommendationEngine
   T5  Extended project: record after the plan's last month clamps to the last
       band and can still contribute to the run.
 
+  (SHIPPED — ClassStandingTest, tests/Unit/Services/AI/): T1-T5 plus two
+  boundary regressions added during review:
+  T2b Gap semantics: month gap (e.g. months 1,2,4) resets the run — month 4
+      must NOT count as consecutive with month 2 (a skipped inspection month
+      breaks "consecutive calendar months").
+  T3b Exact-P25 month: actual exactly AT P25 is at/above the band (resets the
+      run), consistent with the strict `<` tier boundary at P25.
+
   Integration — CrossProjectSupplementIntegrationTest:
   T6  Blend-mode project surfaces class_standing with a tier and at-risk either
       true/false deterministically (seed the same completed-project pool).
   T7  No-pool project: class_standing.usable = false and no recommendation
       fired from the B6 rule.
+  T8  Duplicate inspections in one month never inflate the run (dedupe to one
+      latest inspection per calendar month before the walk).
+  T9  Stored calendar month_number is IGNORED: the month index is derived from
+      month_label relative to the plan's first baseline month, so a project
+      that did not start in January still gets a consistent tier/run (see §8
+      Decision 5).
 
   RecommendationEngine (unit or feature):
   T8  class_behind_run >= 2 → a corrective recommendation with the B6 reason is
@@ -238,14 +256,31 @@ Step 5 — RecommendationEngine
   8. DECISION LOG
 ===============================================================================
 
-  1. B5-lite (banded tier, not exact percentile) — ✅ DECIDED (Aug 13 2026).
-     Pool fits a single-site PMU (realistically < 100 similar completed
-     projects; MIN_SIMILAR_PROJECTS floor = 3). Exact percentiles over tiny
-     pools are false precision; a tier is honest and requires no new data.
-  2. Classification location — AIPredictionService computes class_standing;
-     HistoricalSimilarityService stays the reference-data owner (no new data).
-     (If the block grows, extract ClassStandingService in Step 1.)
-  3. At-risk semantics — run of ≥2 consecutive trailing months below P25;
-     record at/above P25 disarms; <2 records never at-risk.
-  4. Honesty — usable=false renders nothing; tier wording includes the
-     "approximate bands" caveat; no peer claim without a pool.
+   1. B5-lite (banded tier, not exact percentile) — ✅ DECIDED (Aug 13 2026).
+      Pool fits a single-site PMU (realistically < 100 similar completed
+      projects; MIN_SIMILAR_PROJECTS floor = 3). Exact percentiles over tiny
+      pools are false precision; a tier is honest and requires no new data.
+   2. Classification location — AIPredictionService computes class_standing;
+      HistoricalSimilarityService stays the reference-data owner (no new data).
+      (If the block grows, extract ClassStandingService in Step 1.)
+   3. At-risk semantics — run of ≥2 consecutive trailing months below P25;
+      record at/above P25 disarms; <2 records never at-risk.
+   4. Honesty — usable=false renders nothing; tier wording includes the
+      "approximate bands" caveat; no peer claim without a pool.
+   5. Month identity is DERIVED, never trusted from storage — ✅ DECIDED
+      (Aug 14 2026, post-review). project_progress_history.month_number is
+      written as calendar month-of-year (Apr=4) by ProjectProgressController
+      but as a project-relative index by seeders/factories, so a project that
+      did not start in January compared its at-risk run against the wrong band
+      month (live project 142 showed tier "upper half" yet "behind peers 5
+      months"). Fix: derive each observation's project-relative index from its
+      month_label anchored to the plan's first baseline month (fallback to the
+      stored value only when no baseline exists). The controller now also
+      stores the project-relative value for consistency (both private helpers
+      share the same derivation). Regression test T9 proves the stored column
+      is ignored.
+   6. Tier boundaries are STRICT at P25/P50 and INCLUSIVE at P75 — ✅ DECIDED
+      (Aug 14 2026). actual < P25 → below_p25; P25 <= actual < median →
+      p25_50; median <= actual <= P75 → p50_75; actual > P75 → above_p75.
+      Exact-P25 is "at/above the band", never "below" — mirrors the B6 run
+      rule so the tier and the flag can never contradict.

@@ -416,7 +416,7 @@ class ProjectProgressController extends Controller
                 'planned_progress_percent' => $plannedProgressPercent,
                 'variance_percent' => $variancePercent,
                 'activity_id' => ! empty($activityIds) ? $activityIds : null,
-                'month_number' => intval(explode('-', $validated['month_label'])[1]), // Extract month from "2026-01"
+                'month_number' => $this->projectRelativeMonthNumber($project, $validated['month_label']),
                 'recorded_by' => auth()->user()->id,
                 'remarks' => $validated['remarks'] ?? null,
                 // Backward compatibility fields
@@ -501,6 +501,32 @@ class ProjectProgressController extends Controller
         }
 
         return 'OnTrack';
+    }
+
+    /**
+     * Project-relative month number for a recorded month_label, anchored to the
+     * plan's FIRST baseline month (month 1). Kept consistent with the B5/B6
+     * class-standing consumer, which derives the same index from month_label.
+     * (Previously this column stored calendar month-of-year, which silently
+     * shifted the at-risk band comparison for any project not starting in
+     * January.)
+     *
+     * @return int 1-based project month index
+     */
+    private function projectRelativeMonthNumber(Project $project, string $monthLabel): int
+    {
+        $firstBaseline = $project->baselineSchedules
+            ->sortBy('month_label')
+            ->first()->month_label ?? null;
+
+        if ($firstBaseline === null) {
+            return intval(explode('-', $monthLabel)[1]);
+        }
+
+        $baseline = \Illuminate\Support\Carbon::parse($firstBaseline . '-01')->startOfMonth();
+        $observed = \Illuminate\Support\Carbon::parse($monthLabel . '-01')->startOfMonth();
+
+        return max(1, (int) $baseline->diffInMonths($observed) + 1);
     }
 
     /**

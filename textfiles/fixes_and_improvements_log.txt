@@ -151,3 +151,33 @@ Logged: 2026-07-28
   - Also hides the request_extension_modal on project_detail page.
   - Prevents users from requesting/approving extensions on projects
     that haven't even set up their baseline schedule.
+
+14. FIXED month_number semantics for B6 at-risk run (calendar vs project-relative)
+----------------------------------------------------------------------
+  Branch: feature/b56-percentile-at-risk
+  Files:
+    app/Services/AI/AIPredictionService.php
+    app/Http/Controllers/ProjectProgressController.php
+    tests/Feature/Services/AI/CrossProjectSupplementIntegrationTest.php
+
+  Problem: The B6 at-risk run indexed into the class P25 band using the
+  stored project_progress_history.month_number column, but that column has
+  two conflicting meanings — the progress controller wrote it as the
+  calendar month-of-year (Apr=4), while seeders/factories wrote a
+  project-relative index (Apr=1). A project that did not start in January
+  (live: project 142, started 2026-04) therefore compared its August actual
+  against band month 8 (lower 43.7) instead of project month 5 (median 20.61)
+  — producing a contradictory "upper half" tier yet "behind peers 5 months"
+  flag.
+
+  Solution: Month identity is now DERIVED, not trusted from storage.
+    - AIPredictionService::projectRelativeMonthIndex() maps each observation's
+      month_label to the plan's project-relative index anchored on the first
+      baseline month (fallback to the stored value only when no baseline
+      exists).
+    - ProjectProgressController now stores the same project-relative value
+      (projectRelativeMonthNumber()) so new records match the seeder/factory
+      convention.
+  - Regression test: test_b56_ignores_stored_calendar_month_number (T9)
+    rewrites stored month_number to calendar month-of-year and asserts the
+    tier/run are unchanged.

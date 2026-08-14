@@ -683,4 +683,61 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $this->assertSame($standingBefore['at_risk_run'], $standingAfter['at_risk_run']);
         $this->assertSame($standingBefore['at_risk'], $standingAfter['at_risk']);
     }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T9 — B6 must NOT trust the stored month_number column.
+     *
+     * ProjectProgressController writes month_number as calendar month-of-year
+     * (e.g. 2026-04 → 4) while seeders/factories write a project-relative index.
+     * For a project that does not start in January the two differ, and using the
+     * stored value as a band index shifts the comparison (the reported bug: a
+     * project could show "upper half" tier yet "behind peers N months"). The
+     * run derives the month from month_label instead, so rewriting the stored
+     * column must NOT change class standing.
+     * ------------------------------------------------------------------------
+     */
+    public function test_b56_ignores_stored_calendar_month_number(): void
+    {
+        $categoryId = $this->makeCategory('B6 Calendar Month')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 180,
+            ]
+        );
+
+        $standingBefore = $this->predictionService->generatePrediction($target)['class_standing'];
+        $this->assertTrue($standingBefore['usable']);
+
+        // Rewrite every record's stored month_number to CALENDAR month-of-year,
+        // exactly like ProjectProgressController::storeProgress() does. The
+        // createProjectWithHistory helper writes project-relative 1..6; if the
+        // project did not start in January these values now disagree.
+        foreach ($target->progressHistory as $record) {
+            $calendarMonth = (int) explode('-', $record->month_label)[1];
+
+            ProjectProgressHistory::where('id', $record->id)->update([
+                'month_number' => $calendarMonth,
+            ]);
+        }
+
+        $standingAfter = $this->predictionService->generatePrediction($target->fresh())['class_standing'];
+
+        // The B6 run derives months from month_label, so the rewritten stored
+        // column changes nothing. (Before the fix, the run would index the band
+        // by calendar month and produce a shifted / false at-risk run.)
+        $this->assertTrue($standingAfter['usable']);
+        $this->assertSame($standingBefore['tier'], $standingAfter['tier']);
+        $this->assertSame($standingBefore['at_risk'], $standingAfter['at_risk']);
+        $this->assertSame($standingBefore['at_risk_run'], $standingAfter['at_risk_run']);
+        // Self-consistency guard on the rewritten run.
+        $this->assertSame($standingAfter['at_risk'], $standingAfter['at_risk_run'] >= 2);
+    }
 }

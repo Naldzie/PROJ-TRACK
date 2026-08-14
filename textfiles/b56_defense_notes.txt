@@ -24,9 +24,9 @@ system already computes — no new database state."
 2. WHAT THE FEATURE DOES (readout on the health card)
 ================================================================================
 - B5 tier (banded, NOT exact percentile):
-    actual  <= P25           -> "slowest quarter (<25th) of similar projects"
-    P25  <  actual <= median -> "lower-middle band (25-50th)"
-    median < actual <= P75   -> "upper-middle band (50-75th)"
+    actual  <  P25           -> "slowest quarter (<25th) of similar projects"
+    P25  <= actual <  median -> "lower-middle band (25-50th)"
+    median <= actual <= P75  -> "upper-middle band (50-75th)"
     actual >  P75            -> "above the 75th percentile"
 - B6 at-risk badge: actual below the class P25 LOWER band for 2+ CONSECUTIVE
   trailing months -> red badge "Behind peers N months" + a corrective
@@ -73,6 +73,15 @@ STEP 6 — B6 at-risk run:
     Walk the project's REAL history oldest -> newest (synthetic/fill points
     NEVER count). A month below P25 increments the run; a month AT/above P25
     resets it. run >= 2 -> at-risk. A single dip is never at-risk.
+
+STEP 7 — Month identity is DERIVED, not trusted:
+    Each observation's month index comes from its month_label relative to the
+    plan's first baseline month — NOT from the stored month_number column.
+    That column is written as calendar month-of-year (Apr=4) by the progress
+    controller but as a project-relative index by seeders, so a project that
+    did not start in January would otherwise compare against the wrong band
+    month (the "upper half yet behind peers" contradiction). The controller
+    now also stores the project-relative value for consistency.
 
 ================================================================================
 4. WHY NOT AN EXACT PERCENTILE? (anticipate this)
@@ -127,17 +136,28 @@ concern here because we read progress %, not a forecast-to-completion index.
 - Relations to existing work: reuses the SAME buildClassReference the blend,
   the P25/P75 forecast band, reliability, and the A2 completion fallback
   already consume. No migration, no new DB state.
+- Pool-side normalization treats one progress-history record as one monitoring
+  month (normalizeToPercentile uses record COUNT as the lifetime). Live data
+  check: completed projects have ~13-14 records over 12-13 planned months, with
+  occasional same-month duplicate inspections counted as distinct pool points;
+  no severe missing-month gaps. The TARGET's own history is deduped to one
+  latest inspection per calendar month before the at-risk run — pool curves
+  are not, so a same-month duplicate only ever inflates the reference shape
+  marginally, never the at-risk count.
 
 ================================================================================
 8. TESTING SUMMARY (proof it works)
 ================================================================================
-- ClassStandingTest (unit, T1-T5): tier edges, at-risk run detection, run
-  disarm, no-pool honesty, extended-project clamping.
+- ClassStandingTest (unit, T1-T5 + T2b/T3b): tier edges, at-risk run detection,
+  run disarm (band reset + calendar-month gap reset), no-pool honesty,
+  extended-project clamping.
 - RecommendationB6RuleTest (T8): corrective rule fires at run>=2; no-fire at
   run<2 and with unusable pool.
-- CrossProjectSupplementIntegrationTest (T6/T7): blend project surfaces a
-  usable class_standing; no-pool project is usable=false and never fires B6.
-- Full suite green: 653 tests passed / 2469 assertions.
+- CrossProjectSupplementIntegrationTest (T6/T7/T8/T9): blend project surfaces a
+  usable class_standing; no-pool project is usable=false and never fires B6;
+  duplicate inspections in one month never inflate the run; stored calendar
+  month_number is ignored (tier/run stay consistent for non-January starts).
+- Full suite green: 656 tests passed / 2485 assertions.
 
 ================================================================================
 9. NUMERIC WALKTHROUGH (memorize this shape; use your own numbers)

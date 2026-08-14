@@ -346,8 +346,13 @@ class AIPredictionService
         // B5/B6 — class standing (percentile tier + at-risk flag). Uses real
         // history observations only (never synthetic/fill points), normalized
         // to ONE latest inspection per calendar month (same rule as
-        // RegressionDatasetBuilder) and keyed by the record's real month, so a
-        // skipped month or a repeat inspection never masquerades as progress.
+        // RegressionDatasetBuilder). The month index is DERIVED from the
+        // record's month_label relative to the plan's first baseline month,
+        // NOT read from the stored month_number column — that column is written
+        // as calendar month-of-year (1-12) by ProjectProgressController but as a
+        // project-relative index by seeders/factories, so trusting it would make
+        // the at-risk run compare against the wrong band month for any project
+        // that did not start in January.
         $realHistory = $project->progressHistory()
             ->orderBy('month_label')
             ->orderBy('inspection_date')
@@ -360,13 +365,12 @@ class AIPredictionService
             })
             ->sortBy('month_label')
             ->values()
-            ->map(function ($record) {
+            ->map(function ($record) use ($project) {
                 return [
-                    'month_number'  => (int) ($record->month_number ?? 0),
+                    'month_number'  => $this->projectRelativeMonthIndex($project, (string) $record->month_label, (int) ($record->month_number ?? 0)),
                     'actual_progress_percent' => (float) ($record->actual_progress_percent ?? 0.0),
                 ];
             })
-            ->values()
             ->toArray();
 
         $classStanding = $this->buildClassStanding(
@@ -514,6 +518,30 @@ class AIPredictionService
         return empty($built) ? null : $built;
     }
 
+    // Project-relative month index for a recorded month_label, anchored to the
+    // plan's FIRST baseline month (month 1). Deliberately ignores the stored
+    // month_number column, whose semantics differ across writers (calendar
+    // month-of-year in ProjectProgressController vs project-relative index in
+    // seeders/factories). Falls back to the stored value only when the project
+    // has no baseline to anchor against.
+    private function projectRelativeMonthIndex(Project $project, string $monthLabel, int $fallbackMonthNumber = 0): int
+    {
+        $firstBaseline = $project->baselineSchedules
+            ->sortBy('month_label')
+            ->first()->month_label ?? null;
+
+        if ($firstBaseline === null) {
+            return $fallbackMonthNumber;
+        }
+
+        $baseline = Carbon::parse($firstBaseline . '-01')->startOfMonth();
+        $observed = Carbon::parse($monthLabel . '-01')->startOfMonth();
+
+        $index = (int) $baseline->diffInMonths($observed) + 1;
+
+        return max(1, $index);
+    }
+
     /**
      * ------------------------------------------------------------------------
      * Build Class Standing (B5/B6 — percentile benchmark + at-risk flag)
@@ -530,7 +558,9 @@ class AIPredictionService
      * $realObservations is a list of ['month_number' => int,
      * 'actual_progress_percent' => float] — REAL history only, normalized to
      * one latest inspection per calendar month (same rule as the regression
-     * dataset builder). A gap in the monthly record resets the at-risk run.
+     * dataset builder), with month_number being the PROJECT-RELATIVE month
+     * index derived from month_label (not the stored column). A gap in the
+     * monthly record resets the at-risk run.
      *
      * Honesty gates: no usable class reference → usable=false, no tier, no
      * flag. Never fabricates a peer comparison without a pool.
