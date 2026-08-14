@@ -1,0 +1,197 @@
+================================================================================
+B5/B6 DEFENSE READY NOTES
+================================================================================
+Feature: Banded Percentile Benchmark (B5) + At-Risk Flag (B6)
+File: /app/Services/AI/  (AIPredictionService + HistoricalSimilarityService)
+Branch: feature/b56-percentile-at-risk
+Plan: textfiles/percentile_benchmark_at_risk_plan.md
+
+TIP: Say the honest caveats BEFORE the panel does. Owning the limits is what
+defenses reward. Every claim below is backed by the actual implementation.
+
+================================================================================
+1. ELEVATOR PITCH (30 seconds)
+================================================================================
+"Most project software compares a project against its OWN baseline. That tells
+you if you're on schedule against your plan — but not how you compare to
+projects LIKE yours. We added an outside view: for every ongoing project, we
+benchmark its current progress against the distribution of SIMILAR COMPLETED
+projects of the same type, and flag it when it has trailed that reference
+group for 2+ consecutive months. One report block, reusing the reference the
+system already computes — no new database state."
+
+================================================================================
+2. WHAT THE FEATURE DOES (readout on the health card)
+================================================================================
+- B5 tier (banded, NOT exact percentile):
+    actual  <  P25           -> "slowest quarter (<25th) of similar projects"
+    P25  <= actual <  median -> "lower-middle band (25-50th)"
+    median <= actual <= P75  -> "upper-middle band (50-75th)"
+    actual >  P75            -> "above the 75th percentile"
+- B6 at-risk badge: actual below the class P25 LOWER band for 2+ CONSECUTIVE
+  trailing months -> red badge "Behind peers N months" + a corrective
+  recommendation (priority 3) so the flag is actionable, not cosmetic.
+- Quiet honesty: with no usable pool, nothing renders. No fabricated peer claim.
+
+================================================================================
+3. HOW IT WORKS (walk this live — this is the money question)
+================================================================================
+STEP 1 — Find similar completed projects (the "reference class"):
+    Weighted similarity score, max 100:
+        category 30 | budget 25 | duration 20 | contractor 15 | workers 10
+    Gates:
+        raw score  >= 50  (MIN_SIMILARITY_SCORE)   -> category alone (30) never
+                              qualifies; needs budget/duration/etc partners
+        usable curves >= 3 (MIN_SIMILAR_PROJECTS)  -> 1-2 curves is NOT a
+                              reference-class pattern; system refuses to borrow
+                              (C8 safety valve)
+        each curve  >= 4 observations (MIN_OBSERVATIONS_FOR_CURVE)
+    Recency only REORDERSCANDIDATES (newer = more representative), never
+    disqualifies. kNN-style weighting: stronger matches dominate the aggregate.
+
+STEP 2 — Normalize to a common timeline:
+    Each similar project's OWN progress history is mapped onto its own
+    0-100% lifetime (normalizeToPercentile). THIS is how different durations
+    become comparable: we compare at the same %-elapsed point, not the same
+    calendar month. (Same idea as reference-class stage-curves / Flyvbjerg.)
+
+STEP 3 — Build the class band (P25 / median / P75) at every 5% point:
+    Aggregate = weighted median, P25, P75 across the pool (buildClassReference).
+
+STEP 4 — Anchor to the MONITORED project's current month:
+    month_index / total_planned_months  ->  %-elapsed  ->  sample the band
+    there (interpolated). Compare the project's actual cumulative % against
+    that month's lower/median/upper. Extended projects clamp to the plan's
+    last band.
+
+STEP 5 — Scale the band to the project's own pace:
+    scaleRatio = median(your actual / class median at each observed month),
+    clamped 0.5 .. 5.0. Prevents a flat first observation from flattening the
+    reference curve.
+
+STEP 6 — B6 at-risk run:
+    Walk the project's REAL history oldest -> newest (synthetic/fill points
+    NEVER count). A month below P25 increments the run; a month AT/above P25
+    resets it. run >= 2 -> at-risk. A single dip is never at-risk.
+
+STEP 7 — Month identity is DERIVED, not trusted:
+    Each observation's month index comes from its month_label relative to the
+    plan's first baseline month — NOT from the stored month_number column.
+    That column is written as calendar month-of-year (Apr=4) by the progress
+    controller but as a project-relative index by seeders, so a project that
+    did not start in January would otherwise compare against the wrong band
+    month (the "upper half yet behind peers" contradiction). The controller
+    now also stores the project-relative value for consistency.
+
+STEP 8 — The anchor is the MONTH INDEX (% elapsed), never the progress value:
+    The project's current progress VALUE (e.g. 59%) NEVER selects the band.
+    The anchor is the current project-relative month index (142 -> month 8 of
+    13 -> 61.5% elapsed). The reference band is month-aligned: each planned
+    month i maps to pct = (i / plannedMonths) x 100, the peer aggregate is
+    sampled at that fraction and stored per month. Peers are read at their OWN
+    equivalent elapsed fraction — a 13-record peer at ~its month 8, a 12-record
+    peer interpolated between its months 7 and 8 — so the same fraction lands
+    on different month numbers across peers. The peer value used is its ACTUAL
+    progress (planned/baseline values play no role). Duration similarity is
+    SOFT (full credit only within +/-30%, weight 20 of 100), so peers are not
+    guaranteed to be within 1-2 months of duration — in the live 142 pool they
+    all happen to be 365/366-day projects.
+
+    WORKED EXAMPLE (live, project 142):
+    Project 142 is at month 8 of 13 = 61.5% elapsed, actual 59.0%.
+    Peer actuals near their own ~61.5% point:
+        138 -> 50 | 139 -> 65 | 140 -> 65 | 141 -> 52
+    Weighted (similarity x recency) + scaled to 142's pace -> stored band at
+    month 8:  P25 49.23 | median 50.63 | P75 55.69.
+    59.0 > 55.69 -> tier above_p75 ("above the 75th percentile") — HIGH vs
+    peers, not low vs its own 70% plan. B6 run: months 4-8 actuals (14, 23, 33,
+    44, 59) are all >= P25 -> run resets to 0 -> at_risk false. Months 1-3 did
+    dip below P25, but they are not the trailing months.
+
+================================================================================
+4. WHY NOT AN EXACT PERCENTILE? (anticipate this)
+================================================================================
+A single-site PMU has a small pool (realistically < 100 similar projects;
+floor 3). "Exact 72nd percentile" over tiny pools is FALSE PRECISION. The
+classifier only stores P25/median/P75, so a band ("bottom 25% / lower-middle /
+upper-middle / top 25%") is the honest, defensible readout. The labels say
+"approximate bands"; tier edges are estimates, the wording never overclaims.
+
+================================================================================
+5. THE TWO HONEST CAVEATS (say these BEFORE being asked)
+================================================================================
+1. Scale-ratio = RELATIVE pace, not absolute standing.
+   If a project is uniformly slow, the whole band shifts down to match its
+   pace. "Top 25%" then means "ahead of the class SHAPE", not "ahead in raw
+   %". The card reads it as a relative-position indicator — and says so.
+2. %-of-lifetime axis, NOT calendar date (deliberate difference from EVM).
+   EVM/SPI compares against YOUR baseline at the data date (calendar). We
+   compare peers at the same fraction of lifetime elapsed. That is what makes
+   different-duration projects comparable, but it means "month 6 at 40%
+   elapsed" and "month 12 at 40% elapsed" share one reference point.
+
+================================================================================
+6. EVM / STANDARD-PRACTICE COMPARISON (if they probe the method)
+================================================================================
+    |          | EVM/SPI (NASA, P6, Procore) | Reference-Class (Flyvbjerg) | Our B5/B6  |
+    |----------|-----------------------------|----------------------------|------------|
+    | Compare  | against own baseline        | against peer distribution   | against peer distribution |
+    | Anchor   | calendar date (data date)   | lifetime % / stage          | lifetime % (same as RCF)  |
+    | Readout  | SPI ratio (EV/PV)           | uplift / finish forecast    | banded tier + at-risk flag|
+    | Purpose  | schedule control            | de-bias early forecasts     | monitoring gauge          |
+Conclusion: peer-percentile framing = legitimate RCF practice; %-elapsed
+normalization = how RCF handles different durations. Only divergence from
+mainstream is the calendar-vs-lifetime axis, which is a deliberate, documented
+design decision. SPI's "always converges to 1.0 at completion" flaw is NOT a
+concern here because we read progress %, not a forecast-to-completion index.
+
+================================================================================
+7. "WHAT WAS TRICKY / WHAT COULD GO WRONG?" (integrity points)
+================================================================================
+- No pool -> dignified silence. usable=false. No benchmark, no flag, no B6
+  recommendation. This is an HONESTY feature, highlight it.
+- Real vs synthetic: the at-risk run uses only real progressHistory records,
+  never the synthetic/fill points injected by the blend.
+- <2 records ever at-risk: you cannot claim "2 consecutive months" from one
+  month. Guarded.
+- A record at/above the band disarms the run even if older months dipped.
+- Self-consistency is tested: at_risk === (run >= 2).
+- Scale-ratio clamp 0.5-5.0 prevents a single tiny observation from
+  flattening the borrowed curve into a meaningless near-flat line.
+- Relations to existing work: reuses the SAME buildClassReference the blend,
+  the P25/P75 forecast band, reliability, and the A2 completion fallback
+  already consume. No migration, no new DB state.
+- Pool-side normalization treats one progress-history record as one monitoring
+  month (normalizeToPercentile uses record COUNT as the lifetime). Live data
+  check: completed projects have ~13-14 records over 12-13 planned months, with
+  occasional same-month duplicate inspections counted as distinct pool points;
+  no severe missing-month gaps. The TARGET's own history is deduped to one
+  latest inspection per calendar month before the at-risk run — pool curves
+  are not, so a same-month duplicate only ever inflates the reference shape
+  marginally, never the at-risk count.
+
+================================================================================
+8. TESTING SUMMARY (proof it works)
+================================================================================
+- ClassStandingTest (unit, T1-T5 + T2b/T3b): tier edges, at-risk run detection,
+  run disarm (band reset + calendar-month gap reset), no-pool honesty,
+  extended-project clamping.
+- RecommendationB6RuleTest (T8): corrective rule fires at run>=2; no-fire at
+  run<2 and with unusable pool.
+- CrossProjectSupplementIntegrationTest (T6/T7/T8/T9): blend project surfaces a
+  usable class_standing; no-pool project is usable=false and never fires B6;
+  duplicate inspections in one month never inflate the run; stored calendar
+  month_number is ignored (tier/run stay consistent for non-January starts).
+- Full suite green: 656 tests passed / 2485 assertions.
+
+================================================================================
+9. NUMERIC WALKTHROUGH (memorize this shape; use your own numbers)
+================================================================================
+Monitored project: month 5 of 10-month plan (= 50% elapsed), actual 25%.
+Class band at 50% elapsed (already scaled to this project's pace):
+    P25 ~ 22 | median ~ 28 | P75 ~ 34
+-> actual 25 is between P25 and median  -> tier "lower-middle (25-50th)".
+If this project had shown 25, 21, 19 over the last 3 months while P25 sat
+~22-24 -> those are 3 consecutive months below P25 -> at-risk badge + a
+corrective recommendation.
+If no similar projects exist -> no tier line, no badge, nothing fabricated.

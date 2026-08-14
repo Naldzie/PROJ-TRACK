@@ -4,6 +4,7 @@ namespace Tests\Feature\Services\AI;
 
 use App\Models\Category;
 use App\Models\Project;
+use App\Models\ProjectProgressHistory;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
@@ -532,5 +533,211 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         );
 
         $this->assertNull($result['methods']['polynomial']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T6 — B5/B6: blend-mode project surfaces a usable class_standing block
+     * ------------------------------------------------------------------------
+     *
+     * A project blended against a real similar-project pool must surface
+     * class_standing with usable=true, a tier from the allowed set, numeric
+     * bands, and a self-consistent at-risk flag (run >= 2 ⟺ at_risk).
+     * Exact tier/run values are not asserted here (the scale-ratio
+     * normalization makes them pool-dependent) — threshold math is unit-tested
+     * in ClassStandingTest with a fixed reference.
+     */
+    public function test_b56_blend_project_surfaces_usable_class_standing(): void
+    {
+        $categoryId = $this->makeCategory('B6 Blend Category')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 180,
+            ]
+        );
+
+        $report = $this->predictionService->generatePrediction($target);
+
+        $this->assertSame('blended', $report['regression']['data_source'] ?? 'project_history');
+
+        $standing = $report['class_standing'];
+        $this->assertTrue($standing['usable']);
+        $this->assertSame(3, $standing['similar_count']);
+        $this->assertContains($standing['tier'], ['below_p25', 'p25_50', 'p50_75', 'above_p75']);
+        $this->assertNotNull($standing['tier_label']);
+        $this->assertIsNumeric($standing['lower_band']);
+        $this->assertIsNumeric($standing['median_band']);
+        $this->assertIsNumeric($standing['upper_band']);
+        // Self-consistency: at_risk implies a run of >= 2; a run < 2 means
+        // at_risk is false.
+        $this->assertSame($standing['at_risk'], $standing['at_risk_run'] >= 2);
+
+        // Presenter exposes the block for the blade.
+        $presented = $this->presenter->present($target);
+        $this->assertTrue($presented['class_standing']['usable']);
+        $this->assertContains(
+            $presented['class_standing']['tier'],
+            ['below_p25', 'p25_50', 'p50_75', 'above_p75']
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T7 — B5/B6 honesty: no similar pool → class_standing unusable and no
+     * B6 recommendation is fired.
+     * ------------------------------------------------------------------------
+     */
+    public function test_b56_no_pool_leaves_class_standing_unusable_and_no_b6_recommendation(): void
+    {
+        $categoryId = $this->makeCategory('B6 No Pool')->id;
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [2, 5, 9, 14, 20, 27],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 180,
+            ]
+        );
+
+        $this->assertSame(0, $this->historicalSimilarityService->getSimilarProjectsCountFor($target));
+
+        $report = $this->predictionService->generatePrediction($target);
+
+        $this->assertFalse($report['class_standing']['usable']);
+        $this->assertNull($report['class_standing']['tier']);
+        $this->assertNull($report['class_standing']['tier_label']);
+        $this->assertFalse($report['class_standing']['at_risk']);
+        $this->assertSame(0, $report['class_standing']['at_risk_run']);
+
+        // No B6 recommendation may fire without a usable pool.
+        $engine = new RecommendationEngine();
+        $recommendations = $engine->generate($target, $report);
+
+        foreach ($recommendations as $recommendation) {
+            $this->assertNotContains('trailed similar projects', [$recommendation['message']]);
+            $this->assertNotContains('below the lower band of similar projects', [$recommendation['reason']]);
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T8 — B6 caller normalization: duplicate inspections in one calendar month
+     * must NOT inflate the at-risk run.
+     *
+     * generatePrediction() collapses progressHistory() to ONE latest inspection
+     * per month_label before building class standing. Adding a redundant
+     * (earlier-dated) inspection to the final month therefore changes neither
+     * at_risk_run nor at_risk — the run counts calendar months, not rows.
+     * ------------------------------------------------------------------------
+     */
+    public function test_b56_multi_inspection_month_does_not_inflate_run(): void
+    {
+        $categoryId = $this->makeCategory('B6 Multi Inspection')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 180,
+            ]
+        );
+
+        $reportBefore = $this->predictionService->generatePrediction($target);
+        $standingBefore = $reportBefore['class_standing'];
+
+        // The original month-6 inspection.
+        $finalMonth = $target->progressHistory->sortByDesc('inspection_date')->first();
+
+        // A redundant inspection in the SAME calendar month but earlier date
+        // and a below-band progress value. Without caller normalization this
+        // would look like an extra trailing month and extend the at-risk run.
+        ProjectProgressHistory::factory()->create([
+            'project_id'              => $target->id,
+            'month_number'            => $finalMonth->month_number,
+            'month_label'             => $finalMonth->month_label,
+            'inspection_date'         => \Illuminate\Support\Carbon::parse($finalMonth->inspection_date)->subDays(10)->format('Y-m-d'),
+            'actual_progress_percent' => 1.0,
+            'progress_percentage'     => 1.0,
+        ]);
+
+        $reportAfter = $this->predictionService->generatePrediction($target->fresh());
+        $standingAfter = $reportAfter['class_standing'];
+
+        // Same usable pool, same calendar months → identical run.
+        $this->assertTrue($standingBefore['usable']);
+        $this->assertTrue($standingAfter['usable']);
+        $this->assertSame($standingBefore['at_risk_run'], $standingAfter['at_risk_run']);
+        $this->assertSame($standingBefore['at_risk'], $standingAfter['at_risk']);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * T9 — B6 must NOT trust the stored month_number column.
+     *
+     * ProjectProgressController writes month_number as calendar month-of-year
+     * (e.g. 2026-04 → 4) while seeders/factories write a project-relative index.
+     * For a project that does not start in January the two differ, and using the
+     * stored value as a band index shifts the comparison (the reported bug: a
+     * project could show "upper half" tier yet "behind peers N months"). The
+     * run derives the month from month_label instead, so rewriting the stored
+     * column must NOT change class standing.
+     * ------------------------------------------------------------------------
+     */
+    public function test_b56_ignores_stored_calendar_month_number(): void
+    {
+        $categoryId = $this->makeCategory('B6 Calendar Month')->id;
+        $this->seedSimilarCompletedProjects($categoryId);
+
+        $target = $this->createProjectWithHistory(
+            months: 6,
+            actualProgress: [10, 25, 45, 65, 85, 100],
+            overrides: [
+                'status'                => 'Ongoing',
+                'category_id'           => $categoryId,
+                'approved_budget'       => 5000000.00,
+                'planned_duration_days' => 180,
+            ]
+        );
+
+        $standingBefore = $this->predictionService->generatePrediction($target)['class_standing'];
+        $this->assertTrue($standingBefore['usable']);
+
+        // Rewrite every record's stored month_number to CALENDAR month-of-year,
+        // exactly like ProjectProgressController::storeProgress() does. The
+        // createProjectWithHistory helper writes project-relative 1..6; if the
+        // project did not start in January these values now disagree.
+        foreach ($target->progressHistory as $record) {
+            $calendarMonth = (int) explode('-', $record->month_label)[1];
+
+            ProjectProgressHistory::where('id', $record->id)->update([
+                'month_number' => $calendarMonth,
+            ]);
+        }
+
+        $standingAfter = $this->predictionService->generatePrediction($target->fresh())['class_standing'];
+
+        // The B6 run derives months from month_label, so the rewritten stored
+        // column changes nothing. (Before the fix, the run would index the band
+        // by calendar month and produce a shifted / false at-risk run.)
+        $this->assertTrue($standingAfter['usable']);
+        $this->assertSame($standingBefore['tier'], $standingAfter['tier']);
+        $this->assertSame($standingBefore['at_risk'], $standingAfter['at_risk']);
+        $this->assertSame($standingBefore['at_risk_run'], $standingAfter['at_risk_run']);
+        // Self-consistency guard on the rewritten run.
+        $this->assertSame($standingAfter['at_risk'], $standingAfter['at_risk_run'] >= 2);
     }
 }

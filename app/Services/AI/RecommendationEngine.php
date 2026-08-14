@@ -19,6 +19,10 @@ use App\Models\ProjectBaselineSchedule;
  * multiple project factors including risk level, trend, progress gap,
  * days remaining, extension count, open issues, and regression quality.
  *
+ * B5/B6: also consumes the class-standing block (banded percentile benchmark
+ * + at-risk flag) so that a project trailing similar projects for 2+
+ * consecutive months yields a corrective recommendation.
+ *
  * Each recommendation has:
  *   • message   — The actionable suggestion
  *   • category  — escalation | corrective | monitoring | administrative
@@ -317,6 +321,20 @@ class RecommendationEngine
             'carried_over_count'       => $carriedOverCount,
             'consecutive_carryovers'   => $consecutiveCarryovers,
             'worst_carried_activity_name' => $worstCarriedActivityName,
+            // B5/B6 — banded percentile benchmark + at-risk flag from the
+            // class standing block (present when a usable peer pool exists).
+            'class_standing'           => $prediction['class_standing'] ?? [
+                'usable'      => false,
+                'tier'        => null,
+                'tier_label'  => null,
+                'at_risk'     => false,
+                'at_risk_run' => 0,
+                'similar_count' => 0,
+            ],
+            // B6 derived factors consumed by assessCorrective().
+            'class_behind'             => (bool) ($prediction['class_standing']['at_risk'] ?? false),
+            'class_behind_run'         => (int) ($prediction['class_standing']['at_risk_run'] ?? 0),
+            'class_similar_count'      => (int) ($prediction['class_standing']['similar_count'] ?? 0),
         ];
     }
 
@@ -507,6 +525,26 @@ class RecommendationEngine
                 'reason'   => $factors['carried_over_count']
                     . ' incomplete activities have been carried over with a progress gap of '
                     . abs($factors['progress_gap']) . '% — work is being deferred rather than completed',
+                'priority' => 3,
+            ];
+        }
+
+        // B6 — at-risk flag: actual progress has sat below the class lower
+        // band (P25) for 2+ consecutive trailing months. Same signal as the
+        // gauge badge, fed into the recommendation stream as a corrective.
+        $classStanding = $factors['class_standing'] ?? [];
+        if (($factors['class_behind'] ?? false)
+            && ($factors['class_behind_run'] ?? 0) >= 2
+            && ($classStanding['usable'] ?? false)
+        ) {
+            $recommendations[] = [
+                'message'  => 'Progress has trailed similar projects for '
+                    . $factors['class_behind_run']
+                    . ' consecutive months — investigate root cause',
+                'category' => 'corrective',
+                'reason'   => 'Actual progress has been below the lower band of similar projects '
+                    . 'of this type for ' . $factors['class_behind_run']
+                    . ' consecutive months',
                 'priority' => 3,
             ];
         }

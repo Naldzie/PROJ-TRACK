@@ -14,8 +14,9 @@
    Previous Phase:  v2.6 Phase 1 (honest fixes) + A4 (0-obs category baseline)
 Status:          ✅ COMPLETE — code committed (a0f301d) + merged to main.
                      Regression tail A2 (completion sanity fallback) DONE
-                     (Aug 13 2026); next: B5/B6 (percentile benchmark +
-                     at-risk flag).
+                     (Aug 13 2026) and B5/B6 (percentile benchmark + at-risk
+                     flag) DONE (Aug 14 2026, feature/b56-percentile-at-risk) —
+                     regression thread is now CLOSED.
 
 
 ================================================================================
@@ -142,7 +143,9 @@ Status:          ✅ COMPLETE — code committed (a0f301d) + merged to main.
     blended predictions accumulate. Chosen k → Decision Log (v2.6 §9 D4).
   • Next regression tail after A2 ✅ (completion sanity fallback DONE Aug 13,
     2026 — see completion_sanity_fallback_plan.md): B5/B6 (percentile
-    benchmark + at-risk flag) — see summary_of_next_work.txt.
+    benchmark + at-risk flag) — ✅ DONE Aug 14, 2026 (feature/b56-percentile-
+    at-risk, plan cd16289 + code 1727879; see percentile_benchmark_at_risk_plan.md
+    and b56_defense_notes.txt). Regression thread CLOSED.
 
 ================================================================================
   END OF LOG

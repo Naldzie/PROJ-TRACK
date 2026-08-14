@@ -847,6 +847,28 @@ class AIPredictionPresenter
             'completion_multi'       => $completionMulti,
 
             /*
+            |------------------------------------------------------------------
+            | Class Standing (B5/B6)
+            |------------------------------------------------------------------
+            |
+            | B5-lite banded percentile tier + B6 at-risk flag. Passed through
+            | from AIPredictionService::buildClassStanding(); the blade renders
+            | nothing when 'usable' is false.
+            */
+
+            'class_standing' => $prediction['class_standing'] ?? [
+                'usable'        => false,
+                'similar_count' => 0,
+                'tier'          => null,
+                'tier_label'    => null,
+                'at_risk'       => false,
+                'at_risk_run'   => 0,
+                'lower_band'    => null,
+                'median_band'   => null,
+                'upper_band'    => null,
+            ],
+
+            /*
             |--------------------------------------------------------------
             | Prediction History (Phase 7)
             |--------------------------------------------------------------

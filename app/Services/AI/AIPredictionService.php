@@ -343,6 +343,44 @@ class AIPredictionService
             $blendContext['reference'] ?? null
         );
 
+        // B5/B6 — class standing (percentile tier + at-risk flag). Uses real
+        // history observations only (never synthetic/fill points), normalized
+        // to ONE latest inspection per calendar month (same rule as
+        // RegressionDatasetBuilder). The month index is DERIVED from the
+        // record's month_label relative to the plan's first baseline month,
+        // NOT read from the stored month_number column — that column is written
+        // as calendar month-of-year (1-12) by ProjectProgressController but as a
+        // project-relative index by seeders/factories, so trusting it would make
+        // the at-risk run compare against the wrong band month for any project
+        // that did not start in January.
+        $realHistory = $project->progressHistory()
+            ->orderBy('month_label')
+            ->orderBy('inspection_date')
+            ->get(['month_number', 'month_label', 'inspection_date', 'actual_progress_percent'])
+            ->groupBy('month_label')
+            ->map(function ($monthRecords) {
+                return $monthRecords
+                    ->sortByDesc(['inspection_date', 'id'])
+                    ->first();
+            })
+            ->sortBy('month_label')
+            ->values()
+            ->map(function ($record) use ($project) {
+                return [
+                    'month_number'  => $this->projectRelativeMonthIndex($project, (string) $record->month_label, (int) ($record->month_number ?? 0)),
+                    'actual_progress_percent' => (float) ($record->actual_progress_percent ?? 0.0),
+                ];
+            })
+            ->toArray();
+
+        $classStanding = $this->buildClassStanding(
+            $project,
+            $blendContext['reference'] ?? null,
+            $currentMonthIndex,
+            $currentProgress,
+            $realHistory
+        );
+
         // Phase 14 Step 3: forecast reliability (weighted evidence score).
         // Next-month: horizon = 1, agreement neutral. Completion: horizon from
         // the completion index, agreement from the multi-method comparison.
@@ -366,7 +404,8 @@ class AIPredictionService
             $completion,
             $completionMulti,
             $nextPredictionBand,
-            $reliability
+            $reliability,
+            $classStanding
         );
 
         $this->savePredictionHistory(
@@ -447,18 +486,7 @@ class AIPredictionService
         // A2 sanity fallback: prefer the reference already built for the blend
         // context, else build one for the class-covering modes so every
         // implausible-polynomial case has a shot at an honest answer.
-        if ($classReference === null) {
-            $totalPlannedMonths = $this->historicalSimilarityService->getPlannedMonths($project);
-
-            if ($totalPlannedMonths > 0) {
-                $built = $this->historicalSimilarityService->buildClassReference(
-                    $project,
-                    $totalPlannedMonths
-                );
-
-                $classReference = empty($built) ? null : $built;
-            }
-        }
+        $classReference ??= $this->resolveClassReference($project);
 
         return $this->completionComparisonService->estimateAll(
             $project->planned_end_date,
@@ -468,6 +496,184 @@ class AIPredictionService
             $project->baselineSchedules,
             $classReference
         );
+    }
+
+    // Build the aggregate class reference (median/lower/upper + count) on
+    // demand. Returns null when the pool is missing/too small or the project
+    // has no planned duration. Shared by A2 (completion fallback) and B5/B6
+    // (class standing).
+    private function resolveClassReference(Project $project): ?array
+    {
+        $totalPlannedMonths = $this->historicalSimilarityService->getPlannedMonths($project);
+
+        if ($totalPlannedMonths <= 0) {
+            return null;
+        }
+
+        $built = $this->historicalSimilarityService->buildClassReference(
+            $project,
+            $totalPlannedMonths
+        );
+
+        return empty($built) ? null : $built;
+    }
+
+    // Project-relative month index for a recorded month_label, anchored to the
+    // plan's FIRST baseline month (month 1). Deliberately ignores the stored
+    // month_number column, whose semantics differ across writers (calendar
+    // month-of-year in ProjectProgressController vs project-relative index in
+    // seeders/factories). Falls back to the stored value only when the project
+    // has no baseline to anchor against.
+    private function projectRelativeMonthIndex(Project $project, string $monthLabel, int $fallbackMonthNumber = 0): int
+    {
+        $firstBaseline = $project->baselineSchedules
+            ->sortBy('month_label')
+            ->first()->month_label ?? null;
+
+        if ($firstBaseline === null) {
+            return $fallbackMonthNumber;
+        }
+
+        $baseline = Carbon::parse($firstBaseline . '-01')->startOfMonth();
+        $observed = Carbon::parse($monthLabel . '-01')->startOfMonth();
+
+        $index = (int) $baseline->diffInMonths($observed) + 1;
+
+        return max(1, $index);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Class Standing (B5/B6 — percentile benchmark + at-risk flag)
+     * ------------------------------------------------------------------------
+     *
+     * Classifies the project's CURRENT progress into a BANDED percentile tier
+     * (B5-lite: below P25 / P25-50 / 50-75 / above P75) against the aggregate
+     * class band, and flags when actual progress has sat below the class lower
+     * band (P25) for 2+ CONSECUTIVE trailing CALENDAR months (B6).
+     *
+     * Tier boundaries are strict (`<`) at P25/P50, matching the B6 run rule:
+     * actual exactly at P25 is "at/above the band", never "below".
+     *
+     * $realObservations is a list of ['month_number' => int,
+     * 'actual_progress_percent' => float] — REAL history only, normalized to
+     * one latest inspection per calendar month (same rule as the regression
+     * dataset builder), with month_number being the PROJECT-RELATIVE month
+     * index derived from month_label (not the stored column). A gap in the
+     * monthly record resets the at-risk run.
+     *
+     * Honesty gates: no usable class reference → usable=false, no tier, no
+     * flag. Never fabricates a peer comparison without a pool.
+     */
+    private function buildClassStanding(
+        Project $project,
+        ?array $classReference,
+        int $currentMonthIndex,
+        float $currentProgress,
+        array $realObservations
+    ): array {
+
+        $reference = $classReference ?? $this->resolveClassReference($project);
+
+        $median = $reference['median'] ?? [];
+        $lower  = $reference['lower'] ?? [];
+        $upper  = $reference['upper'] ?? [];
+
+        $usable = !empty($median) && !empty($lower) && !empty($upper);
+
+        if (!$usable) {
+            return [
+                'usable'        => false,
+                'similar_count' => (int) ($reference['similar_projects_count'] ?? 0),
+                'tier'          => null,
+                'tier_label'    => null,
+                'at_risk'       => false,
+                'at_risk_run'   => 0,
+                'lower_band'    => null,
+                'median_band'   => null,
+                'upper_band'    => null,
+            ];
+        }
+
+        // Anchor the benchmark at the CURRENT planned-month index (clamped to
+        // the plan window for extended projects).
+        $plannedMonths = count($median);
+        $anchorMonth   = max(1, min($currentMonthIndex, $plannedMonths));
+
+        $lowerBand  = $lower[$anchorMonth] ?? $median[$anchorMonth] ?? null;
+        $medianBand = $median[$anchorMonth] ?? null;
+        $upperBand  = $upper[$anchorMonth] ?? $median[$anchorMonth] ?? null;
+
+        // B5-lite tier
+        $tier       = null;
+        $tierLabel  = null;
+
+        if ($lowerBand !== null && $medianBand !== null && $upperBand !== null) {
+            if ($currentProgress < $lowerBand) {
+                $tier      = 'below_p25';
+                $tierLabel = 'in the slowest quarter (<25th percentile) of similar projects';
+            } elseif ($currentProgress < $medianBand) {
+                $tier      = 'p25_50';
+                $tierLabel = 'in the lower-middle band (25-50th percentile) of similar projects';
+            } elseif ($currentProgress <= $upperBand) {
+                $tier      = 'p50_75';
+                $tierLabel = 'in the upper-middle band (50-75th percentile) of similar projects';
+            } else {
+                $tier      = 'above_p75';
+                $tierLabel = 'above the 75th percentile of similar projects';
+            }
+        }
+
+        // B6 at-risk run: count trailing CONSECUTIVE REAL calendar months below
+        // the class lower band (P25). $realObservations is normalized to one
+        // latest inspection per month and carries its true month_number, so:
+        //   • a record at/above the band resets the run;
+        //   • a gap in the monthly record (skipped inspection / no record for
+        //     a calendar month) also resets the run — "N consecutive months"
+        //     means N calendar months, never N inspections in a row.
+        $run = 0;
+        $expectedNextMonth = null;
+
+        foreach ($realObservations as $observation) {
+            $obsMonth = (int) ($observation['month_number'] ?? 0);
+
+            if ($obsMonth <= 0) {
+                continue;
+            }
+
+            // A skipped calendar month breaks consecutive-month semantics.
+            if ($expectedNextMonth !== null && $obsMonth > $expectedNextMonth) {
+                $run = 0;
+            }
+
+            $compareMonth = max(1, min($obsMonth, $plannedMonths));
+            $band = $lower[$compareMonth] ?? $median[$compareMonth] ?? null;
+
+            if ($band === null) {
+                $expectedNextMonth = $obsMonth + 1;
+                continue;
+            }
+
+            if ((float) $observation['actual_progress_percent'] < (float) $band) {
+                $run++;
+            } else {
+                $run = 0;
+            }
+
+            $expectedNextMonth = $obsMonth + 1;
+        }
+
+        return [
+            'usable'        => true,
+            'similar_count' => (int) ($reference['similar_projects_count'] ?? 0),
+            'tier'          => $tier,
+            'tier_label'    => $tierLabel,
+            'at_risk'       => $run >= 2,
+            'at_risk_run'   => $run,
+            'lower_band'    => $lowerBand !== null ? (float) $lowerBand : null,
+            'median_band'   => $medianBand !== null ? (float) $medianBand : null,
+            'upper_band'    => $upperBand !== null ? (float) $upperBand : null,
+        ];
     }
 
     /**
@@ -1166,7 +1372,8 @@ class AIPredictionService
         ?array $completion = null,
         ?array $completionMulti = null,
         ?array $nextPredictionBand = null,
-        ?array $reliability = null
+        ?array $reliability = null,
+        ?array $classStanding = null
     ): array {
 
         /*
@@ -1308,6 +1515,28 @@ class AIPredictionService
 
             /*
             |--------------------------------------------------------------------------
+            | Class Standing (B5/B6)
+            |--------------------------------------------------------------------------
+            |
+            | Banded percentile benchmark (B5-lite) plus the at-risk flag (B6):
+            | 2+ consecutive trailing months below the class lower band (P25).
+            | Consumers treat 'usable'=false as "no honest peers to benchmark".
+            */
+
+            'class_standing' => $classStanding ?? [
+                'usable'        => false,
+                'similar_count' => 0,
+                'tier'          => null,
+                'tier_label'    => null,
+                'at_risk'       => false,
+                'at_risk_run'   => 0,
+                'lower_band'    => null,
+                'median_band'   => null,
+                'upper_band'    => null,
+            ],
+
+            /*
+            |--------------------------------------------------------------------------
             | Dataset Statistics
             |--------------------------------------------------------------------------
             */
@@ -1409,6 +1638,21 @@ class AIPredictionService
                 'next_prediction'   => null,
                 'completion'        => null,
                 'fit_quality_label' => 'Curve Fit Quality',
+            ],
+
+            // B5/B6 — banded percentile benchmark + at-risk flag. Always
+            // present as a shape; consumers treat 'usable'=false as "no
+            // honest peers to compare against".
+            'class_standing' => [
+                'usable'        => false,
+                'similar_count' => 0,
+                'tier'          => null,
+                'tier_label'    => null,
+                'at_risk'       => false,
+                'at_risk_run'   => 0,
+                'lower_band'    => null,
+                'median_band'   => null,
+                'upper_band'    => null,
             ],
 
             'statistics' => $dataset['statistics'],

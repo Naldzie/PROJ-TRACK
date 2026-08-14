@@ -156,17 +156,23 @@
         textfiles/completion_sanity_fallback_plan.md.
         Regression-module tail → B5/B6 below.
 
-    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)  ⬜ after A2
+    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)  ✅ DONE
         B5: actuals vs aggregate median/P25/P75 → "your progress is in the Nth
         percentile of similar completed projects" (feeds health gauge).
         B6: actual below the category lower band for 2+ consecutive months →
         "behind similar projects of this type" flag (feeds RecommendationEngine).
+        IMPLEMENTED: AIPredictionService::buildClassStanding() (banded tier +
+        consecutive-month at-risk run; month index DERIVED from month_label,
+        never the stored month_number); RecommendationEngine corrective rule.
+        Committed on feature/b56-percentile-at-risk (plan cd16289, code 1727879)
+        + a post-review month-index fix (see percentile_benchmark_at_risk_plan.md
+        §8 D5/D6 and fixes_and_improvements_log.txt #14). Full suite: 656/2485.
 
-  ▸ Status Aug 13 2026: the v2.6 thread (Steps 1–5 + Phase 1 + C7 + A4 +
+  ▸ Status Aug 14 2026: the v2.6 thread (Steps 1–5 + Phase 1 + C7 + A4 +
     Phase 2 blend) was COMPLETE and merged to main; **A2 (completion sanity
-    fallback) is now DONE** on its own branch. The regression-module tail is
-    B5/B6; after that, core Phase E → AI Phase 9/10 (see overall
-    prioritization below).
+    fallback) and B5/B6 (percentile benchmark + at-risk flag) are DONE** on
+    their own branches. The regression-module tail is now CLOSED; next: core
+    Phase E → AI Phase 9/10 (see overall prioritization below).
 
 ===============================================================================
 
@@ -180,10 +186,11 @@
         v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
         theme as merged Phase 14; closes live "score-40 still borrowed" bug;
         warmest context; branch + plan edits already half-done (uncommitted).
-Status Aug 13 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
+Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
          (blend + range) ALL DONE & merged into main (a0f301d); **A2 (completion
-         sanity fallback) DONE on feature/a2-completion-sanity-fallback** —
-         next work is B5/B6.
+         sanity fallback) DONE on feature/a2-completion-sanity-fallback** and
+         **B5/B6 DONE on feature/b56-percentile-at-risk** — regression thread
+         is CLOSED, next work is core Phase E.
      2. CORE MONITORING Phase E — AI ↔ baseline linkage (small prep; enables
         future Phase 10 loop). Plan: core_monitoring_completion_plan.md
      3. AI PHASE 9 → 10 — Contractor Performance Tracking → AI-Powered

@@ -148,6 +148,37 @@
                                         @endif
                                     </span>
                                 </div>
+                                @if (!($prediction['is_insufficient_data'] ?? false))
+                                {{-- B5/B6: banded percentile benchmark + at-risk flag. Rendered only
+                                     when a usable similar-project pool exists. --}}
+                                @if (!empty($prediction['class_standing']['usable']))
+                                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
+                                    <span style="font-size: 12px; color: #6b7280;">vs Similar Projects</span>
+                                    <span style="font-size: 13px; font-weight: 700; text-align: right; color: {{ ($prediction['class_standing']['tier'] ?? '') === 'above_p75' ? '#10b981' : ((($prediction['class_standing']['tier'] ?? '') === 'p50_75') ? '#059669' : ((($prediction['class_standing']['tier'] ?? '') === 'below_p25') ? '#ef4444' : '#eab308')) }};">
+                                        @if (($prediction['class_standing']['tier'] ?? '') === 'above_p75')
+                                            Top 25%
+                                        @elseif (($prediction['class_standing']['tier'] ?? '') === 'p50_75')
+                                            Upper half
+                                        @elseif (($prediction['class_standing']['tier'] ?? '') === 'p25_50')
+                                            Lower half
+                                        @elseif (($prediction['class_standing']['tier'] ?? '') === 'below_p25')
+                                            Bottom 25%
+                                        @else
+                                            N/A
+                                        @endif
+                                    </span>
+                                </div>
+                                @if (!empty($prediction['class_standing']['at_risk']))
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fef2f2; border-radius: 6px; border: 1px solid #fecaca;">
+                                    <span style="font-size: 12px; color: #b91c1c;">At-Risk Flag</span>
+                                    <span style="font-size: 12px; font-weight: 700; color: #dc2626;">
+                                        <i class="bi bi-exclamation-octagon" style="margin-right: 4px;"></i>
+                                        Behind peers {{ $prediction['class_standing']['at_risk_run'] }} months
+                                    </span>
+                                </div>
+                                @endif
+                                @endif
+                                @endif
                             </div>
                         </div>
                     </div>
