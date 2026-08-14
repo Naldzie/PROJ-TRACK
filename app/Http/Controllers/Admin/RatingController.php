@@ -31,6 +31,11 @@ class RatingController extends Controller
         $contractorsJson = $contractors->map(fn($c) => [
             'id' => $c->id,
             'name' => $c->company_name ?? $c->contractor_name ?? ($c->user->name ?? 'Contractor #' . $c->id),
+            'photo' => $c->user->profile_photo
+                ? (str_starts_with($c->user->profile_photo, 'http')
+                    ? $c->user->profile_photo
+                    : asset('storage/' . $c->user->profile_photo))
+                : ($c->user->avatar ?? 'https://ui-avatars.com/api/?name=' . urlencode($c->user->name ?? 'User')),
             'projects' => $c->projects->map(fn($p) => [
                 'id' => $p->id,
                 'title' => $p->title,

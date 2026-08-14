@@ -86,7 +86,23 @@
   padding: 18px 18px 16px;
   box-shadow: var(--shadow-sm);
   min-width: 0;
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s var(--ease-out), box-shadow .2s var(--ease-out), border-color .2s;
 }
+.summary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--blue);
+  opacity: .85;
+}
+.summary:nth-child(2)::after { background: var(--gold); }
+.summary:nth-child(3)::after { background: var(--rose); }
+.summary:hover { transform: translateY(-2px); box-shadow: 0 10px 28px oklch(25% .03 285 / .09); border-color: oklch(84% .04 285); }
 .summary-top {
   display: flex;
   justify-content: space-between;
@@ -169,14 +185,23 @@
 .contractor.selected { background: var(--blue-soft); border-color: oklch(82% .09 264); }
 .contractor-avatar {
   width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-  background: var(--surface-2); color: var(--blue-dark); font-size: 11px; font-weight: 700;
+  background: linear-gradient(135deg, var(--blue-soft), var(--surface-2));
+  color: var(--blue-dark); font-size: 11px; font-weight: 700; letter-spacing: .02em;
+  transition: background .2s, color .2s, transform .2s var(--ease-out);
 }
-.contractor.selected .contractor-avatar { background: oklch(83% .11 264); }
+.contractor:hover .contractor-avatar { transform: scale(1.05); }
+.contractor.selected .contractor-avatar { background: linear-gradient(135deg, oklch(83% .11 264), oklch(74% .13 264)); color: #fff; }
+.contractor-avatar img.avatar-img {
+  width: 100%; height: 100%; border-radius: 10px; object-fit: cover;
+  display: block; background: var(--surface-2);
+}
+.contractor.selected .contractor-avatar img.avatar-img { box-shadow: 0 0 0 1px oklch(72% .13 264 / .35); }
 .contractor strong { display: block; font-size: 12px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .contractor small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
 .rating-compact { text-align: right; }
 .stars { color: var(--gold); letter-spacing: 1px; font-size: 11px; line-height: 1; }
 .rating-num { color: var(--muted); font: 10px 'Space Mono', 'SF Mono', monospace; margin-top: 4px; }
+.not-rated { color: var(--faint); font: 10px 'Space Mono', 'SF Mono', monospace; }
 
 .projects-panel .panel-body { padding: 12px 14px 14px; }
 .project-toolbar {
@@ -206,6 +231,14 @@ select {
 .status::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .status.progress { background: var(--blue-soft); color: var(--blue-dark); }
 .status.complete { background: var(--mint-soft); color: oklch(40% .11 160); }
+.status.warn { background: oklch(93% .04 18); color: #b91c1c; }
+.badge-inline {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: #b91c1c; background: oklch(93% .04 18);
+  font: 700 10px/1 'Space Mono', 'SF Mono', monospace;
+  padding: 3px 7px; border-radius: 5px; margin-left: 8px;
+}
+.badge-inline::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .project-bottom {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-top: 15px; padding-top: 11px; border-top: 1px solid var(--line);
@@ -256,8 +289,10 @@ select {
   padding: 16px 18px; border-bottom: 1px solid var(--line);
   display: flex; align-items: center; justify-content: space-between;
 }
-.cr-modal-title { font-size: 14px; font-weight: 700; }
+.cr-modal-title { font-size: 14px; font-weight: 700; letter-spacing: -.02em; }
+.cr-modal-subtitle { margin-top: 2px; font-size: 11px; color: var(--muted); }
 .cr-modal-close { border: 0; background: none; font-size: 22px; color: var(--muted); cursor: pointer; line-height: 1; padding: 0; }
+.cr-modal-close:hover { color: var(--ink); }
 .cr-modal-body { padding: 20px; }
 .star-select { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .star-btn {
@@ -265,6 +300,8 @@ select {
   color: var(--faint); transition: color .1s, transform .1s; line-height: 1; padding: 0;
 }
 .star-btn.on { color: var(--gold); transform: scale(1.1); }
+.star-btn:hover { color: oklch(70% .13 80); transform: scale(1.15); }
+.star-btn.on:hover { color: var(--gold); }
 .star-hint { text-align: center; font-size: 12px; color: var(--muted); min-height: 16px; margin-bottom: 4px; }
 .cr-modal-footer {
   padding: 12px 16px; border-top: 1px solid var(--line);
@@ -405,7 +442,10 @@ select {
 <div class="cr-modal-overlay" id="ratingOverlay">
   <div class="cr-modal">
     <div class="cr-modal-head">
-      <span class="cr-modal-title">Rate project</span>
+      <div>
+        <span class="cr-modal-title">Rate project</span>
+        <div class="cr-modal-subtitle" id="modalProjectTitle">—</div>
+      </div>
       <button class="cr-modal-close" onclick="closeModal()">&times;</button>
     </div>
     <div class="cr-modal-body">
@@ -459,10 +499,10 @@ function renderContractors(filter) {
     const avg = ratings.length ? (ratings.reduce((a,b) => a+b, 0) / ratings.length) : 0;
     const avgR = Math.round(avg * 10) / 10;
     return `<button class="contractor ${c.id === selectedId ? 'selected' : ''}" data-id="${c.id}">
-      <div class="contractor-avatar">${initials(c.name)}</div>
+      <div class="contractor-avatar">${c.photo ? `<img class="avatar-img" src="${c.photo}" alt="" loading="lazy" onerror="this.parentElement.textContent='${initials(c.name)}';this.remove()">` : initials(c.name)}</div>
       <div><strong>${escHtml(c.name)}</strong><small>${c.projects.length} project${c.projects.length === 1 ? '' : 's'}</small></div>
       <div class="rating-compact">
-        <div class="stars">${avgR > 0 ? starsHtml(Math.round(avgR)) : '<span style="color:var(--faint);font-size:11px">Not rated</span>'}</div>
+        <div class="stars">${avgR > 0 ? starsHtml(Math.round(avgR)) : '<span class="not-rated">Not rated</span>'}</div>
         ${avgR > 0 ? `<div class="rating-num">${avgR.toFixed(1)}</div>` : ''}
       </div>
     </button>`;
@@ -519,13 +559,13 @@ function renderProjects() {
       <div class="project-row">
         <div>
           <h3>${escHtml(p.title)}</h3>
-          <div class="project-meta"><span>Status: ${s.label}</span>${p.status === 'Ongoing' ? ' <span style="color:#b91c1c;background:#fee2e2;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:6px">Can\'t be rated due to still in progress</span>' : ''}</div>
+          <div class="project-meta"><span>Status: ${s.label}</span>${p.status === 'Ongoing' ? '<span class="badge-inline">Not rateable — in progress</span>' : ''}</div>
         </div>
         <span class="status ${s.cls}">${s.label}</span>
       </div>
       <div class="project-bottom">
         <div class="project-rating">
-          <div class="stars">${rating > 0 ? starsHtml(rating) : '<span style="color:var(--faint);font-size:12px">Not rated</span>'}</div>
+          <div class="stars">${rating > 0 ? starsHtml(rating) : '<span class="not-rated">Not rated</span>'}</div>
           ${rating > 0 ? `<span>${rating}/5</span>` : ''}
         </div>
         <div class="project-actions">
@@ -546,7 +586,7 @@ function renderProjects() {
       const conId = parseInt(parts[1]);
       const con = contractorsData.find(x => x.id === conId);
       const proj = con ? con.projects.find(p => p.key === key) : null;
-      openRating(key, proj ? proj.rating : 0, conId, projId);
+      openRating(key, proj ? proj.rating : 0, conId, projId, proj ? proj.title : '');
     });
   });
 
@@ -586,11 +626,12 @@ function renderAnalysis(message) {
   </div>`;
 }
 
-function openRating(key, existing, contractorId, projectId) {
+function openRating(key, existing, contractorId, projectId, projectTitle) {
   currentKey = key;
   currentContractorId = contractorId;
   currentProjectId = projectId;
   currentStar = existing || 0;
+  document.getElementById('modalProjectTitle').textContent = projectTitle || 'Untitled project';
   renderModalStars(currentStar);
   document.getElementById('ratingOverlay').classList.add('show');
 }
@@ -610,6 +651,17 @@ function renderModalStars(n) {
   });
   document.getElementById('starHint').textContent = n ? starLabels[n] : 'Tap a star to rate';
 }
+
+document.querySelectorAll('.star-btn').forEach((btn, i) => {
+  const n = i + 1;
+  btn.addEventListener('mouseenter', () => {
+    document.getElementById('starHint').textContent = starLabels[n];
+    document.querySelectorAll('.star-btn').forEach((b, j) => b.classList.toggle('on', j < n));
+  });
+  btn.addEventListener('mouseleave', () => {
+    renderModalStars(currentStar);
+  });
+});
 
 function saveRating() {
   if (!currentStar) { closeModal(); return; }
