@@ -366,8 +366,15 @@ class IssueLifecycleTest extends TestCase
             'action'     => 'Delete Issue',
         ]);
 
+        // Issue creation also surfaces a system "Issue Reported" ActivityLog
+        // entry via NotificationService::notifyMany() (admins are notified).
+        $this->assertDatabaseHas('activity_logs', [
+            'project_id' => $this->project->id,
+            'action'     => 'Issue Reported',
+        ]);
+
         $this->assertDatabaseCount('issues', 0);
-        $this->assertDatabaseCount('activity_logs', 3);
+        $this->assertDatabaseCount('activity_logs', 4);
     }
 
     // === DESTROY CLEANS ATTACHMENTS ===

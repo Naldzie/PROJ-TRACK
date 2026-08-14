@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\Contractor;
 use App\Models\Issue;
 use App\Models\Project;
@@ -135,15 +136,18 @@ class NotificationServiceTest extends TestCase
     public function test_notify_many_fans_out_with_dedupe(): void
     {
         $admins = collect([$this->makeUser('admin'), $this->makeUser('admin')]);
+        $project = Project::factory()->create();
 
         $delivered = $this->service->notifyMany(
             $admins,
-            new ExtensionStatusChanged(1, 'P', 3, 1, ExtensionStatusChanged::SUBMITTED)
+            new ExtensionStatusChanged($project->id, 'P', 3, 1, ExtensionStatusChanged::SUBMITTED)
         );
 
         $this->assertSame(2, $delivered);
         $this->assertSame(1, $admins->get(0)->notifications()->count());
         $this->assertSame(1, $admins->get(1)->notifications()->count());
+        // The admin ActivityLog entry (NotificationService) carries a real project id.
+        $this->assertSame(1, ActivityLog::where('project_id', $project->id)->count());
     }
 
     // === Audience resolvers ===
