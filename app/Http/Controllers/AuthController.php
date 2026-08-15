@@ -10,6 +10,7 @@ use App\Models\Admin;
 use App\Models\Contractor;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -19,14 +20,23 @@ class AuthController extends Controller
     // ================= GOOGLE REDIRECT =================
     public function redirectToGoogle(Request $request)
     {
+        $popup = $request->query('popup') === '1';
+
         // Remember that this flow was started from a popup so the callback
         // can respond with a close-popup page instead of a full-page redirect.
-        if ($request->query('popup') === '1') {
+        if ($popup) {
             session()->flash('google_login_popup', true);
         }
 
+        // Carry the popup flag through the OAuth round-trip inside the `state`
+        // parameter (Google echoes it back unchanged in the callback URL), so
+        // the callback still knows this was a popup login even if the session
+        // flash is consumed/lost between the redirect and the callback.
         return Socialite::driver('google')
-            ->with(['prompt' => 'select_account'])
+            ->with([
+                'prompt' => 'select_account',
+                'state'  => ($popup ? 'popup|' : '') . Str::random(40),
+            ])
             ->redirect();
     }
 
@@ -35,7 +45,10 @@ class AuthController extends Controller
     {
         try {
             // True when this login was opened from a popup window.
+            // Detected via the `state` param echoed back by Google (set during
+            // the redirect), falling back to the session flash for safety.
             $this->popup = request()->query('popup') === '1'
+                || (is_string(request()->query('state')) && str_starts_with(request()->query('state'), 'popup|'))
                 || session()->pull('google_login_popup') === true;
 
             // ── Lockout check ──────────────────────────────────────────────
@@ -65,7 +78,7 @@ class AuthController extends Controller
 
             // ── Device check (admin/staff desktop-only) ─────────────────────
             $userAgent = request()->header('User-Agent');
-            $isMobile  = preg_match('/Android|iPhone|iPad|iPod/i', $userAgent);
+            $isMobile  = preg_match('/Android|iPhone|iPad|iPod|IEMobile|Windows Phone|Mobile/i', $userAgent);
 
             if (in_array($user->role, ['admin', 'staff']) && $isMobile) {
                 return $this->failedAttempt('Admin/Staff login is only allowed on desktop.');
@@ -238,19 +251,67 @@ class AuthController extends Controller
         <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F8FAFF;font-family:'Segoe UI',sans-serif;color:#172033">
             <div style="text-align:center;padding:0 24px">
                 <p style="font-size:15px;font-weight:600;margin:0 0 6px">{$this->popupStatusLabel($success)}</p>
-                <p style="font-size:12px;color:#64748B;margin:0">You can close this window.</p>
+                <p id="popupHint" style="font-size:12px;color:#64748B;margin:0">You can close this window.</p>
             </div>
             <script>
                 (function () {
                     var origin = window.location.origin;
+                    var result = {$payload};
+
+                    function closePopup() {
+                        try { window.close(); } catch (e) { /* ignore */ }
+                    }
+
+                    // Primary channel: navigate the opener (current tab) straight
+                    // to the dashboard. The login session was already created on
+                    // the server and is shared through the session cookie, so the
+                    // opener tab is authenticated the moment it loads the URL.
+                    if (result.success && result.redirect && window.opener && !window.opener.closed) {
+                        try {
+                            window.opener.location.href = result.redirect;
+                            closePopup();
+                            return;
+                        } catch (e) {
+                            /* fall through to the message channels */
+                        }
+                    }
+
+                    // Backup channel 1: post a message to the login tab.
                     try {
                         if (window.opener) {
-                            window.opener.postMessage({$payload}, origin);
+                            window.opener.postMessage(result, origin);
                         }
-                    } catch (e) {
-                        /* ignore cross-origin / closed-opener errors */
+                    } catch (e) { /* ignore cross-origin / closed-opener errors */ }
+
+                    // Backup channel 2: broadcast across tabs of this origin.
+                    try {
+                        var bc = new BroadcastChannel('google-auth');
+                        bc.postMessage(result);
+                        bc.close();
+                    } catch (e) { /* BroadcastChannel unsupported */ }
+
+                    // Backup channel 3: sessionStorage (same-origin popup shares it).
+                    try {
+                        sessionStorage.setItem('google-auth-result', JSON.stringify(result));
+                    } catch (e) { /* storage unavailable */ }
+
+                    if (!window.opener) {
+                        // The popup lost its opener — give the user a way to continue
+                        // so they are never stuck on a dead page.
+                        var hint = document.getElementById('popupHint');
+                        if (result.success && result.redirect) {
+                            var a = document.createElement('a');
+                            a.href = result.redirect;
+                            a.style.cssText = 'color:#2563EB;font-weight:600;text-decoration:underline';
+                            a.textContent = 'Continue to dashboard';
+                            hint.innerHTML = '';
+                            hint.appendChild(a);
+                        } else {
+                            hint.textContent = result.error || 'Sign-in failed. Please try again.';
+                        }
                     }
-                    window.close();
+
+                    closePopup();
                 })();
             </script>
         </body>

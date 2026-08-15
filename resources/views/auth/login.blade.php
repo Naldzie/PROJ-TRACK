@@ -12,6 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ asset('css/layouts/sweetalert-theme.css') }}">
 
 <style>
 :root {
@@ -830,130 +831,6 @@ body::after {
 }
 
 /* ---- COOL LOGIN POPUPS (SweetAlert2 theme) ---- */
-.swal-theme {
-    background: linear-gradient(165deg, #0F2747 0%, #0B1F3A 58%, #081728 100%) !important;
-    border: 1px solid rgba(96,165,250,0.35) !important;
-    border-radius: 24px !important;
-    padding: 34px 30px 26px !important;
-    box-shadow:
-        0 0 0 1px rgba(37,99,235,0.15),
-        0 40px 80px -20px rgba(3,10,24,0.85),
-        0 16px 34px -14px rgba(37,99,235,0.4),
-        inset 0 1px 0 rgba(255,255,255,0.08) !important;
-    position: relative !important;
-    overflow: hidden !important;
-}
-/* glowing signal bar along the top edge */
-.swal-theme::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #1D4ED8, #3B82F6, #93C5FD, #60A5FA, #2563EB);
-    background-size: 220% 100%;
-    animation: swalSignal 1.6s ease infinite alternate;
-}
-@keyframes swalSignal { from { background-position: 0% 0; } to { background-position: 100% 0; } }
-/* faint blueprint dot-grid overlay inside the popup */
-.swal-theme::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.10;
-    background-image:
-        repeating-linear-gradient(to right,  rgba(96,165,250,0.25) 0 1px, transparent 1px 34px),
-        repeating-linear-gradient(to bottom, rgba(96,165,250,0.25) 0 1px, transparent 1px 34px);
-    background-size: 34px 34px;
-}
-.swal-theme .swal2-actions { margin-top: 28px; position: relative; z-index: 1; }
-
-/* icon tile */
-.swal-theme-icon {
-    position: relative;
-    z-index: 1;
-    width: 76px;
-    height: 76px;
-    margin: 0 auto;
-    border-radius: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(96,165,250,0.12);
-    border: 1px solid rgba(96,165,250,0.35);
-    box-shadow: 0 12px 28px -10px rgba(37,99,235,0.7), inset 0 1px 0 rgba(255,255,255,0.12);
-}
-.swal-theme-icon svg { width: 34px; height: 34px; }
-.swal-theme-icon.error   { color: #FCA5A5; border-color: rgba(248,113,113,0.42); background: rgba(248,113,113,0.10); box-shadow: 0 12px 28px -10px rgba(220,38,38,0.65), inset 0 1px 0 rgba(255,255,255,0.10); }
-.swal-theme-icon.warning { color: #FCD34D; border-color: rgba(251,191,36,0.42); background: rgba(251,191,36,0.10); box-shadow: 0 12px 28px -10px rgba(217,119,6,0.6), inset 0 1px 0 rgba(255,255,255,0.10); }
-.swal-theme-icon.lock    { color: #93C5FD; border-color: rgba(96,165,250,0.42); background: rgba(59,130,246,0.12); box-shadow: 0 12px 28px -10px rgba(37,99,235,0.7), inset 0 1px 0 rgba(255,255,255,0.12); }
-
-.swal-theme-title {
-    position: relative;
-    z-index: 1;
-    margin-top: 22px;
-    color: #FFFFFF;
-    font-family: 'Inter', sans-serif;
-    font-size: 21px;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-    text-align: center;
-    text-shadow: 0 2px 10px rgba(3,10,24,0.5);
-}
-
-.swal-theme-html {
-    position: relative;
-    z-index: 1;
-    margin-top: 8px;
-    color: #BFDBFE;
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    line-height: 1.6;
-    text-align: center;
-}
-.swal-theme-html small { display: block; margin-top: 10px; color: #64748B; font-size: 12px; line-height: 1.5; }
-.swal-theme-html .pulse-note { color: #FCD34D; font-weight: 600; }
-
-/* confirm button */
-.swal-theme-confirm {
-    font-family: 'Inter', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 12px 36px !important;
-    border-radius: 999px !important;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease !important;
-}
-.swal-theme-confirm:hover {
-    transform: translateY(-2px);
-    filter: brightness(1.08);
-}
-.swal-theme-confirm:active { transform: translateY(0) scale(0.97); }
-
-/* close button on dark card */
-.swal-theme .swal2-close {
-    color: rgba(191,219,254,0.55);
-    font-size: 30px;
-    transition: color 0.2s ease, transform 0.2s ease;
-}
-.swal-theme .swal2-close:hover { color: #FFFFFF; transform: rotate(90deg); }
-
-/* popup enter / exit animation */
-.swal-theme-pop {
-    animation: swalPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both !important;
-}
-@keyframes swalPop {
-    from { opacity: 0; transform: scale(0.86) translateY(26px); }
-    to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-.swal-theme-hide {
-    animation: swalPopOut 0.24s ease-in both !important;
-}
-@keyframes swalPopOut {
-    from { opacity: 1; transform: scale(1) translateY(0); }
-    to   { opacity: 0; transform: scale(0.92) translateY(16px); }
-}
 </style>
 </head>
 
@@ -1139,54 +1016,71 @@ function loginWithGoogle() {
 }
 
 /* Result posted back by the popup before it closes. */
-window.addEventListener('message', (e) => {
-    if (e.origin !== window.location.origin) return;
-
-    const d = e.data;
-    if (!d || d.type !== 'google-auth') return;
+function handleAuthResult(d) {
+    if (!d || d.type !== 'google-auth') return false;
+    if (authHandled) return true;
 
     authHandled = true;
     if (authPoller) { clearInterval(authPoller); authPoller = null; }
     authPopup = null;
 
     if (d.success && d.redirect) {
-        // The auth session is already active for this tab â€” go to the dashboard.
+        // The auth session is already active for this tab — go to the dashboard.
         window.location.href = d.redirect;
-        return;
+        return true;
     }
 
     resetLoginButton();
     showLoginError(d.error || 'Google sign-in failed. Please try again.');
+    return true;
+}
+
+window.addEventListener('message', (e) => {
+    if (e.origin !== window.location.origin) return;
+    handleAuthResult(e.data);
 });
 
-/* Single reusable themed popup (dark blueprint card) for login warnings. */
+/* Broadcast channel fallback: the popup also broadcasts the result across
+   tabs of this origin, so the main tab still redirects even if postMessage
+   or sessionStorage are unavailable. */
+try {
+    const bc = new BroadcastChannel('google-auth');
+    bc.onmessage = (e) => handleAuthResult(e.data);
+} catch (e) { /* BroadcastChannel unsupported */ }
+
+/* Fallback channel: the popup writes the result into sessionStorage, which is
+   shared with this (opener) tab, so the main tab still redirects to the
+   dashboard even if postMessage or window.close() fails on mobile. */
+(function () {
+    const KEY = 'google-auth-result';
+    try { sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+
+    const poll = setInterval(() => {
+        let raw = null;
+        try { raw = sessionStorage.getItem(KEY); } catch (e) { /* ignore */ }
+        if (!raw) return;
+
+        let d = null;
+        try {
+            sessionStorage.removeItem(KEY);
+            d = JSON.parse(raw);
+        } catch (e) { return; }
+
+        if (handleAuthResult(d)) {
+            clearInterval(poll);
+        }
+    }, 400);
+})();
+
+/* Single reusable popup (default white SweetAlert2, matching the rest of the app). */
 function coolPopup(kind, title, messageHTML, confirmColor) {
-    const icons = {
-        error: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6m0-6 6 6"/></svg>',
-        warning: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>',
-        lock: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
-    };
+    const iconMap = { error: 'error', warning: 'warning', lock: 'warning' };
 
     Swal.fire({
-        customClass: {
-            popup: 'swal-theme',
-            confirmButton: 'swal-theme-confirm'
-        },
-        html: '<div class="swal-theme-icon ' + kind + '">' + (icons[kind] || icons.error) + '</div>' +
-              '<div class="swal-theme-title">' + title + '</div>' +
-              '<div class="swal-theme-html">' + messageHTML + '</div>',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#2563eb',
-        showCloseButton: true,
-        width: 440,
-        position: 'center',
-        backdrop: 'rgba(3,10,24,0.68)',
-        showClass:  { popup: 'swal-theme-pop' },
-        hideClass:  { popup: 'swal-theme-hide' },
-        didOpen: () => {
-            const b = Swal.getConfirmButton();
-            if (b && confirmColor) b.style.background = confirmColor;
-        }
+        icon: iconMap[kind] || 'error',
+        title: title,
+        html: messageHTML,
+        confirmButtonColor: confirmColor || '#2563eb'
     });
 }
 
