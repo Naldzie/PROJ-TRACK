@@ -19,8 +19,8 @@
     $companyName = $email->contractor?->company_name ?? '';
     $unread = !$email->opened_at && !$email->delivered_at;
 @endphp
-<article class="message {{ $unread ? 'unread' : '' }}" onclick="viewMsg({{ $email->id }})">
-  <div class="message-avatar">{{ $initials ?: '?' }}</div>
+<article class="message {{ $unread ? 'unread' : '' }}" data-status="{{ $status === 'Opened' ? 'opened' : ($status === 'Delivered' ? 'delivered' : 'pending') }}" onclick="viewMsg({{ $email->id }})">
+  <div class="message-avatar"><img src="{{ asset('faviconpmu.png') }}" alt="PROJ-TRACK"></div>
   <div class="message-main">
     <div class="message-top">
       <strong>{{ $contractorName }}</strong>
