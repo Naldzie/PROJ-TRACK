@@ -24,6 +24,8 @@ body {
     backface-visibility: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+    height: 100vh;
+    height: 100dvh;
 }
 .sidebar::-webkit-scrollbar { width: 6px; }
 .sidebar::-webkit-scrollbar-track { background: transparent; }
@@ -132,6 +134,16 @@ body {
 .sidebar-footer {
     padding: 16px 12px;
     transition: padding var(--sd-time) var(--sd-ease);
+}
+/* Keep the logout pinned to the bottom of the drawer so it is always
+   visible when the mobile sidebar is open. */
+.sidebar-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: linear-gradient(165deg, #0e1d3f 0%, #16245c 48%, #1e3a8a 100%);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 .sidebar-footer .btn-logout {
     padding: 9px;
@@ -251,6 +263,7 @@ body.sidebar-collapsed .sidebar-footer .btn-logout[title]:hover::after {
     border-bottom: 1px solid rgba(96, 165, 250, 0.25);
     box-shadow: 0 6px 20px -10px rgba(10, 20, 50, 0.22);
     transition: margin-left var(--sd-time) var(--sd-ease);
+    overflow: hidden;
 }
 
 /* Nav toggle button */
