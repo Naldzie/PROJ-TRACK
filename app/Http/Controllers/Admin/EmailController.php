@@ -50,6 +50,8 @@ class EmailController extends Controller
             ->take(5)
             ->get();
 
+        $nextAutoSend = app(\App\Services\AIReportSendingService::class)->nextAutoSendAt();
+
         if ($request->ajax()) {
             return response()->json([
                 'html' => view('admin.partials.email_list', compact('emails'))->render(),
@@ -58,7 +60,7 @@ class EmailController extends Controller
             ]);
         }
 
-        return view('admin.email', compact('emails', 'autoSendEnabled', 'lastAutoSend', 'projects', 'recentActivity'));
+        return view('admin.email', compact('emails', 'autoSendEnabled', 'lastAutoSend', 'projects', 'recentActivity', 'nextAutoSend'));
     }
 
     public function show(EmailTracking $email)

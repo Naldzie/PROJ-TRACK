@@ -134,4 +134,18 @@ class AIReportSendingService
     {
         return (int) Setting::getValue('auto_send_interval_days', '30');
     }
+
+    /**
+     * When the next monthly auto-send batch runs (1st of the month at 08:00).
+     */
+    public function nextAutoSendAt(): \Illuminate\Support\Carbon
+    {
+        $candidate = now()->startOfMonth()->setTime(8, 0, 0);
+
+        if (now()->gte($candidate)) {
+            $candidate = $candidate->addMonth();
+        }
+
+        return $candidate;
+    }
 }

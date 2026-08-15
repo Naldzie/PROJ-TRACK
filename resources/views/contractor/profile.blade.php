@@ -201,6 +201,35 @@ body {
         margin-bottom: 25px;
         padding-bottom: 25px;
     }
+
+    .card-box {
+        padding: 24px;
+        border-radius: 20px;
+    }
+
+    .header-title {
+        font-size: 22px;
+    }
+
+    .profile-avatar {
+        width: 110px;
+        height: 110px;
+    }
+}
+
+@media(max-width: 480px){
+    .card-box {
+        padding: 18px;
+    }
+
+    .profile-name {
+        font-size: 17px;
+    }
+
+    .container {
+        padding-left: 0;
+        padding-right: 0;
+    }
 }
 </style>
 

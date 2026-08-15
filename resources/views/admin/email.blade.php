@@ -373,6 +373,66 @@
 }
 .toggle.on { background: var(--blue); }
 .toggle.on::after { transform: translateX(14px); }
+
+.next-send-box {
+  margin-top: 15px;
+  background: var(--blue-pale);
+  border: 1px dashed oklch(70% .12 265);
+  border-radius: 12px;
+  padding: 13px 14px;
+}
+.next-send-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.next-send-date {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.next-send-count {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-count .unit {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  text-align: center;
+  min-width: 48px;
+}
+.next-send-count .unit b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.next-send-count .unit span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 2px;
+}
 .field-label {
   color: var(--muted);
   font-size: 10px;
@@ -666,7 +726,7 @@
   <article class="metric">
     <div class="metric-top"><span>Auto-send status</span><div class="metric-icon"><i class="bi bi-clock"></i></div></div>
     <div class="metric-value" style="font-size:22px">{{ $autoSendEnabled ? 'Active' : 'Paused' }}</div>
-    <div class="metric-foot">{{ $lastAutoSend ? 'Last: ' . \Carbon\Carbon::parse($lastAutoSend)->format('M d, Y') : 'No batches yet' }}</div>
+    <div class="metric-foot">Next: <span id="nextAutoSendDate">{{ $nextAutoSend->format('M d, Y') }}</span> · <span id="nextAutoSendCountdown" style="font-variant-numeric:tabular-nums"></span></div>
   </article>
   <article class="metric">
     <div class="metric-top"><span>Projects</span><div class="metric-icon"><i class="bi bi-folder"></i></div></div>
@@ -749,6 +809,15 @@
             <button type="button" class="toggle {{ $autoSendEnabled ? 'on' : '' }}" id="autoToggle" aria-label="Toggle auto-send"></button>
           </div>
         </form>
+        <div class="next-send-box" id="nextSendBox" data-target="{{ $nextAutoSend->timestamp }}">
+          <div class="next-send-head">
+            <i class="bi bi-calendar-event"></i>
+            <span>Next auto-send</span>
+          </div>
+          <div class="next-send-date">{{ $nextAutoSend->format('F d, Y') }}</div>
+          <div class="next-send-sub">Monthly · every 1st of the month</div>
+          <div class="next-send-count" id="nextSendCount">–</div>
+        </div>
         <form method="POST" action="{{ route('admin.email.send-one') }}" id="sendOneForm">
           @csrf
           <label class="field-label" for="projectSelect">Send to project</label>
@@ -856,7 +925,7 @@ document.getElementById('autoToggle').addEventListener('click', function() {
   const enabled = this.classList.contains('on');
   document.getElementById('automationLabel').textContent = enabled ? 'Currently active' : 'Paused';
   document.getElementById('autoSendVal').value = enabled ? '1' : '0';
-  showToast(enabled ? 'Auto-send enabled' : 'Auto-send paused', enabled ? 'success' : 'warning');
+  showToast(enabled ? 'Auto-send enabled' : 'Auto-send paused', 'success');
   document.getElementById('autoSendForm').submit();
 });
 
@@ -955,6 +1024,39 @@ document.addEventListener('keydown', function(e) {
   }
   const sort = params.get('sort');
   if (sort) document.getElementById('sort').value = sort;
+})();
+
+/* Next auto-send countdown (targets the 1st of next month, 08:00). */
+(function() {
+  const box = document.getElementById('nextSendBox');
+  const metricCount = document.getElementById('nextAutoSendCountdown');
+  if (!box && !metricCount) return;
+
+  const target = new Date(Number(box ? box.dataset.target : 0) * 1000);
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    let diff = Math.max(0, target - new Date());
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor(diff % 86400000 / 3600000);
+    const m = Math.floor(diff % 3600000 / 60000);
+    const s = Math.floor(diff % 60000 / 1000);
+
+    if (box) {
+      box.querySelector('#nextSendCount').innerHTML =
+        `<div class="unit"><b>${pad(d)}</b><span>days</span></div>` +
+        `<div class="unit"><b>${pad(h)}</b><span>hrs</span></div>` +
+        `<div class="unit"><b>${pad(m)}</b><span>min</span></div>` +
+        `<div class="unit"><b>${pad(s)}</b><span>sec</span></div>`;
+    }
+    if (metricCount) {
+      metricCount.textContent = `in ${d}d ${pad(h)}h ${pad(m)}m`;
+    }
+  }
+
+  tick();
+  setInterval(tick, 1000);
 })();
 </script>
 @endsection

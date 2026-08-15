@@ -12,9 +12,11 @@ class EmailController extends Controller
     {
         $contractor = auth()->user()->contractor;
 
+        $nextAutoSend = app(\App\Services\AIReportSendingService::class)->nextAutoSendAt();
+
         if (!$contractor) {
             $emails = collect();
-            return view('contractor.email', compact('emails'));
+            return view('contractor.email', compact('emails', 'nextAutoSend'));
         }
 
         $query = EmailTracking::where('contractor_id', $contractor->id)
@@ -44,7 +46,7 @@ class EmailController extends Controller
             ]);
         }
 
-        return view('contractor.email', compact('emails', 'recentActivity'));
+        return view('contractor.email', compact('emails', 'recentActivity', 'nextAutoSend'));
     }
 
     public function show(EmailTracking $email)

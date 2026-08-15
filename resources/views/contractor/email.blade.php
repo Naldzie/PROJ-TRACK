@@ -25,6 +25,30 @@
 }
 * { box-sizing: border-box; }
 
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.page-head h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  margin: 0;
+  color: var(--ink);
+}
+.page-head .breadcrumb {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+}
+.page-head .breadcrumb a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
 .overview {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -37,7 +61,20 @@
   border-radius: 13px;
   padding: 15px 16px;
   box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
 }
+.metric::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--blue);
+  opacity: .8;
+}
+.metric:nth-child(2)::after { background: var(--purple); }
+.metric:nth-child(3)::after { background: var(--green); }
+.metric:nth-child(4)::after { background: var(--gold); }
 .metric-top {
   display: flex;
   align-items: center;
@@ -128,6 +165,23 @@
   gap: 12px;
   border-bottom: 1px solid var(--line);
 }
+.tabs {
+  display: flex;
+  gap: 5px;
+}
+.tab {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 11px;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background .2s, color .2s;
+  cursor: pointer;
+}
+.tab:hover { background: var(--canvas); color: var(--ink); }
+.tab.active { background: var(--blue-soft); color: var(--blue); }
 .toolbar-right { display: flex; align-items: center; gap: 8px; }
 .search-wrap {
   display: flex;
@@ -162,8 +216,8 @@
 .message {
   position: relative;
   display: grid;
-  grid-template-columns: 7px 35px minmax(0,1fr) auto;
-  gap: 11px;
+  grid-template-columns: 40px minmax(0,1fr) auto;
+  gap: 12px;
   padding: 15px 18px;
   border-bottom: 1px solid var(--line);
   transition: background .2s var(--ease);
@@ -171,25 +225,18 @@
 }
 .message:last-child { border-bottom: 0; }
 .message:hover { background: var(--blue-pale); }
-.message.unread { background: oklch(98% .01 265); }
-.message.unread .message-subject { font-weight: 600; color: var(--ink); }
-.unread-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+.message.unread::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
   background: var(--blue);
-  flex-shrink: 0;
-  margin-top: 6px;
-}
-.read-dot {
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  margin-top: 6px;
 }
 .message-avatar {
-  width: 33px;
-  height: 33px;
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
   background: var(--blue-soft);
   color: var(--blue);
@@ -197,6 +244,14 @@
   place-items: center;
   font-size: 11px;
   font-weight: 800;
+  overflow: hidden;
+}
+.message-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 4px;
+  border-radius: 10px;
 }
 .message-main { min-width: 0; }
 .message-top {
@@ -299,6 +354,55 @@
 .mini-item:nth-child(3) .mini-dot { background: var(--green); }
 .mini-item p { font-size: 11px; line-height: 1.35; margin: 0; }
 .mini-item small { display: block; color: var(--quiet); font-size: 10px; margin-top: 2px; }
+
+.next-send-box {
+  background: var(--blue-pale);
+  border: 1px dashed oklch(70% .12 265);
+  border-radius: 12px;
+  padding: 13px 14px;
+}
+.next-send-date {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.next-send-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+.next-send-count {
+  margin-top: 11px;
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-count .unit {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  text-align: center;
+  min-width: 48px;
+}
+.next-send-count .unit b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.next-send-count .unit span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 2px;
+}
 
 .empty-state {
   padding: 42px 20px;
@@ -507,20 +611,42 @@
   .toolbar-right { width: 100%; }
   .search-wrap { flex: 1; }
   .mail-search { width: 100%; }
-  .message { grid-template-columns: 7px 33px minmax(0,1fr); }
+  .message { grid-template-columns: 40px minmax(0,1fr); }
   .message-actions { display: none; }
 }
 @media (max-width: 480px) {
   .overview { grid-template-columns: 1fr 1fr; gap: 8px; }
   .metric { padding: 13px; }
   .metric-value { font-size: 22px; }
-  .message { padding: 14px 13px; gap: 9px; }
+  .page-head h1 { font-size: 19px; }
+  .tabs { width: 100%; }
+  .tab { flex: 1; }
+  .message { padding: 14px 13px; gap: 10px; }
   .message-snippet { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+}
+@media (max-width: 380px) {
+  .overview { grid-template-columns: 1fr; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .panel-head, .toolbar { padding: 12px 14px; }
+  .email-banner { padding: 16px; }
 }
 </style>
 
+<!-- PAGE HEAD -->
+<div class="page-head">
+  <div>
+    <h1>Email Reports</h1>
+    <div class="breadcrumb"><a href="{{ route('contractor.dashboard') }}">Dashboard</a> &nbsp;/&nbsp; Email</div>
+  </div>
+</div>
+
 <!-- OVERVIEW METRICS -->
-@php $totalEmails = $emails instanceof \Illuminate\Pagination\LengthAwarePaginator ? $emails->total() : 0; @endphp
+@php
+    $totalEmails = $emails instanceof \Illuminate\Pagination\LengthAwarePaginator ? $emails->total() : 0;
+    $unreadCount = $emails instanceof \Illuminate\Pagination\LengthAwarePaginator
+        ? $emails->sum(fn($e) => $e->is_read ? 0 : 1)
+        : 0;
+@endphp
 <section class="overview" aria-label="Message summary">
   <article class="metric">
     <div class="metric-top"><span>Messages</span><div class="metric-icon"><i class="bi bi-envelope"></i></div></div>
@@ -529,7 +655,7 @@
   </article>
   <article class="metric">
     <div class="metric-top"><span>Unread</span><div class="metric-icon"><i class="bi bi-envelope-open"></i></div></div>
-    <div class="metric-value">{{ $emails instanceof \Illuminate\Pagination\LengthAwarePaginator ? $emails->sum(fn($e) => $e->is_read ? 0 : 1) : 0 }}</div>
+    <div class="metric-value">{{ $unreadCount }}</div>
     <div class="metric-foot">Requires attention</div>
   </article>
   <article class="metric">
@@ -538,9 +664,9 @@
     <div class="metric-foot">Auto-generated monthly</div>
   </article>
   <article class="metric">
-    <div class="metric-top"><span>Status</span><div class="metric-icon"><i class="bi bi-check-circle"></i></div></div>
-    <div class="metric-value" style="font-size:22px">Active</div>
-    <div class="metric-foot">System operational</div>
+    <div class="metric-top"><span>Next report</span><div class="metric-icon"><i class="bi bi-hourglass-split"></i></div></div>
+    <div class="metric-value" style="font-size:22px">{{ $nextAutoSend->format('M d, Y') }}</div>
+    <div class="metric-foot">Arrives in <span id="nextAutoSendCountdown" style="font-variant-numeric:tabular-nums"></span></div>
   </article>
 </section>
 
@@ -559,7 +685,12 @@
     </div>
 
     <div class="toolbar">
-      <div class="toolbar-right" style="margin-left:auto;">
+      <div class="tabs">
+        <button class="tab active" data-filter="all">All <span>({{ $totalEmails }})</span></button>
+        <button class="tab" data-filter="unread">Unread <span>({{ $unreadCount }})</span></button>
+        <button class="tab" data-filter="read">Read</button>
+      </div>
+      <div class="toolbar-right">
         <div class="search-wrap">
           <i class="bi bi-search"></i>
           <input class="mail-search" id="searchInput"
@@ -585,6 +716,20 @@
   </section>
 
   <aside class="inbox-side">
+    <section class="panel">
+      <div class="side-section">
+        <div class="side-title">
+          <h2>Next report</h2>
+          <span>Monthly</span>
+        </div>
+        <div class="next-send-box" id="nextSendBox" data-target="{{ $nextAutoSend->timestamp }}">
+          <div class="next-send-date">{{ $nextAutoSend->format('F d, Y') }}</div>
+          <div class="next-send-sub">Your next AI report arrives automatically on the 1st of every month.</div>
+          <div class="next-send-count" id="nextSendCount">–</div>
+        </div>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="side-section">
         <div class="side-title">
@@ -660,6 +805,25 @@
 <script>
 let currentEmailId = null;
 
+function applyFilter(filter) {
+  const rows = document.querySelectorAll('.message');
+  rows.forEach(row => {
+    const read = row.dataset.read;
+    const show = filter === 'all' || (filter === 'unread' && read === 'unread') || (filter === 'read' && read === 'read');
+    row.style.display = show ? '' : 'none';
+  });
+  const empty = document.getElementById('emptyState');
+  if (empty) empty.style.display = Array.from(rows).some(r => r.style.display !== 'none') ? 'none' : '';
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+    applyFilter(this.dataset.filter);
+  });
+});
+
 function viewMsg(id) {
   currentEmailId = id;
   document.getElementById('loadingOverlay').classList.add('active');
@@ -699,10 +863,8 @@ function viewMsg(id) {
       const row = document.querySelector(`.message[data-email-id="${id}"]`);
       if (row) {
         row.classList.remove('unread');
-        const dot = row.querySelector('.unread-dot');
-        if (dot) dot.className = 'read-dot';
-        const subj = row.querySelector('.message-subject');
-        if (subj) subj.style.fontWeight = 'normal';
+        row.dataset.read = 'read';
+        applyFilter(document.querySelector('.tab.active').dataset.filter);
       }
 
       const activityItem = document.querySelector(`.mini-item[data-email-id="${id}"]`);
@@ -729,5 +891,37 @@ function searchMessages() {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') closeOverlay();
 });
+
+/* Next report countdown (targets the 1st of next month, 08:00). */
+(function() {
+  const box = document.getElementById('nextSendBox');
+  const metricEl = document.getElementById('nextAutoSendCountdown');
+  if (!box && !metricEl) return;
+
+  const target = new Date({{ $nextAutoSend->timestamp }} * 1000);
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function tick() {
+    let diff = Math.max(0, target - new Date());
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor(diff % 86400000 / 3600000);
+    const m = Math.floor(diff % 3600000 / 60000);
+    const s = Math.floor(diff % 60000 / 1000);
+
+    if (box) {
+      document.getElementById('nextSendCount').innerHTML =
+        `<div class="unit"><b>${pad(d)}</b><span>days</span></div>` +
+        `<div class="unit"><b>${pad(h)}</b><span>hrs</span></div>` +
+        `<div class="unit"><b>${pad(m)}</b><span>min</span></div>` +
+        `<div class="unit"><b>${pad(s)}</b><span>sec</span></div>`;
+    }
+    if (metricEl) {
+      metricEl.textContent = `${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+    }
+  }
+
+  tick();
+  setInterval(tick, 1000);
+})();
 </script>
 @endsection

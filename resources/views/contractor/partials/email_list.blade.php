@@ -17,9 +17,8 @@
         $severity = $variance >= 0 ? 'ok' : ($variance >= -15 ? 'warn' : 'crit');
     }
 @endphp
-<article class="message {{ $unread ? 'unread' : '' }}" data-email-id="{{ $email->id }}" onclick="viewMsg({{ $email->id }})">
-  <div class="{{ $unread ? 'unread-dot' : 'read-dot' }}"></div>
-  <div class="message-avatar">PT</div>
+<article class="message {{ $unread ? 'unread' : '' }}" data-email-id="{{ $email->id }}" data-read="{{ $unread ? 'unread' : 'read' }}" onclick="viewMsg({{ $email->id }})">
+  <div class="message-avatar"><img src="{{ asset('faviconpmu.png') }}" alt="PROJ-TRACK"></div>
   <div class="message-main">
     <div class="message-top">
       <strong>PROJ-TRACK System</strong>

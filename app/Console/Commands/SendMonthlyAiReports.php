@@ -10,13 +10,18 @@ use Illuminate\Console\Command;
 class SendMonthlyAiReports extends Command
 {
     protected $signature = 'reports:send-ai-monthly {--force : Skip auto-send and date checks}';
-    protected $description = 'Send AI reports based on project creation date';
+    protected $description = 'Send AI reports on the first day of every month (Aug 1, Sep 1, ...)';
 
     public function handle(AIReportSendingService $service)
     {
         if (!$this->option('force')) {
             if (!$service->isAutoSendEnabled()) {
                 $this->info('Auto-send is disabled. Use --force to override.');
+                return;
+            }
+
+            if (now()->day !== 1) {
+                $this->info('Not the first day of the month — skipping. Next run: ' . $service->nextAutoSendAt()->format('M j, Y g:i A'));
                 return;
             }
         }
@@ -49,22 +54,6 @@ class SendMonthlyAiReports extends Command
                 $logs[] = ['project' => $project->code, 'message' => 'Already sent — skipped'];
                 $skipped++;
                 continue;
-            }
-
-            if (!$this->option('force')) {
-                $projectDay = $project->created_at->day;
-                $today = now()->day;
-                $daysInMonth = now()->daysInMonth;
-
-                if ($projectDay > $daysInMonth) {
-                    $projectDay = $daysInMonth;
-                }
-
-                if ($today !== $projectDay) {
-                    $logs[] = ['project' => $project->code, 'message' => "Not scheduled today (project day: {$projectDay}) — skipped"];
-                    $skipped++;
-                    continue;
-                }
             }
 
             $result = $service->sendForProject($project);

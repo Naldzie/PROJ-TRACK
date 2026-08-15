@@ -453,6 +453,53 @@
     transition: background 0.15s;
 }
 .btn-save:hover { background: #1d4ed8; }
+
+/* two-column form group inside modals */
+.wm-date-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* ── RESPONSIVE (mobile friendly) ── */
+@media (max-width: 768px) {
+    .wm-wrap {
+        flex-direction: column;
+        height: auto;
+        min-height: 0;
+        gap: 14px;
+    }
+
+    .wm-left {
+        width: 100%;
+        max-height: 340px;
+    }
+
+    .wm-right {
+        min-height: 420px;
+    }
+
+    .wm-right-body {
+        padding: 14px;
+    }
+
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+
+    #previewContainer iframe {
+        min-height: 300px;
+    }
+}
+
+@media (max-width: 480px) {
+    .wm-right-head { padding: 12px 14px; }
+    .wm-right-body { padding: 12px; }
+    .wm-date-row {
+        grid-template-columns: 1fr;
+    }
+    .wm-search { padding: 8px 10px; }
+}
 </style>
 
 <div class="wm-wrap">
@@ -639,7 +686,7 @@
                     </select>
                 </div>
 
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;" class="mb-3">
+                <div class="wm-date-row mb-3">
                     <div>
                         <label class="form-label">Start date</label>
                         <input type="date" name="start_date" class="form-control" required>

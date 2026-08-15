@@ -115,7 +115,8 @@ Monthly Progress Report
 
 <div class="card-body">
 
-<table class="table table-hover table-bordered">
+    <div class="table-responsive">
+    <table class="table table-hover table-bordered">
 
 <thead class="table-dark">
 <tr>
@@ -179,7 +180,8 @@ Monthly Progress Report
 
 </tbody>
 
-</table>
+    </table>
+    </div>
 
 
 <button class="btn btn-primary" onclick="updateChart()">
