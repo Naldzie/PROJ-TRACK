@@ -176,15 +176,26 @@
 
 /* ========== HEADER SECTION ========== */
 .header-section {
-    background:
-        radial-gradient(circle at 115% -10%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 55%),
-        linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
+    background: linear-gradient(135deg, var(--primary) 0%, #1e3a8a 100%);
     color: white;
     padding: 32px;
     border-radius: 12px;
     margin-bottom: 28px;
     box-shadow: 0 10px 15px -3px rgba(26, 86, 219, 0.2);
     position: relative;
+    overflow: hidden;
+}
+
+.header-section::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    z-index: 0;
 }
 
 .header-content {
@@ -1654,4 +1665,44 @@
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* ========== MOBILE/COMPACT EXTRA (contractor + small screens) ========== */
+@media (max-width: 768px) {
+    /* Tabs scroll horizontally instead of wrapping into a tall stack */
+    .tab-navigation {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .tab-navigation::-webkit-scrollbar { display: none; }
+    .tab-btn { white-space: nowrap; }
+
+    /* Wide tables scroll inside their container */
+    .milestone-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .milestone-table { min-width: 620px; }
+
+    .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+    }
+
+    .card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .content-grid { gap: 16px; }
+    .tab-btn { padding: 10px 12px; font-size: 13px; }
 }

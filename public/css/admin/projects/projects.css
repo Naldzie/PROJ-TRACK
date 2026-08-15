@@ -877,6 +877,24 @@
         overflow-x: auto;
     }
 
+    /* ========== TABLE SCROLL WRAPPER ========== */
+    .projects-table-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .project-search-input {
+        padding: 10px 14px 10px 40px;
+        border: 2px solid var(--primary);
+        background: rgba(37,99,235,0.05);
+        border-radius: 8px;
+        width: 280px;
+        font-size: 13px;
+        transition: 0.3s;
+        font-weight: 500;
+    }
+
     /* TABLE HEADER */
     .projects-table thead {
         background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
@@ -1257,6 +1275,8 @@
         .table-action-btn i { font-size: 12px; }
         .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
         .filters-section { flex-direction: column; }
+        .filters-buttons,
+        .filters-actions { width: 100%; flex-wrap: wrap; }
         .dashboard-metrics { grid-template-columns: repeat(2, 1fr); }
     }
 
@@ -1265,9 +1285,15 @@
         .projects-grid { grid-template-columns: 1fr; }
         .details-grid { grid-template-columns: 1fr; }
         .page-header { flex-direction: column; align-items: flex-start; }
+        .page-header h1 { font-size: 22px; }
         .project-header { flex-direction: column; align-items: flex-start; }
         .project-header-badges { width: 100%; justify-content: flex-start; margin-top: 8px; }
         .view-toggle-group { flex-direction: row; }
+        .filters-buttons { gap: 8px; }
+        .filters-buttons .filter-btn { padding: 7px 12px; font-size: 12px; }
+        .project-search { flex: 1; min-width: 0; width: 100%; }
+        .project-search-input { width: 100% !important; max-width: 100%; }
+        .filters-actions { flex-wrap: wrap; }
         .projects-table.show { display: table !important; overflow-x: auto !important; font-size: 9px; }
         .projects-table th, .projects-table td { padding: 6px 4px; }
         .table-project-title { max-width: 50px; }
@@ -1276,4 +1302,11 @@
         .table-action-btn { width: 22px; height: 22px; }
         .table-action-btn i { font-size: 10px; }
         .dashboard-metrics { grid-template-columns: 1fr; }
+        .project-actions { flex-wrap: wrap; }
+    }
+
+    /* RESPONSIVE: 480px and below */
+    @media (max-width: 480px) {
+        .filters-buttons .filter-btn { padding: 6px 10px; font-size: 11px; }
+        .view-toggle-btn { font-size: 11px; padding: 7px 10px; }
     }
