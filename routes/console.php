@@ -9,7 +9,7 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('reports:send-ai-monthly')
-    ->dailyAt('08:00')
+    ->monthlyOn(1, '08:00')
     ->withoutOverlapping();
 
 Schedule::command('notifications:scan')

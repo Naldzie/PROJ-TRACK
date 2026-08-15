@@ -78,16 +78,16 @@
 @endif
 
 <div class="filters-section">
-    <div style="display: flex; gap: 12px; align-items: center; flex: 1;">
+    <div class="filters-buttons" style="display: flex; gap: 12px; align-items: center; flex: 1;">
         <button class="filter-btn active" onclick="filterProjects('all')">All</button>
         <button class="filter-btn" onclick="filterProjects('ongoing')"><i class="bi bi-arrow-repeat"></i> Ongoing</button>
         <button class="filter-btn" onclick="filterProjects('planned')"><i class="bi bi-clipboard-check"></i> Planned</button>
         <button class="filter-btn" onclick="filterProjects('completed')"><i class="bi bi-check-circle"></i> Completed</button>
     </div>
     
-    <div style="display: flex; gap: 12px; align-items: center;">
-        <div style="position: relative; flex-shrink: 0;">
-            <input type="text" id="projectSearch" placeholder="Search by code, title, or contractor" 
+    <div class="filters-actions" style="display: flex; gap: 12px; align-items: center;">
+        <div class="project-search" style="position: relative;">
+            <input type="text" id="projectSearch" class="project-search-input" placeholder="Search by code, title, or contractor" 
                    style="padding: 10px 14px 10px 40px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; width: 280px; font-size: 13px; transition: 0.3s; font-weight: 500;" 
                    oninput="performSearch(this.value)"
                    onfocus="this.style.background='rgba(37,99,235,0.08)'; this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 3px rgba(37,99,235,0.1)';"
@@ -404,7 +404,8 @@
 </div>
 
 <!-- TABLE VIEW -->
-<table class="projects-table" id="projectsTable">
+<div class="projects-table-wrap">
+    <table class="projects-table" id="projectsTable">
     <thead>
         <tr>
             <th>Code</th>
@@ -545,7 +546,8 @@
             </tr>
         @endif
     </tbody>
-</table>
+    </table>
+</div>
 
 @include('components.delete-confirmation-modal')
 @include('components.loading-overlay', ['id' => 'deleteProjectLoadingOverlay', 'label' => 'Deleting project…'])

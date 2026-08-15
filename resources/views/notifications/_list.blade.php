@@ -49,6 +49,13 @@
     .notif-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
     .notif-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .notif-unread-count { font-size: 13px; color: var(--text-muted); }
+
+    @media (max-width: 576px) {
+        .notif-row { flex-wrap: wrap; gap: 10px; padding: 12px 14px; }
+        .notif-actions { margin-left: 48px; }
+        .notif-toolbar { gap: 8px; flex-wrap: wrap; }
+        .notif-page-title { font-size: 19px; }
+    }
 </style>
 
 <div class="notif-wrap py-4">
