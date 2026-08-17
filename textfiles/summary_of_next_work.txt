@@ -8,6 +8,18 @@
   in referenced plan files under textfiles/.
 
 ===============================================================================
+  RECOMMENDED READING — START HERE (Aug 17, 2026)
+===============================================================================
+
+  Any teammate or AI agent continuing the REGRESSION / AI MODULE must read:
+      textfiles/active_reference/AI_MODULE_HANDOVER.md
+
+  It is the single entry point for that module: human-readable overview +
+  AI-readable code map (every service, model, controller, route, view, test),
+  the immutable "Project 7" fixture, behavioral rules that must be preserved,
+  the DONE inventory, and the ordered NEXT-WORK list below.
+
+===============================================================================
   COMPLETED — RISK REGISTER (gap #20)
 ===============================================================================
 
