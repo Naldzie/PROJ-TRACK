@@ -81,7 +81,7 @@ class ProjectsRenderTest extends TestCase
             ->assertSee('Render Index Project');
     }
 
-    public function test_admin_index_renders_delete_loading_overlay(): void
+    public function test_admin_index_renders_archive_loading_overlay(): void
     {
         Project::factory()->create([
             'title'  => 'Render Overlay Project',
@@ -91,8 +91,8 @@ class ProjectsRenderTest extends TestCase
         $this->actingAs($this->admin)
             ->get(route('admin.projects'))
             ->assertOk()
-            ->assertSee('deleteProjectLoadingOverlay', false)
-            ->assertSee('Deleting project…')
+            ->assertSee('archiveProjectLoadingOverlay', false)
+            ->assertSee('Working…')
             ->assertSee('Almost done…');
     }
 
@@ -224,6 +224,11 @@ class ProjectsRenderTest extends TestCase
             'status' => 'Ongoing',
         ]);
 
+        // Permanent deletion only applies to ARCHIVED projects — archive first.
+        $this->actingAs($this->admin)
+            ->post(route('admin.projects.archive', $project->id))
+            ->assertOk();
+
         $progress = \App\Models\ProjectProgressHistory::factory()->create([
             'project_id' => $project->id,
         ]);
@@ -242,10 +247,10 @@ class ProjectsRenderTest extends TestCase
         $this->assertDatabaseMissing('project_progress_history', ['id' => $progress->id]);
         $this->assertDatabaseMissing('project_baseline_schedules', ['id' => $baseline->id]);
 
-        // The flashed toast must be rendered by the index page on the reload.
+        // The flashed toast must be rendered by the archived page on the reload.
         // (Note: @json() escapes apostrophes, so match the un-escaped tail.)
         $this->actingAs($this->admin)
-            ->get(route('admin.projects'))
+            ->get(route('admin.projects.archived'))
             ->assertOk()
             ->assertSee('has been permanently deleted.', false);
     }
@@ -256,6 +261,12 @@ class ProjectsRenderTest extends TestCase
             'title'  => 'Untouchable',
             'status' => 'Ongoing',
         ]);
+
+        // Archive it first so the staff request reaches the role check
+        // (staff may archive but never permanently delete).
+        $this->actingAs($this->staff)
+            ->post(route('staff.projects.archive', $project->id))
+            ->assertOk();
 
         $response = $this->actingAs($this->staff)
             ->deleteJson(route('projects.destroy.shared', $project->id));

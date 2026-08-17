@@ -121,6 +121,15 @@ class Project extends Model
         return $this->hasMany(Document::class)->orderBy('created_at', 'desc');
     }
 
+    /**
+     * All evidence attachments ever uploaded for this project (denormalized
+     * project_id on the polymorphic attachments table — see Attachment model).
+     */
+    public function attachments()
+    {
+        return $this->hasMany(Attachment::class);
+    }
+
     // A project can have many AI-generated analysis records
     public function aiSolutions()
     {

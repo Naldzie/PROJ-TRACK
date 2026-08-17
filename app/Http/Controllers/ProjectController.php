@@ -32,6 +32,8 @@ use App\Models\Proposal;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectActivity;
 use App\Models\ProjectProgressHistory;
+use App\Models\ProjectMilestone;
+use App\Models\Attachment;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIExplanationService;
 use App\Services\AIReportSendingService;
@@ -897,18 +899,170 @@ class ProjectController extends Controller
     }
 
     /**
-     * === DELETE PROJECT (ADMIN ONLY) ===
-     * 
-     * Staff cannot delete projects. Only admins can permanently delete projects.
-     * Authorization:
-     * - Admin: Can delete any project
-     * - Staff/Contractor: Cannot delete projects
+     * === LIST ARCHIVED PROJECTS (ADMIN/STAFF) ===
+     *
+     * Shows the archived-projects page: projects moved out of the active list
+     * (is_archived = true) that are awaiting restore or permanent deletion.
+     * Archived projects are only permanently deletable from this page.
+     *
+     * Authorization: route middleware 'role:admin' / 'role:staff'
      */
-    public function destroy($id)
+    public function archived()
+    {
+        $projects = Project::with('contractor')
+            ->where('is_archived', true)
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('projects.archived', compact('projects'));
+    }
+
+    /**
+     * === ARCHIVE PROJECT (ADMIN/STAFF) ===
+     *
+     * Reversibly moves a project out of the active list by setting
+     * is_archived = true and stamping archived_at. No data is destroyed.
+     * Restore via restore() and permanent deletion via delete().
+     *
+     * Authorization:
+     * - Admin: Can archive
+     * - Staff: Can archive
+     * - Contractor: Cannot archive (no route)
+     */
+    public function archive($id)
     {
         $user = Auth::user();
-        
-        // Only admin can delete projects (staff cannot)
+
+        if (!in_array($user->role, ['admin', 'staff'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins and staff can archive projects.'
+            ], 403);
+        }
+
+        try {
+            $project = Project::findOrFail($id);
+            $projectTitle = $project->title;
+
+            // Suppress the model's generic "Update Project" auto-log so we can
+            // write one explicit, descriptive "Archive Project" entry instead.
+            Project::withoutEvents(function () use ($project) {
+                $project->update([
+                    'is_archived' => true,
+                    'archived_at' => now(),
+                ]);
+            });
+
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'project_id' => $project->id,
+                'action' => 'Archive Project',
+                'description' => $user->name . " archived project: {$projectTitle}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            session()->flash('toast_success', "Project '{$projectTitle}' has been archived.");
+
+            return response()->json([
+                'success' => true,
+                'message' => "Project '{$projectTitle}' has been archived."
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error archiving project', [
+                'project_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error archiving project: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * === RESTORE ARCHIVED PROJECT (ADMIN/STAFF) ===
+     *
+     * Reverses archive(): clears is_archived and archived_at so the project
+     * returns to the active list. All associated data is untouched.
+     *
+     * Authorization:
+     * - Admin: Can restore
+     * - Staff: Can restore
+     * - Contractor: Cannot restore (no route)
+     */
+    public function restore($id)
+    {
+        $user = Auth::user();
+
+        if (!in_array($user->role, ['admin', 'staff'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized: Only admins and staff can restore projects.'
+            ], 403);
+        }
+
+        try {
+            $project = Project::findOrFail($id);
+            $projectTitle = $project->title;
+
+            // Suppress the model's generic "Update Project" auto-log in favor of
+            // an explicit "Restore Project" entry.
+            Project::withoutEvents(function () use ($project) {
+                $project->update([
+                    'is_archived' => false,
+                    'archived_at' => null,
+                ]);
+            });
+
+            \App\Models\ActivityLog::create([
+                'user_id' => Auth::id(),
+                'project_id' => $project->id,
+                'action' => 'Restore Project',
+                'description' => $user->name . " restored project: {$projectTitle}",
+                'ip_address' => request()->ip(),
+                'visibility' => 'all',
+            ]);
+
+            session()->flash('toast_success', "Project '{$projectTitle}' has been restored.");
+
+            return response()->json([
+                'success' => true,
+                'message' => "Project '{$projectTitle}' has been restored."
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error restoring project', [
+                'project_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restoring project: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * === PERMANENTLY DELETE PROJECT (ADMIN ONLY, ARCHIVED ONLY) ===
+     *
+     * Removes the project and ALL associated data permanently. This is the only
+     * permanent-delete entry point: a project must be archived first (the active
+     * list only offers archive/restore, never delete). Running a full cascade
+     * inside a transaction prevents orphaned rows for relations that have no
+     * DB-level ON DELETE CASCADE.
+     *
+     * Authorization:
+     * - Admin: Can permanently delete archived projects
+     * - Staff/Contractor: Cannot delete projects
+     */
+    public function delete($id)
+    {
+        $user = Auth::user();
+
+        // Only admin can permanently delete projects (staff cannot)
         if ($user->role !== 'admin') {
             return response()->json([
                 'success' => false,
@@ -919,62 +1073,83 @@ class ProjectController extends Controller
         try {
             $project = Project::findOrFail($id);
             $projectTitle = $project->title;
-            
-            // Delete all related records (cascade delete)
-            try {
-                $project->activities()->delete();
-            } catch (\Exception $e) {
-                \Log::error('Error deleting activities', ['error' => $e->getMessage()]);
+
+            // Safety guard: only ARCHIVED projects may be permanently deleted.
+            // Active projects must go through archive() first (reversible step).
+            if (!$project->is_archived) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Project '{$projectTitle}' must be archived before it can be permanently deleted."
+                ], 422);
             }
-            
-            try {
+
+            DB::transaction(function () use ($project) {
+                // Polymorphic attachments for the whole project (physical files
+                // are removed by the Attachment deleting hook). Deleted first so
+                // no parent row is left pointing at a missing attachment.
+                $project->attachments()->get()->each->delete();
+
+                // Issues & risks (risks' deleting hook cleans remaining evidence).
+                $project->issues()->get()->each->delete();
+                $project->risks()->get()->each->delete();
+
+                // Extensions use soft-deletes (archived panel) — forceDelete
+                // purges both live and archived rows.
+                $project->extensions()->withTrashed()->get()->each->forceDelete();
+
+                // Baseline schedules, progress history and activities.
                 $project->baselineSchedules()->delete();
-            } catch (\Exception $e) {
-                \Log::error('Error deleting baselineSchedules', ['error' => $e->getMessage()]);
-            }
-            
-            try {
                 $project->progressHistory()->delete();
-            } catch (\Exception $e) {
-                \Log::error('Error deleting progressHistory', ['error' => $e->getMessage()]);
-            }
-            
-            try {
-                $project->extensions()->delete();
-            } catch (\Exception $e) {
-                \Log::error('Error deleting extensions', ['error' => $e->getMessage()]);
-            }
-            
-            try {
-                $project->milestones()->delete();
-            } catch (\Exception $e) {
-                \Log::error('Error deleting milestones', ['error' => $e->getMessage()]);
-            }
-            
-            // Delete the project itself
-            $project->delete();
+                $project->activities()->delete();
+
+                // Milestones (no relation is defined on Project; delete via model).
+                ProjectMilestone::where('project_id', $project->id)->delete();
+
+                // AI analysis + prediction + carryover records.
+                $project->aiSolutions()->delete();
+                $project->predictionHistory()->delete();
+                $project->activityCarryovers()->delete();
+
+                // Documents (Document deleting hook removes physical files).
+                $project->documents()->get()->each->delete();
+
+                // Delete the project itself (model events log "Delete Project").
+                $project->delete();
+            });
 
             // Flash a success toast message so it renders AFTER the page reloads
-            // (consumed by the load-time toast script in projects/index.blade.php).
+            // (consumed by the load-time toast script in the archived view).
             session()->flash('toast_success', "Project '{$projectTitle}' has been permanently deleted.");
 
             return response()->json([
                 'success' => true,
                 'message' => "Project '{$projectTitle}' has been permanently deleted."
             ]);
-            
         } catch (\Exception $e) {
             \Log::error('Error deleting project', [
                 'project_id' => $id,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Error deleting project: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * === DELETE PROJECT (shared route alias) ===
+     *
+     * Thin wrapper kept for the shared `DELETE /projects/{id}` endpoint
+     * (routes/web.php `projects.destroy.shared`). Delegates to delete() so
+     * both the shared route and the per-role admin/staff destroy routes share
+     * the same archived-only, admin-only permanent-delete logic.
+     */
+    public function destroy($id)
+    {
+        return $this->delete($id);
     }
 
     /**

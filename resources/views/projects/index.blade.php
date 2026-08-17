@@ -18,6 +18,15 @@
         default  => 'admin.projects',
     };
 
+    $archivedRoute = match(auth()->user()->role) {
+        'staff'  => 'staff.projects.archived',
+        default  => 'admin.projects.archived',
+    };
+
+    $archiveRouteName = auth()->user()->role === 'admin'
+        ? 'admin.projects.archive'
+        : 'staff.projects.archive';
+
     $activeFilterLabel = match(true) {
         request('status') === 'Ongoing'   => 'Ongoing Projects',
         request('status') === 'Completed' => 'Completed Projects',
@@ -49,6 +58,11 @@
 <div class="page-header">
     
     <h1>Project Monitor</h1>
+    @if(in_array(auth()->user()->role, ['admin', 'staff']))
+        <a href="{{ route($archivedRoute) }}" class="btn-secondary" style="text-decoration: none; margin-right: 8px;">
+            <i class="bi bi-archive"></i> Archived Projects
+        </a>
+    @endif
     @can('create', App\Models\Project::class)
         <button class="btn-primary" data-bs-toggle="modal" data-bs-target="#addProjectModal">
             <i class="bi bi-plus-circle"></i> New Project
@@ -385,9 +399,9 @@
                                 <i class="bi bi-pencil-square"></i>EDIT
                             </a>
                         @endcan
-                        @can('delete', $project)
-                            <button class="action-btn danger" onclick="deleteProject({{ $project->id }}, '{{ $project->title }}')">
-                                <i class="bi bi-trash"></i>DELETE
+                        @can('archive', $project)
+                            <button class="action-btn" onclick="archiveProject('{{ route($archiveRouteName, $project->id) }}', '{{ $project->title }}')">
+                                <i class="bi bi-archive"></i>ARCHIVE
                             </button>
                         @endcan
                     </div>
@@ -529,9 +543,9 @@
                                     <i class="bi bi-pencil-square"></i>
                                 </a>
                             @endcan
-                            @can('delete', $project)
-                                <button class="table-action-btn table-action-danger" onclick="deleteProject({{ $project->id }}, '{{ $project->title }}')" title="Delete">
-                                    <i class="bi bi-trash"></i>
+                            @can('archive', $project)
+                                <button class="table-action-btn" onclick="archiveProject('{{ route($archiveRouteName, $project->id) }}', '{{ $project->title }}')" title="Archive">
+                                    <i class="bi bi-archive"></i>
                                 </button>
                             @endcan
                         </div>
@@ -550,10 +564,10 @@
 </div>
 
 @include('components.delete-confirmation-modal')
-@include('components.loading-overlay', ['id' => 'deleteProjectLoadingOverlay', 'label' => 'Deleting project…'])
+@include('components.loading-overlay', ['id' => 'archiveProjectLoadingOverlay', 'label' => 'Working…'])
 
-{{-- Show the success toast AFTER the post-delete page reload (flash set by
-     ProjectController@destroy → session('toast_success')). --}}
+{{-- Show the success toast AFTER the post-archive page reload (flash set by
+     ProjectController@archive → session('toast_success')). --}}
 @if(session('toast_success'))
 <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -563,14 +577,16 @@
 @endif
 
 <script>
-function deleteProject(projectId, projectTitle) {
+function archiveProject(url, projectTitle) {
     showDeleteConfirmation(
-        'Delete Project',
-        `<strong style="color: #ef4444;"><i class="bi bi-exclamation-triangle-fill" style="margin-right: 8px;"></i>Warning:</strong> Are you sure you want to permanently delete <strong>"${projectTitle}"</strong> and all associated data? This action cannot be undone.`,
+        'Archive Project',
+        `Are you sure you want to archive <strong>"${projectTitle}"</strong>? ` +
+        `Archived projects are hidden from the active list but can be restored at any time. ` +
+        `They are <strong>not</strong> permanently deleted.`,
         function() {
-            showLoadingOverlay('deleteProjectLoadingOverlay', 'Deleting project…');
-            fetch(`/projects/${projectId}`, {
-                method: 'DELETE',
+            showLoadingOverlay('archiveProjectLoadingOverlay', 'Archiving project…');
+            fetch(url, {
+                method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                     'Content-Type': 'application/json'
@@ -583,17 +599,17 @@ function deleteProject(projectId, projectTitle) {
                     // let location.reload() tear the page down (no gap between the
                     // overlay hiding and the reload painting). The success toast is
                     // flashed server-side and rendered after this reload.
-                    showLoadingOverlay('deleteProjectLoadingOverlay', 'Almost done…');
+                    showLoadingOverlay('archiveProjectLoadingOverlay', 'Almost done…');
                     location.reload();
                 } else {
-                    hideLoadingOverlay('deleteProjectLoadingOverlay');
-                    showToast(data.message || 'Failed to delete project', 'error');
+                    hideLoadingOverlay('archiveProjectLoadingOverlay');
+                    showToast(data.message || 'Failed to archive project', 'error');
                 }
             })
             .catch(err => {
-                console.error('Delete error:', err);
-                hideLoadingOverlay('deleteProjectLoadingOverlay');
-                showToast('Error deleting project. Please try again.', 'error');
+                console.error('Archive error:', err);
+                hideLoadingOverlay('archiveProjectLoadingOverlay');
+                showToast('Error archiving project. Please try again.', 'error');
             });
         }
     );
