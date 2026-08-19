@@ -270,6 +270,9 @@
                                     <button type="button" onclick="openBaselineSetupModal()" class="btn btn-sm btn-outline-primary" style="border-color: #0d9488; color: #0d9488; font-weight: 600;">
                                         <i class="bi bi-flag-fill"></i> Set Up Baseline
                                     </button>
+                                    <button type="button" id="scurveImportBtn" class="btn btn-sm btn-outline-primary" data-mode="" data-parse-url="{{ route($routePrefix . '.s-curve.parse') }}" style="display: none; border-color: #0d9488; color: #0d9488; font-weight: 600;">
+                                        <i class="bi bi-cloud-arrow-up-fill"></i> Import from S-curve
+                                    </button>
                                     <button type="button" id="clearBaselineBtn" onclick="clearBaselineSetup()" style="display: none; padding: 6px 12px; background: white; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; align-items: center; gap: 5px; transition: all 0.2s;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='white'">
                                         <i class="bi bi-trash"></i> Clear Baseline
                                     </button>
@@ -404,3 +407,5 @@ window.openManageCategoriesFromCreateProject = function () {
      It attaches itself to window.documentParserCore for the classic script below. --}}
 <script type="module" src="{{ $jsv('js/admin/projects/document-parser-core.js') }}"></script>
 <script src="{{ $jsv('js/admin/projects/document-parser.js') }}"></script>
+<script type="module" src="{{ $jsv('js/admin/projects/scurve-import-core.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/scurve-import-ui.js') }}"></script>

@@ -136,11 +136,11 @@ function openSetupBaselineModal() {
 
     // Read caller context to determine mode and existing data
     var ctx = window.__setupModalContext || null;
-    var existingData = (ctx && ctx.mode === 'return-data' && ctx.existingMonths)
-        ? ctx.existingMonths : [];
+    var existingData = (ctx && ctx.existingMonths) ? ctx.existingMonths : [];
 
     if (existingData.length > 0) {
-        // Return-data mode with existing in-memory data — restore it
+        // Pre-existing in-memory months — restore them (used by return-data
+        // mode AND by the S-curve import feature in save-immediately mode)
         setupLocalMonths = existingData.slice(); // copy to avoid mutation
         setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
             return Math.max(max, parseFloat(m.planned_progress_percent) || 0);

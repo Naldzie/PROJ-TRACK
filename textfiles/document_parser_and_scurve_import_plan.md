@@ -11,10 +11,10 @@ document uploads:
 
 Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improvement`
         (pending review/merge, Rule 12)
-        ✅ Phase 2 — PLANNED with real client samples analyzed + decisions locked
-        (implementation pending on its own branch, Rule 12)
+        ✅ Phase 2 — IMPLEMENTED on branch `phase-2-scurve-baseline-import`
+        (pending review/merge, Rule 12)
 Date:   August 19, 2026
-Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 will branch
+Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 branched
         FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`.
 
 IMPLEMENTATION LOG — Phase 1 (2026-08-19):
@@ -66,6 +66,60 @@ IMPLEMENTATION LOG — Phase 2 planning (2026-08-19):
     first (PDF text-layout importer deferred; chart-only/PDF gets a clear
     "upload the .xlsx" message).
   - Full sample analysis + refined Phase 2 implementation below (§4).
+
+IMPLEMENTATION LOG — Phase 2 build (2026-08-19):
+  - Branch phase-2-scurve-baseline-import created FROM phase-1-document-parser-
+    improvement (includes a1b17a9).
+  - DISCREPANCY RESOLVED: the file's quarterly cumulative block (R89-92:
+    6.5/20.5/48.2/97) is author-entered and contradicts the activity table
+    (probe: R88 total row = exact per-column activity sums; 242,317.46 ÷
+    32,588,531.43 = 0.74%, not the claimed 6.5%). The imported curve is the
+    ACTIVITY-DERIVED one (self-consistent; final month forced 100%).
+- app/Services/SCurveImportService.php (NEW): sheet scan → findHeader (ITEM /
+    % WEIGHT / Month 1..N; month spans auto-detected as [col, col+1] when month
+    headers land every other column) → buildMonths. Month peso = SUM of a column
+    pair — the client writes each month's peso TWICE (each cell = half the month;
+    e.g. field office F=179,256 = 7469 × 24 cells), and the sample's own TOTAL
+    row proves it: paired columns (I+J, K+L, ...) sum to the exact contract
+    ₱32,588,531.43. (Initially used MAX, assuming a copy-paste duplicate — that
+    UNDERCOUNTS duplicated months; reverted to SUM after verification.) Summary-
+    block rows ("% ACCOMPLISHED" / cumulative / cost) skipped even when they carry
+    values; TOTAL row captured for contract fallback. Cumulative % monotonic-
+    clamped, capped at 100, final month with data forced to 100. Output months
+    carry month_index + activities; dates derived CLIENT-SIDE.
+  - Real-sample result: projectName/location correct, contract 32,588,531.43,
+    weightSum 100, 12 months, 59 activities, warnings [] → M1 1.12 / M4 10.59 /
+    M7 28.64 / M10 68 / M12 100 — matches the file's own quarterly block at
+    quarter-ends (6.74≈6.5, 21.09≈20.46, 49.73≈48.24, 100≈97).
+  - app/Http/Controllers/SCurveImportController.php (NEW): POST /s-curve/parse
+    accepts multipart file OR document_id (Schedule-type stored doc, validated
+    .xls/.xlsx) → { success, months, meta } / 422. Routed in BOTH role groups
+    (routes/web.php; admin + staff). Route cache had to be cleared to register.
+  - public/js/admin/projects/scurve-import-core.js (NEW, ESM): isSCurveCandidate
+    / isSCurveExcel / addCalendarMonths / formatDateInput / normalizeSCurveMonths
+    (planned_date = start + (N-1) months, clamped to end date; no-start fallback
+    keeps "Month N" labels). Attaches to window.scurveImportCore.
+  - public/js/admin/projects/scurve-import-ui.js (NEW): create-wizard button
+    (#scurveImportBtn, hidden until a Schedule/curve-named xlsx/xls/pdf pending
+    doc appears — guarded refreshSCurveImportButton() hook in document-manager.js;
+    PDF → "upload the .xlsx" notice), and project-detail button
+    (#scurveImportBtnDetail, shown when a stored Schedule .xlsx/.xls exists).
+    Import sets window._baselineSetupMonths (+ openBaselineSetupModal) in the
+    wizard, or __setupModalContext { mode:'save-immediately', existingMonths }
+    + openSetupBaselineModal() on the detail page. Double-init guarded.
+  - baseline-schedule-setup-modal.js: openSetupBaselineModal now preloads
+    ctx.existingMonths in mode 1 (save-immediately) too, so the detail page can
+    preload imported months.
+  - Blades: import button in _create_project_modal.blade.php (route
+    $routePrefix . '.s-curve.parse'), import button + core/UI script tags in
+    baseline-schedule.blade.php (mode-1 preload), core script tag in the create
+    modal.
+  - Tests: tests/Feature/SCurveImportTest.php (6 tests: client-layout fixture
+    workbook via PhpSpreadsheet, pair de-dup, summary skip, metadata, errors,
+    endpoint 422); tests/js/scurve-import.test.mjs (9 tests: date offsets,
+    clamping, no-start fallback, activity passthrough, candidates).
+  - Verification: npm run test:js 28/28; composer test 719 passed / 2778
+    assertions; view:cache compiles all blades. NOT yet committed (Rule 12).
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt

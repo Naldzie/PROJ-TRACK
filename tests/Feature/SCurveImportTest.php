@@ -1,0 +1,215 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Services\SCurveImportService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use RuntimeException;
+use Tests\TestCase;
+
+/**
+ * ============================================================================
+ * SCurveImportTest
+ * ============================================================================
+ *
+ * The contractor S-curve Excel importer (Phase 2) reads a
+ * "CONSTRUCTION SCHEDULE AND S-CURVE" workbook and produces baseline months
+ * (cumulative planned % per month_index 1..N) plus metadata.
+ *
+ * The fixtures here replicate the confirmed client layout (Layout B —
+ * activity-weighted): a two-row header (ITEM / DESCRIPTION / CONTRACT /
+ * % WEIGHT / Month 1..12), each month spanning two adjacent columns, and a
+ * TOTAL row followed by a summary block.
+ *
+ * @see app/Services/SCurveImportService.php
+ */
+class SCurveImportTest extends TestCase
+{
+    use RefreshDatabase;
+
+    /**
+     * A 3-month client-layout workbook with two activities + a TOTAL row.
+     */
+    protected function makeFixtureWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('S-CURVE');
+
+        // Metadata block (label in one cell, value in the next)
+        $sheet->setCellValue('A1', 'CONSTRUCTION SCHEDULE AND S-CURVE');
+        $sheet->setCellValue('A2', 'CONTRACT NAME:');
+        $sheet->setCellValue('B2', 'COMPLETION OF A TEST BUILDING');
+        $sheet->setCellValue('A3', 'LOCATION:');
+        $sheet->setCellValue('B3', 'Somewhere in the Philippines');
+
+        // Two-row header: months at I (Month 1), K (Month 2), M (Month 3)
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', 'DESCRIPTION');
+        $sheet->setCellValue('F10', 'CONTRACT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('M10', 'Month 3');
+        $sheet->setCellValue('B11', '1');
+
+        // Activity 1 — mobilization split between month 1 (odd cell) and
+        // month 3 (even cell). Single-cell months are counted as-is.
+        $sheet->setCellValue('B12', '1');
+        $sheet->setCellValue('C12', 'Mobilization and Demobilization');
+        $sheet->setCellValue('F12', 100000);
+        $sheet->setCellValue('G12', 25);
+        $sheet->setCellValue('I12', 50000);
+        $sheet->setCellValue('N12', 50000);
+
+        // Activity 2 — the client's duplicated-pair convention: the month's
+        // peso is written TWICE (each cell = half), so the pair must be SUMMED.
+        $sheet->setCellValue('B13', '2');
+        $sheet->setCellValue('C13', 'Site Layout and Survey Works');
+        $sheet->setCellValue('F13', 300000);
+        $sheet->setCellValue('G13', 75);
+        $sheet->setCellValue('I13', 150000);
+        $sheet->setCellValue('J13', 150000);
+
+        // TOTAL row (skipped as data, holds the contract total)
+        $sheet->setCellValue('C14', 'TOTAL');
+        $sheet->setCellValue('F14', 400000);
+        $sheet->setCellValue('G14', 100);
+        $sheet->setCellValue('I14', 200000);
+        $sheet->setCellValue('J14', 150000);
+        $sheet->setCellValue('N14', 50000);
+
+        // Summary block (must be skipped)
+        $sheet->setCellValue('C15', '% ACCOMPLISHED');
+        $sheet->setCellValue('I15', 0.5);
+
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($path);
+    }
+
+    public function test_parses_client_layout_into_baseline_months(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(400000.0, $result['meta']['contractAmount']);
+        $this->assertSame(100.0, $result['meta']['weightSum']);
+        $this->assertSame(3, $result['meta']['monthCount']);
+        $this->assertSame(2, $result['meta']['activityCount']);
+        $this->assertSame([], $result['meta']['warnings']);
+
+        // Month 1 = (50000 mobilization) + (150000 + 150000 site layout pair)
+        //        = 350000 / 400000 = 87.5%
+        $this->assertSame(1, $result['months'][0]['month_index']);
+        $this->assertSame(87.5, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame('Mobilization and Demobilization, Site Layout and Survey Works', $result['months'][0]['description']);
+
+        // Month 2 = no peso → cumulative unchanged at 87.5%
+        $this->assertSame(2, $result['months'][1]['month_index']);
+        $this->assertSame(87.5, $result['months'][1]['planned_progress_percent']);
+
+        // Month 3 = +50000 → 100%; forced final month is 100%
+        $this->assertSame(3, $result['months'][2]['month_index']);
+        $this->assertSame(100.0, $result['months'][2]['planned_progress_percent']);
+
+        $this->assertSame('COMPLETION OF A TEST BUILDING', $result['meta']['projectName']);
+        $this->assertSame('Somewhere in the Philippines', $result['meta']['location']);
+
+        unlink($path);
+    }
+
+    public function test_metadata_is_null_when_header_block_is_absent(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->setCellValue('A10', 'ITEM');
+        $spreadsheet->getActiveSheet()->setCellValue('C10', 'DESCRIPTION');
+        $spreadsheet->getActiveSheet()->setCellValue('G10', '% WEIGHT');
+        $spreadsheet->getActiveSheet()->setCellValue('I10', 'Month 1');
+        $spreadsheet->getActiveSheet()->setCellValue('K10', 'Month 2');
+        $spreadsheet->getActiveSheet()->setCellValue('B11', '1');
+        $spreadsheet->getActiveSheet()->setCellValue('C11', 'Earthworks');
+        $spreadsheet->getActiveSheet()->setCellValue('F11', 100);
+        $spreadsheet->getActiveSheet()->setCellValue('G11', 100);
+        $spreadsheet->getActiveSheet()->setCellValue('I11', 100);
+        $spreadsheet->getActiveSheet()->setCellValue('C12', 'TOTAL');
+        $spreadsheet->getActiveSheet()->setCellValue('F12', 100);
+        $spreadsheet->getActiveSheet()->setCellValue('G12', 100);
+        $spreadsheet->getActiveSheet()->setCellValue('I12', 100);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(null, $result['meta']['projectName']);
+        $this->assertSame(null, $result['meta']['location']);
+
+        unlink($path);
+    }
+
+    public function test_throws_when_no_curve_table_is_found(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->setCellValue('A1', 'NOT AN S-CURVE');
+        (new Xlsx($spreadsheet))->save($path);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('No S-curve table found');
+
+        app(SCurveImportService::class)->parse($path);
+
+        unlink($path);
+    }
+
+    public function test_throws_for_missing_file(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('The file could not be found');
+
+        app(SCurveImportService::class)->parse('/nonexistent/path.xlsx');
+    }
+
+    public function test_throws_for_non_excel_file(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.bin';
+        // Corrupt binary that no spreadsheet reader can identify.
+        file_put_contents($path, random_bytes(2048));
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('not a valid Excel workbook');
+
+        app(SCurveImportService::class)->parse($path);
+
+        unlink($path);
+    }
+
+    public function test_parse_endpoint_rejects_missing_source(): void
+    {
+        $this->actingAs($this->createAdminUser());
+
+        $this->postJson(route('admin.projects.s-curve.parse'), [])
+            ->assertStatus(422)
+            ->assertJson(['success' => false]);
+    }
+
+    protected function createAdminUser()
+    {
+        // User::create (not the factory) — the users table has no
+        // email_verified_at column in this app's migrations.
+        return \App\Models\User::create([
+            'name' => 'SCurve Admin',
+            'email' => fake()->unique()->safeEmail(),
+            'password' => bcrypt('password'),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+    }
+}

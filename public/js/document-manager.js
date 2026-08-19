@@ -134,6 +134,7 @@ function handleDocumentFileSelected() {
 
     // Update UI
     displayPendingDocuments();
+    refreshSCurveImportButtonIfAvailable();
 
     // Reset the file input + type select so the next document requires a fresh type choice
     fileInput.value = '';
@@ -197,6 +198,7 @@ function getDocumentIcon(filename) {
 function removeDocument(docId) {
     pendingDocuments = pendingDocuments.filter(doc => doc.id !== docId);
     displayPendingDocuments();
+    refreshSCurveImportButtonIfAvailable();
 }
 
 /**
@@ -256,4 +258,15 @@ function clearPendingDocuments() {
     displayPendingDocuments();
     document.getElementById('documentFileInput').value = '';
     document.getElementById('documentTypeSelect').value = '';
+}
+
+/**
+ * Refresh the S-curve import button visibility if the feature script is loaded.
+ * Guarded so document-manager works standalone (e.g. the contractor issue
+ * modal, which has no S-curve import).
+ */
+function refreshSCurveImportButtonIfAvailable() {
+    if (typeof refreshSCurveImportButton === 'function') {
+        refreshSCurveImportButton();
+    }
 }

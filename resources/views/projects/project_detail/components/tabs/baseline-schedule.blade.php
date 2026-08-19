@@ -52,6 +52,7 @@
         <div style="display: flex; gap: 8px;">
             @php
                 $hasBaseline = $project->baselineSchedules()->exists();
+                $scheduleDoc = $project->documents()->byTypeName('Schedule')->latest()->first();
             @endphp
             @can('update', $project)
                 @if(!$hasBaseline)
@@ -59,6 +60,16 @@
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
                         <i class="bi bi-flag"></i> Set Up Baseline
                     </button>
+                    @if($scheduleDoc && in_array(strtolower($scheduleDoc->file_extension), ['xls', 'xlsx']))
+                        <button id="scurveImportBtnDetail" class="btn-primary"
+                                data-parse-url="{{ route($routePrefix . '.s-curve.parse') }}"
+                                data-document-id="{{ $scheduleDoc->id }}"
+                                data-start-date="{{ $project->planned_start_date?->toDateString() ?? '' }}"
+                                data-end-date="{{ $project->planned_end_date?->toDateString() ?? '' }}"
+                                style="padding: 8px 16px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
+                            <i class="bi bi-cloud-arrow-up-fill"></i> Import from S-curve
+                        </button>
+                    @endif
                 @else
                     {{-- Admin-only: re-open the Set Up Baseline modal to correct the locked original plan (B3.2). --}}
                     @if(auth()->user()->role === 'admin')
@@ -572,6 +583,10 @@ Add Month Target Modal functions moved to baseline-schedule-add-month-modal.js
 
 <!-- Load Set Up Baseline Modal JavaScript -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
+
+<!-- Load S-curve Excel baseline import (Phase 2) -->
+<script type="module" src="{{ asset('js/admin/projects/scurve-import-core.js') }}"></script>
+<script src="{{ asset('js/admin/projects/scurve-import-ui.js') }}"></script>
 
 <!-- Load Manage Month Modal JavaScript (includes reloadInlineActivities) -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-manage-month-modal.js') }}"></script>

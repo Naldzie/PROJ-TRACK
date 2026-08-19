@@ -7,6 +7,7 @@ use App\Http\Controllers\Contractor\ProfileContractorController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProjectController;  // Consolidated: handles all roles with authorization
 use App\Http\Controllers\BaselineScheduleController;
+use App\Http\Controllers\SCurveImportController;
 use App\Http\Controllers\ProjectActivityController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\RiskController;
@@ -172,6 +173,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
         ->name('staff.projects.baseline-schedules.adjust');
     Route::post('/projects/{project}/baseline-schedules/adjust/save', [BaselineScheduleController::class, 'saveAdjustedBaseline'])
         ->name('staff.projects.baseline-schedules.adjust.save');
+
+    // S-Curve Excel baseline import (Phase 2)
+    Route::post('/s-curve/parse', [SCurveImportController::class, 'parseExcel'])
+        ->name('staff.projects.s-curve.parse');
 
     // === ACTIVITIES: CRUD ROUTES ===
     Route::post('/projects/{project}/activities', [ProjectActivityController::class, 'storeActivity'])
@@ -518,6 +523,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.baseline-schedules.original');
     Route::post('/projects/{project}/baseline-schedules/original/save', [BaselineScheduleController::class, 'saveEditedOriginalBaseline'])
         ->name('admin.projects.baseline-schedules.original.save');
+
+    // S-Curve Excel baseline import (Phase 2)
+    Route::post('/s-curve/parse', [SCurveImportController::class, 'parseExcel'])
+        ->name('admin.projects.s-curve.parse');
 
     // === ACTIVITIES: CRUD ROUTES ===
     Route::post('/projects/{project}/activities', [ProjectActivityController::class, 'storeActivity'])
