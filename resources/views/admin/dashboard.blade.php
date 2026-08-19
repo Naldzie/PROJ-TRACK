@@ -174,7 +174,7 @@
             </div>
         </a>
 
-        {{-- At Risk — deadline within 14 days, DB-level count covers ALL ongoing --}}
+        {{-- At Risk — gap-based (baseline vs actual), count covers ALL ongoing --}}
         <a href="{{ route($projectsIndex, ['filter' => 'atrisk']) }}" class="db-stat-card s-violet">
             <div class="db-stat-icon"><i class="bi bi-exclamation-diamond-fill"></i></div>
             <div>
@@ -182,7 +182,7 @@
                 <div class="db-stat-label">At Risk</div>
                 <div class="db-stat-sub {{ $atRiskCount > 0 ? 'neg' : 'neu' }}">
                     @if($atRiskCount > 0)
-                        <i class="bi bi-clock"></i> within 14 days
+                        <i class="bi bi-clock"></i> behind baseline plan
                     @else
                         <i class="bi bi-check-circle"></i> all on track
                     @endif

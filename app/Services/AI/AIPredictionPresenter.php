@@ -225,7 +225,7 @@ class AIPredictionPresenter
         $daysElapsed       = $this->getDaysElapsed($project);
         $daysTotal         = $this->getDaysTotal($project);
         $daysRemaining     = $this->calculateDaysRemaining($project);
-        $expectedProgress  = $this->calculateExpectedProgress($project, $daysElapsed, $daysTotal);
+        $expectedProgress  = app(\App\Services\ProjectHealthService::class)->expectedProgress($project);
         $progressGap       = $expectedProgress - $currentProgress;
 
         return [
@@ -456,7 +456,8 @@ class AIPredictionPresenter
         $daysElapsed       = $this->getDaysElapsed($project);
         $daysTotal         = $this->getDaysTotal($project);
         $daysRemaining     = $this->calculateDaysRemaining($project);
-        $expectedProgress  = $this->calculateExpectedProgress($project, $daysElapsed, $daysTotal);
+        $healthService     = app(\App\Services\ProjectHealthService::class);
+        $expectedProgress  = $healthService->expectedProgress($project);
         $progressGap       = $expectedProgress - $currentProgress;
 
         /*
@@ -499,7 +500,7 @@ class AIPredictionPresenter
         |
         */
 
-        $currentGapRisk = $this->classifyRiskFromGap($progressGap);
+        $currentGapRisk = $healthService->classifyGap($progressGap);
 
         $overallRisk = $currentGapRisk;
 
@@ -974,139 +975,6 @@ class AIPredictionPresenter
 
     /**
      * ------------------------------------------------------------------------
-     * Calculate Expected Progress
-     * ------------------------------------------------------------------------
-     *
-     * Determines the expected cumulative progress from the project's
-     * Effective Baseline.
-     *
-     * Logic
-     * -----
-     * 1. Find the latest baseline schedule whose planned_date ≤ today.
-     * 2. Use its planned_progress_percent as expected progress.
-     * 3. If no baseline exists, fall back to a time-based estimate
-     *    (days elapsed / total days).
-     *
-     * Used By
-     * -------
-     * presentNormal(), presentInsufficientData()
-     */
-    private function calculateExpectedProgress(
-        Project $project,
-        int $daysElapsed,
-        int $daysTotal
-    ): float {
-        $effectiveNow = DateHelper::now();
-        $currentMonthStart = $effectiveNow->copy()->startOfMonth()->format('Y-m-d');
-        $currentMonthEnd = $effectiveNow->copy()->endOfMonth()->format('Y-m-d');
-
-        /*
-        |----------------------------------------------------------------------
-        | 1. Look for a progress history record in the current month
-        |----------------------------------------------------------------------
-        |
-        | If a record exists for this month, use its planned_progress_percent.
-        | This handles the case where the user has already recorded progress
-        | for the current month.
-        |
-        */
-
-        $currentMonthHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->where('month_label', DateHelper::now()->format('Y-m'))
-            ->orderBy('created_at', 'desc')
-            ->first();
-
-        if ($currentMonthHistory && $currentMonthHistory->planned_progress_percent !== null) {
-            return (float) $currentMonthHistory->planned_progress_percent;
-        }
-
-        /*
-        |----------------------------------------------------------------------
-        | 2. Look up the baseline schedule for the current month
-        |----------------------------------------------------------------------
-        |
-        | If no progress record exists yet for this month (e.g., the user
-        | hasn't entered progress), use the planned target from the baseline
-        | schedule that falls within this month.
-        |
-        */
-
-        $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
-            ->where('planned_date', '>=', $currentMonthStart)
-            ->where('planned_date', '<=', $currentMonthEnd)
-            ->orderBy('planned_date', 'asc')
-            ->first();
-
-        if ($currentMonthBaseline) {
-            return (float) $currentMonthBaseline->planned_progress_percent;
-        }
-
-        /*
-        |----------------------------------------------------------------------
-        | 3. Fall back to the latest progress history record
-        |----------------------------------------------------------------------
-        |
-        | If no current month data exists, use the most recent recorded
-        | planned value from any past month.
-        |
-        */
-
-        $latestHistory = ProjectProgressHistory::where('project_id', $project->id)
-            ->orderBy('month_label', 'desc')
-            ->orderBy('created_at', 'desc')
-            ->first();
-
-        if ($latestHistory && $latestHistory->planned_progress_percent !== null) {
-            return (float) $latestHistory->planned_progress_percent;
-        }
-
-        /*
-        |----------------------------------------------------------------------
-        | 4. Fall back to date-filtered baseline
-        |----------------------------------------------------------------------
-        |
-        | Uses the project's loaded relationship to avoid extra DB queries
-        | if the relationship is already eager-loaded.
-        |
-        */
-
-        $baselineSchedules = $project->baselineSchedules
-            ?? ProjectBaselineSchedule::where('project_id', $project->id)
-                ->orderBy('planned_date', 'asc')
-                ->get();
-
-        if ($baselineSchedules->isNotEmpty()) {
-            $currentMonthTarget = $baselineSchedules
-                ->filter(fn ($schedule) =>
-                    $schedule->planned_date && $schedule->planned_date->lte($effectiveNow)
-                )
-                ->last();
-
-            if ($currentMonthTarget) {
-                return (float) $currentMonthTarget->planned_progress_percent;
-            }
-
-            return (float) $baselineSchedules->first()->planned_progress_percent;
-        }
-
-        /*
-        |----------------------------------------------------------------------
-        | 5. Fallback: Time-Based Estimate
-        |----------------------------------------------------------------------
-        |
-        | Used when no baseline schedules exist.
-        |
-        */
-
-        if ($daysTotal > 0) {
-            return ($daysElapsed / $daysTotal) * 100;
-        }
-
-        return 0;
-    }
-
-    /**
-     * ------------------------------------------------------------------------
      * Get Next Planned Progress
      * ------------------------------------------------------------------------
      *
@@ -1134,34 +1002,6 @@ class AIPredictionPresenter
             ->first();
 
         return $nextBaseline ? (float) $nextBaseline->planned_progress_percent : null;
-    }
-
-    /**
-     * ------------------------------------------------------------------------
-     * Classify Risk From Progress Gap
-     * ------------------------------------------------------------------------
-     *
-     * Fallback risk classification when no assessment data is available.
-     *
-     * Used By
-     * -------
-     * presentNormal()
-     */
-    private function classifyRiskFromGap(float $progressGap): string
-    {
-        if ($progressGap <= -5) {
-            return 'Low';
-        }
-        if ($progressGap <= 5) {
-            return 'Low';
-        }
-        if ($progressGap < 10) {
-            return 'Moderate';
-        }
-        if ($progressGap < 15) {
-            return 'High';
-        }
-        return 'Critical';
     }
 
     /**

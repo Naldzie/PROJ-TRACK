@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\ActivityLog;
 use App\Models\Contractor;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -54,8 +55,13 @@ class ContractorDashboardTest extends TestCase
     private function assignProject(array $overrides = []): Project
     {
         return Project::factory()->create(array_merge([
-            'contractor_id' => $this->contractor->id,
-            'status'        => 'Ongoing',
+            'contractor_id'       => $this->contractor->id,
+            'status'              => 'Ongoing',
+            // Pin the schedule so health tests are deterministic — the factory
+            // default planned_end_date is random and sometimes lands in the past
+            // (which would flip the badge to OVERDUE).
+            'planned_start_date'  => now()->subMonths(2),
+            'planned_end_date'    => now()->addMonths(2),
         ], $overrides));
     }
 
@@ -158,5 +164,78 @@ class ContractorDashboardTest extends TestCase
         $this->actingAs($admin)
             ->get(route('contractor.dashboard'))
             ->assertRedirect(route('unauthorized'));
+    }
+
+    // ─── UNIFIED GAP-BASED HEALTH (same ProjectHealthService as admin) ────
+
+    /**
+     * Current-month actual + (optionally) a current-month baseline target.
+     */
+    private function addCurrentMonthData(Project $project, float $actual, ?float $plannedBaseline = null): void
+    {
+        ProjectProgressHistory::factory()->forMonth(
+            1,
+            now()->format('Y-m'),
+            now()->format('Y-m-d'),
+            $actual
+        )->create([
+            'project_id'              => $project->id,
+            // Force the planned lookup to use the baseline (branch 2), not a
+            // random factory value on the progress record (branch 1).
+            'planned_progress_percent' => null,
+        ]);
+
+        if ($plannedBaseline !== null) {
+            ProjectBaselineSchedule::factory()->forMonth(
+                1,
+                now()->format('Y-m'),
+                now()->endOfMonth()->format('Y-m-d'),
+                $plannedBaseline
+            )->create(['project_id' => $project->id]);
+        }
+    }
+
+    public function test_contractor_dashboard_gap_based_at_risk(): void
+    {
+        $project = $this->assignProject(['title' => 'Behind Schedule Job']);
+        $this->addCurrentMonthData($project, actual: 40, plannedBaseline: 80);
+
+        $this->actingAs($this->contractorUser)
+            ->get(route('contractor.dashboard'))
+            ->assertOk()
+            ->assertSee('Behind Schedule Job')
+            ->assertSee('AT RISK')
+            ->assertDontSee('ON TRACK');
+    }
+
+    public function test_contractor_dashboard_near_deadline_on_plan_stays_on_track(): void
+    {
+        // Deadline within 14 days but on-plan (50 vs 50) — the OLD deadline-based
+        // rule flagged this AT RISK; the unified gap-based rule must not.
+        $project = $this->assignProject([
+            'title'            => 'Near Deadline Fine Job',
+            'planned_end_date' => now()->addDays(7),
+        ]);
+        $this->addCurrentMonthData($project, actual: 50, plannedBaseline: 50);
+
+        $this->actingAs($this->contractorUser)
+            ->get(route('contractor.dashboard'))
+            ->assertOk()
+            ->assertSee('Near Deadline Fine Job')
+            ->assertSee('ON TRACK')
+            ->assertDontSee('AT RISK');
+    }
+
+    public function test_contractor_dashboard_no_data_badge(): void
+    {
+        $this->assignProject(['title' => 'No Records Yet Job']);
+        // No progress history, no baseline → NO DATA (grey, never green).
+
+        $this->actingAs($this->contractorUser)
+            ->get(route('contractor.dashboard'))
+            ->assertOk()
+            ->assertSee('No Records Yet Job')
+            ->assertSee('NO DATA')
+            ->assertDontSee('ON TRACK');
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
+use App\Services\ProjectHealthService;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -77,6 +78,54 @@ class DashboardController extends Controller
             ->get()
             ->keyBy('project_id');
 
+        // ── HEALTH MAP (for the projects table) ──────────────────────────────
+        // Same ProjectHealthService definition as the admin/staff dashboard:
+        // expected (baseline) vs actual progress gap, plus record-based
+        // escalation. Pre-fetched context → zero per-row queries.
+        $healthMap = [];
+
+        if ($contractor) {
+            $projects->load(['progressHistory', 'baselineSchedules']);
+            $projects->loadCount([
+                'issues as open_high_issue_count'  => fn ($q) => $q->unresolved()->whereIn('severity', ['High', 'Critical']),
+                'issues as aging_issue_count'      => fn ($q) => $q->aging(30),
+                'risks as open_high_risk_count'    => fn ($q) => $q->open()->highRisk(),
+                'extensions as pending_extension_count' => fn ($q) => $q->pending(),
+            ]);
+
+            $service = app(ProjectHealthService::class);
+
+            foreach ($tableProjects as $project) {
+                $history  = $project->progressHistory; // asc by inspection_date
+                $latest   = $history->last();
+                $monthHistory = $history->filter(fn ($r) => $r->month_label === $currentMonthLabel)->last();
+
+                $baselines = $project->baselineSchedules; // asc by planned_date
+                $monthBaseline = $baselines->first(fn ($b) =>
+                    ($b->month_label && $b->month_label === $currentMonthLabel)
+                    || ($b->planned_date && $b->planned_date->format('Y-m') === $currentMonthLabel)
+                );
+
+                $health = $service->determine($project, [
+                    'latest_progress'        => $latest,
+                    'current_month_history'  => $monthHistory,
+                    'current_month_baseline' => $monthBaseline,
+                    'baseline_schedules'     => $baselines,
+                    'open_high_issues'       => (int) ($project->open_high_issue_count ?? 0) > 0,
+                    'aging_issue_count'      => (int) ($project->aging_issue_count ?? 0),
+                    'open_high_risks'        => (int) ($project->open_high_risk_count ?? 0) > 0,
+                    'pending_extension'      => (int) ($project->pending_extension_count ?? 0) > 0,
+                ]);
+
+                // Overall progress for the fallback mini-bar (no N+1).
+                $health['progress'] = $latest
+                    ? (float) ($latest->actual_progress_percent ?? $latest->progress_percentage ?? 0)
+                    : 0;
+
+                $healthMap[$project->id] = $health;
+            }
+        }
+
         // ── BUDGET ───────────────────────────────────────────────────────────
         $totalBudget = $projects->sum('approved_budget');
         $budgetProjects = $projects->sortByDesc('approved_budget');
@@ -115,6 +164,7 @@ class DashboardController extends Controller
             'latestKnownProgress',
             'currentMonthProgress',
             'currentMonthBaseline',
+            'healthMap',
             'totalBudget',
             'budgetProjects',
             'deadlineProjects',

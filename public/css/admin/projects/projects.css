@@ -9,6 +9,7 @@
         --warning: #f59e0b;
         --danger: #ef4444;
         --info: #06b6d4;
+        --muted: #6b7280;
         --bg: #f4f6f9;
         --card-bg: #ffffff;
         --border: #e5e7eb;
@@ -97,6 +98,20 @@
     .metric-card.danger { border-left-color: var(--danger); }
     .metric-card.warning { border-left-color: var(--warning); }
 
+    /* Metric cards are now links (match the dashboard stat cards). */
+    .metric-card-link {
+        display: block;
+        text-decoration: none;
+        color: inherit;
+    }
+    .metric-card-link .metric-card {
+        transition: 0.3s;
+    }
+    .metric-card-link:hover .metric-card {
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+        transform: translateY(-2px);
+    }
+
     .metric-label {
         font-size: 13px;
         color: var(--text-muted);
@@ -173,6 +188,7 @@
     .project-card.overdue { border-top: 4px solid var(--danger); }
     .project-card.at-risk { border-top: 4px solid var(--warning); }
     .project-card.on-track { border-top: 4px solid var(--success); }
+    .project-card.no-data { border-top: 4px solid var(--muted); }
 
     /* ========== PROJECT HEADER (CARD HEADER) ========== */
     .project-header {
@@ -287,6 +303,11 @@
     .health-badge.overdue {
         background: rgba(239,68,68,0.25);
         border-color: rgba(239,68,68,0.4);
+    }
+
+    .health-badge.no-data {
+        background: rgba(156,163,175,0.25);
+        border-color: rgba(156,163,175,0.4);
     }
 
     .health-badge.on-schedule {
@@ -449,6 +470,7 @@
     .progress-fill.healthy { background: var(--success); }
     .progress-fill.warning { background: var(--warning); }
     .progress-fill.danger { background: var(--danger); }
+    .progress-fill.normal { background: var(--info); }
 
     /* ========== SCHEDULE INFO BOX ========== */
     .schedule-info {
@@ -1014,6 +1036,11 @@
         color: var(--danger);
     }
 
+    .table-health-badge.no-data {
+        background: rgba(156,163,175,0.08);
+        color: var(--muted);
+    }
+
     /* TABLE COLUMN: STATUS BADGE */
     .table-status-badge {
         display: inline-flex;
@@ -1078,6 +1105,7 @@
     .table-progress-fill.healthy { background: var(--success); }
     .table-progress-fill.warning { background: var(--warning); }
     .table-progress-fill.danger { background: var(--danger); }
+    .table-progress-fill.normal { background: var(--info); }
 
     .table-progress-text {
         font-weight: 600;

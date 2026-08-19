@@ -565,26 +565,21 @@
                 $hasPlanned      = $monthBaseline !== null;
                 $isCurrentMonth  = $monthRecord  !== null;
 
-                // ── HEALTH (mirrors Project::isOverdue()/isAtRisk()) ───
-                $days          = $project->planned_end_date
-                    ? (int) now()->diffInDays($project->planned_end_date, false)
-                    : null;
-                $isOverdue     = $project->planned_end_date
-                    && $project->planned_end_date->lt(now()) && $progress < 100;
-                $isAtRisk      = !$isOverdue && $days !== null && $days < 15 && $progress < 90;
+                // ── HEALTH (unified ProjectHealthService definition) ────
+                $health        = $healthMap[$project->id] ?? [];
+                $isOverdue     = $health['is_overdue'] ?? false;
+                $isAtRisk      = $health['is_at_risk'] ?? false;
+                $days          = $health['days_remaining']
+                    ?? ($project->planned_end_date
+                        ? (int) now()->diffInDays($project->planned_end_date, false)
+                        : null);
 
-                $fillClass     = $isOverdue ? 'fill-danger'
-                                : ($isAtRisk  ? 'fill-warning'
-                                : 'fill-healthy');
-                $deadlineClass = $isOverdue           ? 'overdue'
-                                : ($days !== null && $days < 30 ? 'urgent' : 'ok');
-
-                $riskLabel     = $isOverdue ? 'OVERDUE'
-                                : ($isAtRisk ? 'AT RISK' : 'ON TRACK');
-                $riskClass     = $isOverdue ? 'risk-high'
-                                : ($isAtRisk ? 'risk-medium' : 'risk-low');
-                $dotColor      = $isOverdue ? 'var(--red-600)'
-                                : ($isAtRisk ? 'var(--amber-600)' : 'var(--green-600)');
+                $fillClass     = $health['fill_class'] ?? 'fill-healthy';
+                $deadlineClass = $health['deadline_class'] ?? 'ok';
+                $riskLabel     = $health['label'] ?? 'ON TRACK';
+                $riskClass     = $health['risk_class'] ?? 'risk-low';
+                $dotColor      = $health['dot_color'] ?? 'var(--green-600)';
+                $healthTooltip = $health['tooltip'] ?? null;
               @endphp
               <tr>
                 {{-- Project identity: code, title, category --}}
@@ -667,9 +662,9 @@
                   @endif
                 </td>
 
-                {{-- Health badge: ON TRACK / AT RISK / OVERDUE --}}
+                {{-- Health badge: ON TRACK / AT RISK / OVERDUE / NO DATA --}}
                 <td>
-                  <span class="risk-indicator {{ $riskClass }}">
+                  <span class="risk-indicator {{ $riskClass }}" @if($healthTooltip) title="{{ $healthTooltip }}" @endif>
                     <span class="risk-dot" style="background:{{ $dotColor }}"></span>
                     {{ $riskLabel }}
                   </span>
