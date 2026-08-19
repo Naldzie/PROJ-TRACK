@@ -261,16 +261,25 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
 
     const tbody = document.getElementById('autofillPreviewRows');
     if (tbody) {
-        tbody.innerHTML = fields.map(f => `
-            <tr>
-                <td class="autofill-preview-label">${escapeHtml(f.label)}</td>
-                <td>
-                    <input type="text" class="form-control form-control-sm" id="previewInput-${f.id}"
-                        value="${f.value ? escapeHtml(f.value) : ''}"
-                        placeholder="${f.value ? '' : 'Not found — fill manually'}" />
-                </td>
-            </tr>
-        `).join('');
+        // Date fields use the native calendar picker (like the create modal's
+        // date inputs). Their values are normalised to YYYY-MM-DD at render so
+        // the calendar shows the extracted date correctly.
+        const core = getCore();
+        const DATE_FIELDS = ['plannedStartDate', 'plannedEndDate'];
+        tbody.innerHTML = fields.map(f => {
+            const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
+            const value = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
+            return `
+                <tr>
+                    <td class="autofill-preview-label">${escapeHtml(f.label)}</td>
+                    <td>
+                        <input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
+                            value="${value ? escapeHtml(value) : ''}"
+                            placeholder="${f.value ? '' : 'Not found — fill manually'}" />
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     const ocrNote = document.getElementById('autofillPreviewOcrNote');

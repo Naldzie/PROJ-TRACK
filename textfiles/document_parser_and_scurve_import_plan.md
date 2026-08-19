@@ -75,7 +75,7 @@ IMPLEMENTATION LOG — Phase 2 build (2026-08-19):
     (probe: R88 total row = exact per-column activity sums; 242,317.46 ÷
     32,588,531.43 = 0.74%, not the claimed 6.5%). The imported curve is the
     ACTIVITY-DERIVED one (self-consistent; final month forced 100%).
-- app/Services/SCurveImportService.php (NEW): sheet scan → findHeader (ITEM /
+  - app/Services/SCurveImportService.php (NEW): sheet scan → findHeader (ITEM /
     % WEIGHT / Month 1..N; month spans auto-detected as [col, col+1] when month
     headers land every other column) → buildMonths. Month peso = SUM of a column
     pair — the client writes each month's peso TWICE (each cell = half the month;
@@ -119,7 +119,12 @@ IMPLEMENTATION LOG — Phase 2 build (2026-08-19):
     endpoint 422); tests/js/scurve-import.test.mjs (9 tests: date offsets,
     clamping, no-start fallback, activity passthrough, candidates).
   - Verification: npm run test:js 28/28; composer test 719 passed / 2778
-    assertions; view:cache compiles all blades. NOT yet committed (Rule 12).
+    assertions; view:cache compiles all blades.
+  - COMMITTED + PUSHED as 7dca28b "Implement Phase 2: S-curve Excel baseline
+    import" on phase-2-scurve-baseline-import (12 files, +1222/-6); pushed to
+    origin/phase-2-scurve-baseline-import. Awaiting user review before merge to
+    main (Rule 12). Scratch files (inspect_142.php, kernel_export_test.php,
+    session-ses_*.md, sampledocs/) intentionally left uncommitted.
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt
