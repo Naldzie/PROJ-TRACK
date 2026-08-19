@@ -9,9 +9,33 @@ document uploads:
 - **PHASE 2 (NEXT, after Phase 1 lands):** automate baseline setup by importing a
   planned S-curve (Excel or PDF) into the existing "Set Up Baseline" modal.
 
-Status: ⬜ Phase 1 — PLANNED (not started) · ⬜ Phase 2 — PLANNED (not started)
+Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improvement`
+        (pending review/merge, Rule 12) · ⬜ Phase 2 — PLANNED (not started)
 Date:   August 19, 2026
 Branch: (Phase 1 on the current work branch, then merge before Phase 2)
+
+IMPLEMENTATION LOG — Phase 1 (2026-08-19):
+  - Branch phase-1-document-parser-improvement created from main (commit 2750f53).
+  - document-parser-core.js (NEW, ESM): line grouping (Y-tolerance + X-sort),
+    X-gap spacing + hasEOL, findLabeledValue (same-line + next-line), all field
+    extractors (label-anchored budget with "(ABC)", date/duration normalizers),
+    parseToInputDate/parseDurationToDays/toTitleCase.
+  - document-parser.js (REWRITTEN): uses core, _autofilledFields tracking (only
+    autofill-written fields are cleared — user input preserved), preview-then-
+    apply flow (preview modal, no instant fill), OCR fallback via lazy
+    tesseract.js (first 10 textless pages), 50-page cap + early-exit once all
+    8 fields found, success banner REMOVED (per-field indicators remain).
+  - pdfjs-loader.js (NEW): PDF.js jsdelivr → unpkg CDN fallback, window.pdfjsLib.
+  - form-navigation.js: runDocumentAutofill() no longer awaited (background run).
+  - app.blade.php + stafflayouts.blade.php: inline PDF.js module replaced by
+    pdfjs-loader.js.
+  - _create_project_modal.blade.php: "Preview Extracted Data" button on Page 1,
+    @include autofill-preview-modal, core loaded via type="module".
+  - components/autofill-preview-modal.blade.php (NEW) + CSS.
+  - tests/js/document-parser-core.test.mjs (NEW, node --test, 17 tests) +
+    package.json "test:js" script.
+  - Verification: npm run test:js 17/17 pass; composer test 713 passed /
+    2753 assertions (2026-08-19).
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt

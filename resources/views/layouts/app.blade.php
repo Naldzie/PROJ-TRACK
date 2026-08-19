@@ -361,15 +361,8 @@
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
-<!-- PDF.js — used by document-parser.js for autofill -->
-    {{-- import() requires type="module" — without it the browser throws a silent syntax error --}}
-    <script type="module">
-        import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs';
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
-        // Expose as a global so non-module scripts (document-parser.js) can access it
-        window.pdfjsLib = pdfjsLib;
-    </script>
+<!-- PDF.js — used by document-parser.js for autofill (multi-CDN fallback loader) -->
+<script src="{{ asset('js/vendor/pdfjs-loader.js') . '?v=' . filemtime(public_path('js/vendor/pdfjs-loader.js')) }}"></script>
     
 {{-- FORM VALIDATOR JS FUNCTION(CREATE/EDIT FORM VALIDATION) --}}
 <script src="{{ asset('js/admin/projects/field-validation.js') }}"></script>

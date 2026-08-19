@@ -661,3 +661,13 @@
     - Add class "show": $('#existingDocumentsSection').addClass('show');
     - Remove class "show" to hide
     */
+/* ========================================== */
+/*     AUTO-FILL PREVIEW MODAL                */
+/* ========================================== */
+#autofillPreviewModal .autofill-preview-label {
+    font-weight: 600;
+    color: #374151;
+}
+#autofillPreviewModal tbody tr:last-child td {
+    border-bottom: none;
+}

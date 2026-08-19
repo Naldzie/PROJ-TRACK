@@ -103,6 +103,12 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Autofill preview (runs extraction without navigating) -->
+                        <div class="d-flex justify-content-end mt-2">
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="runDocumentAutofill()">
+                                <i class="bi bi-magic"></i> Preview Extracted Data
+                            </button>
+                        </div>
                     </div>
 
                     <!-- === PAGE 2: PROJECT INFORMATION === -->
@@ -345,6 +351,9 @@
 </div>
 <!-- === END CREATE/EDIT PROJECT MODAL === -->
 
+<!-- === AUTO-FILL PREVIEW MODAL (shown by document-parser.js) === -->
+@include('components.autofill-preview-modal')
+
 
 <!-- Initialize global variables for the modal JS -->
 <script>
@@ -383,7 +392,15 @@ window.openManageCategoriesFromCreateProject = function () {
 </script>
 
 <!-- Load external modal JS -->
-<script src="{{ asset('js/_create_project_modal.js') }}"></script>
-<script src="{{ asset('js/document-upload-handler.js') }}"></script>
-<script src="{{ asset('js/document-manager.js') }}"></script>
-<script src="{{ asset('js/admin/projects/document-parser.js') }}"></script>
+{{-- Cache-bust: public/js files are served without versioning, so append the
+     file mtime to force browsers to pick up edits in development. --}}
+@php
+    $jsv = fn($p) => asset($p) . '?v=' . filemtime(public_path($p));
+@endphp
+<script src="{{ $jsv('js/_create_project_modal.js') }}"></script>
+<script src="{{ $jsv('js/document-upload-handler.js') }}"></script>
+<script src="{{ $jsv('js/document-manager.js') }}"></script>
+{{-- Parser core is an ESM module (export statements) — must load with type="module".
+     It attaches itself to window.documentParserCore for the classic script below. --}}
+<script type="module" src="{{ $jsv('js/admin/projects/document-parser-core.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/document-parser.js') }}"></script>

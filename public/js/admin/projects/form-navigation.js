@@ -117,9 +117,11 @@ function nextPage() {
             // ── DOCUMENT AUTOFILL HOOK ──────────────────────────
             // Only triggers on the Page 1 → Page 2 transition and
             // only in create mode (edit mode has its own data).
+            // Runs in the background — navigation already happened,
+            // the scanning banner shows while extraction runs.
             if (leavingPage === 1 && window._projectModalMode !== 'edit') {
                 if (typeof runDocumentAutofill === 'function') {
-                    await runDocumentAutofill();
+                    runDocumentAutofill();
                 }
             }
             // ────────────────────────────────────────────────────

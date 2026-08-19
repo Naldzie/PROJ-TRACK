@@ -195,6 +195,12 @@ function resetModalToCreateMode() {
     if (typeof hideAutofillBanner === 'function') {
         hideAutofillBanner();
     }
+
+    // Cancel any in-flight autofill run (e.g. a scan started then the modal was
+    // closed) so it can't re-show the banner or pop the preview modal later.
+    if (typeof cancelDocumentAutofill === 'function') {
+        cancelDocumentAutofill();
+    }
     
     // Update code field help text for create mode
     document.getElementById('projectCodeHelp').textContent = 'Format: PRJ-YYYY-NNNNN (auto-filled on open)';
@@ -534,6 +540,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Reset to create mode when modal is hidden
         addProjectModal.addEventListener('hidden.bs.modal', function() {
+            // Cancel any in-flight autofill run immediately (don't wait for the
+            // setTimeout below) so the scan can't continue while the modal is closed.
+            if (typeof cancelDocumentAutofill === 'function') {
+                cancelDocumentAutofill();
+            }
             // Small delay to allow any redirects to happen first
             setTimeout(() => {
                 // Reset form page to 1
