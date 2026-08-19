@@ -225,6 +225,7 @@
 .risk-high   { background:var(--red-100);   color:var(--red-800);   border:1px solid var(--red-200); }
 .risk-medium { background:var(--amber-100); color:var(--amber-800); border:1px solid var(--amber-200); }
 .risk-low    { background:var(--green-100); color:var(--green-700); border:1px solid #a7f3d0; }
+.risk-neutral{ background:var(--gray-100);  color:var(--gray-600);  border:1px solid var(--gray-200); }
 .risk-dot    { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
 
 .deadline-cell        { font-size:12px; font-weight:500; color:var(--gray-700); }

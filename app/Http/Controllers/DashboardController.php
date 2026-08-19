@@ -8,6 +8,7 @@ use App\Models\ProjectProgressHistory;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ActivityLog;
 use App\Models\Setting;
+use App\Services\ProjectHealthService;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -32,6 +33,11 @@ class DashboardController extends Controller
         $currentMonthProgress     = $progressData['currentMonthProgress'];
         $currentMonthBaseline     = $progressData['currentMonthBaseline'];
         $latestKnownProgress      = $progressData['latestKnownProgress'];
+        $baselineSchedules        = $progressData['baselineSchedules'];
+        $openHighIssueCounts      = $progressData['openHighIssueCounts'];
+        $agingIssueCounts         = $progressData['agingIssueCounts'];
+        $openHighRiskCounts       = $progressData['openHighRiskCounts'];
+        $pendingExtensionCounts   = $progressData['pendingExtensionCounts'];
 
         // ── STATS CARD COUNTS ─────────────────────────────────────────────
         // Separate COUNT queries covering ALL projects — not the table's 10 rows.
@@ -40,14 +46,11 @@ class DashboardController extends Controller
                             ->where('is_archived', false)->count();
         $completedCount = Project::where('status', 'Completed')->count();
 
-        // ── AT RISK COUNT (DB-level, ALL ongoing) ─────────────────────────
-        // Mirrors isAtRisk() deadline condition: planned_end_date within 14 days.
-        // Slight overcount possible (includes >=90% progress near deadline) —
-        // acceptable, safer to overcount than undercount.
-        $atRiskCount = Project::where('status', 'Ongoing')
-            ->where('is_archived', false)
-            ->whereBetween('planned_end_date', [now(), now()->addDays(14)])
-            ->count();
+        // ── AT RISK COUNT (gap-based, ALL ongoing) ────────────────────────
+        // Same ProjectHealthService definition as the table badges: expected
+        // progress (baseline) minus actual progress, gap ≥ 10 → AT RISK.
+        // Overdue projects are NOT counted here (they have their own bucket).
+        $atRiskCount = count($this->atRiskProjectIds());
 
         // ── OVERDUE COUNT (DB-level, ALL ongoing) ─────────────────────────
         // planned_end_date is always the current effective deadline (updated by
@@ -108,6 +111,11 @@ class DashboardController extends Controller
             'currentMonthProgress',
             'currentMonthBaseline',
             'latestKnownProgress',
+            'baselineSchedules',
+            'openHighIssueCounts',
+            'agingIssueCounts',
+            'openHighRiskCounts',
+            'pendingExtensionCounts',
             'totalProjects',
             'ongoingCount',
             'completedCount',
@@ -143,12 +151,15 @@ class DashboardController extends Controller
                 ->get();
 
         } elseif ($type === 'atrisk') {
-            // All ongoing projects with deadline within the next 14 days.
+            // All ongoing projects classified AT RISK by ProjectHealthService
+            // (gap-based — same definition as the table badges and the index
+            // metric card). Overdue projects are excluded (their own bucket).
             $projects = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
-                ->whereBetween('planned_end_date', [now(), now()->addDays(14)])
+                ->whereIn('id', $this->atRiskProjectIds())
                 ->with(['contractor', 'category'])
-                ->orderBy('planned_end_date', 'asc') // soonest deadline first
+                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->orderBy('planned_end_date', 'asc')
                 ->get();
 
         } elseif ($type === 'pending') {
@@ -210,6 +221,60 @@ class DashboardController extends Controller
     }
 
     // ── PRIVATE HELPER ────────────────────────────────────────────────────
+    // Gap-based AT RISK classification across ALL non-archived ongoing
+    // projects. Shared by index() (metric card count) and filter() (the
+    // "At Risk" AJAX list + deep link) so the number always matches the list.
+    // Uses ProjectHealthService — the exact same definition as the table
+    // badges. Overdue projects are never counted here.
+    private function atRiskProjectIds(): array
+    {
+        $projects = Project::with(['progressHistory', 'baselineSchedules'])
+            ->where('status', 'Ongoing')
+            ->where('is_archived', false)
+            ->get();
+
+        $projects->loadCount([
+            'issues as open_high_issue_count'  => fn ($q) => $q->unresolved()->whereIn('severity', ['High', 'Critical']),
+            'issues as aging_issue_count'      => fn ($q) => $q->aging(30),
+            'risks as open_high_risk_count'    => fn ($q) => $q->open()->highRisk(),
+            'extensions as pending_extension_count' => fn ($q) => $q->pending(),
+        ]);
+
+        $service   = app(ProjectHealthService::class);
+        $ids       = [];
+        $month     = now()->format('Y-m');
+
+        foreach ($projects as $project) {
+            $history  = $project->progressHistory; // asc by inspection_date
+            $latest   = $history->last();
+            $monthHistory = $history->filter(fn ($r) => $r->month_label === $month)->last();
+
+            $baselines = $project->baselineSchedules; // asc by planned_date
+            $monthBaseline = $baselines->first(fn ($b) =>
+                ($b->month_label && $b->month_label === $month)
+                || ($b->planned_date && $b->planned_date->format('Y-m') === $month)
+            );
+
+            $health = $service->determine($project, [
+                'latest_progress'        => $latest,
+                'current_month_history'  => $monthHistory,
+                'current_month_baseline' => $monthBaseline,
+                'baseline_schedules'     => $baselines,
+                'open_high_issues'       => (int) ($project->open_high_issue_count ?? 0) > 0,
+                'aging_issue_count'      => (int) ($project->aging_issue_count ?? 0),
+                'open_high_risks'        => (int) ($project->open_high_risk_count ?? 0) > 0,
+                'pending_extension'      => (int) ($project->pending_extension_count ?? 0) > 0,
+            ]);
+
+            if ($health['level'] === 'at_risk') {
+                $ids[] = $project->id;
+            }
+        }
+
+        return $ids;
+    }
+
+    // ── PRIVATE HELPER ────────────────────────────────────────────────────
     // Fetches the 3 progress data collections needed by both index() and filter().
     // Keeps logic in one place — no duplication between the two methods.
     private function getProgressData($projects): array
@@ -239,7 +304,54 @@ class DashboardController extends Controller
             ->get()
             ->keyBy('project_id');
 
-        return compact('currentMonthProgress', 'latestKnownProgress', 'currentMonthBaseline');
+        // ALL baseline schedules (asc by planned_date), keyed by project_id.
+        // Feeds ProjectHealthService::expectedProgress() branch 4 (last baseline
+        // ≤ today) so the health badge is computed WITHOUT any per-row query.
+        $baselineSchedules = ProjectBaselineSchedule::whereIn('project_id', $ids)
+            ->orderBy('planned_date', 'asc')
+            ->get()
+            ->groupBy('project_id');
+
+        // ── ESCALATION SIGNALS (grouped counts — one query each, no N+1) ─────
+        // Feed ProjectHealthService's record-based escalation overlay: open
+        // High/Critical issues, unresolved issues aging > 30 days, open
+        // high-priority risks (score ≥ 7), and pending extension requests.
+        $openHighIssueCounts = \App\Models\Issue::whereIn('project_id', $ids)
+            ->unresolved()
+            ->whereIn('severity', ['High', 'Critical'])
+            ->selectRaw('project_id, count(*) as cnt')
+            ->groupBy('project_id')
+            ->pluck('cnt', 'project_id');
+
+        $agingIssueCounts = \App\Models\Issue::whereIn('project_id', $ids)
+            ->aging(30)
+            ->selectRaw('project_id, count(*) as cnt')
+            ->groupBy('project_id')
+            ->pluck('cnt', 'project_id');
+
+        $openHighRiskCounts = \App\Models\Risk::whereIn('project_id', $ids)
+            ->open()
+            ->highRisk()
+            ->selectRaw('project_id, count(*) as cnt')
+            ->groupBy('project_id')
+            ->pluck('cnt', 'project_id');
+
+        $pendingExtensionCounts = \App\Models\ProjectExtension::whereIn('project_id', $ids)
+            ->pending()
+            ->selectRaw('project_id, count(*) as cnt')
+            ->groupBy('project_id')
+            ->pluck('cnt', 'project_id');
+
+        return compact(
+            'currentMonthProgress',
+            'latestKnownProgress',
+            'currentMonthBaseline',
+            'baselineSchedules',
+            'openHighIssueCounts',
+            'agingIssueCounts',
+            'openHighRiskCounts',
+            'pendingExtensionCounts'
+        );
     }
 
     // ── PRIVATE HELPER ────────────────────────────────────────────────────

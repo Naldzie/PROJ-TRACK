@@ -72,22 +72,36 @@
 
 @if(in_array(auth()->user()->role, ['admin', 'staff']))
     <div class="dashboard-metrics">
-        <div class="metric-card success">
-            <div class="metric-label"><i class="bi bi-bar-chart"></i> Ongoing Projects</div>
-            <div class="metric-value">{{ $metrics['active_projects'] ?? 0 }}</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-label"><i class="bi bi-check-circle"></i> Completed</div>
-            <div class="metric-value">{{ $metrics['completed_projects'] ?? 0 }}</div>
-        </div>
-        <div class="metric-card warning">
-            <div class="metric-label"><i class="bi bi-exclamation-triangle"></i> At Risk</div>
-            <div class="metric-value">{{ $projects->filter(fn($p) => $p->isAtRisk())->count() }}</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-label"><i class="bi bi-cash-stack"></i> Total Budget</div>
-            <div class="metric-value">{{ \App\Helpers\FormatHelper::formatCurrencyShort($metrics['total_budget'] ?? 0) }}</div>
-        </div>
+        <a href="{{ route($indexRoute) }}" class="metric-card-link">
+            <div class="metric-card">
+                <div class="metric-label"><i class="bi bi-folder2"></i> Total Projects</div>
+                <div class="metric-value">{{ $metrics['total_projects'] ?? 0 }}</div>
+            </div>
+        </a>
+        <a href="{{ route($indexRoute, ['status' => 'Ongoing']) }}" class="metric-card-link">
+            <div class="metric-card success">
+                <div class="metric-label"><i class="bi bi-arrow-repeat"></i> Ongoing</div>
+                <div class="metric-value">{{ $metrics['ongoing_count'] ?? 0 }}</div>
+            </div>
+        </a>
+        <a href="{{ route($indexRoute, ['filter' => 'overdue']) }}" class="metric-card-link">
+            <div class="metric-card danger">
+                <div class="metric-label"><i class="bi bi-alarm-fill"></i> Overdue</div>
+                <div class="metric-value">{{ $metrics['overdue_count'] ?? 0 }}</div>
+            </div>
+        </a>
+        <a href="{{ route($indexRoute, ['filter' => 'atrisk']) }}" class="metric-card-link">
+            <div class="metric-card warning">
+                <div class="metric-label"><i class="bi bi-exclamation-diamond-fill"></i> At Risk</div>
+                <div class="metric-value">{{ $metrics['at_risk_projects'] ?? 0 }}</div>
+            </div>
+        </a>
+        <a href="{{ route($indexRoute, ['status' => 'Completed']) }}" class="metric-card-link">
+            <div class="metric-card success">
+                <div class="metric-label"><i class="bi bi-check-circle-fill"></i> Completed</div>
+                <div class="metric-value">{{ $metrics['completed_projects'] ?? 0 }}</div>
+            </div>
+        </a>
     </div>
 @endif
 
@@ -123,18 +137,22 @@
     @if($projects->count() > 0)
         @foreach($projects as $project)
             @php
-                $daysRemaining = $project->getDaysRemaining();
-                $isOverdue = $project->isOverdue();
-                $isAtRisk = $project->isAtRisk();
-                $progress = $project->getProgressPercentage();
-                $progressHealth = $progress >= 80 ? 'healthy' : ($progress >= 50 ? 'warning' : 'danger');
+                // Health comes from ProjectHealthService (computed in the
+                // controller via $healthMap) — same definition as the dashboard.
+                $health = $healthMap[$project->id] ?? [];
+                $daysRemaining = $health['days_remaining'] ?? $project->getDaysRemaining();
+                $isOverdue = $health['is_overdue'] ?? $project->isOverdue();
+                $isAtRisk = $health['is_at_risk'] ?? $project->isAtRisk();
+                $progress = $health['progress'] ?? $project->getProgressPercentage();
+                $healthLevel = $health['level'] ?? null;
+                $progressHealth = $isOverdue ? 'danger' : ($isAtRisk ? 'warning' : ($progress >= 80 ? 'healthy' : 'normal'));
                 $riskStatus = $isOverdue ? 'danger' : ($isAtRisk ? 'warning' : 'success');
                 $isCompleted = $project->status === 'Completed';
                 $completionDelay = $project->getCompletionDelay();
                 $completionStatusLabel = $project->getCompletionStatusLabel();
                 $completionStatusColor = $project->getCompletionStatusColor();
             @endphp
-            <div class="project-card {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : 'on-track') }}" 
+            <div class="project-card {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : (in_array($healthLevel, ['no_data', 'neutral']) ? 'no-data' : 'on-track')) }}" 
                  data-status="{{ strtolower($project->status) }}"
                  data-id="{{ $project->id }}">
                 
@@ -169,11 +187,16 @@
                                     @endif
                                 </span>
                             @else
-                                <span class="health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : 'on-track') }}">
+                                <span class="health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : ($healthLevel === 'no_data' || $healthLevel === 'neutral' ? 'no-data' : 'on-track')) }}"
+                                      @if(!empty($health['tooltip'])) title="{{ $health['tooltip'] }}" @endif>
                                     @if($isOverdue)
                                         <i class="bi bi-exclamation-triangle-fill"></i> Overdue
                                     @elseif($isAtRisk)
                                         <i class="bi bi-exclamation-diamond-fill"></i> At Risk
+                                    @elseif($healthLevel === 'no_data')
+                                        <i class="bi bi-hourglass-split"></i> No Data
+                                    @elseif($healthLevel === 'neutral')
+                                        <i class="bi bi-pause-circle-fill"></i> {{ $health['label'] ?? 'Planned' }}
                                     @else
                                         <i class="bi bi-check-circle-fill"></i> On Track
                                     @endif
@@ -441,12 +464,14 @@
         @if($projects->count() > 0)
             @foreach($projects as $project)
                 @php
-                    $daysRemaining = $project->getDaysRemaining();
-                    $isOverdue = $project->isOverdue();
-                    $isAtRisk = $project->isAtRisk();
-                    $progress = $project->getProgressPercentage();
-                    $progressHealth = $progress >= 80 ? 'healthy' : ($progress >= 50 ? 'warning' : 'danger');
+                    $health = $healthMap[$project->id] ?? [];
+                    $daysRemaining = $health['days_remaining'] ?? $project->getDaysRemaining();
+                    $isOverdue = $health['is_overdue'] ?? $project->isOverdue();
+                    $isAtRisk = $health['is_at_risk'] ?? $project->isAtRisk();
+                    $progress = $health['progress'] ?? $project->getProgressPercentage();
+                    $progressHealth = $isOverdue ? 'danger' : ($isAtRisk ? 'warning' : ($progress >= 80 ? 'healthy' : 'normal'));
                     $riskStatus = $isOverdue ? 'danger' : ($isAtRisk ? 'warning' : 'success');
+                    $healthLevel = $health['level'] ?? null;
                     $isCompleted = $project->status === 'Completed';
                 @endphp
                 <tr data-status="{{ strtolower($project->status) }}" data-id="{{ $project->id }}">
@@ -477,11 +502,16 @@
                         </span>
                     </td>
                     <td>
-                        <span class="table-health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : 'on-track') }}">
+                        <span class="table-health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : ($healthLevel === 'no_data' || $healthLevel === 'neutral' ? 'no-data' : 'on-track')) }}"
+                              @if(!empty($health['tooltip'])) title="{{ $health['tooltip'] }}" @endif>
                             @if($isOverdue)
                                 <i class="bi bi-exclamation-triangle-fill"></i> Overdue
                             @elseif($isAtRisk)
                                 <i class="bi bi-exclamation-diamond-fill"></i> At Risk
+                            @elseif($healthLevel === 'no_data')
+                                <i class="bi bi-hourglass-split"></i> No Data
+                            @elseif($healthLevel === 'neutral')
+                                <i class="bi bi-pause-circle-fill"></i> {{ $health['label'] ?? 'Planned' }}
                             @else
                                 <i class="bi bi-check-circle-fill"></i> On Track
                             @endif

@@ -4,7 +4,7 @@ CSPC PMU System — cross-cutting fix for the "ON TRACK vs AT RISK"
 inconsistency between the list views (admin/staff/contractor dashboards,
 projects index) and the AI Prediction panel on the project detail page.
 
-Status: 📌 PLAN CREATED (implementation NOT STARTED)
+Status: ✅ IMPLEMENTED — all 8 steps complete, full suite green (712 passed / 2750 assertions, 2026-08-19)
 Date:   August 19, 2026
 Branch: `feature/project-health-unification` (from main)
 Plan file: textfiles/project_health_unification_plan.md (this file)
@@ -222,7 +222,7 @@ panel and to the industry standard.
 Ordered; each step is tested before the next (Rule 8), and the user is
 informed at each phase boundary (Rule 10).
 
-Step 1 — ProjectHealthService + classifyGap extraction      ⬜ NOT STARTED
+Step 1 — ProjectHealthService + classifyGap extraction      ✅ COMPLETE
   • Create app/Services/ProjectHealthService.php with classifyGap(),
     expectedProgress(), and determine() per §4.1/§4.2.
   • Delete AIPredictionPresenter::classifyRiskFromGap() (lines 1150-1165);
@@ -232,7 +232,7 @@ Step 1 — ProjectHealthService + classifyGap extraction      ⬜ NOT STARTED
     (classifyGap boundaries: -5/5/10/15; determine() outcomes via context,
     no DB).
 
-Step 2 — Dashboard rows (admin/staff)                       ⬜ NOT STARTED
+Step 2 — Dashboard rows (admin/staff)                       ✅ COMPLETE
   • dashboard/partials/dashboard-table-rows.blade.php: build context from
     the already-fetched maps and call determine(); replace fillClass,
     riskLabel/riskClass/dotColor, and the data-overdue/data-atrisk
@@ -242,7 +242,7 @@ Step 2 — Dashboard rows (admin/staff)                       ⬜ NOT STARTED
     "OVERDUE"; no-records renders "NO DATA"; on-plan + open critical issue
     escalates to "AT RISK".
 
-Step 3 — Projects index (grid + table + metric card)       ⬜ NOT STARTED
+Step 3 — Projects index (grid + table + metric card)       ✅ COMPLETE
   • ProjectController::index(): eager-load progressHistory + baselineSchedules
     (+ withCount issues/risks/extensions for Step 5 flags); compute a per-
     page health map; compute an ALL-ongoing health map for the metric card
@@ -255,7 +255,7 @@ Step 3 — Projects index (grid + table + metric card)       ⬜ NOT STARTED
     behind-schedule project shows "AT RISK" in both grid and table views;
     metric card reflects the full count.
 
-Step 4 — Dashboard counts + filters                          ⬜ NOT STARTED
+Step 4 — Dashboard counts + filters                          ✅ COMPLETE
   • DashboardController::index(): atRiskCount = PHP-classified gap-based
     count over all ongoing (excludes overdue — separate card/pill exists).
   • DashboardController::filter(): 'atrisk' branch returns gap-based at-risk
@@ -264,24 +264,24 @@ Step 4 — Dashboard counts + filters                          ⬜ NOT STARTED
     (compute the id-set from the all-ongoing map, then paginate those ids).
   • 'overdue' filter/pill/count stay deadline-based (well-defined, unchanged).
 
-Step 5 — Escalation flags (§4.3)                            ⬜ NOT STARTED
+Step 5 — Escalation flags (§4.3)                            ✅ COMPLETE
   • ProjectHealthService::determine() accepts escalation context; add the
     worst-signal-wins overlay in Step 2-4 callers (withCount/relation data).
   • Tooltip text explaining the reason behind AT RISK.
   • Unit tests for the escalation overlay + feature tests asserting the
     on-plan-but-escalated case.
 
-Step 6 — Contractor dashboard                                ⬜ NOT STARTED
+Step 6 — Contractor dashboard                                ✅ COMPLETE
   • contractor/dashboard.blade.php: same swap using its pre-fetched maps
     (health currently mirrors isOverdue/isAtRisk inline, lines 568-587).
   • Keep ContractorDashboardTest green.
 
-Step 7 — CSS                                                 ⬜ NOT STARTED
+Step 7 — CSS                                                 ✅ COMPLETE
   • public/css/dashboard/dashboard.css + public/css/admin/projects/
     projects.css: grey .no-data / .neutral badge state; AT RISK severity
     coloring (reuse .risk-medium/.risk-high; add .risk-critical if needed).
 
-Step 8 — Full suite + verification                           ⬜ NOT STARTED
+Step 8 — Full suite + verification                           ✅ COMPLETE
   • php artisan test (full suite) must stay green (Project 7 fixture and all
     AI expectations unchanged).
   • Manual browser pass on the simulated-date dev widget: a project shown
@@ -305,6 +305,35 @@ Step 8 — Full suite + verification                           ⬜ NOT STARTED
     cost/budget health is out of scope (matches the client exclusion in
     summary_of_next_work.txt §5).
   • Created branch feature/project-health-unification + this plan file.
+
+2026-08-19 (implementation — Steps 1-8, full suite green 712/2750)
+  • Step 1: app/Services/ProjectHealthService.php (classifyGap,
+    expectedProgress, determine + escalationReason). AIPredictionPresenter's
+    private calculateExpectedProgress/classifyRiskFromGap deleted; both
+    presenters delegate to the service. 19 unit tests.
+  • Step 2: dashboard-table-rows partial consumes determine() with
+    pre-fetched context (kills the per-row N+1). DashboardHealthTest (8).
+  • Step 3: ProjectController::index() eager-loads relations + grouped
+    escalation counts, computes a page health map and an all-ongoing map for
+    the metric card + ?filter=atrisk id-set. projects/index.blade.php grid +
+    table consume the map. ProjectsHealthIndexTest (6).
+  • Step 4: DashboardController atRiskCount + filter('atrisk') gap-based.
+    Dashboard stat card sub-text updated ("behind baseline plan").
+  • Step 5: escalation context wired into all list callers (open high/
+    critical issues, aging unresolved issues, open high risks, pending
+    extensions); unit + feature tests cover all four flags.
+  • Step 6: contractor dashboard uses ProjectHealthService via a precomputed
+    health map (controller) — inline deadline heuristic removed.
+  • Step 7: grey .no-data/.risk-neutral states + .normal progress fill +
+    .project-card.no-data added to dashboard.css / projects.css.
+  • Fixed a latent flake: ProjectFactory's random planned_end_date sometimes
+    landed in the past and flipped badges to OVERDUE; ContractorDashboardTest
+    assignProject() now pins the schedule (0/10 fails after fix).
+  • Step 8: php artisan test → 712 passed / 2750 assertions (was 712 baseline,
+    no regressions). AIPredictionPresenterTest unchanged (delegation is
+    behavior-identical). Manual browser pass on the dev widget still to do.
+  • NOT committed yet — plan file status updated; branch ready for review
+    (Rule 12) before any commit/merge.
 
 ===============================================================================
   7. OPEN QUESTIONS / STILL TO RESOLVE

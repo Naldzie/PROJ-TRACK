@@ -36,6 +36,7 @@ use App\Models\ProjectMilestone;
 use App\Models\Attachment;
 use App\Services\AI\AIPredictionPresenter;
 use App\Services\AI\AIExplanationService;
+use App\Services\ProjectHealthService;
 use App\Services\AIReportSendingService;
 use App\Services\ProjectDetailService;
 use Illuminate\Http\Request;
@@ -83,8 +84,9 @@ class ProjectController extends Controller
             } elseif ($filter === 'overdue') {
                 $query->where('status', 'Ongoing')->where('planned_end_date', '<', now());
             } elseif ($filter === 'atrisk') {
-                $query->where('status', 'Ongoing')
-                    ->whereBetween('planned_end_date', [now(), now()->addDays(14)]);
+                // Gap-based at-risk (same definition as the AI module / dashboard):
+                // ongoing projects classified AT RISK by ProjectHealthService.
+                $query->where('status', 'Ongoing')->whereIn('id', $this->ongoingAtRiskIds());
             } elseif ($filter === 'pending') {
                 $projectsWithRecord = ProjectProgressHistory
                     ::where('month_label', 'like', now()->format('Y-m') . '%')
@@ -114,22 +116,36 @@ class ProjectController extends Controller
         //Prepare data array
         $data = compact('projects');
         
-        //Add extra data for admin/staff only
+        // Add extra data for admin/staff only
         if (in_array($user->role, ['admin', 'staff'])) {
             $data['contractors'] = Contractor::with('user')->get();
              // Get all admins and staff for project manager dropdown
             $data['admins'] = Admin::with('user')->get();
             $data['staff'] = Staff::with('user')->get();
-             // Dashboard metrics
+             // Metric cards — same stat set as the admin dashboard (Total /
+             // Ongoing / Overdue / At Risk / Completed). Budget card removed
+             // (client excluded cost health; the dashboard has no budget card).
             $data['metrics'] = [
-                'active_projects' => Project::where('is_archived', false)
-                    ->whereIn('status', ['Ongoing', 'Planned'])
+                'total_projects' => Project::where('is_archived', false)->count(),
+                'ongoing_count' => Project::where('is_archived', false)
+                    ->where('status', 'Ongoing')
                     ->count(),
+                // Overdue stays deadline-based (matches the dashboard Overdue card).
+                'overdue_count' => Project::where('is_archived', false)
+                    ->where('status', 'Ongoing')
+                    ->where('planned_end_date', '<', now())
+                    ->count(),
+                // Gap-based AT RISK count across ALL non-archived ongoing projects
+                // (not just the paginated page — the old value was a placeholder).
+                'at_risk_projects' => $this->ongoingAtRiskCount(),
                 'completed_projects' => Project::where('status', 'Completed')->count(),
-                'at_risk_projects' => 0, // Will calculate per project
-                'total_budget' => Project::where('is_archived', false)->sum('approved_budget'),
             ];
         }
+        
+        // Health map for the page rows (badges + progress fill) — computed from
+        // eagerly-loaded relations + grouped escalation counts, so the blade does
+        // ZERO per-row queries. Shared by grid and table views, all roles.
+        $data['healthMap'] = $this->buildHealthMap($projects);
         
         //return view('admin.projects', $data);
         
@@ -137,6 +153,140 @@ class ProjectController extends Controller
         $data['documentTypes'] = DocumentType::active()->orderBy('name')->get();
         
         return view('projects.index', $data);
+    }
+
+    /**
+     * === HEALTH CONTEXT HELPER ===
+     *
+     * Builds the ProjectHealthService context for a project whose
+     * progressHistory, baselineSchedules and escalation counts are already
+     * loaded. Used by buildHealthMap() and ongoingHealthMap() so the health
+     * badge never triggers a per-row DB query.
+     */
+    private function healthContext(Project $project): array
+    {
+        $history      = $project->progressHistory; // asc by inspection_date
+        $currentMonth = \App\Support\DateHelper::now()->format('Y-m');
+
+        $latest = $history->last();
+        $currentMonthHistory = $history
+            ->filter(fn ($r) => $r->month_label === $currentMonth)
+            ->last();
+
+        $baselines = $project->baselineSchedules; // asc by planned_date
+        $currentMonthBaseline = $baselines->first(function ($b) use ($currentMonth) {
+            return ($b->month_label && $b->month_label === $currentMonth)
+                || ($b->planned_date && $b->planned_date->format('Y-m') === $currentMonth);
+        });
+
+        return [
+            'latest_progress'        => $latest,
+            'current_month_history'  => $currentMonthHistory,
+            'current_month_baseline' => $currentMonthBaseline,
+            'baseline_schedules'     => $baselines,
+            'open_high_issues'       => (int) ($project->open_high_issue_count ?? 0) > 0,
+            'aging_issue_count'      => (int) ($project->aging_issue_count ?? 0),
+            'open_high_risks'        => (int) ($project->open_high_risk_count ?? 0) > 0,
+            'pending_extension'      => (int) ($project->pending_extension_count ?? 0) > 0,
+        ];
+    }
+
+    /**
+     * === ESCALATION COUNTS ===
+     *
+     * withCount aliases for the record-based escalation flags consumed by
+     * ProjectHealthService (open High/Critical issues, aging unresolved issues,
+     * open high-priority risks, pending extensions).
+     */
+    private function escalationCounts(): array
+    {
+        return [
+            'issues as open_high_issue_count' => fn ($q) => $q->unresolved()->whereIn('severity', ['High', 'Critical']),
+            'issues as aging_issue_count'     => fn ($q) => $q->aging(30),
+            'risks as open_high_risk_count'   => fn ($q) => $q->open()->highRisk(),
+            'extensions as pending_extension_count' => fn ($q) => $q->pending(),
+        ];
+    }
+
+    /**
+     * === BUILD HEALTH MAP (page rows) ===
+     *
+     * Returns a map of project_id → ProjectHealthService result (plus the
+     * latest actual 'progress' %) for the paginated collection. Loads the
+     * needed relations + escalation counts in bulk — no per-row queries.
+     */
+    private function buildHealthMap($projects): array
+    {
+        $projects->load(['progressHistory', 'baselineSchedules']);
+        $projects->loadCount($this->escalationCounts());
+
+        $service = app(ProjectHealthService::class);
+        $map = [];
+
+        foreach ($projects as $project) {
+            $health = $service->determine($project, $this->healthContext($project));
+
+            $latest = $project->progressHistory->last();
+            $health['progress'] = $latest
+                ? (float) ($latest->actual_progress_percent ?? $latest->progress_percentage ?? 0)
+                : 0;
+
+            $map[$project->id] = $health;
+        }
+
+        return $map;
+    }
+
+    /**
+     * === ONGOING HEALTH MAP (cached per request) ===
+     *
+     * Gap-based health for ALL non-archived ongoing projects. Drives the
+     * metric card count and the ?filter=atrisk id-set. Cached so the metric
+     * and the filter share one computation.
+     */
+    private ?array $ongoingHealthMapCache = null;
+
+    private function ongoingHealthMap(): array
+    {
+        if ($this->ongoingHealthMapCache !== null) {
+            return $this->ongoingHealthMapCache;
+        }
+
+        $projects = Project::with(['progressHistory', 'baselineSchedules'])
+            ->where('status', 'Ongoing')
+            ->where('is_archived', false)
+            ->get();
+
+        $projects->loadCount($this->escalationCounts());
+
+        $service = app(ProjectHealthService::class);
+        $map = [];
+
+        foreach ($projects as $project) {
+            $map[$project->id] = $service->determine($project, $this->healthContext($project));
+        }
+
+        return $this->ongoingHealthMapCache = $map;
+    }
+
+    /**
+     * Ids of ALL ongoing projects classified AT RISK (gap-based, excludes
+     * overdue — overdue has its own filter bucket).
+     */
+    private function ongoingAtRiskIds(): array
+    {
+        return array_keys(array_filter(
+            $this->ongoingHealthMap(),
+            fn ($health) => $health['level'] === 'at_risk'
+        ));
+    }
+
+    /**
+     * Count of ALL ongoing projects classified AT RISK (gap-based).
+     */
+    private function ongoingAtRiskCount(): int
+    {
+        return count($this->ongoingAtRiskIds());
     }
 
     /**

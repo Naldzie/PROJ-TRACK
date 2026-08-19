@@ -43,29 +43,32 @@
                             $hasPlanned      = $monthBaseline !== null;
                             $isCurrentMonth  = $monthRecord  !== null; // true only if inspected THIS month
 
-                            // ── PROGRESS BAR FILL COLOR ───────────────────────────────────
-                            // Driven by overall project health, not just this month.
-                            $fillClass = $project->isOverdue() ? 'fill-danger'
-                                    : ($project->isAtRisk()  ? 'fill-warning'
-                                    : 'fill-healthy');
+                            // ── HEALTH (single source of truth) ─────────────────────────
+                            // ProjectHealthService::determine() classifies from the pre-fetched
+                            // maps below — ZERO DB queries per row (was 3+ via isOverdue()/
+                            // isAtRisk()/getRiskColor(), each hitting the DB through
+                            // getProgressPercentage()). Same definition as the AI panel.
+                            $health = app(\App\Services\ProjectHealthService::class)->determine($project, [
+                                'latest_progress'        => $latestRecord,
+                                'current_month_history'  => $monthRecord,
+                                'current_month_baseline' => $monthBaseline,
+                                'baseline_schedules'     => $baselineSchedules[$project->id] ?? collect(),
+                                'open_high_issues'       => (int) ($openHighIssueCounts[$project->id] ?? 0) > 0,
+                                'aging_issue_count'      => (int) ($agingIssueCounts[$project->id] ?? 0),
+                                'open_high_risks'        => (int) ($openHighRiskCounts[$project->id] ?? 0) > 0,
+                                'pending_extension'      => (int) ($pendingExtensionCounts[$project->id] ?? 0) > 0,
+                            ]);
+
+                            $fillClass     = $health['fill_class'];
+                            $riskLabel     = $health['label'];
+                            $riskClass     = $health['risk_class'];
+                            $dotColor      = $health['dot_color'];
+                            $healthTitle   = $health['tooltip'];
+                            $isOverdue     = $health['is_overdue'];
 
                             // ── DEADLINE DISPLAY ──────────────────────────────────────────
-                            $days          = $project->getDaysRemaining(); // null if no planned_end_date
-                            $deadlineClass = $project->isOverdue()             ? 'overdue'
-                                        : ($days !== null && $days < 30     ? 'urgent'
-                                        : 'ok');
-
-                            // ── HEALTH BADGE ──────────────────────────────────────────────
-                            $riskColor = $project->getRiskColor(); // 'danger' | 'warning' | 'success'
-                            $riskLabel = $project->isOverdue()     ? 'OVERDUE'
-                                    : ($project->isAtRisk()     ? 'AT RISK'
-                                    : 'ON TRACK');
-                            $riskClass = $project->isOverdue()     ? 'risk-high'
-                                    : ($project->isAtRisk()     ? 'risk-medium'
-                                    : 'risk-low');
-                            $dotColor  = $riskColor === 'danger'   ? 'var(--red-600)'
-                                    : ($riskColor === 'warning'  ? 'var(--amber-600)'
-                                    : 'var(--green-600)');
+                            $days          = $health['days_remaining']; // null if no planned_end_date
+                            $deadlineClass = $health['deadline_class'];
 
                             // ── ROW LINK ──────────────────────────────────────────────────
                             // Points to the correct detail route based on the logged-in user's role.
@@ -75,8 +78,8 @@
                         @endphp
 
                         {{-- Data attributes drive the JS filter — computed from same @php block above --}}
-                        <tr data-overdue="{{ $project->isOverdue() ? '1' : '0' }}"
-                            data-atrisk="{{ (!$project->isOverdue() && $project->isAtRisk()) ? '1' : '0' }}"
+                        <tr data-overdue="{{ $isOverdue ? '1' : '0' }}"
+                            data-atrisk="{{ $health['is_at_risk'] ? '1' : '0' }}"
                             data-pending="{{ !$hasActual ? '1' : '0' }}">
                             {{-- Project identity: code, title, category --}}
                             <td>
@@ -164,7 +167,7 @@
                                 <div class="deadline-cell {{ $deadlineClass }}">
                                     {{ $project->planned_end_date?->format('M d, Y') ?? '—' }}
                                 </div>
-                                @if($project->isOverdue())
+                                @if($isOverdue)
                                     <div class="days-label overdue-text">
                                         {{ abs($days) }}d overdue
                                     </div>
@@ -175,9 +178,9 @@
                                 @endif
                             </td>
 
-                            {{-- Health badge: ON TRACK / AT RISK / OVERDUE --}}
+                            {{-- Health badge: ON TRACK / AT RISK / OVERDUE / NO DATA --}}
                             <td>
-                                <span class="risk-indicator {{ $riskClass }}">
+                                <span class="risk-indicator {{ $riskClass }}" title="{{ $healthTitle }}">
                                     <span class="risk-dot" style="background:{{ $dotColor }}"></span>
                                     {{ $riskLabel }}
                                 </span>
