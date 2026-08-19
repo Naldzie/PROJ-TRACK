@@ -10,9 +10,12 @@ document uploads:
   planned S-curve (Excel or PDF) into the existing "Set Up Baseline" modal.
 
 Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improvement`
-        (pending review/merge, Rule 12) · ⬜ Phase 2 — PLANNED (not started)
+        (pending review/merge, Rule 12)
+        ✅ Phase 2 — PLANNED with real client samples analyzed + decisions locked
+        (implementation pending on its own branch, Rule 12)
 Date:   August 19, 2026
-Branch: (Phase 1 on the current work branch, then merge before Phase 2)
+Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 will branch
+        FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`.
 
 IMPLEMENTATION LOG — Phase 1 (2026-08-19):
   - Branch phase-1-document-parser-improvement created from main (commit 2750f53).
@@ -36,6 +39,33 @@ IMPLEMENTATION LOG — Phase 1 (2026-08-19):
     package.json "test:js" script.
   - Verification: npm run test:js 17/17 pass; composer test 713 passed /
     2753 assertions (2026-08-19).
+
+IMPLEMENTATION LOG — Phase 1 follow-ups (2026-08-19, commit 5ba98a4):
+  - BUG: lines sorted ASCENDING by y, but PDF.js y is bottom-up (origin bottom-
+    left), so pages came out upside-down (description swallowed the lines ABOVE
+    it — "Location:" + "Project title:"). groupItemsIntoLines now sorts
+    DESCENDING (top of page = largest y).
+  - BUG: extractDescription was a raw-text regex capturing until blank line/EOF.
+    Rewritten line-based; stops at the next field label (budget/contractor/
+    dates/workers), so the description no longer grabs the rest of the doc.
+  - Preview modal rows are now editable inputs; Apply reads corrected values
+    (dates normalized to YYYY-MM-DD).
+  - _autofillApplied flag: the Page1→2 Next hook skips re-scanning once a
+    preview was applied; reset on modal open.
+  - Cache-busting: filemtime ?v= query on touched script tags.
+  - tests/js expanded to 19 tests (regression: exact test PDF, bottom-up coords,
+    scrambled item order). composer test 713 passed / 2751 assertions.
+
+IMPLEMENTATION LOG — Phase 2 planning (2026-08-19):
+  - Client samples uploaded to sampledocs/ (STEP 0 dependency satisfied):
+    Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi.xlsx = canonical Excel S-curve
+    (single sheet "S-CURVE"); CONSCHEDSAVINGS.pdf = chart-only (no text layer);
+    Contract/Quantity-Sheet PDFs = Phase 1 autofill test material (not S-curves).
+  - User decisions: branch Phase 2 FROM the Phase 1 branch; month planned_date
+    derived by offsetting the project's planned start date; SCOPE = EXCEL import
+    first (PDF text-layout importer deferred; chart-only/PDF gets a clear
+    "upload the .xlsx" message).
+  - Full sample analysis + refined Phase 2 implementation below (§4).
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt
@@ -203,66 +233,126 @@ Data target (existing, no schema change — Option A)
   - Per-month activities: { activity_name, description } on the month object.
   - project_activities is NOT extended (weights used only at import time).
 
-STEP 0 — Sample files (HARD DEPENDENCY)
-  Get 1-2 real S-curve files from the client/contractor (Excel + PDF) into the
-  repo as fixtures BEFORE writing heuristics. Layouts expected (mix possible):
-    A) Cumulative table: period column (Date/Month) + "Planned % / Cumulative %
-       / S-Curve / Target %" column; possibly a ₱ value column (convert value ÷
-       total × 100).
-    B) Activity-weighted schedule: rows of activity name | start date | end date
-       (or duration) | weight %. Cumulative % per month = running sum of weights
-       of activities scheduled up to that month.
-  Files are also submitted by the contractor to the client's office, so real
-  samples will reflect contractor conventions.
+STEP 0 — Sample files (HARD DEPENDENCY) ✅ DONE (2026-08-19)
+  Real client files uploaded to `sampledocs/`. Findings:
+    Excel — `Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi.xlsx`
+      Single sheet "S-CURVE". LAYOUT B (activity-weighted).
+      - Rows 1-8: metadata (contract no "2026 -INFRA- 01", project name, agency,
+        location; R6 "Contract Name:" etc.)
+      - R9: title "CONSTRUCTION SCHEDULE AND S-CURVE"
+      - R10-11: TWO-ROW header — A=ITEM, C=DESCRIPTION, D=AMOUNT, E=3% DISCOUNT,
+        F=CONTRACT AMOUNT, G=% WEIGHT, H=NO. OF DAYS, then "Month 1..12" at
+        columns I, K, M, O, Q, S, U, W, Y, AA, AC, AE (R11 has day markers).
+      - KEY: each month = 2 ADJACENT columns (I:J=Month 1, K:L=Month 2, ...,
+        AE:AF=Month 12); the value is duplicated in both cells of a pair.
+        Verified: activity A.1.1(3) F=179,256 ÷ 24 cells = 7,469 exactly →
+        each activity spreads its CONTRACT AMOUNT evenly across its months.
+        Per-month amount = SUM of the pair (I+J, K+L, ...).
+      - Activity rows: B=item code, C=description, G=% WEIGHT (e.g. 0.55 =
+        0.55%; TOTAL row R88 G=100 confirms activities sum to 100), H=days,
+        monthly peso amounts in the pair columns.
+      - Section-header rows (PART A-H, DIVISION I-II) have NO weight → skip.
+      - R88 TOTAL row (C="TOTAL", F=contract total 32,588,531.43, G=100) +
+        R89-92 S-curve summary block ("% ACCOMPLISHED", "CUMULATIVE %
+        ACCOMPLISHED" fractions, "COST", "CUMULATIVE COST") at Months
+        1/4/7/10 → cumulative = 6.5% / 20.5% / 48.2% / 97% (cross-check target).
+      - Quirks: stray backtick at AH (R27), whitespace-only cells, weights as
+        plain % numbers, NO real dates (only "Month 1..12").
+    PDF — `CONSCHEDSAVINGS.pdf`
+      2 pages, "Microsoft: Print To PDF", NO extractable text layer (embedded
+      fonts only) → CHART-ONLY. Confirms the PDF path needs the "chart-only →
+      upload the .xlsx / manual fallback" message. Other PDFs (Contract, Quantity
+      Sheets, plans in Completed/Ongoing folders) are Phase 1 autofill test
+      material, NOT S-curve sources.
 
-STEP 1 — Flexible parser core (client JS, extends Phase 1 core)
-  - Detect layout A or B from the header row / first rows.
-  - Layout A → period + planned-% columns (auto-detect ₱ column → convert).
-  - Layout B → activity rows; assign each activity to its month(s); derive each
-    month's cumulative % from summed weights.
-  - Emit months sorted by date; monotonic clamp; force last month to 100%;
-    description = activity names for the month (layout B).
-  - Mismatch warnings: row count vs project duration, missing 100%, non-
-    monotonic %, unknown columns → surfaced in the preview, never silent.
+  SCOPE DECISION (2026-08-19): implement EXCEL import first (server + UI +
+  tests). Client-side PDF text-layout importer DEFERRED (sample PDF has no text
+  layer anyway); PDF S-curve files get a clear "Excel import is supported —
+  please upload the .xlsx version" notice. No schema change (Option A).
+
+  MONTH DATE DECISION (2026-08-19): the workbook has no dates. planned_date for
+  month N = project's planned start date + (N-1) months, clamped to the project
+  end date. If no start date is set, import with "Month N" labels + null dates
+  for the user to fill in the modal. Dates are assigned CLIENT-SIDE (server
+  returns month_index 1..12 — keeps the service pure/testable).
+
+  BRANCH DECISION (2026-08-19): branch Phase 2 from the Phase 1 branch
+  (`phase-2-scurve-baseline-import`) so the PDF path can reuse the Phase 1 core.
+
+STEP 1 — Flexible parser core
+  CONFIRMED for the client file: Layout B (activity-weighted, "CONSTRUCTION
+  SCHEDULE AND S-CURVE"). Shared heuristics (used by PHP for Excel and later by
+  JS for PDF text):
+  - Find the header block: row containing ITEM + % WEIGHT + Month 1..12 labels.
+    Month columns are PAIRED (I:J=Month 1 ... AE:AF=Month 12); sum each pair.
+  - Skip: section-header rows (PART A-H / DIVISION I-II — no weight), TOTAL row
+    (C="TOTAL", G=100 — use its F as the contract total), the summary block
+    ("% ACCOMPLISHED" / "CUMULATIVE % ACCOMPLISHED" / "COST"), and garbage
+    cells (stray backtick, whitespace-only).
+  - Per activity: code, description, weight %, and each month's peso sum.
+  - Month % of total = Σ activity month-peso ÷ contract total × 100.
+  - Emit months 1..12: cumulative %, monotonic clamp, force last month to 100%;
+    description = that month's activity names (Layout B).
+  - Cross-check: weight sum ≈ 100 (else warning); compare against the file's
+    CUMULATIVE % block when present (quarterly 6.5/20.5/48.2/97 in the sample).
+  - Mismatch warnings surfaced in the preview, never silent.
 
 STEP 2 — Excel import path (SERVER)
-  - New endpoint POST parse-s-curve (role-protected admin/staff) accepting an
-    Excel file (multipart) → JSON { months: [...] }.
-  - Parse with phpoffice/phpspreadsheet (already required): iterate rows,
-    detect header, run the same layout-A/B heuristics.
-  - Use from BOTH entry points: create-wizard AJAX-uploads the in-memory File;
-    project-detail POSTs the stored file's bytes.
-  - PHP = fully unit-testable (feature tests build fixture workbooks with
-    PhpSpreadsheet in-test).
+  - NEW app/Services/SCurveImportService.php — parse(string $path): array via
+    PhpSpreadsheet, implementing the heuristics above. Pure (no dates — emits
+    month_index 1..12).
+  - NEW app/Http/Controllers/SCurveImportController.php — parseExcel(Request)
+    accepting either multipart `file` (create wizard) OR `document_id` (project
+    detail → reads the stored Schedule-type Document bytes from storage).
+    Returns { success, months, meta } or 422 { errors, warnings }.
+  - Routes (role-protected): POST /admin/s-curve/parse + /staff/s-curve/parse.
+  - PHP fully unit-testable: fixture workbooks built with PhpSpreadsheet in-test.
 
-STEP 3 — PDF import path (CLIENT)
-  - Reuse Phase 1's extractTextFromPDF() + OCR; feed text into the same parser.
-  - Chart-only PDFs (no data table) → clear "cannot import chart-only PDF"
-    message + manual fallback.
+STEP 3 — PDF import path (CLIENT) — DEFERRED (per scope decision)
+  - Reuse Phase 1's extractTextFromPDF() + OCR; feed text into the same parser
+    heuristics (§1) re-implemented client-side.
+  - Chart-only PDFs (no text layer — e.g. the client's CONSCHEDSAVINGS.pdf) →
+    clear "cannot import chart-only PDF — please upload the .xlsx" message.
+  - THIS SCOPE: show that message only; no PDF text parsing yet.
 
 STEP 4 — UI wiring (BOTH entry points)
-  - Create wizard Page 4 "Set Up Baseline": if an S-curve PDF/Excel was picked
-    on Page 1, show "Import from S-curve document".
-  - Project detail Baseline tab: same button when a "Schedule"-type doc exists.
-  - Imported months (+activities) pre-load the existing Setup Baseline modal
-    (return-data mode) for review/edit before "Done — Lock Baseline".
+  - NEW public/js/admin/projects/scurve-import-ui.js:
+    - normalizeMonths(months, startDate, endDate) — month_label 'Y-m' and
+      planned_date = start + (N-1) months, clamped to end; no start date →
+      'Month N' label + null date.
+    - importFromFile(file) / importFromDocumentId(id) → endpoint → normalize.
+  - Create wizard Page 4 baseline section (return-data mode): "Import from
+    S-curve document" button shown when a pending doc has typeName='Schedule'
+    AND ext .xlsx/.xls (re-evaluated on doc add/remove — guarded hook in
+    document-manager.js). Click → import → window._baselineSetupMonths
+    (confirm if non-empty) → updateBaselineSetupButton() → open modal.
+    PDF S-curve pending → "upload the .xlsx" notice.
+  - Project detail Baseline tab (save-immediately mode): same button when the
+    project has a stored Schedule .xlsx/.xls → document_id → preload months
+    into the modal for review.
+  - baseline-schedule-setup-modal.js: preload existingMonths in mode 1 too
+    (currently only return-data preloads) so project-detail can preload.
   - Non-blocking: if import fails, modal still opens empty with a notice.
 
 STEP 5 — Tests
-  - PHP feature tests for parse-s-curve: fixture xlsx (cumulative table AND
-    activity-weighted) generated via PhpSpreadsheet; assert month rows, clamp,
-    100% enforcement, error JSON on garbage input.
-  - node --test fixtures for the PDF/table parser paths (Phase 1 core).
-  - Full composer test stays green; manual QA against the real client files.
+  - PHP feature tests (tests/Feature/SCurveImportTest.php): fixture workbook
+    built via PhpSpreadsheet replicating the client layout (two-row header,
+    section rows, weighted activities with month pairs, TOTAL row, quarterly
+    cumulative block); assert month cumulative %, activity descriptions, 100%
+    enforcement, warnings; garbage workbook → 422; document_id path.
+  - node --test (tests/js/scurve-import.test.mjs): normalizeMonths date
+    offsets, clamping, no-start-date fallback.
+  - Full composer test stays green; manual QA against the real client Excel
+    (compare cumulative 6.5/20.5/48.2/97).
 
 ===============================================================================
   5. ORDER & PRIORITY
 ===============================================================================
 
-  PHASE 1 FIRST (this session's focus): improves the existing autofill, no
-  dependency on Phase 2. Merge Phase 1 to main before starting Phase 2.
-  PHASE 2 AFTER: builds on Phase 1's parser core + OCR; its own branch from
-  main after Phase 1 is merged.
+  PHASE 1 FIRST: improves the existing autofill, no dependency on Phase 2.
+  PHASE 2 AFTER: builds on Phase 1's parser core + OCR. USER DECISION: branch
+  Phase 2 from the Phase 1 branch (`phase-2-scurve-baseline-import`), not main.
+  Both merge to main only with explicit approval (Rule 12).
 
   Per dev rules: each phase on its own branch; run lint/tests; present to the
   user for review before merging (Rule 12).
