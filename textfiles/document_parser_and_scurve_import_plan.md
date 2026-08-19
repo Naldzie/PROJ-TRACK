@@ -13,9 +13,12 @@ Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improveme
         (pending review/merge, Rule 12)
         ✅ Phase 2 — IMPLEMENTED on branch `phase-2-scurve-baseline-import`
         (pending review/merge, Rule 12)
+        🔜 Phase 2 hardening + Phase 3 (PDF S-curve) — PLANNED
+        (see "Phase 2 follow-ups + Phase 3 planning" log below)
 Date:   August 19, 2026
 Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 branched
-        FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`.
+        FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`;
+        Phase 3 (PDF S-curve) to branch FROM phase-2 as `phase-3-pdf-scurve-import`.
 
 IMPLEMENTATION LOG — Phase 1 (2026-08-19):
   - Branch phase-1-document-parser-improvement created from main (commit 2750f53).
@@ -125,6 +128,69 @@ IMPLEMENTATION LOG — Phase 2 build (2026-08-19):
     origin/phase-2-scurve-baseline-import. Awaiting user review before merge to
     main (Rule 12). Scratch files (inspect_142.php, kernel_export_test.php,
     session-ses_*.md, sampledocs/) intentionally left uncommitted.
+
+IMPLEMENTATION LOG — Phase 2 follow-ups + Phase 3 planning (2026-08-19):
+  - af69c97 "Add calendar date pickers to autofill preview dates; log Phase 2
+    commit" (pushed): the autofill preview modal's Start/End Date rows now
+    render as native type="date" inputs (calendar picker, same as the create
+    modal); extracted values are normalized to YYYY-MM-DD at render.
+  - SAMPLE CORRECTION — PDF text layer: CONSCHEDSAVINGS.pdf was previously
+    recorded as "chart-only, no text layer". WRONG. Verified via raw stream
+    inspection: it is a 2-page A3 (1190×842) table with a REAL text layer
+    (embedded CID fonts, ToUnicode CMap, /Tj text operators, cell-rectangle
+    graphics). The table's extra columns overflow onto page 2 (matches the
+    user's observation). PDF S-curve import IS feasible client-side via the
+    already-loaded pdf.js.
+  - New samples added by the user: sampledocs/Completed Project/ (CHS -
+    Savings.pdf 2.4MB 12pp, Contract - CHS Savings.pdf, Quantity Sheet - CHS
+    Savings.pdf) and sampledocs/Ongoing Project/ (Quantity Sheet
+    (Continuation).pdf, Three-Storey Acad Bldg, Buhi Campus.pdf 4.4MB). Used
+    for manual QA of Excel hardening and the PDF importer.
+  - LIBRARY ASSESSMENT (user asked whether plugins/libs could improve the
+    Excel + PDF plans): NO new dependencies. The stack already has the best
+    tools: PhpSpreadsheet ^4.0 (Excel) and client-side pdf.js + tesseract.js
+    (PDF). Excel hardening = use PhpSpreadsheet features we skip today
+    (formula calculation via getCalculatedValue(), getMergeCells() header
+    spans, setReadDataOnly / setReadEmptyCells perf options). Server-side PHP
+    PDF parsers (smalot/pdfparser) lack layout/position data; poppler
+    (pdftotext) needs a system binary not installed on this Windows stack;
+    cloud document-AI (AWS Textract / Azure Document Intelligence / Google
+    Document AI) = paid keys + sending client documents to a third party. All
+    rejected for now.
+  - FINALIZED PLAN (user decisions): Commit 1 = Excel hardening + surfacing
+    import warnings in the setup modal (on phase-2-scurve-baseline-import);
+    Commit 2 = PDF S-curve import as a SEPARATE commit on a NEW branch
+    phase-3-pdf-scurve-import (branched from phase-2), best-effort parse with
+    "please upload the .xlsx" fallback for unrecognized layouts.
+
+  COMMIT 1 — Excel hardening + warnings (SCurveImportService + UI):
+    - Widen header vocabulary: item /(item|no\.|code)/i; weight
+      /(weight|share|gravity|distribution|percent)/i (made OPTIONAL — no
+      longer a hard header requirement); description /(description|particulars|
+      work\s*items|activity|scope)/i.
+    - More month labels: "Month N", "M N", month names/abbrevs (JAN..DEC);
+      bare numbers 1..12 only as a fallback when they form an ascending run
+      of >=2.
+    - Two-row split header: when no single row matches, merge two adjacent
+      header rows per-column; data starts after the merged block.
+    - Lenient TOTAL row: /^(grand\s*)?total/i, excluded from activity count.
+    - Formulas: if a month/weight/contract cell is a "=" string, re-read with
+      PhpSpreadsheet's calculation engine (getCalculatedValue()); use
+      getMergeCells() for header spans; setReadEmptyCells(false) for perf.
+    - Surface meta.warnings in the setup modal (amber note + warning toast).
+    - New fixture tests: month-names header, split header, no-weight column,
+      GRAND TOTAL row, formula cells, bare-number months.
+
+  COMMIT 2 — PDF S-curve import (branch phase-3-pdf-scurve-import):
+    - New client-side scurve-pdf-parser-core.js (ESM, unit-testable) + parser
+      using the existing pdf.js loader: extract text items (str, x, y) per
+      page; detect the S-curve header tokens; infer column x-boundaries;
+      assemble rows by y-band; merge the 2-page column overflow; feed the
+      existing normalizeSCurveMonths + setup-modal flow.
+    - Best-effort fallback: unrecognized layout → "please upload the .xlsx"
+      notice; tesseract.js OCR only as last resort for scanned S-curves.
+    - Unit tests (synthetic item lists) + manual QA on CONSCHEDSAVINGS.pdf and
+      the new Ongoing/Completed Project PDFs.
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt
