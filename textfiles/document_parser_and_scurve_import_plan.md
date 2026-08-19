@@ -192,6 +192,29 @@ IMPLEMENTATION LOG — Phase 2 follow-ups + Phase 3 planning (2026-08-19):
     - Unit tests (synthetic item lists) + manual QA on CONSCHEDSAVINGS.pdf and
       the new Ongoing/Completed Project PDFs.
 
+  IMPLEMENTED 2026-08-19 (COMMIT 1, pending user review → commit+push):
+    - SCurveImportService rewritten header detection: best-match scoring across
+      all rows AND adjacent-row pairs (split header); item/weight now optional
+      (description + >=2 month columns are the only hard requirements);
+      anchored item regex prevents the "NO. OF DAYS" false-positive codeCol;
+      per-month span logic with uniformly-paired fallback so the last paired
+      month keeps its second column (tail-fill convention preserved — real
+      sample still parses to 1.12/6.74/21.09/49.73/100, contract 32,588,531.43,
+      59 activities, warnings []); merged-cell spans from getMergeCells() when
+      present; bare-number months only as an ascending run of >=2; month names
+      mapped via exact full/3-letter match (no prefix-prefix false positives);
+      formula cells resolved via getCalculatedValue() safety net when toArray
+      leaves "=" strings; lenient /^(grand\s*)?total/i TOTAL row.
+    - Note: PhpSpreadsheet 4.0 moved Coordinate to the Cell\ namespace
+      (PhpOffice\PhpSpreadsheet\Cell\Coordinate) — fixture tests didn't hit it
+      (no merges), the real sample did.
+    - scurve-import-ui.js: warnings surface as an amber note under the import
+      button + a warning toast; cleared at the start of each import attempt.
+    - Tests: SCurveImportTest 6 → 12 (month-names, split header, no-weight,
+      GRAND TOTAL, bare-number months, formula cells). npm run test:js 28/28;
+      composer test 725 passed / 2804 assertions; view:cache compiles. Real
+      sample curve unchanged.
+
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt
 - textfiles/summary_of_next_work.txt

@@ -70,6 +70,32 @@ function scurveToast(message, type) {
     alert(message);
 }
 
+/* ─── Import warnings ──────────────────────────────────────────────────────── */
+
+function scurveWarningsEl(container) {
+    var el = document.getElementById('scurveImportWarnings');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'scurveImportWarnings';
+        el.style.cssText = 'margin-top:6px;padding:6px 10px;border:1px solid #fcd34d;' +
+            'background:#fef3c7;color:#92400e;font-size:12px;border-radius:6px;' +
+            'display:none;white-space:pre-line;';
+        (container || document.body).appendChild(el);
+    }
+    return el;
+}
+
+function scurveShowWarnings(warnings, container) {
+    var el = scurveWarningsEl(container);
+    if (!warnings || warnings.length === 0) {
+        el.style.display = 'none';
+        return;
+    }
+    el.textContent = 'Import notes:\n' + warnings.join('\n');
+    el.style.display = 'block';
+    scurveToast('Import succeeded with notes: ' + warnings[0], 'warning');
+}
+
 /* ─── Create-project wizard wiring ────────────────────────────────────────── */
 
 function refreshSCurveImportButton() {
@@ -136,6 +162,7 @@ function initCreateWizardSCurveImport() {
 
         try {
             var data = await parseSCurveFile(file, parseUrl);
+            scurveShowWarnings(null, btn.parentElement);
             var months = core.normalizeSCurveMonths(data.months, startDate, endDate);
 
             if (months.length === 0) {
@@ -156,6 +183,7 @@ function initCreateWizardSCurveImport() {
                 'Imported ' + months.length + ' baseline months from the S-curve file.',
                 'success'
             );
+            scurveShowWarnings(data.meta ? data.meta.warnings : null, btn.parentElement);
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
         } catch (err) {
@@ -187,6 +215,7 @@ function initProjectDetailSCurveImport() {
 
         try {
             var data = await parseSCurveDocument(documentId, parseUrl);
+            scurveShowWarnings(null, btn.parentElement);
             var months = core.normalizeSCurveMonths(data.months, startDate, endDate);
 
             if (months.length === 0) {
@@ -202,6 +231,7 @@ function initProjectDetailSCurveImport() {
                 'Imported ' + months.length + ' baseline months. Review, then Done to lock.',
                 'success'
             );
+            scurveShowWarnings(data.meta ? data.meta.warnings : null, btn.parentElement);
         } catch (err) {
             scurveToast(err.message, 'danger');
         } finally {

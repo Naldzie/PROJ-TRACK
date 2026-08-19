@@ -191,6 +191,192 @@ class SCurveImportTest extends TestCase
         unlink($path);
     }
 
+    public function test_accepts_month_names_header(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'JANUARY');
+        $sheet->setCellValue('C10', 'FEBRUARY');
+        $sheet->setCellValue('D10', 'MARCH');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Excavation Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('A12', 'GRAND TOTAL');
+        $sheet->setCellValue('E12', 60000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(60000.0, $result['meta']['contractAmount']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame([], $result['meta']['warnings']);
+
+        unlink($path);
+    }
+
+    public function test_accepts_two_row_split_header(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        // Row 1: "MONTH" alone; row 2: the month numbers. Merged → "MONTH 1..3".
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'MONTH');
+        $sheet->setCellValue('C10', 'MONTH');
+        $sheet->setCellValue('D10', 'MONTH');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('B11', '1');
+        $sheet->setCellValue('C11', '2');
+        $sheet->setCellValue('D11', '3');
+        $sheet->setCellValue('A12', 'Excavation Works');
+        $sheet->setCellValue('B12', 10000);
+        $sheet->setCellValue('D12', 5000);
+        $sheet->setCellValue('A13', 'GRAND TOTAL');
+        $sheet->setCellValue('E13', 15000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(1, $result['months'][0]['month_index']);
+        $this->assertSame(3, $result['months'][2]['month_index']);
+        $this->assertSame(15000.0, $result['meta']['contractAmount']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+
+        unlink($path);
+    }
+
+    public function test_weight_column_is_optional(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('B10', 'DESCRIPTION');
+        $sheet->setCellValue('C10', 'CONTRACT');
+        $sheet->setCellValue('D10', 'Month 1');
+        $sheet->setCellValue('E10', 'Month 2');
+        $sheet->setCellValue('F10', 'Month 3');
+        $sheet->setCellValue('A11', '1');
+        $sheet->setCellValue('B11', 'Signage');
+        $sheet->setCellValue('C11', 50000);
+        $sheet->setCellValue('D11', 25000);
+        $sheet->setCellValue('E11', 25000);
+        $sheet->setCellValue('B12', 'TOTAL');
+        $sheet->setCellValue('C12', 50000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(0.0, $result['meta']['weightSum']);
+        $this->assertSame(50000.0, $result['meta']['contractAmount']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+        $this->assertSame([], $result['meta']['warnings']);
+
+        unlink($path);
+    }
+
+    public function test_accepts_grand_total_row(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('D10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 20000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('A12', 'GRAND TOTAL');
+        $sheet->setCellValue('D12', 50000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(50000.0, $result['meta']['contractAmount']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+        $this->assertSame(40.0, $result['months'][0]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
+    public function test_accepts_bare_number_month_columns(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', '1');
+        $sheet->setCellValue('C10', '2');
+        $sheet->setCellValue('D10', '3');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Excavation Works');
+        $sheet->setCellValue('B11', 10000);
+        $sheet->setCellValue('C11', 10000);
+        $sheet->setCellValue('A12', 'GRAND TOTAL');
+        $sheet->setCellValue('E12', 20000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(1, $result['months'][0]['month_index']);
+        $this->assertSame(3, $result['months'][2]['month_index']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
+    public function test_formula_month_cells_are_calculated(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('B10', 'DESCRIPTION');
+        $sheet->setCellValue('C10', 'CONTRACT');
+        $sheet->setCellValue('D10', 'Month 1');
+        $sheet->setCellValue('E10', 'Month 2');
+        $sheet->setCellValue('F10', 'Month 3');
+        $sheet->setCellValue('A11', '1');
+        $sheet->setCellValue('B11', 'Works');
+        $sheet->setCellValue('C11', 50000);
+        $sheet->setCellValue('D11', 30000);
+        $sheet->setCellValue('H11', 20000);
+        $sheet->setCellValue('E11', '=H11');
+        $sheet->setCellValue('B12', 'GRAND TOTAL');
+        $sheet->setCellValue('C12', 50000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(60.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
     public function test_parse_endpoint_rejects_missing_source(): void
     {
         $this->actingAs($this->createAdminUser());
