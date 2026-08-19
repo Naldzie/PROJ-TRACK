@@ -26,8 +26,8 @@
             <!-- Body -->
             <div class="modal-body" style="padding: 20px 22px;">
                 <p class="text-muted mb-3" style="font-size: 13px;">
-                    The following values were read from your uploaded documents. Review them,
-                    then click <strong>Apply to Form</strong> — you can still edit anything after.
+                    The following values were read from your uploaded documents. You can correct any of them
+                    right here, then click <strong>Apply to Form</strong> — you can still edit anything after.
                 </p>
 
                 <!-- OCR note: only shown when scanned pages were read with OCR -->

@@ -119,7 +119,9 @@ function nextPage() {
             // only in create mode (edit mode has its own data).
             // Runs in the background — navigation already happened,
             // the scanning banner shows while extraction runs.
-            if (leavingPage === 1 && window._projectModalMode !== 'edit') {
+            // Skipped if the user already applied a preview this session.
+            if (leavingPage === 1 && window._projectModalMode !== 'edit' &&
+                window._autofillApplied !== true) {
                 if (typeof runDocumentAutofill === 'function') {
                     runDocumentAutofill();
                 }

@@ -154,6 +154,10 @@ function resetModalToCreateMode() {
     window._projectModalMode = 'create';
     window._editingProjectId = null;
     
+    // Reset the autofill "already applied" flag so a new modal session
+    // starts fresh (Next will re-run the document scan again).
+    window._autofillApplied = false;
+    
     // Restore the full 5-step wizard (Documents first)
     applyWizardMode();
     

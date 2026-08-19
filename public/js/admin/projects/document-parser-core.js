@@ -118,7 +118,11 @@ const DocumentParserCore = (function () {
         }
 
         // Sort lines top-to-bottom, items left-to-right.
-        lines.sort((a, b) => a.y - b.y);
+        // NOTE: PDF.js coordinates are bottom-up (origin at the bottom-left, y
+        // grows upward), so the TOP of the page has the LARGEST y. Descending
+        // sort therefore yields true reading order. Ascending would emit the
+        // page upside-down (bottom line first).
+        lines.sort((a, b) => b.y - a.y);
         for (const line of lines) {
             line.items.sort((a, b) => {
                 const ax = a.transform ? a.transform[4] : (a.x || 0);
@@ -240,13 +244,31 @@ const DocumentParserCore = (function () {
         ], lenRange(3, 200));
     }
 
-    // Description / Scope of Work — prose, so a flowing regex over the raw text.
+    // Labels that start another field — used to terminate a prose description
+    // block so it doesn't swallow the rest of the document (single newlines
+    // between lines must NOT be treated as a description boundary).
+    const DESCRIPTION_NEXT_FIELD = /^\s*(?:approved\s*budget\s*(?:for\s*the\s*contract)?|contract\s*amount|project\s*cost|total\s*cost|budget|contract\s*price|contractor|awarded\s*to|proponent|company\s*name|firm\s*name|start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|date\s*started|end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion|duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|calendar\s*days?|working\s*days?|location|project\s*site|site\s*address|project\s*location|barangay|address|project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|workers?|manpower|headcount)\s*[:\-]/i;
+
+    // Description / Scope of Work — prose, so collect the label line plus every
+    // following line until another known field label starts (or the text ends).
     function extractDescription(text) {
-        const match = String(text || '').match(
-            /(?:scope\s*of\s*work|project\s*description|description|objectives?|work\s*description)\s*[:\-]\s*([\s\S]{20,800}?)(?:\n{2,}|$)/i
-        );
-        if (match) {
-            const value = cleanValue(match[1]);
+        const lines = buildLinesFromText(text);
+
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(
+                /(?:scope\s*of\s*work|project\s*description|description|objectives?|work\s*description)\s*[:\-]\s*(.*)/i
+            );
+            if (!m) continue;
+
+            const parts = [];
+            if (m[1] && m[1].trim()) parts.push(m[1].trim());
+
+            for (let j = i + 1; j < lines.length; j++) {
+                if (DESCRIPTION_NEXT_FIELD.test(lines[j])) break;
+                parts.push(lines[j]);
+            }
+
+            const value = cleanValue(parts.join(' '));
             if (value && value.length >= 20) {
                 return value.substring(0, 500);
             }

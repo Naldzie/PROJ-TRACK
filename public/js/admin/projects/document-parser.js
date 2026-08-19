@@ -264,7 +264,11 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         tbody.innerHTML = fields.map(f => `
             <tr>
                 <td class="autofill-preview-label">${escapeHtml(f.label)}</td>
-                <td class="${f.value ? '' : 'text-muted fst-italic'}">${f.value ? escapeHtml(f.value) : 'Not found'}</td>
+                <td>
+                    <input type="text" class="form-control form-control-sm" id="previewInput-${f.id}"
+                        value="${f.value ? escapeHtml(f.value) : ''}"
+                        placeholder="${f.value ? '' : 'Not found — fill manually'}" />
+                </td>
             </tr>
         `).join('');
     }
@@ -273,7 +277,6 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     if (ocrNote) ocrNote.style.display = ocrUsed ? '' : 'none';
 
     hideAutofillBanner();
-    window._autofillPreviewParsed = parsed;
 
     const instance = bootstrap.Modal.getOrCreateInstance(modalEl);
     instance.show();
@@ -288,13 +291,34 @@ function closeAutofillPreview() {
 }
 
 // Apply the previewed data to the form (Apply button in the preview modal).
+// Reads the (possibly edited) input values from the preview rows.
 function applyAutofillFromPreview() {
-    const parsed = window._autofillPreviewParsed;
-    if (!parsed) return;
+    const read = (id) => {
+        const el = document.getElementById('previewInput-' + id);
+        return el ? el.value.trim() : '';
+    };
+
+    // Date inputs require YYYY-MM-DD — normalise any human-typed date.
+    const core = getCore();
+    const normDate = (v) => (core.parseToInputDate(v) || v);
+
+    const parsed = {
+        title: read('projectTitle'),
+        location: read('projectLocation'),
+        description: read('projectDescription'),
+        budget: read('projectBudget'),
+        startDate: normDate(read('plannedStartDate')),
+        endDate: normDate(read('plannedEndDate')),
+        duration: read('plannedDuration'),
+        contractor: read('contractorSelect'),
+    };
 
     // Clear only previously autofilled values, then fill freshly
     clearAutofillFields();
     autofillFormFields(parsed);
+
+    // Remember the user applied this run so the Next hook doesn't re-prompt.
+    window._autofillApplied = true;
 
     closeAutofillPreview();
 }
