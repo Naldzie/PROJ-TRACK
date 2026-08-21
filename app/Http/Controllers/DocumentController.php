@@ -238,10 +238,19 @@ class DocumentController extends Controller
             abort(404, 'Document file not found.');
         }
 
+        $ext = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
+        $mimeMap = [
+            'jpg'  => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png'  => 'image/png',
+            'gif'  => 'image/gif',  'webp' => 'image/webp', 'bmp'  => 'image/bmp',
+            'svg'  => 'image/svg+xml', 'pdf' => 'application/pdf',
+        ];
+        $contentType = $mimeMap[$ext] ?? Storage::disk('public')->mimeType($document->file_path);
+
         return Storage::disk('public')->response(
             $document->file_path,
             $document->document_name,
-            ['Content-Disposition' => 'inline; filename="' . addslashes($document->document_name) . '"']
+            ['Content-Type' => $contentType,
+             'Content-Disposition' => 'inline; filename="' . addslashes($document->document_name) . '"']
         );
     }
 
