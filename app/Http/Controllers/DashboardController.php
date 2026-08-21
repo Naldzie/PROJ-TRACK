@@ -45,6 +45,7 @@ class DashboardController extends Controller
         $ongoingCount   = Project::where('status', 'Ongoing')
                             ->where('is_archived', false)->count();
         $completedCount = Project::where('status', 'Completed')->count();
+        $completedBudget = Project::where('status', 'Completed')->sum('approved_budget');
 
         // ── AT RISK COUNT (gap-based, ALL ongoing) ────────────────────────
         // Same ProjectHealthService definition as the table badges: expected
@@ -119,6 +120,7 @@ class DashboardController extends Controller
             'totalProjects',
             'ongoingCount',
             'completedCount',
+            'completedBudget',
             'atRiskCount',
             'overdueCount',
             'pendingUpdateCount',

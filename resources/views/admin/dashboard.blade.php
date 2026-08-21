@@ -148,6 +148,17 @@
             </div>
         </a>
 
+        {{-- Completed --}}
+        <a href="{{ route($projectsIndex, ['status' => 'Completed']) }}" class="db-stat-card s-green"
+           title="Total Budget: {{ \App\Helpers\FormatHelper::formatCurrency($completedBudget) }}">
+            <div class="db-stat-icon"><i class="bi bi-check-circle-fill"></i></div>
+            <div>
+                <div class="db-stat-num">{{ $completedCount }}</div>
+                <div class="db-stat-label">Completed</div>
+                <div class="db-stat-sub pos"><i class="bi bi-check2-all"></i> finished projects</div>
+            </div>
+        </a>
+
         {{-- Ongoing --}}
         <a href="{{ route($projectsIndex, ['status' => 'Ongoing']) }}" class="db-stat-card s-amber">
             <div class="db-stat-icon"><i class="bi bi-arrow-repeat"></i></div>
@@ -187,16 +198,6 @@
                         <i class="bi bi-check-circle"></i> all on track
                     @endif
                 </div>
-            </div>
-        </a>
-
-        {{-- Completed --}}
-        <a href="{{ route($projectsIndex, ['status' => 'Completed']) }}" class="db-stat-card s-green">
-            <div class="db-stat-icon"><i class="bi bi-check-circle-fill"></i></div>
-            <div>
-                <div class="db-stat-num">{{ $completedCount }}</div>
-                <div class="db-stat-label">Completed</div>
-                <div class="db-stat-sub pos"><i class="bi bi-check2-all"></i> finished projects</div>
             </div>
         </a>
 
