@@ -267,7 +267,33 @@ Track commits and changes as tasks are completed.
   status is 'rejected' (submitExtension)
 - Files: ProjectExtensionController.php, request_extension_modal.blade.php
 
-### Task 7 — Restrict reject and archive (pending)
+### Task 7 — Restrict reject and archive (committed: 1b62a8d)
 - Only latest extension can be rejected (Review button)
 - Only pending/rejected can be archived (Archive button)
 - File: baseline-schedule-extensions.js
+
+### Task 5 — Email notification for approved extensions (committed: 1980305)
+- Added $approvedEndDate param to ExtensionStatusChanged
+- APPROVED emails show "New Deadline" + disclaimer
+- notifyExtension() passes effectiveEndDate() for APPROVED
+- Updated notification.blade.php to render disclaimer block
+- Files: ExtensionStatusChanged.php, ProjectExtensionController.php,
+  notification.blade.php
+
+### Task 6 — Clickable notifications + unread dots (pending)
+- Added url() methods to all 5 notification classes (role-based routes
+  with tab anchors: #extensions, #issues, #risks, #overview,
+  #baseline-schedule)
+- Bell dropdown: click marks read then navigates via data-navigate-url
+- Notifications list: rows clickable with cursor:pointer, Mark read
+  navigates after marking
+- Projects index: unread dot (red circle) on grid cards (absolute-
+  positioned) and table rows (inline next to code)
+- Hash-based tab switching in project_detail.blade.php: DOMContentLoaded
+  reads location.hash, maps anchors to tab names via hashTabMap, calls
+  switchMainTab(). NOTE: tab switching on deep-link navigation is not
+  fully working yet — may need further investigation.
+- Files: ExtensionStatusChanged.php, IssueReported.php,
+  RiskReported.php, DeadlineReminder.php, OverdueInspectionReminder.php,
+  bell.blade.php, _list.blade.php, ProjectController.php,
+  projects/index.blade.php, project_detail.blade.php

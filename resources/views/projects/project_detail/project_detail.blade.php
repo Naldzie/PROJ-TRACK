@@ -141,6 +141,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (activeTab) {
         switchMainTab(activeTab);
         sessionStorage.removeItem('activeTab');
+    } else if (location.hash) {
+        // Notification deep-link: map hash anchors to tab names.
+        const hashTabMap = {
+            '#overview': 'overview',
+            '#s-curve-planning': 's-curve-planning',
+            '#baseline-schedule': 's-curve-planning',
+            '#extensions': 's-curve-planning',
+            '#progress': 'progress',
+            '#documents': 'documents',
+            '#issues': 'issues',
+            '#risks': 'issues',
+        };
+        const tabName = hashTabMap[location.hash] || 'overview';
+        switchMainTab(tabName);
     }
 });
 

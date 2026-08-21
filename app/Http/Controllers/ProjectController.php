@@ -151,6 +151,13 @@ class ProjectController extends Controller
         
         // Add document types for modal
         $data['documentTypes'] = DocumentType::active()->orderBy('name')->get();
+
+        // Unread notification counts per project (for unread dots on cards).
+        $data['unreadByProject'] = $user->unreadNotifications()
+            ->get()
+            ->pluck('data.project_id')
+            ->filter()
+            ->countBy();
         
         return view('projects.index', $data);
     }

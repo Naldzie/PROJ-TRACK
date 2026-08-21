@@ -35,10 +35,27 @@
 
         <div class="notification-menu-body">
             @forelse($recentNotifs as $n)
-                @php $d = $n->data; @endphp
+                @php
+                    $d = $n->data;
+                    $nPid = $d['project_id'] ?? null;
+                    $nRoute = match ($rolePrefix) {
+                        'staff'      => 'staff.projects.detail',
+                        'contractor' => 'projects.show',
+                        default      => 'admin.projects.detail',
+                    };
+                    $nAnchor = match (true) {
+                        str_contains($n->type, 'ExtensionStatusChanged')      => '#extensions',
+                        str_contains($n->type, 'IssueReported')              => '#issues',
+                        str_contains($n->type, 'RiskReported')               => '#risks',
+                        str_contains($n->type, 'OverdueInspectionReminder')  => '#baseline-schedule',
+                        default => '#overview',
+                    };
+                    $nUrl = $nPid ? route($nRoute, $nPid) . $nAnchor : '';
+                @endphp
                 <div class="notification-item {{ $n->read_at ? '' : 'unread' }}"
                      data-id="{{ $n->id }}"
-                     data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}">
+                     data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}"
+                     data-navigate-url="{{ $nUrl }}">
                     <div class="notification-item-title">
                         {{ $n->type === \App\Notifications\DeadlineReminder::class
                             ? ($d['bucket'] === 'overdue'
@@ -247,6 +264,7 @@
     dropdown.querySelectorAll('.notification-item').forEach(function (item) {
         item.addEventListener('click', function () {
             var url = item.dataset.url;
+            var navigateUrl = item.dataset.navigateUrl;
             if (!url) return;
             fetch(url, {
                 method: 'POST',
@@ -254,7 +272,13 @@
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                     'Accept': 'application/json'
                 }
-            }).then(function () { location.reload(); });
+            }).then(function () {
+                if (navigateUrl) {
+                    window.location.href = navigateUrl;
+                } else {
+                    location.reload();
+                }
+            });
         });
     });
 

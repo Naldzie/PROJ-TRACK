@@ -94,7 +94,20 @@
                             ? 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? '')
                             : 'Issue reported' . ($d['severity'] ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? '')));
             @endphp
-            <div class="notif-row {{ $n->read_at ? '' : 'unread' }}">
+            @php
+                $nPid = $d['project_id'] ?? null;
+                $nRoute = match($rolePrefix ?? 'admin') { 'staff' => 'staff.projects.detail', 'contractor' => 'projects.show', default => 'admin.projects.detail' };
+                $nAnchor = match(true) {
+                    str_contains($n->type, 'ExtensionStatusChanged')     => '#extensions',
+                    str_contains($n->type, 'IssueReported')             => '#issues',
+                    str_contains($n->type, 'RiskReported')              => '#risks',
+                    str_contains($n->type, 'OverdueInspectionReminder') => '#baseline-schedule',
+                    default => '#overview',
+                };
+                $nUrl = $nPid ? route($nRoute, $nPid) . $nAnchor : '';
+            @endphp
+            <div class="notif-row {{ $n->read_at ? '' : 'unread' }}"
+                 data-navigate-url="{{ $nUrl }}">
                 <div class="notif-icon {{ $cls }}"><i class="bi {{ $icon }}"></i></div>
                 <div style="flex:1; min-width:0;">
                     <div class="notif-title">
@@ -114,7 +127,8 @@
                 @if(!$n->read_at)
                     <div class="notif-actions">
                         <button class="btn btn-sm btn-outline-primary notif-read-one"
-                                data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}">Mark read</button>
+                                data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}"
+                                data-navigate-url="{{ $nUrl }}">Mark read</button>
                     </div>
                 @endif
             </div>
@@ -133,14 +147,27 @@
 
 <script>
     document.querySelectorAll('.notif-read-one').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
             fetch(btn.dataset.url, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     'Accept': 'application/json'
                 }
-            }).then(function () { location.reload(); });
+            }).then(function () {
+                var nav = btn.dataset.navigateUrl;
+                if (nav) window.location.href = nav;
+                else location.reload();
+            });
+        });
+    });
+
+    document.querySelectorAll('.notif-row').forEach(function (row) {
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', function () {
+            var nav = row.dataset.navigateUrl;
+            if (nav) window.location.href = nav;
         });
     });
 

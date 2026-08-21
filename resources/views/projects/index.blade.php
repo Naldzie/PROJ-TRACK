@@ -158,6 +158,9 @@
                 
                 <div class="project-header">
                     <div class="project-header-left">
+                        @if(($unreadByProject->get($project->id, 0) ?? 0) > 0)
+                            <span style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 2px rgba(255,255,255,0.8);" title="Unread notifications"></span>
+                        @endif
                         <div class="project-code">{{ $project->code }}</div>
                         <div class="project-title">{{ $project->title }}</div>
                         
@@ -475,7 +478,12 @@
                     $isCompleted = $project->status === 'Completed';
                 @endphp
                 <tr data-status="{{ strtolower($project->status) }}" data-id="{{ $project->id }}">
-                    <td><span class="table-project-code">{{ $project->code }}</span></td>
+                    <td>
+                        <span class="table-project-code">{{ $project->code }}</span>
+                        @if(($unreadByProject->get($project->id, 0) ?? 0) > 0)
+                            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-left:4px;vertical-align:middle;" title="Unread notifications"></span>
+                        @endif
+                    </td>
                     <td><span class="table-project-title" title="{{ $project->title }}">{{ $project->title }}</span></td>
                     <td><span class="table-category">{{ $project->category?->name ?? 'N/A' }}</span></td>
                     <td>

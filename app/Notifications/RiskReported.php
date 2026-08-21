@@ -65,4 +65,15 @@ class RiskReported extends Notification
     {
         return $this->toDatabase($notifiable);
     }
+
+    public function url($notifiable): string
+    {
+        $route = match ($notifiable->role ?? 'admin') {
+            'staff'      => 'staff.projects.detail',
+            'contractor' => 'projects.show',
+            default      => 'admin.projects.detail',
+        };
+
+        return route($route, $this->projectId) . '#risks';
+    }
 }
