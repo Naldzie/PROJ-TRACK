@@ -17,9 +17,9 @@ Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improveme
         (uncommitted, pending review/merge, Rule 12)
         🔜 Phase 3 follow-up — Gemini OCR last-resort (PLANNED)
         (see "Phase 3 implementation log + Gemini OCR plan" below)
-        🔜 Phase 4 — Document viewer enhancement + extension attachments fix
-        (IMPLEMENTED on branch `phase-4-document-viewer-fix`, uncommitted,
-        pending review/merge, Rule 12)
+        ✅ Phase 4 — Document viewer enhancement + extension attachments fix
+        (IMPLEMENTED on branch `phase-4-document-viewer-fix`, merged to
+        `phase-3-pdf-scurve-import`, Rule 12)
 Date:   August 21, 2026
 Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 branched
         FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`;
@@ -606,12 +606,17 @@ Status:   IMPLEMENTED (uncommitted, pending review/merge, Rule 12)
       extension modal (review_extension_modal.blade.php) likewise updated.
       Both store attachments in window._extensionAttachments map.
     - Document viewer modal (document-viewer-modal.blade.php) rewritten:
-      * Images: rendered via <img> element (not iframe) for reliable
-        Content-Type handling; new #dvImageContainer with flex centering.
+      * Images: displayed via <iframe> (same as PDF) for StreamedResponse
+        compatibility; dedicated #dvImageIframe with dark background.
+        NOTE: <img> and fetch→blob approaches both failed on
+        StreamedResponse (fpassthru) — <img> silently errors, fetch hangs
+        waiting for stream EOF. iframe works because the browser's built-in
+        media renderer handles streaming internally. Image types now show
+        "Preview Not Available" fallback for now; revisit later.
       * PDF: unchanged (iframe with built-in viewer).
       * Excel (xls/xlsx): iframe loading new previewHtml endpoint.
-      * DOCX: client-side mammoth.js loaded lazily from CDN (jsdelivr + unpkg
-        fallback); fetches file as ArrayBuffer, converts to HTML via
+      * DOCX: client-side mammoth.js loaded lazily from CDN (jsdelivr +
+        unpkg fallback); fetches file as ArrayBuffer, converts to HTML via
         mammoth.convertToHtml(), renders in #dvHtmlContainer.
       * hideAllViewers() resets all containers on open/close.
       * PREVIEWABLE list extended to include xls, xlsx, docx.
@@ -623,8 +628,16 @@ Status:   IMPLEMENTED (uncommitted, pending review/merge, Rule 12)
     - previewUrl passed from all call sites: documents.blade.php,
       progress.blade.php, baseline-schedule.blade.php, issues-modal.js,
       risk-register.js, progress-attachments.js, baseline-schedule-extensions.js.
+    - Commits (phase-4-document-viewer-fix):
+        6d4a56c  Phase 4: Document viewer enhancement + extension attachments fix
+        a56d08d  Fix image preview: explicit Content-Type header for view routes
+        fe15563  Fix image preview: use plain response() instead of StreamedResponse
+        8d641a2  Fix image preview: fetch→blob + plain response
+        ebf3e7b  Fix image preview: use iframe instead of img/fetch
+        60b9918  Disable image preview for now (show fallback for all image types)
     - Tests: composer test 725 passed / 2803 assertions; npm run test:js
       39/39; view:cache compiles clean.
+    - MERGED to phase-3-pdf-scurve-import (Rule 12).
 
 ---------------------------------------------------------------------------
   1. PROBLEMS
