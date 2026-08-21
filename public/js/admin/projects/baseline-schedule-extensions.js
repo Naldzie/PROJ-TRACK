@@ -68,6 +68,13 @@ function reloadExtensionsTable() {
     })
     .then(data => {
         console.log('[reloadExtensionsTable] Extensions data received:', data);
+
+        // Toggle "Add Extension" button: hidden when a pending extension exists.
+        const addBtn = document.getElementById('addExtensionBtn');
+        if (addBtn) {
+            const hasPending = data.extensions && data.extensions.some(e => e.status === 'pending');
+            addBtn.style.display = hasPending ? 'none' : 'inline-flex';
+        }
         
         // Verify templates exist
         const tableTemplate = document.getElementById('extensionsTableTemplate');

@@ -82,7 +82,7 @@ class ProjectExtensionLifecycleTest extends TestCase
 
     // === Phase 1: proposal queue + re-anchor / supersede ===
 
-    public function test_staff_can_submit_multiple_pending_extensions(): void
+    public function test_staff_cannot_submit_second_pending_extension(): void
     {
         $payload = fn () => [
             'new_end_date' => $this->project->planned_end_date->copy()->addMonths(1)->format('Y-m-d'),
@@ -96,9 +96,9 @@ class ProjectExtensionLifecycleTest extends TestCase
 
         $this->actingAs($this->staff)->postJson(
             route('staff.projects.extensions.store', $this->project), $payload()
-        )->assertCreated();
+        )->assertStatus(422);
 
-        $this->assertSame(2, $this->project->extensions()->pending()->count());
+        $this->assertSame(1, $this->project->extensions()->pending()->count());
         $this->assertSame(0, $this->project->fresh()->extension_count);
     }
 

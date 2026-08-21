@@ -37,9 +37,9 @@ class ProjectExtensionController extends Controller
      * ADMIN: created and auto-approved immediately — the project's
      *        planned_end_date/extension_count update right away, and any other
      *        pending proposals are re-anchored/superseded (Decision 2).
-     * STAFF: created as a PENDING request only. MULTIPLE pendings are allowed
-     *        (Decision 1 — each proposal is anchored to the current approved
-     *        deadline). Project is NOT updated until an admin approves.
+     * STAFF: created as a PENDING request only. Only ONE pending extension
+     *        is allowed at a time — the user must wait for review before
+     *        adding another. Admin may auto-approve or pick the status.
      */
     public function store(Request $request, Project $project)
     {
@@ -67,6 +67,19 @@ class ProjectExtensionController extends Controller
 
             $status = $isAdmin ? ($validated['status'] ?? 'approved') : 'pending';
             $rejectionReason = $status === 'rejected' ? ($validated['rejection_reason'] ?? null) : null;
+
+            // Only ONE pending extension allowed at a time (consultant + client decision).
+            if ($status === 'pending') {
+                $hasPending = ProjectExtension::where('project_id', $project->id)
+                    ->where('status', 'pending')
+                    ->exists();
+                if ($hasPending) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'There is already a pending extension request for this project. Please wait for it to be reviewed before adding another.',
+                    ], 422);
+                }
+            }
 
             DB::beginTransaction();
 
