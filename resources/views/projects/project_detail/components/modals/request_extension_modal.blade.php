@@ -77,14 +77,9 @@
                         </div>
                     </div>
 
-                    <!-- Status + Partial Approval (Decision 7) — ADMIN ONLY.
-                         Shown in BOTH create and edit so an admin can create a
-                         pending/rejected extension too, not just auto-approved. -->
+                    <!-- Status — ADMIN ONLY. -->
                     <div class="row g-2">
-                        <!-- Status Field — ADMIN ONLY. Hidden entirely for staff;
-                             even if somehow shown, the backend ignores status
-                             from a non-admin payload regardless of this UI. -->
-                        <div class="col-md-5 mb-2" id="statusFieldWrapper" style="display: none;">
+                        <div class="col-md-12 mb-2" id="statusFieldWrapper" style="display: none;">
                             <label for="extensionStatus" class="form-label">Status</label>
                             <div class="d-flex align-items-center gap-2">
                                 <select class="form-select form-select-sm" id="extensionStatus" name="status" onchange="toggleRejectionReasonField()" style="flex: 1;">
@@ -95,20 +90,6 @@
                             </div>
                             <div class="form-text text-muted">
                                 "Approved" applies the new deadline immediately. "Reject" requires a reason.
-                            </div>
-                        </div>
-
-                        <!-- Partial Approval (Decision 7) — ADMIN ONLY -->
-                        <div class="col-md-7 mb-2" id="partialApprovalWrapper" style="display: none;">
-                            <label for="approvedNewEndDate" class="form-label">
-                                Granted End Date (Partial Approval)
-                            </label>
-                            <input type="date" class="form-control form-control-sm" id="approvedNewEndDate" name="approved_new_end_date">
-                            <div class="invalid-feedback" id="approvedNewEndDateError">
-                                Granted date must be after the current deadline and not after the requested end date.
-                            </div>
-                            <div class="form-text text-muted">
-                                Leave blank to approve exactly as requested. Setting a date here grants LESS time than requested — it cannot exceed the requested end date.
                             </div>
                         </div>
                     </div>
@@ -268,11 +249,6 @@ function isAdminContext() {
 window.toggleRejectionReasonField = function () {
     const status = document.getElementById('extensionStatus').value;
     document.getElementById('rejectionReasonWrapper').style.display = status === 'rejected' ? 'block' : 'none';
-    // Partial approval field (Decision 7) — admin only, shown when approving.
-    const partialApprovalWrapper = document.getElementById('partialApprovalWrapper');
-    if (partialApprovalWrapper) {
-        partialApprovalWrapper.style.display = status === 'approved' ? 'block' : 'none';
-    }
 };
 
 /**
@@ -289,11 +265,6 @@ window.openRequestExtensionModal = function () {
     document.getElementById('rejectionReason').value = '';
 
     const statusWrapper = document.getElementById('statusFieldWrapper');
-    const approvedNewEndDate = document.getElementById('approvedNewEndDate');
-    if (approvedNewEndDate) {
-        approvedNewEndDate.value = '';
-        approvedNewEndDate.classList.remove('is-valid', 'is-invalid');
-    }
     if (isAdminContext()) {
         // Admin can create a pending/approved/rejected extension directly —
         // default to approved (auto-approve) so the common path is one click.
@@ -304,9 +275,6 @@ window.openRequestExtensionModal = function () {
     } else {
         statusWrapper.style.display = 'none'; // status is meaningless on create for staff
     }
-    // toggleRejectionReasonField() last — it decides partialApprovalWrapper
-    // (shown when status=approved) and rejectionReasonWrapper based on the
-    // freshly-reset status value above.
     window.toggleRejectionReasonField();
     document.getElementById('durationDays').textContent = '0';
     document.getElementById('newEndDate').value = '';
@@ -378,11 +346,6 @@ function _populateExtensionEditFields(extension) {
 
     const reasonCategory = document.getElementById('reasonCategory');
     if (reasonCategory) reasonCategory.value = extension.reason_category || '';
-    const approvedNewEndDate = document.getElementById('approvedNewEndDate');
-    if (approvedNewEndDate) {
-        approvedNewEndDate.value = extension.approved_new_end_date || '';
-        approvedNewEndDate.classList.remove('is-valid', 'is-invalid');
-    }
 
     // Reset pending evidence picks (existing attachments stay on the row).
     window._pendingExtensionEvidence = [];
@@ -489,9 +452,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const editMode = document.getElementById('extensionEditMode').value;
         const extensionId = document.getElementById('extensionEditId').value;
 
-        if (!extensionForm.checkValidity()) {
-            extensionForm.classList.add('was-validated');
-            return;
+        // When rejecting, skip HTML5 form validation — the date is irrelevant.
+        const selectedStatusForCheck = isAdminContext() ? (document.getElementById('extensionStatus')?.value || '') : '';
+        if (selectedStatusForCheck !== 'rejected') {
+            if (!extensionForm.checkValidity()) {
+                extensionForm.classList.add('was-validated');
+                return;
+            }
         }
 
         const newDateValue = newEndDateInput.value;
@@ -509,9 +476,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // the CURRENT live deadline — the active approved extension IS the
         // deadline (its own new_end_date set planned_end_date). Only block a
         // date strictly BEFORE it in edit mode; new/resubmit still require
-        // strictly after.
+        // strictly after. Rejection skips the date check entirely.
         const isEditing = editMode === 'edit';
-        if (isEditing ? newDate < currentDate : newDate <= currentDate) {
+        const selectedStatus = isAdminContext() ? (document.getElementById('extensionStatus')?.value || '') : '';
+        const isRejectingStatus = selectedStatus === 'rejected';
+        if (!isRejectingStatus && (isEditing ? newDate < currentDate : newDate <= currentDate)) {
             newEndDateInput.classList.add('is-invalid');
             document.getElementById('newEndDateError').textContent = 'New date must be after current deadline';
             return;
@@ -551,30 +520,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
                 formData.rejection_reason = rejectionReasonValue;
-            } else if (selectedStatus === 'approved') {
-                // Decision 7 — partial approval granted date (optional).
-                const approvedNewEndDate = document.getElementById('approvedNewEndDate')?.value;
-                if (approvedNewEndDate) {
-                    // Granted date must be after the current deadline and can
-                    // never exceed the requested new_end_date. Mirrors the
-                    // backend rules so the admin sees a clear inline error
-                    // instead of a raw 422 "Validation failed".
-                    const granted = parseDate(approvedNewEndDate);
-                    const requested = parseDate(newDateValue);
-                    const approvedInput = document.getElementById('approvedNewEndDate');
-                    if (!granted || granted < currentDate) {
-                        approvedInput.classList.add('is-invalid');
-                        document.getElementById('approvedNewEndDateError').textContent = 'Granted date must be after the current deadline.';
-                        return;
-                    }
-                    if (granted > requested) {
-                        approvedInput.classList.add('is-invalid');
-                        document.getElementById('approvedNewEndDateError').textContent = 'Granted date cannot be later than the requested end date.';
-                        return;
-                    }
-                    approvedInput.classList.remove('is-invalid');
-                    formData.approved_new_end_date = approvedNewEndDate;
-                }
             }
         }
 
@@ -800,15 +745,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             String(minDate.getMonth() + 1).padStart(2, '0') + '-' +
                             String(minDate.getDate()).padStart(2, '0');
         newEndDateInput.min = minDateString;
-
-        // Partial approval (Decision 7): the granted date can never be before
-        // the current deadline (granting LESS than the request, but never
-        // earlier than today's deadline). The backend enforces this; setting
-        // min here keeps the date picker honest.
-        const approvedNewEndDateInput = document.getElementById('approvedNewEndDate');
-        if (approvedNewEndDateInput) {
-            approvedNewEndDateInput.min = minDateString;
-        }
     }
 });
 </script>
