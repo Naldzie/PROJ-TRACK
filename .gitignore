@@ -33,3 +33,9 @@ Thumbs.db
 
 # Database dumps (sensitive data)
 /pmu_system4 (2).sql
+
+# Temp files / test artifacts
+inspect_142.php
+kernel_export_test.php
+sampledocs/
+session-ses_*.md
