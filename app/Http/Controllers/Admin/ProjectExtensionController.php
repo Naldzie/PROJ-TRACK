@@ -1359,7 +1359,10 @@ class ProjectExtensionController extends Controller
             $extension->id,
             $extension->extension_number,
             $status,
-            $status === ExtensionStatusChanged::REJECTED ? $extension->rejection_reason : null
+            $status === ExtensionStatusChanged::REJECTED ? $extension->rejection_reason : null,
+            $status === ExtensionStatusChanged::APPROVED
+                ? \Carbon\Carbon::parse($extension->effectiveEndDate())->format('M d, Y')
+                : null
         );
 
         if ($status === ExtensionStatusChanged::SUBMITTED) {

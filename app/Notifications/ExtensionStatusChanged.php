@@ -28,6 +28,7 @@ class ExtensionStatusChanged extends Notification
         public int $extensionNumber,
         public string $status,
         public ?string $rejectionReason = null,
+        public ?string $approvedEndDate = null,
     ) {
     }
 
@@ -51,6 +52,14 @@ class ExtensionStatusChanged extends Notification
             $lines['Rejection reason'] = $this->rejectionReason ?? 'Not provided';
         }
 
+        if ($this->status === self::APPROVED && $this->approvedEndDate) {
+            $lines['New Deadline'] = $this->approvedEndDate;
+        }
+
+        $disclaimer = $this->status === self::APPROVED
+            ? 'Please note that this extension may still be subject to change depending on project circumstances.'
+            : null;
+
         return (new MailMessage)
             ->subject($title)
             ->view('emails.notification', [
@@ -63,6 +72,7 @@ class ExtensionStatusChanged extends Notification
                     default         => 'The status of a project extension request has changed.',
                 },
                 'lines'         => $lines,
+                'disclaimer'    => $disclaimer,
             ]);
     }
 
@@ -76,6 +86,7 @@ class ExtensionStatusChanged extends Notification
             'extension_number' => $this->extensionNumber,
             'status'           => $this->status,
             'rejection_reason' => $this->rejectionReason,
+            'approved_end_date'=> $this->approvedEndDate,
         ];
     }
 
