@@ -351,28 +351,33 @@ class ProjectExtensionController extends Controller
             }
 
             // --- Admin path ---
-            $validated = $request->validate([
-                'new_end_date' => [
-                    'sometimes', 'required', 'date_format:Y-m-d',
-                    // Decision 8: admin can never set a date BEFORE the live
-                    // deadline — equality is allowed when editing an existing
-                    // extension (its own date may be the deadline itself).
-                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
-                    'before_or_equal:2030-12-31',
-                ],
+            $isRejecting = $request->input('status') === 'rejected';
+
+            $baseRules = [
                 'reason' => 'sometimes|required|string|min:5|max:500',
                 'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
                 'status' => 'sometimes|required|in:pending,approved,rejected',
-                // Required ONLY when the admin is setting status to rejected —
-                // staff need this to know what to fix before resubmitting.
                 'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
-                // Partial approval (Decision 7): nullable granted date.
                 'approved_new_end_date' => [
                     'sometimes', 'nullable', 'date_format:Y-m-d',
                     'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
                     'before_or_equal:2030-12-31',
                 ],
-            ]);
+            ];
+
+            // new_end_date is required unless rejecting — date is irrelevant
+            // for rejected extensions.
+            if ($isRejecting) {
+                $baseRules['new_end_date'] = 'sometimes|nullable|date_format:Y-m-d';
+            } else {
+                $baseRules['new_end_date'] = [
+                    'sometimes', 'required', 'date_format:Y-m-d',
+                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                    'before_or_equal:2030-12-31',
+                ];
+            }
+
+            $validated = $request->validate($baseRules);
 
             DB::beginTransaction();
 
