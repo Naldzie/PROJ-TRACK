@@ -517,7 +517,14 @@
         var fallbackEl     = modal.querySelector('#dvFallback');
 
         if (iframeEl)       { iframeEl.style.display = 'none'; iframeEl.src = ''; }
-        if (imageContainer) { imageContainer.style.display = 'none'; imageContainer.innerHTML = ''; }
+        if (imageContainer) {
+            var prevImg = imageContainer.querySelector('img');
+            if (prevImg && prevImg.src && prevImg.src.startsWith('blob:')) {
+                URL.revokeObjectURL(prevImg.src);
+            }
+            imageContainer.style.display = 'none';
+            imageContainer.innerHTML = '';
+        }
         if (htmlContainer)  { htmlContainer.style.display = 'none'; htmlContainer.innerHTML = ''; }
         if (loadingEl)      { loadingEl.style.display = 'none'; }
         if (fallbackEl)     { fallbackEl.style.display = 'none'; }
@@ -575,20 +582,27 @@
         var viewerType = getViewerType(options.name);
 
         if (viewerType === 'image') {
-            // Images: use <img> element (reliable Content-Type detection)
+            // Images: fetch as blob → object URL (avoids StreamedResponse <img> issues)
             var container = modal.querySelector('#dvImageContainer');
-            var img = new Image();
-            img.onload = function () {
-                loadingEl.style.display = 'none';
-                container.style.display = 'flex';
-            };
-            img.onerror = function () {
-                loadingEl.style.display = 'none';
-                modal.querySelector('#dvFallback').style.display = 'flex';
-            };
-            img.src = options.viewUrl;
-            img.alt = options.name || 'Image';
-            container.appendChild(img);
+            fetch(options.viewUrl, { credentials: 'same-origin' })
+                .then(function (res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.blob();
+                })
+                .then(function (blob) {
+                    var img = new Image();
+                    img.onload = function () {
+                        loadingEl.style.display = 'none';
+                        container.style.display = 'flex';
+                    };
+                    img.src = URL.createObjectURL(blob);
+                    img.alt = options.name || 'Image';
+                    container.appendChild(img);
+                })
+                .catch(function () {
+                    loadingEl.style.display = 'none';
+                    modal.querySelector('#dvFallback').style.display = 'flex';
+                });
 
         } else if (viewerType === 'pdf') {
             // PDF: use iframe (browser built-in viewer)
