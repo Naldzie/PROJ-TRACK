@@ -195,22 +195,11 @@ class AttachmentController extends Controller
             abort(404, 'Attachment file not found.');
         }
 
-        $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
-        $mimeMap = [
-            'jpg'  => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png'  => 'image/png',
-            'gif'  => 'image/gif',  'webp' => 'image/webp', 'bmp'  => 'image/bmp',
-            'svg'  => 'image/svg+xml', 'pdf' => 'application/pdf',
-        ];
-        $contentType = $mimeMap[$ext] ?? Storage::disk('public')->mimeType($attachment->file_path);
-
-        $contents = Storage::disk('public')->get($attachment->file_path);
-
-        return response($contents, 200, [
-            'Content-Type'        => $contentType,
-            'Content-Length'      => strlen($contents),
-            'Content-Disposition' => 'inline; filename="' . addslashes($attachment->original_name) . '"',
-            'Cache-Control'       => 'private, max-age=300',
-        ]);
+        return Storage::disk('public')->response(
+            $attachment->file_path,
+            $attachment->original_name,
+            ['Content-Disposition' => 'inline; filename="' . addslashes($attachment->original_name) . '"']
+        );
     }
 
     /**

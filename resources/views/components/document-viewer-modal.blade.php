@@ -76,9 +76,9 @@
                 <iframe id="dvIframe" class="dv-iframe" src="" title="Document viewer"
                         style="display:none;" allowfullscreen></iframe>
 
-                {{-- Image viewer (<img> — reliable Content-Type handling) --}}
-                <div id="dvImageContainer" class="dv-image-container" style="display:none;">
-                </div>
+                {{-- Image viewer (uses iframe for StreamedResponse compatibility) --}}
+                <iframe id="dvImageIframe" class="dv-iframe dv-image-iframe" src=""
+                        title="Image viewer" style="display:none;"></iframe>
 
                 {{-- HTML viewer for DOCX/Excel preview --}}
                 <div id="dvHtmlContainer" class="dv-html-container" style="display:none;">
@@ -297,22 +297,9 @@
     background: #fff;
 }
 
-/* === Image viewer === */
-.dv-image-container {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* === Image viewer (iframe variant with dark background) === */
+.dv-image-iframe {
     background: #1e1e2e;
-    overflow: auto;
-}
-
-.dv-image-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    border-radius: 4px;
 }
 
 /* === HTML viewer (DOCX / Excel preview) === */
@@ -511,23 +498,16 @@
 
     function hideAllViewers(modal) {
         var iframeEl      = modal.querySelector('#dvIframe');
-        var imageContainer = modal.querySelector('#dvImageContainer');
-        var htmlContainer  = modal.querySelector('#dvHtmlContainer');
-        var loadingEl      = modal.querySelector('#dvLoading');
-        var fallbackEl     = modal.querySelector('#dvFallback');
+        var imageIframe   = modal.querySelector('#dvImageIframe');
+        var htmlContainer = modal.querySelector('#dvHtmlContainer');
+        var loadingEl     = modal.querySelector('#dvLoading');
+        var fallbackEl    = modal.querySelector('#dvFallback');
 
-        if (iframeEl)       { iframeEl.style.display = 'none'; iframeEl.src = ''; }
-        if (imageContainer) {
-            var prevImg = imageContainer.querySelector('img');
-            if (prevImg && prevImg.src && prevImg.src.startsWith('blob:')) {
-                URL.revokeObjectURL(prevImg.src);
-            }
-            imageContainer.style.display = 'none';
-            imageContainer.innerHTML = '';
-        }
-        if (htmlContainer)  { htmlContainer.style.display = 'none'; htmlContainer.innerHTML = ''; }
-        if (loadingEl)      { loadingEl.style.display = 'none'; }
-        if (fallbackEl)     { fallbackEl.style.display = 'none'; }
+        if (iframeEl)      { iframeEl.style.display = 'none'; iframeEl.src = ''; }
+        if (imageIframe)   { imageIframe.style.display = 'none'; imageIframe.src = ''; }
+        if (htmlContainer) { htmlContainer.style.display = 'none'; htmlContainer.innerHTML = ''; }
+        if (loadingEl)     { loadingEl.style.display = 'none'; }
+        if (fallbackEl)    { fallbackEl.style.display = 'none'; }
     }
 
     // ── Public API ───────────────────────────────────────────────────
@@ -582,27 +562,17 @@
         var viewerType = getViewerType(options.name);
 
         if (viewerType === 'image') {
-            // Images: fetch as blob → object URL (avoids StreamedResponse <img> issues)
-            var container = modal.querySelector('#dvImageContainer');
-            fetch(options.viewUrl, { credentials: 'same-origin' })
-                .then(function (res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.blob();
-                })
-                .then(function (blob) {
-                    var img = new Image();
-                    img.onload = function () {
-                        loadingEl.style.display = 'none';
-                        container.style.display = 'flex';
-                    };
-                    img.src = URL.createObjectURL(blob);
-                    img.alt = options.name || 'Image';
-                    container.appendChild(img);
-                })
-                .catch(function () {
-                    loadingEl.style.display = 'none';
-                    modal.querySelector('#dvFallback').style.display = 'flex';
-                });
+            // Images: load in iframe (StreamedResponse-compatible, same as PDF)
+            var imageIframe = modal.querySelector('#dvImageIframe');
+            imageIframe.onload = function () {
+                loadingEl.style.display = 'none';
+                imageIframe.style.display = 'block';
+            };
+            imageIframe.onerror = function () {
+                loadingEl.style.display = 'none';
+                modal.querySelector('#dvFallback').style.display = 'flex';
+            };
+            imageIframe.src = options.viewUrl;
 
         } else if (viewerType === 'pdf') {
             // PDF: use iframe (browser built-in viewer)
