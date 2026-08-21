@@ -13,12 +13,17 @@ Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improveme
         (pending review/merge, Rule 12)
         ✅ Phase 2 — IMPLEMENTED on branch `phase-2-scurve-baseline-import`
         (pending review/merge, Rule 12)
-        🔜 Phase 2 hardening + Phase 3 (PDF S-curve) — PLANNED
-        (see "Phase 2 follow-ups + Phase 3 planning" log below)
-Date:   August 19, 2026
+        ✅ Phase 3 (PDF S-curve) — IMPLEMENTED on branch `phase-3-pdf-scurve-import`
+        (uncommitted, pending review/merge, Rule 12)
+        🔜 Phase 3 follow-up — Gemini OCR last-resort (PLANNED)
+        (see "Phase 3 implementation log + Gemini OCR plan" below)
+        🔜 Phase 4 — Document viewer enhancement + extension attachments fix
+        (PLANNED — see "Phase 4" section near end of file)
+Date:   August 21, 2026
 Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 branched
         FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`;
-        Phase 3 (PDF S-curve) to branch FROM phase-2 as `phase-3-pdf-scurve-import`.
+        Phase 3 (PDF S-curve) branched FROM phase-2 as `phase-3-pdf-scurve-import`
+        (uncommitted work on the branch).
 
 IMPLEMENTATION LOG — Phase 1 (2026-08-19):
   - Branch phase-1-document-parser-improvement created from main (commit 2750f53).
@@ -214,6 +219,84 @@ IMPLEMENTATION LOG — Phase 2 follow-ups + Phase 3 planning (2026-08-19):
       GRAND TOTAL, bare-number months, formula cells). npm run test:js 28/28;
       composer test 725 passed / 2804 assertions; view:cache compiles. Real
       sample curve unchanged.
+
+  IMPLEMENTED 2026-08-20 (COMMIT 2 — PDF S-curve import, on branch
+  phase-3-pdf-scurve-import, UNCOMMITTED — pending user review → commit+push):
+    - CONFIRMED LAYOUT: CONSCHEDSAVINGS.pdf (2pp A3) is NOT a "Month 1..12"
+      table. It is a WEEKLY schedule: a multi-row header block (day-index row
+      "#1..#90", month-span labels DECEMBER/JANUARY/FEBRUARY/MARCH, column-label
+      row NO./DESCRIPTION/UNIT/QUANTITY/UNIT PRICE/AMOUNT/%, and a date row
+      "December 9, 2024"…), WEEK 1..12 columns, and rows for incremental %,
+      CUMULATIVE % (strictly increasing, tops out at 100), peso amounts, and
+      working days. Page 2 = column overflow (WEEKS 9-12 continue from WEEKS
+      1-8). Month-end cumulative points: Dec 36.70 / Jan 68.85 / Feb 91.16 /
+      Mar 100.00.
+    - public/js/admin/projects/scurve-pdf-parser-core.js (NEW, ESM): pure core
+      with two layout paths:
+        * Monthly-column layout (Description + Month 1..N / M1..N / names / bare
+          numbers): infer column x-boundaries from the header line, assemble
+          rows by y-band, sum pesos per month, merge pages by column-overflow
+          or repeated-header (row continuation), build cumulative % via
+          buildMonthsFromRows (monotonic clamp, final month forced 100).
+        * Weekly-schedule layout (parseWeeklySchedulePdf): detect the WEEK row,
+          the month-span label row, and the cumulative-% row (%-tokens in strict
+          ascending order, max >= 50); assign week columns to month spans using
+          boundary tolerance (curX = b.x - 30, nextX = nextBoundary.x - 30) so a
+          week centered under a month header (WEEK 12 @ x=329 under MARCH @
+          x=330) still lands in the right month; month-end cumulative % = the
+          cumulative value at the last week of each span; sequential month_index
+          1..N in appearance order (Dec→1, Jan→2, …). Real PDF now parses to
+          1:36.7 / 2:68.85 / 3:91.16 / 4:100.
+    - public/js/admin/projects/scurve-pdf-parser.js (NEW, classic): exposes
+      window.parseSCurvePdfFile(file) → Promise<{months, meta}|null> using the
+      existing pdfjs-loader (window.loadPdfJs), 20-page cap.
+    - scurve-import-ui.js: PDF import wired into BOTH entry points (create
+      wizard + project detail). Excel regression FIXED: importPDFSCurve now
+      returns the raw {months, meta} (same shape as the Excel endpoint) and the
+      shared normalizeSCurveMonths(...) call was restored for BOTH paths (the
+      earlier draft bypassed it for Excel → modal got months without planned_date
+      / month_label). Fallback notice for unrecognized layouts: "Could not read
+      the S-curve from this PDF layout. Please upload the Excel (.xlsx) S-curve
+      file instead."
+    - Blades: _create_project_modal.blade.php + baseline-schedule.blade.php load
+      the PDF parser core + wrapper; the baseline-tab Import button now shows for
+      pdf docs too, with data-doc-type / data-download-url (route
+      {role}.documents.download) / data-document-name for detail-page PDFs.
+    - Tests: tests/js/scurve-pdf-parser.test.mjs 10 → 11 (weekly-schedule layout
+      with month-span boundaries + multi-page overflow + boundary tolerance).
+      npm run test:js 39/39; composer test 725 passed / 2806 assertions;
+      view:cache compiles. QA on CONSCHEDSAVINGS.pdf = 4 months.
+    - KNOWN LIMITATION: scanned PDFs (Ongoing Project/Three-Storey Acad Bldg,
+      Buhi Campus.pdf 18pp; Completed Project/CHS - Savings.pdf 12pp) have 0 text
+      items → parse returns null → fallback notice. OCR is the planned last-resort.
+
+  PHASE 3 FOLLOW-UP — Gemini OCR last-resort (PLANNED, not yet implemented):
+    - User asked whether the Gemini API can read scanned S-curves the way the
+      Gemini web app reads uploaded images/docs. YES: generateContent supports
+      inline_data parts (base64 + mimeType), including application/pdf — and the
+      app ALREADY calls Gemini server-side (AIExplanationService::callGemini,
+      config/services.php: gemini.key = env('AI_API_KEY'), gemini.model =
+      env('AI_MODEL', 'gemini-1.5-flash')).
+    - Proposed design (server-side fallback, not yet built):
+        * New app/Services/AI/GeminiSCurveOcrService.php: receive PDF bytes
+          (uploaded file or stored document_id) → base64 → inline_data PDF part
+          + prompt asking for JSON { months: [{ month_index, cumulative % }] } →
+          parse JSON → validate (monotonic clamp, force last month 100) → return
+          the same { months, meta } shape as the Excel/PDF parsers. Empty/missing
+          key or failed call → null (existing fallback notice).
+        * Endpoint: extend SCurveImportController (both role groups).
+        * Client: scurve-import-ui.js tries free client-side pdf.js first; on
+          null (unrecognized layout OR scanned PDF) → call server Gemini OCR;
+          only if both fail → "upload the .xlsx" notice.
+    - Open decisions (awaiting user): (1) fallback order pdf.js → Gemini → .xlsx
+      OK? (2) whole PDF inline vs render pages to images client-side first for
+      large scans? (3) server-side Gemini only, or also free tesseract.js client
+      option in parallel? (4) part of Phase 3 or separate follow-up branch?
+    - Tradeoffs logged: cost (per-call API), privacy (contractor docs leave the
+      server — note the app already sends project data to Gemini for AI analysis,
+      so the provider-privacy precedent exists), robustness (vision handles dense
+      numeric tables better than tesseract), determinism (LLM output varies →
+      needs validation/clamping).
 
 Reference Documents:
 - textfiles/active_reference/project_context_and_development_rules.txt
@@ -504,6 +587,193 @@ STEP 5 — Tests
 
   Per dev rules: each phase on its own branch; run lint/tests; present to the
   user for review before merging (Rule 12).
+
+===============================================================================
+  PHASE 4 — DOCUMENT VIEWER ENHANCEMENT + EXTENSION ATTACHMENTS FIX
+===============================================================================
+
+Date:     August 21, 2026
+Branch:   TBD (Rule 12 — branch on explicit go-ahead)
+Status:   PLANNED (not yet implemented)
+
+---------------------------------------------------------------------------
+  1. PROBLEMS
+---------------------------------------------------------------------------
+
+  A. Extension attachments open in new browser tab (403) instead of the
+     preview modal used by documents, issues, progress, and risk attachments.
+
+     Root cause: baseline-schedule-extensions.js:120-127 and
+     review_extension_modal.blade.php:185-191 render evidence as
+     <a href="${a.file_url}" target="_blank"> — using the raw storage URL
+     (/storage/...) which is broken (public/storage is an empty directory,
+     not a symlink) AND not auth-protected.
+
+     Contrast: issues-modal.js, progress-attachments.js, risk-register.js
+     all correctly use openDocumentViewer() with role-scoped viewUrl
+     (/{role}/attachments/{id}/view).
+
+  B. Images (PNG/JPG) show broken icon in the viewer modal iframe.
+
+     The modal's iframe loads the viewUrl which returns the file via
+     Storage::disk('public')->response() (BinaryFileResponse with
+     Content-Disposition: inline). PDFs render because browsers have built-in
+     PDF viewers; images may fail if BinaryFileResponse's Content-Type
+     detection is wrong or the response is misformatted.
+
+     Note: public/storage is an empty directory (not a symlink), but the
+     view routes read directly from storage/app/public/ on the filesystem,
+     so this alone shouldn't break the view endpoint.
+
+  C. Excel files (xls/xlsx) show "Preview Not Available" fallback.
+
+     Not in the PREVIEWABLE list, and even if they were, an iframe cannot
+     render binary xlsx content.
+
+  D. DOCX files show fallback.
+
+     No server-side renderer installed; browser cannot render docx natively.
+
+---------------------------------------------------------------------------
+  2. SOLUTION OVERVIEW
+---------------------------------------------------------------------------
+
+  A. Extension attachments — follow the issues/progress/risk pattern:
+     cache attachments in a window-level map, render clickable elements
+     that call openDocumentViewer() with role-scoped viewUrl/downloadUrl.
+
+  B. Images — render via <img> element instead of iframe. Browsers auto-
+     detect Content-Type for <img> src, which is more reliable than
+     BinaryFileResponse in an iframe context.
+
+  C. Excel — new server-side preview endpoint using PhpSpreadsheet's
+     Html writer. Returns an HTML table rendered in the iframe.
+
+  D. DOCX — client-side mammoth.js (CDN, matches pdfjs-loader pattern).
+     Fetch file as ArrayBuffer, convert to HTML, render in a div.
+
+---------------------------------------------------------------------------
+  3. IMPLEMENTATION STEPS
+---------------------------------------------------------------------------
+
+  STEP 1 — Fix storage symlink
+    php artisan storage:link
+    (On Windows may need admin or Developer Mode; fallback: mklink /J)
+
+  STEP 2 — Fix extension attachments (2 files)
+    File A: public/js/admin/projects/baseline-schedule-extensions.js
+      - At ~line 120: replace <a href="${a.file_url}" target="_blank">
+        with clickable <span> elements that call openDocumentViewer()
+      - Cache attachments in window._extensionAttachments map
+      - Add openExtensionAttachmentById(id) function
+      - Build viewUrl: /${window.userRole}/attachments/${att.id}/view
+      - Build downloadUrl: /${window.userRole}/attachments/${att.id}/download
+      - Use attachment-chip styling consistent with other tabs
+
+    File B: resources/views/projects/project_detail/components/modals/
+            review_extension_modal.blade.php
+      - At ~line 185: same fix — replace <a target="_blank"> with
+        openDocumentViewer() calls
+
+  STEP 3 — Fix image preview in the modal
+    File: resources/views/components/document-viewer-modal.blade.php
+      - Add new container elements (#dvImageContainer for <img>,
+        #dvHtmlContainer for DOCX HTML)
+      - Modify openDocumentViewer() viewer strategy:
+          image exts  → <img> element with viewUrl as src
+          pdf         → iframe (existing)
+          xls/xlsx    → iframe with previewHtml endpoint URL
+          docx        → fetch + mammoth.js → render in #dvHtmlContainer
+          else        → fallback
+      - Clean up containers on modal hide (alongside existing iframe cleanup)
+
+  STEP 4 — Add Excel preview endpoint
+    File: app/Http/Controllers/DocumentController.php
+      - Add previewHtml($documentId) method
+      - Reuse DocumentPolicy::view auth + fileExists() check
+      - For xls/xlsx: IOFactory::load() → Html writer → generateHtmlAll()
+      - Return response($html)->header('Content-Type', 'text/html; charset=utf-8')
+
+    File: app/Http/Controllers/AttachmentController.php
+      - Add same previewHtml() method
+
+    File: routes/web.php
+      - Add in all 3 role groups:
+        Route::get('/documents/{document}/preview', ...)->name('{role}.documents.preview');
+        Route::get('/attachments/{attachment}/preview', ...)->name('{role}.attachments.preview');
+
+  STEP 5 — Add DOCX preview (client-side)
+    File: public/js/vendor/mammoth.browser.min.js (NEW)
+      - Download mammoth.js UMD bundle from CDN
+      - Follows the same pattern as pdfjs-loader.js
+
+    File: resources/views/components/document-viewer-modal.blade.php
+      - Add lazy CDN loader for mammoth.js (jsdelivr/unpkg fallback)
+      - When DOCX opened: fetch file as ArrayBuffer, call
+        mammoth.convertToHtml({arrayBuffer}), render HTML
+
+  STEP 6 — Pass previewUrl from Blade templates
+    File: documents.blade.php
+      - Add $previewUrl = route($role . '.documents.preview', $document->id)
+      - Pass previewUrl in openDocumentViewer() calls
+
+    Files: progress.blade.php, baseline-schedule.blade.php,
+           issues-modal.js, risk-register.js,
+           baseline-schedule-extensions.js
+      - Add previewUrl to their openDocumentViewer() calls
+
+  STEP 7 — Update plan MD + run tests
+    - Update this plan with implementation log (Rule 11)
+    - Run composer test + npm run test:js to verify no regressions
+
+---------------------------------------------------------------------------
+  4. FILES TO MODIFY
+---------------------------------------------------------------------------
+
+  resources/views/components/document-viewer-modal.blade.php
+    Multi-type viewer (img/excel-html/docx/html), mammoth CDN loader
+
+  public/js/admin/projects/baseline-schedule-extensions.js
+    Replace <a target="_blank"> with openDocumentViewer() calls
+
+  review_extension_modal.blade.php
+    Same — replace <a target="_blank"> with openDocumentViewer()
+
+  app/Http/Controllers/DocumentController.php
+    Add previewHtml() method
+
+  app/Http/Controllers/AttachmentController.php
+    Add previewHtml() method
+
+  routes/web.php
+    Add preview routes for all 3 role groups
+
+  documents.blade.php
+    Pass previewUrl
+
+  progress.blade.php
+    Pass previewUrl
+
+  baseline-schedule.blade.php
+    Pass previewUrl
+
+  public/js/admin/projects/issues-modal.js
+    Pass previewUrl
+
+  public/js/admin/projects/risk-register.js
+    Pass previewUrl
+
+  public/js/vendor/mammoth.browser.min.js (NEW)
+    mammoth.js CDN bundle for DOCX
+
+---------------------------------------------------------------------------
+  5. OUT OF SCOPE
+---------------------------------------------------------------------------
+
+  - PPT/PPTX preview: no reliable server-side or lightweight client-side
+    renderer; keep as download-only fallback.
+  - Word .doc (legacy binary format): mammoth.js only supports .docx;
+    .doc falls to fallback.
 
 ===============================================================================
   END OF PLAN

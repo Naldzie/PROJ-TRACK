@@ -409,3 +409,5 @@ window.openManageCategoriesFromCreateProject = function () {
 <script src="{{ $jsv('js/admin/projects/document-parser.js') }}"></script>
 <script type="module" src="{{ $jsv('js/admin/projects/scurve-import-core.js') }}"></script>
 <script src="{{ $jsv('js/admin/projects/scurve-import-ui.js') }}"></script>
+<script type="module" src="{{ $jsv('js/admin/projects/scurve-pdf-parser-core.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/scurve-pdf-parser.js') }}"></script>

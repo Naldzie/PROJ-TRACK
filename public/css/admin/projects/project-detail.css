@@ -183,19 +183,20 @@
     margin-bottom: 28px;
     box-shadow: 0 10px 15px -3px rgba(26, 86, 219, 0.2);
     position: relative;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .header-section::before {
     content: '';
     position: absolute;
-    top: -50%;
-    right: -10%;
-    width: 400px;
-    height: 400px;
+    top: 24px;
+    right: 24px;
+    width: 320px;
+    height: 320px;
     background: rgba(255, 255, 255, 0.1);
     border-radius: 50%;
     z-index: 0;
+    pointer-events: none;
 }
 
 .header-content {

@@ -121,11 +121,38 @@ function refreshSCurveImportButton() {
         btn.textContent = 'Import baseline from S-curve file';
         btn.style.display = '';
     } else {
-        window._scurvePendingFile = null;
+        window._scurvePendingFile = candidates[0].file;
         btn.dataset.mode = 'pdf';
         btn.textContent = 'Import baseline from S-curve file (PDF)';
         btn.style.display = '';
     }
+}
+
+/* ─── PDF import helpers ───────────────────────────────────────────────────── */
+
+async function importPDFSCurve(file) {
+    if (typeof window.parseSCurvePdfFile !== 'function') {
+        throw new Error('The S-curve PDF parser is not loaded.');
+    }
+
+    var parsed = await window.parseSCurvePdfFile(file);
+    if (!parsed || !parsed.months || parsed.months.length === 0) {
+        throw new Error(
+            'Could not read the S-curve from this PDF layout. ' +
+            'Please upload the Excel (.xlsx) S-curve file instead.'
+        );
+    }
+
+    return parsed;
+}
+
+async function scurveFetchDocument(url, name) {
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('Could not download the document for parsing.');
+    var blob = await res.blob();
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    var type = ext === 'pdf' ? 'application/pdf' : blob.type;
+    return new File([blob], name, { type: type });
 }
 
 function initCreateWizardSCurveImport() {
@@ -142,17 +169,9 @@ function initCreateWizardSCurveImport() {
         var core = window.scurveImportCore;
         if (!core) return;
 
-        if (mode === 'pdf') {
-            scurveToast(
-                'PDF S-curves are chart-only. Please upload the Excel (.xlsx) S-curve file to import the baseline.',
-                'warning'
-            );
-            return;
-        }
-
         var file = window._scurvePendingFile;
         if (!file) {
-            scurveToast('No S-curve Excel file found in the document list.', 'warning');
+            scurveToast('No S-curve file found in the document list.', 'warning');
             return;
         }
 
@@ -161,8 +180,18 @@ function initCreateWizardSCurveImport() {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
 
         try {
-            var data = await parseSCurveFile(file, parseUrl);
+            var data;
+            if (mode === 'pdf') {
+                data = await importPDFSCurve(file);
+            } else {
+                data = await parseSCurveFile(file, parseUrl);
+            }
             scurveShowWarnings(null, btn.parentElement);
+
+            if (!data || !data.months || data.months.length === 0) {
+                throw new Error('The file contains no baseline months.');
+            }
+
             var months = core.normalizeSCurveMonths(data.months, startDate, endDate);
 
             if (months.length === 0) {
@@ -214,8 +243,19 @@ function initProjectDetailSCurveImport() {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
 
         try {
-            var data = await parseSCurveDocument(documentId, parseUrl);
+            var data;
+            if (btn.dataset.docType === 'pdf') {
+                var file = await scurveFetchDocument(btn.dataset.downloadUrl, btn.dataset.documentName || 's-curve.pdf');
+                data = await importPDFSCurve(file);
+            } else {
+                data = await parseSCurveDocument(documentId, parseUrl);
+            }
             scurveShowWarnings(null, btn.parentElement);
+
+            if (!data || !data.months || data.months.length === 0) {
+                throw new Error('The document contains no baseline months.');
+            }
+
             var months = core.normalizeSCurveMonths(data.months, startDate, endDate);
 
             if (months.length === 0) {

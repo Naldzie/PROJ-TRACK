@@ -60,10 +60,16 @@
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
                         <i class="bi bi-flag"></i> Set Up Baseline
                     </button>
-                    @if($scheduleDoc && in_array(strtolower($scheduleDoc->file_extension), ['xls', 'xlsx']))
+                    @php
+                        $scheduleExt = strtolower($scheduleDoc->file_extension ?? '');
+                    @endphp
+                    @if($scheduleDoc && in_array($scheduleExt, ['xls', 'xlsx', 'pdf']))
                         <button id="scurveImportBtnDetail" class="btn-primary"
                                 data-parse-url="{{ route($routePrefix . '.s-curve.parse') }}"
                                 data-document-id="{{ $scheduleDoc->id }}"
+                                data-doc-type="{{ $scheduleExt }}"
+                                data-download-url="{{ $scheduleExt === 'pdf' ? route(auth()->user()->role . '.documents.download', $scheduleDoc->id) : '' }}"
+                                data-document-name="{{ $scheduleDoc->document_name }}"
                                 data-start-date="{{ $project->planned_start_date?->toDateString() ?? '' }}"
                                 data-end-date="{{ $project->planned_end_date?->toDateString() ?? '' }}"
                                 style="padding: 8px 16px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
@@ -587,6 +593,10 @@ Add Month Target Modal functions moved to baseline-schedule-add-month-modal.js
 <!-- Load S-curve Excel baseline import (Phase 2) -->
 <script type="module" src="{{ asset('js/admin/projects/scurve-import-core.js') }}"></script>
 <script src="{{ asset('js/admin/projects/scurve-import-ui.js') }}"></script>
+
+<!-- Load S-curve PDF import (Phase 3) -->
+<script type="module" src="{{ asset('js/admin/projects/scurve-pdf-parser-core.js') }}"></script>
+<script src="{{ asset('js/admin/projects/scurve-pdf-parser.js') }}"></script>
 
 <!-- Load Manage Month Modal JavaScript (includes reloadInlineActivities) -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-manage-month-modal.js') }}"></script>
