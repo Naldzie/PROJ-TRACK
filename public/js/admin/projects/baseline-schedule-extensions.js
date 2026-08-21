@@ -220,7 +220,7 @@ function reloadExtensionsTable() {
                 console.log('[reloadExtensionsTable] No extensions - empty state rendered');
             } catch (error) {
                 console.error('[reloadExtensionsTable] Error rendering empty state:', error);
-                container.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af; border: 2px dashed #d1d5db; border-radius: 8px;"><i class="bi bi-inbox" style="font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.5;"></i><div style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">No extensions recorded yet</div><div style="font-size: 12px; color: #d1d5db;">Click "Request Extension" to extend the project deadline</div></div>';
+                container.innerHTML = '<div style="padding: 40px; text-align: center; color: #9ca3af; border: 2px dashed #d1d5db; border-radius: 8px;"><i class="bi bi-inbox" style="font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.5;"></i><div style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">No extensions recorded yet</div><div style="font-size: 12px; color: #d1d5db;">Click "Add Extension" to extend the project deadline</div></div>';
             }
         }
     })

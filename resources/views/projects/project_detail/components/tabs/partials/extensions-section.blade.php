@@ -15,7 +15,7 @@
                         style="background: #f59e0b; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
                         onmouseover="this.style.background='#d97706'; this.style.transform='translateY(-2px)';"
                         onmouseout="this.style.background='#f59e0b'; this.style.transform='translateY(0)';">
-                    <i class="bi bi-plus-circle"></i> Request Extension
+                    <i class="bi bi-plus-circle"></i> Add Extension
                 </button>
             @endif
             @if(auth()->user()->role === 'admin' && $project->extensions()->onlyTrashed()->exists())
@@ -133,7 +133,7 @@
     <div style="padding: 40px; text-align: center; color: #9ca3af; border: 2px dashed #d1d5db; border-radius: 8px;">
         <i class="bi bi-inbox" style="font-size: 40px; display: block; margin-bottom: 12px; opacity: 0.5;"></i>
         <div style="font-size: 14px; font-weight: 500; margin-bottom: 6px;">No extensions recorded yet</div>
-        <div style="font-size: 12px; color: #d1d5db;">Click "Request Extension" to extend the project deadline</div>
+        <div style="font-size: 12px; color: #d1d5db;">Click "Add Extension" to extend the project deadline</div>
     </div>
 </template>
 

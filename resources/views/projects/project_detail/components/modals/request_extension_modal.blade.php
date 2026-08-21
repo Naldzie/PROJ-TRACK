@@ -206,7 +206,7 @@
                     id="submitExtensionBtn"
                     onclick="submitExtension()"
                 >
-                    <i class="fas fa-check me-1"></i><span id="submitExtensionBtnLabel">Request Extension</span>
+                    <i class="fas fa-check me-1"></i><span id="submitExtensionBtnLabel">Add Extension</span>
                 </button>
             </div>
         </div>
@@ -282,7 +282,7 @@ window.openRequestExtensionModal = function () {
     document.getElementById('extensionEditMode').value = 'create';
     document.getElementById('extensionEditId').value = '';
     document.getElementById('extensionModalTitle').textContent = 'Request Project Extension';
-    document.getElementById('submitExtensionBtnLabel').textContent = isAdminContext() ? 'Create Extension' : 'Request Extension';
+    document.getElementById('submitExtensionBtnLabel').textContent = 'Add Extension';
     document.getElementById('pendingNotice').style.display = 'none';
     document.getElementById('rejectionReasonNotice').style.display = 'none';
     document.getElementById('rejectionReasonWrapper').style.display = 'none';
