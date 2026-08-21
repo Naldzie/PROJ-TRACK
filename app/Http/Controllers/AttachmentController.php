@@ -203,12 +203,14 @@ class AttachmentController extends Controller
         ];
         $contentType = $mimeMap[$ext] ?? Storage::disk('public')->mimeType($attachment->file_path);
 
-        return Storage::disk('public')->response(
-            $attachment->file_path,
-            $attachment->original_name,
-            ['Content-Type' => $contentType,
-             'Content-Disposition' => 'inline; filename="' . addslashes($attachment->original_name) . '"']
-        );
+        $contents = Storage::disk('public')->get($attachment->file_path);
+
+        return response($contents, 200, [
+            'Content-Type'        => $contentType,
+            'Content-Length'      => strlen($contents),
+            'Content-Disposition' => 'inline; filename="' . addslashes($attachment->original_name) . '"',
+            'Cache-Control'       => 'private, max-age=300',
+        ]);
     }
 
     /**

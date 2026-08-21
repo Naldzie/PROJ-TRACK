@@ -246,12 +246,14 @@ class DocumentController extends Controller
         ];
         $contentType = $mimeMap[$ext] ?? Storage::disk('public')->mimeType($document->file_path);
 
-        return Storage::disk('public')->response(
-            $document->file_path,
-            $document->document_name,
-            ['Content-Type' => $contentType,
-             'Content-Disposition' => 'inline; filename="' . addslashes($document->document_name) . '"']
-        );
+        $contents = Storage::disk('public')->get($document->file_path);
+
+        return response($contents, 200, [
+            'Content-Type'        => $contentType,
+            'Content-Length'      => strlen($contents),
+            'Content-Disposition' => 'inline; filename="' . addslashes($document->document_name) . '"',
+            'Cache-Control'       => 'private, max-age=300',
+        ]);
     }
 
     /**
