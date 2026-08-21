@@ -18,7 +18,8 @@ Status: ✅ Phase 1 — IMPLEMENTED on branch `phase-1-document-parser-improveme
         🔜 Phase 3 follow-up — Gemini OCR last-resort (PLANNED)
         (see "Phase 3 implementation log + Gemini OCR plan" below)
         🔜 Phase 4 — Document viewer enhancement + extension attachments fix
-        (PLANNED — see "Phase 4" section near end of file)
+        (IMPLEMENTED on branch `phase-4-document-viewer-fix`, uncommitted,
+        pending review/merge, Rule 12)
 Date:   August 21, 2026
 Branch: Phase 1 on `phase-1-document-parser-improvement`; Phase 2 branched
         FROM the Phase 1 branch (user decision) as `phase-2-scurve-baseline-import`;
@@ -593,8 +594,37 @@ STEP 5 — Tests
 ===============================================================================
 
 Date:     August 21, 2026
-Branch:   TBD (Rule 12 — branch on explicit go-ahead)
-Status:   PLANNED (not yet implemented)
+Branch:   phase-4-document-viewer-fix (from phase-3-pdf-scurve-import)
+Status:   IMPLEMENTED (uncommitted, pending review/merge, Rule 12)
+
+  IMPLEMENTED 2026-08-21 (on branch phase-4-document-viewer-fix):
+    - storage:link fixed (public/storage was an empty directory, now a proper
+      junction to storage/app/public).
+    - Extension attachments: baseline-schedule-extensions.js evidence cell now
+      renders clickable <span> chips with openExtensionAttachmentById() calling
+      openDocumentViewer() (same pattern as issues/progress/risk). Review
+      extension modal (review_extension_modal.blade.php) likewise updated.
+      Both store attachments in window._extensionAttachments map.
+    - Document viewer modal (document-viewer-modal.blade.php) rewritten:
+      * Images: rendered via <img> element (not iframe) for reliable
+        Content-Type handling; new #dvImageContainer with flex centering.
+      * PDF: unchanged (iframe with built-in viewer).
+      * Excel (xls/xlsx): iframe loading new previewHtml endpoint.
+      * DOCX: client-side mammoth.js loaded lazily from CDN (jsdelivr + unpkg
+        fallback); fetches file as ArrayBuffer, converts to HTML via
+        mammoth.convertToHtml(), renders in #dvHtmlContainer.
+      * hideAllViewers() resets all containers on open/close.
+      * PREVIEWABLE list extended to include xls, xlsx, docx.
+    - Excel preview endpoints: DocumentController::previewHtml() and
+      AttachmentController::previewHtml() added; uses PhpSpreadsheet
+      IOFactory::load() → Html writer → generateHtmlAll(); falls back to
+      view() for non-Excel types. 6 routes added (admin/staff/contractor
+      × documents/attachments).
+    - previewUrl passed from all call sites: documents.blade.php,
+      progress.blade.php, baseline-schedule.blade.php, issues-modal.js,
+      risk-register.js, progress-attachments.js, baseline-schedule-extensions.js.
+    - Tests: composer test 725 passed / 2803 assertions; npm run test:js
+      39/39; view:cache compiles clean.
 
 ---------------------------------------------------------------------------
   1. PROBLEMS

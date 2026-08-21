@@ -188,7 +188,7 @@
                                             <div style="display: flex; flex-wrap: wrap; gap: 4px;">
                                                 @foreach($history->attachments as $att)
                                                     <span class="attachment-chip me-1 mb-1" title="{{ $att->original_name }}"
-                                                          onclick="openDocumentViewer({id: {{ $att->id }}, name: '{{ addslashes($att->original_name) }}', type: 'Inspection Evidence', size: '{{ $att->display_size }}', uploadedBy: '{{ addslashes($att->uploaded_by ?? '') }}', uploadedAt: '{{ $att->created_at ? $att->created_at->format('M d, Y H:i') : '' }}', viewUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/view', downloadUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/download'})">
+                                                          onclick="openDocumentViewer({id: {{ $att->id }}, name: '{{ addslashes($att->original_name) }}', type: 'Inspection Evidence', size: '{{ $att->display_size }}', uploadedBy: '{{ addslashes($att->uploaded_by ?? '') }}', uploadedAt: '{{ $att->created_at ? $att->created_at->format('M d, Y H:i') : '' }}', viewUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/view', downloadUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/download', previewUrl: '/{{ auth()->user()->role }}/attachments/{{ $att->id }}/preview'})">
                                                         <i class="bi {{ $att->file_extension === 'pdf' ? 'bi-file-earmark-pdf' : 'bi-file-earmark-image' }}"></i>
                                                         <span>{{ $att->original_name }}</span>
                                                     </span>

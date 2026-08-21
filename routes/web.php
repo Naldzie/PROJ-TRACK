@@ -245,6 +245,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/documents/{document}/view', [DocumentController::class, 'view'])
         ->name('staff.documents.view');
 
+    Route::get('/documents/{document}/preview', [DocumentController::class, 'previewHtml'])
+        ->name('staff.documents.preview');
+
     // === ATTACHMENT ROUTES ===
     Route::post('/attachments/upload', [AttachmentController::class, 'upload'])
         ->name('staff.attachments.upload');
@@ -254,6 +257,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
 
     Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
         ->name('staff.attachments.view');
+
+    Route::get('/attachments/{attachment}/preview', [AttachmentController::class, 'previewHtml'])
+        ->name('staff.attachments.preview');
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('staff.attachments.download');
@@ -363,6 +369,9 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
  
     Route::get('/documents/{document}/view', [DocumentController::class, 'view'])
         ->name('contractor.documents.view');
+
+    Route::get('/documents/{document}/preview', [DocumentController::class, 'previewHtml'])
+        ->name('contractor.documents.preview');
  
     Route::get('/documents/{document}/download', [DocumentController::class, 'download'])
         ->name('contractor.documents.download');
@@ -370,6 +379,9 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
     // === ATTACHMENT ROUTES (READ-ONLY) ===
     Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
         ->name('contractor.attachments.view');
+
+    Route::get('/attachments/{attachment}/preview', [AttachmentController::class, 'previewHtml'])
+        ->name('contractor.attachments.preview');
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('contractor.attachments.download');
@@ -648,6 +660,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::get('/documents/{document}/view', [DocumentController::class, 'view'])
         ->name('admin.documents.view');
 
+    Route::get('/documents/{document}/preview', [DocumentController::class, 'previewHtml'])
+        ->name('admin.documents.preview');
+
     // === ATTACHMENT ROUTES ===
     Route::post('/attachments/upload', [AttachmentController::class, 'upload'])
         ->name('admin.attachments.upload');
@@ -657,6 +672,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/attachments/{attachment}/view', [AttachmentController::class, 'view'])
         ->name('admin.attachments.view');
+
+    Route::get('/attachments/{attachment}/preview', [AttachmentController::class, 'previewHtml'])
+        ->name('admin.attachments.preview');
 
     Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])
         ->name('admin.attachments.download');

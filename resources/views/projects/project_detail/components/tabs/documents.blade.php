@@ -42,9 +42,10 @@
             };
 
             // Build role-aware route names
-            $role       = auth()->user()->role;
-            $viewRoute  = $role . '.documents.view';
-            $dlRoute    = $role . '.documents.download';
+            $role         = auth()->user()->role;
+            $viewRoute    = $role . '.documents.view';
+            $dlRoute      = $role . '.documents.download';
+            $previewRoute = $role . '.documents.preview';
 
             // Grab any one document to use as the @can gate subject for the JS block.
             // DocumentPolicy::delete() only checks the user's role, so any document works.
@@ -77,6 +78,7 @@
                                 // Build the view & download URLs via named routes
                                 $viewUrl     = route($viewRoute, $document->id);
                                 $downloadUrl = route($dlRoute,   $document->id);
+                                $previewUrl  = route($previewRoute, $document->id);
                             @endphp
 
                             <div class="doc-item doc-item-clickable"
@@ -91,6 +93,7 @@
                                      uploadedAt:  {{ Js::from($uploadDate) }},
                                      viewUrl:     {{ Js::from($viewUrl) }},
                                      downloadUrl: {{ Js::from($downloadUrl) }},
+                                     previewUrl:  {{ Js::from($previewUrl) }},
                                  })">
 
                                 <div class="doc-icon" style="background: {{ $color['bg'] }}">
@@ -120,6 +123,7 @@
                                               uploadedAt:  {{ Js::from($uploadDate) }},
                                               viewUrl:     {{ Js::from($viewUrl) }},
                                               downloadUrl: {{ Js::from($downloadUrl) }},
+                                              previewUrl:  {{ Js::from($previewUrl) }},
                                           })">
                                         <i class="bi bi-eye"></i>
                                     </span>

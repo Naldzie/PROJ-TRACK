@@ -228,7 +228,8 @@ function openRiskAttachmentById(id) {
         uploadedBy: att.uploaded_by,
         uploadedAt: att.created_at,
         viewUrl: `/${role}/attachments/${att.id}/view`,
-        downloadUrl: `/${role}/attachments/${att.id}/download`
+        downloadUrl: `/${role}/attachments/${att.id}/download`,
+        previewUrl: `/${role}/attachments/${att.id}/preview`
     });
 }
 

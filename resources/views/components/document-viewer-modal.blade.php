@@ -72,9 +72,17 @@
                     <p>Loading document…</p>
                 </div>
 
-                {{-- PDF / image viewer --}}
+                {{-- PDF viewer (iframe) --}}
                 <iframe id="dvIframe" class="dv-iframe" src="" title="Document viewer"
                         style="display:none;" allowfullscreen></iframe>
+
+                {{-- Image viewer (<img> — reliable Content-Type handling) --}}
+                <div id="dvImageContainer" class="dv-image-container" style="display:none;">
+                </div>
+
+                {{-- HTML viewer for DOCX/Excel preview --}}
+                <div id="dvHtmlContainer" class="dv-html-container" style="display:none;">
+                </div>
 
                 {{-- Fallback for unsupported file types --}}
                 <div class="dv-fallback" id="dvFallback" style="display:none;">
@@ -289,6 +297,52 @@
     background: #fff;
 }
 
+/* === Image viewer === */
+.dv-image-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1e1e2e;
+    overflow: auto;
+}
+
+.dv-image-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+/* === HTML viewer (DOCX / Excel preview) === */
+.dv-html-container {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background: #fff;
+    padding: 20px;
+}
+
+.dv-html-container table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+}
+
+.dv-html-container td,
+.dv-html-container th {
+    border: 1px solid #d1d5db;
+    padding: 4px 8px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.dv-html-container th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+
 /* === Loading spinner === */
 .dv-loading {
     display: flex;
@@ -364,7 +418,11 @@
 <script>
 (function () {
     // ── File-type helpers ────────────────────────────────────────────
-    const PREVIEWABLE = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+    var IMAGE_EXTS  = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+    var EXCEL_EXTS  = ['xls', 'xlsx'];
+    var DOCX_EXTS   = ['docx'];
+    var PDF_EXTS    = ['pdf'];
+    var PREVIEWABLE = IMAGE_EXTS.concat(EXCEL_EXTS).concat(DOCX_EXTS).concat(PDF_EXTS);
 
     function getExtension(filename) {
         return (filename || '').split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -375,8 +433,8 @@
     }
 
     function getFileIcon(filename) {
-        const ext = getExtension(filename);
-        const map = {
+        var ext = getExtension(filename);
+        var map = {
             pdf:  'bi-file-earmark-pdf',
             doc:  'bi-file-earmark-word',
             docx: 'bi-file-earmark-word',
@@ -394,8 +452,54 @@
         return map[ext] || 'bi-file-earmark-text';
     }
 
+    function getViewerType(filename) {
+        var ext = getExtension(filename);
+        if (IMAGE_EXTS.includes(ext))  return 'image';
+        if (PDF_EXTS.includes(ext))    return 'pdf';
+        if (EXCEL_EXTS.includes(ext))  return 'excel';
+        if (DOCX_EXTS.includes(ext))   return 'docx';
+        return 'none';
+    }
+
+    // ── Mammoth.js lazy loader (for DOCX preview) ─────────────────
+    var _mammothLoaded = false;
+    var _mammothLoading = false;
+    var _mammothCallbacks = [];
+
+    function loadMammoth(callback) {
+        if (_mammothLoaded) { callback(); return; }
+        _mammothCallbacks.push(callback);
+        if (_mammothLoading) return;
+        _mammothLoading = true;
+
+        var cdnUrls = [
+            'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js',
+            'https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js'
+        ];
+        var idx = 0;
+
+        function tryNext() {
+            if (idx >= cdnUrls.length) {
+                console.error('[DocumentViewer] Failed to load mammoth.js from all CDNs');
+                _mammothCallbacks.forEach(function(cb) { cb(new Error('mammoth.js load failed')); });
+                _mammothCallbacks = [];
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = cdnUrls[idx++];
+            s.onload = function () {
+                _mammothLoaded = true;
+                _mammothCallbacks.forEach(function(cb) { cb(); });
+                _mammothCallbacks = [];
+            };
+            s.onerror = tryNext;
+            document.head.appendChild(s);
+        }
+        tryNext();
+    }
+
     // ── DOM refs (resolved lazily after DOMContentLoaded) ────────────
-    let _modal, _bsModal;
+    var _modal, _bsModal;
     function getModal() {
         if (!_modal) _modal = document.getElementById('documentViewerModal');
         return _modal;
@@ -403,6 +507,20 @@
     function getBsModal() {
         if (!_bsModal) _bsModal = new bootstrap.Modal(getModal());
         return _bsModal;
+    }
+
+    function hideAllViewers(modal) {
+        var iframeEl      = modal.querySelector('#dvIframe');
+        var imageContainer = modal.querySelector('#dvImageContainer');
+        var htmlContainer  = modal.querySelector('#dvHtmlContainer');
+        var loadingEl      = modal.querySelector('#dvLoading');
+        var fallbackEl     = modal.querySelector('#dvFallback');
+
+        if (iframeEl)       { iframeEl.style.display = 'none'; iframeEl.src = ''; }
+        if (imageContainer) { imageContainer.style.display = 'none'; imageContainer.innerHTML = ''; }
+        if (htmlContainer)  { htmlContainer.style.display = 'none'; htmlContainer.innerHTML = ''; }
+        if (loadingEl)      { loadingEl.style.display = 'none'; }
+        if (fallbackEl)     { fallbackEl.style.display = 'none'; }
     }
 
     // ── Public API ───────────────────────────────────────────────────
@@ -418,9 +536,10 @@
      * @param {string}  [options.uploadedAt]
      * @param {string}  options.viewUrl
      * @param {string}  options.downloadUrl
+     * @param {string}  [options.previewUrl]
      */
     window.openDocumentViewer = function (options) {
-        const modal = getModal();
+        var modal = getModal();
 
         // ── Populate header meta
         modal.querySelector('#dvFilename').textContent     = options.name       || 'Document';
@@ -430,60 +549,116 @@
         modal.querySelector('#dvUploadedAt').textContent   = options.uploadedAt || '—';
 
         // ── File icon
-        const iconEl = modal.querySelector('#dvFileIcon');
-        iconEl.innerHTML = `<i class="bi ${getFileIcon(options.name)}"></i>`;
+        var iconEl = modal.querySelector('#dvFileIcon');
+        iconEl.innerHTML = '<i class="bi ' + getFileIcon(options.name) + '"></i>';
 
         // ── Wire action buttons
-        const openTabBtn   = modal.querySelector('#dvOpenTabBtn');
-        const downloadBtn  = modal.querySelector('#dvDownloadBtn');
-        const fallbackOpen = modal.querySelector('#dvFallbackOpenBtn');
-        const fallbackDl   = modal.querySelector('#dvFallbackDownloadBtn');
+        var openTabBtn   = modal.querySelector('#dvOpenTabBtn');
+        var downloadBtn  = modal.querySelector('#dvDownloadBtn');
+        var fallbackOpen = modal.querySelector('#dvFallbackOpenBtn');
+        var fallbackDl   = modal.querySelector('#dvFallbackDownloadBtn');
 
         openTabBtn.href   = options.viewUrl;
         downloadBtn.href  = options.downloadUrl;
         if (fallbackOpen) fallbackOpen.href = options.viewUrl;
         if (fallbackDl)   fallbackDl.href   = options.downloadUrl;
 
-        // ── Reset viewer state
-        const iframeEl   = modal.querySelector('#dvIframe');
-        const loadingEl  = modal.querySelector('#dvLoading');
-        const fallbackEl = modal.querySelector('#dvFallback');
+        // ── Reset all viewer containers
+        hideAllViewers(modal);
 
-        iframeEl.style.display   = 'none';
-        fallbackEl.style.display = 'none';
-        loadingEl.style.display  = 'flex';
-        iframeEl.src = '';
+        var loadingEl = modal.querySelector('#dvLoading');
+        loadingEl.style.display = 'flex';
 
         getBsModal().show();
 
-        // ── Decide viewer strategy
-        if (isPreviewable(options.name)) {
+        // ── Decide viewer strategy per file type
+        var viewerType = getViewerType(options.name);
+
+        if (viewerType === 'image') {
+            // Images: use <img> element (reliable Content-Type detection)
+            var container = modal.querySelector('#dvImageContainer');
+            var img = new Image();
+            img.onload = function () {
+                loadingEl.style.display = 'none';
+                container.style.display = 'flex';
+            };
+            img.onerror = function () {
+                loadingEl.style.display = 'none';
+                modal.querySelector('#dvFallback').style.display = 'flex';
+            };
+            img.src = options.viewUrl;
+            img.alt = options.name || 'Image';
+            container.appendChild(img);
+
+        } else if (viewerType === 'pdf') {
+            // PDF: use iframe (browser built-in viewer)
+            var iframeEl = modal.querySelector('#dvIframe');
             iframeEl.onload = function () {
                 loadingEl.style.display = 'none';
-                iframeEl.style.display  = 'block';
+                iframeEl.style.display = 'block';
             };
             iframeEl.onerror = function () {
-                loadingEl.style.display  = 'none';
-                fallbackEl.style.display = 'flex';
+                loadingEl.style.display = 'none';
+                modal.querySelector('#dvFallback').style.display = 'flex';
             };
             iframeEl.src = options.viewUrl;
+
+        } else if (viewerType === 'excel') {
+            // Excel: server-side PhpSpreadsheet → HTML in iframe
+            var iframeEl = modal.querySelector('#dvIframe');
+            var previewUrl = options.previewUrl || options.viewUrl;
+            iframeEl.onload = function () {
+                loadingEl.style.display = 'none';
+                iframeEl.style.display = 'block';
+            };
+            iframeEl.onerror = function () {
+                loadingEl.style.display = 'none';
+                modal.querySelector('#dvFallback').style.display = 'flex';
+            };
+            iframeEl.src = previewUrl;
+
+        } else if (viewerType === 'docx') {
+            // DOCX: client-side mammoth.js → HTML in div
+            loadMammoth(function (err) {
+                if (err || typeof mammoth === 'undefined') {
+                    loadingEl.style.display = 'none';
+                    modal.querySelector('#dvFallback').style.display = 'flex';
+                    return;
+                }
+                // Fetch the file as ArrayBuffer
+                fetch(options.downloadUrl, { credentials: 'same-origin' })
+                    .then(function (res) {
+                        if (!res.ok) throw new Error('Fetch failed');
+                        return res.arrayBuffer();
+                    })
+                    .then(function (arrayBuffer) {
+                        return mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+                    })
+                    .then(function (result) {
+                        var htmlContainer = modal.querySelector('#dvHtmlContainer');
+                        htmlContainer.innerHTML = result.value || '<p style="color:#999;">Empty document</p>';
+                        loadingEl.style.display = 'none';
+                        htmlContainer.style.display = 'block';
+                    })
+                    .catch(function () {
+                        loadingEl.style.display = 'none';
+                        modal.querySelector('#dvFallback').style.display = 'flex';
+                    });
+            });
+
         } else {
-            // Non-previewable: show fallback immediately
-            loadingEl.style.display  = 'none';
-            fallbackEl.style.display = 'flex';
+            // Unsupported: show fallback immediately
+            loadingEl.style.display = 'none';
+            modal.querySelector('#dvFallback').style.display = 'flex';
         }
     };
 
-    // ── Clean up iframe src when modal is hidden (avoids audio/video leaks)
+    // ── Clean up when modal is hidden (avoids memory/audio/video leaks)
     document.addEventListener('DOMContentLoaded', function () {
-        const modal = getModal();
+        var modal = getModal();
         if (!modal) return;
         modal.addEventListener('hidden.bs.modal', function () {
-            const iframeEl = modal.querySelector('#dvIframe');
-            if (iframeEl) {
-                iframeEl.src = '';
-                iframeEl.style.display = 'none';
-            }
+            hideAllViewers(modal);
         });
     });
 })();

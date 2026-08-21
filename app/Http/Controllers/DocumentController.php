@@ -246,6 +246,45 @@ class DocumentController extends Controller
     }
 
     /**
+     * === PREVIEW DOCUMENT AS HTML ===
+     *
+     * Converts Excel/Word files to HTML for in-browser preview.
+     * For xls/xlsx: uses PhpSpreadsheet Html writer.
+     * Other types: redirects to the view endpoint.
+     */
+    public function previewHtml($documentId)
+    {
+        $document = Document::findOrFail($documentId);
+
+        if (!Auth::user()->can('view', $document)) {
+            abort(403, 'You do not have permission to view this document.');
+        }
+
+        if (!$document->fileExists()) {
+            abort(404, 'Document file not found.');
+        }
+
+        $ext = strtolower(pathinfo($document->file_path, PATHINFO_EXTENSION));
+
+        if (in_array($ext, ['xls', 'xlsx'])) {
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load(
+                    $document->full_path
+                );
+                $writer = new \PhpOffice\PhpSpreadsheet\Writer\Html($spreadsheet);
+                $html = $writer->generateHtmlAll();
+
+                return response($html)
+                    ->header('Content-Type', 'text/html; charset=utf-8');
+            } catch (\Exception $e) {
+                abort(500, 'Could not render spreadsheet preview.');
+            }
+        }
+
+        return $this->view($documentId);
+    }
+
+    /**
      * === DOWNLOAD DOCUMENT ===
      *
      * Forces a file download (attachment disposition).

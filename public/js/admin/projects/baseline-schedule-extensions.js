@@ -13,6 +13,26 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 /**
+ * Open the document viewer for an extension attachment using role-scoped routes.
+ */
+function openExtensionAttachmentById(id) {
+    var att = (window._extensionAttachments || {})[id];
+    if (!att || typeof openDocumentViewer !== 'function') return;
+    var role = window.userRole;
+    openDocumentViewer({
+        id: att.id,
+        name: att.original_name,
+        type: 'Extension Evidence',
+        size: att.display_size || '',
+        uploadedBy: att.uploaded_by || '',
+        uploadedAt: att.created_at || '',
+        viewUrl: '/' + role + '/attachments/' + att.id + '/view',
+        downloadUrl: '/' + role + '/attachments/' + att.id + '/download',
+        previewUrl: '/' + role + '/attachments/' + att.id + '/preview'
+    });
+}
+
+/**
  * Load and display the extensions table
  * Fetches extension data from the API and renders as a table or empty state
  */
@@ -117,13 +137,17 @@ function reloadExtensionsTable() {
                         agingBadge = `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px;" title="Days awaiting admin review">${ext.days_awaiting_review}d</span>`;
                     }
 
-                    // Evidence (Decision 4): count chip + links to each file.
+                    // Evidence (Decision 4): count chip + clickable chips that
+                    // open the document viewer modal (same pattern as issues/
+                    // progress/risk attachments).
                     let evidenceCell = '';
                     if (ext.attachments_count > 0) {
-                        const links = (ext.attachments || []).map(a =>
-                            `<a href="${a.file_url}" target="_blank" style="color:#4f46e5;text-decoration:none;font-size:11px;" title="${(a.original_name || '').replace(/"/g, '&quot;')}"><i class="bi bi-paperclip"></i> ${a.original_name || a.file_url}</a>`
-                        ).join('<br>');
-                        evidenceCell = `<div style="display:inline-flex;align-items:center;gap:4px;color:#4f46e5;font-size:11px;font-weight:600;">${links}</div>`;
+                        window._extensionAttachments = window._extensionAttachments || {};
+                        const links = (ext.attachments || []).map(a => {
+                            window._extensionAttachments[a.id] = a;
+                            return `<span class="attachment-chip me-1 mb-1" title="${(a.original_name || '').replace(/"/g, '&quot;')}" onclick="openExtensionAttachmentById(${a.id})" style="cursor:pointer;color:#4f46e5;font-size:11px;font-weight:600;"><i class="bi bi-paperclip"></i> ${a.original_name || 'file'}</span>`;
+                        }).join(' ');
+                        evidenceCell = `<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">${links}</div>`;
                     }
 
                     // Editable for admin always; for staff only while

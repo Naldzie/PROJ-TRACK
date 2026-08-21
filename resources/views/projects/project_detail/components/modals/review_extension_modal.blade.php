@@ -186,9 +186,11 @@ window.openReviewExtensionModal = function (extension) {
     const evidenceEl = document.getElementById('reviewEvidence');
     const attachments = extension.attachments || [];
     if (attachments.length) {
-        evidenceEl.innerHTML = attachments.map(a =>
-            `<a href="${a.file_url}" target="_blank" style="color:#4f46e5;text-decoration:none;font-size:12px;"><i class="bi bi-paperclip"></i> ${(a.original_name || a.file_url).replace(/"/g, '&quot;')}</a>`
-        ).join('<br>');
+        window._extensionAttachments = window._extensionAttachments || {};
+        evidenceEl.innerHTML = attachments.map(a => {
+            window._extensionAttachments[a.id] = a;
+            return `<span class="attachment-chip me-1 mb-1" title="${(a.original_name || '').replace(/"/g, '&quot;')}" onclick="openExtensionAttachmentById(${a.id})" style="cursor:pointer;color:#4f46e5;font-size:12px;font-weight:600;"><i class="bi bi-paperclip"></i> ${(a.original_name || 'file').replace(/"/g, '&quot;')}</span>`;
+        }).join(' ');
         evidenceWrapper.style.display = 'block';
     } else {
         evidenceEl.innerHTML = '';

@@ -203,6 +203,41 @@ class AttachmentController extends Controller
     }
 
     /**
+     * === PREVIEW ATTACHMENT AS HTML ===
+     *
+     * Converts Excel files to HTML for in-browser preview.
+     */
+    public function previewHtml(Attachment $attachment)
+    {
+        if (!Auth::user()->can('view', $attachment)) {
+            abort(403, 'You do not have permission to view this attachment.');
+        }
+
+        if (!$attachment->fileExists()) {
+            abort(404, 'Attachment file not found.');
+        }
+
+        $ext = strtolower(pathinfo($attachment->file_path, PATHINFO_EXTENSION));
+
+        if (in_array($ext, ['xls', 'xlsx'])) {
+            try {
+                $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load(
+                    $attachment->full_path
+                );
+                $writer = new \PhpOffice\PhpSpreadsheet\Writer\Html($spreadsheet);
+                $html = $writer->generateHtmlAll();
+
+                return response($html)
+                    ->header('Content-Type', 'text/html; charset=utf-8');
+            } catch (\Exception $e) {
+                abort(500, 'Could not render spreadsheet preview.');
+            }
+        }
+
+        return $this->view($attachment);
+    }
+
+    /**
      * === DOWNLOAD ATTACHMENT ===
      *
      * Forces a file download (attachment disposition).
