@@ -105,6 +105,11 @@ function reloadExtensionsTable() {
                 data.extensions.forEach(ext => {
                     if (ext.status === 'approved') activeApprovedId = ext.id;
                 });
+                // Latest extension = highest extension_number (last in
+                // ascending-sorted array). Only it can be reviewed.
+                const latestExtensionId = data.extensions.length
+                    ? data.extensions[data.extensions.length - 1].id
+                    : null;
 
                 // Build table rows for each extension
                 data.extensions.forEach((ext, index) => {
@@ -168,17 +173,18 @@ function reloadExtensionsTable() {
                     // own pending request only. Rejected is NOT editable —
                     // Resubmit is the only way back to review.
                     const canEdit = isAdmin || (isStaff && isOwner && ext.status === 'pending');
-                    // Delete: admin may delete any row EXCEPT the active
-                    // approved extension; staff may delete their OWN
-                    // pending/rejected requests (Decision 14).
-                    const isActiveApproved = ext.status === 'approved' && ext.id === activeApprovedId;
-                    const canDelete = isAdmin ? !isActiveApproved : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
+                    // Delete: admin may archive only pending/rejected;
+                    // staff may archive their OWN pending/rejected (Decision 14).
+                    const canDelete = isAdmin
+                        ? (ext.status === 'pending' || ext.status === 'rejected')
+                        : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
                     // Resubmit (Decision 6): only rejected rows; staff may only
                     // resubmit their OWN (Decision 14). Admin may resubmit any.
                     const canResubmit = ext.status === 'rejected' && (isAdmin || (isStaff && isOwner));
                     // Review (Decision 13): admin decides on pending requests
-                    // via the dedicated Review modal.
-                    const canReview = isAdmin && ext.status === 'pending';
+                    // via the dedicated Review modal. Only the latest extension
+                    // can be reviewed to prevent out-of-order decisions.
+                    const canReview = isAdmin && ext.status === 'pending' && ext.id === latestExtensionId;
 
                     row.innerHTML = `
                         ${isAdmin ? `<td style="padding: 12px 15px; text-align: center;"><input type="checkbox" class="extension-row-checkbox" value="${ext.id}" data-number="${ext.extension_number}" data-status="${ext.status}" style="cursor: pointer; width: 14px; height: 14px;"></td>` : ''}
