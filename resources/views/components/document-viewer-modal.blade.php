@@ -441,7 +441,6 @@
 
     function getViewerType(filename) {
         var ext = getExtension(filename);
-        if (IMAGE_EXTS.includes(ext))  return 'image';
         if (PDF_EXTS.includes(ext))    return 'pdf';
         if (EXCEL_EXTS.includes(ext))  return 'excel';
         if (DOCX_EXTS.includes(ext))   return 'docx';
