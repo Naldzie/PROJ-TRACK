@@ -50,33 +50,32 @@ Files:
 
 ---
 
-## Task 3 — Remove Partial Approval from Review Modal
+## Task 3 — Remove Partial Approval
 
-Goal: Simplify the review modal to only "Approve as Requested" and "Reject".
-Remove the "Approve with Less Time" option from the REVIEW modal only.
-The admin can still set an approved date via the request/edit modal
-(partialApprovalWrapper stays in request_extension_modal.blade.php).
+Goal: Simplify both the review modal and the edit modal — remove the
+"Approve with Less Time" / partial approval option entirely.
 
 Files:
 - resources/views/projects/project_detail/components/modals/review_extension_modal.blade.php
-  - Remove the "Approve with Less Time" button (line ~60).
-  - Remove the reviewGrantedDate / reviewGrantedDays inputs and
+  - Removed the "Approve with Less Time" button.
+  - Removed reviewGrantedDate / reviewGrantedDays inputs and
     syncReviewPartialApproval() JS function.
-  - Remove the partial decision branch from the submit handler.
-  - Keep only "Approve as Requested" and "Reject" buttons.
-  - On submit: approved extensions always use new_end_date as the
-    effective date (no approved_new_end_date override from this modal).
+  - Removed _prefillReviewPartial() function.
+  - Simplified setReviewDecision() to 2-button (Approve/Reject).
+  - Removed partial branch from submitReviewExtension().
+  - Updated docblock.
+
+- resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php
+  - Removed partialApprovalWrapper div (Granted End Date field).
+  - Removed approvedNewEndDate references from toggleRejectionReasonField(),
+    openRequestExtensionModal(), openEditExtensionModal(), and submitExtension().
+  - Removed partial approval submit logic and client-side validation for
+    granted date.
+  - Removed partial approval min-date setter in DOMContentLoaded.
 
 - app/Http/Controllers/Admin/ProjectExtensionController.php
-  - store() (lines 82-95): Keep partial approval logic for admin-created
-    extensions (they can still set approved_new_end_date via edit modal).
-  - update() (lines 386-401): Keep partial approval sanity check for
-    admin edit flow. The review modal just no longer sends partial data.
-
-Note: The partialApprovalWrapper in request_extension_modal.blade.php is
-KEPT as-is. Admins can still set a granted date when creating/editing
-extensions directly. Only the dedicated review modal loses the 3-button
-choice.
+  - store() and update(): kept approved_new_end_date handling for backward
+    compatibility, but no UI sends it anymore.
 
 ---
 
@@ -87,24 +86,20 @@ Confirmed by client and consultant.
 
 Files:
 - app/Http/Controllers/Admin/ProjectExtensionController.php
-  - In store(), after validateExtension() and before DB::beginTransaction,
-    add a pending check:
-    ```
-    $hasPending = ProjectExtension::where('project_id', $project->id)
-        ->where('status', 'pending')
-        ->exists();
-    if ($hasPending) {
-        return response()->json([
-            'success' => false,
-            'message' => 'There is already a pending extension request for this project. Please wait for it to be reviewed before adding another.',
-        ], 422);
-    }
-    ```
+  - store(): added pending check before DB::beginTransaction — returns
+    422 if a pending extension already exists for the project.
 
 - resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php
-  - (Optional) Hide the "Add Extension" button when a pending extension
-    exists. Requires passing $hasPendingExtension from controller or
-    checking via JS after extensions table loads.
+  - Added id="addExtensionBtn" to the Add Extension button.
+
+- public/js/admin/projects/baseline-schedule-extensions.js
+  - In reloadExtensionsTable AJAX success handler, toggles button
+    visibility: hidden when any extension has status === 'pending',
+    visible otherwise.
+
+- tests/Feature/ProjectExtensionLifecycleTest.php
+  - Updated test_staff_cannot_submit_second_pending_extension to expect
+    422 JSON response instead of 302 redirect.
 
 ---
 
@@ -190,6 +185,33 @@ Files:
 
 ---
 
+## Task 7 — Restrict Reject and Archive to Eligible Extensions
+
+Goal: Only the LATEST extension can be rejected (Review button).
+Only pending or rejected extensions can be archived (Archive button).
+Hide the Archive button for extensions that cannot be archived.
+
+Current state:
+- canReview: any pending extension → admin sees Review button on all pending
+- canDelete (admin): any except active approved → admin can archive approved
+- canDelete (staff): own pending/rejected → already correct
+
+Changes:
+- public/js/admin/projects/baseline-schedule-extensions.js
+  - Compute latestExtensionId = extensions[0].id (first in list = highest
+    extension_number, since list is sorted desc).
+  - canReview: add `&& ext.id === latestExtensionId` — only the latest
+    extension shows the Review button.
+  - canDelete (admin): change from `!isActiveApproved` to
+    `ext.status === 'pending' || ext.status === 'rejected'` — approved
+    extensions cannot be archived.
+  - canDelete (staff): unchanged (already pending/rejected only).
+
+Files:
+- public/js/admin/projects/baseline-schedule-extensions.js
+
+---
+
 ## Verification
 
 - Run composer test after each task (725 tests must pass)
@@ -209,3 +231,43 @@ Files:
   deferred to a future iteration)
 - Bulk extension operations (unchanged)
 - Migration to remove approved_new_end_date column (kept for data integrity)
+
+---
+
+## Implementation Log
+
+Track commits and changes as tasks are completed.
+
+### Task 1 — Dashboard reorder (committed: f0ebe99)
+- Reordered stat cards: Total → Completed → Ongoing → Overdue → At Risk
+- Added $completedBudget query and title tooltip on Completed card
+- Files: DashboardController.php, admin/dashboard.blade.php
+
+### Task 2 — Extension label (committed: 625114e)
+- Changed "Request Extension" → "Add Extension" for all roles
+- Files: extensions-section.blade.php, request_extension_modal.blade.php,
+  baseline-schedule-extensions.js
+
+### Task 3 — Remove partial approval (committed: 415405c)
+- Removed "Approve with Less Time" from review modal (2-button only)
+- Removed partialApprovalWrapper, approvedNewEndDate JS, and partial
+  approval submit logic from edit modal
+- Files: review_extension_modal.blade.php, request_extension_modal.blade.php
+
+### Task 4 — 1 extension at a time (committed: 9b36bb0)
+- Server-side: 422 if pending extension exists (store())
+- Client-side: button hidden when pending extensions exist
+- Updated test to expect 422
+- Files: ProjectExtensionController.php, extensions-section.blade.php,
+  baseline-schedule-extensions.js, ProjectExtensionLifecycleTest.php
+
+### Rejection fix (committed: 2a163f2)
+- Server-side: skip new_end_date validation when rejecting (update())
+- Client-side: skip HTML5 checkValidity() and custom date check when
+  status is 'rejected' (submitExtension)
+- Files: ProjectExtensionController.php, request_extension_modal.blade.php
+
+### Task 7 — Restrict reject and archive (pending)
+- Only latest extension can be rejected (Review button)
+- Only pending/rejected can be archived (Archive button)
+- File: baseline-schedule-extensions.js
