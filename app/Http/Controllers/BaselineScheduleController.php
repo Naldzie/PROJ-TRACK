@@ -1076,6 +1076,19 @@ class BaselineScheduleController extends Controller
     }
 
     /**
+     * Check if the user can edit the original baseline of the project.
+     * Admins always have access; staff only when assigned to the project.
+     */
+    private function canEditOriginalBaseline(User $user, Project $project): bool
+    {
+        if ($user->role === 'admin') {
+            return true;
+        }
+
+        return $project->isAssignedTo($user);
+    }
+
+    /**
      * Return ONLY original-baseline months for the admin "Edit Original
      * Baseline" mode of the Set Up Baseline modal.
      *
@@ -1086,10 +1099,10 @@ class BaselineScheduleController extends Controller
      */
     public function getOriginalBaselineMonths(Project $project)
     {
-        if (auth()->user() && auth()->user()->role !== 'admin') {
+        if (! $this->canEditOriginalBaseline(auth()->user(), $project)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only admins can edit the original baseline.',
+                'message' => 'Only admins or assigned staff can edit the original baseline.',
             ], 403);
         }
 
@@ -1134,7 +1147,7 @@ class BaselineScheduleController extends Controller
     }
 
     /**
-     * Admin-only: bulk-save an edited ORIGINAL baseline.
+     * Admin/assigned-staff: bulk-save an edited ORIGINAL baseline.
      *
      * This is the correction path for the locked original plan. Unlike the
      * adjust-baseline flow it:
@@ -1153,10 +1166,10 @@ class BaselineScheduleController extends Controller
      */
     public function saveEditedOriginalBaseline(Request $request, Project $project)
     {
-        if (auth()->user() && auth()->user()->role !== 'admin') {
+        if (! $this->canEditOriginalBaseline(auth()->user(), $project)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Only admins can edit the original baseline.',
+                'message' => 'Only admins or assigned staff can edit the original baseline.',
             ], 403);
         }
 
@@ -1185,6 +1198,14 @@ class BaselineScheduleController extends Controller
                     'message' => 'Set the project planned start and end dates before editing the baseline.',
                 ], 422);
             }
+
+            // Capture before-snapshot for diff logging (admin audit trail)
+            $beforeMonths = ProjectBaselineSchedule::where('project_id', $project->id)
+                ->whereNotNull('original_planned_progress_percent')
+                ->orderBy('original_planned_date', 'asc')
+                ->get(['id', 'month_label', 'planned_date', 'planned_progress_percent',
+                    'original_planned_date', 'original_planned_progress_percent', 'description'])
+                ->toArray();
 
             DB::beginTransaction();
 
@@ -1507,6 +1528,16 @@ class BaselineScheduleController extends Controller
                     ." edited the locked original baseline for project: {$project->title}",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
+                'metadata' => [
+                    'before' => $beforeMonths,
+                    'after' => ProjectBaselineSchedule::where('project_id', $project->id)
+                        ->whereNotNull('original_planned_progress_percent')
+                        ->orderBy('original_planned_date', 'asc')
+                        ->get(['id', 'month_label', 'planned_date', 'planned_progress_percent',
+                            'original_planned_date', 'original_planned_progress_percent', 'description'])
+                        ->toArray(),
+                    'removed' => $validated['removed_ids'] ?? [],
+                ],
             ]);
 
             DB::commit();

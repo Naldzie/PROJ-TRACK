@@ -514,4 +514,17 @@ class Project extends Model
         // Return as is if not numeric (backward compatibility for old string names)
         return $managerId;
     }
+
+    /**
+     * Check if the given user is the assigned staff for this project.
+     * Used for per-project authorization (baseline edit, extension approve).
+     */
+    public function isAssignedTo(\App\Models\User $user): bool
+    {
+        if ($user->role !== 'staff' || !$user->staff) {
+            return false;
+        }
+
+        return (string) $this->assigned_project_manager === (string) $user->staff->id;
+    }
 }

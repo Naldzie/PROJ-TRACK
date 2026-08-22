@@ -61,8 +61,9 @@
 @include('projects.project_detail.components.tabs.overview', ['project' => $project, 'data' => $data, 'contractors' => $contractors])
 @php
     $routePrefix = auth()->user()->role === 'admin' ? 'admin.projects' : (auth()->user()->role === 'staff' ? 'staff.projects' : 'contractor.projects');
+    $isAssignedStaff = $project->isAssignedTo(auth()->user());
 @endphp
-@include('projects.project_detail.components.tabs.baseline-schedule', ['project' => $project, 'routePrefix' => $routePrefix])
+@include('projects.project_detail.components.tabs.baseline-schedule', ['project' => $project, 'routePrefix' => $routePrefix, 'isAssignedStaff' => $isAssignedStaff])
 @include('projects.project_detail.components.tabs.progress', ['project' => $project, 'data' => $data])
 @include('projects.project_detail.components.tabs.documents', ['project' => $project, 'data' => $data])
 @include('projects.project_detail.components.tabs.issues', ['project' => $project])

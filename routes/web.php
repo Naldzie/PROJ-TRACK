@@ -173,6 +173,11 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
         ->name('staff.projects.baseline-schedules.adjust');
     Route::post('/projects/{project}/baseline-schedules/adjust/save', [BaselineScheduleController::class, 'saveAdjustedBaseline'])
         ->name('staff.projects.baseline-schedules.adjust.save');
+    // Edit original (frozen) baseline — assigned staff can edit their projects
+    Route::get('/projects/{project}/baseline-schedules/original', [BaselineScheduleController::class, 'getOriginalBaselineMonths'])
+        ->name('staff.projects.baseline-schedules.original');
+    Route::post('/projects/{project}/baseline-schedules/original/save', [BaselineScheduleController::class, 'saveEditedOriginalBaseline'])
+        ->name('staff.projects.baseline-schedules.original.save');
 
     // S-Curve Excel baseline import (Phase 2)
     Route::post('/s-curve/parse', [SCurveImportController::class, 'parseExcel'])

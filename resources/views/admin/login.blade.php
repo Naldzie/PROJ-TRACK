@@ -354,6 +354,9 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 .action-logout          { background: #f3f4f6; color: #6b7280; }
 .action-logout::before  { background: #9ca3af; }
 
+.action-edit-baseline   { background: #F0E6FF; color: #6B21A8; }
+.action-edit-baseline::before { background: #8B5CF6; }
+
 .action-other          { background: #f3f4f6; color: #6b7280; }
 .action-other::before  { background: #9ca3af; }
 
@@ -561,6 +564,91 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
     color: var(--text-muted);
     font-weight: 500;
 }
+
+/* ── METADATA DIFF TOOLTIP ── */
+.diff-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--primary);
+    cursor: help;
+    margin-top: 4px;
+    font-weight: 500;
+    position: relative;
+}
+.diff-trigger i { font-size: 13px; }
+
+.diff-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 1050;
+    background: #1a1f2e;
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 16px;
+    min-width: 380px;
+    max-width: 520px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+    font-size: 12px;
+    line-height: 1.5;
+    pointer-events: none;
+}
+.diff-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 20px;
+    border: 6px solid transparent;
+    border-top-color: #1a1f2e;
+}
+.diff-trigger:hover .diff-tooltip { display: block; }
+
+.diff-tooltip .diff-header {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+.diff-tooltip .diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+}
+.diff-tooltip .diff-table th {
+    text-align: left;
+    color: #94a3b8;
+    font-weight: 500;
+    padding: 2px 8px 2px 0;
+    white-space: nowrap;
+}
+.diff-tooltip .diff-table td {
+    padding: 2px 8px 2px 0;
+    vertical-align: top;
+}
+.diff-tooltip .diff-old {
+    color: #f87171;
+    text-decoration: line-through;
+    opacity: 0.85;
+}
+.diff-tooltip .diff-new {
+    color: #4ade80;
+    font-weight: 500;
+}
+.diff-tooltip .diff-removed {
+    color: #f87171;
+    font-style: italic;
+    opacity: 0.7;
+}
+.diff-tooltip .diff-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
 </style>
 
 <div class="logs-wrap">
@@ -587,7 +675,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
             <div class="select-wrap">
                 <select name="action" class="form-select" style="width:170px" id="actionSelect" onchange="triggerAutoSubmit(this)">
                     <option value="">All actions</option>
-                    @foreach(['Login','Logout','Create Project','Update Project','Delete Project','Create Category','Update Category','Delete Category','Create User','Delete User','Request Extension','Approve Extension','Reject Extension','Update Extension','Revert Extension','Supersede Extension','Resubmit Extension','Delete Extension','Restore Extension','Adjust Baseline','Deadline Reminder','Overdue Inspection','Extension Update','Issue Reported'] as $act)
+                    @foreach(['Login','Logout','Create Project','Update Project','Delete Project','Create Category','Update Category','Delete Category','Create User','Delete User','Request Extension','Approve Extension','Reject Extension','Update Extension','Revert Extension','Supersede Extension','Resubmit Extension','Delete Extension','Restore Extension','Edit Original Baseline','Adjust Baseline','Deadline Reminder','Overdue Inspection','Extension Update','Issue Reported'] as $act)
                         <option value="{{ $act }}" {{ request('action') == $act ? 'selected' : '' }}>{{ $act }}</option>
                     @endforeach
                 </select>
@@ -666,6 +754,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                         $actionClass = match(true) {
                             $log->action === 'Login' => 'action-login',
                             $log->action === 'Logout' => 'action-logout',
+                            $log->action === 'Edit Original Baseline' => 'action-edit-baseline',
                             str_starts_with($log->action, 'Create') => 'action-create',
                             str_starts_with($log->action, 'Update') => 'action-update',
                             str_starts_with($log->action, 'Delete') => 'action-delete',
@@ -712,6 +801,73 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                                 <span class="desc-link" onclick="showDesc(@js($description))">
                                     View full ›
                                 </span>
+                            @endif
+                            @if($log->action === 'Edit Original Baseline' && $log->metadata)
+                                @php
+                                    $meta = $log->metadata;
+                                    $before = $meta['before'] ?? [];
+                                    $after = $meta['after'] ?? [];
+                                    $removed = $meta['removed'] ?? [];
+                                    $afterMap = collect($after)->keyBy('id');
+                                    $beforeMap = collect($before)->keyBy('id');
+                                    $changedMonths = [];
+                                    foreach ($afterMap as $id => $a) {
+                                        $b = $beforeMap->get($id);
+                                        if (!$b) continue;
+                                        $pctChanged = (float)$b['original_planned_progress_percent'] !== (float)$a['original_planned_progress_percent'];
+                                        $dateChanged = ($b['original_planned_date'] ?? '') !== ($a['original_planned_date'] ?? '');
+                                        if ($pctChanged || $dateChanged) {
+                                            $changedMonths[] = [
+                                                'label' => $a['month_label'],
+                                                'oldPct' => $b['original_planned_progress_percent'],
+                                                'newPct' => $a['original_planned_progress_percent'],
+                                                'oldDate' => $b['original_planned_date'] ?? '',
+                                                'newDate' => $a['original_planned_date'] ?? '',
+                                            ];
+                                        }
+                                    }
+                                @endphp
+                                <div class="diff-trigger">
+                                    <i class="bi bi-code-slash"></i> Changes
+                                    <div class="diff-tooltip">
+                                        <div class="diff-header">Baseline Edit Diff</div>
+                                        @if(count($changedMonths) > 0)
+                                            <table class="diff-table">
+                                                <tr><th>Month</th><th>Progress</th><th>Date</th></tr>
+                                                @foreach($changedMonths as $cm)
+                                                    <tr>
+                                                        <td>{{ $cm['label'] }}</td>
+                                                        <td>
+                                                            @if($cm['oldPct'] != $cm['newPct'])
+                                                                <span class="diff-old">{{ $cm['oldPct'] }}%</span> → <span class="diff-new">{{ $cm['newPct'] }}%</span>
+                                                            @else
+                                                                {{ $cm['newPct'] }}%
+                                                            @endif
+                                                        </td>
+                                                        <td>
+                                                            @if($cm['oldDate'] != $cm['newDate'])
+                                                                <span class="diff-old">{{ $cm['oldDate'] }}</span> → <span class="diff-new">{{ $cm['newDate'] }}</span>
+                                                            @else
+                                                                {{ $cm['newDate'] }}
+                                                            @endif
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </table>
+                                        @else
+                                            <div style="opacity:0.6;">No value changes detected.</div>
+                                        @endif
+                                        @if(count($removed) > 0)
+                                            <div class="diff-section">
+                                                <div class="diff-header" style="margin-bottom:4px;">Removed Months</div>
+                                                @foreach($removed as $rid)
+                                                    @php $rm = $beforeMap->get($rid); @endphp
+                                                    <div class="diff-removed">– {{ $rm['month_label'] ?? 'ID '.$rid }} ({{ $rm['original_planned_progress_percent'] ?? '?' }}%)</div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
                             @endif
                         </td>
 
