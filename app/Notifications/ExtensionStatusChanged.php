@@ -29,6 +29,8 @@ class ExtensionStatusChanged extends Notification
         public string $status,
         public ?string $rejectionReason = null,
         public ?string $approvedEndDate = null,
+        public ?string $currentEndDate = null,
+        public ?int $daysExtended = null,
     ) {
     }
 
@@ -54,6 +56,12 @@ class ExtensionStatusChanged extends Notification
 
         if ($this->status === self::APPROVED && $this->approvedEndDate) {
             $lines['New Deadline'] = $this->approvedEndDate;
+            if ($this->currentEndDate) {
+                $lines['Current End'] = $this->currentEndDate;
+            }
+            if ($this->daysExtended !== null) {
+                $lines['Days Extended'] = $this->daysExtended . ' day(s)';
+            }
         }
 
         $disclaimer = $this->status === self::APPROVED
@@ -87,6 +95,8 @@ class ExtensionStatusChanged extends Notification
             'status'           => $this->status,
             'rejection_reason' => $this->rejectionReason,
             'approved_end_date'=> $this->approvedEndDate,
+            'current_end_date' => $this->currentEndDate,
+            'days_extended'    => $this->daysExtended,
         ];
     }
 

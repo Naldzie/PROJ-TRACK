@@ -1358,6 +1358,10 @@ class ProjectExtensionController extends Controller
     {
         $service = app(NotificationService::class);
 
+        $currentEnd = \Carbon\Carbon::parse($extension->original_end_date);
+        $effectiveEnd = \Carbon\Carbon::parse($extension->effectiveEndDate());
+        $daysExtended = $currentEnd->diffInDays($effectiveEnd);
+
         $notification = new ExtensionStatusChanged(
             $project->id,
             $project->title,
@@ -1366,8 +1370,10 @@ class ProjectExtensionController extends Controller
             $status,
             $status === ExtensionStatusChanged::REJECTED ? $extension->rejection_reason : null,
             $status === ExtensionStatusChanged::APPROVED
-                ? \Carbon\Carbon::parse($extension->effectiveEndDate())->format('M d, Y')
-                : null
+                ? $effectiveEnd->format('M d, Y')
+                : null,
+            $currentEnd->format('M d, Y'),
+            $daysExtended
         );
 
         if ($status === ExtensionStatusChanged::SUBMITTED) {

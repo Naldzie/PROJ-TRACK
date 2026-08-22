@@ -123,6 +123,17 @@
                     @if(str_contains($n->type, 'ExtensionStatusChanged') && ($d['status'] ?? '') === 'rejected' && !empty($d['rejection_reason']))
                         <div class="notif-meta" style="margin-top:4px; color:#b91c1c;">Reason: {{ $d['rejection_reason'] }}</div>
                     @endif
+                    @if(str_contains($n->type, 'ExtensionStatusChanged') && ($d['status'] ?? '') === 'approved')
+                        @if(!empty($d['current_end_date']))
+                            <div class="notif-meta" style="margin-top:4px; color:#374151;">Current end: {{ $d['current_end_date'] }}</div>
+                        @endif
+                        @if(!empty($d['approved_end_date']))
+                            <div class="notif-meta" style="margin-top:2px; color:#059669;">New end: {{ $d['approved_end_date'] }}</div>
+                        @endif
+                        @if(!empty($d['days_extended']))
+                            <div class="notif-meta" style="margin-top:2px; color:#6b7280;">Extended by {{ $d['days_extended'] }} day(s)</div>
+                        @endif
+                    @endif
                 </div>
                 @if(!$n->read_at)
                     <div class="notif-actions">
