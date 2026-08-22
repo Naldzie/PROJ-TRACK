@@ -586,19 +586,29 @@ extensions) already do not include staff, so they are unaffected.
 1. Task 9 (staff baseline edit) — DONE
 2. Task 12 (auto-assign + PM read-only) — DONE
 3. Task 14 (restrict project operations + documents/issues/risks) — DONE
-4. Task 15 (notification assignment filter) — NEXT
-5. Task 13 (staff filtering) — LAST (deferred for testing convenience)
-6. Task 10 (staff extension approval) — after Task 15
+4. Task 15 (notification assignment filter) — DONE
+5. Task 13 (staff filtering) — DONE
+6. Task 10 (staff extension approval) — NEXT
 7. Task 11 (additional work %) — independent, anytime
 
-### Implementation Log — Task 15
+### Implementation Log — Task 15 + fixes
+
+Committed: `eca6cda`, `e71d148`, `b50f085` on `staff-baseline-extension-improvements`
+
+Files changed:
+- `app/Services/NotificationService.php` — Added `staffForProject()`; deprecated `allStaff()`
+- `app/Console/Commands/SendNotifications.php` — Uses `staffForProject()` per project
+- `app/Notifications/ExtensionStatusChanged.php` — Added `currentEndDate` + `daysExtended` params
+- `app/Http/Controllers/Admin/ProjectExtensionController.php` — Passes dates + days; added assigned staff to approve/reject recipients
+- `resources/views/notifications/_list.blade.php` — Approved shows current end, new end, days extended
+- `tests/Feature/NotificationScanTest.php` — Test projects set `assigned_project_manager`
+
+### Implementation Log — Task 13
 
 Committed: (pending) on `staff-baseline-extension-improvements`
 
 Files changed:
-- `app/Services/NotificationService.php` — Added `staffForProject(Project $project): ?User` method; deprecated `allStaff()`
-- `app/Console/Commands/SendNotifications.php` — Replaced `$service->allStaff()` with `$service->staffForProject($project)` for per-project staff resolution
-- `tests/Feature/NotificationScanTest.php` — Test projects now set `assigned_project_manager` to staff user ID
+- `app/Http/Controllers/ProjectController.php` — `index()` filters by `assigned_project_manager = user_id` for staff
 
 All 725 tests passing.
 

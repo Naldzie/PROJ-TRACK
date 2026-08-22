@@ -73,6 +73,11 @@ class ProjectController extends Controller
                 $q->where('user_id', $user->id);
             });
         } else {
+            // Staff can only see projects assigned to them
+            if ($user->role === 'staff') {
+                $query->where('assigned_project_manager', $user->id);
+            }
+
             // Admin/Staff: optional deep-link filters from the dashboard stat cards.
             //   ?status=Ongoing|Completed|Planned|... — exact status match
             //   ?filter=overdue|atrisk|pending         — health buckets (ongoing only)
@@ -109,7 +114,6 @@ class ProjectController extends Controller
                     });
             }
         }
-        // Admin and Staff see all projects (no additional filter)
 
         // Year filters (from dropdowns) — use date range instead of YEAR()
         // for SQLite compatibility (tests use SQLite in-memory).
