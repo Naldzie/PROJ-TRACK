@@ -339,8 +339,9 @@ gates (Task 14) will be tested first while projects remain visible.
 
 Goal: Defense-in-depth access control. Even if a staff member navigates
 to an unassigned project (via URL, bookmark, or shared link), they cannot
-edit the project, modify its baseline, or manage its extensions. Only
-admin and the assigned project manager can perform these operations.
+edit the project, modify its baseline, manage activities, record progress,
+or manage its extensions. Only admin and the assigned project manager can
+perform these operations.
 
 Current state (audit results):
 
@@ -352,6 +353,11 @@ Current state (audit results):
 | Generate Adjusted Baseline | Yes | Yes (any) | No gate |
 | Delete month target | Yes | Partial | No gate |
 | Edit Original Baseline | Yes | No | **Already correct** |
+| Add/Edit/Delete Activity | Yes | Yes (any) | No gate |
+| Toggle Activity Completion | Yes | Yes (any) | No gate |
+| Carry Over Activity | Yes | Yes (any) | No gate |
+| Record Progress | Yes | Yes (any) | No gate |
+| Edit Progress | Yes | Latest only | No gate |
 | Add Extension | Yes | Yes (any project) | No gate |
 | Edit/Delete Extension | Yes | Own only | **Already correct** |
 
@@ -372,7 +378,7 @@ Current state (audit results):
   - This restricts the edit button AND the controller update route
     to admin + assigned staff only.
 
-#### B. Baseline CRUD Restriction
+#### B. Baseline CRUD + Activities Restriction
 
 - app/Http/Controllers/BaselineScheduleController.php
   - Add a new private helper (generalizing canEditOriginalBaseline):
@@ -396,14 +402,41 @@ Current state (audit results):
   - Refactor `canEditOriginalBaseline()` to call `authorizeProjectAccess()`
     internally (or replace it) for consistency.
 
+- app/Http/Controllers/ProjectActivityController.php
+  - Add `$this->authorizeProjectAccess(auth()->user(), $project)` at the
+    top of these methods:
+    - `storeActivity()`
+    - `deleteActivity()`
+    - `toggleActivityCompletion()` — load project from activity first
+
 - resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php
   - Wrap "Set Up Baseline", "Add Month Target", "Generate Adjusted Baseline"
     buttons with `@if(auth()->user()->role === 'admin' || $isAssignedStaff)`
     to hide them for non-assigned staff.
   - Per-card "Delete" and "Manage Month" buttons: add `$isAssignedStaff`
     check alongside the existing admin check.
+  - Activity checkboxes: add `disabled` attribute for non-assigned staff,
+    or wrap with `$isAssignedStaff` condition.
+  - "Record Progress" and "Edit Progress" buttons: add `$isAssignedStaff`
+    check alongside the existing admin check.
+  - "Carry Over" button: add `$isAssignedStaff` check.
 
-#### C. Extension CRUD Restriction
+#### C. Progress Recording Restriction
+
+- app/Http/Controllers/ProjectProgressController.php
+  - Add `$this->authorizeProjectAccess(auth()->user(), $project)` at the
+    top of these methods:
+    - `recordMonthlyProgress()`
+    - `editProgressRecord()`
+    - `destroyProgress()`
+    - `storeProgress()` (legacy, but still protected)
+
+- The `authorizeProjectAccess()` helper is shared from BaselineScheduleController.
+  If ProjectProgressController needs it, either extract to a trait or call
+  via `$this->app->make(BaselineScheduleController::class)` — or simpler:
+  duplicate the 5-line helper in ProjectProgressController as well.
+
+#### D. Extension CRUD Restriction
 
 - app/Http/Controllers/Admin/ProjectExtensionController.php
   - In `store()`: add assignment check before creating:
@@ -454,6 +487,10 @@ Current state (audit results):
   * Staff CAN edit project details of assigned projects
   * Staff CANNOT set up / add month / generate adjusted baseline for unassigned projects
   * Staff CAN do all baseline operations for assigned projects
+  * Staff CANNOT add/edit/delete activities on unassigned projects
+  * Staff CAN add/edit/delete activities on assigned projects
+  * Staff CANNOT record/edit/delete progress on unassigned projects
+  * Staff CAN record/edit/delete progress on assigned projects
   * Staff CANNOT add extension for unassigned projects
   * Staff CAN add/edit/delete extensions for assigned projects (own extensions only for edit/delete)
   * Admin can do all operations for all projects
