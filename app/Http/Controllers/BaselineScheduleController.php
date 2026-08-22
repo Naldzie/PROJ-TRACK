@@ -1205,6 +1205,16 @@ class BaselineScheduleController extends Controller
                 ->orderBy('original_planned_date', 'asc')
                 ->get(['id', 'month_label', 'planned_date', 'planned_progress_percent',
                     'original_planned_date', 'original_planned_progress_percent', 'description'])
+                ->map(fn ($s) => [
+                    'id' => $s->id,
+                    'month_label' => $s->month_label,
+                    'planned_date' => $s->planned_date?->format('Y-m-d'),
+                    'planned_progress_percent' => $s->planned_progress_percent,
+                    'original_planned_date' => $s->original_planned_date?->format('Y-m-d'),
+                    'original_planned_progress_percent' => $s->original_planned_progress_percent,
+                    'description' => $s->description,
+                ])
+                ->values()
                 ->toArray();
 
             DB::beginTransaction();
@@ -1535,6 +1545,16 @@ class BaselineScheduleController extends Controller
                         ->orderBy('original_planned_date', 'asc')
                         ->get(['id', 'month_label', 'planned_date', 'planned_progress_percent',
                             'original_planned_date', 'original_planned_progress_percent', 'description'])
+                        ->map(fn ($s) => [
+                            'id' => $s->id,
+                            'month_label' => $s->month_label,
+                            'planned_date' => $s->planned_date?->format('Y-m-d'),
+                            'planned_progress_percent' => $s->planned_progress_percent,
+                            'original_planned_date' => $s->original_planned_date?->format('Y-m-d'),
+                            'original_planned_progress_percent' => $s->original_planned_progress_percent,
+                            'description' => $s->description,
+                        ])
+                        ->values()
                         ->toArray(),
                     'removed' => $validated['removed_ids'] ?? [],
                 ],

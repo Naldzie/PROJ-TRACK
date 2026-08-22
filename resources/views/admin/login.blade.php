@@ -802,15 +802,70 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                                     View full ›
                                 </span>
                             @endif
-                            @if($log->action === 'Edit Original Baseline' && $log->metadata)
-                                <div class="diff-trigger" data-meta-id="{{ $log->id }}">
+                            @if($log->action === 'Edit Original Baseline' && $log->metadata && isset($log->metadata['before'], $log->metadata['after']))
+                                @php
+                                    $before = $log->metadata['before'] ?? [];
+                                    $after = $log->metadata['after'] ?? [];
+                                    $removed = $log->metadata['removed'] ?? [];
+                                    $beforeById = [];
+                                    foreach ($before as $bm) { $beforeById[$bm['id']] = $bm; }
+                                    $diffRows = [];
+                                    foreach ($after as $am) {
+                                        $bm = $beforeById[$am['id']] ?? null;
+                                        if (!$bm) continue;
+                                        $oldPct = (string) ($bm['original_planned_progress_percent'] ?? '');
+                                        $newPct = (string) ($am['original_planned_progress_percent'] ?? '');
+                                        $oldDate = (string) ($bm['original_planned_date'] ?? '');
+                                        $newDate = (string) ($am['original_planned_date'] ?? '');
+                                        $label = $am['month_label'] ?? substr($newDate, 0, 7) ?? '';
+                                        if ($oldPct !== $newPct || $oldDate !== $newDate) {
+                                            $diffRows[] = compact('label', 'oldPct', 'newPct', 'oldDate', 'newDate');
+                                        }
+                                    }
+                                @endphp
+                                <div class="diff-trigger">
                                     <i class="bi bi-code-slash"></i> Changes
-                                    <div class="diff-tooltip" id="diff-{{ $log->id }}">
+                                    <div class="diff-tooltip">
                                         <div class="diff-header">Baseline Edit Diff</div>
-                                        <div class="diff-content"></div>
+                                        @if(count($diffRows) > 0)
+                                            <table class="diff-table">
+                                                <tr><th>Month</th><th>Progress</th><th>Date</th></tr>
+                                                @foreach($diffRows as $row)
+                                                    <tr>
+                                                        <td>{{ $row['label'] }}</td>
+                                                        <td>
+                                                            @if($row['oldPct'] !== $row['newPct'])
+                                                                <span class="diff-old">{{ $row['oldPct'] }}%</span> &rarr; <span class="diff-new">{{ $row['newPct'] }}%</span>
+                                                            @else
+                                                                {{ $row['newPct'] }}%
+                                                            @endif
+                                                        </td>
+                                                        <td>
+                                                            @if($row['oldDate'] !== $row['newDate'])
+                                                                <span class="diff-old">{{ $row['oldDate'] }}</span> &rarr; <span class="diff-new">{{ $row['newDate'] }}</span>
+                                                            @else
+                                                                {{ $row['newDate'] }}
+                                                            @endif
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </table>
+                                        @else
+                                            <div style="opacity:0.6;">No value changes detected.</div>
+                                        @endif
+                                        @if(count($removed) > 0)
+                                            <div class="diff-section">
+                                                <div class="diff-header" style="margin-bottom:4px;">Removed Months</div>
+                                                @foreach($removed as $rid)
+                                                    @php $rm = $beforeById[$rid] ?? null; @endphp
+                                                    @if($rm)
+                                                        <div class="diff-removed">&ndash; {{ $rm['month_label'] ?? 'ID '.$rid }} ({{ $rm['original_planned_progress_percent'] ?? '?' }}%)</div>
+                                                    @endif
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     </div>
                                 </div>
-                                <script type="application/json" id="meta-{{ $log->id }}">{!! json_encode($log->metadata) !!}</script>
                             @endif
                         </td>
 
@@ -937,99 +992,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const rows = document.querySelectorAll('.table tbody tr');
     rows.forEach((row, i) => {
         row.style.animationDelay = `${0.04 + i * 0.04}s`;
-    });
-
-    // ── RENDER DIFF TOOLTIPS FROM JSON DATA ──
-    document.querySelectorAll('.diff-trigger[data-meta-id]').forEach(trigger => {
-        const logId = trigger.getAttribute('data-meta-id');
-        const scriptEl = document.getElementById('meta-' + logId);
-        const contentEl = trigger.querySelector('.diff-content');
-        if (!scriptEl || !contentEl) return;
-
-        try {
-            const meta = JSON.parse(scriptEl.textContent);
-            const before = meta.before || [];
-            const after = meta.after || [];
-            const removed = meta.removed || [];
-
-            const beforeMap = {};
-            before.forEach(m => { beforeMap[m.id] = m; });
-
-            let html = '';
-            let hasChanges = false;
-
-            after.forEach(a => {
-                const b = beforeMap[a.id];
-                if (!b) return;
-
-                const oldPct = parseFloat(b.original_planned_progress_percent || 0);
-                const newPct = parseFloat(a.original_planned_progress_percent || 0);
-
-                var oldDateStr = '';
-                var newDateStr = '';
-                if (b.original_planned_date) {
-                    oldDateStr = typeof b.original_planned_date === 'string'
-                        ? b.original_planned_date.substring(0, 10)
-                        : (b.original_planned_date.date || '').substring(0, 10);
-                }
-                if (a.original_planned_date) {
-                    newDateStr = typeof a.original_planned_date === 'string'
-                        ? a.original_planned_date.substring(0, 10)
-                        : (a.original_planned_date.date || '').substring(0, 10);
-                }
-
-                var label = a.month_label || newDateStr.substring(0, 7) || 'Month';
-                var pctChanged = oldPct !== newPct;
-                var dateChanged = oldDateStr !== newDateStr;
-
-                if (pctChanged || dateChanged) {
-                    hasChanges = true;
-                    html += '<tr>';
-                    html += '<td>' + label + '</td>';
-                    html += '<td>';
-                    if (pctChanged) {
-                        html += '<span class="diff-old">' + oldPct + '%</span> &rarr; <span class="diff-new">' + newPct + '%</span>';
-                    } else {
-                        html += newPct + '%';
-                    }
-                    html += '</td>';
-                    html += '<td>';
-                    if (dateChanged) {
-                        html += '<span class="diff-old">' + oldDateStr + '</span> &rarr; <span class="diff-new">' + newDateStr + '</span>';
-                    } else {
-                        html += newDateStr;
-                    }
-                    html += '</td></tr>';
-                }
-            });
-
-            if (hasChanges) {
-                contentEl.innerHTML = '<table class="diff-table"><tr><th>Month</th><th>Progress</th><th>Date</th></tr>' + html + '</table>';
-            } else {
-                contentEl.innerHTML = '<div style="opacity:0.6;">No value changes detected.</div>';
-            }
-
-            if (removed.length > 0) {
-                var removeHtml = '<div class="diff-section"><div class="diff-header" style="margin-bottom:4px;">Removed Months</div>';
-                removed.forEach(function(rid) {
-                    var rm = beforeMap[rid];
-                    if (!rm) return;
-                    var rmLabel = rm.month_label || '';
-                    var rmPct = rm.original_planned_progress_percent || '?';
-                    if (!rmLabel) {
-                        var rmDate = typeof rm.original_planned_date === 'string'
-                            ? rm.original_planned_date.substring(0, 7)
-                            : ((rm.original_planned_date && rm.original_planned_date.date) || '').substring(0, 7);
-                        rmLabel = rmDate || ('ID ' + rid);
-                    }
-                    removeHtml += '<div class="diff-removed">&ndash; ' + rmLabel + ' (' + rmPct + '%)</div>';
-                });
-                removeHtml += '</div>';
-                contentEl.innerHTML += removeHtml;
-            }
-        } catch (e) {
-            contentEl.innerHTML = '<div style="opacity:0.6;">Unable to load diff data.</div>';
-        }
     });
 });
 </script>
