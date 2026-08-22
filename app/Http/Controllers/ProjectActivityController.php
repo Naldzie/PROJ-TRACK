@@ -7,6 +7,7 @@ use App\Models\Project;
 use App\Models\ProjectActivity;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 /**
@@ -76,6 +77,8 @@ class ProjectActivityController extends Controller
 
     public function storeActivity(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $validated = $request->validate([
                 'activity_name' => 'required|string|max:255',
@@ -142,6 +145,8 @@ class ProjectActivityController extends Controller
 
     public function deleteActivity(Project $project, $activityId)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $activity = ProjectActivity::where('project_id', $project->id)
                 ->where('id', $activityId)
@@ -245,6 +250,10 @@ class ProjectActivityController extends Controller
             ]);
 
             $activity = ProjectActivity::findOrFail($activityId);
+
+            $project = $activity->project;
+            $this->authorizeProjectAccess(auth()->user(), $project);
+
             $activity->update([
                 'is_completed' => $validated['is_completed'],
             ]);
@@ -277,6 +286,18 @@ class ProjectActivityController extends Controller
                 'success' => false,
                 'message' => 'Error updating activity: '.$e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Require admin or assigned staff for write operations on a project.
+     */
+    private function authorizeProjectAccess(User $user, Project $project): void
+    {
+        if ($user->role === 'admin') return;
+
+        if (!$project->isAssignedTo($user)) {
+            abort(403, 'You are not assigned to this project.');
         }
     }
 }

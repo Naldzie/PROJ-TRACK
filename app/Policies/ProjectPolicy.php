@@ -63,12 +63,13 @@ class ProjectPolicy
      * 
      * Rules:
      * - Admin: Can update any project
-     * - Staff: Can update any project
+     * - Staff: Can only update assigned projects
      * - Contractor: Cannot update
      */
     public function update(User $user, Project $project): bool
     {
-        return in_array($user->role, ['admin', 'staff']);
+        if ($user->role === 'admin') return true;
+        return $project->isAssignedTo($user);
     }
 
     /**

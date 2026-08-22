@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\ProjectActivity;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
+use App\Models\User;
 use App\Services\ProjectDetailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,8 @@ class ProjectProgressController extends Controller
 {
     public function storeProgress(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         $request->validate([
             'inspection_date' => 'required|date',
             'progress_percentage' => 'required|numeric|min:0|max:100',
@@ -67,6 +70,8 @@ class ProjectProgressController extends Controller
 
     public function editProgressRecord(Request $request, Project $project, $progressId)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         $request->validate([
             'inspection_date' => 'required|date|before_or_equal:today',
             'progress_percentage' => 'required|numeric|min:0|max:100',
@@ -233,6 +238,8 @@ class ProjectProgressController extends Controller
 
     public function destroyProgress(Project $project, $progressId)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         // Admin-only deletion
         if (! auth()->user() || auth()->user()->role !== 'admin') {
             return response()->json([
@@ -342,6 +349,8 @@ class ProjectProgressController extends Controller
 
     public function recordMonthlyProgress(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         // Validate input
         $validated = $request->validate([
             'inspection_date' => 'required|date',
@@ -647,6 +656,18 @@ class ProjectProgressController extends Controller
                 'project_id' => $project->id,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * Require admin or assigned staff for write operations on a project.
+     */
+    private function authorizeProjectAccess(User $user, Project $project): void
+    {
+        if ($user->role === 'admin') return;
+
+        if (!$project->isAssignedTo($user)) {
+            abort(403, 'You are not assigned to this project.');
         }
     }
 }

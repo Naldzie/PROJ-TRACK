@@ -52,7 +52,9 @@ class BaselineDeleteGuardTest extends TestCase
 
     private function makeProject(): Project
     {
-        return Project::factory()->create(['status' => 'Ongoing']);
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+        $project->update(['assigned_project_manager' => (string) $this->staff->id]);
+        return $project;
     }
 
     private function makeSchedule(

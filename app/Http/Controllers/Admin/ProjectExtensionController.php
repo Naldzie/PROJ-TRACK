@@ -48,6 +48,11 @@ class ProjectExtensionController extends Controller
 
             $isAdmin = auth()->user()->role === 'admin';
 
+            // Staff can only create extensions for assigned projects
+            if (!$isAdmin && !$project->isAssignedTo(auth()->user())) {
+                abort(403, 'You are not assigned to this project.');
+            }
+
             // Admin may pick the review status at creation time (defaults to
             // approved, preserving the auto-approve behavior); staff always
             // create pending. Partial approval + rejection reason are admin-only.

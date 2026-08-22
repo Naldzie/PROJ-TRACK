@@ -55,6 +55,7 @@ class ProgressEditGuardTest extends TestCase
     private function makeProject(): Project
     {
         $project = Project::factory()->create(['status' => 'Ongoing']);
+        $project->update(['assigned_project_manager' => (string) $this->staff->id]);
 
         foreach (['2026-02', '2026-03', '2026-04'] as $i => $month) {
             ProjectBaselineSchedule::create([

@@ -335,7 +335,7 @@
 
                         <!-- Action Buttons -->
                         <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
-                            @if($showRecordButton)
+                            @if($showRecordButton && (auth()->user()->role === 'admin' || $isAssignedStaff))
                             <button onclick="openRecordProgressModal('{{ $plan->month_label }}', {{ $plan->planned_progress_percent }}, '{{ $plan->planned_date->toDateString() }}', {{ $latestProgress?->actual_progress_percent ?? 0 }}, {{ $highestActualProgress }}, {{ $loop->last ? '1' : '0' }})" 
                                     style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Record Monthly Progress"
@@ -344,7 +344,7 @@
                                 <i class="bi bi-graph-up-arrow"></i> Record Progress
                             </button>
                             @endif
-                            @if($latestProgress && (auth()->user()->role === 'admin' || $plan->month_label === $latestProgressMonth))
+                            @if($latestProgress && (auth()->user()->role === 'admin' || $isAssignedStaff) && ($plan->month_label === $latestProgressMonth))
                             <button onclick="openEditProgressModal({{ $latestProgress->id }}, '{{ $latestProgress->month_label }}', {{ $loop->last ? '1' : '0' }})"
                                     style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Edit Latest Progress Record"
@@ -353,7 +353,7 @@
                                 <i class="bi bi-pencil"></i> Edit Progress
                             </button>
                             @endif
-                            @if($latestProgress && $incompleteCount > 0 && $hasFutureMonths)
+                            @if($latestProgress && $incompleteCount > 0 && $hasFutureMonths && (auth()->user()->role === 'admin' || $isAssignedStaff))
                             <button onclick="openCarryOverForMonth('{{ $plan->month_label }}')"
                                     style="flex: 1; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Carry Over Incomplete Activities"
@@ -362,7 +362,7 @@
                                 <i class="bi bi-arrow-right-circle"></i> ↗ Carry Over
                             </button>
                             @endif
-                            @if(!$latestProgress)
+                            @if(!$latestProgress && (auth()->user()->role === 'admin' || $isAssignedStaff))
                             @php
                                 $manageMode = ($project->extension_count > 0 && !$latestProgress) ? 'edit' : 'activities-only';
                             @endphp
@@ -374,7 +374,7 @@
                                 <i class="bi bi-pencil-square"></i> Manage Month
                             </button>
                             @endif
-                            @if(auth()->user()->role === 'admin' || (!$latestProgress && $plan->original_planned_progress_percent === null))
+                            @if(auth()->user()->role === 'admin' || ($isAssignedStaff && !$latestProgress && $plan->original_planned_progress_percent === null))
                             <button onclick="deleteMonthTarget({{ $plan->id }})" 
                                     style="flex: 1; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;"
                                     title="Delete Month Target"

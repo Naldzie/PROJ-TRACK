@@ -68,6 +68,8 @@ class BaselineScheduleController extends Controller
 
     public function storeBaselineSchedule(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $validated = $request->validate([
                 'planned_date' => 'required|date',
@@ -293,6 +295,8 @@ class BaselineScheduleController extends Controller
      */
     public function storeInitialBaselineSetup(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             // ── Guard: first-time setup only ──────────────────────────────────────
             // If baseline rows already exist, this endpoint must not run again.
@@ -487,6 +491,8 @@ class BaselineScheduleController extends Controller
      */
     public function updateBaselineSchedule(Request $request, Project $project, $scheduleId)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $validated = $request->validate([
                 'planned_date' => 'required|date',
@@ -606,6 +612,8 @@ class BaselineScheduleController extends Controller
      */
     public function carryOverActivity(Request $request, Project $project, ProjectActivity $activity)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             // Validate the activity belongs to this project
             if ($activity->project_id !== $project->id) {
@@ -792,6 +800,8 @@ class BaselineScheduleController extends Controller
      */
     public function saveAdjustedBaseline(Request $request, Project $project)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $validated = $request->validate([
                 'months' => 'required|array',
@@ -1086,6 +1096,19 @@ class BaselineScheduleController extends Controller
         }
 
         return $project->isAssignedTo($user);
+    }
+
+    /**
+     * Require admin or assigned staff for write operations on a project.
+     * Aborts with 403 if the user is not authorized.
+     */
+    private function authorizeProjectAccess(User $user, Project $project): void
+    {
+        if ($user->role === 'admin') return;
+
+        if (!$project->isAssignedTo($user)) {
+            abort(403, 'You are not assigned to this project.');
+        }
     }
 
     /**
@@ -1592,6 +1615,8 @@ class BaselineScheduleController extends Controller
 
     public function deleteBaselineSchedule(Project $project, $scheduleId)
     {
+        $this->authorizeProjectAccess(auth()->user(), $project);
+
         try {
             $schedule = ProjectBaselineSchedule::where('project_id', $project->id)
                 ->where('id', $scheduleId)

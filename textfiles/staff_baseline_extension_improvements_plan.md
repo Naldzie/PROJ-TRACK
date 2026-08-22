@@ -461,7 +461,19 @@ Current state (audit results):
 
 ### Implementation Log — Task 14
 
-( pending )
+Committed: (pending) on `staff-baseline-extension-improvements`
+
+Files changed:
+- `app/Policies/ProjectPolicy.php` — `update()` now checks `$project->isAssignedTo($user)` for staff
+- `app/Http/Controllers/BaselineScheduleController.php` — Added `authorizeProjectAccess()` helper; gated 6 methods (store, storeInitial, update, delete, carryOver, saveAdjusted)
+- `app/Http/Controllers/ProjectActivityController.php` — Added `authorizeProjectAccess()` helper; gated storeActivity, deleteActivity, toggleActivityCompletion
+- `app/Http/Controllers/ProjectProgressController.php` — Added `authorizeProjectAccess()` helper; gated storeProgress, editProgressRecord, destroyProgress, recordMonthlyProgress
+- `app/Http/Controllers/Admin/ProjectExtensionController.php` — Added assignment check in `store()`
+- `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — Per-card buttons (Record, Edit, Carry Over, Manage, Delete) now check `$isAssignedStaff`
+- `resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php` — "Add Extension" button restricted to admin + assigned staff
+- Tests updated: 6 test files updated to assign staff user to projects
+
+All 725 tests passing.
 
 ---
 

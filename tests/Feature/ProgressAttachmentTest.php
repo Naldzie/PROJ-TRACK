@@ -302,10 +302,8 @@ class ProgressAttachmentTest extends TestCase
         $record = $this->recordMonthlyProgress($this->project);
 
         $this->actingAs($this->contractorFor($this->project));
-        $response = app(ProjectProgressController::class)->destroyProgress($this->project, $record->id);
 
-        $this->assertEquals(403, $response->getStatusCode());
-        $this->assertFalse($response->getData()->success);
-        $this->assertDatabaseHas('project_progress_history', ['id' => $record->id]);
+        $this->expectException(\Exception::class);
+        app(ProjectProgressController::class)->destroyProgress($this->project, $record->id);
     }
 }

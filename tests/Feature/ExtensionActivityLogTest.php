@@ -65,6 +65,7 @@ class ExtensionActivityLogTest extends TestCase
         $this->project = Project::factory()->create([
             'status'        => 'Ongoing',
             'contractor_id' => $this->contractor->id,
+            'assigned_project_manager' => (string) $this->staff->id,
         ]);
     }
 
