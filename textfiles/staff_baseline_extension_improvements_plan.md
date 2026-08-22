@@ -605,10 +605,12 @@ Files changed:
 
 ### Implementation Log — Task 13
 
-Committed: (pending) on `staff-baseline-extension-improvements`
+Committed: `06958cb`, `86b8ec4` on `staff-baseline-extension-improvements`
 
 Files changed:
 - `app/Http/Controllers/ProjectController.php` — `index()` filters by `assigned_project_manager = user_id` for staff
+- `app/Http/Controllers/ProjectController.php` — `show()` blocks staff from unassigned project details (403)
+- `app/Http/Controllers/DashboardController.php` — Added `scopeToAssigned()` helper; applied to all queries (table, stats cards, overdue, at-risk, pending, inspection, extensions, all filter AJAX queries)
 
 All 725 tests passing.
 
@@ -641,7 +643,11 @@ All 725 tests passing.
     * Admin still receives notifications for all projects
     * Contractor still receives notifications for their assigned projects only
     * Admin can do all operations for all projects
-    * Staff sees only assigned projects in the index (Task 13 — deferred)
+    * Staff sees only assigned projects in the index (Task 13)
+    * Staff sees only assigned projects on dashboard (Task 13)
+    * Staff cannot access unassigned project detail page — 403 (Task 13)
+    * Extension notification shows current end, new end, days extended
+    * Staff receives extension approval/rejection notifications
   * Generate Adjusted Baseline modal shows Additional Work % input (Task 11)
   * S-curve updates correctly when additional work % is entered (Task 11)
   * ActivityLog captures before/after diffs for baseline edits
