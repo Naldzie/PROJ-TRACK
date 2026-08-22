@@ -814,15 +814,22 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                                     foreach ($afterMap as $id => $a) {
                                         $b = $beforeMap->get($id);
                                         if (!$b) continue;
-                                        $pctChanged = (float)$b['original_planned_progress_percent'] !== (float)$a['original_planned_progress_percent'];
-                                        $dateChanged = ($b['original_planned_date'] ?? '') !== ($a['original_planned_date'] ?? '');
+                                        $oldPct = (float)($b['original_planned_progress_percent'] ?? 0);
+                                        $newPct = (float)($a['original_planned_progress_percent'] ?? 0);
+                                        $oldDate = is_array($b['original_planned_date'] ?? null) ? ($b['original_planned_date']['date'] ?? '') : ($b['original_planned_date'] ?? '');
+                                        $newDate = is_array($a['original_planned_date'] ?? null) ? ($a['original_planned_date']['date'] ?? '') : ($a['original_planned_date'] ?? '');
+                                        $oldDate = is_string($oldDate) ? substr($oldDate, 0, 10) : '';
+                                        $newDate = is_string($newDate) ? substr($newDate, 0, 10) : '';
+                                        $label = $a['month_label'] ?? ($newDate ? substr($newDate, 0, 7) : 'Month');
+                                        $pctChanged = $oldPct !== $newPct;
+                                        $dateChanged = $oldDate !== $newDate;
                                         if ($pctChanged || $dateChanged) {
                                             $changedMonths[] = [
-                                                'label' => $a['month_label'],
-                                                'oldPct' => $b['original_planned_progress_percent'],
-                                                'newPct' => $a['original_planned_progress_percent'],
-                                                'oldDate' => $b['original_planned_date'] ?? '',
-                                                'newDate' => $a['original_planned_date'] ?? '',
+                                                'label' => $label,
+                                                'oldPct' => $oldPct,
+                                                'newPct' => $newPct,
+                                                'oldDate' => $oldDate,
+                                                'newDate' => $newDate,
                                             ];
                                         }
                                     }
@@ -861,8 +868,16 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                                             <div class="diff-section">
                                                 <div class="diff-header" style="margin-bottom:4px;">Removed Months</div>
                                                 @foreach($removed as $rid)
-                                                    @php $rm = $beforeMap->get($rid); @endphp
-                                                    <div class="diff-removed">– {{ $rm['month_label'] ?? 'ID '.$rid }} ({{ $rm['original_planned_progress_percent'] ?? '?' }}%)</div>
+                                                    @php
+                                                        $rm = $beforeMap->get($rid);
+                                                        $rmLabel = $rm['month_label'] ?? '';
+                                                        $rmPct = $rm['original_planned_progress_percent'] ?? '?';
+                                                        if (!$rmLabel) {
+                                                            $rmDate = is_array($rm['original_planned_date'] ?? null) ? ($rm['original_planned_date']['date'] ?? '') : ($rm['original_planned_date'] ?? '');
+                                                            $rmLabel = is_string($rmDate) ? substr($rmDate, 0, 7) : 'ID '.$rid;
+                                                        }
+                                                    @endphp
+                                                    <div class="diff-removed">– {{ $rmLabel }} ({{ $rmPct }}%)</div>
                                                 @endforeach
                                             </div>
                                         @endif
