@@ -30,42 +30,109 @@ Branch:   staff-baseline-extension-improvements (from develop)
 
 Goal: Allow staff to edit the frozen original baseline of projects they
 are assigned to (via assigned_project_manager). Add detailed before/after
-diff logging for baseline edits.
+diff logging so admin can see who edited, what the original data was, and
+what was changed — enabling identification of mistakes.
 
-Current state:
-- BaselineScheduleController::getOriginalBaselineMonths() returns 403 if
-  role !== 'admin' (line ~1089).
-- saveEditedOriginalBaseline() same admin-only check (line ~1156).
-- Blade button hidden behind @if(auth()->user()->role === 'admin').
-- ActivityLog records action but no before/after field values.
+### Current Authorization Chain (4 layers, all admin-only)
 
-Files:
+| Layer | File | Line(s) | Current Check |
+|-------|------|---------|---------------|
+| Route | routes/web.php | 534, 536 | Routes only in admin group (role:admin middleware) |
+| Controller GET | BaselineScheduleController.php | 1089 | role !== 'admin' → 403 |
+| Controller POST | BaselineScheduleController.php | 1156 | role !== 'admin' → 403 |
+| Blade | baseline-schedule.blade.php | 81 | @if(auth()->user()->role === 'admin') |
+| JS | baseline-schedule-setup-modal.js | 284 | None (relies on window.routePrefix) |
+
+Note: `assigned_project_manager` is a string field storing Staff record IDs
+(as strings) for new projects. No legacy name-based handling needed —
+any legacy name-string records are test data and can be removed.
+
+### Changes
+
+- routes/web.php
+  - Add GET and POST /original routes to the staff route group (lines
+    ~156-175) so staff can hit the same controller endpoints:
+    ```
+    Route::get('/projects/{project}/baseline-schedules/original',
+        [BaselineScheduleController::class, 'getOriginalBaselineMonths'])
+        ->name('staff.projects.baseline-schedules.original');
+    Route::post('/projects/{project}/baseline-schedules/original/save',
+        [BaselineScheduleController::class, 'saveEditedOriginalBaseline'])
+        ->name('staff.projects.baseline-schedules.original.save');
+    ```
+  - The JS uses window.routePrefix ('staff.projects') to build the
+    endpoint URL, so the staff routes must exist for the fetch to work.
+
+- app/Models/Project.php
+  - Add helper method:
+    ```
+    public function isAssignedTo(User $user): bool
+    {
+        if ($user->role !== 'staff' || !$user->staff) return false;
+        return (string) $this->assigned_project_manager === (string) $user->staff->id;
+    }
+    ```
+
 - app/Http/Controllers/BaselineScheduleController.php
+  - Add private helper:
+    ```
+    private function canEditOriginalBaseline(User $user, Project $project): bool
+    {
+        if ($user->role === 'admin') return true;
+        return $project->isAssignedTo($user);
+    }
+    ```
   - In getOriginalBaselineMonths(): replace `role !== 'admin'` check
-    with: user is admin OR (user is staff AND
-    project.assigned_project_manager matches user's Staff record ID).
-  - In saveEditedOriginalBaseline(): same authorization check.
-  - In saveEditedOriginalBaseline(): before upserting, capture the old
-    values of each month being edited. After save, log an ActivityLog
-    entry with structured before/after JSON (not just a description
-    string). Format:
+    with `!$this->canEditOriginalBaseline(auth()->user(), $project)`.
+  - In saveEditedOriginalBaseline(): same replacement.
+  - In saveEditedOriginalBaseline(): BEFORE the upsert loop, fetch all
+    current original months and build a before-snapshot array:
     ```
-    action: 'Edit Original Baseline'
-    description: 'Admin/Staff X edited the original baseline for Project Y'
-    extra: { before: [...old months...], after: [...new months...] }
+    $beforeMonths = $project->baselineSchedules()
+        ->whereNotNull('original_planned_progress_percent')
+        ->orderBy('planned_date')
+        ->get(['month_label', 'planned_date', 'planned_progress_percent',
+               'original_planned_progress_percent', 'description'])
+        ->toArray();
     ```
-  - The ActivityLog model already has a `project_id` column. We can store
-    the diff in the `description` field as JSON or add a new `metadata`
-    JSON column if needed.
+  - AFTER the save + validation succeeds, build an after-snapshot and
+    compute the diff. Log with structured data:
+    ```
+    ActivityLog::create([
+        'user_id'    => auth()->id(),
+        'project_id' => $project->id,
+        'action'     => 'Edit Original Baseline',
+        'description'=> auth()->user()->name . ' edited the original baseline',
+        'ip_address' => request()->ip(),
+        'visibility'=> 'all',
+        'metadata'   => json_encode([
+            'before' => $beforeMonths,
+            'after'  => $afterMonths,
+            'removed'=> $validated['removed_ids'] ?? [],
+        ]),
+    ]);
+    ```
+  - This lets admin see: who made the change, what the old months were,
+    what the new months are, and which months were removed — enabling
+    identification of mistakes.
 
-- resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php
-  - Compute $isAssignedStaff: staff user whose Staff ID matches
-    $project->assigned_project_manager.
-  - Change @if(auth()->user()->role === 'admin') on the Edit Original
-    Baseline button to @if(auth()->user()->role === 'admin' || $isAssignedStaff).
+- app/Models/ActivityLog.php
+  - Add 'metadata' to $fillable and $casts (as 'array').
+  - If the activity_logs table doesn't have a metadata column, add a
+    migration:
+    ```
+    $table->json('metadata')->nullable()->after('visibility');
+    ```
 
 - resources/views/projects/project_detail/project_detail.blade.php
+  - Compute $isAssignedStaff = $project->isAssignedTo(auth()->user())
   - Pass $isAssignedStaff to the baseline-schedule tab include.
+
+- resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php
+  - Change the Edit Original Baseline button condition from:
+    @if(auth()->user()->role === 'admin')
+  - To:
+    @if(auth()->user()->role === 'admin' || $isAssignedStaff)
 
 ---
 
@@ -233,5 +300,5 @@ Recommended order based on dependencies:
 
 - Risk module changes (kept as-is per client confirmation)
 - Contractor self-service (client confirmed PMU personnel input S-curves)
-- Migration to convert assigned_project_manager from string to FK
-  (kept for backward compatibility with existing data)
+- Legacy name-string assigned_project_manager records (test data only,
+  can be removed; new projects store Staff record IDs as strings)
