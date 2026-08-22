@@ -134,6 +134,28 @@ any legacy name-string records are test data and can be removed.
   - To:
     @if(auth()->user()->role === 'admin' || $isAssignedStaff)
 
+### Implementation Log — Task 9
+
+Committed: `eb10a56` on `staff-baseline-extension-improvements`
+
+Files changed:
+- `routes/web.php` — Added GET/POST `/original` routes to staff group
+- `app/Models/Project.php` — Added `isAssignedTo(User $user)` helper
+- `app/Models/ActivityLog.php` — Added `metadata` to $fillable + $casts
+- `database/migrations/2026_08_22_093055_add_metadata_column_to_activity_logs_table.php` — New migration
+- `app/Http/Controllers/BaselineScheduleController.php`:
+  - Added `canEditOriginalBaseline()` private helper
+  - Replaced admin-only checks in both methods
+  - Added before/after diff logging with metadata on ActivityLog
+- `resources/views/projects/project_detail/project_detail.blade.php` — Computes $isAssignedStaff
+- `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — Button shows for assigned staff
+- `resources/views/admin/login.blade.php`:
+  - Added 'Edit Original Baseline' to action filter dropdown
+  - Added CSS tooltip showing before/after diff on hover for baseline edit entries
+  - Added distinct purple badge (`action-edit-baseline`) for this action
+
+All 725 tests passing.
+
 ---
 
 ## Task 10 — Staff Can Approve Extensions for Assigned Projects
