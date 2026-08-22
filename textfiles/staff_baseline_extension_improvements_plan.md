@@ -166,36 +166,50 @@ All 725 tests passing.
 
 ## Task 10 — Staff Can Approve Extensions for Assigned Projects
 
-Goal: Staff can approve or auto-approve extensions for projects they are
-assigned to. Admin approval still works for all projects.
+Goal: Staff assigned to a project can approve or reject extensions for that
+project. Admin approval still works for all projects. Partial approval
+(approved_new_end_date) is removed per consultant recommendation — the
+reviewer edits new_end_date directly before approving.
 
 Current state:
-- store(): staff submissions always set to 'pending' (line ~68).
-- update(): staff cannot change status (line ~318 strips status).
+- store(): staff submissions always set to 'pending' (line ~73).
+- update(): staff cannot change status (line ~323 strips status).
 - Review modal is admin-only (blade + JS).
 - canReview in baseline-schedule-extensions.js only checks isAdmin.
+- approved_new_end_date (partial approval) exists but consultant wants removed.
+
+Flow:
+1. Staff creates extension → status = 'pending' (unchanged — staff records
+   the request while awaiting external office decision).
+2. External office decides → staff reviews the pending extension.
+3. Staff can edit new_end_date in the review modal (e.g., if the office
+   grants less time than requested), then approve or reject.
+4. Approval triggers recomputeProjectDeadline() + notification to
+   requester + contractor + assigned staff.
 
 Changes:
 - app/Http/Controllers/Admin/ProjectExtensionController.php
-  - In store(): when staff creates extension for a project where
-    assigned_project_manager matches their Staff ID, set status to
-    'approved' (auto-approve) instead of 'pending'. Also immediately
-    recompute deadline + extension_count (same as admin auto-approve).
-  - In update(): allow staff to change status (approve/reject) when the
-    project is assigned to them. Remove the line that strips status from
-    staff payload when isAssignedStaff is true.
+  - In update() STAFF path: add 'status', 'rejection_reason' to staff
+    validation rules when project is assigned to them. Set
+    approved_by_user_id + approved_at on approval. Trigger
+    recomputeProjectDeadline() + notifications (same as admin).
+  - In update() both paths: remove approved_new_end_date from validation
+    rules and all references (partial approval removed).
+  - In store() admin path: remove approved_new_end_date from creation.
 
 - resources/views/projects/project_detail/components/modals/review_extension_modal.blade.php
   - Show the Review modal for staff assigned to the project (not just
     admin). Change the @if check to include $isAssignedStaff.
+  - Add editable new_end_date field so reviewer can adjust the date
+    before approving/rejecting.
+  - Remove approved_new_end_date / partial approval UI.
 
 - public/js/admin/projects/baseline-schedule-extensions.js
-  - Update canReview: add `|| (isAssignedStaff && ext.status === 'pending')`.
+  - Update canReview: add || isAssignedStaff when ext.status === 'pending'.
   - Pass isAssignedStaff from a window variable set in the blade.
 
 - resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php
-  - Set window.isAssignedStaff = {{ $isAssignedStaff ? 'true' : 'false' }}
-    for the JS to read.
+  - Ensure window.isAssignedStaff is available for the JS to read.
 
 ---
 
