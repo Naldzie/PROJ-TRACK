@@ -291,11 +291,11 @@
                                 <label class="form-label">Project In Charge</label>
                                 @php $isStaff = auth()->user()->role === 'staff'; @endphp
                                 @if($isStaff)
-                                <input type="hidden" name="assigned_project_manager" id="projectManagerHidden" value="{{ auth()->id }}">
+                                <input type="hidden" name="assigned_project_manager" id="projectManagerHidden" value="{{ auth()->id() }}">
                                 @endif
                                 <select name="{{ $isStaff ? '' : 'assigned_project_manager' }}" id="projectManager" class="form-select" {{ $isStaff ? 'disabled' : '' }}>
                                     @if($isStaff)
-                                        <option value="{{ auth()->id }}" selected>{{ auth()->user()->display_name }}</option>
+                                        <option value="{{ auth()->id() }}" selected>{{ auth()->user()->display_name }}</option>
                                     @else
                                     <option value="">-- Select Project Manager --</option>
                                     <optgroup label="Admins">
