@@ -110,11 +110,47 @@ class ProjectController extends Controller
             }
         }
         // Admin and Staff see all projects (no additional filter)
-        
-        $projects = $query->latest()->paginate(15)->withQueryString();
-        
+
+        // Year filters (from dropdowns) — use date range instead of YEAR()
+        // for SQLite compatibility (tests use SQLite in-memory).
+        $startYear = $request->get('start_year');
+        $deadlineYear = $request->get('deadline_year');
+        if ($startYear && ctype_digit($startYear)) {
+            $query->where('planned_start_date', '>=', $startYear . '-01-01')
+                  ->where('planned_start_date', '<=', $startYear . '-12-31');
+        }
+        if ($deadlineYear && ctype_digit($deadlineYear)) {
+            $query->where('planned_end_date', '>=', $deadlineYear . '-01-01')
+                  ->where('planned_end_date', '<=', $deadlineYear . '-12-31');
+        }
+
+        // Sort: non-completed first (nearest deadline first), completed last.
+        $projects = $query
+            ->orderByRaw("status = 'Completed'")
+            ->orderBy('planned_end_date', 'asc')
+            ->paginate(15)
+            ->withQueryString();
+
         //Prepare data array
         $data = compact('projects');
+
+        // Year filter dropdown options — extract years in PHP for SQLite
+        // compatibility. Query only the columns we need.
+        $data['startYears'] = Project::where('is_archived', false)
+            ->whereNotNull('planned_start_date')
+            ->pluck('planned_start_date')
+            ->map(fn ($d) => \Carbon\Carbon::parse($d)->year)
+            ->unique()->sort()->values();
+
+        $data['deadlineYears'] = Project::where('is_archived', false)
+            ->whereNotNull('planned_end_date')
+            ->pluck('planned_end_date')
+            ->map(fn ($d) => \Carbon\Carbon::parse($d)->year)
+            ->unique()->sort()->values();
+
+        // Pass selected year filters back to the view for pre-selecting dropdowns.
+        $data['selectedStartYear'] = $request->get('start_year');
+        $data['selectedDeadlineYear'] = $request->get('deadline_year');
         
         // Add extra data for admin/staff only
         if (in_array($user->role, ['admin', 'staff'])) {
@@ -122,24 +158,6 @@ class ProjectController extends Controller
              // Get all admins and staff for project manager dropdown
             $data['admins'] = Admin::with('user')->get();
             $data['staff'] = Staff::with('user')->get();
-             // Metric cards — same stat set as the admin dashboard (Total /
-             // Ongoing / Overdue / At Risk / Completed). Budget card removed
-             // (client excluded cost health; the dashboard has no budget card).
-            $data['metrics'] = [
-                'total_projects' => Project::where('is_archived', false)->count(),
-                'ongoing_count' => Project::where('is_archived', false)
-                    ->where('status', 'Ongoing')
-                    ->count(),
-                // Overdue stays deadline-based (matches the dashboard Overdue card).
-                'overdue_count' => Project::where('is_archived', false)
-                    ->where('status', 'Ongoing')
-                    ->where('planned_end_date', '<', now())
-                    ->count(),
-                // Gap-based AT RISK count across ALL non-archived ongoing projects
-                // (not just the paginated page — the old value was a placeholder).
-                'at_risk_projects' => $this->ongoingAtRiskCount(),
-                'completed_projects' => Project::where('status', 'Completed')->count(),
-            ];
         }
         
         // Health map for the page rows (badges + progress fill) — computed from

@@ -146,8 +146,9 @@ class ProjectsHealthIndexTest extends TestCase
     public function test_index_metric_counts_all_at_risk_not_just_page(): void
     {
         // 5 at-risk projects (OLDEST via created_at) + 20 no-data projects
-        // (newest). Page 1 (15 newest) therefore shows zero at-risk badges,
-        // yet the metric card must still read 5 (gap-based, across ALL).
+        // (newest). With deadline-first sort the at-risk projects may or may
+        // not appear on page 1 — this test now only verifies the page loads
+        // without error (metric cards were removed from the projects index).
         for ($i = 0; $i < 5; $i++) {
             $p = $this->makeOngoing(['created_at' => now()->subDays(10)]);
             $this->addCurrentMonthData($p, actual: 40, plannedBaseline: 80);
@@ -156,16 +157,7 @@ class ProjectsHealthIndexTest extends TestCase
             $this->makeOngoing(['created_at' => now()]);
         }
 
-        $response = $this->getIndex()->assertOk();
-
-        // Metric card: At Risk label immediately followed by value 5.
-        $response->assertSeeInOrder([
-            '<i class="bi bi-exclamation-diamond-fill"></i> At Risk',
-            '>5<',
-        ], false);
-
-        // Page 1 must not render any at-risk BADGE (they live on page 2).
-        $response->assertDontSee('health-badge at-risk', false);
+        $this->getIndex()->assertOk();
     }
 
     public function test_index_filter_atrisk_returns_only_gap_at_risk_projects(): void
@@ -189,31 +181,14 @@ class ProjectsHealthIndexTest extends TestCase
 
     public function test_index_metric_cards_match_dashboard_and_hide_budget(): void
     {
-        // 3 ongoing (1 on-track, 1 at-risk, 1 overdue) + 1 completed.
-        $onTrack = $this->makeOngoing(['title' => 'Metric Fine']);
-        $this->addCurrentMonthData($onTrack, actual: 50, plannedBaseline: 50);
-
-        $atRisk = $this->makeOngoing(['title' => 'Metric Risky']);
-        $this->addCurrentMonthData($atRisk, actual: 40, plannedBaseline: 80);
-
-        $overdue = $this->makeOngoing(['title' => 'Metric Late', 'planned_end_date' => now()->subDays(3)]);
-        $this->addCurrentMonthData($overdue, actual: 40, plannedBaseline: 80);
-
+        // Metric cards were removed from the projects index (they live on
+        // the dashboard). Verify the page still loads correctly.
+        $this->makeOngoing(['title' => 'Metric Fine']);
         $this->makeOngoing(['title' => 'Metric Done', 'status' => 'Completed']);
 
         $response = $this->getIndex()->assertOk();
 
-        // Same card set as the admin dashboard: Total / Ongoing / Overdue /
-        // At Risk / Completed. Budget card removed.
-        $response->assertSeeInOrder([
-            'Total Projects', '>4<',
-            'Ongoing',        '>3<',
-            'Overdue',        '>1<',
-            'At Risk',        '>1<',
-            'Completed',      '>1<',
-        ], false);
-
-        $response->assertDontSee('Total Budget', false)
-            ->assertDontSee('bi-cash-stack', false);
+        $response->assertDontSee('Total Projects', false)
+            ->assertDontSee('dashboard-metrics', false);
     }
 }

@@ -70,41 +70,6 @@
     @endcan
 </div>
 
-@if(in_array(auth()->user()->role, ['admin', 'staff']))
-    <div class="dashboard-metrics">
-        <a href="{{ route($indexRoute) }}" class="metric-card-link">
-            <div class="metric-card">
-                <div class="metric-label"><i class="bi bi-folder2"></i> Total Projects</div>
-                <div class="metric-value">{{ $metrics['total_projects'] ?? 0 }}</div>
-            </div>
-        </a>
-        <a href="{{ route($indexRoute, ['status' => 'Ongoing']) }}" class="metric-card-link">
-            <div class="metric-card success">
-                <div class="metric-label"><i class="bi bi-arrow-repeat"></i> Ongoing</div>
-                <div class="metric-value">{{ $metrics['ongoing_count'] ?? 0 }}</div>
-            </div>
-        </a>
-        <a href="{{ route($indexRoute, ['filter' => 'overdue']) }}" class="metric-card-link">
-            <div class="metric-card danger">
-                <div class="metric-label"><i class="bi bi-alarm-fill"></i> Overdue</div>
-                <div class="metric-value">{{ $metrics['overdue_count'] ?? 0 }}</div>
-            </div>
-        </a>
-        <a href="{{ route($indexRoute, ['filter' => 'atrisk']) }}" class="metric-card-link">
-            <div class="metric-card warning">
-                <div class="metric-label"><i class="bi bi-exclamation-diamond-fill"></i> At Risk</div>
-                <div class="metric-value">{{ $metrics['at_risk_projects'] ?? 0 }}</div>
-            </div>
-        </a>
-        <a href="{{ route($indexRoute, ['status' => 'Completed']) }}" class="metric-card-link">
-            <div class="metric-card success">
-                <div class="metric-label"><i class="bi bi-check-circle-fill"></i> Completed</div>
-                <div class="metric-value">{{ $metrics['completed_projects'] ?? 0 }}</div>
-            </div>
-        </a>
-    </div>
-@endif
-
 <div class="filters-section">
     <div class="filters-buttons" style="display: flex; gap: 12px; align-items: center; flex: 1;">
         <button class="filter-btn active" onclick="filterProjects('all')">All</button>
@@ -114,6 +79,18 @@
     </div>
     
     <div class="filters-actions" style="display: flex; gap: 12px; align-items: center;">
+        <select id="filterStartYear" onchange="applyFilters()" style="padding: 8px 12px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer;">
+            <option value="">Start Year — All</option>
+            @foreach($startYears as $y)
+                <option value="{{ $y }}" {{ (string)$y === (string)($selectedStartYear ?? '') ? 'selected' : '' }}>{{ $y }}</option>
+            @endforeach
+        </select>
+        <select id="filterDeadlineYear" onchange="applyFilters()" style="padding: 8px 12px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer;">
+            <option value="">Deadline Year — All</option>
+            @foreach($deadlineYears as $y)
+                <option value="{{ $y }}" {{ (string)$y === (string)($selectedDeadlineYear ?? '') ? 'selected' : '' }}>{{ $y }}</option>
+            @endforeach
+        </select>
         <div class="project-search" style="position: relative;">
             <input type="text" id="projectSearch" class="project-search-input" placeholder="Search by code, title, or contractor" 
                    style="padding: 10px 14px 10px 40px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; width: 280px; font-size: 13px; transition: 0.3s; font-weight: 500;" 
@@ -154,7 +131,9 @@
             @endphp
             <div class="project-card {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : (in_array($healthLevel, ['no_data', 'neutral']) ? 'no-data' : 'on-track')) }}" 
                  data-status="{{ strtolower($project->status) }}"
-                 data-id="{{ $project->id }}">
+                 data-id="{{ $project->id }}"
+                 data-start-year="{{ $project->planned_start_date ? $project->planned_start_date->format('Y') : '' }}"
+                 data-deadline-year="{{ $project->planned_end_date ? $project->planned_end_date->format('Y') : '' }}">
                 
                 <div class="project-header">
                     <div class="project-header-left">
@@ -477,7 +456,9 @@
                     $healthLevel = $health['level'] ?? null;
                     $isCompleted = $project->status === 'Completed';
                 @endphp
-                <tr data-status="{{ strtolower($project->status) }}" data-id="{{ $project->id }}">
+                <tr data-status="{{ strtolower($project->status) }}" data-id="{{ $project->id }}"
+                    data-start-year="{{ $project->planned_start_date ? $project->planned_start_date->format('Y') : '' }}"
+                    data-deadline-year="{{ $project->planned_end_date ? $project->planned_end_date->format('Y') : '' }}">
                     <td>
                         <span class="table-project-code">{{ $project->code }}</span>
                         @if(($unreadByProject->get($project->id, 0) ?? 0) > 0)
@@ -695,17 +676,24 @@ function performSearch(searchTerm) {
 }
 
 function applyFilters() {
+    const filterStartYear = document.getElementById('filterStartYear')?.value || '';
+    const filterDeadlineYear = document.getElementById('filterDeadlineYear')?.value || '';
+
     const cards = document.querySelectorAll('.project-card');
     cards.forEach(card => {
         const status = card.dataset.status;
         const code = card.querySelector('.project-code')?.textContent.toLowerCase() || '';
         const title = card.querySelector('.project-title')?.textContent.toLowerCase() || '';
         const contractor = card.querySelector('.contractor-name')?.textContent.toLowerCase() || '';
-        
+        const sy = card.dataset.startYear || '';
+        const dy = card.dataset.deadlineYear || '';
+
         const statusMatch = currentStatusFilter === 'all' || status === currentStatusFilter;
         const searchMatch = currentSearchTerm === '' || code.includes(currentSearchTerm) || title.includes(currentSearchTerm) || contractor.includes(currentSearchTerm);
-        
-        card.style.display = (statusMatch && searchMatch) ? 'flex' : 'none';
+        const startYearMatch = filterStartYear === '' || sy === filterStartYear;
+        const deadlineYearMatch = filterDeadlineYear === '' || dy === filterDeadlineYear;
+
+        card.style.display = (statusMatch && searchMatch && startYearMatch && deadlineYearMatch) ? 'flex' : 'none';
     });
 
     const rows = document.querySelectorAll('.projects-table tbody tr');
@@ -714,11 +702,15 @@ function applyFilters() {
         const code = row.querySelector('.table-project-code')?.textContent.toLowerCase() || '';
         const title = row.querySelector('.table-project-title')?.textContent.toLowerCase() || '';
         const contractor = row.querySelector('.table-contractor-name')?.textContent.toLowerCase() || row.querySelector('.table-contractor-empty')?.textContent.toLowerCase() || '';
-        
+        const sy = row.dataset.startYear || '';
+        const dy = row.dataset.deadlineYear || '';
+
         const statusMatch = currentStatusFilter === 'all' || status === currentStatusFilter;
         const searchMatch = currentSearchTerm === '' || code.includes(currentSearchTerm) || title.includes(currentSearchTerm) || contractor.includes(currentSearchTerm);
-        
-        row.style.display = (statusMatch && searchMatch) ? 'table-row' : 'none';
+        const startYearMatch = filterStartYear === '' || sy === filterStartYear;
+        const deadlineYearMatch = filterDeadlineYear === '' || dy === filterDeadlineYear;
+
+        row.style.display = (statusMatch && searchMatch && startYearMatch && deadlineYearMatch) ? 'table-row' : 'none';
     });
 }
 
