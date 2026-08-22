@@ -164,10 +164,31 @@ class NotificationService
 
     /**
      * All active staff users.
+     * @deprecated Use staffForProject() instead for scoped notifications.
      */
     public function allStaff(): Collection
     {
         return User::where('role', 'staff')->where('is_active', true)->get();
+    }
+
+    /**
+     * The single assigned staff user for a project, if any.
+     * Uses the User ID stored in assigned_project_manager.
+     */
+    public function staffForProject(Project $project): ?User
+    {
+        if (!$project->assigned_project_manager) {
+            return null;
+        }
+
+        $userId = (int) $project->assigned_project_manager;
+
+        $user = User::where('id', $userId)
+            ->where('role', 'staff')
+            ->where('is_active', true)
+            ->first();
+
+        return $user;
     }
 
     /**

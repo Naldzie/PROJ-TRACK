@@ -75,6 +75,7 @@ class NotificationScanTest extends TestCase
             'status'           => 'Ongoing',
             'contractor_id'    => $this->contractor->id,
             'planned_end_date' => $endDate,
+            'assigned_project_manager' => (string) $this->staff->id,
         ]);
     }
 
@@ -88,6 +89,7 @@ class NotificationScanTest extends TestCase
             'status'           => 'Ongoing',
             'contractor_id'    => $this->contractor->id,
             'planned_end_date' => Carbon::now()->addYear(),
+            'assigned_project_manager' => (string) $this->staff->id,
         ]);
     }
 

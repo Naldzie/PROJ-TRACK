@@ -591,6 +591,17 @@ extensions) already do not include staff, so they are unaffected.
 6. Task 10 (staff extension approval) — after Task 15
 7. Task 11 (additional work %) — independent, anytime
 
+### Implementation Log — Task 15
+
+Committed: (pending) on `staff-baseline-extension-improvements`
+
+Files changed:
+- `app/Services/NotificationService.php` — Added `staffForProject(Project $project): ?User` method; deprecated `allStaff()`
+- `app/Console/Commands/SendNotifications.php` — Replaced `$service->allStaff()` with `$service->staffForProject($project)` for per-project staff resolution
+- `tests/Feature/NotificationScanTest.php` — Test projects now set `assigned_project_manager` to staff user ID
+
+All 725 tests passing.
+
 ---
 
 ## Verification

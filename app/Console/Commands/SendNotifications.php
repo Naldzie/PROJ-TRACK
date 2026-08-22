@@ -62,8 +62,11 @@ class SendNotifications extends Command
         foreach ($projects as $project) {
             $projectsChecked++;
 
-            $recipients = collect($service->admins())
-                ->merge($service->allStaff());
+            $recipients = collect($service->admins());
+            $assignedStaff = $service->staffForProject($project);
+            if ($assignedStaff) {
+                $recipients->push($assignedStaff);
+            }
             $contractorUser = $service->contractorUserFor($project);
             if ($contractorUser) {
                 $recipients->push($contractorUser);
