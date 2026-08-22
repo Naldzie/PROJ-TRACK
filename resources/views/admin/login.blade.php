@@ -629,6 +629,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
 .diff-tooltip .diff-table td {
     padding: 2px 8px 2px 0;
     vertical-align: top;
+    color: #e2e8f0;
 }
 .diff-tooltip .diff-old {
     color: #f87171;
