@@ -489,27 +489,43 @@ class Project extends Model
 
         $managerId = trim($this->assigned_project_manager);
 
-        // Primary path: assigned_project_manager stores the User ID
-        if (is_numeric($managerId)) {
-            $userId = (int) $managerId;
-            $user = User::with(['admin', 'staff'])->find($userId);
-
-            if ($user) {
-                if ($user->role === 'admin' && $user->admin) {
-                    return $user->admin->full_name ?? $user->display_name;
-                }
-                if ($user->role === 'staff' && $user->staff) {
-                    $name = ($user->staff->first_name ?? '') . ' ' . ($user->staff->last_name ?? '');
-                    return trim($name) ?: $user->display_name;
-                }
-                return $user->display_name ?? 'User (ID: ' . $userId . ')';
-            }
-
-            return 'Manager (ID: ' . $userId . ')';
+        if (!is_numeric($managerId)) {
+            return $managerId;
         }
 
-        // Backward compatibility: old prefixed format or raw string name
-        return $managerId;
+        $userId = (int) $managerId;
+
+        // Try User → admin/staff relationship first
+        $user = User::with(['admin', 'staff'])->find($userId);
+
+        if ($user) {
+            if ($user->role === 'admin' && $user->admin) {
+                return $user->admin->full_name ?? $user->email;
+            }
+            if ($user->role === 'staff' && $user->staff) {
+                $name = trim(($user->staff->first_name ?? '') . ' ' . ($user->staff->last_name ?? ''));
+                return $name ?: $user->email;
+            }
+            return $user->email;
+        }
+
+        // Fallback: look up directly in admins/staff tables by their own ID
+        // (handles leftover old Admin/Staff record IDs that weren't migrated)
+        $admin = \DB::table('admins')->where('id', $userId)->first();
+        if ($admin && $admin->user_id) {
+            // Self-heal: update to the correct User ID
+            $this->update(['assigned_project_manager' => (string) $admin->user_id]);
+            return $admin->full_name ?? 'Admin';
+        }
+        $staff = \DB::table('staff')->where('id', $userId)->first();
+        if ($staff && $staff->user_id) {
+            // Self-heal: update to the correct User ID
+            $this->update(['assigned_project_manager' => (string) $staff->user_id]);
+            $name = trim(($staff->first_name ?? '') . ' ' . ($staff->last_name ?? ''));
+            return $name ?: 'Staff';
+        }
+
+        return 'Unknown (ID: ' . $userId . ')';
     }
 
     /**
