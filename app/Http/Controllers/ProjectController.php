@@ -656,6 +656,12 @@ class ProjectController extends Controller
             }
         }
 
+        // Auto-assign staff as project manager when not manually selected
+        $user = Auth::user();
+        if ($user->role === 'staff' && empty($data['assigned_project_manager'])) {
+            $data['assigned_project_manager'] = (string) $user->id;
+        }
+
         // Use a transaction so proposal + project are saved atomically
         $project = DB::transaction(function () use ($data, $request) {
 

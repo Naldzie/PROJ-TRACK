@@ -308,7 +308,8 @@
                                                     data-manager-type="staff" 
                                                     data-manager-name="{{ $staffMember->first_name }} {{ $staffMember->last_name }}"
                                                     data-manager-email="{{ $staffMember->user->email ?? '' }}"
-                                                    data-manager-phone="{{ $staffMember->contact_number ?? '' }}">
+                                                    data-manager-phone="{{ $staffMember->contact_number ?? '' }}"
+                                                    {{ ($staffMember->user_id == auth()->id()) ? 'selected' : '' }}>
                                                 {{ $staffMember->first_name }} {{ $staffMember->last_name }} (Staff)
                                             </option>
                                         @endforeach

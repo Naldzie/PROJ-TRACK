@@ -270,6 +270,18 @@ Changes:
   - When the creating user is staff, pre-select their value in the
     assigned_project_manager dropdown (optional UX improvement).
 
+### Implementation Log — Task 12
+
+Committed: (pending)
+
+Files changed:
+- `app/Http/Controllers/ProjectController.php` — Added auto-assign logic in `store()`: when staff creates project without selecting a PM, sets `assigned_project_manager` to their User ID
+- `resources/views/admin/_create_project_modal.blade.php` — Pre-selects staff member's own option in the PM dropdown when they're creating a project
+
+Note: `assigned_project_manager` now stores User IDs (fixed earlier). Auto-assign uses `$user->id` directly.
+
+All 725 tests passing.
+
 ---
 
 ## Task 13 — Staff Project Filtering
