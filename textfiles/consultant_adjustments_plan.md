@@ -349,3 +349,14 @@ Track commits and changes as tasks are completed.
   RiskReported.php, DeadlineReminder.php, OverdueInspectionReminder.php,
   bell.blade.php, _list.blade.php, ProjectController.php,
   projects/index.blade.php, project_detail.blade.php
+
+### Task 8 — Projects index improvements (committed: 84a85da)
+- Removed duplicate metric cards from projects index (already on dashboard)
+- Changed default sort: deadline-first for non-completed, completed pushed
+  to bottom
+- Added Start Year and Deadline Year filter dropdowns with server-side
+  filtering (date range, SQLite-compatible) and client-side filtering
+  (data attributes on cards/rows)
+- Updated ProjectsHealthIndexTest to reflect removed metric cards
+- Files: ProjectController.php, projects/index.blade.php,
+  ProjectsHealthIndexTest.php
