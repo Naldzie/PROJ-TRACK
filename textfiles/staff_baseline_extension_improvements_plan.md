@@ -18,8 +18,10 @@ Branch:   staff-baseline-extension-improvements (from develop)
   Add a field in the "Generate Adjusted Baseline" modal for the approximated
   additional % worth of the extension.
 - When a staff member creates a project, they should be auto-assigned as
-  the project manager.
+  the project manager. Staff cannot reassign — only admin can.
 - Staff should only see their assigned projects in the projects index.
+- Only assigned staff and admin should be able to edit projects, manage
+  baselines, and manage extensions (defense-in-depth, not just UI hiding).
 - Risks module stays as-is (client doesn't use it but it's already in place).
 - S-curve baseline is based on contractor-sent S-curve plans (cumulative %
   per month, format varies by contractor).
@@ -43,9 +45,10 @@ what was changed — enabling identification of mistakes.
 | Blade | baseline-schedule.blade.php | 81 | @if(auth()->user()->role === 'admin') |
 | JS | baseline-schedule-setup-modal.js | 284 | None (relies on window.routePrefix) |
 
-Note: `assigned_project_manager` is a string field storing Staff record IDs
-(as strings) for new projects. No legacy name-based handling needed —
-any legacy name-string records are test data and can be removed.
+Note: `assigned_project_manager` stores User IDs (fixed in this branch).
+The old format stored Admin/Staff record IDs which overlapped (both had
+IDs 1, 2, 3), causing wrong PM names to display. A migration converts
+existing values to User IDs.
 
 ### Changes
 
@@ -249,36 +252,57 @@ Changes:
 ## Task 12 — Auto-Assign Staff as Project Manager on Creation
 
 Goal: When a staff member creates a project, automatically set
-assigned_project_manager to their Staff record ID.
+assigned_project_manager to their User ID. Staff cannot reassign the
+project manager — only admins can.
 
 Current state:
 - store() has no auto-assign logic.
 - assigned_project_manager is manually selected from dropdown.
+- Any staff member can edit any project's PM field.
 
 Changes:
 - app/Http/Controllers/ProjectController.php
   - In store(): after validation, if auth user is staff and
-    assigned_project_manager is null/empty, set it to the staff user's
-    Staff record ID:
+    assigned_project_manager is null/empty, set it to the user's ID:
     ```
     if ($user->role === 'staff' && empty($validated['assigned_project_manager'])) {
-        $validated['assigned_project_manager'] = $user->staff?->id;
+        $validated['assigned_project_manager'] = (string) $user->id;
+    }
+    ```
+  - In update(): strip assigned_project_manager from staff payload:
+    ```
+    if (auth()->user()->role === 'staff') {
+        unset($projectData['assigned_project_manager']);
     }
     ```
 
 - resources/views/admin/_create_project_modal.blade.php
-  - When the creating user is staff, pre-select their value in the
-    assigned_project_manager dropdown (optional UX improvement).
+  - When the creating user is staff, disable the PM dropdown and show
+    only their name. A hidden input carries their User ID for form
+    submission.
+  - When admin, full dropdown with all admins/staff (unchanged).
+
+- public/js/_create_project_modal.js
+  - In openEditProjectModal(): if dropdown is disabled (staff), update
+    the hidden input with the current PM value instead of trying to
+    set the disabled select.
 
 ### Implementation Log — Task 12
 
-Committed: (pending)
+Committed: `cd8c4b5`, `f20b2eb`, `afc46f0` on `staff-baseline-extension-improvements`
 
 Files changed:
-- `app/Http/Controllers/ProjectController.php` — Added auto-assign logic in `store()`: when staff creates project without selecting a PM, sets `assigned_project_manager` to their User ID
-- `resources/views/admin/_create_project_modal.blade.php` — Pre-selects staff member's own option in the PM dropdown when they're creating a project
+- `app/Http/Controllers/ProjectController.php`:
+  - `store()`: Auto-assigns user ID as PM when staff creates without selecting
+  - `update()`: Strips `assigned_project_manager` for staff — only admin can reassign
+- `resources/views/admin/_create_project_modal.blade.php`:
+  - PM dropdown disabled for staff with hidden input carrying their User ID
+  - Pre-selects staff member's own option (now replaced by disabled state)
+- `public/js/_create_project_modal.js`:
+  - Edit modal sets hidden input value when dropdown is disabled (staff)
 
-Note: `assigned_project_manager` now stores User IDs (fixed earlier). Auto-assign uses `$user->id` directly.
+Note: `assigned_project_manager` stores User IDs (fixed earlier in this branch).
+Auto-assign uses `$user->id` directly.
 
 All 725 tests passing.
 
@@ -296,7 +320,7 @@ Current state:
 Changes:
 - app/Http/Controllers/ProjectController.php
   - In index(): when role is staff, add filter:
-    $query->where('assigned_project_manager', $user->staff?->id)
+    $query->where('assigned_project_manager', (string) $user->id)
     This replaces the current "Admin and Staff see all projects" behavior.
   - Ensure that projects where assigned_project_manager is null (admin
     created but not yet assigned) are NOT shown to staff.
@@ -305,17 +329,117 @@ Changes:
   - For staff, the "New Project" button should still be visible (staff
     can create projects which are auto-assigned to them).
 
+Note: This task is deferred to LAST so that during testing, staff accounts
+can still see and access all projects in the index. The access-restriction
+gates (Task 14) will be tested first while projects remain visible.
+
+---
+
+## Task 14 — Restrict Project Operations to Assigned Staff + Admin
+
+Goal: Defense-in-depth access control. Even if a staff member navigates
+to an unassigned project (via URL, bookmark, or shared link), they cannot
+edit the project, modify its baseline, or manage its extensions. Only
+admin and the assigned project manager can perform these operations.
+
+Current state (audit results):
+
+| Feature | Admin | Any Staff | Assigned Staff |
+|---|---|---|---|
+| Edit project (header button) | Yes | Yes (any) | No gate |
+| Set Up Baseline | Yes | Yes (any) | No gate |
+| Add Month Target | Yes | Yes (any) | No gate |
+| Generate Adjusted Baseline | Yes | Yes (any) | No gate |
+| Delete month target | Yes | Partial | No gate |
+| Edit Original Baseline | Yes | No | **Already correct** |
+| Add Extension | Yes | Yes (any project) | No gate |
+| Edit/Delete Extension | Yes | Own only | **Already correct** |
+
+### Changes
+
+#### A. Edit Project Button (header.blade.php)
+
+- resources/views/projects/project_detail/components/header.blade.php
+  - The edit button uses `@can('update', $project)`. Currently
+    ProjectPolicy@update allows ANY staff. Change to:
+    ```
+    public function update(User $user, Project $project): bool
+    {
+        if ($user->role === 'admin') return true;
+        return $project->isAssignedTo($user);
+    }
+    ```
+  - This restricts the edit button AND the controller update route
+    to admin + assigned staff only.
+
+#### B. Baseline CRUD Restriction
+
+- app/Http/Controllers/BaselineScheduleController.php
+  - Add a new private helper (generalizing canEditOriginalBaseline):
+    ```
+    private function authorizeProjectAccess(User $user, Project $project): void
+    {
+        if ($user->role === 'admin') return;
+        if (!$project->isAssignedTo($user)) {
+            abort(403, 'You are not assigned to this project.');
+        }
+    }
+    ```
+  - Add `$this->authorizeProjectAccess(auth()->user(), $project)` at the
+    top of these methods:
+    - `storeBaselineSchedule()`
+    - `storeInitialBaselineSetup()`
+    - `updateBaselineSchedule()`
+    - `deleteBaselineSchedule()`
+    - `carryOverActivity()`
+    - `saveAdjustedBaseline()`
+  - Refactor `canEditOriginalBaseline()` to call `authorizeProjectAccess()`
+    internally (or replace it) for consistency.
+
+- resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php
+  - Wrap "Set Up Baseline", "Add Month Target", "Generate Adjusted Baseline"
+    buttons with `@if(auth()->user()->role === 'admin' || $isAssignedStaff)`
+    to hide them for non-assigned staff.
+  - Per-card "Delete" and "Manage Month" buttons: add `$isAssignedStaff`
+    check alongside the existing admin check.
+
+#### C. Extension CRUD Restriction
+
+- app/Http/Controllers/Admin/ProjectExtensionController.php
+  - In `store()`: add assignment check before creating:
+    ```
+    if (!$isAdmin && !$project->isAssignedTo(auth()->user())) {
+        abort(403, 'You are not assigned to this project.');
+    }
+    ```
+  - Staff extensions for own projects remain as-is (auto-approve for
+    assigned staff, pending for non-assigned — but non-assigned will
+    now be blocked at the gate).
+
+- resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php
+  - Change "Add Extension" button condition from:
+    `auth()->user()->role !== 'contractor'`
+  - To:
+    `auth()->user()->role === 'admin' || $isAssignedStaff`
+
+- public/js/admin/projects/baseline-schedule-extensions.js
+  - Update `canEdit`/`canDelete`/`canResubmit` to also check
+    `isAssignedStaff` (pass via window variable from blade).
+
+### Implementation Log — Task 14
+
+( pending )
+
 ---
 
 ## Implementation Order
 
-Recommended order based on dependencies:
-
-1. Task 12 (auto-assign) — prerequisite for Task 13 and Task 9/10
-2. Task 13 (staff filtering) — depends on Task 12
-3. Task 9 (staff baseline edit) — depends on Task 12 for assignment check
-4. Task 10 (staff extension approval) — depends on Task 12
-5. Task 11 (additional work %) — independent, can be done anytime
+1. Task 9 (staff baseline edit) — DONE
+2. Task 12 (auto-assign + PM read-only) — DONE
+3. Task 14 (restrict project operations) — NEXT
+4. Task 13 (staff filtering) — LAST (deferred for testing convenience)
+5. Task 10 (staff extension approval) — after Task 14
+6. Task 11 (additional work %) — independent, anytime
 
 ---
 
@@ -324,11 +448,18 @@ Recommended order based on dependencies:
 - Run composer test after each task
 - Manual QA:
   * Staff creates project → auto-assigned to them
-  * Staff sees only their assigned projects
-  * Staff can edit original baseline of assigned projects only
-  * Staff can approve extensions for assigned projects
-  * Generate Adjusted Baseline modal shows Additional Work % input
-  * S-curve updates correctly when additional work % is entered
+  * Staff cannot change PM in create/edit modal (dropdown disabled)
+  * Admin can assign PM to any project
+  * Staff CANNOT edit project details of unassigned projects (edit button hidden, 403 on direct URL)
+  * Staff CAN edit project details of assigned projects
+  * Staff CANNOT set up / add month / generate adjusted baseline for unassigned projects
+  * Staff CAN do all baseline operations for assigned projects
+  * Staff CANNOT add extension for unassigned projects
+  * Staff CAN add/edit/delete extensions for assigned projects (own extensions only for edit/delete)
+  * Admin can do all operations for all projects
+  * Staff sees only assigned projects in the index (Task 13 — deferred)
+  * Generate Adjusted Baseline modal shows Additional Work % input (Task 11)
+  * S-curve updates correctly when additional work % is entered (Task 11)
   * ActivityLog captures before/after diffs for baseline edits
 
 ---
@@ -338,4 +469,6 @@ Recommended order based on dependencies:
 - Risk module changes (kept as-is per client confirmation)
 - Contractor self-service (client confirmed PMU personnel input S-curves)
 - Legacy name-string assigned_project_manager records (test data only,
-  can be removed; new projects store Staff record IDs as strings)
+  can be removed; new projects store User IDs as strings)
+- Uploaded-by / edited-by fields currently store display names (cosmetic,
+  not a collision risk since names aren't numeric IDs)
