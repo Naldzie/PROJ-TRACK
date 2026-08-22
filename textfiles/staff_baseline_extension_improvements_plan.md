@@ -485,16 +485,111 @@ Files changed (second commit — documents/issues/risks):
 
 All 725 tests passing.
 
+### Implementation Log — Task 14 (cont.)
+
+Committed: `75c2563` on `staff-baseline-extension-improvements`
+
+Extended Task 14 to cover documents, issues, and risks — all use the same
+"admin + assigned staff only" access pattern:
+
+Files changed:
+- `app/Policies/DocumentPolicy.php` — `create()` and `delete()` now check `$project->isAssignedTo($user)` for staff
+- `app/Http/Controllers/IssueController.php` — `store()`, `update()`, `destroy()` replaced role-only check with assignment check
+- `app/Http/Controllers/RiskController.php` — `store()`, `update()`, `destroy()`, `convertToIssue()` replaced role-only check with assignment check
+- `resources/views/projects/project_detail/project_detail.blade.php` — Added `window.isAssignedStaff` JS var; passes `$isAssignedStaff` to issues include
+- `resources/views/projects/project_detail/components/tabs/issues.blade.php` — Buttons/Actions gated with `$isAssignedStaff`
+- `resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php` — "Add Risk" button gated
+- `public/js/admin/projects/risk-register.js` — Actions column and per-row buttons gated with `window.isAssignedStaff`
+- `public/js/admin/projects/issues-modal.js` — Edit/Delete buttons and form submission gated with `window.isAssignedStaff`
+
+All 725 tests passing.
+
+---
+
+## Task 15 — Notification: Only Notify Assigned Staff
+
+### Problem
+
+Staff receive notifications (deadline reminders, overdue inspection alerts) for
+**every ongoing project** in the system, not just projects they are assigned to.
+
+Root cause: `SendNotifications.php` line 66 merges `$service->allStaff()` which
+returns every active staff user with zero project filtering.
+
+### Scope
+
+| Notification Type | Current Recipients | Fix Needed? |
+|---|---|---|
+| Deadline reminder (scan) | ALL staff + ALL admins + contractor | **Yes** |
+| Overdue inspection (scan) | ALL staff + ALL admins + contractor | **Yes** |
+| Issue reported | ALL admins + contractor only | No (no staff) |
+| Risk reported | ALL admins + contractor only | No (no staff) |
+| Extension submitted | ALL admins only | No |
+| Extension approved/rejected | Requester + contractor | No |
+
+### Changes
+
+**1. `app/Services/NotificationService.php`**
+
+Add new method `staffForProject(Project $project): ?User` that resolves only
+the single assigned staff user via `assigned_project_manager` (User ID):
+
+```php
+public function staffForProject(Project $project): ?User
+{
+    if (!$project->assigned_project_manager) {
+        return null;
+    }
+    $user = User::where('id', $project->assigned_project_manager)
+        ->where('role', 'staff')
+        ->where('is_active', true)
+        ->first();
+    return $user;
+}
+```
+
+Remove or deprecate `allStaff()` (only called from `SendNotifications.php`).
+
+**2. `app/Console/Commands/SendNotifications.php`** (line 65-66)
+
+Replace:
+```php
+$recipients = collect($service->admins())
+    ->merge($service->allStaff());
+```
+
+With:
+```php
+$recipients = collect($service->admins());
+$assignedStaff = $service->staffForProject($project);
+if ($assignedStaff) {
+    $recipients->push($assignedStaff);
+}
+```
+
+**No other files need changes.** Event-driven notifications (issues, risks,
+extensions) already do not include staff, so they are unaffected.
+
+### Verification
+
+- Run `composer test` — all 725+ tests should pass
+- Manual QA:
+  * Staff assigned to Project A → receives deadline/overdue notifications for A only
+  * Staff NOT assigned to Project B → does NOT receive notifications for B
+  * Admin still receives notifications for all projects
+  * Contractor still receives notifications for their assigned projects only
+
 ---
 
 ## Implementation Order
 
 1. Task 9 (staff baseline edit) — DONE
 2. Task 12 (auto-assign + PM read-only) — DONE
-3. Task 14 (restrict project operations) — NEXT
-4. Task 13 (staff filtering) — LAST (deferred for testing convenience)
-5. Task 10 (staff extension approval) — after Task 14
-6. Task 11 (additional work %) — independent, anytime
+3. Task 14 (restrict project operations + documents/issues/risks) — DONE
+4. Task 15 (notification assignment filter) — NEXT
+5. Task 13 (staff filtering) — LAST (deferred for testing convenience)
+6. Task 10 (staff extension approval) — after Task 15
+7. Task 11 (additional work %) — independent, anytime
 
 ---
 
@@ -514,9 +609,18 @@ All 725 tests passing.
   * Staff CANNOT record/edit/delete progress on unassigned projects
   * Staff CAN record/edit/delete progress on assigned projects
   * Staff CANNOT add extension for unassigned projects
-  * Staff CAN add/edit/delete extensions for assigned projects (own extensions only for edit/delete)
-  * Admin can do all operations for all projects
-  * Staff sees only assigned projects in the index (Task 13 — deferred)
+    * Staff CAN add/edit/delete extensions for assigned projects (own extensions only for edit/delete)
+    * Staff CANNOT add/edit/delete documents on unassigned projects
+    * Staff CAN add/edit/delete documents on assigned projects
+    * Staff CANNOT add/edit/delete issues on unassigned projects
+    * Staff CAN add/edit/delete issues on assigned projects
+    * Staff CANNOT add/edit/delete/convert risks on unassigned projects
+    * Staff CAN add/edit/delete/convert risks on assigned projects
+    * Staff only receives notifications for assigned projects (Task 15)
+    * Admin still receives notifications for all projects
+    * Contractor still receives notifications for their assigned projects only
+    * Admin can do all operations for all projects
+    * Staff sees only assigned projects in the index (Task 13 — deferred)
   * Generate Adjusted Baseline modal shows Additional Work % input (Task 11)
   * S-curve updates correctly when additional work % is entered (Task 11)
   * ActivityLog captures before/after diffs for baseline edits
