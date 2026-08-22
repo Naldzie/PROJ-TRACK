@@ -284,7 +284,7 @@
                                 @if($project->assigned_project_manager)
                                     <div class="detail-item">
                                         <div class="detail-label"><i class="bi bi-person-badge"></i>Project Manager</div>
-                                        <div class="detail-value">{{ $project->assigned_project_manager }}</div>
+                                        <div class="detail-value">{{ $project->getProjectManagerName() }}</div>
                                     </div>
                                 @endif
                                 @if($project->project_manager_contact)

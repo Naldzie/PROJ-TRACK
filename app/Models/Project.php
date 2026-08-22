@@ -489,29 +489,26 @@ class Project extends Model
 
         $managerId = trim($this->assigned_project_manager);
 
-        // Check if it's a numeric ID
+        // Primary path: assigned_project_manager stores the User ID
         if (is_numeric($managerId)) {
-            // Convert to integer for proper lookup
-            $id = (int) $managerId;
-            
-            // Try to find in Admin table first
-            $admin = Admin::where('id', $id)->with('user')->first();
-            if ($admin) {
-                return $admin->full_name ?? 'Admin (ID: ' . $id . ')';
+            $userId = (int) $managerId;
+            $user = User::with(['admin', 'staff'])->find($userId);
+
+            if ($user) {
+                if ($user->role === 'admin' && $user->admin) {
+                    return $user->admin->full_name ?? $user->display_name;
+                }
+                if ($user->role === 'staff' && $user->staff) {
+                    $name = ($user->staff->first_name ?? '') . ' ' . ($user->staff->last_name ?? '');
+                    return trim($name) ?: $user->display_name;
+                }
+                return $user->display_name ?? 'User (ID: ' . $userId . ')';
             }
 
-            // Try to find in Staff table
-            $staff = Staff::where('id', $id)->with('user')->first();
-            if ($staff) {
-                $name = ($staff->first_name ?? '') . ' ' . ($staff->last_name ?? '');
-                return trim($name) ?: 'Staff (ID: ' . $id . ')';
-            }
-            
-            // If ID not found in either table, return ID with label
-            return 'Manager (ID: ' . $id . ')';
+            return 'Manager (ID: ' . $userId . ')';
         }
 
-        // Return as is if not numeric (backward compatibility for old string names)
+        // Backward compatibility: old prefixed format or raw string name
         return $managerId;
     }
 
@@ -521,10 +518,11 @@ class Project extends Model
      */
     public function isAssignedTo(\App\Models\User $user): bool
     {
-        if ($user->role !== 'staff' || !$user->staff) {
+        if (!$user || !$this->assigned_project_manager) {
             return false;
         }
 
-        return (string) $this->assigned_project_manager === (string) $user->staff->id;
+        // assigned_project_manager stores the User ID
+        return (string) $this->assigned_project_manager === (string) $user->id;
     }
 }

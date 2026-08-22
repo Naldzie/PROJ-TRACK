@@ -293,7 +293,7 @@
                                     <option value="">-- Select Project Manager --</option>
                                     <optgroup label="Admins">
                                         @foreach($admins as $admin)
-                                            <option value="{{ $admin->id }}" 
+                                            <option value="{{ $admin->user_id }}" 
                                                     data-manager-type="admin" 
                                                     data-manager-name="{{ $admin->full_name }}"
                                                     data-manager-email="{{ $admin->user->email ?? '' }}"
@@ -304,7 +304,7 @@
                                     </optgroup>
                                     <optgroup label="Staff">
                                         @foreach($staff as $staffMember)
-                                            <option value="{{ $staffMember->id }}" 
+                                            <option value="{{ $staffMember->user_id }}" 
                                                     data-manager-type="staff" 
                                                     data-manager-name="{{ $staffMember->first_name }} {{ $staffMember->last_name }}"
                                                     data-manager-email="{{ $staffMember->user->email ?? '' }}"
