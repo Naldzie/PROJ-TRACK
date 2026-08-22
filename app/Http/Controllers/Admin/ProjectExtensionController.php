@@ -1383,7 +1383,7 @@ class ProjectExtensionController extends Controller
             return;
         }
 
-        // Approved / rejected → requester + project contractor.
+        // Approved / rejected → requester + project contractor + assigned staff.
         $recipients = collect();
 
         if ($extension->created_by_user_id) {
@@ -1396,6 +1396,11 @@ class ProjectExtensionController extends Controller
         $contractorUser = $service->contractorUserFor($project);
         if ($contractorUser) {
             $recipients->push($contractorUser);
+        }
+
+        $assignedStaff = $service->staffForProject($project);
+        if ($assignedStaff) {
+            $recipients->push($assignedStaff);
         }
 
         $service->notifyMany($recipients->unique('id'), $notification);
