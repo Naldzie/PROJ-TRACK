@@ -351,7 +351,12 @@ function populateFormWithProjectData(project) {
     // Assignment & Details
     // For the project manager dropdown, try to match the stored value
     const projectManagerSelect = document.getElementById('projectManager');
+    const projectManagerHidden = document.getElementById('projectManagerHidden');
     if (project.assigned_project_manager && projectManagerSelect) {
+        if (projectManagerSelect.disabled && projectManagerHidden) {
+            // Staff: dropdown is disabled, update hidden input with current value
+            projectManagerHidden.value = String(project.assigned_project_manager);
+        } else {
         // Try to find matching option by value (ID) or by manager name
         const managerValue = String(project.assigned_project_manager);
         let found = false;
@@ -378,6 +383,7 @@ function populateFormWithProjectData(project) {
         
         // Trigger change event to auto-fill contact info
         projectManagerSelect.dispatchEvent(new Event('change'));
+        }
     }
     
     // Set contact if not auto-filled from selection

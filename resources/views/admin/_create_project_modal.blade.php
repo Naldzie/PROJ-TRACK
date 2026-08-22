@@ -289,7 +289,14 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Project In Charge</label>
-                                <select name="assigned_project_manager" id="projectManager" class="form-select">
+                                @php $isStaff = auth()->user()->role === 'staff'; @endphp
+                                @if($isStaff)
+                                <input type="hidden" name="assigned_project_manager" id="projectManagerHidden" value="{{ auth()->id }}">
+                                @endif
+                                <select name="{{ $isStaff ? '' : 'assigned_project_manager' }}" id="projectManager" class="form-select" {{ $isStaff ? 'disabled' : '' }}>
+                                    @if($isStaff)
+                                        <option value="{{ auth()->id }}" selected>{{ auth()->user()->display_name }}</option>
+                                    @else
                                     <option value="">-- Select Project Manager --</option>
                                     <optgroup label="Admins">
                                         @foreach($admins as $admin)
@@ -308,12 +315,12 @@
                                                     data-manager-type="staff" 
                                                     data-manager-name="{{ $staffMember->first_name }} {{ $staffMember->last_name }}"
                                                     data-manager-email="{{ $staffMember->user->email ?? '' }}"
-                                                    data-manager-phone="{{ $staffMember->contact_number ?? '' }}"
-                                                    {{ ($staffMember->user_id == auth()->id()) ? 'selected' : '' }}>
+                                                    data-manager-phone="{{ $staffMember->contact_number ?? '' }}">
                                                 {{ $staffMember->first_name }} {{ $staffMember->last_name }} (Staff)
                                             </option>
                                         @endforeach
                                     </optgroup>
+                                    @endif
                                 </select>
                             </div>
                             <div class="col-md-6">

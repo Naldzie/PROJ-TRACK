@@ -1043,6 +1043,11 @@ class ProjectController extends Controller
             unset($projectData['original_planned_start_date']);
             unset($projectData['original_planned_end_date']);
 
+            // Staff cannot reassign the project manager — only admins can
+            if (auth()->user()->role === 'staff') {
+                unset($projectData['assigned_project_manager']);
+            }
+
             $project->update($projectData);
 
             return $project;
