@@ -348,6 +348,11 @@ class ProjectController extends Controller
                 abort(403, 'Unauthorized: You do not have permission to view this project.');
             }
         }
+
+        // Staff can only view assigned projects
+        if ($user->role === 'staff' && !$project->isAssignedTo($user)) {
+            abort(403, 'Unauthorized: You are not assigned to this project.');
+        }
         
         // Use the service to prepare data
         // Resolved via service container because ProjectDetailService

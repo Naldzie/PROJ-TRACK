@@ -10,9 +10,20 @@ use App\Models\ActivityLog;
 use App\Models\Setting;
 use App\Services\ProjectHealthService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
 {
+    /**
+     * Scope a project query to only show assigned projects for staff.
+     * Admins see all projects unchanged.
+     */
+    private function scopeToAssigned($query): void
+    {
+        if (Auth::user()->role === 'staff') {
+            $query->where('assigned_project_manager', Auth::id());
+        }
+    }
     public function index()
     {
         // ── ONGOING PROJECTS (table — capped at 10 rows) ──────────────────
@@ -20,7 +31,9 @@ class DashboardController extends Controller
         // Limit 10 keeps the dashboard summary concise with minimal scrolling.
         $ongoingProjects = Project::where('status', 'Ongoing')
             ->where('is_archived', false)
-            ->with(['contractor', 'category'])
+            ->with(['contractor', 'category']);
+        $this->scopeToAssigned($ongoingProjects);
+        $ongoingProjects = $ongoingProjects
             ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
             ->orderBy('planned_end_date', 'asc')
             ->limit(10)
@@ -40,12 +53,13 @@ class DashboardController extends Controller
         $pendingExtensionCounts   = $progressData['pendingExtensionCounts'];
 
         // ── STATS CARD COUNTS ─────────────────────────────────────────────
-        // Separate COUNT queries covering ALL projects — not the table's 10 rows.
-        $totalProjects  = Project::where('is_archived', false)->count();
-        $ongoingCount   = Project::where('status', 'Ongoing')
-                            ->where('is_archived', false)->count();
-        $completedCount = Project::where('status', 'Completed')->count();
-        $completedBudget = Project::where('status', 'Completed')->sum('approved_budget');
+        // Separate COUNT queries covering projects visible to the current user.
+        $baseQuery = Project::where('is_archived', false);
+        $this->scopeToAssigned($baseQuery);
+        $totalProjects = (clone $baseQuery)->count();
+        $ongoingCount = (clone $baseQuery)->where('status', 'Ongoing')->count();
+        $completedCount = (clone $baseQuery)->where('status', 'Completed')->count();
+        $completedBudget = (clone $baseQuery)->where('status', 'Completed')->sum('approved_budget');
 
         // ── AT RISK COUNT (gap-based, ALL ongoing) ────────────────────────
         // Same ProjectHealthService definition as the table badges: expected
@@ -56,8 +70,7 @@ class DashboardController extends Controller
         // ── OVERDUE COUNT (DB-level, ALL ongoing) ─────────────────────────
         // planned_end_date is always the current effective deadline (updated by
         // extensions), so no special extension handling needed.
-        $overdueCount = Project::where('status', 'Ongoing')
-            ->where('is_archived', false)
+        $overdueCount = (clone $baseQuery)->where('status', 'Ongoing')
             ->where('planned_end_date', '<', now())
             ->count();
 
@@ -66,8 +79,7 @@ class DashboardController extends Controller
         // Uses DB-level query — not limited to the table's 10 rows.
         $currentMonthLabel = now()->format('Y-m');
 
-        $allOngoingIds = Project::where('status', 'Ongoing')
-            ->where('is_archived', false)
+        $allOngoingIds = (clone $baseQuery)->where('status', 'Ongoing')
             ->pluck('id');
 
         $projectsWithThisMonthRecord = ProjectProgressHistory
@@ -91,8 +103,7 @@ class DashboardController extends Controller
         // admin review. Mirrors ProjectExtension::scopePending() so the pill
         // and the review workflow stay in sync. Admin-only pill (staff cannot
         // review/approve extensions).
-        $pendingExtensionCount = Project::where('status', 'Ongoing')
-            ->where('is_archived', false)
+        $pendingExtensionCount = (clone $baseQuery)->where('status', 'Ongoing')
             ->whereHas('extensions', fn ($q) => $q->pending())
             ->count();
 
@@ -143,40 +154,35 @@ class DashboardController extends Controller
 
         // ── BUILD PROJECT COLLECTION BASED ON FILTER TYPE ─────────────────
         if ($type === 'overdue') {
-            // All ongoing projects past their current effective deadline.
-            // planned_end_date already reflects any approved extensions.
-            $projects = Project::where('status', 'Ongoing')
+            $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->where('planned_end_date', '<', now())
-                ->with(['contractor', 'category'])
-                ->orderBy('planned_end_date', 'asc') // most overdue first
-                ->get();
+                ->with(['contractor', 'category']);
+            $this->scopeToAssigned($query);
+            $projects = $query->orderBy('planned_end_date', 'asc')->get();
 
         } elseif ($type === 'atrisk') {
-            // All ongoing projects classified AT RISK by ProjectHealthService
-            // (gap-based — same definition as the table badges and the index
-            // metric card). Overdue projects are excluded (their own bucket).
-            $projects = Project::where('status', 'Ongoing')
+            $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereIn('id', $this->atRiskProjectIds())
-                ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->with(['contractor', 'category']);
+            $this->scopeToAssigned($query);
+            $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->get();
 
         } elseif ($type === 'pending') {
-            // All ongoing projects with NO progress record for the current month.
-            // distinct() prevents duplicate project IDs from multiple records.
             $projectsWithRecord = ProjectProgressHistory
                 ::where('month_label', 'like', $currentMonthLabel . '%')
                 ->distinct()
                 ->pluck('project_id');
 
-            $projects = Project::where('status', 'Ongoing')
+            $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereNotIn('id', $projectsWithRecord)
-                ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->with(['contractor', 'category']);
+            $this->scopeToAssigned($query);
+            $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->get();
 
@@ -190,22 +196,21 @@ class DashboardController extends Controller
                 ->get();
 
         } elseif ($type === 'pending_extensions') {
-            // Ongoing projects with ≥1 extension request awaiting admin review.
-            // Admin-only pill — staff cannot review/approve extensions.
-            $projects = Project::where('status', 'Ongoing')
+            $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereHas('extensions', fn ($q) => $q->pending())
-                ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->with(['contractor', 'category']);
+            $this->scopeToAssigned($query);
+            $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->get();
 
         } else {
-            // 'default' — restore original 10-row view (also used for clear).
-            $projects = Project::where('status', 'Ongoing')
+            $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
-                ->with(['contractor', 'category'])
-                ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
+                ->with(['contractor', 'category']);
+            $this->scopeToAssigned($query);
+            $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->limit(10)
                 ->get();
@@ -230,10 +235,11 @@ class DashboardController extends Controller
     // badges. Overdue projects are never counted here.
     private function atRiskProjectIds(): array
     {
-        $projects = Project::with(['progressHistory', 'baselineSchedules'])
+        $query = Project::with(['progressHistory', 'baselineSchedules'])
             ->where('status', 'Ongoing')
-            ->where('is_archived', false)
-            ->get();
+            ->where('is_archived', false);
+        $this->scopeToAssigned($query);
+        $projects = $query->get();
 
         $projects->loadCount([
             'issues as open_high_issue_count'  => fn ($q) => $q->unresolved()->whereIn('severity', ['High', 'Critical']),
@@ -365,7 +371,7 @@ class DashboardController extends Controller
     {
         $cutoff = now()->subDays($graceDays);
 
-        return Project::where('status', 'Ongoing')
+        $query = Project::where('status', 'Ongoing')
             ->where('is_archived', false)
             ->whereHas('baselineSchedules', function ($q) use ($cutoff) {
                 $q->whereNotNull('month_label')
@@ -377,5 +383,8 @@ class DashboardController extends Controller
                             ->whereNotNull('month_label');
                     });
             });
+        $this->scopeToAssigned($query);
+
+        return $query;
     }
 }
