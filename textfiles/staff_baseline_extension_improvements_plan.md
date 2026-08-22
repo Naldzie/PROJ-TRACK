@@ -136,7 +136,7 @@ any legacy name-string records are test data and can be removed.
 
 ### Implementation Log — Task 9
 
-Committed: `eb10a56` on `staff-baseline-extension-improvements`
+Committed: `eb10a56` + follow-up fixes on `staff-baseline-extension-improvements`
 
 Files changed:
 - `routes/web.php` — Added GET/POST `/original` routes to staff group
@@ -146,12 +146,15 @@ Files changed:
 - `app/Http/Controllers/BaselineScheduleController.php`:
   - Added `canEditOriginalBaseline()` private helper
   - Replaced admin-only checks in both methods
+  - Before/after snapshots use `->map()` to store clean scalar dates (Y-m-d)
   - Added before/after diff logging with metadata on ActivityLog
 - `resources/views/projects/project_detail/project_detail.blade.php` — Computes $isAssignedStaff
 - `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — Button shows for assigned staff
 - `resources/views/admin/login.blade.php`:
   - Added 'Edit Original Baseline' to action filter dropdown
-  - Added CSS tooltip showing before/after diff on hover for baseline edit entries
+  - Pure Blade server-side diff tooltip (no JS dependency)
+  - CSS fix: `color: #e2e8f0` on `.diff-tooltip .diff-table td` to prevent dark-on-dark text
+  - Month labels formatted as "Month Name - YYYY" (e.g. "January - 2027")
   - Added distinct purple badge (`action-edit-baseline`) for this action
 
 All 725 tests passing.
