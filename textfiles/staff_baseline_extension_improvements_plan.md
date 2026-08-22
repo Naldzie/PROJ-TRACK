@@ -461,17 +461,27 @@ Current state (audit results):
 
 ### Implementation Log — Task 14
 
-Committed: (pending) on `staff-baseline-extension-improvements`
+Committed: `b1477c8` + (pending) on `staff-baseline-extension-improvements`
 
-Files changed:
+Files changed (first commit `57dde60`):
 - `app/Policies/ProjectPolicy.php` — `update()` now checks `$project->isAssignedTo($user)` for staff
-- `app/Http/Controllers/BaselineScheduleController.php` — Added `authorizeProjectAccess()` helper; gated 6 methods (store, storeInitial, update, delete, carryOver, saveAdjusted)
-- `app/Http/Controllers/ProjectActivityController.php` — Added `authorizeProjectAccess()` helper; gated storeActivity, deleteActivity, toggleActivityCompletion
-- `app/Http/Controllers/ProjectProgressController.php` — Added `authorizeProjectAccess()` helper; gated storeProgress, editProgressRecord, destroyProgress, recordMonthlyProgress
+- `app/Http/Controllers/BaselineScheduleController.php` — Added `authorizeProjectAccess()` helper; gated 6 methods
+- `app/Http/Controllers/ProjectActivityController.php` — Added `authorizeProjectAccess()` helper; gated 3 methods
+- `app/Http/Controllers/ProjectProgressController.php` — Added `authorizeProjectAccess()` helper; gated 4 methods
 - `app/Http/Controllers/Admin/ProjectExtensionController.php` — Added assignment check in `store()`
-- `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — Per-card buttons (Record, Edit, Carry Over, Manage, Delete) now check `$isAssignedStaff`
-- `resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php` — "Add Extension" button restricted to admin + assigned staff
-- Tests updated: 6 test files updated to assign staff user to projects
+- `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — Per-card buttons check `$isAssignedStaff`
+- `resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php` — "Add Extension" gated
+- Tests updated: 6 test files updated
+
+Files changed (second commit — documents/issues/risks):
+- `app/Policies/DocumentPolicy.php` — `create()` and `delete()` now check `$project->isAssignedTo($user)` for staff
+- `app/Http/Controllers/IssueController.php` — `store()`, `update()`, `destroy()` now check assignment
+- `app/Http/Controllers/RiskController.php` — `store()`, `update()`, `destroy()`, `convertToIssue()` now check assignment
+- `resources/views/projects/project_detail/project_detail.blade.php` — Added `window.isAssignedStaff` JS var; passes `$isAssignedStaff` to issues include
+- `resources/views/projects/project_detail/components/tabs/issues.blade.php` — Buttons/Actions gated with `$isAssignedStaff`
+- `resources/views/projects/project_detail/components/tabs/partials/risk-register.blade.php` — "Add Risk" button gated
+- `public/js/admin/projects/risk-register.js` — Actions column and per-row buttons gated with `window.isAssignedStaff`
+- `public/js/admin/projects/issues-modal.js` — Edit/Delete buttons and form submission gated with `window.isAssignedStaff`
 
 All 725 tests passing.
 

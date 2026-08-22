@@ -62,12 +62,11 @@ class RiskController extends Controller
     public function store(Request $request, Project $project)
     {
         try {
-            // Authorization — only admin and staff can create risks
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can create risks',
+                    'message' => 'Unauthorized: You are not assigned to this project',
                 ], 403);
             }
 
@@ -158,12 +157,11 @@ class RiskController extends Controller
     public function update(Request $request, Project $project, Risk $risk)
     {
         try {
-            // Authorization — only admin and staff can update risks
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can update risks',
+                    'message' => 'Unauthorized: You are not assigned to this project',
                 ], 403);
             }
 
@@ -240,12 +238,11 @@ class RiskController extends Controller
     public function destroy(Project $project, Risk $risk)
     {
         try {
-            // Authorization — only admin and staff can delete risks
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can delete risks',
+                    'message' => 'Unauthorized: You are not assigned to this project',
                 ], 403);
             }
 
@@ -307,12 +304,11 @@ class RiskController extends Controller
     public function convertToIssue(Request $request, Project $project, Risk $risk)
     {
         try {
-            // Authorization — only admin and staff can convert risks
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can convert risks to issues',
+                    'message' => 'Unauthorized: You are not assigned to this project',
                 ], 403);
             }
 

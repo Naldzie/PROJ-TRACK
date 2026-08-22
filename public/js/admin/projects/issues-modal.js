@@ -273,7 +273,7 @@ function displayIssues(issues) {
                         <div class="mt-2">${renderAttachmentChips(issue.attachments)}</div>
                     ` : ''}
                 </div>
-                ${['admin', 'staff'].includes(window.userRole) ? `
+                ${window.userRole === 'admin' || window.isAssignedStaff ? `
                 <div class="ms-2" style="flex-shrink: 0;">
                     <button class="btn btn-sm btn-outline-primary" onclick="editIssue(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}', '${issue.baseline_schedule_id || ''}', '${escapeHtml(issue.resolution_notes || '')}')">
                         <i class="bi bi-pencil"></i>
@@ -476,8 +476,8 @@ function collectPendingFiles(inputId) {
         }
     });
 
-// Form submission (admin/staff only — guarded at runtime via window.userRole)
-if (['admin', 'staff'].includes(window.userRole)) {
+// Form submission (admin + assigned staff only)
+if (window.userRole === 'admin' || window.isAssignedStaff) {
 document.getElementById('addIssueForm')?.addEventListener('submit', function(e) {
     e.preventDefault();
     

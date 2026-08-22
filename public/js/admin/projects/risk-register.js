@@ -79,7 +79,7 @@ function displayTabRisks(risks) {
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Mitigation</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Identified</th>
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Evidence</th>
-                    ${window.userRole === 'contractor' ? '' : `
+                    ${window.userRole === 'contractor' || !window.isAssignedStaff ? '' : `
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Actions</th>
                     `}
                 </tr>
@@ -117,7 +117,7 @@ function displayTabRisks(risks) {
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(risk.mitigation_plan || '')}">${risk.mitigation_plan ? escapeHtml(risk.mitigation_plan) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px; text-align: center; color: #6b7280; font-size: 13px;">${risk.identified_at ? '<i class="bi bi-calendar-event" style="margin-right: 4px;"></i>' + escapeHtml(risk.identified_at) : '<span style="color:#9ca3af;">—</span>'}</td>
                         <td style="padding: 12px 16px;">${renderRiskAttachmentChips(risk.attachments)}</td>
-                        ${window.userRole === 'contractor' ? '' : `
+                        ${window.userRole === 'contractor' || !window.isAssignedStaff ? '' : `
                         <td style="padding: 12px 16px; text-align: center;">
                             ${risk.status !== 'Realized' && risk.status !== 'Closed' ? `
                             <button class="btn btn-sm" onclick="openConvertRiskModal(${risk.id})" title="Convert to Issue"

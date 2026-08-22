@@ -66,7 +66,7 @@
 @include('projects.project_detail.components.tabs.baseline-schedule', ['project' => $project, 'routePrefix' => $routePrefix, 'isAssignedStaff' => $isAssignedStaff])
 @include('projects.project_detail.components.tabs.progress', ['project' => $project, 'data' => $data])
 @include('projects.project_detail.components.tabs.documents', ['project' => $project, 'data' => $data])
-@include('projects.project_detail.components.tabs.issues', ['project' => $project])
+@include('projects.project_detail.components.tabs.issues', ['project' => $project, 'isAssignedStaff' => $isAssignedStaff])
 
 <!-- MODALS -->
 
@@ -111,6 +111,7 @@ const csrfToken = '{{ csrf_token() }}';
 window.csrfToken = csrfToken;
 window.userRole = '{{ auth()->user()->role }}';
 window.authUserId = {{ auth()->id() }};
+window.isAssignedStaff = {{ $isAssignedStaff ? 'true' : 'false' }};
 
 // Build the correct API base URL based on user role
 function getIssuesApiUrl(action = '') {

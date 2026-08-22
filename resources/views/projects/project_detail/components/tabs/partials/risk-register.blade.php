@@ -7,7 +7,7 @@
             <h4 style="margin: 0; font-size: 15px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 10px;">
                 <i class="bi bi-shield-exclamation" style="color: #d97706; font-size: 20px;"></i> Risk Register
             </h4>
-            @if(in_array(auth()->user()->role, ['admin', 'staff']))
+            @if(auth()->user()->role === 'admin' || $isAssignedStaff)
             <button class="btn" data-bs-toggle="modal" data-bs-target="#riskModal"
                     style="background: #d97706; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
                     onmouseover="this.style.background='#b45309'; this.style.transform='translateY(-2px)';"

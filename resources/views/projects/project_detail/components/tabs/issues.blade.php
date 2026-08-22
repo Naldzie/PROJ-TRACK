@@ -10,7 +10,7 @@
                 </h4>
                 <p style="margin: 0; font-size: 12px; color: #6b7280;">Track project issues and forward-looking risks</p>
             </div>
-            @if(in_array(auth()->user()->role, ['admin', 'staff']))
+            @if(auth()->user()->role === 'admin' || $isAssignedStaff)
             <button class="btn" data-bs-toggle="modal" data-bs-target="#issuesModal"
                     style="background: #3b82f6; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
                     onmouseover="this.style.background='#2563eb'; this.style.transform='translateY(-2px)';"
@@ -71,7 +71,7 @@
         </div>
 
         <!-- Risk Register Section -->
-        @include('projects.project_detail.components.tabs.partials.risk-register', ['project' => $project])
+        @include('projects.project_detail.components.tabs.partials.risk-register', ['project' => $project, 'isAssignedStaff' => $isAssignedStaff])
     </div>
 </div>
 
@@ -184,7 +184,7 @@ function displayTabIssues(issues) {
                     <th style="padding: 12px 16px; text-align: left; font-weight: 600; color: #374151; font-size: 13px;">Resolution</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Created Date</th>
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Attachments</th>
-                    @if(in_array(auth()->user()->role, ['admin', 'staff']))
+                    @if(auth()->user()->role === 'admin' || $isAssignedStaff)
                     <th style="padding: 12px 16px; text-align: center; font-weight: 600; color: #374151; font-size: 13px;">Actions</th>
                     @endif
                 </tr>
@@ -233,7 +233,7 @@ function displayTabIssues(issues) {
                         <td style="padding: 12px 16px; text-align: center;">
                             ${renderAttachmentChips(issue.attachments) || '<span style="color: #9ca3af; font-size: 11px;">—</span>'}
                         </td>
-                        @if(in_array(auth()->user()->role, ['admin', 'staff']))
+                        @if(auth()->user()->role === 'admin' || $isAssignedStaff)
                         <td style="padding: 12px 16px; text-align: center;">
                             <button class="btn btn-sm" onclick="openEditIssueModal(${issue.id}, '${escapeHtml(issue.issue_name)}', '${escapeHtml(issue.description)}', '${issue.status}', '${issue.issue_type || ''}', '${issue.severity || ''}', '${issue.baseline_schedule_id || ''}', '${escapeHtml(issue.resolution_notes || '')}')" title="Edit"
                                     style="background: #dbeafe; color: #0369a1; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-right: 4px; transition: all 0.2s;"

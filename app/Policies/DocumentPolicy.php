@@ -22,13 +22,8 @@ class DocumentPolicy
      */
     public function create(User $user, Project $project)
     {
-        // Only admin and staff can create documents
-        if (in_array($user->role, ['admin', 'staff'])) {
-            return true;
-        }
-
-        // Contractors cannot upload documents
-        return false;
+        if ($user->role === 'admin') return true;
+        return $project->isAssignedTo($user);
     }
 
     /**
@@ -36,12 +31,8 @@ class DocumentPolicy
      */
     public function delete(User $user, Document $document)
     {
-        // Only admin and staff can delete documents
-        if (in_array($user->role, ['admin', 'staff'])) {
-            return true;
-        }
-
-        return false;
+        if ($user->role === 'admin') return true;
+        return $document->project->isAssignedTo($user);
     }
 
     /**

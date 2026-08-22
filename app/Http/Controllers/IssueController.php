@@ -86,12 +86,11 @@ class IssueController extends Controller
     public function store(Request $request, Project $project)
     {
         try {
-            // Check authorization - only admin and staff can create issues
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can create issues'
+                    'message' => 'Unauthorized: You are not assigned to this project'
                 ], 403);
             }
 
@@ -194,12 +193,11 @@ class IssueController extends Controller
     public function update(Request $request, Project $project, Issue $issue)
     {
         try {
-            // Check authorization
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can update issues'
+                    'message' => 'Unauthorized: You are not assigned to this project'
                 ], 403);
             }
 
@@ -301,12 +299,11 @@ class IssueController extends Controller
     public function destroy(Project $project, Issue $issue)
     {
         try {
-            // Check authorization
             $user = Auth::user();
-            if (!in_array($user->role, ['admin', 'staff'])) {
+            if ($user->role !== 'admin' && !$project->isAssignedTo($user)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unauthorized: Only admin and staff can delete issues'
+                    'message' => 'Unauthorized: You are not assigned to this project'
                 ], 403);
             }
 
