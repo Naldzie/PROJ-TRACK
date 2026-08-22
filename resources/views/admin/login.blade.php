@@ -819,6 +819,9 @@ code, .mono { font-family: 'JetBrains Mono', monospace; }
                                         $oldDate = (string) ($bm['original_planned_date'] ?? '');
                                         $newDate = (string) ($am['original_planned_date'] ?? '');
                                         $label = $am['month_label'] ?? substr($newDate, 0, 7) ?? '';
+                                        if (preg_match('/^\d{4}-\d{2}$/', $label)) {
+                                            $label = \Carbon\Carbon::parse($label . '-01')->format('F - Y');
+                                        }
                                         if ($oldPct !== $newPct || $oldDate !== $newDate) {
                                             $diffRows[] = compact('label', 'oldPct', 'newPct', 'oldDate', 'newDate');
                                         }
