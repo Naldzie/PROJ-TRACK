@@ -234,6 +234,58 @@ Files:
 
 ---
 
+## Task 8 — Projects Index: Remove Duplicate Cards, Improve Sort + Year Filters
+
+Goal: Remove the status metric cards from the projects index (already
+shown on the dashboard). Improve the default listing so projects nearing
+deadline appear first. Add year filters for start date and deadline.
+
+### Part A — Remove Status Metric Cards
+
+Files:
+- resources/views/projects/index.blade.php
+  - Delete the entire `dashboard-metrics` block (lines 73-106).
+
+- app/Http/Controllers/ProjectController.php
+  - Remove the `$data['metrics']` computation (lines 128-142).
+
+### Part B — Deadline-First Sort, Completed Pushed Down
+
+Files:
+- app/Http/Controllers/ProjectController.php
+  - Replace `$query->latest()` (line 114) with:
+    `$query->orderByRaw("status = 'Completed'")->orderBy('planned_end_date', 'asc')`
+  - Non-completed projects sorted by nearest deadline first.
+  - Completed projects pushed to the bottom.
+
+### Part C — Year Filter Dropdowns
+
+Files:
+- app/Http/Controllers/ProjectController.php
+  - Accept `start_year` and `deadline_year` query params.
+  - When set: add `whereYear('planned_start_date', $startYear)` and
+    `whereYear('planned_end_date', $deadlineYear)` to the query.
+  - Compute distinct years from planned_start_date and
+    planned_end_date across all non-archived projects for the
+    dropdown options.
+
+- resources/views/projects/index.blade.php
+  - Add two `<select>` dropdowns in the filters section:
+    * "Start Year" — filters by planned_start_date year
+    * "Deadline Year" — filters by planned_end_date year
+    * Both with "All Years" default option
+    * Year options passed from controller ($startYears, $deadlineYears)
+  - On cards/rows: add data-start-year and data-deadline-year
+    attributes for client-side filtering.
+  - Extend applyFilters() JS to check year dropdowns against data
+    attributes.
+
+Files changed:
+- app/Http/Controllers/ProjectController.php
+- resources/views/projects/index.blade.php
+
+---
+
 ## Implementation Log
 
 Track commits and changes as tasks are completed.
