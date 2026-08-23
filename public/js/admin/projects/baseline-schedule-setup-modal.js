@@ -1439,12 +1439,12 @@ function renderSetupMonthList(months) {
                     <!-- Dual % display in adjust mode -->
                     ${showDualPct
                         ? `<span style="font-size: 11px; color: #9ca3af; text-decoration: line-through; margin-right: 2px;">
-                               ${origPct.toFixed(0)}%
+                               ${origPct.toFixed(2)}%
                            </span>`
                         : ''}
                     <!-- Progress % -->
                     <span style="font-weight: 700; color: ${percentColor}; font-size: 14px;">
-                        ${pct.toFixed(0)}%
+                        ${pct.toFixed(2)}%
                     </span>
                     <!-- 100% checkmark -->
                     ${is100
