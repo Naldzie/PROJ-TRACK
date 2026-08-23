@@ -267,12 +267,11 @@ class ProjectExtensionController extends Controller
             if (!$isAdmin) {
                 $isAssignedStaff = $project->isAssignedTo($user);
 
-                // Staff who CREATED the extension can edit details while pending
-                // (but NOT change status — status changes go through the review
-                // path below). When the request includes a 'status' field
-                // (approve/reject), skip this edit path so the review path
-                // handles it.
-                if ($extension->created_by_user_id === $user->id && $extension->status === 'pending' && !$request->has('status')) {
+                // Staff assigned to the project can edit ANY pending extension
+                // (not just their own) — details only, NOT status. When the
+                // request includes a 'status' field (approve/reject), skip
+                // this edit path so the review path handles it.
+                if ($isAssignedStaff && $extension->status === 'pending' && !$request->has('status')) {
                     $validated = $request->validate([
                         'new_end_date' => [
                             'sometimes', 'required', 'date_format:Y-m-d',

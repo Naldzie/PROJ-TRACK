@@ -169,10 +169,10 @@ function reloadExtensionsTable() {
                     const isAdmin = window.routePrefix === 'admin.projects';
                     const isStaff = window.routePrefix === 'staff.projects';
                     const isOwner = Number(ext.created_by_user_id) === Number(window.authUserId);
-                    // Admin may edit any row (corrections); staff may edit their
-                    // own pending request only. Rejected is NOT editable —
-                    // Resubmit is the only way back to review.
-                    const canEdit = isAdmin || (isStaff && isOwner && ext.status === 'pending');
+                    const isAssignedStaff = window.isAssignedStaff === true;
+                    // Admin may edit any row; assigned staff may edit any pending
+                    // extension on their project (not just their own).
+                    const canEdit = isAdmin || (isAssignedStaff && ext.status === 'pending');
                     // Delete: admin may archive only pending/rejected;
                     // staff may archive their OWN pending/rejected (Decision 14).
                     const canDelete = isAdmin
@@ -184,7 +184,6 @@ function reloadExtensionsTable() {
                     // Review: admin or assigned staff decides on pending requests
                     // via the dedicated Review modal. Only the latest extension
                     // can be reviewed to prevent out-of-order decisions.
-                    const isAssignedStaff = window.isAssignedStaff === true;
                     const canReview = (isAdmin || isAssignedStaff) && ext.status === 'pending' && ext.id === latestExtensionId;
 
                     row.innerHTML = `
