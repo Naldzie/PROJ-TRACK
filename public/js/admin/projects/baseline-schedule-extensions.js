@@ -551,6 +551,16 @@ window.loadArchivedExtensions = function () {
  * Wire the archived-panel bulk-delete checkboxes (admin only).
  */
 function wireArchivedSelectionHandlers() {
+    const selectAll = document.getElementById('archivedSelectAll');
+    if (selectAll) {
+        selectAll.checked = false;
+        selectAll.onchange = function () {
+            document.querySelectorAll('.archived-row-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateArchivedSelection();
+        };
+    }
     document.querySelectorAll('.archived-row-checkbox').forEach(cb => {
         cb.addEventListener('change', updateArchivedSelection);
     });
@@ -558,13 +568,87 @@ function wireArchivedSelectionHandlers() {
 }
 
 function updateArchivedSelection() {
-    const bulkBtn = document.getElementById('archivedBulkDeleteBtn');
-    const countEl = document.getElementById('archivedBulkCount');
-    if (!bulkBtn || !countEl) return;
+    const deleteBtn = document.getElementById('archivedBulkDeleteBtn');
+    const deleteCount = document.getElementById('archivedBulkCount');
+    const restoreBtn = document.getElementById('archivedBulkRestoreBtn');
+    const restoreCount = document.getElementById('archivedBulkRestoreCount');
+    const selectAll = document.getElementById('archivedSelectAll');
 
-    const count = document.querySelectorAll('.archived-row-checkbox:checked').length;
-    countEl.textContent = count;
-    bulkBtn.style.display = count > 0 ? '' : 'none';
+    const boxes = document.querySelectorAll('.archived-row-checkbox');
+    const checked = document.querySelectorAll('.archived-row-checkbox:checked');
+    const count = checked.length;
+
+    if (selectAll) selectAll.checked = boxes.length > 0 && Array.from(boxes).every(b => b.checked);
+    if (deleteBtn) deleteBtn.style.display = count > 0 ? '' : 'none';
+    if (deleteCount) deleteCount.textContent = count;
+    if (restoreBtn) restoreBtn.style.display = count > 0 ? '' : 'none';
+    if (restoreCount) restoreCount.textContent = count;
+}
+
+/**
+ * Bulk-restore selected archived extensions (admin only).
+ */
+window.restoreSelectedArchived = function () {
+    const selected = Array.from(document.querySelectorAll('.archived-row-checkbox:checked'))
+        .map(cb => ({ id: Number(cb.value), number: Number(cb.dataset.number) }));
+    if (selected.length === 0) {
+        showToast('No archived extensions selected.', 'danger');
+        return;
+    }
+
+    const labels = selected.map(s => '#' + s.number).join(', ');
+    showDeleteConfirmation(
+        `Restore ${selected.length} Extension${selected.length > 1 ? 's' : ''}`,
+        `Restore archived extension(s) <strong>${labels}</strong>? They will reappear in the main extensions table.`,
+        function () { performBulkRestoreArchived(selected); }
+    );
+};
+
+function performBulkRestoreArchived(selected) {
+    const token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!token) {
+        showToast('Error: CSRF token not found. Please refresh the page and try again.', 'danger');
+        return;
+    }
+
+    const endpoint = `/admin/projects/${window.projectId}/extensions/bulk-restore`;
+    let completed = 0;
+    const total = selected.length;
+
+    function restoreNext() {
+        if (completed >= total) {
+            showToast(`${total} extension${total > 1 ? 's' : ''} restored.`, 'success');
+            loadArchivedExtensions();
+            reloadExtensionsTable();
+            return;
+        }
+
+        const ext = selected[completed];
+        fetch(`${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': token,
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({ ids: [ext.id] })
+        })
+        .then(response => response.json().catch(() => ({})).then(body => ({ ok: response.ok, body })))
+        .then(({ ok, body }) => {
+            if (!ok) showToast(body.message || `Could not restore #${ext.number}.`, 'danger');
+            completed++;
+            restoreNext();
+        })
+        .catch(error => {
+            console.error('[performBulkRestoreArchived] Error:', error);
+            showToast(`Could not restore #${ext.number}.`, 'danger');
+            completed++;
+            restoreNext();
+        });
+    }
+
+    restoreNext();
 }
 
 /**

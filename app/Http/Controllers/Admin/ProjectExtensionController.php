@@ -1003,6 +1003,62 @@ class ProjectExtensionController extends Controller
         }
     }
 
+    /**
+     * Bulk-restore soft-deleted extensions. Admin only.
+     * Accepts { ids: [1, 2, 3] } — restores each and logs the action.
+     */
+    public function bulkRestore(Request $request, Project $project)
+    {
+        try {
+            if (auth()->user()->role !== 'admin') {
+                return response()->json(['success' => false, 'message' => 'Unauthorized.'], 403);
+            }
+
+            $validated = $request->validate([
+                'ids' => ['required', 'array', 'min:1'],
+                'ids.*' => ['required', 'integer'],
+            ]);
+
+            $ids = array_values(array_filter($validated['ids']));
+            $rows = $project->extensions()->onlyTrashed()->whereIn('id', $ids)->get();
+
+            $restored = [];
+            foreach ($rows as $extension) {
+                $extension->restore();
+                $restored[] = $extension->extension_number;
+            }
+
+            if (!empty($restored)) {
+                ActivityLog::create([
+                    'user_id' => auth()->id(),
+                    'project_id' => $project->id,
+                    'action' => 'Restore Extension',
+                    'description' => auth()->user()->name . " restored extension(s) #" . implode(', #', $restored) . " for project: {$project->title}",
+                    'ip_address' => request()->ip(),
+                    'visibility' => 'admin_only',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Restored extension(s) #' . (implode(', #', $restored) ?: '—'),
+                'restored' => count($restored),
+            ]);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select at least one extension to restore.',
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Extension bulkRestore error: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error restoring extensions: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     // ===========================================================================
     // BASELINE SNAPSHOT + RESTORE (Phase 2.5 / §4)
     // ===========================================================================

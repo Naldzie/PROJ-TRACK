@@ -9,7 +9,7 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
 
-            <div class="modal-body">
+            <div class="modal-body py-3">
                 <form id="extensionForm" class="needs-validation" novalidate>
                     @csrf
                     <input type="hidden" id="extensionEditId" value="">
@@ -35,34 +35,19 @@
                         </div>
                     </div>
 
-                    <div class="row g-2">
-                        <!-- New End Date Field -->
-                        <div class="col-md-6 mb-2">
-                            <label for="newEndDate" class="form-label">
+                    <!-- New End Date + Reason Category + Status in one row -->
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label for="newEndDate" class="form-label mb-0">
                                 <span class="text-danger">*</span> New End Date
                             </label>
-                            <input
-                                type="date"
-                                class="form-control form-control-sm"
-                                id="newEndDate"
-                                name="new_end_date"
-                                required
-                            >
-                            <div class="form-text text-muted">
-                                Must be after current deadline
-                            </div>
-                            <div class="invalid-feedback" id="newEndDateError">
-                                Please provide a valid end date.
-                            </div>
+                            <input type="date" class="form-control form-control-sm" id="newEndDate" name="new_end_date" required>
+                            <div class="invalid-feedback" id="newEndDateError" style="font-size:11px;">Please provide a valid end date.</div>
                         </div>
-
-                        <!-- Reason Category (Decision 3) -->
-                        <div class="col-md-6 mb-2">
-                            <label for="reasonCategory" class="form-label">
-                                Reason Category
-                            </label>
+                        <div class="col-md-4">
+                            <label for="reasonCategory" class="form-label mb-0">Reason Category</label>
                             <select class="form-select form-select-sm" id="reasonCategory" name="reason_category">
-                                <option value="">Select a category (optional)</option>
+                                <option value="">Select (optional)</option>
                                 <option value="Weather">Weather</option>
                                 <option value="Materials">Materials</option>
                                 <option value="Labor">Labor</option>
@@ -71,34 +56,39 @@
                                 <option value="Design change">Design change</option>
                                 <option value="Other">Other</option>
                             </select>
-                            <div class="form-text text-muted">
-                                Categorize the ground for this extension request
-                            </div>
+                        </div>
+                        <div class="col-md-4" id="statusFieldWrapper" style="display: none;">
+                            <label for="extensionStatus" class="form-label mb-0">Status</label>
+                            <select class="form-select form-select-sm" id="extensionStatus" name="status" onchange="toggleRejectionReasonField()">
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
                         </div>
                     </div>
 
-                    <!-- Status — ADMIN ONLY. -->
-                    <div class="row g-2">
-                        <div class="col-md-12 mb-2" id="statusFieldWrapper" style="display: none;">
-                            <label for="extensionStatus" class="form-label">Status</label>
-                            <div class="d-flex align-items-center gap-2">
-                                <select class="form-select form-select-sm" id="extensionStatus" name="status" onchange="toggleRejectionReasonField()" style="flex: 1;">
-                                    <option value="pending">Pending</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="rejected">Rejected</option>
-                                </select>
-                            </div>
-                            <div class="form-text text-muted">
-                                "Approved" applies the new deadline immediately. "Reject" requires a reason.
-                            </div>
+                    <!-- Reason Field -->
+                    <div class="mb-2">
+                        <label for="reason" class="form-label mb-0">
+                            <span class="text-danger">*</span> Reason for Extension
+                        </label>
+                        <textarea
+                            class="form-control form-control-sm"
+                            id="reason"
+                            name="reason"
+                            rows="2"
+                            placeholder="e.g., Delayed material delivery, weather conditions..."
+                            required
+                            minlength="5"
+                        ></textarea>
+                        <div class="invalid-feedback" id="reasonError">
+                            Please provide a reason (minimum 5 characters).
                         </div>
                     </div>
 
-                    <!-- Rejection Reason — ADMIN ONLY, only shown/required
-                         when status is set to "Rejected". Staff needs this
-                         to know what to fix before resubmitting. -->
+                    <!-- Rejection Reason — shown when status = Rejected -->
                     <div class="mb-2" id="rejectionReasonWrapper" style="display: none;">
-                        <label for="rejectionReason" class="form-label">
+                        <label for="rejectionReason" class="form-label mb-0">
                             <span class="text-danger">*</span> Reason for Rejection
                         </label>
                         <textarea
@@ -106,59 +96,27 @@
                             id="rejectionReason"
                             name="rejection_reason"
                             rows="2"
-                            placeholder="Explain what needs to change before this request can be approved..."
+                            placeholder="Explain what needs to change..."
                             minlength="5"
                         ></textarea>
-                        <div class="form-text text-muted">
-                            This will be shown to the staff member who submitted the request.
-                        </div>
                     </div>
 
-                    <!-- Reason Field -->
+                    <!-- Evidence Attachments -->
                     <div class="mb-2">
-                        <label for="reason" class="form-label">
-                            <span class="text-danger">*</span> Reason for Extension
-                        </label>
-                        <textarea
-                            class="form-control form-control-sm"
-                            id="reason"
-                            name="reason"
-                            rows="3"
-                            placeholder="e.g., Delayed material delivery, weather conditions, site access issues..."
-                            required
-                            minlength="5"
-                        ></textarea>
-                        <div class="form-text text-muted">
-                            Minimum 5 characters required
-                        </div>
-                        <div class="invalid-feedback" id="reasonError">
-                            Please provide a reason (minimum 5 characters).
-                        </div>
-                    </div>
-
-                    <!-- Evidence Attachments (Decision 4) — two-step upload.
-                         Files are picked here, then uploaded AFTER the extension
-                         row is created/updated (attachable_id needs the row id). -->
-                    <div class="mb-2">
-                        <label for="extensionEvidenceFiles" class="form-label">
+                        <label for="extensionEvidenceFiles" class="form-label mb-0">
                             <i class="bi bi-paperclip me-1"></i> Evidence Files (Optional)
                         </label>
                         <input type="file" class="form-control form-control-sm" id="extensionEvidenceFiles" name="extension_evidence_files[]" multiple accept="image/*,.pdf">
-                        <div class="mt-2 d-flex flex-wrap gap-1" id="extensionEvidenceFilesPreview"></div>
-                        <div class="form-text text-muted">
-                            Supporting documents (photos, PDFs) for this request. Uploaded after the request is saved.
-                        </div>
+                        <div class="mt-1 d-flex flex-wrap gap-1" id="extensionEvidenceFilesPreview"></div>
                     </div>
 
-                    <!-- Staff-only notice shown when editing a request that's
-                         awaiting admin review -->
-                    <div class="alert alert-warning py-2 px-3 mb-0" id="pendingNotice" style="display: none;">
-                        <i class="fas fa-clock me-1"></i>This request is awaiting admin approval. You can still revise the details below before it's reviewed.
+                    <!-- Staff-only notice shown when editing a pending request -->
+                    <div class="alert alert-warning py-1 px-2 mb-0" id="pendingNotice" style="display: none; font-size:12px;">
+                        <i class="fas fa-clock me-1"></i>This request is awaiting admin approval.
                     </div>
 
-                    <!-- Staff-only display of WHY their request was
-                         rejected, when editing a rejected extension -->
-                    <div class="alert alert-danger py-2 px-3 mb-0" id="rejectionReasonNotice" style="display: none;">
+                    <!-- Staff-only display of WHY their request was rejected -->
+                    <div class="alert alert-danger py-1 px-2 mb-0" id="rejectionReasonNotice" style="display: none; font-size:12px;">
                         <i class="fas fa-exclamation-circle me-1"></i><strong>Rejected:</strong> <span id="rejectionReasonText"></span>
                     </div>
                 </form>

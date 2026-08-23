@@ -589,6 +589,8 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         ->name('admin.projects.extensions.bulkDestroy');
     Route::post('/projects/{project}/extensions/bulk-force-delete', [ProjectExtensionController::class, 'bulkForceDestroy'])
         ->name('admin.projects.extensions.bulkForceDestroy');
+    Route::post('/projects/{project}/extensions/bulk-restore', [ProjectExtensionController::class, 'bulkRestore'])
+        ->name('admin.projects.extensions.bulkRestore');
     Route::get('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'show'])
         ->name('admin.projects.extensions.show');
     Route::put('/projects/{project}/extensions/{extension}', [ProjectExtensionController::class, 'update'])

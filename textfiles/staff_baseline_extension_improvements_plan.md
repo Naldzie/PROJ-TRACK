@@ -661,7 +661,35 @@ Changes:
 
 All 722 tests passing.
 
-### Implementation Log — Task 10 (UI fixes)
+### Implementation Log — Task 10 (UI improvements + archived extensions)
+
+Committed: (pending) on `staff-baseline-extension-improvements`
+
+Changes:
+- `resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php`
+  - Compact layout: New End Date, Reason Category, and Status now in a single row (col-md-4 each)
+  - Reason textarea reduced from rows=3 to rows=2
+  - Removed verbose help text, condensed labels
+  - Evidence section simplified
+  - Pending/rejection notices condensed to 1-line alerts
+
+- `resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php`
+  - Archived extensions panel: added "Select All" checkbox in header
+  - Added "Restore Selected" bulk button alongside existing "Delete Selected"
+
+- `public/js/admin/projects/baseline-schedule-extensions.js`
+  - Added `restoreSelectedArchived()` — bulk-restore selected archived extensions
+  - Added `performBulkRestoreArchived()` — POST to bulk-restore endpoint
+  - Updated `wireArchivedSelectionHandlers()` to wire select-all checkbox
+  - Updated `updateArchivedSelection()` to show both restore and delete buttons
+
+- `app/Http/Controllers/Admin/ProjectExtensionController.php`
+  - Added `bulkRestore()` method — validates IDs, restores soft-deleted extensions, logs action
+
+- `routes/web.php`
+  - Added `POST /projects/{project}/extensions/bulk-restore` route
+
+All 722 tests passing.
 
 Committed: (pending) on `staff-baseline-extension-improvements`
 

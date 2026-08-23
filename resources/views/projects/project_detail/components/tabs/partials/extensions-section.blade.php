@@ -142,11 +142,17 @@
      surfaced here for Restore or permanent Delete Forever. -->
 <div id="archivedExtensionsPanel" style="display: none; margin-top: 20px; padding: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h5 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155;">
-            <i class="bi bi-archive me-1" style="color: #64748b;"></i> Archived Extensions
-        </h5>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <h5 style="margin: 0; font-size: 14px; font-weight: 700; color: #334155;">
+                <i class="bi bi-archive me-1" style="color: #64748b;"></i> Archived Extensions
+            </h5>
+            <input type="checkbox" id="archivedSelectAll" title="Select all archived" style="cursor: pointer; width: 14px; height: 14px;">
+        </div>
         <div style="display: flex; align-items: center; gap: 10px;">
-            <button type="button" id="archivedBulkDeleteBtn" onclick="forceDeleteSelectedArchived()" style="display: none; background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Permanently delete selected archived extensions (cannot be undone)">
+            <button type="button" id="archivedBulkRestoreBtn" onclick="restoreSelectedArchived()" style="display: none; background: #16a34a; color: white; border: none; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Restore selected archived extensions">
+                <i class="bi bi-arrow-counterclockwise"></i> Restore Selected (<span id="archivedBulkRestoreCount">0</span>)
+            </button>
+            <button type="button" id="archivedBulkDeleteBtn" onclick="forceDeleteSelectedArchived()" style="display: none; background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Permanently delete selected archived extensions">
                 <i class="bi bi-trash"></i> Delete Selected (<span id="archivedBulkCount">0</span>)
             </button>
             <button type="button" onclick="toggleArchivedPanel()" style="background: transparent; border: none; color: #64748b; font-size: 12px; font-weight: 600; cursor: pointer;">
