@@ -138,14 +138,13 @@ class ProjectExtensionController extends Controller
                 'visibility' => 'all',
             ]);
 
-            // Notify: staff submissions go to admins; admin auto-approvals go to
-            // the project contractor (who is affected by the new deadline).
-            // Admin-created pending/rejected follow the same channels as staff
-            // submissions / admin rejections respectively.
-            $notifyStatus = $isAdmin
-                ? ($status === 'approved' ? ExtensionStatusChanged::APPROVED
-                    : ($status === 'rejected' ? ExtensionStatusChanged::REJECTED : ExtensionStatusChanged::SUBMITTED))
-                : ExtensionStatusChanged::SUBMITTED;
+            // Notify: staff submissions go to admins; auto-approvals (admin or
+            // assigned staff) go to the full recipient set including contractor.
+            // Pending/rejected follow the same channels as submissions /
+            // rejections respectively.
+            $notifyStatus = $status === 'approved'
+                ? ExtensionStatusChanged::APPROVED
+                : ($status === 'rejected' ? ExtensionStatusChanged::REJECTED : ExtensionStatusChanged::SUBMITTED);
 
             $this->notifyExtension($project, $extension, $notifyStatus);
 
