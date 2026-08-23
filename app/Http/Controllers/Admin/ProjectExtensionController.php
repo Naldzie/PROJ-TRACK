@@ -91,6 +91,8 @@ class ProjectExtensionController extends Controller
             $newEndDate = Carbon::parse($validated['new_end_date']);
             $durationDays = $originalEndDate->diffInDays($newEndDate);
 
+            $canAutoApprove = ($isAdmin || $project->isAssignedTo(auth()->user())) && $status === 'approved';
+
             $extension = ProjectExtension::create([
                 'project_id' => $project->id,
                 'extension_number' => $nextExtensionNumber,
@@ -101,21 +103,16 @@ class ProjectExtensionController extends Controller
                 'reason_category' => $validated['reason_category'] ?? null,
                 'status' => $status,
                 'rejection_reason' => $rejectionReason,
-                'approved_by_user_id' => ($isAdmin && $status === 'approved') ? auth()->id() : null,
-                'approved_at' => ($isAdmin && $status === 'approved') ? now() : null,
+                'approved_by_user_id' => $canAutoApprove ? auth()->id() : null,
+                'approved_at' => $canAutoApprove ? now() : null,
                 'created_by_user_id' => auth()->id(),
             ]);
 
             // Push the change to the project itself once the extension is
-            // actually approved. For admin this happens immediately when the
-            // status is approved; for staff it happens later in update()/approve.
-            // An admin creating a pending/rejected extension leaves the project
-            // untouched (same as a staff submission).
-            if ($isAdmin && $status === 'approved') {
-                // A freshly auto-approved admin extension becomes the active
-                // approved — re-anchor any remaining pending proposals and
-                // supersede the obsolete ones (Decision 2), then point the
-                // project deadline/extension_count at the latest approved.
+            // actually approved. For admin/staff this happens immediately when
+            // the status is approved; for pending it happens later in
+            // update()/approve.
+            if ($canAutoApprove) {
                 $this->resolvePendingQueue($project, $extension);
                 $this->recomputeProjectDeadline($project);
             }
@@ -1430,6 +1427,7 @@ class ProjectExtensionController extends Controller
     private function notifyExtension(Project $project, ProjectExtension $extension, string $status): void
     {
         $service = app(NotificationService::class);
+        $triggerUserId = auth()->id();
 
         $currentEnd = \Carbon\Carbon::parse($extension->original_end_date);
         $effectiveEnd = \Carbon\Carbon::parse($extension->effectiveEndDate());
@@ -1449,17 +1447,30 @@ class ProjectExtensionController extends Controller
             $daysExtended
         );
 
+        $recipients = collect();
+
+        // Always include assigned staff (except the trigger user).
+        $assignedStaff = $service->staffForProject($project);
+        if ($assignedStaff && $assignedStaff->id !== $triggerUserId) {
+            $recipients->push($assignedStaff);
+        }
+
         if ($status === ExtensionStatusChanged::SUBMITTED) {
-            // Each submission/resubmission is a distinct review event — bypass
-            // dedupe so a resubmitted request re-notifies the admins.
-            $service->notifyMany($service->admins(), $notification, dedupe: false);
+            // Submission → all admins (except trigger) + assigned staff.
+            // Dedupe bypassed so resubmissions re-notify.
+            foreach ($service->admins() as $admin) {
+                if ($admin->id !== $triggerUserId) {
+                    $recipients->push($admin);
+                }
+            }
+            $service->notifyMany($recipients->unique('id'), $notification, dedupe: false);
             return;
         }
 
-        // Approved / rejected → requester + project contractor + assigned staff.
-        $recipients = collect();
+        // Approved / Rejected → requester + contractor + assigned staff + admins,
+        // minus the trigger user so nobody receives their own notification.
 
-        if ($extension->created_by_user_id) {
+        if ($extension->created_by_user_id && $extension->created_by_user_id !== $triggerUserId) {
             $requester = User::find($extension->created_by_user_id);
             if ($requester && $requester->is_active) {
                 $recipients->push($requester);
@@ -1467,13 +1478,14 @@ class ProjectExtensionController extends Controller
         }
 
         $contractorUser = $service->contractorUserFor($project);
-        if ($contractorUser) {
+        if ($contractorUser && $contractorUser->id !== $triggerUserId) {
             $recipients->push($contractorUser);
         }
 
-        $assignedStaff = $service->staffForProject($project);
-        if ($assignedStaff) {
-            $recipients->push($assignedStaff);
+        foreach ($service->admins() as $admin) {
+            if ($admin->id !== $triggerUserId) {
+                $recipients->push($admin);
+            }
         }
 
         $service->notifyMany($recipients->unique('id'), $notification);
