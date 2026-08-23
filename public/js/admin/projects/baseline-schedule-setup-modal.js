@@ -231,10 +231,23 @@ function openAdjustBaselineModal() {
         });
 
         // Auto-generate extension months up to planned_end_date
-        // Before generating, capture the original deadline label (last month before extension)
+        // Before generating, find the original deadline for additional work %.
+        // If the last month is already at 100% (saved from a previous extension),
+        // step backwards to the last month that isn't at 100% — that's the real
+        // deadline the additional work should affect.
+        setupOriginalDeadlineLabel = null;
         if (setupLocalMonths.length > 0) {
-            var lastExistingMonth = setupLocalMonths[setupLocalMonths.length - 1];
-            setupOriginalDeadlineLabel = lastExistingMonth.month_label;
+            for (var di = setupLocalMonths.length - 1; di >= 0; di--) {
+                var dv = parseFloat(setupLocalMonths[di].planned_progress_percent) || 0;
+                if (dv < 100) {
+                    setupOriginalDeadlineLabel = setupLocalMonths[di].month_label;
+                    break;
+                }
+            }
+            // Fallback: if all months are 100%, use the last month
+            if (!setupOriginalDeadlineLabel) {
+                setupOriginalDeadlineLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
+            }
         }
         // Store a deep copy of original months for resetting when remaining work % changes
         setupOriginalMonthsForAdjust = JSON.parse(JSON.stringify(setupLocalMonths));
