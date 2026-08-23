@@ -52,6 +52,29 @@
                     </div>
                 </div>
 
+                <!-- ── ADDITIONAL WORK % (adjust mode only) ──────────── -->
+                <div id="setupRemainingWorkWrapper" style="display: none; margin-bottom: 14px; padding: 12px 16px; background: #fef3c7; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; border-radius: 8px;">
+                    <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                        <div style="flex: 0 0 auto;">
+                            <label for="setupAdditionalWorkPercent" style="display: block; margin-bottom: 4px; font-weight: 600; font-size: 11px; color: #92400e;">
+                                Additional Work %
+                            </label>
+                            <input type="number" id="setupAdditionalWorkPercent"
+                                   min="0" max="100" step="0.01" value=""
+                                   placeholder="e.g. 5"
+                                   style="width: 100px; padding: 8px 10px; border: 1px solid #f59e0b; border-radius: 6px; font-size: 12px; font-weight: 600;"
+                                   oninput="onAdditionalWorkChange()">
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <small style="color: #78350f; font-size: 11px; line-height: 1.4; display: block;">
+                                <i class="bi bi-info-circle"></i>
+                                Estimated % of work to be done in the <strong>extension period</strong>.
+                                The original deadline month will adjust to (100 - this value)%, and non-locked months scale proportionally.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ── S-CURVE PREVIEW (full-width top) ──────────────── -->
                 <div style="margin-bottom: 14px;">
                     @include('components._s_curve_chart', [

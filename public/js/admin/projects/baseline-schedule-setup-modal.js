@@ -80,6 +80,12 @@ var setupRemovedIds = [];
 /** The original planned_end_date from the project, used to generate extension months up to. */
 var setupProjectEndDate = null;
 
+/** The month_label of the original deadline (last month BEFORE extension months), used for remaining work %. */
+var setupOriginalDeadlineLabel = null;
+
+/** Original months from server (before extension generation), used to reset when remaining work % changes. */
+var setupOriginalMonthsForAdjust = [];
+
 // ─── DATE BOUNDS (project timeline) ──────────────────────────────────────────
 
 /**
@@ -161,6 +167,10 @@ function openSetupBaselineModal() {
         updateSetupSCurvePreview();
     }
 
+    // Hide remaining work wrapper (only shown in adjust mode)
+    var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
+    if (rwWrapper) rwWrapper.style.display = 'none';
+
     setupModalInstance.show();
 }
 
@@ -221,6 +231,13 @@ function openAdjustBaselineModal() {
         });
 
         // Auto-generate extension months up to planned_end_date
+        // Before generating, capture the original deadline label (last month before extension)
+        if (setupLocalMonths.length > 0) {
+            var lastExistingMonth = setupLocalMonths[setupLocalMonths.length - 1];
+            setupOriginalDeadlineLabel = lastExistingMonth.month_label;
+        }
+        // Store a deep copy of original months for resetting when remaining work % changes
+        setupOriginalMonthsForAdjust = JSON.parse(JSON.stringify(setupLocalMonths));
         generateAutoDistribution();
 
         setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
@@ -256,6 +273,12 @@ function openAdjustBaselineModal() {
             warningEl.style.border = '1px solid #99f6e4';
             warningEl.style.borderLeft = '4px solid #0d9488';
         }
+
+        // Show remaining work wrapper and reset input
+        var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
+        var rwInput = document.getElementById('setupAdditionalWorkPercent');
+        if (rwWrapper) rwWrapper.style.display = 'block';
+        if (rwInput) rwInput.value = '';
 
         setupEditingIndex = null;
         resetSetupForm();
@@ -368,6 +391,11 @@ function openEditOriginalBaselineModal() {
         renderSetupMonthList(setupLocalMonths);
         updateSetupProgress(setupLocalMonths);
         updateSetupSCurvePreview();
+
+        // Hide remaining work wrapper (only shown in adjust mode)
+        var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
+        if (rwWrapper) rwWrapper.style.display = 'none';
+
         setupModalInstance.show();
     })
     .catch(function (err) {
@@ -533,6 +561,102 @@ function generateAutoDistribution() {
 }
 
 /**
+ * Called when the Additional Work % input changes.
+ * Resets months to original stretched values, then applies the additional work
+ * adjustment to the original deadline month and redistributes extension months.
+ *
+ * The input value represents the % of work done in the EXTENSION period.
+ * So the original deadline month becomes (100 - additionalWork)%.
+ * Example: additional work = 5% → deadline month = 95% → extension reaches 100%.
+ *
+ * Non-locked months between locked months and the deadline are also scaled
+ * proportionally to maintain the S-curve pattern.
+ */
+function onAdditionalWorkChange() {
+    if (!setupAdjustMode || !setupOriginalDeadlineLabel) return;
+
+    // Reset to original months (deep copy)
+    setupLocalMonths = JSON.parse(JSON.stringify(setupOriginalMonthsForAdjust));
+
+    // Re-run the base stretching algorithm
+    generateAutoDistribution();
+
+    // Read additional work %
+    var rwInput = document.getElementById('setupAdditionalWorkPercent');
+    var additionalWork = parseFloat(rwInput ? rwInput.value : 0) || 0;
+    if (additionalWork <= 0) {
+        // No additional work — just update UI with base stretched values
+        setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
+            return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+        }, 0);
+        renderSetupMonthList(setupLocalMonths);
+        updateSetupProgress(setupLocalMonths);
+        updateSetupSCurvePreview();
+        return;
+    }
+
+    // Clamp additional work to max 100%
+    if (additionalWork > 100) additionalWork = 100;
+
+    // Target value at the original deadline = 100% - additional work
+    var targetAtDeadline = Math.round((100 - additionalWork) * 100) / 100;
+
+    // Find the original deadline month
+    var deadlineIdx = -1;
+    for (var i = 0; i < setupLocalMonths.length; i++) {
+        if (setupLocalMonths[i].month_label === setupOriginalDeadlineLabel) {
+            deadlineIdx = i;
+            break;
+        }
+    }
+    if (deadlineIdx === -1) return;
+
+    // Get the stretched deadline value (before additional work adjustment)
+    var stretchedDeadlineValue = parseFloat(setupLocalMonths[deadlineIdx].planned_progress_percent) || 0;
+
+    // Scale all non-locked months proportionally to reach the new target
+    // This preserves the S-curve pattern while adjusting to the new deadline
+    if (stretchedDeadlineValue > 0) {
+        var scaleFactor = targetAtDeadline / stretchedDeadlineValue;
+        for (var si = 0; si < setupLocalMonths.length; si++) {
+            var m = setupLocalMonths[si];
+            if (!m.has_actual_progress) {
+                // Don't scale extension months — they get redistributed separately
+                if (m.month_label > setupOriginalDeadlineLabel) continue;
+                m.planned_progress_percent = Math.round(m.planned_progress_percent * scaleFactor * 100) / 100;
+            }
+        }
+    }
+
+    // Set the deadline month to the target value directly
+    setupLocalMonths[deadlineIdx].planned_progress_percent = targetAtDeadline;
+
+    // Find extension months (months after the original deadline)
+    var extMonths = [];
+    for (var j = deadlineIdx + 1; j < setupLocalMonths.length; j++) {
+        if (!setupLocalMonths[j].has_actual_progress) {
+            extMonths.push(setupLocalMonths[j]);
+        }
+    }
+
+    // Redistribute extension months evenly from the target to 100%
+    if (extMonths.length > 0) {
+        var step = (100 - targetAtDeadline) / extMonths.length;
+        for (var k = 0; k < extMonths.length; k++) {
+            extMonths[k].planned_progress_percent = Math.round((targetAtDeadline + step * (k + 1)) * 100) / 100;
+        }
+    }
+
+    // Update UI
+    setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
+        return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+    }, 0);
+    renderSetupMonthList(setupLocalMonths);
+    updateSetupProgress(setupLocalMonths);
+    updateSetupSCurvePreview();
+}
+
+/**
  * Called when the user clicks "Cancel / Finish Later" or the X button.
  *
  * In 'return-data' mode (B3.1 — create-project flow):
@@ -575,6 +699,11 @@ function onSetupBaselineCancel() {
             setupEditOriginalMode = false;
             setupRemovedIds = [];
             setupProjectEndDate = null;
+            setupOriginalDeadlineLabel = null;
+            setupOriginalMonthsForAdjust = [];
+            // Hide remaining work wrapper
+            var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
+            if (rwWrapper) rwWrapper.style.display = 'none';
             resetModalUIToDefaults();
             if (ctx && ctx.mode === 'return-data' && typeof ctx.onCancel === 'function') {
                 ctx.onCancel();
@@ -1569,6 +1698,9 @@ function resetModalUIToDefaults() {
         addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
         addBtn.style.background = '#0d9488';
     }
+    // Reset remaining work input
+    var rwInput = document.getElementById('setupAdditionalWorkPercent');
+    if (rwInput) rwInput.value = '';
 }
 
 // ─── MONTH ↔ DATE AUTO-SYNC ───────────────────────────────────────────────────
