@@ -136,18 +136,6 @@
                         </div>
                     </div>
 
-                    <!-- Details Field (Optional) -->
-                    <div class="mb-2">
-                        <label for="details" class="form-label">Additional Details (Optional)</label>
-                        <textarea
-                            class="form-control form-control-sm"
-                            id="details"
-                            name="details"
-                            rows="2"
-                            placeholder="Any additional information about this extension..."
-                        ></textarea>
-                    </div>
-
                     <!-- Evidence Attachments (Decision 4) — two-step upload.
                          Files are picked here, then uploaded AFTER the extension
                          row is created/updated (attachable_id needs the row id). -->
@@ -265,15 +253,16 @@ window.openRequestExtensionModal = function () {
     document.getElementById('rejectionReason').value = '';
 
     const statusWrapper = document.getElementById('statusFieldWrapper');
-    if (isAdminContext()) {
-        // Admin can create a pending/approved/rejected extension directly —
+    const canPickStatus = isAdminContext() || window.isAssignedStaff === true;
+    if (canPickStatus) {
+        // Admin and assigned staff can create a pending/approved/rejected extension directly —
         // default to approved (auto-approve) so the common path is one click.
         statusWrapper.style.display = 'block';
         document.getElementById('extensionStatus').value = 'approved';
         document.getElementById('rejectionReason').value = '';
         document.getElementById('rejectionReasonWrapper').style.display = 'none';
     } else {
-        statusWrapper.style.display = 'none'; // status is meaningless on create for staff
+        statusWrapper.style.display = 'none'; // status is meaningless on create for contractor
     }
     window.toggleRejectionReasonField();
     document.getElementById('durationDays').textContent = '0';
@@ -342,7 +331,6 @@ window.openResubmitExtensionModal = function (extension) {
 function _populateExtensionEditFields(extension) {
     document.getElementById('newEndDate').value = extension.new_end_date;
     document.getElementById('reason').value = extension.reason || '';
-    document.getElementById('details').value = extension.details || '';
 
     const reasonCategory = document.getElementById('reasonCategory');
     if (reasonCategory) reasonCategory.value = extension.reason_category || '';
@@ -359,7 +347,7 @@ function _populateExtensionEditFields(extension) {
     const rejectionReasonWrapper = document.getElementById('rejectionReasonWrapper');
     const rejectionReasonNotice = document.getElementById('rejectionReasonNotice');
 
-    if (isAdminContext() && document.getElementById('extensionEditMode').value !== 'resubmit') {
+    if ((isAdminContext() || window.isAssignedStaff === true) && document.getElementById('extensionEditMode').value !== 'resubmit') {
         statusWrapper.style.display = 'block';
         document.getElementById('extensionStatus').value = extension.status;
         pendingNotice.style.display = 'none';
@@ -387,7 +375,6 @@ function _populateExtensionEditFields(extension) {
 document.addEventListener('DOMContentLoaded', function() {
     const newEndDateInput = document.getElementById('newEndDate');
     const reasonInput = document.getElementById('reason');
-    const detailsInput = document.getElementById('details');
     const extensionForm = document.getElementById('extensionForm');
     const durationDaysSpan = document.getElementById('durationDays');
     const modal = new bootstrap.Modal(document.getElementById('requestExtensionModal'));
@@ -453,7 +440,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const extensionId = document.getElementById('extensionEditId').value;
 
         // When rejecting, skip HTML5 form validation — the date is irrelevant.
-        const selectedStatusForCheck = isAdminContext() ? (document.getElementById('extensionStatus')?.value || '') : '';
+        const canPickStatus = isAdminContext() || window.isAssignedStaff === true;
+        const selectedStatusForCheck = canPickStatus ? (document.getElementById('extensionStatus')?.value || '') : '';
         if (selectedStatusForCheck !== 'rejected') {
             if (!extensionForm.checkValidity()) {
                 extensionForm.classList.add('was-validated');
@@ -478,7 +466,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // date strictly BEFORE it in edit mode; new/resubmit still require
         // strictly after. Rejection skips the date check entirely.
         const isEditing = editMode === 'edit';
-        const selectedStatus = isAdminContext() ? (document.getElementById('extensionStatus')?.value || '') : '';
+        const selectedStatus = (isAdminContext() || window.isAssignedStaff === true) ? (document.getElementById('extensionStatus')?.value || '') : '';
         const isRejectingStatus = selectedStatus === 'rejected';
         if (!isRejectingStatus && (isEditing ? newDate < currentDate : newDate <= currentDate)) {
             newEndDateInput.classList.add('is-invalid');
@@ -500,15 +488,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = {
             new_end_date: newDateValue,
             reason: reasonInput.value,
-            details: detailsInput.value || null,
             // Decision 3 — structured category (optional).
             reason_category: document.getElementById('reasonCategory')?.value || null
         };
 
-        // Only admin context ever includes status. Applies in BOTH create and
-        // edit (admin may create pending/approved/rejected directly); resubmit
-        // never carries status — the new row is always pending.
-        if (isAdminContext() && editMode !== 'resubmit') {
+        // Admin and assigned staff contexts include status. Applies in BOTH
+        // create and edit; resubmit never carries status — the new row is always pending.
+        if ((isAdminContext() || window.isAssignedStaff === true) && editMode !== 'resubmit') {
             const selectedStatus = document.getElementById('extensionStatus').value;
             formData.status = selectedStatus;
 

@@ -1,8 +1,6 @@
-<!-- Review Extension Modal (Decision 13) — ADMIN ONLY.
-     Dedicated approve/reject surface. The request is shown READ-ONLY so the
-     admin decides on exactly what was submitted; the only thing sent back is
-     the decision (status + optional rejection reason).
-     Reuses the existing admin update route via window.buildExtensionsEndpoint(). -->
+<!-- Review Extension Modal — Admin or assigned staff can approve/reject
+     pending extensions. The reviewer can optionally adjust the new_end_date
+     before approving (no partial approval — approve uses the edited date). -->
 <div class="modal fade" id="reviewExtensionModal" tabindex="-1" aria-labelledby="reviewExtensionLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
@@ -55,12 +53,12 @@
                     </div>
                 </div>
 
-                <!-- Decision Buttons (Decision 13) -->
+                <!-- Decision Buttons -->
                 <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">DECISION</div>
                 <div class="d-flex gap-2 mb-2">
                     <button type="button" id="reviewBtnApprove" onclick="setReviewDecision('approved')"
                             style="flex: 1; border: 1px solid #86efac; background: #dcfce7; color: #166534; padding: 9px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;">
-                        <i class="bi bi-check-lg me-1"></i>Approve as Requested
+                        <i class="bi bi-check-lg me-1"></i>Approve
                     </button>
                     <button type="button" id="reviewBtnReject" onclick="setReviewDecision('rejected')"
                             style="flex: 1; border: 1px solid #fca5a5; background: #fee2e2; color: #991b1b; padding: 9px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer;">
@@ -68,7 +66,28 @@
                     </button>
                 </div>
 
-                <!-- Rejection reason (Decision 13) -->
+                <!-- New End Date + Days (editable on approve, bidirectional sync) -->
+                <div class="mb-2" id="reviewEndDateWrapper" style="display: none;">
+                    <label class="form-label">Grant Extension</label>
+                    <div class="row g-2">
+                        <div class="col-5">
+                            <label for="reviewGrantDays" class="form-label" style="font-size: 11px; color: #6b7280;">Days to Grant</label>
+                            <input type="number" class="form-control form-control-sm" id="reviewGrantDays"
+                                   min="1" step="1" placeholder="e.g. 30"
+                                   onkeydown="if(event.key==='-'||event.key==='e'||event.key==='E'||event.key==='+')event.preventDefault();"
+                                   oninput="if(this.value!==''&&Number(this.value)<1)this.value='';" />
+                        </div>
+                        <div class="col-7">
+                            <label for="reviewNewEndDate" class="form-label" style="font-size: 11px; color: #6b7280;">New End Date</label>
+                            <input type="date" class="form-control form-control-sm" id="reviewNewEndDate" />
+                        </div>
+                    </div>
+                    <div class="form-text text-muted">
+                        Enter days or pick a date — both fields sync automatically.
+                    </div>
+                </div>
+
+                <!-- Rejection reason -->
                 <div class="mb-2" id="reviewRejectWrapper" style="display: none;">
                     <label for="reviewRejectionReason" class="form-label">
                         <span class="text-danger">*</span> Reason for Rejection
@@ -124,14 +143,41 @@ function reviewShowError(message) {
     }
 }
 
+/** Format a Date as Y-m-d for <input type="date">. */
+function reviewToInputDate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
 let _reviewExtension = null;
+let _reviewOriginalDate = null; // Date object of the extension's original_end_date
 
 /**
- * Open the Review modal for a pending extension (Decision 13).
+ * Add days to a Date and return a new Date.
+ */
+function reviewAddDays(date, days) {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+}
+
+/**
+ * Compute the number of whole days between two dates.
+ */
+function reviewDaysBetween(a, b) {
+    const msPerDay = 86400000;
+    return Math.round((a.getTime() - b.getTime()) / msPerDay);
+}
+
+/**
+ * Open the Review modal for a pending extension.
  * `extension` is the shape from formatExtension().
  */
 window.openReviewExtensionModal = function (extension) {
     _reviewExtension = extension;
+    _reviewOriginalDate = reviewParseDate(extension.original_end_date);
 
     document.getElementById('reviewExtensionId').value = extension.id;
     document.getElementById('reviewExtensionNumber').textContent = extension.extension_number;
@@ -164,6 +210,28 @@ window.openReviewExtensionModal = function (extension) {
     setReviewDecision('');
     document.getElementById('reviewRejectionReason').value = '';
     document.getElementById('reviewRejectionReason').classList.remove('is-invalid', 'is-valid');
+
+    // Pre-fill both fields from the requested new_end_date.
+    const requestedDate = reviewParseDate(extension.new_end_date);
+    const currentEndDate = reviewParseDate(extension.original_end_date);
+
+    // Set min on the date picker — browser grays out dates earlier than this.
+    const dateInput = document.getElementById('reviewNewEndDate');
+    if (currentEndDate) {
+        const minYear = currentEndDate.getFullYear();
+        const minMonth = String(currentEndDate.getMonth() + 1).padStart(2, '0');
+        const minDay = String(currentEndDate.getDate()).padStart(2, '0');
+        dateInput.setAttribute('min', `${minYear}-${minMonth}-${minDay}`);
+    }
+
+    dateInput.value = extension.new_end_date || '';
+    if (_reviewOriginalDate && requestedDate) {
+        const days = reviewDaysBetween(requestedDate, _reviewOriginalDate);
+        document.getElementById('reviewGrantDays').value = days > 0 ? days : '';
+    } else {
+        document.getElementById('reviewGrantDays').value = '';
+    }
+
     document.getElementById('reviewSubmitBtn').disabled = true;
 
     new bootstrap.Modal(document.getElementById('reviewExtensionModal')).show();
@@ -171,7 +239,7 @@ window.openReviewExtensionModal = function (extension) {
 
 /**
  * Set the current review decision and reveal the matching input. Buttons act
- * as a 1-of-2 choice: approved (as requested) / rejected.
+ * as a 1-of-2 choice: approved / rejected.
  */
 window.setReviewDecision = function (decision) {
     document.getElementById('reviewDecision').value = decision;
@@ -192,6 +260,7 @@ window.setReviewDecision = function (decision) {
     apply('reviewBtnReject', 'rejected');
 
     document.getElementById('reviewRejectWrapper').style.display = decision === 'rejected' ? 'block' : 'none';
+    document.getElementById('reviewEndDateWrapper').style.display = decision === 'approved' ? 'block' : 'none';
     document.getElementById('reviewSubmitBtn').disabled = decision === '';
     document.getElementById('reviewSubmitBtn').innerHTML = decision === 'rejected'
         ? '<i class="fas fa-times me-1"></i>Reject Request'
@@ -199,7 +268,42 @@ window.setReviewDecision = function (decision) {
 };
 
 /**
- * Submit the admin's decision via the existing admin update route.
+ * Bidirectional sync: when Days changes → update Date; when Date changes → update Days.
+ */
+(function initReviewSync() {
+    const daysInput = document.getElementById('reviewGrantDays');
+    const dateInput = document.getElementById('reviewNewEndDate');
+
+    daysInput.addEventListener('input', function () {
+        const days = parseInt(this.value, 10);
+        if (!_reviewOriginalDate || isNaN(days) || days < 1) {
+            dateInput.value = '';
+            return;
+        }
+        const newDate = reviewAddDays(_reviewOriginalDate, days);
+        dateInput.value = reviewToInputDate(newDate);
+    });
+
+    dateInput.addEventListener('change', function () {
+        const picked = reviewParseDate(this.value);
+        if (!_reviewOriginalDate || !picked) {
+            daysInput.value = '';
+            return;
+        }
+        const minAttr = this.getAttribute('min');
+        const minDate = reviewParseDate(minAttr);
+        if (minDate && picked < minDate) {
+            this.value = minAttr;
+            daysInput.value = reviewDaysBetween(minDate, _reviewOriginalDate) || '';
+            return;
+        }
+        const days = reviewDaysBetween(picked, _reviewOriginalDate);
+        daysInput.value = days > 0 ? days : '';
+    });
+})();
+
+/**
+ * Submit the reviewer's decision via the existing admin update route.
  * Only the decision fields are sent — request content is never touched.
  */
 window.submitReviewExtension = function () {
@@ -211,6 +315,13 @@ window.submitReviewExtension = function () {
 
     const ext = _reviewExtension;
     const formData = { status: decision };
+
+    if (decision === 'approved') {
+        const newEndDate = document.getElementById('reviewNewEndDate').value.trim();
+        if (newEndDate) {
+            formData.new_end_date = newEndDate;
+        }
+    }
 
     if (decision === 'rejected') {
         const reason = document.getElementById('reviewRejectionReason').value.trim();

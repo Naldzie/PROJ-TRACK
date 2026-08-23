@@ -602,8 +602,8 @@ extensions) already do not include staff, so they are unaffected.
 3. Task 14 (restrict project operations + documents/issues/risks) — DONE
 4. Task 15 (notification assignment filter) — DONE
 5. Task 13 (staff filtering) — DONE
-6. Task 10 (staff extension approval) — NEXT
-7. Task 11 (additional work %) — independent, anytime
+6. Task 10 (staff extension approval) — DONE
+7. Task 11 (additional work %) — independent, NEXT
 
 ### Implementation Log — Task 15 + fixes
 
@@ -627,6 +627,68 @@ Files changed:
 - `app/Http/Controllers/DashboardController.php` — Added `scopeToAssigned()` helper; applied to all queries (table, stats cards, overdue, at-risk, pending, inspection, extensions, all filter AJAX queries)
 
 All 725 tests passing.
+
+---
+
+### Implementation Log — Task 10
+
+Committed: (pending) on `staff-baseline-extension-improvements`
+
+Changes:
+- `app/Http/Controllers/Admin/ProjectExtensionController.php`
+  - `update()`: staff creator edit path (edit details while pending), then assigned staff review path (approve/reject with new_end_date edit), then catch-all 403
+  - `store()`: removed `approved_new_end_date` from creation logic and validation
+  - `effectiveEndDate()`: simplified to return `new_end_date` only (no partial approval)
+  - `formatExtension()`: removed `approved_end_date` key, kept `effective_end_date`
+  - `notifyExtension()`: added `staffForProject()` to recipient list
+
+- `resources/views/projects/project_detail/components/modals/review_extension_modal.blade.php`
+  - Shows for admin + assigned staff (not just admin)
+  - Added editable `new_end_date` field visible on Approve
+  - Removed partial approval UI ("Approve as Requested" → "Approve")
+  - `submitReviewExtension()` sends `new_end_date` when approving
+
+- `public/js/admin/projects/baseline-schedule-extensions.js`
+  - `canReview` now includes `isAssignedStaff` for pending extensions
+  - Removed `isPartialGrant` display logic
+  - Updated Review button tooltip
+
+- `tests/Feature/ProjectExtensionLifecycleTest.php`
+  - Removed 3 partial approval tests (`test_partial_approval_granted_date_drives_deadline`, `test_partial_approval_cannot_exceed_requested_date`, `test_admin_can_partially_approve_through_update`)
+  - Added `test_admin_can_approve_with_new_end_date`
+  - Fixed rejected extension edit test error message
+  - Fixed `isSameDay` comparison for date-only fields
+
+All 722 tests passing.
+
+### Implementation Log — Task 10 (UI fixes)
+
+Committed: (pending) on `staff-baseline-extension-improvements`
+
+Changes:
+- `resources/views/projects/project_detail/components/modals/review_extension_modal.blade.php`
+  - Days input: added `onkeydown` to block `-`, `e`, `E`, `+` keys; `oninput` clears values below 1
+  - Date picker: `min` attribute set to current end date on modal open — browser natively grays out and blocks earlier dates
+  - `change` listener clamps date to min as safety net
+  - Removed readonly — date picker remains fully interactive
+
+- `resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php`
+  - Removed "Additional Details" textarea (no DB column existed)
+  - Removed `detailsInput` JS variable, `details` from formData, and `_populateExtensionEditFields` reset
+  - Status dropdown: changed `isAdminContext()` guards to `isAdminContext() || window.isAssignedStaff === true` for the status selector visibility
+
+- `app/Http/Controllers/Admin/ProjectExtensionController.php`
+  - `update()`: added `&& !$request->has('status')` guard on creator-edit path so staff approval requests go through the review path
+  - `store()`: status validation + default now applies to assigned staff (defaults to `approved` when not specified)
+
+- `tests/Feature/ProjectExtensionLifecycleTest.php`
+  - `test_staff_cannot_submit_second_pending_extension`: now sends explicit `'status' => 'pending'`
+  - `test_admin_can_approve_with_new_end_date`: uses `isSameDay()` for date comparison
+
+- `tests/Feature/NotificationTest.php`
+  - `staffSubmitsExtension()`: now sends explicit `'status' => 'pending'`
+
+All 722 tests passing.
 
 ---
 
@@ -662,6 +724,10 @@ All 725 tests passing.
     * Staff cannot access unassigned project detail page — 403 (Task 13)
     * Extension notification shows current end, new end, days extended
     * Staff receives extension approval/rejection notifications
+    * Staff can approve/reject pending extensions for assigned projects (Task 10)
+    * Staff can edit new_end_date before approving in review modal (Task 10)
+    * Admin can approve/reject pending extensions for all projects (Task 10)
+    * Partial approval (approved_new_end_date) is removed (Task 10)
   * Generate Adjusted Baseline modal shows Additional Work % input (Task 11)
   * S-curve updates correctly when additional work % is entered (Task 11)
   * ActivityLog captures before/after diffs for baseline edits

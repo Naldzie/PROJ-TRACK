@@ -128,7 +128,7 @@ function reloadExtensionsTable() {
                     const toDate = new Date(effectiveDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
                     // Partial approval (Decision 7): granted differs from what
                     // was requested — show the original ask as the small note.
-                    const isPartialGrant = ext.approved_new_end_date && ext.approved_new_end_date !== ext.new_end_date;
+                    
 
                     // Status badge — reflects the real status from the
                     // backend instead of a hardcoded "Approved".
@@ -181,17 +181,18 @@ function reloadExtensionsTable() {
                     // Resubmit (Decision 6): only rejected rows; staff may only
                     // resubmit their OWN (Decision 14). Admin may resubmit any.
                     const canResubmit = ext.status === 'rejected' && (isAdmin || (isStaff && isOwner));
-                    // Review (Decision 13): admin decides on pending requests
+                    // Review: admin or assigned staff decides on pending requests
                     // via the dedicated Review modal. Only the latest extension
                     // can be reviewed to prevent out-of-order decisions.
-                    const canReview = isAdmin && ext.status === 'pending' && ext.id === latestExtensionId;
+                    const isAssignedStaff = window.isAssignedStaff === true;
+                    const canReview = (isAdmin || isAssignedStaff) && ext.status === 'pending' && ext.id === latestExtensionId;
 
                     row.innerHTML = `
                         ${isAdmin ? `<td style="padding: 12px 15px; text-align: center;"><input type="checkbox" class="extension-row-checkbox" value="${ext.id}" data-number="${ext.extension_number}" data-status="${ext.status}" style="cursor: pointer; width: 14px; height: 14px;"></td>` : ''}
                         <td style="padding: 12px 15px; font-size: 13px; font-weight: 600; color: #667eea;">#${ext.extension_number}</td>
                         <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.created_by || '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #374151;">${fromDate}</td>
-                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}${isPartialGrant ? `<div style="font-size:10px;color:#7c3aed;font-weight:600;">Requested: ${new Date(ext.new_end_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>` : ''}</td>
+                        <td style="padding: 12px 15px; font-size: 13px; color: #374151; font-weight: 600;">${toDate}</td>
                         <td style="padding: 12px 15px; text-align: center; font-size: 13px; font-weight: 600; color: #f59e0b;">+${daysAdded} days</td>
                         <td style="padding: 12px 15px; font-size: 12px; color: #475569;">${ext.reason_category ? `<span style="background:#f1f5f9;color:#334155;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;">${ext.reason_category}</span>` : '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; font-size: 13px; color: #6b7280;">${ext.reason || 'N/A'}${evidenceCell ? `<div style="margin-top:4px;">${evidenceCell}</div>` : ''}</td>
@@ -200,7 +201,7 @@ function reloadExtensionsTable() {
                         </td>
                         <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${ext.status === 'approved' ? (ext.approved_by_name || ext.approved_by || '<span style="color:#cbd5e1;">—</span>') : '<span style="color:#cbd5e1;">—</span>'}</td>
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
-                            ${canReview ? `<button onclick='openReviewExtensionModal(${JSON.stringify(ext)})' style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Approve, partially approve, or reject this request"><i class="bi bi-gavel"></i> Review</button>` : ''}
+                            ${canReview ? `<button onclick='openReviewExtensionModal(${JSON.stringify(ext)})' style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Approve or reject this request"><i class="bi bi-gavel"></i> Review</button>` : ''}
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}
                             ${canResubmit ? `<button onclick='openResubmitExtensionModal(${JSON.stringify(ext)})' style="background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Resubmit as a new request"><i class="bi bi-arrow-repeat"></i> Resubmit</button>` : ''}
                             ${canDelete ? `<button onclick='deleteExtension(${JSON.stringify(ext)})' style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;" title="Move to Archived Extensions (reversible)"><i class="bi bi-archive"></i> Archive</button>` : ''}

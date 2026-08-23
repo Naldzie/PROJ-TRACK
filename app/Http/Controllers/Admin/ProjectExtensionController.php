@@ -53,24 +53,18 @@ class ProjectExtensionController extends Controller
                 abort(403, 'You are not assigned to this project.');
             }
 
-            // Admin may pick the review status at creation time (defaults to
-            // approved, preserving the auto-approve behavior); staff always
-            // create pending. Partial approval + rejection reason are admin-only.
-            if ($isAdmin) {
+            // Admin and assigned staff may pick the review status at creation time
+            // (defaults to approved, preserving the auto-approve behavior).
+            if ($isAdmin || $project->isAssignedTo(auth()->user())) {
                 $validated = array_merge($validated, $request->validate([
                     'status' => 'sometimes|nullable|in:pending,approved,rejected',
                     'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
-                    'approved_new_end_date' => [
-                        'sometimes', 'nullable', 'date_format:Y-m-d',
-                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
-                        'before_or_equal:2030-12-31',
-                    ],
-                ], [
-                    'approved_new_end_date.after_or_equal' => 'The granted end date cannot be before the current deadline (' . $project->planned_end_date->format('M d, Y') . '). Granting less time still moves the deadline forward, never backward.',
                 ]));
             }
 
-            $status = $isAdmin ? ($validated['status'] ?? 'approved') : 'pending';
+            $status = ($isAdmin || $project->isAssignedTo(auth()->user()))
+                ? ($validated['status'] ?? 'approved')
+                : 'pending';
             $rejectionReason = $status === 'rejected' ? ($validated['rejection_reason'] ?? null) : null;
 
             // Only ONE pending extension allowed at a time (consultant + client decision).
@@ -97,21 +91,6 @@ class ProjectExtensionController extends Controller
             $newEndDate = Carbon::parse($validated['new_end_date']);
             $durationDays = $originalEndDate->diffInDays($newEndDate);
 
-            // Partial approval (Decision 7): an admin approving with a GRANTED
-            // date earlier than the requested one stores that date here. It can
-            // never exceed the requested new_end_date.
-            $approvedNewEndDate = null;
-            if ($isAdmin && $status === 'approved' && !empty($validated['approved_new_end_date'])) {
-                $approvedNewEndDate = Carbon::parse($validated['approved_new_end_date']);
-                if ($approvedNewEndDate->greaterThan($newEndDate)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'The granted end date cannot be later than the requested end date.',
-                    ], 422);
-                }
-            }
-
             $extension = ProjectExtension::create([
                 'project_id' => $project->id,
                 'extension_number' => $nextExtensionNumber,
@@ -122,7 +101,6 @@ class ProjectExtensionController extends Controller
                 'reason_category' => $validated['reason_category'] ?? null,
                 'status' => $status,
                 'rejection_reason' => $rejectionReason,
-                'approved_new_end_date' => $approvedNewEndDate,
                 'approved_by_user_id' => ($isAdmin && $status === 'approved') ? auth()->id() : null,
                 'approved_at' => ($isAdmin && $status === 'approved') ? now() : null,
                 'created_by_user_id' => auth()->id(),
@@ -287,72 +265,140 @@ class ProjectExtensionController extends Controller
             $isAdmin = $user->role === 'admin';
 
             if (!$isAdmin) {
-                // Staff guard (Decision 14): only their OWN extension, and only
-                // while it's still PENDING (undecided — in-place edits are fine).
-                // Rejected rows are immutable: the only way back to review is
-                // Resubmit, which creates a NEW row so the audit trail is kept.
-                if ($extension->created_by_user_id !== $user->id) {
+                $isAssignedStaff = $project->isAssignedTo($user);
+
+                // Staff who CREATED the extension can edit details while pending
+                // (but NOT change status — status changes go through the review
+                // path below). When the request includes a 'status' field
+                // (approve/reject), skip this edit path so the review path
+                // handles it.
+                if ($extension->created_by_user_id === $user->id && $extension->status === 'pending' && !$request->has('status')) {
+                    $validated = $request->validate([
+                        'new_end_date' => [
+                            'sometimes', 'required', 'date_format:Y-m-d',
+                            'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                            'before_or_equal:2030-12-31',
+                        ],
+                        'reason' => 'sometimes|required|string|min:5|max:500',
+                        'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
+                    ]);
+
+                    DB::beginTransaction();
+
+                    if (isset($validated['new_end_date'])) {
+                        $newEndDate = Carbon::parse($validated['new_end_date']);
+                        $extension->new_end_date = $newEndDate;
+                        $extension->duration_days = $extension->original_end_date->diffInDays($newEndDate);
+                    }
+                    if (isset($validated['reason'])) {
+                        $extension->reason = $validated['reason'];
+                    }
+                    if (array_key_exists('reason_category', $validated)) {
+                        $extension->reason_category = $validated['reason_category'];
+                    }
+
+                    $extension->save();
+                    DB::commit();
+
+                    ActivityLog::create([
+                        'user_id' => auth()->id(),
+                        'project_id' => $project->id,
+                        'action' => 'Update Extension',
+                        'description' => auth()->user()->name
+                            . " updated extension #{$extension->extension_number} for project: {$project->title}",
+                        'ip_address' => request()->ip(),
+                        'visibility' => 'all',
+                    ]);
+
                     return response()->json([
-                        'success' => false,
-                        'message' => 'You can only edit your own extension requests.',
-                    ], 403);
+                        'success' => true,
+                        'message' => 'Extension request updated',
+                        'extension' => $this->formatExtension($extension),
+                    ]);
                 }
-                if ($extension->status !== 'pending') {
+
+                // Staff assigned to the project can APPROVE/REJECT pending
+                // extensions (review path — after external office decides).
+                if ($isAssignedStaff && $extension->status === 'pending') {
+                    $isRejecting = $request->input('status') === 'rejected';
+
+                    $reviewRules = [
+                        'reason' => 'sometimes|required|string|min:5|max:500',
+                        'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
+                        'status' => 'required|in:approved,rejected',
+                        'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                    ];
+
+                    if ($isRejecting) {
+                        $reviewRules['new_end_date'] = 'sometimes|nullable|date_format:Y-m-d';
+                    } else {
+                        $reviewRules['new_end_date'] = [
+                            'sometimes', 'required', 'date_format:Y-m-d',
+                            'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                            'before_or_equal:2030-12-31',
+                        ];
+                    }
+
+                    $validated = $request->validate($reviewRules);
+
+                    DB::beginTransaction();
+
+                    if (isset($validated['new_end_date'])) {
+                        $newEndDate = Carbon::parse($validated['new_end_date']);
+                        $extension->new_end_date = $newEndDate;
+                        $extension->duration_days = $extension->original_end_date->diffInDays($newEndDate);
+                    }
+                    if (isset($validated['reason'])) {
+                        $extension->reason = $validated['reason'];
+                    }
+                    if (array_key_exists('reason_category', $validated)) {
+                        $extension->reason_category = $validated['reason_category'];
+                    }
+
+                    $extension->status = $validated['status'];
+                    if ($validated['status'] === 'approved') {
+                        $extension->approved_by_user_id = $user->id;
+                        $extension->approved_at = now();
+                        $extension->rejection_reason = null;
+                    } else {
+                        $extension->approved_by_user_id = null;
+                        $extension->approved_at = null;
+                        $extension->rejection_reason = $validated['rejection_reason'];
+                    }
+
+                    $extension->save();
+
+                    $this->recomputeProjectDeadline($project);
+                    $this->resolvePendingQueue($project, $extension);
+
+                    DB::commit();
+
+                    $logAction = $validated['status'] === 'approved' ? 'Approve Extension' : 'Reject Extension';
+                    ActivityLog::create([
+                        'user_id' => auth()->id(),
+                        'project_id' => $project->id,
+                        'action' => $logAction,
+                        'description' => auth()->user()->name . " {$logAction} for project: {$project->title}",
+                        'ip_address' => request()->ip(),
+                        'visibility' => 'all',
+                    ]);
+
+                    $notifStatus = $validated['status'] === 'approved'
+                        ? ExtensionStatusChanged::APPROVED
+                        : ExtensionStatusChanged::REJECTED;
+                    $this->notifyExtension($project, $extension, $notifStatus);
+
                     return response()->json([
-                        'success' => false,
-                        'message' => $extension->isApproved()
-                            ? 'This extension has already been approved and can no longer be edited.'
-                            : 'A rejected extension cannot be edited directly. Use "Resubmit" to send a revised request.',
-                    ], 403);
+                        'success' => true,
+                        'message' => 'Extension ' . $validated['status'],
+                        'extension' => $this->formatExtension($extension->load('attachments')),
+                    ]);
                 }
-
-                $validated = $request->validate([
-                    'new_end_date' => [
-                        'sometimes', 'required', 'date_format:Y-m-d',
-                        // Editing an existing extension may legitimately keep its
-                        // date equal to the live deadline (the active approved
-                        // extension IS the deadline) — allow equality here. New
-                        // requests still require strictly-after (validateExtension).
-                        'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
-                        'before_or_equal:2030-12-31',
-                    ],
-                    'reason' => 'sometimes|required|string|min:5|max:500',
-                    'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
-                ]);
-
-                // status is intentionally never read from the staff payload.
-                DB::beginTransaction();
-
-                if (isset($validated['new_end_date'])) {
-                    $newEndDate = Carbon::parse($validated['new_end_date']);
-                    $extension->new_end_date = $newEndDate;
-                    $extension->duration_days = $extension->original_end_date->diffInDays($newEndDate);
-                }
-                if (isset($validated['reason'])) {
-                    $extension->reason = $validated['reason'];
-                }
-                if (array_key_exists('reason_category', $validated)) {
-                    $extension->reason_category = $validated['reason_category'];
-                }
-
-                $extension->save();
-                DB::commit();
-
-                ActivityLog::create([
-                    'user_id' => auth()->id(),
-                    'project_id' => $project->id,
-                    'action' => 'Update Extension',
-                    'description' => auth()->user()->name
-                        . " updated extension #{$extension->extension_number} for project: {$project->title}",
-                    'ip_address' => request()->ip(),
-                    'visibility' => 'all',
-                ]);
 
                 return response()->json([
-                    'success' => true,
-                    'message' => 'Extension request updated',
-                    'extension' => $this->formatExtension($extension),
-                ]);
+                    'success' => false,
+                    'message' => 'You do not have permission to modify this extension.',
+                ], 403);
             }
 
             // --- Admin path ---
@@ -363,11 +409,6 @@ class ProjectExtensionController extends Controller
                 'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
                 'status' => 'sometimes|required|in:pending,approved,rejected',
                 'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
-                'approved_new_end_date' => [
-                    'sometimes', 'nullable', 'date_format:Y-m-d',
-                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
-                    'before_or_equal:2030-12-31',
-                ],
             ];
 
             // new_end_date is required unless rejecting — date is irrelevant
@@ -407,22 +448,6 @@ class ProjectExtensionController extends Controller
                 }
             }
 
-            // Partial approval sanity check: the granted date cannot exceed
-            // the requested new_end_date (an admin grants LESS, never more).
-            // When the admin does not resubmit a new_end_date, the extension's
-            // existing requested date is the ceiling.
-            $requestedEndDate = $validated['new_end_date']
-                ?? $extension->new_end_date->format('Y-m-d');
-            if (isset($validated['approved_new_end_date'])
-                && $validated['approved_new_end_date'] !== null
-                && $validated['approved_new_end_date'] > $requestedEndDate) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'The granted end date cannot be later than the requested end date.',
-                ], 422);
-            }
-
             if (isset($validated['new_end_date'])) {
                 $newEndDate = Carbon::parse($validated['new_end_date']);
                 $extension->new_end_date = $newEndDate;
@@ -433,11 +458,6 @@ class ProjectExtensionController extends Controller
             }
             if (array_key_exists('reason_category', $validated)) {
                 $extension->reason_category = $validated['reason_category'];
-            }
-            if (array_key_exists('approved_new_end_date', $validated)) {
-                // Stored only when explicitly provided. NULL here means "approve
-                // as requested" (granted = new_end_date).
-                $extension->approved_new_end_date = $validated['approved_new_end_date'] ?? null;
             }
             if (isset($validated['status'])) {
                 $extension->status = $validated['status'];
@@ -451,8 +471,6 @@ class ProjectExtensionController extends Controller
                     $extension->approved_by_user_id = null;
                     $extension->approved_at = null;
                     $extension->rejection_reason = $validated['rejection_reason'];
-                    // A rejected request cannot carry a partial-grant date.
-                    $extension->approved_new_end_date = null;
                 } elseif ($validated['status'] === 'pending') {
                     // Manually reverting to pending (rare, but keep state
                     // clean) — clear both approval and rejection traces.
@@ -1421,9 +1439,6 @@ class ProjectExtensionController extends Controller
             'extension_number' => $ext->extension_number,
             'original_end_date' => $ext->original_end_date->format('Y-m-d'),
             'new_end_date' => $ext->new_end_date->format('Y-m-d'),
-            // Partial approval (Decision 7): the granted date, when set.
-            'approved_new_end_date' => $ext->approved_new_end_date?->format('Y-m-d') ?? null,
-            // Effective deadline = granted date when present, else requested.
             'effective_end_date' => $ext->effectiveEndDate()->format('Y-m-d'),
             'duration_days' => $ext->duration_days,
             'reason' => $ext->reason,

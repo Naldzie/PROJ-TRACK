@@ -127,13 +127,11 @@ class ProjectExtension extends Model
     }
 
     /**
-     * The effective deadline this extension grants. Partial approvals
-     * (approved_new_end_date) override the requested new_end_date.
-     * (Decision 7 — the project deadline reads this everywhere.)
+     * The effective deadline this extension grants (= new_end_date).
      */
     public function effectiveEndDate()
     {
-        return $this->approved_new_end_date ?? $this->new_end_date;
+        return $this->new_end_date;
     }
 
     /**

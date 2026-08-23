@@ -94,7 +94,7 @@
 <!-- Include project extension modal (only if baseline exists) -->
 @if($hasBaseline)
 @include('projects.project_detail.components.modals.request_extension_modal')
-@if(auth()->user()->role === 'admin')
+@if(auth()->user()->role === 'admin' || $isAssignedStaff)
 @include('projects.project_detail.components.modals.review_extension_modal')
 @endif
 @endif

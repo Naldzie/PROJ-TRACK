@@ -73,7 +73,7 @@ class NotificationTest extends TestCase
     {
         return $this->actingAs($this->staff)->postJson(
             route('staff.projects.extensions.store', $this->project),
-            ['new_end_date' => $this->project->planned_end_date->copy()->addMonths(2)->format('Y-m-d'), 'reason' => 'Weather delay on site']
+            ['new_end_date' => $this->project->planned_end_date->copy()->addMonths(2)->format('Y-m-d'), 'reason' => 'Weather delay on site', 'status' => 'pending']
         )->assertCreated()->json('extension');
     }
 
