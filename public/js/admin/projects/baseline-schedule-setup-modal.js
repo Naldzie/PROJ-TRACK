@@ -231,10 +231,12 @@ function openAdjustBaselineModal() {
         });
 
         // Auto-generate extension months up to planned_end_date
-        // Before generating, find the original deadline for additional work %.
-        // If the last month is already at 100% (saved from a previous extension),
-        // step backwards to the last month that isn't at 100% — that's the real
-        // deadline the additional work should affect.
+        generateAutoDistribution();
+
+        // After stretching, find the deadline for additional work %.
+        // Scan backwards on the STRETCHED planned_progress_percent values
+        // for the last month below 100% — that's the deadline.
+        // Extension months (at 100%) are automatically skipped.
         setupOriginalDeadlineLabel = null;
         if (setupLocalMonths.length > 0) {
             for (var di = setupLocalMonths.length - 1; di >= 0; di--) {
@@ -244,14 +246,12 @@ function openAdjustBaselineModal() {
                     break;
                 }
             }
-            // Fallback: if all months are 100%, use the last month
             if (!setupOriginalDeadlineLabel) {
                 setupOriginalDeadlineLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
             }
         }
-        // Store a deep copy of original months for resetting when remaining work % changes
+        // Store a deep copy of stretched months for resetting when additional work % changes
         setupOriginalMonthsForAdjust = JSON.parse(JSON.stringify(setupLocalMonths));
-        generateAutoDistribution();
 
         setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
             return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
