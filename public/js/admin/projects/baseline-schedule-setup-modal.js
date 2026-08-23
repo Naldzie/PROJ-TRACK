@@ -231,12 +231,17 @@ function openAdjustBaselineModal() {
         });
 
         // Auto-generate extension months up to planned_end_date
-        // Before generating, capture the original deadline label (last month before extension)
-        if (setupLocalMonths.length > 0) {
-            var lastExistingMonth = setupLocalMonths[setupLocalMonths.length - 1];
-            setupOriginalDeadlineLabel = lastExistingMonth.month_label;
+        // Before generating, find the TRUE original deadline: the last month that
+        // has an original_planned_progress_percent (extension months have null).
+        setupOriginalDeadlineLabel = null;
+        for (var di = setupLocalMonths.length - 1; di >= 0; di--) {
+            if (setupLocalMonths[di].original_planned_progress_percent !== null
+                && setupLocalMonths[di].original_planned_progress_percent !== undefined) {
+                setupOriginalDeadlineLabel = setupLocalMonths[di].month_label;
+                break;
+            }
         }
-        // Store a deep copy of original months for resetting when remaining work % changes
+        // Store a deep copy of original months for resetting when additional work % changes
         setupOriginalMonthsForAdjust = JSON.parse(JSON.stringify(setupLocalMonths));
         generateAutoDistribution();
 
