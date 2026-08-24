@@ -154,7 +154,7 @@
         $baselineMonths = $project->baselineSchedules()->orderBy('planned_date', 'asc')->get();
         $totalDots = $baselineMonths->count();
         $currentMonthLabel = $currentMonthLabel ?? now()->format('Y-m');
-        $useShortLabels = $totalDots > 20;
+        $useShortLabels = $totalDots >= 18;
     @endphp
 
     @if($totalDots > 0)
@@ -196,7 +196,18 @@
                     {{-- DOT --}}
                     <div class="timeline-dot {{ $dotState }}" data-month-label="{{ $plan->month_label }}" data-plan-id="{{ $plan->id }}"
                          onclick="toggleTimelineDetail('{{ $collapseId }}', this)">
-                        <span class="timeline-dot-label">{{ $useShortLabels ? $plan->planned_date->format('M - y') : $plan->planned_date->format('F - Y') }}</span>
+                        {{-- Always-visible info for current month (above label) --}}
+                        @if($isCurrentMonth)
+                        <div class="timeline-always-info">
+                            <div class="always-month">{{ $plan->planned_date->format('F - Y') }}</div>
+                            <div class="always-date">{{ $plan->planned_date->format('F d, Y') }}</div>
+                            <div class="always-progress">
+                                <span class="always-planned">Plan: {{ $plan->planned_progress_percent }}%</span>
+                                <span class="always-actual">Actual: {{ $latestProgress ? $latestProgress->actual_progress_percent . '%' : '—' }}</span>
+                            </div>
+                        </div>
+                        @endif
+                        <span class="timeline-dot-label">{{ $useShortLabels ? $plan->planned_date->format('M - Y') : $plan->planned_date->format('F - Y') }}</span>
                         <div class="timeline-dot-circle">
                             @if($dotState === 'completed')
                                 <i class="bi bi-check-lg"></i>
@@ -225,18 +236,6 @@
                             </div>
                             @endif
                         </div>
-
-                        {{-- Always-visible info for current month --}}
-                        @if($isCurrentMonth)
-                        <div class="timeline-always-info">
-                            <div class="always-month">{{ $plan->planned_date->format('F - Y') }}</div>
-                            <div class="always-date">{{ $plan->planned_date->format('F d, Y') }}</div>
-                            <div class="always-progress">
-                                <span class="always-planned">Plan: {{ $plan->planned_progress_percent }}%</span>
-                                <span class="always-actual">Actual: {{ $latestProgress ? $latestProgress->actual_progress_percent . '%' : '—' }}</span>
-                            </div>
-                        </div>
-                        @endif
                     </div>
                 @endforeach
             </div>

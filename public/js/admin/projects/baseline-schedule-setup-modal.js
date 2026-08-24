@@ -171,6 +171,8 @@ function openSetupBaselineModal() {
     var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
     if (rwWrapper) rwWrapper.style.display = 'none';
 
+    updateAutoGenVisibility();
+
     setupModalInstance.show();
 }
 
@@ -1478,6 +1480,7 @@ function renderSetupMonthList(months) {
     });
 
     listEl.innerHTML = html;
+    updateAutoGenVisibility();
 }
 
 /**
@@ -1506,6 +1509,63 @@ function updateSetupProgress(months) {
     doneBtn.disabled      = !isComplete;
     doneBtn.style.opacity = isComplete ? '1'    : '0.5';
     doneBtn.style.cursor  = isComplete ? 'pointer' : 'not-allowed';
+}
+
+// ─── AUTO-GENERATE S-CURVE ──────────────────────────────────────────────────────
+
+/**
+ * Show/hide the auto-generate section based on whether the modal is empty
+ * and the project has both start and end dates.
+ */
+function updateAutoGenVisibility() {
+    var section = document.getElementById('setupAutoGenSection');
+    if (!section) return;
+    var bounds = getSetupDateBounds();
+    var hasDates = bounds.min && bounds.max;
+    var isEmpty = setupLocalMonths.length === 0;
+    section.style.display = (hasDates && isEmpty) ? 'block' : 'none';
+}
+
+/**
+ * Auto-generate monthly S-curve targets from project start/end dates.
+ * Uses the Hermite smoothstep formula (industry-standard DHSS/Kenley-Wilson).
+ */
+function autoGenerateSCurve() {
+    var bounds = getSetupDateBounds();
+    if (!bounds.min || !bounds.max) {
+        if (typeof showToast === 'function') showToast('Please set project start and end dates first.', 'error');
+        return;
+    }
+
+    var curveType = (document.getElementById('setupAutoGenCurveType') || {}).value || 'symmetric';
+    var core = window.scurveImportCore;
+    if (!core || typeof core.generateAutoSCurve !== 'function') {
+        if (typeof showToast === 'function') showToast('S-curve generator not loaded.', 'error');
+        return;
+    }
+
+    var months = core.generateAutoSCurve(bounds.min, bounds.max, { loading: curveType });
+    if (!months || months.length === 0) {
+        if (typeof showToast === 'function') showToast('Could not generate S-curve. Check that start date is before end date.', 'error');
+        return;
+    }
+
+    setupLocalMonths = months;
+    setupCurrentMaxPercent = months.reduce(function (max, m) {
+        return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+    }, 0);
+    setupEditingIndex = null;
+
+    resetSetupForm();
+    renderSetupMonthList(setupLocalMonths);
+    updateSetupProgress(setupLocalMonths);
+    updateSetupSCurvePreview();
+    updateAutoGenVisibility();
+
+    var label = curveType === 'front' ? 'front-loaded' : curveType === 'back' ? 'back-loaded' : 'standard';
+    if (typeof showToast === 'function') {
+        showToast('Generated ' + months.length + ' monthly targets using ' + label + ' S-curve.', 'success');
+    }
 }
 
 // ─── S-CURVE PREVIEW CHART (Phase 2) ──────────────────────────────────────────

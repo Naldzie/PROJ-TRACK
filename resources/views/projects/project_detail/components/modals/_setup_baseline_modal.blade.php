@@ -75,6 +75,33 @@
                     </div>
                 </div>
 
+                <!-- ── AUTO-GENERATE S-CURVE (shown when empty + dates available) ── -->
+                <div id="setupAutoGenSection" style="display: none; margin-bottom: 14px;">
+                    <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 12px 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <div style="font-weight: 700; color: #1e40af; font-size: 12px; margin-bottom: 2px;">
+                                    <i class="bi bi-magic"></i> Quick Start: Auto-Generate S-Curve
+                                </div>
+                                <div style="color: #1e3a5f; font-size: 11px; line-height: 1.4;">
+                                    Automatically generate monthly targets from your project's planned start and end dates.
+                                    You can review and edit each month after generation.
+                                </div>
+                            </div>
+                            <select id="setupAutoGenCurveType"
+                                    style="padding: 6px 10px; border: 1px solid #93c5fd; border-radius: 6px; font-size: 11px; font-weight: 600; color: #1e40af; background: white;">
+                                <option value="symmetric">Standard S-Curve</option>
+                                <option value="front">Front-Loaded (Early Peak)</option>
+                                <option value="back">Back-Loaded (Late Peak)</option>
+                            </select>
+                            <button type="button" onclick="autoGenerateSCurve()" id="setupAutoGenBtn"
+                                    style="padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                                <i class="bi bi-lightning-charge-fill"></i> Generate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ── S-CURVE PREVIEW (full-width top) ──────────────── -->
                 <div style="margin-bottom: 14px;">
                     @include('components._s_curve_chart', [

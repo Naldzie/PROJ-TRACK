@@ -1762,14 +1762,11 @@
     background: #667eea;
     border-color: #667eea;
     box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
-    width: 20px;
-    height: 20px;
     animation: timeline-pulse 2s ease-in-out infinite;
 }
 
 .timeline-dot.active .timeline-dot-circle {
     box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.3);
-    transform: scale(1.15);
 }
 
 .timeline-dot.active .timeline-dot-label {
@@ -1784,6 +1781,8 @@
 .timeline-detail-panel {
     position: relative;
     margin-top: 14px;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .timeline-detail-arrow {
@@ -1875,7 +1874,7 @@
 }
 
 .timeline-always-info {
-    margin-top: 8px;
+    margin-bottom: 6px;
     padding: 8px 12px;
     background: #f0f9ff;
     border: 1px solid #bae6fd;

@@ -76,6 +76,94 @@ export function normalizeSCurveMonths(months, startDate, endDate) {
     });
 }
 
+/* ─── Auto-generate S-curve from start/end dates ──────────────────────────── */
+
+/**
+ * Hermite smoothstep: 3x² - 2x³.
+ * Industry-standard DHSS/Kenley-Wilson formula.
+ * @param {number} t - Normalized time (0 to 1)
+ * @returns {number} Cumulative fraction (0 to 1)
+ */
+function hermite(t) {
+    var x = Math.max(0, Math.min(1, t));
+    return x * x * (3 - 2 * x);
+}
+
+/**
+ * Generate monthly S-curve data from project start/end dates.
+ *
+ * @param {string} startDate - 'YYYY-MM-DD'
+ * @param {string} endDate - 'YYYY-MM-DD'
+ * @param {Object} [options]
+ * @param {string} [options.loading='symmetric'] - 'symmetric' | 'front' | 'back'
+ * @returns {Array} [{month_label, planned_date, planned_progress_percent, description, activities}]
+ */
+export function generateAutoSCurve(startDate, endDate, options) {
+    if (!(/^\d{4}-\d{2}-\d{2}$/.test(startDate || '')) || !(/^\d{4}-\d{2}-\d{2}$/.test(endDate || ''))) {
+        return [];
+    }
+
+    var start = new Date(startDate);
+    var end = new Date(endDate);
+    if (start >= end) return [];
+
+    var loading = (options && options.loading) || 'symmetric';
+    var skew = loading === 'front' ? 0.7 : loading === 'back' ? 1.4 : 1.0;
+
+    var totalMonths = (end.getFullYear() - start.getFullYear()) * 12
+                    + (end.getMonth() - start.getMonth()) + 1;
+    if (totalMonths < 1) return [];
+    if (totalMonths === 1) {
+        return [{
+            month_label: formatDateInput(start).slice(0, 7),
+            planned_date: formatDateInput(start),
+            planned_progress_percent: 100,
+            description: '',
+            activities: []
+        }];
+    }
+
+    var result = [];
+    for (var m = 1; m <= totalMonths; m++) {
+        var tEnd = m / totalMonths;
+        var tStart = (m - 1) / totalMonths;
+
+        var cEnd = hermite(Math.pow(tEnd, 1.0 / skew));
+        var cStart = hermite(Math.pow(tStart, 1.0 / skew));
+        var cumulative = cEnd * 100;
+
+        var d = addCalendarMonths(start, m - 1);
+        var day = Math.min(15, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate());
+        d.setDate(day);
+
+        result.push({
+            month_label: formatDateInput(d).slice(0, 7),
+            planned_date: formatDateInput(d),
+            planned_progress_percent: Math.round(cumulative * 100) / 100,
+            description: '',
+            activities: []
+        });
+    }
+
+    if (result.length > 0) {
+        result[result.length - 1].planned_progress_percent = 100;
+    }
+
+    for (var i = 1; i < result.length; i++) {
+        if (result[i].planned_progress_percent <= result[i - 1].planned_progress_percent) {
+            result[i].planned_progress_percent = Math.round((result[i - 1].planned_progress_percent + 0.01) * 100) / 100;
+        }
+        if (result[i].planned_progress_percent > 100) {
+            result[i].planned_progress_percent = 100;
+        }
+    }
+    if (result.length > 0 && result[result.length - 1].planned_progress_percent !== 100) {
+        result[result.length - 1].planned_progress_percent = 100;
+    }
+
+    return result;
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -85,5 +173,6 @@ if (typeof window !== 'undefined') {
         addCalendarMonths,
         formatDateInput,
         normalizeSCurveMonths,
+        generateAutoSCurve,
     };
 }
