@@ -54,16 +54,31 @@
                     The PROJ-TRACK AI system has completed its scheduled analysis of your project's progress.
                 </p>
 
+                @if(!empty($tracking->is_edited))
+                <div class="footer-note" style="background:#fefce8;border-color:#fde68a;color:#854d0e;margin-top:0;">
+                    <strong>&#9998; Revised Message</strong><br>
+                    This message was reviewed and edited by the PROJ-TRACK team{{ $tracking->edited_at ? ' on ' . $tracking->edited_at->format('F d, Y') : '' }}.
+                    The content below replaces any earlier copy you may have received.
+                </div>
+                @endif
+
                 <p class="analysis-text">
                     <strong>Project:</strong> {{ $project->title ?? 'N/A' }}<br>
                     <strong>Location:</strong> {{ $project->location ?? 'N/A' }}<br>
                     <strong>Status:</strong> {{ $project->status ?? 'N/A' }}
                 </p>
 
+                @if(!empty($tracking->body))
+                <div class="analysis-block">
+                    <div class="analysis-label">Message</div>
+                    <p class="analysis-text" style="margin:0; white-space:pre-line;">{{ $tracking->body }}</p>
+                </div>
+                @else
                 <div class="analysis-block">
                     <div class="analysis-label">AI-Generated Analysis</div>
                     <p class="analysis-text" style="margin:0;">{{ $aiSolution->analysis_text ?? 'Analysis not available.' }}</p>
                 </div>
+                @endif
 
                 <div class="analysis-block">
                     <div class="analysis-label">Project Progress Analysis</div>

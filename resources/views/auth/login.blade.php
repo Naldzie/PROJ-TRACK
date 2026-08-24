@@ -203,6 +203,7 @@ body::after {
     width: 1060px;
     max-width: 100%;
     display: flex;
+    flex-direction: row-reverse;
     border-radius: var(--radius);
     overflow: hidden;
     background: var(--white);
@@ -241,18 +242,18 @@ body::after {
 /* â”€â”€ LEFT PANEL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .panel-left {
     background:
-        radial-gradient(120% 95% at 100% 0%, rgba(37,99,235,0.07), transparent 55%),
-        radial-gradient(120% 90% at 0% 100%, rgba(37,99,235,0.05), transparent 60%),
+        radial-gradient(120% 95% at 0% 0%, rgba(37,99,235,0.07), transparent 55%),
+        radial-gradient(120% 90% at 100% 100%, rgba(37,99,235,0.05), transparent 60%),
         var(--white);
     padding: 52px 48px 46px;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    border-right: 1px solid rgba(37,99,235,0.08);
+    border-left: 1px solid rgba(37,99,235,0.08);
     position: relative;
 }
 
-/* soft engineering corner marks on the left panel */
+/* soft engineering corner marks on the login panel */
 .panel-left::before,
 .panel-left::after {
     content: "";
@@ -261,8 +262,8 @@ body::after {
     border: 2px solid rgba(37,99,235,0.16);
     pointer-events: none;
 }
-.panel-left::before { top: 18px; left: 18px; border-right: none; border-bottom: none; }
-.panel-left::after  { bottom: 18px; right: 18px; border-left: none; border-top: none; }
+.panel-left::before { top: 18px; right: 18px; border-left: none; border-bottom: none; }
+.panel-left::after  { bottom: 18px; left: 18px; border-right: none; border-top: none; }
 
 /* entrance stagger for left-panel children */
 .anim {
@@ -768,7 +769,7 @@ body::after {
     .time-head { font-size: 8.5px; }
 
     .panel-left {
-        border-right: none;
+        border-left: none;
         padding: 34px 24px 40px;
         align-items: center;
         text-align: center;
@@ -850,7 +851,7 @@ body::after {
 <!-- â”€â”€ LOGIN CARD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
 <main class="login-card" role="main" aria-label="PROJ-TRACK System login">
 
-    <!-- LEFT: AUTH FORM -->
+    <!-- RIGHT: AUTH FORM (rendered on the right via row-reverse) -->
     <section class="panel panel-left" aria-labelledby="welcomeTitle">
 
         <span class="badge-pmu anim st1"><i class="bi bi-diagram-3-fill"></i> PMU Construction Monitoring</span>
@@ -908,7 +909,7 @@ body::after {
 
     </section>
 
-    <!-- RIGHT: CONSTRUCTION BLUEPRINT CENTERPIECE -->
+    <!-- LEFT: CONSTRUCTION BLUEPRINT CENTERPIECE (rendered on the left via row-reverse) -->
     <section class="panel panel-right" aria-label="Construction monitoring overview">
 
         <div class="panel-media">

@@ -14,14 +14,14 @@ class AiAnalysisMail extends Mailable
     use Queueable, SerializesModels;
 
     public Project $project;
-    public AiSolution $aiSolution;
+    public ?AiSolution $aiSolution;
     public EmailTracking $tracking;
     public string $plannedProgress;
     public string $actualProgress;
     public string $varianceLabel;
     public string $varianceColor;
 
-    public function __construct(Project $project, AiSolution $aiSolution, EmailTracking $tracking)
+    public function __construct(Project $project, ?AiSolution $aiSolution, EmailTracking $tracking)
     {
         $this->project = $project;
         $this->aiSolution = $aiSolution;
@@ -52,7 +52,7 @@ class AiAnalysisMail extends Mailable
     {
         $trackingUrl = route('tracking.open', ['token' => $this->tracking->tracking_token]);
 
-        return $this->subject('AI Project Status Report — ' . $this->project->title)
+        return $this->subject($this->tracking->subject ?: ('AI Project Status Report — ' . $this->project->title))
                     ->with(['trackingUrl' => $trackingUrl])
                     ->view('emails.ai-analysis');
     }

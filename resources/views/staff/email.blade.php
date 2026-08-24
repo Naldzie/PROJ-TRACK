@@ -51,7 +51,7 @@
 
 .overview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 11px;
   margin-bottom: 25px;
 }
@@ -74,7 +74,6 @@
 }
 .metric:nth-child(2)::after { background: var(--purple); }
 .metric:nth-child(3)::after { background: var(--green); }
-.metric:nth-child(4)::after { background: var(--gold); }
 .metric-top {
   display: flex;
   align-items: center;
@@ -202,6 +201,7 @@
   width: 190px;
 }
 .mail-search::placeholder { color: var(--quiet); }
+.mail-search:focus + .search-wrap { border-color: var(--blue); }
 .select-sort {
   height: 34px;
   border: 1px solid var(--line);
@@ -211,6 +211,138 @@
   font-size: 11px;
   padding: 0 8px;
 }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 13px;
+  border-bottom: 1px solid var(--line);
+}
+.toggle-row div strong { display: block; font-size: 12px; }
+.toggle-row div small { color: var(--muted); display: block; font-size: 10px; margin-top: 2px; }
+.toggle {
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 20px;
+  background: oklch(79% .025 270);
+  transition: background .2s;
+  cursor: pointer;
+  position: relative;
+}
+.toggle::after {
+  content: '';
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px oklch(24% .035 270 / .2);
+  transition: transform .2s var(--ease);
+}
+.toggle.on { background: var(--blue); }
+.toggle.on::after { transform: translateX(14px); }
+
+.next-send-box {
+  margin-top: 15px;
+  background: var(--blue-pale);
+  border: 1px dashed oklch(70% .12 265);
+  border-radius: 12px;
+  padding: 13px 14px;
+}
+.next-send-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.next-send-date {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.next-send-count {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-count .unit {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  text-align: center;
+  min-width: 48px;
+}
+.next-send-count .unit b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.next-send-count .unit span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.field-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  display: block;
+  margin: 15px 0 6px;
+}
+.full-select {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 11px;
+  padding: 0 9px;
+}
+.btn-send {
+  width: 100%;
+  margin-top: 13px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--blue);
+  color: oklch(98% .008 270);
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 5px 12px oklch(55% .205 265 / .2);
+  transition: transform .2s var(--ease), background .2s, box-shadow .2s;
+}
+.btn-send:hover { background: oklch(45% .18 265); transform: translateY(-2px); box-shadow: 0 8px 18px oklch(55% .205 265 / .25); }
+.btn-send:active { transform: translateY(0); }
+.btn-send:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
 
 .message-list { display: grid; }
 .message {
@@ -592,19 +724,14 @@
     <div class="metric-foot positive">Sent from this portal</div>
   </article>
   <article class="metric">
-    <div class="metric-top"><span>Projects monitored</span><div class="metric-icon"><i class="bi bi-folder"></i></div></div>
-    <div class="metric-value">{{ $projectsCount }}</div>
+    <div class="metric-top"><span>Auto-send status</span><div class="metric-icon"><i class="bi bi-clock"></i></div></div>
+    <div class="metric-value" style="font-size:22px">{{ $autoSendEnabled ? 'Active' : 'Paused' }}</div>
+    <div class="metric-foot">Next: <span id="nextAutoSendDate">{{ $nextAutoSend->format('M d, Y') }}</span> · <span id="nextAutoSendCountdown" style="font-variant-numeric:tabular-nums"></span></div>
+  </article>
+  <article class="metric">
+    <div class="metric-top"><span>Projects</span><div class="metric-icon"><i class="bi bi-folder"></i></div></div>
+    <div class="metric-value">{{ $projects->count() }}</div>
     <div class="metric-foot">Active projects</div>
-  </article>
-  <article class="metric">
-    <div class="metric-top"><span>View status</span><div class="metric-icon"><i class="bi bi-eye"></i></div></div>
-    <div class="metric-value" style="font-size:22px">Read-only</div>
-    <div class="metric-foot">Monitoring enabled</div>
-  </article>
-  <article class="metric">
-    <div class="metric-top"><span>Next auto-send</span><div class="metric-icon"><i class="bi bi-clock"></i></div></div>
-    <div class="metric-value" style="font-size:22px">{{ $nextAutoSend->format('M d') }}</div>
-    <div class="metric-foot">Every 1st of the month · <span id="nextAutoSendCountdown" style="font-variant-numeric:tabular-nums"></span></div>
   </article>
 </section>
 
@@ -615,7 +742,7 @@
       <div class="panel-heading">
         <div class="panel-icon"><i class="bi bi-send"></i></div>
         <div>
-          <h2 id="sent-title">Sent AI reports</h2>
+          <h2 id="sent-title">Sent messages</h2>
           <p id="sentCount">{{ $emails->total() }} message{{ $emails->total() !== 1 ? 's' : '' }} in your workspace</p>
         </div>
       </div>
@@ -625,6 +752,7 @@
     <div class="toolbar">
       <div class="tabs">
         <button class="tab active" data-filter="all">All <span>({{ $emails->total() }})</span></button>
+        <button class="tab" data-filter="drafts">Drafts</button>
         <button class="tab" data-filter="opened">Opened</button>
         <button class="tab" data-filter="pending">Pending</button>
       </div>
@@ -640,6 +768,15 @@
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
         </select>
+        <button type="button" class="btn-send" style="width:auto;margin-top:0;" onclick="openCompose()">
+          <i class="bi bi-pencil-square" style="font-size:11px;"></i> Compose
+        </button>
+        <form method="POST" action="{{ route('staff.email.send-now') }}" style="display:inline;" id="sendNowForm">
+          @csrf
+          <button type="button" class="btn-send" style="width:auto;margin-top:0;" onclick="confirmSendNow()">
+            <i class="bi bi-send" style="font-size:11px;"></i> Send now
+          </button>
+        </form>
       </div>
     </div>
 
@@ -658,6 +795,48 @@
   </section>
 
   <aside class="inbox-side">
+    <section class="panel">
+      <div class="side-section">
+        <div class="side-title">
+          <h2>Automation</h2>
+          <span id="automationLabel">{{ $autoSendEnabled ? 'Currently active' : 'Paused' }}</span>
+        </div>
+        <form method="POST" action="{{ route('staff.email.toggle-auto-send') }}" id="autoSendForm">
+          @csrf
+          <input type="hidden" name="enabled" id="autoSendVal" value="{{ $autoSendEnabled ? '1' : '0' }}">
+          <div class="toggle-row">
+            <div>
+              <strong>Auto-send reports</strong>
+              <small>Send generated updates automatically</small>
+            </div>
+            <button type="button" class="toggle {{ $autoSendEnabled ? 'on' : '' }}" id="autoToggle" aria-label="Toggle auto-send"></button>
+          </div>
+        </form>
+        <div class="next-send-box" id="nextSendBox" data-target="{{ $nextAutoSend->timestamp }}">
+          <div class="next-send-head">
+            <i class="bi bi-calendar-event"></i>
+            <span>Next auto-send</span>
+          </div>
+          <div class="next-send-date">{{ $nextAutoSend->format('F d, Y') }}</div>
+          <div class="next-send-sub">Monthly · every 1st of the month</div>
+          <div class="next-send-count" id="nextSendCount">–</div>
+        </div>
+        <form method="POST" action="{{ route('staff.email.send-one') }}" id="sendOneForm">
+          @csrf
+          <label class="field-label" for="projectSelect">Send to project</label>
+          <select class="full-select" id="projectSelect" name="project_id" required>
+            <option value="">— Select project —</option>
+            @foreach($projects as $p)
+            <option value="{{ $p->id }}">{{ $p->code }} — {{ Str::limit($p->title, 28) }}</option>
+            @endforeach
+          </select>
+          <button type="submit" class="btn-send" id="sendSelected">
+            <i class="bi bi-send" style="font-size:11px;"></i> Send to selected
+          </button>
+        </form>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="side-section">
         <div class="side-title">
@@ -680,13 +859,22 @@
           </div>
           @empty
           <div class="mini-item">
-            <span class="mini-dot" style="background:var(--green)"></span>
+            <span class="mini-dot" style="background:var(--blue)"></span>
             <div>
               <p>No email activity yet</p>
               <small>Waiting for reports</small>
             </div>
           </div>
           @endforelse
+          @if($lastAutoSend)
+          <div class="mini-item">
+            <span class="mini-dot" style="background:var(--gold)"></span>
+            <div>
+              <p>Auto-send completed</p>
+              <small>{{ \Carbon\Carbon::parse($lastAutoSend)->format('M d · g:i A') }}</small>
+            </div>
+          </div>
+          @endif
         </div>
       </div>
     </section>
@@ -722,18 +910,30 @@
       </div>
       <div class="ai-note" style="background:#fef9c3;border-color:#fde68a;color:#854d0e;">
         <i class="bi bi-shield-lock" style="font-size:13px;flex-shrink:0;margin-top:1px;"></i>
-        <span>This email contains integrity monitoring technology. For audit and security purposes, delivery and open events may be recorded using a secure tracking pixel.</span>
+        <span>This email contains integrity monitoring technology. For audit and security purposes, delivery and open events may be recorded using a secure tracking pixel. No personal information beyond standard email delivery metadata is collected.</span>
       </div>
     </div>
     <div class="modal-footer">
+      <div id="v-actions"></div>
       <button class="btn-close-modal" onclick="closeOverlay()">Close</button>
     </div>
   </div>
 </div>
 
+@include('admin.partials.email_compose', ['prefix' => '/staff', 'projects' => $projects])
+
 <script>
 let currentFilter = 'all';
 let currentEmailId = null;
+
+document.getElementById('autoToggle').addEventListener('click', function() {
+  this.classList.toggle('on');
+  const enabled = this.classList.contains('on');
+  document.getElementById('automationLabel').textContent = enabled ? 'Currently active' : 'Paused';
+  document.getElementById('autoSendVal').value = enabled ? '1' : '0';
+  showToast(enabled ? 'Auto-send enabled' : 'Auto-send paused', 'success');
+  document.getElementById('autoSendForm').submit();
+});
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', function() {
@@ -745,6 +945,23 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 document.getElementById('sort').addEventListener('change', filterMessages);
+
+function confirmSendNow() {
+  Swal.fire({
+    title: 'Send AI reports now?',
+    text: 'This will generate and send AI progress reports to all eligible contractors with active projects.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#2563eb',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Yes, send now',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      document.getElementById('sendNowForm').submit();
+    }
+  });
+}
 
 function filterMessages() {
   const filter = currentFilter;
@@ -776,6 +993,7 @@ function viewMsg(id) {
         <div class="detail-item"><span class="label">Location</span><span class="value">${m.project_location}</span></div>
         <div class="detail-item"><span class="label">Delivery Status</span><span class="value">${m.status}</span></div>
         <div class="detail-item"><span class="label">Generated</span><span class="value">${m.generated_at}</span></div>
+        ${m.is_edited ? `<div class="detail-item" style="grid-column:1/-1;"><span class="label">Last edited</span><span class="value">&#9998; Edited by ${m.edited_by_name || 'a user'}${m.edited_at ? ' · ' + m.edited_at : ''}</span></div>` : ''}
       `;
       document.getElementById('v-body').innerHTML = m.body.replace(/\n/g, '<br>');
       const plannedPct = parseFloat(m.planned_progress) || 0;
@@ -795,6 +1013,7 @@ function viewMsg(id) {
         <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val">${m.delay_percentage}%</span></div></div>
         <div><div class="metric-row"><span class="metric-label">Risk Level</span><span class="metric-val" style="color:${color};">${m.risk_level}</span></div></div>
       `;
+      renderViewActions(m.is_draft, m.id);
       document.getElementById('loadingOverlay').classList.remove('active');
       document.getElementById('viewOverlay').classList.add('open');
     })
@@ -832,10 +1051,12 @@ document.addEventListener('keydown', function(e) {
 
 /* Next auto-send countdown (targets the 1st of next month, 08:00). */
 (function() {
-  const el = document.getElementById('nextAutoSendCountdown');
-  if (!el) return;
+  const box = document.getElementById('nextSendBox');
+  const metricCount = document.getElementById('nextAutoSendCountdown');
+  if (!box && !metricCount) return;
 
-  const target = new Date({{ $nextAutoSend->timestamp }} * 1000);
+  const target = new Date(Number(box ? box.dataset.target : 0) * 1000);
+
   function pad(n) { return String(n).padStart(2, '0'); }
 
   function tick() {
@@ -844,7 +1065,17 @@ document.addEventListener('keydown', function(e) {
     const h = Math.floor(diff % 86400000 / 3600000);
     const m = Math.floor(diff % 3600000 / 60000);
     const s = Math.floor(diff % 60000 / 1000);
-    el.textContent = `in ${d}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+
+    if (box) {
+      box.querySelector('#nextSendCount').innerHTML =
+        `<div class="unit"><b>${pad(d)}</b><span>days</span></div>` +
+        `<div class="unit"><b>${pad(h)}</b><span>hrs</span></div>` +
+        `<div class="unit"><b>${pad(m)}</b><span>min</span></div>` +
+        `<div class="unit"><b>${pad(s)}</b><span>sec</span></div>`;
+    }
+    if (metricCount) {
+      metricCount.textContent = `in ${d}d ${pad(h)}h ${pad(m)}m`;
+    }
   }
 
   tick();

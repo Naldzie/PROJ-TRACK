@@ -22,7 +22,7 @@ return new class extends Migration
         Schema::table('risks', function (Blueprint $table) {
             $table->foreignId('baseline_schedule_id')
                 ->nullable()
-                ->after('owner')
+                ->after('mitigation_plan')
                 ->constrained('project_baseline_schedules')
                 ->nullOnDelete();
 

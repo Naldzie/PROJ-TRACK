@@ -752,6 +752,7 @@
     <div class="toolbar">
       <div class="tabs">
         <button class="tab active" data-filter="all">All <span>({{ $emails->total() }})</span></button>
+        <button class="tab" data-filter="drafts">Drafts</button>
         <button class="tab" data-filter="opened">Opened</button>
         <button class="tab" data-filter="pending">Pending</button>
       </div>
@@ -767,10 +768,12 @@
           <option value="newest">Newest</option>
           <option value="oldest">Oldest</option>
         </select>
+        <button type="button" class="btn-send" style="width:auto;margin-top:0;" onclick="openCompose()">
+          <i class="bi bi-pencil-square" style="font-size:11px;"></i> Compose
+        </button>
         <form method="POST" action="{{ route('admin.email.send-now') }}" style="display:inline;" id="sendNowForm">
           @csrf
-          <button type="submit" class="btn-send" style="width:auto;margin-top:0;"
-                  onclick="return confirm('Send AI reports to all eligible contractors now?')">
+          <button type="button" class="btn-send" style="width:auto;margin-top:0;" onclick="confirmSendNow()">
             <i class="bi bi-send" style="font-size:11px;"></i> Send now
           </button>
         </form>
@@ -911,10 +914,13 @@
       </div>
     </div>
     <div class="modal-footer">
+      <div id="v-actions"></div>
       <button class="btn-close-modal" onclick="closeOverlay()">Close</button>
     </div>
   </div>
 </div>
+
+@include('admin.partials.email_compose', ['prefix' => '/admin', 'projects' => $projects])
 
 <script>
 let currentFilter = 'all';
@@ -971,6 +977,7 @@ function viewMsg(id) {
         <div class="detail-item"><span class="label">Location</span><span class="value">${m.project_location}</span></div>
         <div class="detail-item"><span class="label">Delivery Status</span><span class="value">${m.status}</span></div>
         <div class="detail-item"><span class="label">Generated</span><span class="value">${m.generated_at}</span></div>
+        ${m.is_edited ? `<div class="detail-item" style="grid-column:1/-1;"><span class="label">Last edited</span><span class="value">&#9998; Edited by ${m.edited_by_name || 'a user'}${m.edited_at ? ' · ' + m.edited_at : ''}</span></div>` : ''}
       `;
       document.getElementById('v-body').innerHTML = m.body.replace(/\n/g, '<br>');
       const plannedPct = parseFloat(m.planned_progress) || 0;
@@ -990,6 +997,7 @@ function viewMsg(id) {
         <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val">${m.delay_percentage}%</span></div></div>
         <div><div class="metric-row"><span class="metric-label">Risk Level</span><span class="metric-val" style="color:${color};">${m.risk_level}</span></div></div>
       `;
+      renderViewActions(m.is_draft, m.id);
       document.getElementById('loadingOverlay').classList.remove('active');
       document.getElementById('viewOverlay').classList.add('open');
     })
@@ -1025,6 +1033,23 @@ document.addEventListener('keydown', function(e) {
   const sort = params.get('sort');
   if (sort) document.getElementById('sort').value = sort;
 })();
+
+function confirmSendNow() {
+  Swal.fire({
+    title: 'Send AI reports now?',
+    text: 'This will generate and send AI progress reports to all eligible contractors with active projects.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#2563eb',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Yes, send now',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      document.getElementById('sendNowForm').submit();
+    }
+  });
+}
 
 /* Next auto-send countdown (targets the 1st of next month, 08:00). */
 (function() {

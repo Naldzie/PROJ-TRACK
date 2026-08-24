@@ -76,7 +76,16 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
         ->name('staff.warranty.store');
 
     Route::get('/email', [StaffEmailController::class, 'index'])->name('staff.email');
+    Route::post('/emails', [StaffEmailController::class, 'store'])->name('staff.emails.store');
+    Route::get('/emails/{email}/edit', [StaffEmailController::class, 'edit'])->name('staff.emails.edit');
+    Route::put('/emails/{email}', [StaffEmailController::class, 'update'])->name('staff.emails.update');
+    Route::delete('/emails/{email}', [StaffEmailController::class, 'destroy'])->name('staff.emails.destroy');
+    Route::post('/emails/{email}/send', [StaffEmailController::class, 'sendDraft'])->name('staff.emails.send');
+    Route::post('/emails/{email}/mark-read', [StaffEmailController::class, 'markAsRead'])->name('staff.emails.mark-read');
     Route::get('/emails/{email}', [StaffEmailController::class, 'show'])->name('staff.emails.show');
+    Route::post('/email/send-now', [StaffEmailController::class, 'sendNow'])->name('staff.email.send-now');
+    Route::post('/email/send-one', [StaffEmailController::class, 'sendOne'])->name('staff.email.send-one');
+    Route::post('/email/toggle-auto-send', [StaffEmailController::class, 'toggleAutoSend'])->name('staff.email.toggle-auto-send');
 
     
     Route::get('/profile', [ProfileStaffController::class, 'index'])
@@ -769,6 +778,11 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::post('/rating/auto-rate-all', [RatingController::class, 'autoRateAll'])->name('admin.rating.auto-rate-all');
     
     Route::get('/email', [AdminEmailController::class, 'index'])->name('admin.email');
+    Route::post('/emails', [AdminEmailController::class, 'store'])->name('admin.emails.store');
+    Route::get('/emails/{email}/edit', [AdminEmailController::class, 'edit'])->name('admin.emails.edit');
+    Route::put('/emails/{email}', [AdminEmailController::class, 'update'])->name('admin.emails.update');
+    Route::delete('/emails/{email}', [AdminEmailController::class, 'destroy'])->name('admin.emails.destroy');
+    Route::post('/emails/{email}/send', [AdminEmailController::class, 'sendDraft'])->name('admin.emails.send');
     Route::get('/emails/{email}', [AdminEmailController::class, 'show'])->name('admin.emails.show');
     Route::post('/emails/{email}/mark-read', [AdminEmailController::class, 'markAsRead'])->name('admin.emails.mark-read');
     Route::post('/email/send-now', [AdminEmailController::class, 'sendNow'])->name('admin.email.send-now');

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Project;
 use App\Models\Setting;
 use App\Services\AIReportSendingService;
+use App\Services\AI\AIExplanationService;
 use Illuminate\Console\Command;
 
 class SendMonthlyAiReports extends Command
@@ -12,7 +13,7 @@ class SendMonthlyAiReports extends Command
     protected $signature = 'reports:send-ai-monthly {--force : Skip auto-send and date checks}';
     protected $description = 'Send AI reports on the first day of every month (Aug 1, Sep 1, ...)';
 
-    public function handle(AIReportSendingService $service)
+    public function handle(AIReportSendingService $service, AIExplanationService $explanationService)
     {
         if (!$this->option('force')) {
             if (!$service->isAutoSendEnabled()) {
@@ -40,10 +41,23 @@ class SendMonthlyAiReports extends Command
 
         foreach ($projects as $project) {
             $aiSolution = $project->aiSolutions()->latest('created_at')->first();
+
+            // Generate AI analysis if it doesn't exist
             if (!$aiSolution) {
-                $logs[] = ['project' => $project->code, 'message' => 'No AI analysis — skipped'];
-                $skipped++;
-                continue;
+                $this->info("Generating AI analysis for {$project->code}...");
+                try {
+                    $explanationService->generate($project);
+                    $aiSolution = $project->aiSolutions()->latest('created_at')->first();
+                    if (!$aiSolution) {
+                        $logs[] = ['project' => $project->code, 'message' => 'AI analysis generation failed — skipped'];
+                        $skipped++;
+                        continue;
+                    }
+                } catch (\Exception $e) {
+                    $logs[] = ['project' => $project->code, 'message' => 'AI analysis generation error: ' . $e->getMessage() . ' — skipped'];
+                    $skipped++;
+                    continue;
+                }
             }
 
             $alreadySent = \App\Models\EmailTracking::where('ai_solution_id', $aiSolution->id)

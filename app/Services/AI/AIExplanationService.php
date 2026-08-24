@@ -215,7 +215,7 @@ class AIExplanationService
             $issuesText = "\nRECENT ISSUES:\n{$issueLines}";
         }
 
-        return "You are a project management analyst. Given the following project data, write a concise 2-3 paragraph analysis of the project's current status and trajectory. Focus on factual observation of the data.
+        return "You are a project management analyst. Given the following project data, write a structured analysis in exactly 5 sections. Use professional, neutral tone suitable for a contractor audience. Cover factual observations from the data.
 
 PROJECT OVERVIEW:
 - Title: {$project->title}
@@ -234,14 +234,23 @@ RISK ASSESSMENT:
 - Overall Risk Level: {$riskLevel}
 - Trend: {$trend}{$completionMultiText}{$issuesText}
 
-Write in a professional, neutral tone. Cover:
-1. Current project trajectory and its implications
-2. Key risk factors or positive indicators evident from the data
-3. Areas that may require closer monitoring
+OUTPUT FORMAT — Use exactly these 5 section markers (wrap each section title in [SECTION:Title] and [/SECTION]):
+[SECTION:Report]
+[2-3 paragraphs: Current project trajectory, key observations from data, what this means for project delivery]
 
-Do NOT make specific recommendations or suggest corrective actions.
-Do NOT mention that you are an AI or that this is an AI-generated analysis.
-Write as if you are a human project analyst reporting to management.";
+[SECTION:Possible Risk]
+[Bullet points: Key risk factors or negative indicators evident from the data. If none, state 'No significant risks identified from current data.']
+
+[SECTION:Mitigation]
+[Bullet points: Areas requiring closer monitoring or preventive measures. If none, state 'No immediate mitigation actions required.']
+
+[SECTION:Performance]
+[2-3 paragraphs: Assessment of project performance vs plan, progress trends, regression model reliability, forecast confidence]
+
+[SECTION:AI Comment]
+[1 paragraph: Clear bottom-line assessment of project health and outlook for the contractor]
+
+Do NOT mention that you are an AI or that this is an AI-generated analysis. Write as a human project analyst reporting to the contractor. Avoid management jargon - write directly for the contractor who is executing the work.";
     }
 
     /**

@@ -51,7 +51,7 @@
 
 .overview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 11px;
   margin-bottom: 25px;
 }
@@ -74,7 +74,6 @@
 }
 .metric:nth-child(2)::after { background: var(--purple); }
 .metric:nth-child(3)::after { background: var(--green); }
-.metric:nth-child(4)::after { background: var(--gold); }
 .metric-top {
   display: flex;
   align-items: center;
@@ -202,6 +201,7 @@
   width: 190px;
 }
 .mail-search::placeholder { color: var(--quiet); }
+.mail-search:focus + .search-wrap { border-color: var(--blue); }
 .select-sort {
   height: 34px;
   border: 1px solid var(--line);
@@ -211,6 +211,104 @@
   font-size: 11px;
   padding: 0 8px;
 }
+.next-send-box {
+  margin-top: 15px;
+  background: var(--blue-pale);
+  border: 1px dashed oklch(70% .12 265);
+  border-radius: 12px;
+  padding: 13px 14px;
+}
+.next-send-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.next-send-date {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.next-send-count {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.next-send-count .unit {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px 8px;
+  text-align: center;
+  min-width: 48px;
+}
+.next-send-count .unit b {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.next-send-count .unit span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.field-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  display: block;
+  margin: 15px 0 6px;
+}
+.full-select {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-size: 11px;
+  padding: 0 9px;
+}
+.btn-send {
+  width: 100%;
+  margin-top: 13px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--blue);
+  color: oklch(98% .008 270);
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 5px 12px oklch(55% .205 265 / .2);
+  transition: transform .2s var(--ease), background .2s, box-shadow .2s;
+}
+.btn-send:hover { background: oklch(45% .18 265); transform: translateY(-2px); box-shadow: 0 8px 18px oklch(55% .205 265 / .25); }
+.btn-send:active { transform: translateY(0); }
+.btn-send:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; transform: none; }
 
 .message-list { display: grid; }
 .message {
@@ -553,6 +651,47 @@
   gap: 8px;
   align-items: flex-start;
 }
+
+/* AI Analysis Sections */
+.analysis-section {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.analysis-section-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+.analysis-section-header i { font-size: 12px; }
+.section-report { background: var(--blue-soft); color: var(--blue); }
+.section-risk { background: oklch(93% .05 25); color: oklch(45% .15 25); }
+.section-mitigation { background: var(--gold-soft); color: oklch(48% .12 78); }
+.section-performance { background: var(--green-soft); color: var(--green); }
+.section-ai-comment { background: var(--purple-soft); color: var(--purple); }
+.analysis-section-content {
+  font-size: 13px;
+  color: oklch(36% .06 270);
+  line-height: 1.75;
+}
+.analysis-section-content ul,
+.analysis-section-content ol {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+}
+.analysis-section-content li {
+  margin-bottom: 4px;
+}
+
 .modal-footer {
   padding: 12px 18px;
   border-top: 1px solid var(--line);
@@ -659,11 +798,6 @@
     <div class="metric-foot">Requires attention</div>
   </article>
   <article class="metric">
-    <div class="metric-top"><span>AI reports</span><div class="metric-icon"><i class="bi bi-cpu"></i></div></div>
-    <div class="metric-value">{{ $totalEmails }}</div>
-    <div class="metric-foot">Auto-generated monthly</div>
-  </article>
-  <article class="metric">
     <div class="metric-top"><span>Next report</span><div class="metric-icon"><i class="bi bi-hourglass-split"></i></div></div>
     <div class="metric-value" style="font-size:22px">{{ $nextAutoSend->format('M d, Y') }}</div>
     <div class="metric-foot">Arrives in <span id="nextAutoSendCountdown" style="font-variant-numeric:tabular-nums"></span></div>
@@ -723,8 +857,12 @@
           <span>Monthly</span>
         </div>
         <div class="next-send-box" id="nextSendBox" data-target="{{ $nextAutoSend->timestamp }}">
+          <div class="next-send-head">
+            <i class="bi bi-calendar-event"></i>
+            <span>Next auto-send</span>
+          </div>
           <div class="next-send-date">{{ $nextAutoSend->format('F d, Y') }}</div>
-          <div class="next-send-sub">Your next AI report arrives automatically on the 1st of every month.</div>
+          <div class="next-send-sub">Monthly · every 1st of the month</div>
           <div class="next-send-count" id="nextSendCount">–</div>
         </div>
       </div>
@@ -751,7 +889,7 @@
           </div>
           @empty
           <div class="mini-item">
-            <span class="mini-dot" style="background:var(--green)"></span>
+            <span class="mini-dot" style="background:var(--blue)"></span>
             <div>
               <p>No reports yet</p>
               <small>Waiting for first report</small>
@@ -793,7 +931,7 @@
       </div>
       <div class="ai-note" style="background:#fef9c3;border-color:#fde68a;color:#854d0e;">
         <i class="bi bi-shield-lock" style="font-size:13px;flex-shrink:0;margin-top:1px;"></i>
-        <span>This email contains integrity monitoring technology. For audit and security purposes, delivery and open events may be recorded using a secure tracking pixel.</span>
+        <span>This email contains integrity monitoring technology. For audit and security purposes, delivery and open events may be recorded using a secure tracking pixel. No personal information beyond standard email delivery metadata is collected.</span>
       </div>
     </div>
     <div class="modal-footer">
@@ -804,6 +942,70 @@
 
 <script>
 let currentEmailId = null;
+
+function parseAiAnalysis(text) {
+  if (!text) return '';
+  
+  const sections = [
+    { key: 'Report', label: 'Report', icon: 'bi-file-text', class: 'section-report' },
+    { key: 'Possible Risk', label: 'Possible Risk', icon: 'bi-exclamation-triangle', class: 'section-risk' },
+    { key: 'Mitigation', label: 'Mitigation', icon: 'bi-shield-check', class: 'section-mitigation' },
+    { key: 'Performance', label: 'Performance', icon: 'bi-graph-up', class: 'section-performance' },
+    { key: 'AI Comment', label: 'AI Comment', icon: 'bi-cpu', class: 'section-ai-comment' }
+  ];
+  
+  let html = '';
+  let remainingText = text;
+  
+  sections.forEach(section => {
+    const startMarker = `[SECTION:${section.key}]`;
+    const endMarker = `[/SECTION]`;
+    const startIdx = remainingText.indexOf(startMarker);
+    
+    if (startIdx === -1) return;
+    
+    const contentStart = startIdx + startMarker.length;
+    const endIdx = remainingText.indexOf(endMarker, contentStart);
+    
+    if (endIdx === -1) return;
+    
+    const content = remainingText.substring(contentStart, endIdx).trim();
+    if (!content) return;
+    
+    // Convert bullet points to HTML list
+    let formattedContent = content
+      .replace(/^\s*[-*]\s+/gm, '<li>')
+      .replace(/<li>/g, '<li>')
+      .replace(/\n<li>/g, '</li><li>')
+      .replace(/<li>$/g, '</li>');
+    
+    // Wrap in ul if it has list items
+    if (formattedContent.includes('<li>')) {
+      formattedContent = '<ul>' + formattedContent + '</ul>';
+    } else {
+      // Convert paragraphs
+      formattedContent = formattedContent
+        .split('\n\n')
+        .filter(p => p.trim())
+        .map(p => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    }
+    
+    html += `
+      <div class="analysis-section">
+        <div class="analysis-section-header ${section.class}">
+          <i class="bi ${section.icon}"></i>
+          <span>${section.label}</span>
+        </div>
+        <div class="analysis-section-content">${formattedContent}</div>
+      </div>
+    `;
+    
+    remainingText = remainingText.substring(endIdx + endMarker.length);
+  });
+  
+  return html || `<div class="analysis-section"><div class="analysis-section-content">${text.replace(/\n/g, '<br>')}</div></div>`;
+}
 
 function applyFilter(filter) {
   const rows = document.querySelectorAll('.message');
@@ -837,13 +1039,17 @@ function viewMsg(id) {
         <div class="detail-item"><span class="label">Project</span><span class="value">${m.project_title}</span></div>
         <div class="detail-item"><span class="label">Location</span><span class="value">${m.project_location}</span></div>
         <div class="detail-item"><span class="label">Status</span><span class="value">${m.project_status}</span></div>
-        <div class="detail-item"><span class="label">Generated</span><span class="value">${m.generated_at}</span></div>
+        <div class="detail-item"><span class="label">AI Generated</span><span class="value">${m.ai_generated_at}</span></div>
+        <div class="detail-item"><span class="label">Email Sent</span><span class="value">${m.generated_at}</span></div>
       `;
       document.getElementById('v-body').innerHTML = m.body.replace(/\n/g, '<br>');
       const plannedPct = parseFloat(m.planned_progress) || 0;
       const actualPct = parseFloat(m.actual_progress) || 0;
       const variance = m.variance;
       const color = variance >= 0 ? '#10b981' : (variance >= -15 ? '#f59e0b' : '#ef4444');
+      
+      // Parse AI analysis sections from m.body (which contains the AI analysis)
+      const analysisHtml = parseAiAnalysis(m.body);
       document.getElementById('v-analysis').innerHTML = `
         <div class="analysis-label">Project Progress Analysis</div>
         <div>
@@ -856,6 +1062,7 @@ function viewMsg(id) {
         </div>
         <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val">${m.delay_percentage}%</span></div></div>
         <div><div class="metric-row"><span class="metric-label">Risk Level</span><span class="metric-val" style="color:${color};">${m.risk_level}</span></div></div>
+        ${analysisHtml}
       `;
       document.getElementById('loadingOverlay').classList.remove('active');
       document.getElementById('viewOverlay').classList.add('open');
