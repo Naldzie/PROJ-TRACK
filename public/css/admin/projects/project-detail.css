@@ -1668,6 +1668,306 @@
     }
 }
 
+/* ========== MONTHLY TARGET TIMELINE ========== */
+.timeline-wrapper {
+    overflow: visible;
+    padding: 100px 0 10px;
+    position: relative;
+}
+
+.timeline-container {
+    display: flex;
+    width: 100%;
+    align-items: flex-end;
+    position: relative;
+    padding: 0;
+    overflow: visible;
+}
+
+.timeline-track {
+    position: absolute;
+    bottom: 8px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #e5e7eb;
+    border-radius: 2px;
+}
+
+.timeline-track-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #10b981, #667eea);
+    transition: width 0.5s ease;
+}
+
+.timeline-dot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 2px;
+    z-index: 2;
+    transition: transform 0.2s;
+}
+
+.timeline-dot:hover {
+    transform: translateY(-2px);
+}
+
+.timeline-dot-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #6b7280;
+    text-align: center;
+    white-space: nowrap;
+    margin-bottom: 6px;
+    transition: color 0.2s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-dot:hover .timeline-dot-label {
+    color: #111827;
+}
+
+.timeline-dot-circle {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 3px solid #d1d5db;
+    position: relative;
+    z-index: 2;
+    transition: all 0.3s;
+}
+
+.timeline-dot:hover .timeline-dot-circle {
+    transform: scale(1.2);
+}
+
+.timeline-dot.completed .timeline-dot-circle {
+    background: #10b981;
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.timeline-dot.current .timeline-dot-circle {
+    background: #667eea;
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+    width: 20px;
+    height: 20px;
+    animation: timeline-pulse 2s ease-in-out infinite;
+}
+
+.timeline-dot.active .timeline-dot-circle {
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.3);
+    transform: scale(1.15);
+}
+
+.timeline-dot.active .timeline-dot-label {
+    color: #667eea;
+    font-weight: 700;
+}
+
+.timeline-dot.active {
+    z-index: 5;
+}
+
+.timeline-detail-panel {
+    position: relative;
+    margin-top: 14px;
+}
+
+.timeline-detail-arrow {
+    position: absolute;
+    top: -14px;
+    width: 28px;
+    height: 14px;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.timeline-detail-arrow::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 18px;
+    height: 18px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 3px;
+    box-shadow: -1px -1px 3px rgba(0,0,0,0.04);
+}
+
+.timeline-tooltip {
+    position: absolute;
+    bottom: calc(100% + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1f2937;
+    color: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    pointer-events: none;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.timeline-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #1f2937;
+}
+
+.timeline-dot:hover .timeline-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+.tooltip-date {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #e5e7eb;
+}
+
+.tooltip-section {
+    margin-top: 4px;
+}
+
+.tooltip-label {
+    font-size: 10px;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.tooltip-value {
+    font-weight: 700;
+}
+
+.tooltip-inspection {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid #374151;
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+.timeline-always-info {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    font-size: 11px;
+    width: 180px;
+    text-align: center;
+    position: relative;
+    z-index: 3;
+}
+
+.timeline-always-info .always-month {
+    font-weight: 700;
+    color: #0369a1;
+    font-size: 12px;
+}
+
+.timeline-always-info .always-date {
+    color: #6b7280;
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+.timeline-always-info .always-progress {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.timeline-always-info .always-planned {
+    color: #667eea;
+    font-weight: 600;
+}
+
+.timeline-always-info .always-actual {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.timeline-dot .bi-check-lg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 10px;
+    color: white;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.timeline-detail-panel {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    margin-top: 16px;
+    overflow: hidden;
+    animation: slideDown 0.3s ease-out;
+}
+
+.timeline-detail-header {
+    padding: 18px 20px;
+    background: linear-gradient(135deg, #f3f4f6 0%, #ffffff 100%);
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.timeline-detail-body {
+    padding: 16px 20px;
+}
+
+.timeline-detail-body .activities-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timeline-actions-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e5e7eb;
+}
+
+@keyframes timeline-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2); }
+    50% { box-shadow: 0 0 0 6px rgba(102, 126, 234, 0.1); }
+}
+
 /* ========== MOBILE/COMPACT EXTRA (contractor + small screens) ========== */
 @media (max-width: 768px) {
     /* Tabs scroll horizontally instead of wrapping into a tall stack */

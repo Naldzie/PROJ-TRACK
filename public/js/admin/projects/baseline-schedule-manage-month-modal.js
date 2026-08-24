@@ -338,45 +338,26 @@ function escapeHtml(text) {
 }
 
 /**
- * Reload the inline activities display on the month card.
- * Called after adding/deleting an activity so the card reflects the change.
+ * Reload the inline activities display on the timeline detail panel.
+ * Called after adding/deleting an activity so the panel reflects the change.
  */
 function reloadInlineActivities(monthLabel) {
     console.log('[reloadInlineActivities] Starting for monthLabel:', monthLabel);
     
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    let targetCard = null;
-    let collapseElement = null;
-    
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
-            targetCard = card;
-            const collapseDiv = card.querySelector('[id^="activities-"]');
-            if (collapseDiv) {
-                collapseElement = collapseDiv;
-                break;
-            }
-        }
-    }
-    
-    if (!collapseElement || !targetCard) {
-        console.error('[reloadInlineActivities] Could not find target card for:', monthLabel);
+    var collapseElement = document.getElementById('activities-' + monthLabel);
+    if (!collapseElement) {
+        console.error('[reloadInlineActivities] Could not find detail panel for:', monthLabel);
         return;
     }
     
-    const recordProgressBtn = targetCard.querySelector('button[onclick*="openRecordProgressModal"]');
-    const manageBtn = targetCard.querySelector('button[onclick*="openManageMonthModal"]');
-    const deleteBtn = targetCard.querySelector('button[onclick*="deleteMonthTarget"]');
+    // Extract current onclick attributes from action buttons
+    var recordProgressBtn = collapseElement.querySelector('button[onclick*="openRecordProgressModal"]');
+    var manageBtn = collapseElement.querySelector('button[onclick*="openManageMonthModal"]');
+    var deleteBtn = collapseElement.querySelector('button[onclick*="deleteMonthTarget"]');
     
-    if (!recordProgressBtn || !manageBtn || !deleteBtn) {
-        console.error('[reloadInlineActivities] Could not find action buttons');
-        return;
-    }
-    
-    const recordProgressOnclick = recordProgressBtn.getAttribute('onclick');
-    const manageOnclick = manageBtn.getAttribute('onclick');
-    const deleteOnclick = deleteBtn.getAttribute('onclick');
+    var recordProgressOnclick = recordProgressBtn ? recordProgressBtn.getAttribute('onclick') : '';
+    var manageOnclick = manageBtn ? manageBtn.getAttribute('onclick') : '';
+    var deleteOnclick = deleteBtn ? deleteBtn.getAttribute('onclick') : '';
     
     fetch(buildActivitiesByMonthEndpoint() + '?month_label=' + monthLabel)
         .then(function (response) {
@@ -408,35 +389,31 @@ function reloadInlineActivities(monthLabel) {
                     activitiesHtml = '<div style="padding: 20px; text-align: center; color: #9ca3af; font-size: 12px;"><i class="bi bi-inbox" style="font-size: 24px; display: block; margin-bottom: 8px; opacity: 0.5;"></i>No activities yet. Click "Manage Month" to add activities.</div>';
                 }
                 
-                var buttonsHtml =
-                    '<div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">' +
-                        '<button onclick="' + recordProgressOnclick + '" ' +
-                                'style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" ' +
-                                'title="Record Monthly Progress" ' +
-                                'onmouseover="this.style.background=\'#c6f6d5\'; this.style.borderColor=\'#68e6a8\';" ' +
-                                'onmouseout="this.style.background=\'#dcfce7\'; this.style.borderColor=\'#86efac\';" ' +
-                                '>' +
-                            '<i class="bi bi-graph-up-arrow"></i> Record Progress' +
-                        '</button>' +
-                        '<button onclick="' + manageOnclick + '" ' +
-                                'style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" ' +
-                                'title="Manage Month Target and Activities" ' +
-                                'onmouseover="this.style.background=\'#bfdbfe\'; this.style.borderColor=\'#7dd3fc\';" ' +
-                                'onmouseout="this.style.background=\'#dbeafe\'; this.style.borderColor=\'#bae6fd\';" ' +
-                                '>' +
-                            '<i class="bi bi-pencil-square"></i> Manage Month' +
-                        '</button>' +
-                        '<button onclick="' + deleteOnclick + '" ' +
-                                'style="flex: 1; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" ' +
-                                'title="Delete Month Target" ' +
-                                'onmouseover="this.style.background=\'#fecaca\'; this.style.borderColor=\'#f878a8\';" ' +
-                                'onmouseout="this.style.background=\'#fee2e2\'; this.style.borderColor=\'#fca5a5\';" ' +
-                                '>' +
-                            '<i class="bi bi-trash"></i> Delete' +
-                        '</button>' +
-                    '</div>';
-                
-                collapseElement.innerHTML = activitiesHtml + buttonsHtml;
+                // Update the activities grid
+                var grid = collapseElement.querySelector('.activities-grid');
+                if (grid) {
+                    grid.innerHTML = activitiesHtml;
+                }
+
+                // Rebuild action buttons
+                var buttonsHtml = '<div class="timeline-actions-row">';
+                if (recordProgressOnclick) {
+                    buttonsHtml += '<button onclick="' + recordProgressOnclick + '" style="flex: 1; background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" title="Record Monthly Progress"><i class="bi bi-graph-up-arrow"></i> Record Progress</button>';
+                }
+                if (manageOnclick) {
+                    buttonsHtml += '<button onclick="' + manageOnclick + '" style="flex: 1; background: #dbeafe; color: #0369a1; border: 1px solid #bae6fd; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" title="Manage Month Target and Activities"><i class="bi bi-pencil-square"></i> Manage Month</button>';
+                }
+                if (deleteOnclick) {
+                    buttonsHtml += '<button onclick="' + deleteOnclick + '" style="flex: 1; background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 10px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;" title="Delete Month Target"><i class="bi bi-trash"></i> Delete</button>';
+                }
+                buttonsHtml += '</div>';
+
+                // Update the actions row
+                var actionsRow = collapseElement.querySelector('.timeline-actions-row');
+                if (actionsRow) {
+                    actionsRow.outerHTML = buttonsHtml;
+                }
+
                 updateActivityCount(monthLabel);
                 console.log('[reloadInlineActivities] Successfully reloaded inline activities');
             }

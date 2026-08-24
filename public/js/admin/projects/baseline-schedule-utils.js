@@ -63,20 +63,91 @@ function buildRecordProgressEndpoint() {
 // ==================== Display/UI Utilities ====================
 
 /**
- * Toggle activity collapse for a month card
+ * Toggle timeline detail panel — only one open at a time.
+ * Clicking the same dot closes the panel; clicking a different dot
+ * closes the current one first, then opens the new one.
+ */
+let _activeTimelineDot = null;
+let _activeTimelinePanel = null;
+
+function toggleTimelineDetail(collapseId, dotElement) {
+    var panel = document.getElementById(collapseId);
+    if (!panel) return;
+
+    var container = document.getElementById('timeline-detail-panel');
+
+    // Clicking the same dot — close it
+    if (_activeTimelineDot === dotElement && _activeTimelinePanel === panel) {
+        panel.style.display = 'none';
+        _removeArrow(panel);
+        _movePanelBack(panel);
+        dotElement.classList.remove('active');
+        _activeTimelineDot = null;
+        _activeTimelinePanel = null;
+        return;
+    }
+
+    // Close any currently open panel
+    if (_activeTimelineDot) {
+        _activeTimelineDot.classList.remove('active');
+    }
+    if (_activeTimelinePanel) {
+        _activeTimelinePanel.style.display = 'none';
+        _removeArrow(_activeTimelinePanel);
+        _movePanelBack(_activeTimelinePanel);
+        _activeTimelinePanel = null;
+    }
+
+    // Open the new panel
+    dotElement.classList.add('active');
+    _activeTimelineDot = dotElement;
+    _activeTimelinePanel = panel;
+    panel.style.display = 'block';
+    container.appendChild(panel);
+    panel.style.animation = 'slideDown 0.3s ease-out';
+
+    // Create and position the speech-bubble arrow
+    _insertArrow(panel, dotElement);
+}
+
+function _insertArrow(panel, dot) {
+    _removeArrow(panel);
+    var arrow = document.createElement('div');
+    arrow.className = 'timeline-detail-arrow';
+    panel.style.position = 'relative';
+    panel.insertBefore(arrow, panel.firstChild);
+
+    // Position the arrow at the dot's horizontal center
+    requestAnimationFrame(function() {
+        var dotRect = dot.getBoundingClientRect();
+        var panelRect = panel.getBoundingClientRect();
+        if (panelRect.width > 0) {
+            var x = dotRect.left + dotRect.width / 2 - panelRect.left;
+            x = Math.max(14, Math.min(x, panelRect.width - 14));
+            arrow.style.left = x + 'px';
+            arrow.style.transform = 'translateX(-50%)';
+        }
+    });
+}
+
+function _removeArrow(panel) {
+    var arrow = panel.querySelector('.timeline-detail-arrow');
+    if (arrow) arrow.remove();
+}
+
+function _movePanelBack(panel) {
+    var placeholder = document.getElementById('timeline-detail-panel');
+    if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(panel, placeholder);
+    }
+}
+
+/**
+ * Legacy alias — kept for backward compatibility with any code
+ * that still calls toggleActivityCollapse().
  */
 function toggleActivityCollapse(collapseId) {
-    const element = document.getElementById(collapseId);
-    const chevron = document.getElementById('chevron-' + collapseId);
-    
-    if (element.style.display === 'none') {
-        element.style.display = 'block';
-        element.style.animation = 'slideDown 0.3s ease-out';
-        chevron.style.transform = 'rotate(180deg)';
-    } else {
-        element.style.display = 'none';
-        chevron.style.transform = 'rotate(0deg)';
-    }
+    toggleTimelineDetail(collapseId, null);
 }
 
 /**
@@ -223,97 +294,87 @@ function clearMonthTargetErrors() {
 // ==================== DOM Update Utilities ====================
 
 /**
- * Update the Actual Progress % in the card header
+ * Update the Actual Progress % in the timeline tooltip and detail panel.
  */
 function updateActualProgressPercent(monthLabel, actualProgressPercent) {
     console.log('[updateActualProgressPercent] Updating for month:', monthLabel, 'value:', actualProgressPercent);
-    
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
-            console.log('[updateActualProgressPercent] Found matching card for month:', monthLabel);
-            
-            // Find the Actual progress spans - look for the green color #10b981
-            const progressSection = card.querySelector('[style*="gap: 20px"]');
-            if (progressSection) {
-                // Find all divs that might contain the actual progress (look for the green inline-flex)
-                const allDivs = progressSection.querySelectorAll('div[style*="background: rgba(16, 185, 129"]');
-                if (allDivs.length > 0) {
-                    // The actual progress span is inside the last matching div
-                    const actualProgressDiv = allDivs[allDivs.length - 1];
-                    const actualProgressSpan = actualProgressDiv.querySelector('span[style*="color: #10b981"]');
-                    if (actualProgressSpan) {
-                        actualProgressSpan.textContent = `${actualProgressPercent}%`;
-                        console.log('[updateActualProgressPercent] Updated span to:', actualProgressSpan.textContent);
-                    }
-                } else {
-                    // Fallback: look for any span with color #10b981
-                    const spans = progressSection.querySelectorAll('span[style*="color: #10b981"]');
-                    if (spans.length > 0) {
-                        const lastSpan = spans[spans.length - 1];
-                        lastSpan.textContent = `${actualProgressPercent}%`;
-                        console.log('[updateActualProgressPercent] Updated (fallback) span to:', lastSpan.textContent);
-                    }
+
+    // 1. Update the hover tooltip on the timeline dot
+    const dot = document.querySelector('.timeline-dot[data-month-label="' + monthLabel + '"]');
+    if (dot) {
+        const tooltip = dot.querySelector('.timeline-tooltip');
+        if (tooltip) {
+            const sections = tooltip.querySelectorAll('.tooltip-section');
+            sections.forEach(function (section) {
+                const label = section.querySelector('.tooltip-label');
+                if (label && label.textContent.trim().toLowerCase() === 'actual') {
+                    const val = section.querySelector('.tooltip-value');
+                    if (val) val.textContent = actualProgressPercent + '%';
                 }
+            });
+        }
+        // Update always-visible info for current month
+        const alwaysActual = dot.querySelector('.always-actual');
+        if (alwaysActual) alwaysActual.textContent = 'Actual: ' + actualProgressPercent + '%';
+    }
+
+    // 2. Update the open detail panel if it belongs to this month
+    var panel = document.getElementById('activities-' + monthLabel);
+    if (!panel) {
+        // Fallback: scan by data-month-label in the detail panel
+        var panels = document.querySelectorAll('.timeline-detail-panel');
+        panels.forEach(function (p) {
+            var badge = p.querySelector('span[data-month-label]');
+            if (badge && badge.dataset.monthLabel === monthLabel) {
+                panel = p;
             }
-            break;
+        });
+    }
+    if (panel && panel.style.display !== 'none') {
+        var actualSpans = panel.querySelectorAll('span[style*="color:#10b981"], span[style*="color: #10b981"]');
+        if (actualSpans.length > 0) {
+            var lastSpan = actualSpans[actualSpans.length - 1];
+            lastSpan.textContent = actualProgressPercent + '%';
+            console.log('[updateActualProgressPercent] Updated detail panel span');
         }
     }
 }
 
 /**
- * Update activity count display in the month card header
+ * Update activity count display in the detail panel header.
  */
 function updateActivityCount(monthLabel) {
     console.log('[updateActivityCount] Updating count for monthLabel:', monthLabel);
-    
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    
-    cards.forEach(card => {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge) {
-            const badgeMonth = monthBadge.dataset.monthLabel;
-            if (badgeMonth === monthLabel) {
-                console.log('[updateActivityCount] Found matching card for:', monthLabel);
-                
-                // Get all activities from the card (only count actual activity checkboxes)
-                const collapseDiv = card.querySelector('[id^="activities-"]');
-                if (collapseDiv) {
-                    const allActivities = collapseDiv.querySelectorAll('input[type="checkbox"].activity-checkbox');
-                    const completedActivities = collapseDiv.querySelectorAll('input[type="checkbox"].activity-checkbox:checked');
-                    
-                    console.log('[updateActivityCount] Activities found:', allActivities.length, 'Completed:', completedActivities.length);
-                    
-                    // Find and update the activities count badge in the header
-                    // The count badge is in the right section showing "X/Y"
-                    const countBadge = card.querySelector('span[style*="background: #f0f9ff"]');
-                    if (countBadge && countBadge.textContent.includes('/')) {
-                        countBadge.textContent = `${completedActivities.length}/${allActivities.length}`;
-                        console.log('[updateActivityCount] Updated badge to:', countBadge.textContent);
-                    }
-                }
-                return; // Found and updated, exit loop
-            }
-        }
-    });
+
+    // Find the active detail panel for this month
+    var panel = document.getElementById('activities-' + monthLabel);
+    if (!panel) return;
+
+    var allActivities = panel.querySelectorAll('input[type="checkbox"].activity-checkbox');
+    var completedActivities = panel.querySelectorAll('input[type="checkbox"].activity-checkbox:checked');
+
+    console.log('[updateActivityCount] Activities found:', allActivities.length, 'Completed:', completedActivities.length);
+
+    // Update count badge in the detail panel header
+    var countBadge = panel.querySelector('.timeline-detail-header span[style*="background:#f0f9ff"], .timeline-detail-header span[style*="background: #f0f9ff"]');
+    if (countBadge && countBadge.textContent.includes('/')) {
+        countBadge.textContent = completedActivities.length + '/' + allActivities.length;
+        console.log('[updateActivityCount] Updated badge to:', countBadge.textContent);
+    }
 }
 
 /**
- * Find the month card ID from month label
+ * Find the month card/plan ID from month label using the timeline dot.
  */
 function findMonthCardId(monthLabel) {
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
-            // Extract ID from the card's collapse element
-            const collapseDiv = card.querySelector('[id^="activities-"]');
-            if (collapseDiv) {
-                return collapseDiv.id.replace('activities-', '');
-            }
-        }
+    var dot = document.querySelector('.timeline-dot[data-month-label="' + monthLabel + '"]');
+    if (dot && dot.dataset.planId) {
+        return dot.dataset.planId;
+    }
+    // Fallback: check detail panels
+    var panel = document.getElementById('activities-' + monthLabel);
+    if (panel) {
+        return monthLabel;
     }
     return null;
 }
