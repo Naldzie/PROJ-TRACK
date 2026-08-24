@@ -3,8 +3,8 @@
 CSPC PMU System — fix extension notification recipients so the trigger user
 never receives their own notification, and all relevant parties are notified.
 
-Date:     August 23, 2026
-Branch:   staff-baseline-extension-improvements (from develop)
+Status: ✅ IMPLEMENTED — committed as 935312b, 25d4973 on develop
+Date:   August 23, 2026
 
 ---
 
@@ -244,7 +244,7 @@ if ($canAutoApprove) {
 
 ## Implementation Log
 
-Committed: (pending) on `staff-baseline-extension-improvements`
+Committed: `935312b`, `25d4973` on `develop`
 
 Files changed:
 - `app/Http/Controllers/Admin/ProjectExtensionController.php`:

@@ -595,7 +595,7 @@ STEP 5 — Tests
 
 Date:     August 21, 2026
 Branch:   phase-4-document-viewer-fix (from phase-3-pdf-scurve-import)
-Status:   IMPLEMENTED (uncommitted, pending review/merge, Rule 12)
+Status:   ✅ COMPLETE — implemented and merged to develop
 
   IMPLEMENTED 2026-08-21 (on branch phase-4-document-viewer-fix):
     - storage:link fixed (public/storage was an empty directory, now a proper

@@ -331,9 +331,8 @@ Step 8 — Full suite + verification                           ✅ COMPLETE
     assignProject() now pins the schedule (0/10 fails after fix).
   • Step 8: php artisan test → 712 passed / 2750 assertions (was 712 baseline,
     no regressions). AIPredictionPresenterTest unchanged (delegation is
-    behavior-identical). Manual browser pass on the dev widget still to do.
-  • NOT committed yet — plan file status updated; branch ready for review
-    (Rule 12) before any commit/merge.
+    behavior-identical). Browser verification: PASSED.
+  • Committed as 2767f7d, b20213f on develop. Merged to main.
 
 ===============================================================================
   7. OPEN QUESTIONS / STILL TO RESOLVE

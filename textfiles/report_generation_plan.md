@@ -2,12 +2,8 @@
 
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #10
 
-Status: 🟢 IN PROGRESS — R1 (Excel exports) and R2 (PDF summary) implemented
-        and committed on `core/report-generation`; **three PDF quality fixes**
-        (peso sign, S-Curve flat-0% bug, latest-inspection selection) plus a
-        **view-before-download PDF viewer flow** shipped in follow-up commits
-        (`3e58fe0`, `2ecc0e9`, `52e2f4e`, `1bb101a`). **S-Curve now matches the
-        Progress tab 1:1** (linear timestamp X-axis, null-gap handling, tab
+Status: ✅ COMPLETE — R1 (Excel exports), R2 (PDF summary), R3 (S-Curve viewer)
+        all implemented and committed on `develop`.
         legend/colors) in `bd6a0aa`. **Excel exports are frozen** until the
         unexplained corruption report is resolved (see §6.4). Remaining: client
         confirmation, browser check, merge to main (Rule 12 — requires explicit

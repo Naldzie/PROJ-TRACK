@@ -2,9 +2,7 @@
 
 CSPC PMU System — AI Module Version 2 follow-up
 
-Status: 🔄 IN PROGRESS — Steps 0-8 COMPLETE and committed (a13037d Step 0,
-        739610d Step 1, 26d5ffe Step 2, 366414d Step 3, bf3ca66 Step 4,
-        901fa07 Step 5, 9b29563 Step 6, f4bcfed Step 7, c732035 Step 8).
+Status: ✅ COMPLETE — Steps 0-9 all implemented and merged (a45a156).
         Test counts: Step 0 565, Step 1 569, Step 2 591, Step 3 595,
         Step 4 599, Step 5 599 (Blade-only), Step 6 603 (4 new
         AIExplanationServiceTest), Step 7 608 (5 new AIPredictionTabRenderTest),

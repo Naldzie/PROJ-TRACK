@@ -332,7 +332,7 @@ Track commits and changes as tasks are completed.
 - Files: ExtensionStatusChanged.php, ProjectExtensionController.php,
   notification.blade.php
 
-### Task 6 — Clickable notifications + unread dots (pending)
+### Task 6 — Clickable notifications + unread dots (DONE)
 - Added url() methods to all 5 notification classes (role-based routes
   with tab anchors: #extensions, #issues, #risks, #overview,
   #baseline-schedule)

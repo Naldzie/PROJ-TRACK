@@ -215,6 +215,8 @@ Changes:
 
 ## Task 11 — Additional Work % in Adjusted Baseline Modal
 
+**Status: ✅ DONE (frontend-only implementation)** — The UI input and JS redistribution algorithm are implemented and working. The value is ephemeral (not saved to DB) as intended — it recalculates on every modal open based on the current extension state.
+
 Goal: Add an "Additional Work %" input in the "Generate Adjusted Baseline"
 modal. This represents the estimated additional scope from the extension.
 The auto-distribution algorithm uses this to scale the cumulative curve
@@ -603,7 +605,7 @@ extensions) already do not include staff, so they are unaffected.
 4. Task 15 (notification assignment filter) — DONE
 5. Task 13 (staff filtering) — DONE
 6. Task 10 (staff extension approval) — DONE
-7. Task 11 (additional work %) — independent, NEXT
+7. Task 11 (additional work %) — DONE (frontend-only: UI input + JS algorithm, no DB persistence needed)
 
 ### Implementation Log — Task 15 + fixes
 

@@ -2,11 +2,9 @@
 
 CSPC PMU System — Core Monitoring (AI regression module paused)
 
-Status: ✅ IN PROGRESS — Phases A–D implemented. Phase A (attachments infra),
-        B (overview real data), C (issue lifecycle) merged to main. Phase D
-        (progress attachments) implemented on `core/progress-attachments`,
-        awaiting user approval to merge (Rule 12). Phase E pending. Regression
-        module paused (Phase 8 done; Fix H + v2.5 deferred to backlog).
+Status: 🔄 IN PROGRESS — Phases A–D implemented and merged. Phase E
+        (AI baseline linkage) NOT STARTED — `ai_solutions` table needs
+        `baseline_schedule_id` column. This is the next recommended work item.
 
 Date: August 2, 2026
 

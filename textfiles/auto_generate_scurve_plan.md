@@ -1,7 +1,7 @@
 # Auto-Generate S-Curve from Start & End Dates
 
-**Status:** Planning  
-**Branch:** `feature/monthly-target-redesign` (extend existing)  
+**Status:** Phase 1 Complete  
+**Branch:** `feature/monthly-target-redesign` merged to `develop`  
 **Date:** August 24, 2026  
 
 ---
