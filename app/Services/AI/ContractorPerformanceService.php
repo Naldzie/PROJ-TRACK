@@ -6,8 +6,76 @@ use App\Models\Contractor;
 use App\Models\Project;
 use Carbon\Carbon;
 
+/**
+ * ============================================================================
+ * ContractorPerformanceService
+ * ============================================================================
+ *
+ * Purpose
+ * -------
+ * Computes and stores aggregated contractor performance metrics from completed
+ * project history. Answers: "How reliable is this contractor overall?"
+ *
+ * This is distinct from the per-project ContractorRating (regression-based
+ * star rating). That answers "How did this contractor do on THIS project's
+ * S-curve?" This service answers "What is their track record across all
+ * completed projects?"
+ *
+ * Metrics Computed
+ * ----------------
+ * • on_time_delivery_pct  — % of completed projects finished by deadline
+ * • avg_delay_days        — average days late (across late projects only)
+ * • completed_projects_count — total completed projects
+ * • performance_rating    — 1-5 rating derived from on-time % and avg delay
+ * • last_project_completed_at — timestamp of most recent completion
+ *
+ * On-Time Calculation (Industry Standard — AACE RP 109R-19)
+ * ----------------------------------------------------------
+ * effective_deadline = original_planned_end_date + latest approved extension
+ * is_on_time = actual_end_date <= effective_deadline
+ *
+ * Used By
+ * -------
+ * • RatingController (recompute endpoint + contractor JSON payload)
+ * • ProjectProgressController::autoCompleteOnFullProgress() (auto-recompute)
+ * • ProjectExtensionController::recomputeProjectDeadline() (auto-recompute)
+ * • AIPredictionService (injects metrics into prediction report)
+ * • RecommendationEngine (consumes metrics for corrective rules)
+ *
+ * Depends On
+ * ----------
+ * • Project model — completed projects with dates
+ * • ProjectExtension model — approved extensions for deadline adjustment
+ */
 class ContractorPerformanceService
 {
+    /**
+     * ------------------------------------------------------------------------
+     * Recompute Performance Metrics
+     * ------------------------------------------------------------------------
+     *
+     * Recalculates all performance metrics for a contractor from their
+     * completed project history and saves them to the contractors table.
+     *
+     * Called When
+     * -----------
+     * • A project status changes to "Completed" (auto-complete at 100%)
+     * • An extension is approved (deadline changed, on-time may shift)
+     * • On demand via POST /admin/rating/{contractor}/recompute-performance
+     * • Bulk recompute via recomputeAll()
+     *
+     * Workflow
+     * --------
+     * 1. Get all Completed projects with actual_end_date and original_planned_end_date.
+     * 2. For each: compute effective_deadline (original + latest approved extension).
+     * 3. Classify as on-time or late; accumulate delay days.
+     * 4. Compute on_time_pct, avg_delay, performance_rating.
+     * 5. Save to contractors table.
+     *
+     * Depends On
+     * ----------
+     * getEffectiveDeadline(), computeRating()
+     */
     public function recompute(Contractor $contractor): array
     {
         $completed = Project::where('contractor_id', $contractor->id)
@@ -35,9 +103,11 @@ class ContractorPerformanceService
             $effectiveDeadline = $this->getEffectiveDeadline($project);
             $actualEnd = Carbon::parse($project->actual_end_date);
 
+            // On-time: actual end is on or before the effective deadline
             if ($actualEnd->lte($effectiveDeadline)) {
                 $onTimeCount++;
             } else {
+                // Late: accumulate positive delay days
                 $totalDelayDays += (int) $effectiveDeadline->diffInDays($actualEnd, false);
             }
         }
@@ -65,6 +135,19 @@ class ContractorPerformanceService
         ];
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Get Performance Summary
+     * ------------------------------------------------------------------------
+     *
+     * Returns the contractor's current performance metrics without
+     * recomputing. Used by AIPredictionService to inject metrics into
+     * the prediction report for the RecommendationEngine.
+     *
+     * Called By
+     * ---------
+     * AIPredictionService::generatePrediction()
+     */
     public function getPerformanceSummary(Contractor $contractor): array
     {
         return [
@@ -76,11 +159,43 @@ class ContractorPerformanceService
         ];
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Compute Performance Rating (Protected)
+     * ------------------------------------------------------------------------
+     *
+     * Derives a 1-5 integer rating from on-time percentage and average
+     * delay days. Uses AND logic: both conditions must be met for each tier.
+     *
+     * Rating Tiers (Industry-Aligned — CPARS/USACE)
+     * ----------------------------------------------
+     * 5 (Superior)   — on-time >= 90% AND avg delay <= 7 days
+     * 4 (Good)       — on-time >= 80% AND avg delay <= 15 days
+     * 3 (Satisfactory) — on-time >= 70% AND avg delay <= 30 days
+     * 2 (Below Average) — on-time >= 50% AND avg delay <= 60 days
+     * 1 (Poor)       — everything else
+     *
+     * Depends On
+     * ----------
+     * getPerformanceRating() (public wrapper for test access)
+     */
     protected function computeRating(float $onTimePct, float $avgDelayDays): int
     {
         return $this->getPerformanceRating($onTimePct, $avgDelayDays);
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Get Performance Rating (Public)
+     * ------------------------------------------------------------------------
+     *
+     * Public wrapper of computeRating() for test access. Implements the
+     * same 1-5 tier logic.
+     *
+     * Called By
+     * ---------
+     * computeRating(), ContractorPerformanceServiceTest
+     */
     public function getPerformanceRating(float $onTimePct, float $avgDelayDays): int
     {
         if ($onTimePct >= 90 && $avgDelayDays <= 7) {
@@ -98,11 +213,48 @@ class ContractorPerformanceService
         return 1;
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Recompute All Contractors
+     * ------------------------------------------------------------------------
+     *
+     * Bulk recompute performance metrics for every contractor. Used for
+     * data repair or after migration.
+     *
+     * Called By
+     * ---------
+     * Manual admin trigger (potential future CLI command)
+     */
     public function recomputeAll(): void
     {
         Contractor::with('projects')->each(fn(Contractor $c) => $this->recompute($c));
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Get Effective Deadline
+     * ------------------------------------------------------------------------
+     *
+     * Determines the effective deadline for a completed project using the
+     * extension-adjusted date (industry standard — AACE RP 109R-19, FIDIC
+     * Sub-Clause 8.4).
+     *
+     * Logic
+     * -----
+     * • If approved extensions exist: use the latest approved extension's
+     *   approved_new_end_date (or new_end_date as fallback).
+     * • If no approved extensions: use original_planned_end_date.
+     *
+     * Why Not planned_end_date?
+     * -------------------------
+     * planned_end_date is mutable and updated by recomputeProjectDeadline().
+     * Using original + extensions explicitly ensures the calculation matches
+     * the industry-standard formula and is testable in isolation.
+     *
+     * Depends On
+     * ----------
+     * Project->extensions() relationship, ProjectExtension->status
+     */
     protected function getEffectiveDeadline(Project $project): Carbon
     {
         $latestApproved = $project->extensions()
@@ -119,6 +271,14 @@ class ContractorPerformanceService
         return Carbon::parse($project->original_planned_end_date);
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Empty Metrics Placeholder
+     * ------------------------------------------------------------------------
+     *
+     * Returns a null/zero metrics array for contractors with no completed
+     * projects. Used as a return value from recompute() when no data exists.
+     */
     protected function emptyMetrics(): array
     {
         return [

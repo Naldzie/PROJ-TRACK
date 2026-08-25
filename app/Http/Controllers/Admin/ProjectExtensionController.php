@@ -1383,6 +1383,8 @@ class ProjectExtensionController extends Controller
             'extension_count' => $approvedCount,
         ]);
 
+        // Phase 9: recompute contractor performance after deadline changes
+        // (on-time calculation may shift when extensions are approved)
         if ($project->contractor) {
             app(ContractorPerformanceService::class)->recompute($project->contractor);
         }

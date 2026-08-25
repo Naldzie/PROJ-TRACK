@@ -23,6 +23,10 @@ use App\Models\ProjectBaselineSchedule;
  * + at-risk flag) so that a project trailing similar projects for 2+
  * consecutive months yields a corrective recommendation.
  *
+ * Phase 9: also consumes contractor performance metrics (on-time %,
+ * avg delay, performance rating) so that a contractor with a poor track
+ * record and open issues yields a corrective recommendation.
+ *
  * Each recommendation has:
  *   • message   — The actionable suggestion
  *   • category  — escalation | corrective | monitoring | administrative

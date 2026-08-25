@@ -170,6 +170,18 @@ class RatingController extends Controller
         ]);
     }
 
+    /**
+     * Phase 9: On-demand recompute of contractor performance metrics.
+     *
+     * POST /admin/rating/{contractor}/recompute-performance
+     *
+     * Recalculates on-time delivery %, avg delay days, and performance
+     * rating from the contractor's completed project history.
+     *
+     * Called By
+     * ---------
+     * Rating UI "Recompute" button (potential future use)
+     */
     public function recomputePerformance(Request $request, Contractor $contractor)
     {
         $service = app(ContractorPerformanceService::class);

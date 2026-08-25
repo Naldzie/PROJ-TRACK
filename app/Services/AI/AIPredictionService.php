@@ -409,6 +409,8 @@ class AIPredictionService
             $classStanding
         );
 
+        // Phase 9: inject contractor performance metrics into prediction report
+        // so RecommendationEngine can use them for corrective rules
         if ($project->contractor) {
             $perf = app(ContractorPerformanceService::class)->getPerformanceSummary($project->contractor);
             $report['contractor_performance_rating'] = $perf['performance_rating'];

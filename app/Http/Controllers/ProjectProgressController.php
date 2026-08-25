@@ -568,6 +568,7 @@ class ProjectProgressController extends Controller
                     'visibility' => 'all',
                 ]);
 
+                // Phase 9: recompute contractor performance metrics after auto-completion
                 if ($project->contractor) {
                     app(ContractorPerformanceService::class)->recompute($project->contractor);
                 }
