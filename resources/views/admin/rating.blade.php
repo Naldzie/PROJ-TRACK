@@ -211,10 +211,14 @@
 .perf-1 { background: oklch(93% .04 18); color: #991b1b; }
 
 /* ── Performance Panel ── */
+.right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+}
 .perf-panel {
   margin-top: 0;
-  grid-column: 3;
-  grid-row: 2;
 }
 .perf-panel .panel-head {
   padding: 14px 20px 12px;
@@ -477,39 +481,41 @@ select {
     </div>
   </section>
 
-  {{-- ── ANALYSIS ── --}}
-  <aside class="panel analysis" aria-labelledby="analysis-title">
-    <div class="panel-head">
-      <div class="panel-title">
-        <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
-        <div><h2 id="analysis-title">Analysis</h2><p class="panel-subtitle">AI performance review</p></div>
+  {{-- ── RIGHT COLUMN: Analysis + Performance ── --}}
+  <div class="right-col">
+    <aside class="panel analysis" aria-labelledby="analysis-title">
+      <div class="panel-head">
+        <div class="panel-title">
+          <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div>
+          <div><h2 id="analysis-title">Analysis</h2><p class="panel-subtitle">AI performance review</p></div>
+        </div>
       </div>
-    </div>
-    <div class="analysis-body" id="analysisBody">
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 3-3 5"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
-        <strong>No analysis yet</strong>
-        <p>Select a project and click <strong>AI review</strong> to generate a performance analysis.</p>
+      <div class="analysis-body" id="analysisBody">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 9a3 3 0 0 1 6 0c0 2-3 3-3 5"/><circle cx="12" cy="17" r=".5" fill="currentColor"/></svg>
+          <strong>No analysis yet</strong>
+          <p>Select a project and click <strong>AI review</strong> to generate a performance analysis.</p>
+        </div>
       </div>
-    </div>
-  </aside>
+    </aside>
 
-  {{-- ── CONTRACTOR PERFORMANCE ── --}}
-  <section class="panel perf-panel" aria-labelledby="perf-title" id="perfPanel">
-    <div class="panel-head">
-      <div class="panel-title">
-        <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-        <div><h2 id="perf-title">Contractor Performance</h2><p class="panel-subtitle" id="perfSubtitle">Select a contractor</p></div>
+    {{-- ── CONTRACTOR PERFORMANCE ── --}}
+    <section class="panel perf-panel" aria-labelledby="perf-title" id="perfPanel">
+      <div class="panel-head">
+        <div class="panel-title">
+          <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+          <div><h2 id="perf-title">Contractor Performance</h2><p class="panel-subtitle" id="perfSubtitle">Select a contractor</p></div>
+        </div>
       </div>
-    </div>
-    <div class="panel-body" id="perfBody">
-      <div class="empty-state">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        <strong>No contractor selected</strong>
-        <p>Select a contractor to view their performance metrics.</p>
+      <div class="panel-body" id="perfBody">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <strong>No contractor selected</strong>
+          <p>Select a contractor to view their performance metrics.</p>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </div>
 </section>
 
 {{-- ── RATING MODAL ── --}}
