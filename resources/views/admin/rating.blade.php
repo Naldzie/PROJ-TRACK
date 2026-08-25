@@ -198,6 +198,17 @@
 .contractor.selected .contractor-avatar img.avatar-img { box-shadow: 0 0 0 1px oklch(72% .13 264 / .35); }
 .contractor strong { display: block; font-size: 12px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .contractor small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.perf-line { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
+.perf-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  flex: 0 0 auto;
+}
+.perf-5 { background: oklch(92% .055 160); color: oklch(35% .12 160); }
+.perf-4 { background: oklch(92% .055 160); color: oklch(40% .11 160); }
+.perf-3 { background: oklch(94% .06 82); color: oklch(45% .12 74); }
+.perf-2 { background: oklch(93% .04 18); color: #b91c1c; }
+.perf-1 { background: oklch(93% .04 18); color: #991b1b; }
 .rating-compact { text-align: right; }
 .stars { color: var(--gold); letter-spacing: 1px; font-size: 11px; line-height: 1; }
 .rating-num { color: var(--muted); font: 10px 'Space Mono', 'SF Mono', monospace; margin-top: 4px; }
@@ -500,7 +511,9 @@ function renderContractors(filter) {
     const avgR = Math.round(avg * 10) / 10;
     return `<button class="contractor ${c.id === selectedId ? 'selected' : ''}" data-id="${c.id}">
       <div class="contractor-avatar">${c.photo ? `<img class="avatar-img" src="${c.photo}" alt="" loading="lazy" onerror="this.parentElement.textContent='${initials(c.name)}';this.remove()">` : initials(c.name)}</div>
-      <div><strong>${escHtml(c.name)}</strong><small>${c.projects.length} project${c.projects.length === 1 ? '' : 's'}</small></div>
+      <div><strong>${escHtml(c.name)}</strong><small>${c.projects.length} project${c.projects.length === 1 ? '' : 's'}</small>
+        ${c.performance_rating ? `<small class="perf-line"><span class="perf-badge perf-${c.performance_rating}">${c.performance_rating}</span> ${c.on_time_delivery_pct != null ? c.on_time_delivery_pct + '% on-time' : ''} · ${c.completed_projects_count} completed</small>` : ''}
+      </div>
       <div class="rating-compact">
         <div class="stars">${avgR > 0 ? starsHtml(Math.round(avgR)) : '<span class="not-rated">Not rated</span>'}</div>
         ${avgR > 0 ? `<div class="rating-num">${avgR.toFixed(1)}</div>` : ''}

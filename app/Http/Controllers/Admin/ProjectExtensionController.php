@@ -13,6 +13,7 @@ use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use App\Notifications\ExtensionStatusChanged;
 use App\Services\NotificationService;
+use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -1381,6 +1382,10 @@ class ProjectExtensionController extends Controller
                 ?? $project->planned_end_date,
             'extension_count' => $approvedCount,
         ]);
+
+        if ($project->contractor) {
+            app(ContractorPerformanceService::class)->recompute($project->contractor);
+        }
     }
 
     /**

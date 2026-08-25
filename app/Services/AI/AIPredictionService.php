@@ -3,6 +3,7 @@
 namespace App\Services\AI;
 
 use App\Models\Project;
+use App\Services\AI\ContractorPerformanceService;
 use App\Models\ProjectBaselineSchedule;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use App\Services\AI\Regression\LinearRegressionService;
@@ -407,6 +408,13 @@ class AIPredictionService
             $reliability,
             $classStanding
         );
+
+        if ($project->contractor) {
+            $perf = app(ContractorPerformanceService::class)->getPerformanceSummary($project->contractor);
+            $report['contractor_performance_rating'] = $perf['performance_rating'];
+            $report['contractor_on_time_pct'] = $perf['on_time_delivery_pct'];
+            $report['contractor_avg_delay'] = $perf['avg_delay_days'];
+        }
 
         $this->savePredictionHistory(
             $project,

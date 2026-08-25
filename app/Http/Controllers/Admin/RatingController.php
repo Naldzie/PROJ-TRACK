@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Contractor;
 use App\Models\ContractorRating;
 use App\Models\Project;
+use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
 
 class RatingController extends Controller
@@ -44,6 +45,10 @@ class RatingController extends Controller
                 'key' => $p->id . '-' . $c->id,
                 'rating' => $ratings->get($p->id . '-' . $c->id)?->rating ?? 0,
             ]),
+            'performance_rating' => $c->performance_rating,
+            'on_time_delivery_pct' => $c->on_time_delivery_pct,
+            'completed_projects_count' => $c->completed_projects_count,
+            'avg_delay_days' => $c->avg_delay_days,
         ]);
 
         $ratingsJson = $ratings->map(fn($r) => [
@@ -162,6 +167,17 @@ class RatingController extends Controller
         return response()->json([
             'success' => true,
             'message' => "Auto-rated {$rated} project(s) ({$skipped} skipped — already rated or no AI data)",
+        ]);
+    }
+
+    public function recomputePerformance(Request $request, Contractor $contractor)
+    {
+        $service = app(ContractorPerformanceService::class);
+        $metrics = $service->recompute($contractor);
+
+        return response()->json([
+            'success' => true,
+            'metrics' => $metrics,
         ]);
     }
 

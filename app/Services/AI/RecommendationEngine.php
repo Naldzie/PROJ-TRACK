@@ -335,6 +335,10 @@ class RecommendationEngine
             'class_behind'             => (bool) ($prediction['class_standing']['at_risk'] ?? false),
             'class_behind_run'         => (int) ($prediction['class_standing']['at_risk_run'] ?? 0),
             'class_similar_count'      => (int) ($prediction['class_standing']['similar_count'] ?? 0),
+            // Phase 9: contractor performance metrics (aggregated across all completed projects).
+            'contractor_performance_rating' => $prediction['contractor_performance_rating'] ?? null,
+            'contractor_on_time_pct'        => $prediction['contractor_on_time_pct'] ?? null,
+            'contractor_avg_delay'          => $prediction['contractor_avg_delay'] ?? null,
         ];
     }
 
@@ -488,6 +492,22 @@ class RecommendationEngine
                 'reason'   => $factors['issues_contractor']
                     . ' contractor-related issues may indicate performance problems',
                 'priority' => 2,
+            ];
+        }
+
+        // Phase 9: contractor with history of delays + open issues
+        if (($factors['contractor_performance_rating'] ?? null) !== null
+            && $factors['contractor_performance_rating'] <= 2
+            && ($factors['open_issue_count'] ?? 0) >= 2
+        ) {
+            $recommendations[] = [
+                'message'  => 'Contractor has a history of delays (rating '
+                    . $factors['contractor_performance_rating'] . '/5, avg '
+                    . $factors['contractor_avg_delay'] . ' days late) with '
+                    . $factors['open_issue_count'] . ' open issues — consider closer schedule monitoring',
+                'category' => 'corrective',
+                'reason'   => 'Contractor performance history indicates elevated risk',
+                'priority' => 4,
             ];
         }
 

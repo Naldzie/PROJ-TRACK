@@ -17,6 +17,11 @@ class Contractor extends Model
         'contact_number',
         'company_landline',
         'company_address',
+        'performance_rating',
+        'on_time_delivery_pct',
+        'completed_projects_count',
+        'avg_delay_days',
+        'last_project_completed_at',
     ];
 
     public function user()

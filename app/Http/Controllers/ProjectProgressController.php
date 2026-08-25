@@ -11,6 +11,7 @@ use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use App\Services\ProjectDetailService;
+use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -566,6 +567,10 @@ class ProjectProgressController extends Controller
                     'ip_address' => request()->ip(),
                     'visibility' => 'all',
                 ]);
+
+                if ($project->contractor) {
+                    app(ContractorPerformanceService::class)->recompute($project->contractor);
+                }
             }
         } catch (\Exception $e) {
             \Log::error('Failed to auto-complete project: '.$e->getMessage());

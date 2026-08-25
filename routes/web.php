@@ -776,6 +776,7 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::post('/rating/suggest', [RatingController::class, 'suggest'])->name('admin.rating.suggest');
     Route::post('/rating/store', [RatingController::class, 'store'])->name('admin.rating.store');
     Route::post('/rating/auto-rate-all', [RatingController::class, 'autoRateAll'])->name('admin.rating.auto-rate-all');
+    Route::post('/rating/{contractor}/recompute-performance', [RatingController::class, 'recomputePerformance'])->name('admin.rating.recompute-performance');
     
     Route::get('/email', [AdminEmailController::class, 'index'])->name('admin.email');
     Route::post('/emails', [AdminEmailController::class, 'store'])->name('admin.emails.store');
