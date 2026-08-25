@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\Models\Contractor;
 use App\Models\Project;
+use App\Models\ProjectExtension;
 use Carbon\Carbon;
 
 /**
@@ -28,6 +29,8 @@ use Carbon\Carbon;
  * • completed_projects_count — total completed projects
  * • performance_rating    — 1-5 rating derived from on-time % and avg delay
  * • last_project_completed_at — timestamp of most recent completion
+ * • total_extensions_count — total approved extensions across completed projects
+ * • total_extension_days   — sum of days from all approved extensions
  *
  * On-Time Calculation (Industry Standard — AACE RP 109R-19)
  * ----------------------------------------------------------
@@ -64,13 +67,14 @@ class ContractorPerformanceService
      * • On demand via POST /admin/rating/{contractor}/recompute-performance
      * • Bulk recompute via recomputeAll()
      *
-     * Workflow
-     * --------
-     * 1. Get all Completed projects with actual_end_date and original_planned_end_date.
-     * 2. For each: compute effective_deadline (original + latest approved extension).
-     * 3. Classify as on-time or late; accumulate delay days.
-     * 4. Compute on_time_pct, avg_delay, performance_rating.
-     * 5. Save to contractors table.
+ * Workflow
+ * --------
+ * 1. Get all Completed projects with actual_end_date and original_planned_end_date.
+ * 2. For each: compute effective_deadline (original + latest approved extension).
+ * 3. Classify as on-time or late; accumulate delay days.
+ * 4. Compute on_time_pct, avg_delay, performance_rating.
+ * 5. Query approved extensions across completed projects for informational stats.
+ * 6. Save all metrics to contractors table.
      *
      * Depends On
      * ----------
@@ -91,6 +95,8 @@ class ContractorPerformanceService
                 'completed_projects_count' => 0,
                 'avg_delay_days' => null,
                 'last_project_completed_at' => null,
+                'total_extensions_count' => 0,
+                'total_extension_days' => null,
             ]);
 
             return $this->emptyMetrics();
@@ -118,12 +124,22 @@ class ContractorPerformanceService
         $performanceRating = $this->computeRating($onTimePct, $avgDelayDays);
         $lastCompleted = $completed->max('actual_end_date');
 
+        // Extension stats: count and sum of days from approved extensions
+        // on completed projects (informational only, no scoring impact)
+        $completedIds = $completed->pluck('id');
+        $extensionsQuery = ProjectExtension::whereIn('project_id', $completedIds)
+            ->where('status', 'approved');
+        $totalExtensionsCount = $extensionsQuery->count();
+        $totalExtensionDays = (clone $extensionsQuery)->sum('duration_days');
+
         $contractor->update([
             'performance_rating' => $performanceRating,
             'on_time_delivery_pct' => $onTimePct,
             'completed_projects_count' => $total,
             'avg_delay_days' => $avgDelayDays,
             'last_project_completed_at' => $lastCompleted,
+            'total_extensions_count' => $totalExtensionsCount,
+            'total_extension_days' => $totalExtensionDays > 0 ? $totalExtensionDays : null,
         ]);
 
         return [
@@ -132,6 +148,8 @@ class ContractorPerformanceService
             'completed_projects_count' => $total,
             'avg_delay_days' => $avgDelayDays,
             'last_project_completed_at' => $lastCompleted,
+            'total_extensions_count' => $totalExtensionsCount,
+            'total_extension_days' => $totalExtensionDays > 0 ? $totalExtensionDays : null,
         ];
     }
 
@@ -156,6 +174,8 @@ class ContractorPerformanceService
             'completed_projects_count' => $contractor->completed_projects_count,
             'avg_delay_days' => $contractor->avg_delay_days,
             'last_project_completed_at' => $contractor->last_project_completed_at,
+            'total_extensions_count' => $contractor->total_extensions_count,
+            'total_extension_days' => $contractor->total_extension_days,
         ];
     }
 
@@ -287,6 +307,8 @@ class ContractorPerformanceService
             'completed_projects_count' => 0,
             'avg_delay_days' => null,
             'last_project_completed_at' => null,
+            'total_extensions_count' => 0,
+            'total_extension_days' => null,
         ];
     }
 }

@@ -63,6 +63,13 @@ class RatingController extends Controller
             'last_project_completed_at' => $c->last_project_completed_at
                 ? (\Carbon\Carbon::parse($c->last_project_completed_at)->format('M d, Y'))
                 : null,
+            // Phase 9 additions: extension stats (informational) + project counts
+            'total_projects_count' => $c->projects->count(),
+            'ongoing_projects_count' => $c->projects->where('status', 'Ongoing')->count(),
+            'total_extensions_count' => $c->total_extensions_count ?? 0,
+            'total_extension_days' => $c->total_extension_days
+                ? round((float) $c->total_extension_days, 1)
+                : null,
         ]);
 
         $ratingsJson = $ratings->map(fn($r) => [

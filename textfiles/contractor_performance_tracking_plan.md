@@ -458,6 +458,60 @@ a contractor's profile).
 
 ---
 
+## 6A. EXTENSION STATS (Informational — Added Post-Phase 9)
+
+### Context
+
+Users requested visibility into extension frequency and total extension days
+to understand contractor patterns. Research showed most government DOT systems
+do NOT penalize for extension count (extensions are contractual mechanisms
+for legitimate delays). Decision: display extension stats as informational
+metrics with no scoring impact.
+
+### What Was Added
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `total_extensions_count` | unsigned int | Count of approved extensions across all completed projects |
+| `total_extension_days` | decimal(10,2) | Sum of days from approved extensions on completed projects |
+
+These are displayed as **averages per completed project** in the UI
+(avg extensions/project, avg extension days/project) for fair comparison
+across contractors with different project counts.
+
+### Panel Layout (9 metrics + hero badge)
+
+| Row | Left | Right |
+|-----|------|-------|
+| Hero | Rating badge + label | — |
+| 1 | On-Time Delivery | Avg Delay |
+| 2 | Completed Projects | Ongoing Projects |
+| 3 | Total Projects | Last Completed |
+| 4 | Avg Extensions/Project | Avg Extension Days/Project |
+
+### Design Decisions
+
+- **Per-project averages, not totals**: Totals are misleading when comparing
+  contractors with different project counts (12 extensions on 20 projects ≠ 12 on 3)
+- **Only approved extensions counted**: Rejected/pending extensions excluded
+- **No scoring impact**: Extension stats are informational only; rating stays
+  based on on-time % + avg delay
+- **Avg days per project, not per extension**: PMs care about total time
+  consumed, not individual extension length
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `database/migrations/2026_08_25_000002_add_extension_info_to_contractors_table.php` | NEW: migration |
+| `app/Models/Contractor.php` | Add `total_extensions_count`, `total_extension_days` to `$fillable` |
+| `app/Services/AI/ContractorPerformanceService.php` | Compute extension stats in `recompute()` + include in summary |
+| `app/Http/Controllers/Admin/RatingController.php` | Add new fields to JSON payload |
+| `resources/views/admin/rating.blade.php` | 9-metric layout with ongoing + total + extension averages |
+| `tests/Unit/Services/AI/ContractorPerformanceServiceTest.php` | 5 new tests for extension stats |
+
+---
+
 ## 7. BRANCH & PROCESS
 
 | Item | Value |
@@ -499,6 +553,19 @@ a contractor's profile).
    Context: New contractors or those with only ongoing projects have no data.
    Decision: All performance columns are nullable (except completed_projects_count=0).
    Consequences: UI shows "N/A" for contractors with no completed projects.
+
+6. **Extension stats are informational only (no scoring impact)**
+   Context: User asked whether extension frequency/days should affect rating.
+   Research: Government DOT systems (SCDOT, MnDOT, FDOT, MTO) do NOT penalize
+   for extension count. Extensions are contractual mechanisms for legitimate delays.
+   Decision: Display extension stats as informational metrics only.
+   Consequences: PMs can see patterns; rating remains purely on-time + delay based.
+
+7. **Per-project averages, not totals for extension metrics**
+   Context: Totals are misleading when comparing contractors with different
+   project counts (12 extensions on 20 projects ≠ 12 on 3 projects).
+   Decision: Show avg extensions/project and avg extension days/project.
+   Consequences: Fair comparison across contractors regardless of project count.
 
 ---
 

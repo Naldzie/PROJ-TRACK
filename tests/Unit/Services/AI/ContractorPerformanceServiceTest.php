@@ -248,4 +248,131 @@ class ContractorPerformanceServiceTest extends TestCase
 
         $this->assertEquals(0, $result['completed_projects_count']);
     }
+
+    public function test_extension_stats_computed_from_approved_extensions(): void
+    {
+        $project = Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 1,
+            'original_end_date' => now()->subDays(30),
+            'new_end_date' => now()->subDays(20),
+            'approved_new_end_date' => now()->subDays(20),
+            'reason' => 'Weather',
+            'status' => 'approved',
+            'duration_days' => 10,
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 2,
+            'original_end_date' => now()->subDays(20),
+            'new_end_date' => now()->subDays(5),
+            'approved_new_end_date' => now()->subDays(5),
+            'reason' => 'Materials',
+            'status' => 'approved',
+            'duration_days' => 15,
+        ]);
+
+        $result = $this->service->recompute($this->contractor);
+
+        $this->assertEquals(2, $result['total_extensions_count']);
+        $this->assertEquals(25, $result['total_extension_days']);
+    }
+
+    public function test_rejected_extensions_not_counted(): void
+    {
+        $project = Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 1,
+            'original_end_date' => now()->subDays(30),
+            'new_end_date' => now()->subDays(20),
+            'approved_new_end_date' => now()->subDays(20),
+            'reason' => 'Weather',
+            'status' => 'approved',
+            'duration_days' => 10,
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 2,
+            'original_end_date' => now()->subDays(20),
+            'new_end_date' => now()->subDays(5),
+            'reason' => 'Bad excuse',
+            'status' => 'rejected',
+            'duration_days' => 15,
+        ]);
+
+        $result = $this->service->recompute($this->contractor);
+
+        $this->assertEquals(1, $result['total_extensions_count']);
+        $this->assertEquals(10, $result['total_extension_days']);
+    }
+
+    public function test_pending_extensions_not_counted(): void
+    {
+        $project = Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 1,
+            'original_end_date' => now()->subDays(30),
+            'new_end_date' => now()->subDays(20),
+            'approved_new_end_date' => now()->subDays(20),
+            'reason' => 'Weather',
+            'status' => 'approved',
+            'duration_days' => 10,
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 2,
+            'original_end_date' => now()->subDays(20),
+            'new_end_date' => now()->subDays(5),
+            'reason' => 'Pending request',
+            'status' => 'pending',
+            'duration_days' => 15,
+        ]);
+
+        $result = $this->service->recompute($this->contractor);
+
+        $this->assertEquals(1, $result['total_extensions_count']);
+        $this->assertEquals(10, $result['total_extension_days']);
+    }
+
+    public function test_empty_metrics_return_zero_for_extension_fields(): void
+    {
+        $result = $this->service->recompute($this->contractor);
+
+        $this->assertEquals(0, $result['total_extensions_count']);
+        $this->assertNull($result['total_extension_days']);
+    }
+
+    public function test_get_performance_summary_includes_extension_fields(): void
+    {
+        $this->contractor->update([
+            'total_extensions_count' => 5,
+            'total_extension_days' => 45.0,
+        ]);
+
+        $summary = $this->service->getPerformanceSummary($this->contractor);
+
+        $this->assertEquals(5, $summary['total_extensions_count']);
+        $this->assertEquals(45.0, $summary['total_extension_days']);
+    }
 }

@@ -315,7 +315,7 @@
     Phase 6  — Estimated Completion Gauge                  ✅ DONE
     Phase 7  — Prediction History & Accuracy                ✅ DONE
     Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
-    Phase 9  — Contractor Performance Tracking             ⬜ NOT STARTED
+    Phase 9  — Contractor Performance Tracking             ✅ DONE (incl. extension stats)
     Phase 10 — AI-Powered Recommendations                  ⬜ NOT STARTED
     Phase 11 — Export / Reporting                           ⬜ NOT STARTED
     Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED

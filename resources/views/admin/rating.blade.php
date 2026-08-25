@@ -723,12 +723,13 @@ function renderPerformance() {
   }
 
   subtitle.textContent = c.name;
+  const ratingInt = Math.round(c.performance_rating);
   const ratingLabels = { 5: 'Superior', 4: 'Good', 3: 'Satisfactory', 2: 'Below Average', 1: 'Poor' };
-  const ratingLabel = ratingLabels[c.performance_rating] || 'N/A';
+  const ratingLabel = ratingLabels[ratingInt] || 'N/A';
 
   panel.innerHTML = `<div class="perf-grid">
     <div class="perf-top">
-      <div class="perf-hero perf-${c.performance_rating}">${c.performance_rating}</div>
+      <div class="perf-hero perf-${ratingInt}">${ratingInt}</div>
       <div class="perf-top-text">
         <span class="perf-top-label">Performance Rating</span>
         <span class="perf-top-value">${ratingLabel}</span>
@@ -748,8 +749,24 @@ function renderPerformance() {
         <span class="perf-stat-value">${c.completed_projects_count}</span>
       </div>
       <div class="perf-stat">
+        <span class="perf-stat-label">Ongoing Projects</span>
+        <span class="perf-stat-value">${c.ongoing_projects_count}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Total Projects</span>
+        <span class="perf-stat-value">${c.total_projects_count}</span>
+      </div>
+      <div class="perf-stat">
         <span class="perf-stat-label">Last Completed</span>
         <span class="perf-stat-value">${c.last_project_completed_at || 'N/A'}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Avg Extensions per Project</span>
+        <span class="perf-stat-value">${c.completed_projects_count > 0 ? (c.total_extensions_count / c.completed_projects_count).toFixed(1) : 'N/A'}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Avg Extension Days per Project</span>
+        <span class="perf-stat-value">${c.completed_projects_count > 0 && c.total_extension_days != null ? (c.total_extension_days / c.completed_projects_count).toFixed(1) + ' days' : 'N/A'}</span>
       </div>
     </div>
   </div>`;

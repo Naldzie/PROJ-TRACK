@@ -22,6 +22,8 @@ class Contractor extends Model
         'completed_projects_count',
         'avg_delay_days',
         'last_project_completed_at',
+        'total_extensions_count',
+        'total_extension_days',
     ];
 
     public function user()
