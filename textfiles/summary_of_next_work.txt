@@ -1,15 +1,15 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-  Last Updated: August 13, 2026
-===============================================================================
+  Last Updated: August 24, 2026
+================================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
   in referenced plan files under textfiles/.
 
-===============================================================================
-  RECOMMENDED READING — START HERE (Aug 17, 2026)
-===============================================================================
+================================================================================
+  RECOMMENDED READING — START HERE
+================================================================================
 
   Any teammate or AI agent continuing the REGRESSION / AI MODULE must read:
       textfiles/active_reference/AI_MODULE_HANDOVER.md
@@ -19,9 +19,9 @@
   the immutable "Project 7" fixture, behavioral rules that must be preserved,
   the DONE inventory, and the ordered NEXT-WORK list below.
 
-===============================================================================
+================================================================================
   COMPLETED — RISK REGISTER (gap #20)
-===============================================================================
+================================================================================
 
   Status: ✅ COMPLETE — implemented on branch phase-20-risk-register
   Branch: phase-20-risk-register (from main)
@@ -75,9 +75,9 @@
       model deleting hook cleans its own evidence on risk delete (fixes orphan
       bug). RiskRegisterTest now 35 tests; full suite 372 passing.
 
-===============================================================================
+================================================================================
   COMPLETED — PROGRESS TAB RISK FLAGS & ALERTS (real data)
-===============================================================================
+================================================================================
 
   Status: ✅ COMPLETE — implemented on branch phase-9-risk-flags-real-data
   Branch: phase-9-risk-flags-real-data (from main)
@@ -111,114 +111,98 @@
   resources/views/projects/project_detail/components/tabs/progress.blade.php,
   tests/Feature/RiskFlagsTest.php. Full suite green: 557 passed / 1993 assertions.
 
+================================================================================
+  NEXT TO IMPLEMENT — ORDERED WORK LIST (Aug 24, 2026)
+================================================================================
 
-===============================================================================
-  NEXT TO IMPLEMENT — (see SECTION 4 list below; top candidates: AI Phase 9
-  contractor tracking, Core Phase E, Activity Log UI for Staff)
-===============================================================================
+  The regression thread is CLOSED (all Phase 8 issues resolved via v2.5/v2.6
+  polish — MIN_SIMILAR_PROJECTS=3, MIN_SCALE_RATIO=0.5, MIN_SIMILARITY_SCORE=50,
+  X-axis merge, honest fit wording, null-safe scoring, 0-obs fallback, reference-
+  class blend, kNN weighting, P25/P75 range). Phase 14 (Forecast Reliability) is
+  DONE & merged. Full suite: 656 tests / 2485 assertions.
 
-  ⭐ ORDERED NEXT-WORK — CROSS-PROJECT REGRESSION (CURRENT FOCUS, Aug 13 2026)
-  --------------------------------------------------------------------------------
-  Branch: fix/cross-project-prior-flow (pushed, merged to main Aug 13 2026).
-  V2.5 Steps 1–5 DONE (Step 5 = MIN_SIMILARITY_SCORE 50). v2.6 Phase 1 ALL
-  DONE (4.1 X-axis merge, 4.2 pool gate via Step 5, 4.3 null-safe scoring,
-  4.4 honest fit wording). v2.6 Phase 2 (reference-class blend + P25/P75
-  range) IMPLEMENTED + merged (code a0f301d). Everything below is the
-  REGRESSION-MODULE TAIL, in order.
+  The remaining work items, in priority order:
 
-    v2.6 Phase 1 — Honest fixes ✅ ALL DONE
-        4.1 X-axis merge ✅ · 4.2 pool gate ✅ · 4.3 null-safe scoring ✅
-        · 4.4 honest fit wording ✅ · A4 0-obs category baseline ✅
-        (Plan: regression_v2_6_..._plan.md)
+     1. CORE MONITORING Phase E — AI ↔ baseline linkage
+        Branch: core/ai-baseline-linkage (from core/issue-lifecycle)
+        Scope: add baseline_schedule_id to ai_solutions (= current pending
+        baseline at generation time). Small prep work, enables Phase 10.
+        Plan: textfiles/core_monitoring_completion_plan.md §8
+        Status: ⬜ NOT STARTED
 
-    C7 — Accuracy-by-data_source logging ✅ DONE (Aug 13 2026)
-        prediction_history.data_source persisted on save + refresh; aggregate
-        query AIPredictionService::predictionAccuracyByDataSource(); dev view
-        /dev/prediction-accuracy. Enables empirical k tuning for Phase 2.
-        Plan: textfiles/regression_v2_5_cross_project_expansion_plan.md
+     2. AI PHASE 9 — Contractor Performance Tracking
+        Compute derived metrics: on-time delivery %, avg delay days,
+        completed projects count. ContractorRating UI already exists;
+        the computed performance metrics do NOT.
+        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 9
+        Status: ⬜ NOT STARTED
 
-    A4 — 0-obs category baseline ✅ DONE (Aug 13 2026)
-        shouldSupplement → 'fallback' for 0 obs + planned duration; category
-        baseline curve labeled "not project-specific"; current_month_index = 1;
-        falls back to Insufficient Data when no pool. = v2.6 §5.6.
-        Plan: regression_v2_5_plan §3 A4
+     3. AI PHASE 10 — AI-Powered Recommendations
+        Replace rule-based RecommendationEngine with Gemini-generated
+        recs. Falls back to rules on API failure. Depends on Phase 9.
+        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 10
+        Reference: textfiles/ai_recommendation_data_gaps.txt
+        Status: ⬜ NOT STARTED
 
-    v2.6 Phase 2 — Reference-class prior + range ✅ DONE + MERGED (Aug 13 2026,
-        commit a0f301d on fix/cross-project-prior-flow)
-        Own regression on real points only (§5.1) + similarity-weighted class
-        curve (§5.2) + blend w·own+(1−w)·class w=obs/(obs+4), applies to ALL
-        projects (Decision 8) (§5.3) + P25/P75 next-month & forecast band
-        (§5.4) + reliability-from-homogeneity shrink (§5.5). Regression-meta
-        disclaimer "blended with category reference curve (N similar, weight
-        w)". Full suite 635 passed / 2394 assertions. Plan: textfiles/
-        regression_v2_6_cross_project_prior_flow_plan.md; log:
-        textfiles/active_reference/ai_v2_phase2_blend_progress_log.txt
+     4. AI PHASE 11 — Export / Reporting
+        PDF export of prediction reports, CSV forecast exports,
+        email notifications on risk level changes.
+        Note: Excel report exists but frozen pending corruption fix.
+        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 11
+        Status: ⬜ NOT STARTED
 
-    A2 — Completion fallback for implausible fits (v2.5 §3 A2)  ✅ DONE (Aug 13 2026)
-        When the project's own model yields an implausible completion
-        (polynomial → past date or absurd month count), estimate "how long
-        similar projects took to go from X% → 100%" via the aggregate and
-        blend/bound the answer. Ties into Fix H item 3.
-        IMPLEMENTED: CompletionEstimationService::estimateFromClassReference()
-        + isPolynomialSelected(); CompletionComparisonService::estimateAll()
-        substitutes the class-derived answer (blended with schedule-aware) for
-        the implausible polynomial branch only; aiprediction passes/builds the
-        class reference; ai-prediction UI shows a "Class-derived estimate"
-        badge. Committed on feature/a2-completion-sanity-fallback. Plan + log:
-        textfiles/completion_sanity_fallback_plan.md.
-        Regression-module tail → B5/B6 below.
+     5. AI PHASE 12 — Architectural Enhancements
+        Prediction caching (TTL 1h), background jobs for Gemini API,
+        configurable thresholds in config/ai.php.
+        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 12
+        Status: ⬜ NOT STARTED
 
-    B5 / B6 — Percentile benchmark + at-risk flag (v2.5 §3 B5/B6)  ✅ DONE
-        B5: actuals vs aggregate median/P25/P75 → "your progress is in the Nth
-        percentile of similar completed projects" (feeds health gauge).
-        B6: actual below the category lower band for 2+ consecutive months →
-        "behind similar projects of this type" flag (feeds RecommendationEngine).
-        IMPLEMENTED: AIPredictionService::buildClassStanding() (banded tier +
-        consecutive-month at-risk run; month index DERIVED from month_label,
-        never the stored month_number); RecommendationEngine corrective rule.
-        Committed on feature/b56-percentile-at-risk (plan cd16289, code 1727879)
-        + a post-review month-index fix (see percentile_benchmark_at_risk_plan.md
-        §8 D5/D6 and fixes_and_improvements_log.txt #14). Full suite: 656/2485.
+     6. AI PHASE 13 — Testing & Refinement
+        ~150 new V2 tests; no V1 regressions.
+        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 13
+        Status: ⬜ NOT STARTED
 
-  ▸ Status Aug 14 2026: the v2.6 thread (Steps 1–5 + Phase 1 + C7 + A4 +
-    Phase 2 blend) was COMPLETE and merged to main; **A2 (completion sanity
-    fallback) and B5/B6 (percentile benchmark + at-risk flag) are DONE** on
-    their own branches. The regression-module tail is now CLOSED; next: core
-    Phase E → AI Phase 9/10 (see overall prioritization below).
+     7. Extension Approval Activity Logging (small pending item)
+        Missing ActivityLog::create() in store() and update().
+        File: app/Http/Controllers/Admin/ProjectExtensionController.php
+        Plan ref: uncertain/baseline_extension_adjustment_plan__4_ (2).txt
+        Status: ⬜ NOT STARTED
 
-===============================================================================
+  LOWEST PRIORITY (safe to defer):
+     MLR, Project Comparison, Bulk Ops, User Activity Summary,
+     Project Templates, Data Export/Import, Job Queue utilization,
+     Dead Code Cleanup, Activity Log UI for Staff.
+     Source: textfiles/gaps_and_features_missing.txt
 
-  🗺️ OVERALL PRIORITIZATION DECISION (Aug 12, 2026) — KEEP THIS ORDER
-  --------------------------------------------------------------------------------
-  Reviewed ALL deferred/future work (regression + non-regression). Decision:
-  FINISH the regression thread first (list above, as-is), THEN core Phase E,
-  THEN AI Phase 9→10, then the rest.
-
-     1. REGRESSION MODULE — finish fully (Step 5 DONE → v2.6 Phase 1 → C7 → A4 →
-        v2.6 Phase 2 → A2 → B5/B6). Rationale: same "statistical honesty"
-        theme as merged Phase 14; closes live "score-40 still borrowed" bug;
-        warmest context; branch + plan edits already half-done (uncommitted).
-Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
-         (blend + range) ALL DONE & merged into main (a0f301d); **A2 (completion
-         sanity fallback) DONE on feature/a2-completion-sanity-fallback** and
-         **B5/B6 DONE on feature/b56-percentile-at-risk** — regression thread
-         is CLOSED, next work is core Phase E.
-     2. CORE MONITORING Phase E — AI ↔ baseline linkage (small prep; enables
-        future Phase 10 loop). Plan: core_monitoring_completion_plan.md
-     3. AI PHASE 9 → 10 — Contractor Performance Tracking → AI-Powered
-        Recommendations (highest capstone demonstration value; Phase 10
-        feedback loop flagged future-capstone-worthy). Phases 11/12/13 after.
-     4. LOWEST PRIORITY (safe to defer) — regression polish A2/B5/B6 (covered
-        in step 1 tail), MLR, Project Comparison, Bulk Ops, User Activity
-        Summary, Project Templates, Data Export/Import, Job Queue use, Dead
-        Code Cleanup, Activity Log UI for Staff.
-
-  Reference: active_reference/ai_module_ver2_master_plan.txt (Phases 9-13),
+  Reference: active_reference/AI_MODULE_HANDOVER.md (single entry point),
+    active_reference/ai_module_ver2_master_plan.txt (Phases 9-13),
     textfiles/core_monitoring_completion_plan.md (Phase E),
-    textfiles/gaps_and_features_missing.txt (V2 + non-AI gaps),
-    textfiles/summary_of_next_work.txt SECTION 2-4.
+    textfiles/gaps_and_features_missing.txt (V2 + non-AI gaps).
 
-===============================================================================
+================================================================================
+
+  🗺️ OVERALL STATUS (Aug 24, 2026)
+  --------------------------------------------------------------------------------
+  COMPLETED:
+     ✅ Regression thread — all Phase 8 issues resolved (v2.5 safety valves
+        + v2.6 honest fixes + reference-class blend). Merged to main (a0f301d).
+        Remaining open items are documented deferrals, not bugs.
+     ✅ Phase 14 — Forecast Reliability & Confidence Rebase. Merged to main
+        (a45a156). R² relabeled; weighted reliability score 0-100 live.
+     ✅ V2.5/V2.6 tail — A2 (completion sanity fallback), B5/B6 (percentile
+        benchmark + at-risk flag), C7 (accuracy-by-data_source logging).
+        Regression thread CLOSED as of Aug 14 2026.
+     ✅ Core Monitoring Phases A–D — attachments, overview real data, issue
+        lifecycle, progress attachments. All merged to main.
+     ✅ Risk Register, Notification System, Report Generation — all merged.
+
+  REMAINING:
+     ⬜ Core Phase E (small prep → enables Phase 10)
+     ⬜ AI Phase 9 → 10 → 11 → 12 → 13 (V2 master plan tail)
+     ⬜ Extension approval activity logging (small fix)
+     ⬜ Non-AI gaps (deferred, see SECTION 4)
+
+================================================================================
 
   ⭐ DONE (Aug 11-12, 2026) — AI MODULE: FORECAST RELIABILITY
   & PREDICTION CONFIDENCE REBASE (V2 PHASE 14)
@@ -250,21 +234,15 @@ Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
     • Presenter/Blade prompt wording updated (AIExplanationService now
       prompts with the reliability block, not R²); all existing report keys
       kept (backward compatible).
-  Branch (on implementation): phase-14-forecast-reliability (from main).
-  Step 9 of the plan = inform for review before merging (Rule 12).
 
-===============================================================================
-  SECTION 1 — CURRENT FOCUS: CORE PROJECT MONITORING
+================================================================================
+  SECTION 1 — CORE PROJECT MONITORING
+================================================================================
 
-  Plan: textfiles/core_monitoring_completion_plan.md (new, Aug 2 2026)
-
-  NOTE: The AI regression module is PAUSED (V2 functionally complete through
-        Phase 8 + post-fixes, all merged to main @ 7086afe). Focus shifts to
-        finishing the core project monitoring features, which still contain
-        hardcoded placeholders (overview.blade.php mockup cards).
+  Plan: textfiles/core_monitoring_completion_plan.md (Aug 2 2026)
 
   STATUS: Phases A–D COMPLETE & merged to main. Phase E (AI ↔ baseline
-        linkage) remains as the only unfinished core-monitoring phase.
+        linkage) is the only unfinished core-monitoring phase.
 
   Phases (each on its own branch; merge to main only on approval):
     A — Attachments infrastructure
@@ -304,56 +282,44 @@ Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
   already exists, ai_solutions↔baseline) enables the Phase 10 recommendation-
   outcome feedback loop (ai_recommendation_data_gaps.txt).
 
-===============================================================================
+================================================================================
   SECTION 2 — AI MODULE V2 REMAINING PHASES
-===============================================================================
+================================================================================
 
   Plan: active_reference/ai_module_ver2_master_plan.txt
-  Recommended Order: 9 → 10 → 11 → 12 → 13 (Phase 8 COMPLETE — see below)
+  Recommended Order: 9 → 10 → 11 → 12 → 13
 
   NOTE: Phase 14 — Forecast Reliability & Prediction Confidence Rebase is
-        PLANNED (Aug 11, 2026). Full plan:
-        textfiles/forecast_reliability_confidence_plan.md.
-        It replaces all R²-as-confidence wording with a weighted reliability
-        score built on the prediction-history backtest. Consider doing it
-        BEFORE Phase 9-13 since it touches the AI Prediction UI everyone
-        sees and is a probable defense question.
+        ✅ COMPLETE (merged to main @ a45a156, Aug 11 2026).
+        Full plan: textfiles/forecast_reliability_confidence_plan.md.
 
-  NOTE: Phase 8 (Cross-Project Historical Regression) is COMPLETE —
-        implemented + health-gauge fixes merged into main (merge 5d8dfc3).
+  NOTE: Phase 8 (Cross-Project Historical Regression) is ✅ COMPLETE
+        and all post-Phase-8 issues resolved (v2.5/v2.6 polish).
+        Merged to main (a0f301d). Regression thread CLOSED.
 
   NOTE: Phases 6 (Estimated Completion Gauge) and 7 (Prediction History)
-        are COMPLETE — verified in codebase.
+        are ✅ COMPLETE — verified in codebase.
 
   NOTE: Phase 4 (Forecast Table) is intentionally omitted — low priority,
         may not implement. The Prediction History & Accuracy table (Phase 7)
         already provides prediction tracking in the UI.
 
-  Phase 8 — Cross-Project Historical Regression   ✅ COMPLETE
-     Implemented (phase-8-cross-project-regression, Jul 28) + health gauge /
-     completion display fixes merged to main (Jul 31). Open items (health
-     gauge at gap=0, completion_multi in supplement mode) tracked in
-     textfiles/regression_v2_5_cross_project_expansion_plan.md §7.
-
-  Phase 9 — Contractor Performance Tracking
-     Track reliability: on-time delivery %, avg delay, performance rating
-     Prerequisite for AI-powered recommendations (Phase 10)
-
-  Phase 10 — AI-Powered Recommendations
-     Replace rule-based RecommendationEngine with Gemini-generated recs
-     Falls back to rule-based on API failure
-     Depends on: Phase 9 contractor data
-
-  Phase 11 — Export / Reporting
-     PDF export of prediction reports, CSV export of forecast data
-     Email notifications on risk level changes
-
-  Phase 12 — Architectural Enhancements
-     Prediction caching, background jobs for AI analysis,
-     configurable thresholds in config/ai.php
-
-  Phase 13 — Testing & Refinement
-     ~150 new V2 tests; no V1 regressions
+  V2 Phase Status Summary:
+    Phase 1  — Polynomial Regression Engine              ✅ DONE
+    Phase 2  — Model Selection & Comparison                ✅ DONE
+    Phase 3  — Completion Estimation                       ✅ DONE
+    Phase 3.5 — Dual Completion Display                    ✅ DONE
+    Phase 4  — Forecast Table                              ⏭️ OMITTED (Phase 7 replaces)
+    Phase 5  — S-Curve Shifted Forecast                    ✅ DONE
+    Phase 6  — Estimated Completion Gauge                  ✅ DONE
+    Phase 7  — Prediction History & Accuracy                ✅ DONE
+    Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
+    Phase 9  — Contractor Performance Tracking             ⬜ NOT STARTED
+    Phase 10 — AI-Powered Recommendations                  ⬜ NOT STARTED
+    Phase 11 — Export / Reporting                           ⬜ NOT STARTED
+    Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED
+    Phase 13 — Testing & Refinement                         ⬜ NOT STARTED
+    Phase 14 — Forecast Reliability Rebase                  ✅ DONE
 
 ================================================================================
   SECTION 3 — AI-RELATED ENHANCEMENT IDEAS (DEFERRED / NOT PLANNED)
@@ -379,13 +345,23 @@ Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
      Non-critical activity carried 5× is fine; critical-path one is not
      Requires: activity dependency mapping or critical path tagging
 
+  Blend parameter k backtest
+     k = 4 is a reasoned default, not empirically tuned.
+     C7 now logs accuracy by data_source, so k in {2,3,4,5,6} can be
+     compared once enough blended predictions accumulate.
+
+  UI "why" note when MIN_SIMILAR_PROJECTS gate skips supplementation
+     When the gate trips, the AI Prediction tab does not explain why.
+     A badge (e.g., "Only N usable similar projects, need >= 3") is a
+     cheap follow-up.
+
 ================================================================================
   SECTION 4 — NON-AI FUTURE WORK (GAPS & FEATURES)
 ================================================================================
 
   Sources: gaps_and_features_missing.txt, project_gaps_and_future_roadmap.mmd
 
-  Risk Register  ✅ COMPLETE (gaps #20) — branch phase-20-risk-register
+  Risk Register  ✅ COMPLETE (gap #20) — branch phase-20-risk-register
      Manual, forward-looking register of potential risks with probability x
      impact score, mitigation plan, status. Lives in the Issues tab
      ("Issues & Risks") via a toggle. High-level risks notify admins + the
@@ -467,31 +443,55 @@ Status Aug 14 2026: Step 5, v2.6 Phase 1, C7, A4, and v2.6 Phase 2
     • adjusted_baseline_generation_plan.txt       ✅ auto-distribution works
   These can be moved to done/ when convenient.
 
-  ✅ Completed (not yet reflected in this file's structure):
+  ✅ Completed (reflected in this file above):
+    • Phase 1 — Polynomial Regression Engine
+    • Phase 2 — Model Selection & Comparison
+    • Phase 3 — Completion Estimation
+    • Phase 3.5 — Dual Completion Display
+    • Phase 5 — S-Curve Shifted Forecast
     • Phase 6 — Estimated Completion Gauge
     • Phase 7 — Prediction History & Accuracy
-    • Phase 8 — Cross-Project Historical Regression (+ health gauge fixes)
+    • Phase 8 — Cross-Project Historical Regression (+ all v2.5/v2.6 fixes)
+    • Phase 14 — Forecast Reliability & Confidence Rebase
+    • V2.5 Safety Valves (Steps 1–5)
+    • v2.6 Phase 1 (honest fixes) + Phase 2 (reference-class blend)
+    • A2 (completion sanity fallback) + B5/B6 (percentile + at-risk) + C7 (accuracy logging)
     • Fixes A–G + auto-complete at 100% actual (main @ 7086afe)
     • Inspection-date refactor (month_label + inspection_date consolidation)
+    • Core Monitoring Phases A–D
+    • Risk Register + Risk-to-Issue Conversion
+    • Notification System (N1–N5)
+    • Report Generation
 
-  Active Plans (also):
-    core_monitoring_completion_plan.md   — CURRENT FOCUS (core monitoring)
-    risk_register_plan.txt               — ✅ COMPLETE (gap #20)
+  Active Plans:
+    core_monitoring_completion_plan.md   — Phase E NOT STARTED
+    risk_register_plan.txt               — ✅ COMPLETE
 
 ================================================================================
   KEY FILE LOCATIONS (current organization)
 ================================================================================
 
-  Active Plans:
+  Active Reference (start here after AI_MODULE_HANDOVER.md):
+    active_reference/AI_MODULE_HANDOVER.md
     active_reference/ai_module_ver2_master_plan.txt
-    active_reference/ai_v2_phase1_progress_log.txt
     active_reference/project_context_and_development_rules.txt
-    cross_project_safety_valves_plan.md             — V2.5 safety valves (Steps 1–5 done)
-    regression_v2_6_cross_project_prior_flow_plan.md — v2.6 prior/blend plan (Phase 1 + Phase 2)
+
+  Plans (mostly DONE; read for decisions & numbers):
+    core_monitoring_completion_plan.md                     — Phase E NOT STARTED
+    regression_v2_5_cross_project_expansion_plan.md         — ✅ (A2/A4/B5/B6/C7 done)
+    regression_v2_6_cross_project_prior_flow_plan.md        — ✅ (blend + range)
+    forecast_reliability_confidence_plan.md                 — ✅ DONE
+    cross_project_safety_valves_plan.md                     — ✅ DONE
+    completion_sanity_fallback_plan.md                      — ✅ DONE
+    percentile_benchmark_at_risk_plan.md                    — ✅ DONE
+
+  Logs / notes:
+    fixes_and_improvements_log.txt                          — ✅/📌
+    gaps_and_features_missing.txt                           — 📌
+    b56_defense_notes.txt                                   — 📌
+    ai_recommendation_data_gaps.txt                         — 📌 (Phase 10 ref)
 
   Future / Feature Ideas:
-    gaps_and_features_missing.txt
-    ai_recommendation_data_gaps.txt
     project_gaps_and_future_roadmap.mmd
 
   Done (V2):
