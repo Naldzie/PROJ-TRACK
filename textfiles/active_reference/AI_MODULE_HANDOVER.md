@@ -80,6 +80,8 @@ All paths relative to `app/Services/AI/`.
 | `CompletionEstimationService.php` | 3 completion solvers + class fallback | `estimate()` (schedule-aware), `estimatePolynomial()` (Newton–Raphson), `estimateFromClassReference()`, `estimateEarnedSchedule()` | `MAX_REASONABLE_MONTHS = 1000`, `MIN_R2_FOR_ESTIMATE = 0.50`, confidence High R²≥0.85 & realObs≥6 & index ≤1.5×planned; Medium R²≥0.70 & realObs≥4; else Low; index >2× planned → Low. Newton–Raphson: max 100 iters, tol `0.0001`, rejects descending tail (`derivativeAtRoot < 0`), root must be > current index. Real obs = obs − synthetic |
 | `CompletionComparisonService.php` | Runs all 3 methods + comparison summary | `estimateAll(...): array` | Labels: `polynomial` → "Polynomial (Trend-Based)", `schedule_aware` → "Schedule-Aware (Conservative)", `earned_schedule` → "Earned Schedule EAC_time". Agreement: <2 valid → N/A; spread ≤15d High; ≤45d Moderate; else Low |
 | `RecommendationEngine.php` | **Rule-based** (not AI) recommendations | `generate(Project, prediction): array`, `getCategoryColor()` | `MAX_RECOMMENDATIONS = 8`. Categories: escalation (red), corrective (amber), monitoring (yellow), administrative (blue). Consumes risk, trend, gap, days left, extensions, issues (severity weights Critical 3 / High 2 / Medium 1 / Low 0.5), fit, obs, speed, baselines, carryovers, B5/B6 class standing. See `textfiles/ai_recommendation_data_gaps.txt` for what data would enable AI-driven recs |
+| `AIRecommendationService.php` | **AI-powered** recommendations via Gemini | `generate(Project, prediction): array`, `buildPrompt()`, `callGemini()`, `parseResponse()`, `validateRecommendation()`, `buildReliabilityText()` | Phase 10. AI-first with rule-based fallback. Max 6 recs. Output: `{message, category, reason, priority, ai_generated}`. Prompt includes: curve fit quality (R² relabeled), forecast reliability score (4 weighted factors), contractor performance, issue breakdown, extension patterns, cross-project standing, carryovers. Explicit warning: "Do NOT use R² as evidence of prediction accuracy." Gibberish filter via TextQualityFilter. |
+| `TextQualityFilter.php` | Detects gibberish/placeholder text in open-text fields | `isMeaningful(?string $text): bool` | Phase 10 (R² fix). 4 heuristics: min length (3 chars), placeholder patterns (test/lorem/keyboard-mash), unique char count (< 5 for text ≥ 5 chars), vowel ratio (< 16%). Applied in `buildIssuesSection()` and `buildExtensionsSection()` to filter issue names/descriptions and extension reasons before prompt construction. |
 | `ProjectAssessmentService.php` | (see table row above) | | |
 | `ProjectDetailService.php` | (app/Services/ProjectDetailService.php) prepares server-side `ai_prediction` for the Overview tab; charts deferred to AJAX | `prepareProjectData()`, `prepareForecastData()` | Bridge between controller and presenter |
 
@@ -159,6 +161,9 @@ Source: `tests/Helpers/CreatesProjectWithHistory.php` → `createProjectWithKnow
 | `tests/Unit/Services/AI/CompletionEstimationServiceTest.php`, `ForecastReliabilityServiceTest.php` | Solvers + reliability |
 | `tests/Unit/Services/AI/RecommendationB6RuleTest.php`, `ClassStandingTest.php` | B5/B6 |
 | `tests/Unit/Services/AI/AIExplanationServiceTest.php` | Gemini prompt content |
+| `tests/Unit/Services/AI/AIRecommendationServiceTest.php` | AI rec prompt builder, JSON parser, R² fix, reliability block |
+| `tests/Unit/Services/AI/TextQualityFilterTest.php` | Gibberish/placeholder detection (32 tests) |
+| `tests/Feature/Services/AI/AIRecommendationIntegrationTest.php` | AI rec pipeline, fallback, sorting |
 | `tests/Feature/Services/AI/ProgressedMonthActivityGuardTest.php`, `CrossProjectSupplementIntegrationTest.php` | Integration |
 
 Run: `php artisan test` (full suite) or `php artisan test --filter=<Class>`. Tests use SQLite `:memory:` (see phpunit.xml).
@@ -184,8 +189,10 @@ Ordered oldest → newest:
 13. **V2.6 Phase 2 — Reference-class blend** (`w = obs/(obs+4)`, applies to ALL projects, P25/P75 range, reliability shrink). ✅ merged @ `a0f301d`.
 14. **A2 — Completion sanity fallback** (class-derived estimate when polynomial is implausible). ✅ `completion_sanity_fallback_plan.md`.
 15. **B5/B6 — Percentile benchmark + at-risk flag** (banded percentile tiers + 2-consecutive-months-below-P25 at-risk). ✅ `percentile_benchmark_at_risk_plan.md`, `b56_defense_notes.txt`.
+16. **Phase 10 — AI-Powered Recommendations** (AI-first with rule fallback, Gemini prompt, JSON parser, `ai_generated` flag, purple badge). ✅ Commits 4110f3e, 835f841, 7f4e23d, d8d8add. Plus uncommitted: R² relabeled as "Curve Fit Quality", FORECAST RELIABILITY section added to prompt, `TextQualityFilter` (4-heuristic gibberish detection for open-text fields).
 
-**Regression-module tail is CLOSED (as of Aug 14, 2026).** Full suite at the end of the tail: 656 tests / 2485 assertions.
+**Regression-module tail is CLOSED (as of Aug 14, 2026). Full suite at the end of the tail: 656 tests / 2485 assertions.
+**Phase 10 added: 828 tests / 3033 assertions (as of Aug 25 2026).
 
 ---
 
@@ -197,7 +204,7 @@ Per `textfiles/summary_of_next_work.txt` (keep this priority order):
    Plan: `textfiles/core_monitoring_completion_plan.md`. Scope: add `baseline_schedule_id` to `ai_solutions` (= current pending baseline at generation time). No snapshot/outcome display yet — that waits for Phase 10. This is the enabler for the future recommendation feedback loop.
 2. **AI Phase 9 → 10 — Contractor Performance Tracking → AI-Powered Recommendations** (highest capstone demonstration value).
    - Phase 9: build contractor metrics — `performance_rating` (1–5), `on_time_delivery_pct`, `completed_projects_count`, `avg_delay_days`, `total_extensions_count`, `total_extension_days`. Extension stats are informational only (no scoring impact). Branch: `ai/phase9-contractor-performance`. Plan: `textfiles/contractor_performance_tracking_plan.md`. **Status: ✅ DONE (incl. extension stats).**
-   - Phase 10: AI-generated recommendations. Plan: `textfiles/ai_recommendation_plan.md` (updated Aug 25 with industry research). AI-first with rule-based fallback. Gemini prompt includes contractor performance, issue breakdown, extension patterns, cross-project benchmarks. Same output format, no UI changes. **Status: 📋 PLAN READY (awaiting approval).**
+   - Phase 10: AI-generated recommendations. Plan: `textfiles/ai_recommendation_plan.md` (updated Aug 25 with industry research). AI-first with rule-based fallback. Gemini prompt includes contractor performance, issue breakdown, extension patterns, cross-project benchmarks. Same output format, no UI changes. **Status: ✅ DONE** (commits 4110f3e, 835f841, 7f4e23d, d8d8add + R² fix + TextQualityFilter pending commit).
    - After: Phases 11 (export/reporting — note Excel report exists but is frozen pending corruption fix, see `report_generation_plan.md` §6.4), 12 (architectural: caching TTL 1h, background jobs, `config/ai.php` threshold migration), 13 (testing ~150 more).
 3. **Pending (small):** Extension approval activity logging — `Admin/ProjectExtensionController` `store()`/`update()` lack `ActivityLog::create()` (ref: `textfiles/uncertain/baseline_extension_adjustment_plan__4_ (2).txt` Part A).
 4. **Deferred / low priority (safe to skip):** MLR (issue density, contractor experience, seasonality, extension count; budget utilization excluded by client), Project Comparison, Bulk Operations, User Activity Summary, Project Templates, Data Export/Import, Job Queue utilization, Dead Code Cleanup, Activity Log UI for Staff, completion-date interval UI (A3), k-backtest tuning via C7, `config/ai.php` migration (Phase 12).

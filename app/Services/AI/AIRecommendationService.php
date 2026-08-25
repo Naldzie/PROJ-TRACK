@@ -61,6 +61,24 @@ class AIRecommendationService
     private const MAX_RECOMMENDATIONS = 6;
 
     /**
+     * Maximum number of individual issues to include in the prompt.
+     * Avoids token bloat on projects with many open issues.
+     */
+    private const MAX_ISSUES_IN_PROMPT = 5;
+
+    /**
+     * Maximum number of individual extensions to include in the prompt.
+     * Avoids token bloat on projects with many extensions.
+     */
+    private const MAX_EXTENSIONS_IN_PROMPT = 5;
+
+    /**
+     * Maximum characters per open-text field in the prompt.
+     * Truncated to keep the prompt compact while preserving meaning.
+     */
+    private const MAX_TEXT_LENGTH = 200;
+
+    /**
      * ------------------------------------------------------------------------
      * Valid Categories
      * ------------------------------------------------------------------------
@@ -71,6 +89,24 @@ class AIRecommendationService
     private const VALID_CATEGORIES = [
         'escalation', 'corrective', 'monitoring', 'administrative',
     ];
+
+    /**
+     * Text quality filter — detects gibberish/placeholder text so the
+     * AI prompt only receives meaningful data.
+     *
+     * @var TextQualityFilter
+     */
+    private TextQualityFilter $textFilter;
+
+    /**
+     * Constructor — inject text quality filter.
+     *
+     * @param  TextQualityFilter|null  $textFilter  Optional; auto-resolved by container
+     */
+    public function __construct(?TextQualityFilter $textFilter = null)
+    {
+        $this->textFilter = $textFilter ?? new TextQualityFilter();
+    }
 
     /**
      * ------------------------------------------------------------------------
@@ -258,9 +294,15 @@ class AIRecommendationService
             }
         }
 
+        // Reliability score — the actual trust indicator for predictions
+        $reliability = $prediction['reliability'] ?? null;
+        $reliabilityText = $this->buildReliabilityText($reliability);
+
         return "You are a construction project management analyst. Given the following project data, generate 3-6 prioritized, actionable recommendations.
 
 Each recommendation MUST reference specific data from the project. Do NOT generate generic advice.
+
+IMPORTANT: Do NOT use R-squared (R²) as evidence that predictions are accurate. R² only measures how well the curve fits PAST data points — it says nothing about whether future predictions will be correct. A curve can fit past data almost perfectly (R² = 0.999) yet predict the wrong direction entirely. Use the FORECAST RELIABILITY score instead — it is the honest trust indicator based on backtesting, data sufficiency, forecast horizon, and method agreement.
 
 PROJECT CONTEXT:
 - Title: {$project->title}
@@ -270,11 +312,14 @@ PROJECT CONTEXT:
 - Days Remaining: {$daysRemaining}
 - Category: {$categoryName}
 
-RISK & REGRESSION:
+REGRESSION MODEL:
+- Curve Fit Quality (matches past data only): R² = {$rSquared} ({$fitQuality})
+- Based on {$obsCount} monthly progress observations
+{$reliabilityText}
+
+RISK ASSESSMENT:
 - Risk Level: {$riskLevel}
 - Trend: {$trend}
-- Regression R-squared: {$rSquared} ({$fitQuality})
-- Observations: {$obsCount}
 
 CONTRACTOR PERFORMANCE:
 - {$contractorText}
@@ -306,6 +351,8 @@ RULES:
 - Priority 5 = routine (admin, data quality)
 - Each recommendation MUST be unique — no duplicates
 - Each recommendation MUST reference specific project data
+- Use FORECAST RELIABILITY (not R²) to assess how much to trust predictions
+- If any text field appears to be gibberish or placeholder text (random characters, no meaningful words), ignore it entirely and do not base recommendations on it
 - Do NOT mention AI or that this is AI-generated
 - Return ONLY the JSON array, no other text";
     }
@@ -324,7 +371,7 @@ RULES:
      */
     private function buildIssuesSection(Project $project): string
     {
-        $openIssues = $project->issues()->where('status', 'Open');
+        $openIssues = $project->issues()->where('status', 'Open')->get();
 
         $totalCount = $openIssues->count();
 
@@ -332,28 +379,21 @@ RULES:
             return "ISSUES:\n- No open issues";
         }
 
-        // Count by type
-        $byType = $openIssues->clone()
-            ->selectRaw('issue_type, COUNT(*) as count')
-            ->groupBy('issue_type')
-            ->pluck('count', 'issue_type')
+        // Aggregate breakdown (always included)
+        $byType = $openIssues->groupBy('issue_type')
+            ->map(fn ($group) => $group->count())
             ->toArray();
 
-        // Count by severity
-        $bySeverity = $openIssues->clone()
-            ->whereNotNull('severity')
-            ->selectRaw('severity, COUNT(*) as count')
+        $bySeverity = $openIssues->whereNotNull('severity')
             ->groupBy('severity')
-            ->pluck('count', 'severity')
+            ->map(fn ($group) => $group->count())
             ->toArray();
 
-        // Aging: issues open 30+ days
         $agingCount = $project->issues()
             ->whereIn('status', ['Open', 'In Progress'])
             ->where('created_at', '<=', now()->subDays(30))
             ->count();
 
-        // Resolution rate: resolved in last 30 days
         $resolvedLast30 = $project->issues()
             ->whereIn('status', ['Resolved', 'Closed'])
             ->where('resolved_at', '>=', now()->subDays(30))
@@ -362,7 +402,6 @@ RULES:
         $lines = ["ISSUES:"];
         $lines[] = "- Total open: {$totalCount}";
 
-        // Type breakdown
         $typeLines = [];
         foreach ($byType as $type => $count) {
             $typeLines[] = "{$type}: {$count}";
@@ -371,7 +410,6 @@ RULES:
             $lines[] = "- By type: " . implode(', ', $typeLines);
         }
 
-        // Severity breakdown
         $sevLines = [];
         foreach ($bySeverity as $sev => $count) {
             $sevLines[] = "{$sev}: {$count}";
@@ -382,6 +420,30 @@ RULES:
 
         $lines[] = "- Aging (30+ days open): {$agingCount}";
         $lines[] = "- Resolved last 30 days: {$resolvedLast30}";
+
+        // Individual issue details — only include meaningful text
+        $meaningfulIssues = $openIssues
+            ->filter(fn ($issue) =>
+                $this->textFilter->isMeaningful($issue->issue_name)
+                || $this->textFilter->isMeaningful($issue->description)
+            )
+            ->take(self::MAX_ISSUES_IN_PROMPT);
+
+        if ($meaningfulIssues->isNotEmpty()) {
+            $lines[] = "";
+            $lines[] = "OPEN ISSUE DETAILS (name — description):";
+            foreach ($meaningfulIssues as $issue) {
+                $name = $this->textFilter->isMeaningful($issue->issue_name)
+                    ? mb_substr($issue->issue_name, 0, self::MAX_TEXT_LENGTH)
+                    : '(no description)';
+                $desc = $this->textFilter->isMeaningful($issue->description)
+                    ? mb_substr($issue->description, 0, self::MAX_TEXT_LENGTH)
+                    : '';
+                $sev = $issue->severity ? " [{$issue->severity}]" : '';
+                $detail = $desc !== '' ? " — {$desc}" : '';
+                $lines[] = "- {$name}{$sev}{$detail}";
+            }
+        }
 
         return implode("\n", $lines);
     }
@@ -410,16 +472,13 @@ RULES:
             return "EXTENSIONS:\n- No approved extensions";
         }
 
-        // Reason breakdown
+        // Aggregate breakdown (always included)
         $byReason = $extensions
             ->groupBy('reason_category')
             ->map(fn ($group) => $group->count())
             ->toArray();
 
-        // Total extension days
         $totalDays = $extensions->sum('duration_days');
-
-        // Average days per extension
         $avgDays = $count > 0 ? round($totalDays / $count, 1) : 0;
 
         $lines = ["EXTENSIONS:"];
@@ -427,7 +486,6 @@ RULES:
         $lines[] = "- Total extension days: {$totalDays}";
         $lines[] = "- Average days per extension: {$avgDays}";
 
-        // Reason breakdown
         $reasonLines = [];
         foreach ($byReason as $reason => $reasonCount) {
             $reasonLines[] = "{$reason}: {$reasonCount}";
@@ -436,7 +494,87 @@ RULES:
             $lines[] = "- Reasons: " . implode(', ', $reasonLines);
         }
 
+        // Individual extension reasons — only include meaningful text
+        $meaningfulExts = $extensions
+            ->filter(fn ($ext) => $this->textFilter->isMeaningful($ext->reason))
+            ->take(self::MAX_EXTENSIONS_IN_PROMPT);
+
+        if ($meaningfulExts->isNotEmpty()) {
+            $lines[] = "";
+            $lines[] = "EXTENSION DETAILS (days — reason):";
+            foreach ($meaningfulExts as $ext) {
+                $reason = mb_substr($ext->reason, 0, self::MAX_TEXT_LENGTH);
+                $lines[] = "- {$ext->duration_days} days — {$reason}";
+            }
+        }
+
         return implode("\n", $lines);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Reliability Text
+     * ------------------------------------------------------------------------
+     *
+     * Renders the forecast-reliability block into a prompt-friendly summary.
+     * This is the actual trust indicator for predictions — NOT R².
+     *
+     * Format matches AIExplanationService::buildReliabilityText() for
+     * consistency across AI prompts.
+     *
+     * Used By
+     * -------
+     * buildPrompt()
+     */
+    private function buildReliabilityText(?array $reliability): string
+    {
+        if (empty($reliability)) {
+            return "\nFORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate";
+        }
+
+        $lines = ['FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):'];
+
+        if (isset($reliability['next_prediction'])) {
+            $next = $reliability['next_prediction'];
+            $lines[] = sprintf(
+                '- Next-month forecast: %s (%d/100)',
+                $next['level'],
+                $next['score']
+            );
+        }
+
+        if (isset($reliability['completion']) && $reliability['completion'] !== null) {
+            $comp = $reliability['completion'];
+            $lines[] = sprintf(
+                '- Completion estimate: %s (%d/100)',
+                $comp['level'],
+                $comp['score']
+            );
+        }
+
+        $factorTitles = [
+            'backtest'  => 'Prediction history',
+            'data'      => 'Data',
+            'horizon'   => 'Forecast horizon',
+            'agreement' => 'Method agreement',
+        ];
+
+        $source = $reliability['next_prediction'] ?? $reliability['completion'] ?? [];
+
+        foreach ($factorTitles as $key => $title) {
+            $factor = $source['factors'][$key] ?? null;
+            if (!$factor) {
+                continue;
+            }
+            $lines[] = sprintf(
+                '- %s: %d/100 — %s',
+                $title,
+                $factor['score'],
+                $factor['detail']
+            );
+        }
+
+        return "\n" . implode("\n", $lines);
     }
 
     /**

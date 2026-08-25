@@ -475,4 +475,115 @@ class AIRecommendationServiceTest extends TestCase
 
         $this->assertStringContainsString('No approved extensions', $prompt);
     }
+
+    // ========================================================================
+    // R² accuracy warning tests (R² fix)
+    // ========================================================================
+
+    /**
+     * Prompt relabels R² as "Curve Fit Quality" — never as "Regression R-squared"
+     */
+    public function test_build_prompt_relabels_r_squared_as_curve_fit_quality(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $prediction = [
+            'current_state' => ['progress' => 30.0],
+            'assessment' => [['risk_level' => 'Low', 'variance' => 0]],
+            'regression' => ['r_squared' => 0.954, 'fit_quality' => 'Excellent fit', 'observation_count' => 12],
+            'class_standing' => ['usable' => false],
+        ];
+
+        $prompt = $this->invokePrivate('buildPrompt', [$project, $prediction]);
+
+        // Must use the relabeled term
+        $this->assertStringContainsString('Curve Fit Quality', $prompt);
+        // Must NOT use the misleading old term
+        $this->assertStringNotContainsString('Regression R-squared', $prompt);
+        // Must include R² value with "matches past data only" context
+        $this->assertStringContainsString('matches past data only', $prompt);
+    }
+
+    /**
+     * Prompt warns AI not to use R² as evidence of prediction accuracy
+     */
+    public function test_build_prompt_warns_against_using_r_squared_as_accuracy(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $prediction = [
+            'current_state' => ['progress' => 30.0],
+            'assessment' => [['risk_level' => 'Low', 'variance' => 0]],
+            'regression' => ['r_squared' => 0.999, 'fit_quality' => 'Excellent fit', 'observation_count' => 12],
+            'class_standing' => ['usable' => false],
+        ];
+
+        $prompt = $this->invokePrivate('buildPrompt', [$project, $prediction]);
+
+        // Must explicitly warn against R²-as-accuracy
+        $this->assertStringContainsString('Do NOT use R-squared', $prompt);
+        $this->assertStringContainsString('nothing about whether future predictions will be correct', $prompt);
+        // Must direct AI to use reliability score instead
+        $this->assertStringContainsString('Use the FORECAST RELIABILITY score', $prompt);
+    }
+
+    /**
+     * Prompt includes forecast reliability block when available
+     */
+    public function test_build_prompt_includes_reliability_block(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $prediction = [
+            'current_state' => ['progress' => 30.0],
+            'assessment' => [['risk_level' => 'Low', 'variance' => 0]],
+            'regression' => ['r_squared' => 0.85, 'fit_quality' => 'Good', 'observation_count' => 6],
+            'class_standing' => ['usable' => false],
+            'reliability' => [
+                'next_prediction' => ['level' => 'Medium', 'score' => 72, 'factors' => [
+                    'backtest'  => ['score' => 80, 'detail' => '67% within 5%'],
+                    'data'      => ['score' => 70, 'detail' => '12/12 months'],
+                    'horizon'   => ['score' => 60, 'detail' => '2 months out'],
+                    'agreement' => ['score' => 65, 'detail' => 'SLR & Polynomial within 5%'],
+                ]],
+                'completion' => ['level' => 'Medium', 'score' => 65, 'factors' => [
+                    'backtest'  => ['score' => 75, 'detail' => '70% within 5%'],
+                    'data'      => ['score' => 70, 'detail' => '12/12 months'],
+                    'horizon'   => ['score' => 50, 'detail' => '10 months to completion'],
+                    'agreement' => ['score' => 60, 'detail' => '3 methods agree'],
+                ]],
+            ],
+        ];
+
+        $prompt = $this->invokePrivate('buildPrompt', [$project, $prediction]);
+
+        // Must include reliability section
+        $this->assertStringContainsString('FORECAST RELIABILITY', $prompt);
+        $this->assertStringContainsString('Next-month forecast: Medium (72/100)', $prompt);
+        $this->assertStringContainsString('Completion estimate: Medium (65/100)', $prompt);
+        $this->assertStringContainsString('Prediction history: 80/100', $prompt);
+        // Must NOT say "Regression R-squared"
+        $this->assertStringNotContainsString('Regression R-squared', $prompt);
+    }
+
+    /**
+     * Prompt degrades gracefully when reliability is missing
+     */
+    public function test_build_prompt_handles_missing_reliability(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $prediction = [
+            'current_state' => ['progress' => 30.0],
+            'assessment' => [['risk_level' => 'Low', 'variance' => 0]],
+            'regression' => ['r_squared' => 0.7, 'fit_quality' => 'Fair', 'observation_count' => 3],
+            'class_standing' => ['usable' => false],
+            'reliability' => null,
+        ];
+
+        $prompt = $this->invokePrivate('buildPrompt', [$project, $prediction]);
+
+        $this->assertStringContainsString('FORECAST RELIABILITY', $prompt);
+        $this->assertStringContainsString('N/A', $prompt);
+    }
 }

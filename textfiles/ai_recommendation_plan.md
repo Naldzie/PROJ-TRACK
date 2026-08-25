@@ -2,8 +2,8 @@
 
 CSPC PMU System — AI Module V2
 
-Status: 📋 PLAN (awaiting approval)
-Branch: `ai/phase10-ai-recommendations` (from develop)
+Status: ✅ IMPLEMENTED
+Branch: `ai/phase10-plan-updates` (from develop)
 Date: August 25, 2026
 Plan file: textfiles/ai_recommendation_plan.md
 
@@ -295,3 +295,55 @@ more contextual recommendations within the same data structure.
 | 5 | JSON parsing with markdown fence handling | Gemini commonly wraps JSON in code fences |
 | 6 | Rule engine improvements deferred to Phase 11+ | Keep Phase 10 focused; rules are adequate today |
 | 7 | No financial data in prompt | System doesn't track it; out of scope for PMU |
+| 8 | R² presented as "Curve Fit Quality (matches past data only)" | Prevents AI from using R² as forecast accuracy (user-identified issue) |
+| 9 | TextQualityFilter added for open-text fields | Gibberish dev data would waste tokens and confuse AI; 4-heuristic filter |
+| 10 | Prompt includes reliability score instead of R² | ForecastReliabilityService weighted score is the honest trust indicator |
+
+---
+
+## 10. IMPLEMENTATION LOG
+
+### Commit 4110f3e — Plan files + industry research
+- Updated `ai_recommendation_plan.md` with industry research from 8 systems
+- Updated `ai_recommendation_data_gaps.txt` with finalized note
+
+### Commit 835f841 — Full Phase 10 implementation
+- Created `app/Services/AI/AIRecommendationService.php` (prompt builder, Gemini caller, JSON parser, validator)
+- Modified `app/Services/AI/RecommendationEngine.php` (AI-first with nullable dependency, rule-based fallback)
+- Modified `app/Providers/AppServiceProvider.php` (singleton binding for RecommendationEngine → AIRecommendationService)
+- Created `tests/Unit/Services/AI/AIRecommendationServiceTest.php` (23 unit tests)
+- Created `tests/Feature/Services/AI/AIRecommendationIntegrationTest.php` (11 integration tests)
+
+### Commit 7f4e23d — AI indicator badge
+- Modified `resources/views/projects/project_detail/components/tabs/ai-prediction.blade.php`
+- Purple "★ AI" badge on AI-generated recommendations (distinct from blue rule-based badge)
+
+### Commit d8d8add — DI container binding fix
+- Fixed `AppServiceProvider::register()` singleton binding (Laravel container was passing null for `?Type $param = null`)
+
+### R² Fix (uncommitted — in progress)
+**Problem:** AI recommendation prompt sent R² as a raw number (`Regression R-squared: 0.999567`), causing the AI to treat it as prediction accuracy — exactly the trap the system was designed to avoid.
+
+**Changes to `AIRecommendationService.php`:**
+- `buildPrompt()`: R² relabeled from `Regression R-squared` to `Curve Fit Quality (matches past data only): R² = ...`
+- `buildPrompt()`: Added explicit warning: "Do NOT use R-squared (R²) as evidence that predictions are accurate"
+- `buildPrompt()`: Added FORECAST RELIABILITY section using weighted reliability score from `ForecastReliabilityService`
+- `buildPrompt()`: Added rule: "Use FORECAST RELIABILITY (not R²) to assess how much to trust predictions"
+- `buildReliabilityText()`: New method — renders raw reliability data (`next_prediction`/`completion` keys with `factors.backtest/data/horizon/agreement`) into prompt-friendly format
+
+### TextQualityFilter (uncommitted — in progress)
+**Problem:** Gibberish dev data (`adasd`, `sdadfsdafadfsdsa`, `qewqweqweqwe`) in issue names and extension reasons would waste tokens and confuse the AI.
+
+**Layer 1 — `app/Services/AI/TextQualityFilter.php` (NEW):**
+- `isMeaningful(?string $text): bool` — 4 heuristics:
+  1. Minimum length: < 3 chars → false
+  2. Placeholder patterns: known test/lorem/keyboard-mash words → false
+  3. Unique character count: < 5 unique for text ≥ 5 chars → false (catches 12/15 patterns)
+  4. Vowel ratio: < 16% → false (catches remaining 3 patterns including `ijokljkjhbghk`)
+- Applied in `buildIssuesSection()` and `buildExtensionsSection()` to filter open-text fields
+- `MAX_ISSUES_IN_PROMPT = 5`, `MAX_EXTENSIONS_IN_PROMPT = 5`, `MAX_TEXT_LENGTH = 200`
+
+**Layer 2 — Prompt instruction:**
+- Added to RULES section: "If any text field appears to be gibberish or placeholder text (random characters, no meaningful words), ignore it entirely and do not base recommendations on it"
+
+**Tests:** `tests/Unit/Services/AI/TextQualityFilterTest.php` — 32 tests (15 gibberish patterns from actual project data, 5 meaningful texts, 5 placeholders, 7 edge cases)

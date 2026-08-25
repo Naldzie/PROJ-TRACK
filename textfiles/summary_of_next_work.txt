@@ -145,9 +145,13 @@
         failure. No UI changes. Same output format.
         Plan: textfiles/ai_recommendation_plan.md (updated Aug 25)
         Reference: textfiles/ai_recommendation_data_gaps.txt
-        Status: 📋 PLAN READY (awaiting approval)
-        Note: Rule engine improvements deferred to Phase 11+ (keep
-        Phase 10 focused; rules are adequate as fallback today)
+        Status: ✅ DONE (commits 4110f3e, 835f841, 7f4e23d, d8d8add)
+        Added: R² relabeled as "Curve Fit Quality (matches past data only)"
+        in prompt. FORECAST RELIABILITY section added (weighted score from
+        ForecastReliabilityService replaces R² as trust indicator).
+        TextQualityFilter: 4-heuristic gibberish detection for issue names,
+        descriptions, extension reasons. Prompt instructs AI to ignore any
+        remaining gibberish. 828 tests passing.
 
      4. AI PHASE 11 — Export / Reporting
         PDF export of prediction reports, CSV forecast exports,
@@ -320,7 +324,7 @@
     Phase 7  — Prediction History & Accuracy                ✅ DONE
     Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
     Phase 9  — Contractor Performance Tracking             ✅ DONE (incl. extension stats)
-    Phase 10 — AI-Powered Recommendations                  📋 PLAN READY
+    Phase 10 — AI-Powered Recommendations                  ✅ DONE (R² fix + TextQualityFilter pending commit)
     Phase 11 — Export / Reporting                           ⬜ NOT STARTED
     Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED
     Phase 13 — Testing & Refinement                         ⬜ NOT STARTED
