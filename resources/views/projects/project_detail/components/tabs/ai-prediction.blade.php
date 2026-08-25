@@ -599,6 +599,11 @@
                                     @endif">
                                     {{ ucfirst($rec['category']) }}
                                 </span>
+                                @if (!empty($rec['ai_generated']))
+                                    <span style="display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #7c3aed; background: #ede9fe; margin-left: 4px; vertical-align: middle;">
+                                        <i class="bi bi-stars" style="font-size: 9px;"></i> AI
+                                    </span>
+                                @endif
                                 <span style="font-size: 14px; color: #166534; margin-left: 6px;">
                                     {{ $rec['message'] }}
                                 </span>

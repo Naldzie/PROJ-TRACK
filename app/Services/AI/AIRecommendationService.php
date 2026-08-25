@@ -125,6 +125,9 @@ class AIRecommendationService
             // Normalize category to lowercase
             $rec['category'] = strtolower($rec['category']);
 
+            // Tag as AI-generated for UI indicator
+            $rec['ai_generated'] = true;
+
             $valid[] = $rec;
         }
 
