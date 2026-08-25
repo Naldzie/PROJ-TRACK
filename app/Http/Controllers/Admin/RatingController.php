@@ -18,6 +18,17 @@ class RatingController extends Controller
               ->with('aiSolutions');
         }])->get();
 
+        // Phase 9: auto-recompute performance for contractors with null metrics
+        // (handles existing contractors that completed projects before Phase 9 migration)
+        $perfService = app(ContractorPerformanceService::class);
+        foreach ($contractors as $contractor) {
+            if ($contractor->performance_rating === null
+                && $contractor->projects->contains('status', 'Completed')
+            ) {
+                $perfService->recompute($contractor);
+            }
+        }
+
         $ratings = ContractorRating::whereIn('project_id', Project::whereIn('status', ['Ongoing', 'Completed'])->pluck('id'))
             ->get()
             ->keyBy(fn($r) => $r->project_id . '-' . $r->contractor_id);
@@ -49,6 +60,7 @@ class RatingController extends Controller
             'on_time_delivery_pct' => $c->on_time_delivery_pct,
             'completed_projects_count' => $c->completed_projects_count,
             'avg_delay_days' => $c->avg_delay_days,
+            'last_project_completed_at' => $c->last_project_completed_at?->format('M d, Y'),
         ]);
 
         $ratingsJson = $ratings->map(fn($r) => [

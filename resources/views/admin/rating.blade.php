@@ -209,6 +209,35 @@
 .perf-3 { background: oklch(94% .06 82); color: oklch(45% .12 74); }
 .perf-2 { background: oklch(93% .04 18); color: #b91c1c; }
 .perf-1 { background: oklch(93% .04 18); color: #991b1b; }
+
+/* ── Performance Panel ── */
+.perf-panel {
+  margin-top: 16px;
+}
+.perf-panel .panel-head {
+  padding: 14px 20px 12px;
+}
+.perf-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px 20px;
+  align-items: center;
+}
+.perf-hero {
+  width: 56px; height: 56px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 800; letter-spacing: -.03em;
+  grid-row: 1 / 3;
+}
+.perf-hero.perf-5 { background: oklch(92% .055 160); color: oklch(32% .14 160); }
+.perf-hero.perf-4 { background: oklch(92% .055 160); color: oklch(38% .12 160); }
+.perf-hero.perf-3 { background: oklch(94% .06 82); color: oklch(42% .14 74); }
+.perf-hero.perf-2 { background: oklch(93% .04 18); color: #b91c1c; }
+.perf-hero.perf-1 { background: oklch(93% .04 18); color: #991b1b; }
+.perf-hero.perf-na { background: var(--surface-2); color: var(--faint); font-size: 14px; }
+.perf-metric { display: flex; flex-direction: column; }
+.perf-metric-label { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+.perf-metric-value { font-size: 15px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .rating-compact { text-align: right; }
 .stars { color: var(--gold); letter-spacing: 1px; font-size: 11px; line-height: 1; }
 .rating-num { color: var(--muted); font: 10px 'Space Mono', 'SF Mono', monospace; margin-top: 4px; }
@@ -449,6 +478,23 @@ select {
   </aside>
 </section>
 
+{{-- ── CONTRACTOR PERFORMANCE ── --}}
+<section class="panel perf-panel" aria-labelledby="perf-title" id="perfPanel">
+  <div class="panel-head">
+    <div class="panel-title">
+      <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+      <div><h2 id="perf-title">Contractor Performance</h2><p class="panel-subtitle" id="perfSubtitle">Select a contractor</p></div>
+    </div>
+  </div>
+  <div class="panel-body" id="perfBody">
+    <div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <strong>No contractor selected</strong>
+      <p>Select a contractor to view their performance metrics.</p>
+    </div>
+  </div>
+</section>
+
 {{-- ── RATING MODAL ── --}}
 <div class="cr-modal-overlay" id="ratingOverlay">
   <div class="cr-modal">
@@ -511,9 +557,7 @@ function renderContractors(filter) {
     const avgR = Math.round(avg * 10) / 10;
     return `<button class="contractor ${c.id === selectedId ? 'selected' : ''}" data-id="${c.id}">
       <div class="contractor-avatar">${c.photo ? `<img class="avatar-img" src="${c.photo}" alt="" loading="lazy" onerror="this.parentElement.textContent='${initials(c.name)}';this.remove()">` : initials(c.name)}</div>
-      <div><strong>${escHtml(c.name)}</strong><small>${c.projects.length} project${c.projects.length === 1 ? '' : 's'}</small>
-        ${c.performance_rating ? `<small class="perf-line"><span class="perf-badge perf-${c.performance_rating}">${c.performance_rating}</span> ${c.on_time_delivery_pct != null ? c.on_time_delivery_pct + '% on-time' : ''} · ${c.completed_projects_count} completed</small>` : ''}
-      </div>
+      <div><strong>${escHtml(c.name)}</strong><small>${c.projects.length} project${c.projects.length === 1 ? '' : 's'}</small></div>
       <div class="rating-compact">
         <div class="stars">${avgR > 0 ? starsHtml(Math.round(avgR)) : '<span class="not-rated">Not rated</span>'}</div>
         ${avgR > 0 ? `<div class="rating-num">${avgR.toFixed(1)}</div>` : ''}
@@ -527,6 +571,7 @@ function renderContractors(filter) {
       btn.classList.add('selected');
       renderProjects();
       renderAnalysis();
+      renderPerformance();
     });
   });
 }
@@ -635,6 +680,50 @@ function renderAnalysis(message) {
           <span style="color:oklch(75% .025 285);font:10px 'Space Mono','SF Mono',monospace;">out of 100</span>
         </div>
       </div>
+    </div>
+  </div>`;
+}
+
+function renderPerformance() {
+  const c = contractorsData.find(x => x.id === selectedId);
+  const panel = document.getElementById('perfBody');
+  const subtitle = document.getElementById('perfSubtitle');
+
+  if (!c || !c.performance_rating) {
+    subtitle.textContent = c ? c.name : 'Select a contractor';
+    panel.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <strong>${c ? 'No performance data yet' : 'No contractor selected'}</strong>
+      <p>${c ? 'Performance metrics will appear once this contractor has completed projects.' : 'Select a contractor to view their performance metrics.'}</p>
+    </div>`;
+    return;
+  }
+
+  subtitle.textContent = c.name;
+  const ratingLabels = { 5: 'Superior', 4: 'Good', 3: 'Satisfactory', 2: 'Below Average', 1: 'Poor' };
+  const ratingLabel = ratingLabels[c.performance_rating] || 'N/A';
+
+  panel.innerHTML = `<div class="perf-grid">
+    <div class="perf-hero perf-${c.performance_rating}">${c.performance_rating}</div>
+    <div class="perf-metric">
+      <span class="perf-metric-label">Performance Rating</span>
+      <span class="perf-metric-value">${ratingLabel}</span>
+    </div>
+    <div class="perf-metric">
+      <span class="perf-metric-label">On-Time Delivery</span>
+      <span class="perf-metric-value">${c.on_time_delivery_pct != null ? c.on_time_delivery_pct + '%' : 'N/A'}</span>
+    </div>
+    <div class="perf-metric">
+      <span class="perf-metric-label">Avg Delay</span>
+      <span class="perf-metric-value">${c.avg_delay_days != null ? c.avg_delay_days + ' days' : 'N/A'}</span>
+    </div>
+    <div class="perf-metric">
+      <span class="perf-metric-label">Completed Projects</span>
+      <span class="perf-metric-value">${c.completed_projects_count}</span>
+    </div>
+    <div class="perf-metric">
+      <span class="perf-metric-label">Last Completed</span>
+      <span class="perf-metric-value">${c.last_project_completed_at || 'N/A'}</span>
     </div>
   </div>`;
 }
@@ -819,10 +908,12 @@ if (contractorsData.length > 0) {
   renderContractors('');
   renderProjects();
   renderAnalysis();
+  renderPerformance();
 } else {
   renderContractors('');
   renderProjects();
   renderAnalysis();
+  renderPerformance();
 }
 </script>
 
