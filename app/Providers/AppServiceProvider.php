@@ -11,6 +11,8 @@ use App\Models\Category;
 use App\Models\Project;
 use App\Policies\CategoryPolicy;
 use App\Policies\ProjectPolicy;
+use App\Services\AI\AIRecommendationService;
+use App\Services\AI\RecommendationEngine;
 use Carbon\Carbon;
 
 class AppServiceProvider extends ServiceProvider
@@ -22,7 +24,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        //
+        $this->app->singleton(RecommendationEngine::class, function ($app) {
+            return new RecommendationEngine($app->make(AIRecommendationService::class));
+        });
     }
 
     public function boot(): void
