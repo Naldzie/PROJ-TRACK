@@ -128,7 +128,7 @@
   CONTRACTOR MANAGEMENT GAPS
 ================================================================================
 
-   7. [IN PROGRESS] CONTRACTOR PERFORMANCE TRACKING
+   7. [DONE] CONTRACTOR PERFORMANCE TRACKING
       - No rating system, on-time delivery %, or quality score for contractors
       - Needed for: smarter AI recommendations, contractor evaluation,
         cross-project pattern detection
@@ -136,11 +136,13 @@
         contractor_ratings table, ContractorRating model, RatingController
         (manual store, AI suggest, auto-rate-all), admin.rating page with
         leaderboard. Rating is 1-5 derived from variance/delay + AI review.
-      - REMAINING (V2 Phase 9): on-time delivery %, avg delay days, completed
-        projects count and a computed ContractorPerformanceService — NOT built.
-      - Plan: textfiles/contractor_performance_tracking_plan.md
-      - Branch: ai/phase9-contractor-performance (from develop)
-      - Referenced as prerequisite in: ai_recommendation_data_gaps.txt
+      - COMPLETED (V2 Phase 9): ContractorPerformanceService computes on-time
+        delivery %, avg delay days, completed projects count, performance rating
+        (1-5). Auto-recomputes on project completion and extension approval.
+        RecommendationEngine integrates contractor performance factor.
+        Plan: textfiles/contractor_performance_tracking_plan.md
+        Branch: ai/phase9-contractor-performance (from develop)
+        Commit: 7259129
 
   8. [GAP] CONTRACTOR ANALYTICS DASHBOARD
      - Contractors currently see only a project list
