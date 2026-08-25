@@ -60,7 +60,9 @@ class RatingController extends Controller
             'on_time_delivery_pct' => $c->on_time_delivery_pct,
             'completed_projects_count' => $c->completed_projects_count,
             'avg_delay_days' => $c->avg_delay_days,
-            'last_project_completed_at' => $c->last_project_completed_at?->format('M d, Y'),
+            'last_project_completed_at' => $c->last_project_completed_at
+                ? (\Carbon\Carbon::parse($c->last_project_completed_at)->format('M d, Y'))
+                : null,
         ]);
 
         $ratingsJson = $ratings->map(fn($r) => [
