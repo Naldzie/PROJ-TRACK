@@ -100,6 +100,25 @@ class Project extends Model
         return $this->baselineSchedules();
     }
 
+    /**
+     * Resolve the "pending baseline" — the first baseline month with no
+     * progress record yet. Returns null if all baselines have been recorded.
+     *
+     * Used by AIExplanationService to stamp each AI analysis with the
+     * baseline it was generated against.
+     */
+    public function getPendingBaseline(): ?ProjectBaselineSchedule
+    {
+        $recordedMonths = $this->progressHistory()->pluck('month_label');
+
+        return $this->baselineSchedules()
+            ->orderBy('planned_date')
+            ->get()
+            ->first(fn (ProjectBaselineSchedule $b) =>
+                !$recordedMonths->contains($b->month_label)
+            );
+    }
+
     public function extensions()
     {
         return $this->hasMany(ProjectExtension::class)->orderBy('extension_number');

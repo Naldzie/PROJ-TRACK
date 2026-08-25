@@ -412,10 +412,11 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
     private function saveAnalysis(Project $project, string $text, array $prediction): AiSolution
     {
         return AiSolution::create([
-            'project_id'          => $project->id,
-            'regression_snapshot' => $prediction,
-            'model_used'          => config('services.gemini.model', 'gemini-1.5-flash'),
-            'analysis_text'       => $text,
+            'project_id'           => $project->id,
+            'baseline_schedule_id' => $project->getPendingBaseline()?->id,
+            'regression_snapshot'  => $prediction,
+            'model_used'           => config('services.gemini.model', 'gemini-1.5-flash'),
+            'analysis_text'        => $text,
         ]);
     }
 }

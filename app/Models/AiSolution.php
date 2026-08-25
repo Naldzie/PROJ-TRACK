@@ -13,6 +13,7 @@ class AiSolution extends Model
 
     protected $fillable = [
         'project_id',
+        'baseline_schedule_id',
         'regression_snapshot',
         'model_used',
         'analysis_text',
@@ -26,5 +27,11 @@ class AiSolution extends Model
     public function project()
     {
         return $this->belongsTo(Project::class);
+    }
+
+    // The baseline schedule this analysis was generated against
+    public function baselineSchedule()
+    {
+        return $this->belongsTo(ProjectBaselineSchedule::class);
     }
 }

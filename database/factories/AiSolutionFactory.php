@@ -23,7 +23,8 @@ class AiSolutionFactory extends Factory
     public function definition(): array
     {
         return [
-            'project_id'          => Project::factory(),
+            'project_id'           => Project::factory(),
+            'baseline_schedule_id' => null,
             'regression_snapshot' => [
                 'current_state' => ['progress' => 45.0, 'month_index' => 10],
                 'next_prediction' => ['progress' => 46.33],

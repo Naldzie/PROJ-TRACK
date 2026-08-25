@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\AI;
 
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Services\AI\AIExplanationService;
 use App\Services\AI\AIPredictionService;
 use App\Services\AI\BaselineComparisonService;
@@ -229,5 +230,103 @@ class AIExplanationServiceTest extends TestCase
             'N/A — insufficient data for a reliability estimate',
             $prompt
         );
+    }
+
+    /*
+    |==========================================================================
+    | Phase E: AI ↔ Baseline Linkage
+    |==========================================================================
+    */
+
+    /**
+     * ------------------------------------------------------------------------
+     * saveAnalysis stamps the pending baseline ID on the ai_solutions record
+     * ------------------------------------------------------------------------
+     */
+    public function test_saveAnalysis_stamps_pending_baseline_id(): void
+    {
+        $project = Project::factory()->create();
+
+        // Create 3 baseline months
+        for ($i = 0; $i < 3; $i++) {
+            ProjectBaselineSchedule::create([
+                'project_id'                 => $project->id,
+                'planned_date'               => now()->addMonths($i + 1)->endOfMonth(),
+                'month_label'                => now()->addMonths($i + 1)->format('Y-m'),
+                'planned_progress_percent'   => ($i + 1) * 25,
+                'original_planned_progress_percent' => ($i + 1) * 25,
+                'original_planned_date'      => now()->addMonths($i + 1)->endOfMonth(),
+            ]);
+        }
+
+        // Record progress for first 2 months only — month 3 is pending
+        \App\Models\ProjectProgressHistory::create([
+            'project_id'              => $project->id,
+            'month_label'             => now()->addMonth()->format('Y-m'),
+            'actual_progress_percent' => 25.0,
+            'inspection_date'         => now()->addMonth()->endOfMonth(),
+        ]);
+        \App\Models\ProjectProgressHistory::create([
+            'project_id'              => $project->id,
+            'month_label'             => now()->addMonths(2)->format('Y-m'),
+            'actual_progress_percent' => 50.0,
+            'inspection_date'         => now()->addMonths(2)->endOfMonth(),
+        ]);
+
+        // Invoke saveAnalysis via reflection (private method)
+        $method = new \ReflectionMethod(AIExplanationService::class, 'saveAnalysis');
+        $method->setAccessible(true);
+
+        $solution = $method->invoke($this->service, $project, 'Test analysis text', []);
+
+        $this->assertNotNull($solution->baseline_schedule_id);
+        $pending = $project->baselineSchedules()
+            ->orderBy('planned_date')
+            ->get()
+            ->first(fn ($b) => !$project->progressHistory()->pluck('month_label')->contains($b->month_label));
+        $this->assertEquals($pending->id, $solution->baseline_schedule_id);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * saveAnalysis stores null baseline_schedule_id when no pending baseline
+     * ------------------------------------------------------------------------
+     */
+    public function test_saveAnalysis_stamps_null_when_no_pending_baseline(): void
+    {
+        $project = Project::factory()->create();
+
+        // Create 2 baseline months
+        for ($i = 0; $i < 2; $i++) {
+            ProjectBaselineSchedule::create([
+                'project_id'                 => $project->id,
+                'planned_date'               => now()->addMonths($i + 1)->endOfMonth(),
+                'month_label'                => now()->addMonths($i + 1)->format('Y-m'),
+                'planned_progress_percent'   => ($i + 1) * 50,
+                'original_planned_progress_percent' => ($i + 1) * 50,
+                'original_planned_date'      => now()->addMonths($i + 1)->endOfMonth(),
+            ]);
+        }
+
+        // Record progress for ALL baseline months — no pending baseline
+        \App\Models\ProjectProgressHistory::create([
+            'project_id'              => $project->id,
+            'month_label'             => now()->addMonth()->format('Y-m'),
+            'actual_progress_percent' => 50.0,
+            'inspection_date'         => now()->addMonth()->endOfMonth(),
+        ]);
+        \App\Models\ProjectProgressHistory::create([
+            'project_id'              => $project->id,
+            'month_label'             => now()->addMonths(2)->format('Y-m'),
+            'actual_progress_percent' => 100.0,
+            'inspection_date'         => now()->addMonths(2)->endOfMonth(),
+        ]);
+
+        $method = new \ReflectionMethod(AIExplanationService::class, 'saveAnalysis');
+        $method->setAccessible(true);
+
+        $solution = $method->invoke($this->service, $project, 'Test text', []);
+
+        $this->assertNull($solution->baseline_schedule_id);
     }
 }
