@@ -219,17 +219,24 @@
 .perf-panel .panel-head {
   padding: 14px 20px 12px;
 }
+.perf-panel .panel-body {
+  padding: 16px 20px 20px;
+}
 .perf-grid {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.perf-top {
+  display: flex;
   align-items: center;
+  gap: 14px;
 }
 .perf-hero {
-  width: 56px; height: 56px; border-radius: 14px;
+  width: 52px; height: 52px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px; font-weight: 800; letter-spacing: -.03em;
-  grid-row: 1 / 3;
+  font-size: 20px; font-weight: 800; letter-spacing: -.03em;
+  flex: 0 0 auto;
 }
 .perf-hero.perf-5 { background: oklch(92% .055 160); color: oklch(32% .14 160); }
 .perf-hero.perf-4 { background: oklch(92% .055 160); color: oklch(38% .12 160); }
@@ -237,9 +244,17 @@
 .perf-hero.perf-2 { background: oklch(93% .04 18); color: #b91c1c; }
 .perf-hero.perf-1 { background: oklch(93% .04 18); color: #991b1b; }
 .perf-hero.perf-na { background: var(--surface-2); color: var(--faint); font-size: 14px; }
-.perf-metric { display: flex; flex-direction: column; }
-.perf-metric-label { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
-.perf-metric-value { font-size: 15px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.perf-top-text { display: flex; flex-direction: column; }
+.perf-top-label { font-size: 11px; color: var(--muted); }
+.perf-top-value { font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+.perf-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+}
+.perf-stat { display: flex; flex-direction: column; }
+.perf-stat-label { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
+.perf-stat-value { font-size: 14px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .rating-compact { text-align: right; }
 .stars { color: var(--gold); letter-spacing: 1px; font-size: 11px; line-height: 1; }
 .rating-num { color: var(--muted); font: 10px 'Space Mono', 'SF Mono', monospace; margin-top: 4px; }
@@ -706,26 +721,30 @@ function renderPerformance() {
   const ratingLabel = ratingLabels[c.performance_rating] || 'N/A';
 
   panel.innerHTML = `<div class="perf-grid">
-    <div class="perf-hero perf-${c.performance_rating}">${c.performance_rating}</div>
-    <div class="perf-metric">
-      <span class="perf-metric-label">Performance Rating</span>
-      <span class="perf-metric-value">${ratingLabel}</span>
+    <div class="perf-top">
+      <div class="perf-hero perf-${c.performance_rating}">${c.performance_rating}</div>
+      <div class="perf-top-text">
+        <span class="perf-top-label">Performance Rating</span>
+        <span class="perf-top-value">${ratingLabel}</span>
+      </div>
     </div>
-    <div class="perf-metric">
-      <span class="perf-metric-label">On-Time Delivery</span>
-      <span class="perf-metric-value">${c.on_time_delivery_pct != null ? c.on_time_delivery_pct + '%' : 'N/A'}</span>
-    </div>
-    <div class="perf-metric">
-      <span class="perf-metric-label">Avg Delay</span>
-      <span class="perf-metric-value">${c.avg_delay_days != null ? c.avg_delay_days + ' days' : 'N/A'}</span>
-    </div>
-    <div class="perf-metric">
-      <span class="perf-metric-label">Completed Projects</span>
-      <span class="perf-metric-value">${c.completed_projects_count}</span>
-    </div>
-    <div class="perf-metric">
-      <span class="perf-metric-label">Last Completed</span>
-      <span class="perf-metric-value">${c.last_project_completed_at || 'N/A'}</span>
+    <div class="perf-stats">
+      <div class="perf-stat">
+        <span class="perf-stat-label">On-Time Delivery</span>
+        <span class="perf-stat-value">${c.on_time_delivery_pct != null ? c.on_time_delivery_pct + '%' : 'N/A'}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Avg Delay</span>
+        <span class="perf-stat-value">${c.avg_delay_days != null ? c.avg_delay_days + ' days' : 'N/A'}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Completed Projects</span>
+        <span class="perf-stat-value">${c.completed_projects_count}</span>
+      </div>
+      <div class="perf-stat">
+        <span class="perf-stat-label">Last Completed</span>
+        <span class="perf-stat-value">${c.last_project_completed_at || 'N/A'}</span>
+      </div>
     </div>
   </div>`;
 }
