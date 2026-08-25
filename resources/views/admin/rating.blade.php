@@ -212,7 +212,9 @@
 
 /* ── Performance Panel ── */
 .perf-panel {
-  margin-top: 16px;
+  margin-top: 0;
+  grid-column: 3;
+  grid-row: 2;
 }
 .perf-panel .panel-head {
   padding: 14px 20px 12px;
@@ -476,23 +478,23 @@ select {
       </div>
     </div>
   </aside>
-</section>
 
-{{-- ── CONTRACTOR PERFORMANCE ── --}}
-<section class="panel perf-panel" aria-labelledby="perf-title" id="perfPanel">
-  <div class="panel-head">
-    <div class="panel-title">
-      <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
-      <div><h2 id="perf-title">Contractor Performance</h2><p class="panel-subtitle" id="perfSubtitle">Select a contractor</p></div>
+  {{-- ── CONTRACTOR PERFORMANCE ── --}}
+  <section class="panel perf-panel" aria-labelledby="perf-title" id="perfPanel">
+    <div class="panel-head">
+      <div class="panel-title">
+        <div class="panel-title-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+        <div><h2 id="perf-title">Contractor Performance</h2><p class="panel-subtitle" id="perfSubtitle">Select a contractor</p></div>
+      </div>
     </div>
-  </div>
-  <div class="panel-body" id="perfBody">
-    <div class="empty-state">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-      <strong>No contractor selected</strong>
-      <p>Select a contractor to view their performance metrics.</p>
+    <div class="panel-body" id="perfBody">
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <strong>No contractor selected</strong>
+        <p>Select a contractor to view their performance metrics.</p>
+      </div>
     </div>
-  </div>
+  </section>
 </section>
 
 {{-- ── RATING MODAL ── --}}
