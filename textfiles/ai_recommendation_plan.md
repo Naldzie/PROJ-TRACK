@@ -347,3 +347,24 @@ more contextual recommendations within the same data structure.
 - Added to RULES section: "If any text field appears to be gibberish or placeholder text (random characters, no meaningful words), ignore it entirely and do not base recommendations on it"
 
 **Tests:** `tests/Unit/Services/AI/TextQualityFilterTest.php` — 32 tests (15 gibberish patterns from actual project data, 5 meaningful texts, 5 placeholders, 7 edge cases)
+
+### Phase 10 Enhancements (uncommitted — in progress)
+
+**Progress Remarks in Prompt:**
+- Added `buildProgressRemarksText()` to `AIRecommendationService` — pulls 3 latest `progressHistory()` records, filters remarks through `TextQualityFilter`, formats as structured block in the prompt
+- 5 new tests in `AIRecommendationServiceTest`
+
+**Saved Recommendations to DB:**
+- Migration: `database/migrations/2026_08_25_182015_add_recommendations_to_ai_solutions_table.php` — adds `recommendations` JSON column
+- `AiSolution` model: `recommendations` added to `$fillable` and `$casts`
+- `AIExplanationService`: now injects `RecommendationEngine` (nullable), `generate()` calls `recommendationEngine->generate()` alongside analysis, `saveAnalysis()` accepts 4th param `$recommendations`
+- `AIPredictionPresenter`: loads saved recommendations from latest `ai_solutions` record (fallback to fresh generation if null/empty)
+- `ProjectController::regenerateAnalysis()`: returns `recommendations` in JSON response alongside `analysis_text`
+- Blade JS: `regenerateAnalysis()` function now rebuilds recommendations HTML on success
+
+**R² Warning in Analysis Prompt:**
+- `AIExplanationService::buildPrompt()`: Added explicit warning after reliability block — "Do NOT use R-squared to compare model quality or prediction strength — it only describes how well the curve fits historical data points, nothing about whether future predictions will be correct. Use the FORECAST RELIABILITY score to assess prediction trust instead."
+- Updated `AIExplanationServiceTest::test_r_squared_is_demoted_to_curve_fit_note()` with 3 new assertions
+
+**Analysis Text Rendering Fix:**
+- `ai-prediction.blade.php`: Changed `{{ $prediction['analysis_text'] }}` to `{!! nl2br(e($prediction['analysis_text'])) !!}` — converts `\n` newlines to `<br>` HTML line breaks while maintaining XSS protection

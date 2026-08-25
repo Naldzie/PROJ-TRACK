@@ -208,6 +208,9 @@ class AIExplanationServiceTest extends TestCase
             '- R²: 0.954 (Fit Quality: Excellent fit)',
             $prompt
         );
+        $this->assertStringContainsString('Do NOT use R-squared', $prompt);
+        $this->assertStringContainsString('nothing about whether future predictions will be correct', $prompt);
+        $this->assertStringContainsString('Use the FORECAST RELIABILITY score', $prompt);
     }
 
     /**

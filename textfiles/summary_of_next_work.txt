@@ -324,7 +324,7 @@
     Phase 7  — Prediction History & Accuracy                ✅ DONE
     Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
     Phase 9  — Contractor Performance Tracking             ✅ DONE (incl. extension stats)
-    Phase 10 — AI-Powered Recommendations                  ✅ DONE (R² fix + TextQualityFilter pending commit)
+    Phase 10 — AI-Powered Recommendations                  ✅ DONE (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
     Phase 11 — Export / Reporting                           ⬜ NOT STARTED
     Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED
     Phase 13 — Testing & Refinement                         ⬜ NOT STARTED

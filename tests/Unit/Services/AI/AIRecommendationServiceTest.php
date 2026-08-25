@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\AI;
 
 use App\Models\Project;
+use App\Models\ProjectProgressHistory;
 use App\Services\AI\AIRecommendationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use ReflectionClass;
@@ -585,5 +586,115 @@ class AIRecommendationServiceTest extends TestCase
 
         $this->assertStringContainsString('FORECAST RELIABILITY', $prompt);
         $this->assertStringContainsString('N/A', $prompt);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Progress Remarks Tests (Phase 10 enhancement)
+    |--------------------------------------------------------------------------
+    |
+    | Validates buildProgressRemarksText() pulls from ProgressHistory,
+    | filters gibberish via TextQualityFilter, and formats for the prompt.
+    |
+    */
+
+    public function test_build_progress_remarks_includes_recent_remarks(): void
+    {
+        $project = Project::factory()->create([
+            'planned_start_date' => now()->subDays(60),
+            'planned_end_date' => now()->addDays(30),
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(3),
+            'remarks' => 'Concrete pouring underway in Zone A',
+        ]);
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(7),
+            'remarks' => 'Formwork completed, pending inspection',
+        ]);
+
+        $text = $this->invokePrivate('buildProgressRemarksText', [$project]);
+
+        $this->assertNotEmpty($text);
+        $this->assertStringContainsString('RECENT INSPECTIONS', $text);
+        $this->assertStringContainsString('Concrete pouring underway in Zone A', $text);
+        $this->assertStringContainsString('Formwork completed, pending inspection', $text);
+    }
+
+    public function test_build_progress_remarks_filters_gibberish(): void
+    {
+        $project = Project::factory()->create([
+            'planned_start_date' => now()->subDays(60),
+            'planned_end_date' => now()->addDays(30),
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(3),
+            'remarks' => 'xkcd fghjkl qwerty',
+        ]);
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(7),
+            'remarks' => 'Actual progress on schedule',
+        ]);
+
+        $text = $this->invokePrivate('buildProgressRemarksText', [$project]);
+
+        $this->assertStringNotContainsString('asdfghjkl', $text);
+        $this->assertStringContainsString('Actual progress on schedule', $text);
+    }
+
+    public function test_build_progress_remarks_returns_fallback_when_no_records(): void
+    {
+        $project = Project::factory()->create([
+            'planned_start_date' => now()->subDays(60),
+            'planned_end_date' => now()->addDays(30),
+        ]);
+
+        $text = $this->invokePrivate('buildProgressRemarksText', [$project]);
+
+        $this->assertNotEmpty($text);
+        $this->assertStringContainsString('No inspection records yet', $text);
+    }
+
+    public function test_build_progress_remarks_shows_no_remarks_when_all_gibberish(): void
+    {
+        $project = Project::factory()->create([
+            'planned_start_date' => now()->subDays(60),
+            'planned_end_date' => now()->addDays(30),
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(3),
+            'remarks' => 'asdfghjkl',
+        ]);
+
+        $text = $this->invokePrivate('buildProgressRemarksText', [$project]);
+
+        $this->assertStringContainsString('(no remarks)', $text);
+        $this->assertStringNotContainsString('asdfghjkl', $text);
+    }
+
+    public function test_build_progress_remarks_includes_as_of_timestamp(): void
+    {
+        $project = Project::factory()->create([
+            'planned_start_date' => now()->subDays(60),
+            'planned_end_date' => now()->addDays(30),
+        ]);
+
+        ProjectProgressHistory::factory()->create([
+            'project_id' => $project->id,
+            'inspection_date' => now()->subDays(1),
+            'remarks' => 'Piping installation in progress',
+        ]);
+
+        $text = $this->invokePrivate('buildProgressRemarksText', [$project]);
+
+        $this->assertStringContainsString('RECENT INSPECTIONS', $text);
     }
 }

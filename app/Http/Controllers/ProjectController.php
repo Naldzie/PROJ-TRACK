@@ -1358,9 +1358,10 @@ class ProjectController extends Controller
      * Workflow
      * --------
      * 1. Call AIExplanationService::generate() to get AI-powered text
+     *    (also generates and saves recommendations to ai_solutions)
      * 2. If empty (API failure / insufficient data), fall back to static
      *    template text from AIPredictionPresenter
-     * 3. Return JSON with analysis_text and generated_at timestamp
+     * 3. Return JSON with analysis_text, recommendations, and timestamp
      *
      * Called by: ai-prediction.blade.php JS (Phase 6.5)
      * Uses: AIExplanationService, AIPredictionPresenter
@@ -1373,6 +1374,7 @@ class ProjectController extends Controller
     ) {
         $analysisText = $aiService->generate($project);
         $emailStatus = null;
+        $recommendations = [];
 
         // Fallback to static template text if AI returned empty
         if (empty($analysisText)) {
@@ -1380,9 +1382,11 @@ class ProjectController extends Controller
             $prediction = $presenter->present($project);
             $analysisText = $prediction['analysis_text'] ?? '';
             $generatedAt = null;
+            $recommendations = $prediction['structured_recommendations'] ?? [];
         } else {
             $latest = $aiService->getLatest($project);
             $generatedAt = $latest ? $latest->created_at->toDateTimeString() : null;
+            $recommendations = $latest->recommendations ?? [];
 
             $result = $emailService->sendForProject($project);
             $emailStatus = [
@@ -1392,9 +1396,10 @@ class ProjectController extends Controller
         }
 
         return response()->json([
-            'analysis_text' => $analysisText,
-            'generated_at'  => $generatedAt,
-            'email'         => $emailStatus,
+            'analysis_text'   => $analysisText,
+            'generated_at'    => $generatedAt,
+            'recommendations' => $recommendations,
+            'email'           => $emailStatus,
         ]);
     }
 

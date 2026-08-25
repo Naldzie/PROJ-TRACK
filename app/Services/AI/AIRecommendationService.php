@@ -247,6 +247,9 @@ class AIRecommendationService
         // Issues breakdown
         $issuesText = $this->buildIssuesSection($project);
 
+        // Progress remarks (3 latest inspections)
+        $progressRemarksText = $this->buildProgressRemarksText($project);
+
         // Class standing
         $classStanding = $prediction['class_standing'] ?? [];
         $classText = 'Not available';
@@ -327,6 +330,8 @@ CONTRACTOR PERFORMANCE:
 {$issuesText}
 
 {$extensionsText}
+
+{$progressRemarksText}
 
 CROSS-PROJECT CONTEXT:
 - Class Standing: {$classText}
@@ -506,6 +511,50 @@ RULES:
                 $reason = mb_substr($ext->reason, 0, self::MAX_TEXT_LENGTH);
                 $lines[] = "- {$ext->duration_days} days — {$reason}";
             }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Progress Remarks Text
+     * ------------------------------------------------------------------------
+     *
+     * Queries the 3 latest progress inspection records and formats them
+     * into a prompt-friendly block showing month, progress, variance, and
+     * inspector remarks. Remarks are filtered through TextQualityFilter
+     * to skip gibberish dev data.
+     *
+     * Gives the AI qualitative on-the-ground context that aggregate stats
+     * miss — e.g. "typhoon delayed steel delivery" vs just "material: 2".
+     *
+     * Used By
+     * -------
+     * buildPrompt()
+     */
+    private function buildProgressRemarksText(Project $project): string
+    {
+        $records = $project->progressHistory()
+            ->latest('inspection_date')
+            ->take(3)
+            ->get();
+
+        if ($records->isEmpty()) {
+            return "RECENT INSPECTIONS:\n- No inspection records yet";
+        }
+
+        $lines = ["RECENT INSPECTIONS (latest 3):"];
+        foreach ($records as $record) {
+            $month = $record->month_label ?? 'Unknown';
+            $actual = $record->actual_progress_percent ?? '?';
+            $variance = $record->variance_percent !== null
+                ? sprintf('%+.1f%%', $record->variance_percent)
+                : 'N/A';
+            $remarks = $this->textFilter->isMeaningful($record->remarks)
+                ? mb_substr($record->remarks, 0, self::MAX_TEXT_LENGTH)
+                : '(no remarks)';
+            $lines[] = "- Month: {$month} | Progress: {$actual}% | Variance: {$variance} | Remarks: {$remarks}";
         }
 
         return implode("\n", $lines);

@@ -189,10 +189,10 @@ Ordered oldest → newest:
 13. **V2.6 Phase 2 — Reference-class blend** (`w = obs/(obs+4)`, applies to ALL projects, P25/P75 range, reliability shrink). ✅ merged @ `a0f301d`.
 14. **A2 — Completion sanity fallback** (class-derived estimate when polynomial is implausible). ✅ `completion_sanity_fallback_plan.md`.
 15. **B5/B6 — Percentile benchmark + at-risk flag** (banded percentile tiers + 2-consecutive-months-below-P25 at-risk). ✅ `percentile_benchmark_at_risk_plan.md`, `b56_defense_notes.txt`.
-16. **Phase 10 — AI-Powered Recommendations** (AI-first with rule fallback, Gemini prompt, JSON parser, `ai_generated` flag, purple badge). ✅ Commits 4110f3e, 835f841, 7f4e23d, d8d8add. Plus uncommitted: R² relabeled as "Curve Fit Quality", FORECAST RELIABILITY section added to prompt, `TextQualityFilter` (4-heuristic gibberish detection for open-text fields).
+16. **Phase 10 — AI-Powered Recommendations** (AI-first with rule fallback, Gemini prompt, JSON parser, `ai_generated` flag, purple badge). ✅ Commits 4110f3e, 835f841, 7f4e23d, d8d8add. Plus: R² relabeled as "Curve Fit Quality", FORECAST RELIABILITY section, `TextQualityFilter` (4-heuristic gibberish detection), progress remarks in prompt, saved recommendations to DB (`ai_solutions.recommendations` JSON column), `nl2br` rendering fix for analysis text, R² warning in analysis prompt.
 
 **Regression-module tail is CLOSED (as of Aug 14, 2026). Full suite at the end of the tail: 656 tests / 2485 assertions.
-**Phase 10 added: 828 tests / 3033 assertions (as of Aug 25 2026).
+**Phase 10 added: 833 tests / 3046 assertions (as of Aug 25 2026).
 
 ---
 

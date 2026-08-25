@@ -648,20 +648,6 @@ class AIPredictionPresenter
 
         /*
         |--------------------------------------------------------------------------
-        | Generate Recommendations
-        |--------------------------------------------------------------------------
-        |
-        | Uses the RecommendationEngine (rule-based) to produce structured,
-        | categorized recommendations with reasons and priorities.
-        | Falls back to empty arrays when prediction data is insufficient.
-        |
-        */
-
-        $structuredRecs = $this->recommendationEngine->generate($project, $prediction);
-        $recommendations = array_column($structuredRecs, 'message');
-
-        /*
-        |--------------------------------------------------------------------------
         | Analysis Text (AI or Static)
         |--------------------------------------------------------------------------
         |
@@ -687,6 +673,25 @@ class AIPredictionPresenter
                 $aiGeneratedAt = null;
             }
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Recommendations (saved or fresh)
+        |--------------------------------------------------------------------------
+        |
+        | Prefer saved recommendations from the latest ai_solutions record.
+        | Falls back to generating fresh recommendations when:
+        | - No ai_solutions record exists yet
+        | - Legacy record without recommendations column (null)
+        |
+        */
+
+        if ($latestAi && !empty($latestAi->recommendations)) {
+            $structuredRecs = $latestAi->recommendations;
+        } else {
+            $structuredRecs = $this->recommendationEngine->generate($project, $prediction);
+        }
+        $recommendations = array_column($structuredRecs, 'message');
 
         /*
         |--------------------------------------------------------------------------
