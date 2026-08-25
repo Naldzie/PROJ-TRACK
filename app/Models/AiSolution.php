@@ -17,10 +17,12 @@ class AiSolution extends Model
         'regression_snapshot',
         'model_used',
         'analysis_text',
+        'recommendations',
     ];
 
     protected $casts = [
         'regression_snapshot' => 'array',
+        'recommendations' => 'array',
     ];
 
     // An AI solution belongs to a single project

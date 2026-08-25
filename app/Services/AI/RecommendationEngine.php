@@ -15,17 +15,20 @@ use App\Models\ProjectBaselineSchedule;
  * Generates structured, categorized, and explainable recommendations for
  * project managers based on regression prediction data and project factors.
  *
- * This is a rule-based engine (not AI). Recommendations are derived from
- * multiple project factors including risk level, trend, progress gap,
- * days remaining, extension count, open issues, and regression quality.
+ * Phase 10: AI-first with rule-based fallback. Attempts to generate
+ * recommendations via AIRecommendationService (Gemini-powered, context-aware)
+ * before falling back to deterministic rule-based logic. The AI produces
+ * more nuanced recommendations by considering contractor performance
+ * history, issue breakdown, extension patterns, and cross-project benchmarks.
  *
- * B5/B6: also consumes the class-standing block (banded percentile benchmark
- * + at-risk flag) so that a project trailing similar projects for 2+
- * consecutive months yields a corrective recommendation.
+ * When AI is unavailable (API failure, bad key, timeout, malformed response),
+ * the rule-based engine takes over unchanged.
  *
- * Phase 9: also consumes contractor performance metrics (on-time %,
- * avg delay, performance rating) so that a contractor with a poor track
- * record and open issues yields a corrective recommendation.
+ * Rule-based factors include:
+ * - Risk level, trend, progress gap, days remaining
+ * - Extension count, open issues, regression quality
+ * - B5/B6 class-standing (percentile benchmark + at-risk flag)
+ * - Phase 9 contractor performance metrics (on-time %, avg delay, rating)
  *
  * Each recommendation has:
  *   • message   — The actionable suggestion
@@ -39,8 +42,9 @@ use App\Models\ProjectBaselineSchedule;
  *
  * Depends On
  * ----------
- * AIPredictionService — provides the regression prediction pipeline
- * Project model       — for extension count, issues, baseline schedules
+ * AIRecommendationService — AI-powered recommendations (Phase 10)
+ * AIPredictionService     — provides the regression prediction pipeline
+ * Project model           — for extension count, issues, baseline schedules
  */
 class RecommendationEngine
 {
@@ -49,10 +53,34 @@ class RecommendationEngine
      * Maximum Recommendations
      * ------------------------------------------------------------------------
      *
-     * Caps the total number of recommendations returned to avoid
+     * Caps the total number of rule-based recommendations returned to avoid
      * overwhelming project managers with too many suggestions.
      */
     private const MAX_RECOMMENDATIONS = 8;
+
+    /**
+     * ------------------------------------------------------------------------
+     * AI Recommendation Service
+     * ------------------------------------------------------------------------
+     *
+     * Generates context-aware recommendations using Gemini. Falls back
+     * to rule-based logic when this service returns empty.
+     */
+    private ?AIRecommendationService $aiRecommendationService = null;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Constructor
+     * ------------------------------------------------------------------------
+     *
+     * Inject AIRecommendationService for AI-first recommendation path.
+     * When null (default), runs in rules-only mode for backward compatibility.
+     * In production, the DI container injects the service automatically.
+     */
+    public function __construct(?AIRecommendationService $aiRecommendationService = null)
+    {
+        $this->aiRecommendationService = $aiRecommendationService;
+    }
 
     /**
      * ------------------------------------------------------------------------
@@ -66,8 +94,11 @@ class RecommendationEngine
      * 1. Skip completed projects (empty array).
      * 2. Extract factors from project + prediction data.
      * 3. Skip insufficient data (< 2 observations).
-     * 4. Run each category rule method.
-     * 5. Merge, deduplicate, sort by priority, cap at 8.
+     * 4. Try AI-powered recommendations via AIRecommendationService.
+     * 5. If AI succeeds → return AI recommendations.
+     * 6. If AI fails → fall back to rule-based logic.
+     * 7. Run each category rule method.
+     * 8. Merge, deduplicate, sort by priority, cap at 8.
      *
      * Used By
      * -------
@@ -75,6 +106,7 @@ class RecommendationEngine
      *
      * Depends On
     ----------
+     * AIRecommendationService::generate() (Phase 10)
      * extractFactors(), assessEscalation(), assessCorrective(),
      * assessMonitoring(), assessAdministrative(), mergeAndSort()
      */
@@ -97,6 +129,16 @@ class RecommendationEngine
         if ($factors['observation_count'] <= 2) {
             return $this->generateDataFocusedRecommendations($factors);
         }
+
+        // Phase 10: Try AI-powered recommendations first (when service is injected)
+        if ($this->aiRecommendationService !== null) {
+            $aiRecs = $this->aiRecommendationService->generate($project, $prediction);
+            if (!empty($aiRecs)) {
+                return $aiRecs;
+            }
+        }
+
+        // Fallback: rule-based logic (unchanged)
 
         // No baseline schedules: return only administrative recommendations
         // Without baselines, risk and trend cannot be reliably assessed

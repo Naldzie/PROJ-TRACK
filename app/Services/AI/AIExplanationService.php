@@ -47,16 +47,24 @@ class AIExplanationService
 {
     private AIPredictionService $aiPredictionService;
 
+    private ?RecommendationEngine $recommendationEngine;
+
     /**
      * ------------------------------------------------------------------------
      * Constructor
      * ------------------------------------------------------------------------
      *
      * Inject AIPredictionService to retrieve regression data for the prompt.
+     * Inject RecommendationEngine to generate and persist recommendations.
+     *
+     * @param  RecommendationEngine|null  $recommendationEngine  Optional; auto-resolved by container
      */
-    public function __construct(AIPredictionService $aiPredictionService)
-    {
+    public function __construct(
+        AIPredictionService $aiPredictionService,
+        ?RecommendationEngine $recommendationEngine = null
+    ) {
         $this->aiPredictionService = $aiPredictionService;
+        $this->recommendationEngine = $recommendationEngine ?? new RecommendationEngine();
     }
 
     /**
@@ -109,7 +117,10 @@ class AIExplanationService
             return '';
         }
 
-        $this->saveAnalysis($project, $text, $prediction);
+        // Generate recommendations alongside analysis (Phase 10 enhancement)
+        $recommendations = $this->recommendationEngine->generate($project, $prediction);
+
+        $this->saveAnalysis($project, $text, $prediction, $recommendations);
 
         return $text;
     }
@@ -230,6 +241,7 @@ REGRESSION MODEL:
 - Based on {$obsCount} monthly progress observations
 - Selection Reason: {$methodReason}
 {$reliabilityText}{$historyAccuracy}
+Do NOT use R-squared to compare model quality or prediction strength — it only describes how well the curve fits historical data points, nothing about whether future predictions will be correct. Use the FORECAST RELIABILITY score to assess prediction trust instead.
 RISK ASSESSMENT:
 - Overall Risk Level: {$riskLevel}
 - Trend: {$trend}{$completionMultiText}{$issuesText}
@@ -409,14 +421,19 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
      * Uses: AiSolution model
      * Called by: generate()
      */
-    private function saveAnalysis(Project $project, string $text, array $prediction): AiSolution
-    {
+    private function saveAnalysis(
+        Project $project,
+        string $text,
+        array $prediction,
+        array $recommendations = []
+    ): AiSolution {
         return AiSolution::create([
             'project_id'           => $project->id,
             'baseline_schedule_id' => $project->getPendingBaseline()?->id,
             'regression_snapshot'  => $prediction,
             'model_used'           => config('services.gemini.model', 'gemini-1.5-flash'),
             'analysis_text'        => $text,
+            'recommendations'      => $recommendations ?: null,
         ]);
     }
 }

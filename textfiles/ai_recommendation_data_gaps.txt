@@ -2,6 +2,7 @@
   AI RECOMMENDATION — DATA GAPS & ENHANCEMENT ROADMAP
   CSPC PMU System
   July 16, 2026
+  Updated: August 25, 2026 (plan finalized → textfiles/ai_recommendation_plan.md)
 ===============================================================================
 
 Disclaimer: This document is a thought exercise exploring what additional
