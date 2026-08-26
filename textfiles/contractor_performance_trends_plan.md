@@ -120,11 +120,28 @@ In `index()`, for each contractor in the `contractorsJson` payload, include tren
 
 ### Testing Checklist
 
-- [ ] Admin rating page loads without errors
-- [ ] Trend chart renders for contractor with 2+ completed projects
-- [ ] Trend chart hidden for contractor with 0-1 completed projects
-- [ ] Running on-time % is accurate at each data point
-- [ ] Trend indicator shows correct direction (improving/declining/stable)
-- [ ] Chart matches existing design system (colors, spacing)
-- [ ] Chart is responsive (scales with panel width)
-- [ ] All existing tests still pass
+- [x] Admin rating page loads without errors
+- [x] Trend chart renders for contractor with 2+ completed projects
+- [x] Trend chart hidden for contractor with 0-1 completed projects
+- [x] Running on-time % is accurate at each data point
+- [x] Trend indicator shows correct direction (improving/declining/stable)
+- [x] Chart matches existing design system (colors, spacing)
+- [x] Chart is responsive (scales with panel width)
+- [x] All existing tests still pass
+
+## Implementation Log
+
+### Backend (commit f2e592d)
+- `ContractorPerformanceService::getPerformanceTrend()` — queries completed projects ordered by actual_end_date, builds running cumulative on-time % and avg delay at each completion point. Returns empty array for 0-1 projects.
+- `RatingController::index()` — added `'trend' => $perfService->getPerformanceTrend($c)` to contractorsJson payload.
+
+### Frontend (commit f2e592d)
+- Added Chart.js v4 CDN script tag.
+- `renderPerformance()` now includes a trend section below the stats grid when 2+ data points exist.
+- Trend section shows: "Performance Trend" title, directional indicator (↑ Improving / ↓ Declining / → Stable with percentage), and a sparkline chart.
+- `renderTrendChart()` — Chart.js line chart, 140px height, blue gradient fill, minimal gridlines, percentage Y-axis.
+- CSS: `.perf-trend`, `.perf-trend-header`, `.trend-up`/`.trend-down`/`.trend-flat`, `.perf-trend-chart-wrap`.
+
+### Tests (commit f2e592d)
+- 6 new tests in `ContractorPerformanceServiceTest`: empty, single project, two points, running cumulative accuracy, date ordering, extension-adjusted deadlines.
+- 849 passed, 2 pre-existing `EmailDraftTest` failures.
