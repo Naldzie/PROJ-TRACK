@@ -2,9 +2,11 @@
 
 CSPC PMU System — Core Monitoring (AI regression module paused)
 
-Status: 🔄 IN PROGRESS — Phases A–D implemented and merged. Phase E
-        (AI baseline linkage) NOT STARTED — `ai_solutions` table needs
-        `baseline_schedule_id` column. This is the next recommended work item.
+Status: ⏸️ DEFERRED — Phases A–D implemented and merged. Phase E
+        (AI baseline linkage + feedback loop) DEFERRED — only implement
+        if client or panel explicitly requests it. Research shows feedback
+        loops are rarely implemented in capstone systems. The data model
+        supports future addition without rework.
 
 Date: August 2, 2026
 

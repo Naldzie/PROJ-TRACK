@@ -123,12 +123,14 @@
 
   The remaining work items, in priority order:
 
-     1. CORE MONITORING Phase E — AI ↔ baseline linkage
-        Branch: core/ai-baseline-linkage (from core/issue-lifecycle)
-        Scope: add baseline_schedule_id to ai_solutions (= current pending
-        baseline at generation time). Small prep work, enables Phase 10.
+     1. CORE MONITORING Phase E — AI ↔ baseline linkage / Feedback Loop
+        Scope: baseline_schedule_id linkage + recommendation outcome feedback
+        loop (track whether AI recs were followed, measure outcomes).
+        DEFERRED — only implement if client or panel explicitly requests it.
+        Research shows feedback loops are rarely implemented in capstone
+        systems. The data model supports future addition without rework.
         Plan: textfiles/core_monitoring_completion_plan.md §8
-        Status: ⬜ NOT STARTED
+        Status: ⏸️ DEFERRED (unless client/panel request)
 
      2. AI PHASE 9 — Contractor Performance Tracking
         Compute derived metrics: on-time delivery %, avg delay days,
@@ -151,13 +153,21 @@
         ForecastReliabilityService replaces R² as trust indicator).
         TextQualityFilter: 4-heuristic gibberish detection for issue names,
         descriptions, extension reasons. Prompt instructs AI to ignore any
-        remaining gibberish. 828 tests passing.
+        remaining gibberish. Saved recommendations to DB. Progress remarks
+        in prompt. R² warning in analysis prompt. 833 tests passing.
 
      4. AI PHASE 11 — Export / Reporting
-        PDF export of prediction reports, CSV forecast exports,
-        email notifications on risk level changes.
-        Note: Excel report exists but frozen pending corruption fix.
-        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 11
+        Scope (revised):
+        a) Add AI analysis text + recommendations to existing Project
+           Summary PDF (dompdf). Pulls from latest ai_solutions record.
+           Includes analysis_text with nl2br rendering and structured
+           recommendations with category badges.
+        b) Risk-level change notification — new Notification class that
+           fires when project risk level changes (e.g., "On Track" →
+           "At Risk" or "Overdue"). Compares previous vs current derived
+           risk level after progress recordings or AI assessments.
+        DROPPED: CSV forecast export (redundant — PDF now covers this).
+        DROPPED: Excel report corruption fix (out of scope, frozen).
         Status: ⬜ NOT STARTED
 
      5. AI PHASE 12 — Architectural Enhancements
@@ -206,8 +216,10 @@
      ✅ Risk Register, Notification System, Report Generation — all merged.
 
   REMAINING:
-     ⬜ Core Phase E (small prep → enables Phase 10)
-     ⬜ AI Phase 9 → 10 → 11 → 12 → 13 (V2 master plan tail)
+     ⏸️ Core Phase E — feedback loop DEFERRED (unless client/panel request)
+     ✅ AI Phase 9 → 10 DONE
+     ⬜ AI Phase 11 (AI in PDF + risk-change notification)
+     ⬜ AI Phase 12 → 13 (architecture + testing)
      ⬜ Extension approval activity logging (small fix)
      ⬜ Non-AI gaps (deferred, see SECTION 4)
 
@@ -325,7 +337,7 @@
     Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
     Phase 9  — Contractor Performance Tracking             ✅ DONE (incl. extension stats)
     Phase 10 — AI-Powered Recommendations                  ✅ DONE (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
-    Phase 11 — Export / Reporting                           ⬜ NOT STARTED
+    Phase 11 — Export / Reporting                           ⬜ NOT STARTED (AI in PDF + risk-change notification)
     Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED
     Phase 13 — Testing & Refinement                         ⬜ NOT STARTED
     Phase 14 — Forecast Reliability Rebase                  ✅ DONE

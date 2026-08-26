@@ -200,14 +200,26 @@ Ordered oldest → newest:
 
 Per `textfiles/summary_of_next_work.txt` (keep this priority order):
 
-1. **Core Monitoring Phase E — AI ↔ baseline linkage** (PREP ONLY, ⬜ NOT STARTED).
-   Plan: `textfiles/core_monitoring_completion_plan.md`. Scope: add `baseline_schedule_id` to `ai_solutions` (= current pending baseline at generation time). No snapshot/outcome display yet — that waits for Phase 10. This is the enabler for the future recommendation feedback loop.
-2. **AI Phase 9 → 10 — Contractor Performance Tracking → AI-Powered Recommendations** (highest capstone demonstration value).
-   - Phase 9: build contractor metrics — `performance_rating` (1–5), `on_time_delivery_pct`, `completed_projects_count`, `avg_delay_days`, `total_extensions_count`, `total_extension_days`. Extension stats are informational only (no scoring impact). Branch: `ai/phase9-contractor-performance`. Plan: `textfiles/contractor_performance_tracking_plan.md`. **Status: ✅ DONE (incl. extension stats).**
-   - Phase 10: AI-generated recommendations. Plan: `textfiles/ai_recommendation_plan.md` (updated Aug 25 with industry research). AI-first with rule-based fallback. Gemini prompt includes contractor performance, issue breakdown, extension patterns, cross-project benchmarks. Same output format, no UI changes. **Status: ✅ DONE** (commits 4110f3e, 835f841, 7f4e23d, d8d8add + R² fix + TextQualityFilter pending commit).
-   - After: Phases 11 (export/reporting — note Excel report exists but is frozen pending corruption fix, see `report_generation_plan.md` §6.4), 12 (architectural: caching TTL 1h, background jobs, `config/ai.php` threshold migration), 13 (testing ~150 more).
-3. **Pending (small):** Extension approval activity logging — `Admin/ProjectExtensionController` `store()`/`update()` lack `ActivityLog::create()` (ref: `textfiles/uncertain/baseline_extension_adjustment_plan__4_ (2).txt` Part A).
-4. **Deferred / low priority (safe to skip):** MLR (issue density, contractor experience, seasonality, extension count; budget utilization excluded by client), Project Comparison, Bulk Operations, User Activity Summary, Project Templates, Data Export/Import, Job Queue utilization, Dead Code Cleanup, Activity Log UI for Staff, completion-date interval UI (A3), k-backtest tuning via C7, `config/ai.php` migration (Phase 12).
+1. **Core Monitoring Phase E — AI ↔ baseline linkage / Feedback Loop** — DEFERRED.
+   Scope: baseline_schedule_id linkage + recommendation outcome feedback loop.
+   Only implement if client or panel explicitly requests it. Research shows
+   feedback loops are rarely implemented in capstone systems. The data model
+   supports future addition without rework.
+2. **AI Phase 11 — Export / Reporting** (⬜ NOT STARTED).
+   - a) Add AI analysis text + recommendations to existing Project Summary PDF
+     (dompdf). Pulls from latest `ai_solutions` record.
+   - b) Risk-level change notification — new Notification class that fires when
+     project risk level changes (e.g., "On Track" → "At Risk").
+   - DROPPED: CSV forecast export (redundant — PDF now covers this).
+   - DROPPED: Excel report corruption fix (out of scope, frozen).
+3. **AI Phase 12 — Architectural Enhancements** (⬜ NOT STARTED).
+   Prediction caching (TTL 1h), background jobs for Gemini API,
+   configurable thresholds in `config/ai.php`.
+4. **AI Phase 13 — Testing & Refinement** (⬜ NOT STARTED).
+   ~150 new V2 tests; no V1 regressions.
+5. **Extension Approval Activity Logging** (small, ⬜ NOT STARTED).
+   Missing `ActivityLog::create()` in `store()`/`update()`.
+6. **Deferred / low priority (safe to skip):** MLR, Project Comparison, Bulk Operations, User Activity Summary, Project Templates, Data Export/Import, Job Queue utilization, Dead Code Cleanup, Activity Log UI for Staff, completion-date interval UI (A3), k-backtest tuning via C7, `config/ai.php` migration (Phase 12).
 
 **Intentionally excluded by client:** Budget burn-rate tracking, Baseline approval workflow, Contractor self-reporting, Formal REST API, S-Curve polynomial overlay.
 
