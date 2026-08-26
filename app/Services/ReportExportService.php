@@ -259,12 +259,16 @@ class ReportExportService
 
         $svgChart = $this->buildSvgChart($chartData);
 
+        // Load latest AI analysis and recommendations (Phase 11)
+        $latestAi = $project->aiSolutions()->first();
+
         $html = view('reports.project-summary', [
             'project'   => $project,
             'data'      => $data,
             'chartData' => $chartData,
             'svgChart'  => $svgChart,
             'generatedAt' => now()->format('F j, Y g:i A'),
+            'latestAi'  => $latestAi,
         ])->render();
 
         $dompdf = new Dompdf();
