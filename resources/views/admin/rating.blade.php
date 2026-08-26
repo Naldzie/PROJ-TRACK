@@ -263,6 +263,14 @@
 .stars { color: var(--gold); letter-spacing: 1px; font-size: 11px; line-height: 1; }
 .rating-num { color: var(--muted); font: 10px 'Space Mono', 'SF Mono', monospace; margin-top: 4px; }
 .not-rated { color: var(--faint); font: 10px 'Space Mono', 'SF Mono', monospace; }
+.perf-trend { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.perf-trend-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.perf-trend-title { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.perf-trend-indicator { font-size: 11px; font-weight: 600; }
+.trend-up { color: #059669; }
+.trend-down { color: #dc2626; }
+.trend-flat { color: #9ca3af; }
+.perf-trend-chart-wrap { height: 140px; background: #f8fafc; border-radius: 8px; padding: 8px; }
 
 .projects-panel .panel-body { padding: 12px 14px 14px; }
 .project-toolbar {
@@ -545,6 +553,7 @@ select {
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
 const contractorsData = @json($contractorsJson);
 const ratingsData = @json($ratingsJson);
@@ -769,7 +778,87 @@ function renderPerformance() {
         <span class="perf-stat-value">${c.completed_projects_count > 0 && c.total_extension_days != null ? (c.total_extension_days / c.completed_projects_count).toFixed(1) + ' days' : 'N/A'}</span>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${c.trend && c.trend.length >= 2 ? `<div class="perf-trend">
+    <div class="perf-trend-header">
+      <span class="perf-trend-title">Performance Trend</span>
+      <span class="perf-trend-indicator ${c.trend[c.trend.length - 1].on_time_pct > c.trend[0].on_time_pct ? 'trend-up' : (c.trend[c.trend.length - 1].on_time_pct < c.trend[0].on_time_pct - 2 ? 'trend-down' : 'trend-flat')}">
+        ${c.trend[c.trend.length - 1].on_time_pct > c.trend[0].on_time_pct
+          ? '&uarr; Improving (+' + (c.trend[c.trend.length - 1].on_time_pct - c.trend[0].on_time_pct).toFixed(1) + '% over ' + c.trend.length + ' projects)'
+          : (c.trend[c.trend.length - 1].on_time_pct < c.trend[0].on_time_pct - 2
+            ? '&darr; Declining (&minus;' + (c.trend[0].on_time_pct - c.trend[c.trend.length - 1].on_time_pct).toFixed(1) + '% over ' + c.trend.length + ' projects)'
+            : '&rarr; Stable')}
+      </span>
+    </div>
+    <div class="perf-trend-chart-wrap"><canvas id="perfTrendChart"></canvas></div>
+  </div>` : ''}`;
+
+  if (c.trend && c.trend.length >= 2) {
+    requestAnimationFrame(() => renderTrendChart(c.trend));
+  }
+}
+
+function renderTrendChart(trend) {
+  const canvas = document.getElementById('perfTrendChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const labels = trend.map(p => {
+    const d = new Date(p.date);
+    return d.toLocaleString('en', { month: 'short', year: '2-digit' });
+  });
+  const data = trend.map(p => p.on_time_pct);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, 140);
+  gradient.addColorStop(0, 'rgba(79,109,245,0.25)');
+  gradient.addColorStop(1, 'rgba(79,109,245,0.02)');
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        borderColor: '#4f6df5',
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#4f6df5',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) { return ctx.parsed.y + '% on-time'; }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { font: { size: 10 }, color: '#9ca3af' }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          grid: { color: '#f3f4f6' },
+          ticks: {
+            font: { size: 10 },
+            color: '#9ca3af',
+            callback: function(v) { return v + '%'; }
+          }
+        }
+      }
+    }
+  });
 }
 
 function openRating(key, existing, contractorId, projectId, projectTitle) {

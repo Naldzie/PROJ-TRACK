@@ -70,6 +70,7 @@ class RatingController extends Controller
             'total_extension_days' => $c->total_extension_days
                 ? round((float) $c->total_extension_days, 1)
                 : null,
+            'trend' => $perfService->getPerformanceTrend($c),
         ]);
 
         $ratingsJson = $ratings->map(fn($r) => [

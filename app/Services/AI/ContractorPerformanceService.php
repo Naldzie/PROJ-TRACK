@@ -311,4 +311,71 @@ class ContractorPerformanceService
             'total_extension_days' => null,
         ];
     }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Get Performance Trend
+     * ------------------------------------------------------------------------
+     *
+     * Builds a running cumulative trend of on-time % and avg delay as each
+     * project completes chronologically. Used by the rating page sparkline
+     * chart to visualize whether a contractor is improving or declining.
+     *
+     * Returns an array of data points, each representing the cumulative
+     * performance snapshot at the time a specific project was completed:
+     *   [
+     *       { date: '2026-03-15', on_time_pct: 100.0, avg_delay: 0, count: 1 },
+     *       { date: '2026-06-20', on_time_pct: 50.0,  avg_delay: 12, count: 2 },
+     *       ...
+     *   ]
+     *
+     * Called By
+     * ---------
+     * RatingController::index() — passed to rating.blade.php for sparkline
+     */
+    public function getPerformanceTrend(Contractor $contractor): array
+    {
+        $completed = Project::where('contractor_id', $contractor->id)
+            ->where('status', 'Completed')
+            ->whereNotNull('actual_end_date')
+            ->whereNotNull('original_planned_end_date')
+            ->orderBy('actual_end_date', 'asc')
+            ->get();
+
+        if ($completed->count() < 2) {
+            return [];
+        }
+
+        $runningOnTimeCount = 0;
+        $runningTotalDelay = 0;
+        $runningLateCount = 0;
+        $trend = [];
+
+        foreach ($completed as $project) {
+            $effectiveDeadline = $this->getEffectiveDeadline($project);
+            $actualEnd = Carbon::parse($project->actual_end_date);
+
+            if ($actualEnd->lte($effectiveDeadline)) {
+                $runningOnTimeCount++;
+            } else {
+                $runningLateCount++;
+                $runningTotalDelay += (int) $effectiveDeadline->diffInDays($actualEnd, false);
+            }
+
+            $count = $runningOnTimeCount + $runningLateCount;
+            $onTimePct = round(($runningOnTimeCount / $count) * 100, 1);
+            $avgDelay = $runningLateCount > 0
+                ? round($runningTotalDelay / $runningLateCount, 1)
+                : 0.0;
+
+            $trend[] = [
+                'date'        => $actualEnd->format('Y-m-d'),
+                'on_time_pct' => $onTimePct,
+                'avg_delay'   => $avgDelay,
+                'count'       => $count,
+            ];
+        }
+
+        return $trend;
+    }
 }

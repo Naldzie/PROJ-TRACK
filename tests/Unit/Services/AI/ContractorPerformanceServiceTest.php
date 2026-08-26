@@ -375,4 +375,149 @@ class ContractorPerformanceServiceTest extends TestCase
         $this->assertEquals(5, $summary['total_extensions_count']);
         $this->assertEquals(45.0, $summary['total_extension_days']);
     }
+
+    /*
+    |==========================================================================
+    | getPerformanceTrend()
+    |==========================================================================
+    */
+
+    public function test_trend_empty_when_no_completed_projects(): void
+    {
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertEmpty($trend);
+    }
+
+    public function test_trend_empty_when_only_one_completed_project(): void
+    {
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(10),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertEmpty($trend);
+    }
+
+    public function test_trend_returns_two_points_for_two_projects(): void
+    {
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(20),
+        ]);
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(10),
+            'actual_end_date' => now()->subDays(5),
+        ]);
+
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertCount(2, $trend);
+        $this->assertArrayHasKey('date', $trend[0]);
+        $this->assertArrayHasKey('on_time_pct', $trend[0]);
+        $this->assertArrayHasKey('avg_delay', $trend[0]);
+        $this->assertArrayHasKey('count', $trend[0]);
+    }
+
+    public function test_trend_running_cumulative_is_accurate(): void
+    {
+        // Project 1: on-time (completed day 30 ago, planned 30 ago)
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(30),
+        ]);
+        // Project 2: 10 days late (completed 5 days ago, planned 15 ago)
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(15),
+            'actual_end_date' => now()->subDays(5),
+        ]);
+        // Project 3: on-time (completed 1 day ago, planned 1 ago)
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDay(),
+            'actual_end_date' => now()->subDay(),
+        ]);
+
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertCount(3, $trend);
+
+        // After project 1: 1/1 on-time = 100%
+        $this->assertEquals(100.0, $trend[0]['on_time_pct']);
+        $this->assertEquals(0, $trend[0]['avg_delay']);
+        $this->assertEquals(1, $trend[0]['count']);
+
+        // After project 2: 1/2 on-time = 50%, avg delay = 10 days
+        $this->assertEquals(50.0, $trend[1]['on_time_pct']);
+        $this->assertEquals(10.0, $trend[1]['avg_delay']);
+        $this->assertEquals(2, $trend[1]['count']);
+
+        // After project 3: 2/3 on-time = 66.7%, avg delay = 10 days
+        $this->assertEquals(66.7, $trend[2]['on_time_pct']);
+        $this->assertEquals(10.0, $trend[2]['avg_delay']);
+        $this->assertEquals(3, $trend[2]['count']);
+    }
+
+    public function test_trend_projects_ordered_by_actual_end_date(): void
+    {
+        // Create projects out of order — trend should sort by actual_end_date
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(10),
+            'actual_end_date' => now()->subDays(5),  // second to complete
+        ]);
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(20), // first to complete
+        ]);
+
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertCount(2, $trend);
+        // First point should be the earlier date
+        $this->assertLessThan($trend[1]['date'], $trend[0]['date']);
+    }
+
+    public function test_trend_includes_extension_adjusted_deadlines(): void
+    {
+        // First project: on-time baseline
+        Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(30),
+        ]);
+
+        // Second project: would be late without extension, but extension makes it on-time
+        $project = Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(20),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        ProjectExtension::create([
+            'project_id' => $project->id,
+            'extension_number' => 1,
+            'status' => 'approved',
+            'original_end_date' => $project->original_planned_end_date,
+            'new_end_date' => now()->subDays(5),
+            'approved_new_end_date' => now()->subDays(5),
+            'reason' => 'Weather delays',
+            'duration_days' => 15,
+        ]);
+
+        $trend = $this->service->getPerformanceTrend($this->contractor);
+
+        $this->assertCount(2, $trend);
+        // Both on-time (second project has extension), so 100% on-time
+        $this->assertEquals(100.0, $trend[1]['on_time_pct']);
+        $this->assertEquals(0, $trend[1]['avg_delay']);
+    }
 }
