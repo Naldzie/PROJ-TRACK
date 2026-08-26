@@ -366,12 +366,15 @@ class ReportExportTest extends TestCase
         $method->setAccessible(true);
         $svgChart = $method->invoke($exportService, $chartData);
 
+        $latestAi = $this->project->aiSolutions()->first();
+
         return view('reports.project-summary', [
             'project'     => $this->project,
             'data'        => $data,
             'chartData'   => $chartData,
             'svgChart'    => $svgChart,
             'generatedAt' => now()->format('F j, Y g:i A'),
+            'latestAi'    => $latestAi,
         ])->render();
     }
 
@@ -707,5 +710,127 @@ class ReportExportTest extends TestCase
             'project_id' => $this->project->id,
             'action'     => 'Export Report',
         ]);
+    }
+
+    // =====================================================================
+    // AI Analysis + Recommendations in PDF (Phase 11)
+    // =====================================================================
+
+    public function test_summary_view_includes_ai_analysis_when_present(): void
+    {
+        \App\Models\AiSolution::create([
+            'project_id'           => $this->project->id,
+            'analysis_text'        => 'The project is currently at 45% progress with a declining trend.',
+            'model_used'           => 'gemini-1.5-flash',
+            'regression_snapshot'  => ['r_squared' => 0.95],
+            'recommendations'      => null,
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('AI Analysis', $html);
+        $this->assertStringContainsString('The project is currently at 45% progress with a declining trend.', $html);
+        $this->assertStringContainsString('AI-Generated Analysis', $html);
+    }
+
+    public function test_summary_view_includes_recommendations_when_present(): void
+    {
+        \App\Models\AiSolution::create([
+            'project_id'           => $this->project->id,
+            'analysis_text'        => 'Test analysis.',
+            'model_used'           => 'gemini-1.5-flash',
+            'regression_snapshot'  => ['r_squared' => 0.95],
+            'recommendations' => [
+                [
+                    'message'      => 'Address open material issues immediately',
+                    'category'     => 'corrective',
+                    'reason'       => 'There are 2 open material issues.',
+                    'priority'     => 1,
+                    'ai_generated' => true,
+                ],
+                [
+                    'message'      => 'Escalate chronic slippage to management',
+                    'category'     => 'escalation',
+                    'reason'       => 'Contractor rating is 1.00/5.',
+                    'priority'     => 2,
+                    'ai_generated' => true,
+                ],
+            ],
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('AI Recommendations', $html);
+        $this->assertStringContainsString('Address open material issues immediately', $html);
+        $this->assertStringContainsString('Escalate chronic slippage to management', $html);
+        $this->assertStringContainsString('Corrective', $html);
+        $this->assertStringContainsString('Escalation', $html);
+        $this->assertStringContainsString('There are 2 open material issues.', $html);
+    }
+
+    public function test_summary_view_omits_ai_sections_when_no_solution(): void
+    {
+        $html = $this->renderSummaryView();
+
+        $this->assertStringNotContainsString('AI Analysis', $html);
+        $this->assertStringNotContainsString('AI Recommendations', $html);
+    }
+
+    public function test_summary_view_omits_ai_sections_when_empty_analysis(): void
+    {
+        \App\Models\AiSolution::create([
+            'project_id'           => $this->project->id,
+            'analysis_text'        => '',
+            'model_used'           => 'gemini-1.5-flash',
+            'regression_snapshot'  => ['r_squared' => 0.95],
+            'recommendations'      => null,
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringNotContainsString('AI Analysis', $html);
+        $this->assertStringNotContainsString('AI Recommendations', $html);
+    }
+
+    public function test_summary_view_uses_nl2br_for_analysis_text(): void
+    {
+        \App\Models\AiSolution::create([
+            'project_id'          => $this->project->id,
+            'analysis_text'       => "Paragraph one.\n\nParagraph two.\n- Bullet point",
+            'model_used'          => 'gemini-1.5-flash',
+            'regression_snapshot' => ['r_squared' => 0.95],
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('Paragraph one.', $html);
+        $this->assertStringContainsString('Paragraph two.', $html);
+        // nl2br converts \n to <br />
+        $this->assertStringContainsString('<br />', $html);
+    }
+
+    public function test_summary_view_renders_recommendation_priority_and_reason(): void
+    {
+        \App\Models\AiSolution::create([
+            'project_id'           => $this->project->id,
+            'analysis_text'        => 'Test.',
+            'model_used'           => 'gemini-1.5-flash',
+            'regression_snapshot'  => ['r_squared' => 0.95],
+            'recommendations' => [
+                [
+                    'message'      => 'Monitor weekly progress',
+                    'category'     => 'monitoring',
+                    'reason'       => 'Declining trend observed.',
+                    'priority'     => 3,
+                    'ai_generated' => true,
+                ],
+            ],
+        ]);
+
+        $html = $this->renderSummaryView();
+
+        $this->assertStringContainsString('3', $html);
+        $this->assertStringContainsString('Declining trend observed.', $html);
+        $this->assertStringContainsString('Monitoring', $html);
     }
 }

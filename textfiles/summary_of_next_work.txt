@@ -168,7 +168,7 @@
            risk level after progress recordings or AI assessments.
         DROPPED: CSV forecast export (redundant — PDF now covers this).
         DROPPED: Excel report corruption fix (out of scope, frozen).
-        Status: ⬜ NOT STARTED
+        Status: 🔄 IN PROGRESS (11a DONE, 11b NOT STARTED)
 
      5. AI PHASE 12 — Architectural Enhancements
         Prediction caching (TTL 1h), background jobs for Gemini API,
