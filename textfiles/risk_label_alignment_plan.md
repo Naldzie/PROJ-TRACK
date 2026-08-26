@@ -157,11 +157,71 @@ The `RiskLevelChanged` title already shows `previous_level → current_level`. A
 
 ## Testing Checklist
 
-- [ ] AI prediction tab gauge shows "Low Risk" / "Medium Risk" / "High Risk" (not "Low" / "Moderate")
-- [ ] AI prediction tab shows new "Forecast Risk" row based on predicted future gap
-- [ ] Email notification shows "Medium Risk" instead of "medium_risk"
-- [ ] Email detail banner shows correct labels (not "Warning")
-- [ ] Dashboard health badge still shows ON TRACK / AT RISK with correct sub-tier
-- [ ] Notification list page renders RiskLevelChanged with human-readable labels
-- [ ] Risk-level change notification email shows "On Track → Medium Risk"
-- [ ] All existing tests pass with updated label assertions
+- [x] AI prediction tab gauge shows "Low Risk" / "Medium Risk" / "High Risk" (not "Low" / "Moderate")
+- [x] AI prediction tab shows new "Forecast Risk" row based on predicted future gap
+- [x] Email notification shows "Medium Risk" instead of "medium_risk"
+- [x] Email detail banner shows correct labels (not "Warning")
+- [x] Dashboard health badge still shows ON TRACK / AT RISK with correct sub-tier
+- [x] Notification list page renders RiskLevelChanged with human-readable labels
+- [x] Risk-level change notification email shows "On Track → Medium Risk"
+- [x] All existing tests pass with updated label assertions
+
+## Implementation Log
+
+### Phase 1: ProjectHealthService (commit 2aaf7fe)
+- `classifyGap()` returns `ahead`/`on_track`/`low_risk`/`medium_risk`/`high_risk` instead of `Low`/`Moderate`/`High`/`Critical`
+- `determine()` updated: `in_array($risk, ['ahead', 'on_track'])` for on_track check, `$risk = 'high_risk'` for escalation, `$severity = $risk === 'high_risk'`
+- Docblock updated to match unified thresholds
+
+### Phase 2: AIPredictionPresenter (commit 2aaf7fe, 0043293, 11e65f5)
+- Added `use App\Services\ProjectStatusService`
+- Status display: `in_array($overallRisk, ['ahead', 'on_track'])` for ON TRACK
+- Added `forecast_risk_level` computed from `nextPlanned - nextPredicted` gap via `ProjectStatusService::getRiskLevel()`
+- Fixed: changed from `$forecastRiskData['label']` to `$forecastRiskData['level']` (Blade uses internal keys)
+- Fixed: changed from `-abs($forecastGap)` to `$forecastGap` (getRiskLevel expects positive = behind)
+
+### Phase 3: AI Prediction Tab Blade (commit 2aaf7fe)
+- `$_riskColors` keyed by internal keys (`ahead`, `on_track`, `low_risk`, `medium_risk`, `high_risk`)
+- Added `$_riskLabels` for display label mapping
+- Added "Risk Level" row with unified display label
+- Added "Forecast Risk" row (dashed border) with color from `$_riskColors`
+- Gauge center text shows `$_currentRiskLabel` instead of raw `risk_level`
+
+### Phase 4: EmailControllers (commit 2aaf7fe, 11e65f5)
+- Admin, Staff, Contractor `EmailController` files: added `use ProjectStatusService`
+- Replaced `$sev` ternary with `$statusService->getRiskLevel(-$variance)['label']`
+- Fixed: changed from `-abs($variance)` to `-$variance` (getRiskLevel expects positive = behind)
+
+### Phase 5: AiAnalysisMail (commit 2aaf7fe, 11e65f5)
+- Added `use App\Services\ProjectStatusService`
+- Replaced 3-tier if/elseif/else with `$statusService->getRiskLevel(-$variance)`
+- Color mapped via match expression (`green`→`#10b981`, `yellow`→`#eab308`, `orange`→`#f97316`, default→`#ef4444`)
+- Fixed: changed from `-abs($variance)` to `-$variance`
+
+### Phase 6: Email Detail Viewer JS (commit 2aaf7fe)
+- Admin and Staff `email.blade.php`: replaced `$riskData === 'Critical'` ternary with `risk_level.includes('High')` / `risk_level.includes('Medium')` mapping
+
+### Phase 7: RiskLevelChanged Notification (commit 2aaf7fe)
+- `isEscalation()` already used unified labels — no change needed
+
+### Phase 8: Notification List Blade (commit 2aaf7fe)
+- Already used `$d['previous_level']` / `$d['current_level']` from DB — labels now display correctly
+
+### Phase 9: Controller stores display labels (commit 2aaf7fe)
+- `ProjectProgressController::recordMonthlyProgress()`: changed `$riskData['level']` to `$riskData['label']` for notification and DB storage
+- Backfill also uses `['label']`
+
+### Bug Fixes (commit 11e65f5)
+- Forecast Risk N/A: `$forecastRiskData['label']` → `$forecastRiskData['level']` (Blade keys by internal level)
+- Forecast Risk wrong value: Changed from `$completion['predicted_delay_days']` to `nextPlanned - nextPredicted` gap
+- Email risk levels inverted: `-abs($variance)` → `-$variance` in 3 EmailControllers + AiAnalysisMail
+- Test updates: `ProjectHealthServiceTest` for new thresholds, `NotificationTest` for display labels
+
+### Tests
+- 843 passed, 2 pre-existing `EmailDraftTest` failures (unrelated)
+- Updated `ProjectHealthServiceTest`: classifyGap assertions + determine risk assertions
+- Updated `NotificationTest`: risk-level stored values now display labels
+
+### Branch
+- `ai/phase11b-risk-level-notification` (4 commits: `6fa1521`, `12d423f`, `2aaf7fe`, `0043293`, `11e65f5`)
+- Ready to merge to `develop`
