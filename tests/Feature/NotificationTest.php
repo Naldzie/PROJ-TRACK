@@ -315,8 +315,8 @@ class NotificationTest extends TestCase
         $this->assertGreaterThan(0, $this->admin->notifications()->count());
         $adminNotif = $this->admin->notifications()->first();
         $this->assertStringContainsString('RiskLevelChanged', $adminNotif->type);
-        $this->assertSame('on_track', $adminNotif->data['previous_level']);
-        $this->assertSame('high_risk', $adminNotif->data['current_level']);
+        $this->assertSame('On Track', $adminNotif->data['previous_level']);
+        $this->assertSame('High Risk', $adminNotif->data['current_level']);
     }
 
     public function test_risk_level_change_does_not_fire_when_level_unchanged(): void

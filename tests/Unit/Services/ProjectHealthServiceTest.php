@@ -46,16 +46,16 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_classify_gap_boundaries(): void
     {
-        $this->assertSame('Low', $this->service->classifyGap(-6.0));
-        $this->assertSame('Low', $this->service->classifyGap(-5.0));
-        $this->assertSame('Low', $this->service->classifyGap(0.0));
-        $this->assertSame('Low', $this->service->classifyGap(5.0));
-        $this->assertSame('Moderate', $this->service->classifyGap(5.01));
-        $this->assertSame('Moderate', $this->service->classifyGap(9.99));
-        $this->assertSame('High', $this->service->classifyGap(10.0));
-        $this->assertSame('High', $this->service->classifyGap(14.99));
-        $this->assertSame('Critical', $this->service->classifyGap(15.0));
-        $this->assertSame('Critical', $this->service->classifyGap(50.0));
+        $this->assertSame('ahead', $this->service->classifyGap(-6.0));
+        $this->assertSame('ahead', $this->service->classifyGap(-5.0));
+        $this->assertSame('on_track', $this->service->classifyGap(0.0));
+        $this->assertSame('on_track', $this->service->classifyGap(5.0));
+        $this->assertSame('low_risk', $this->service->classifyGap(5.01));
+        $this->assertSame('low_risk', $this->service->classifyGap(9.99));
+        $this->assertSame('medium_risk', $this->service->classifyGap(10.0));
+        $this->assertSame('medium_risk', $this->service->classifyGap(14.99));
+        $this->assertSame('high_risk', $this->service->classifyGap(15.0));
+        $this->assertSame('high_risk', $this->service->classifyGap(50.0));
     }
 
     /*
@@ -97,7 +97,7 @@ class ProjectHealthServiceTest extends TestCase
 
         $this->assertSame('on_track', $result['level']);
         $this->assertSame('ON TRACK', $result['label']);
-        $this->assertSame('Low', $result['risk']);
+        $this->assertSame('on_track', $result['risk']);
         $this->assertSame('risk-low', $result['risk_class']);
         $this->assertSame('fill-healthy', $result['fill_class']);
         $this->assertSame('var(--green-600)', $result['dot_color']);
@@ -116,7 +116,7 @@ class ProjectHealthServiceTest extends TestCase
 
         $this->assertSame('at_risk', $result['level']);
         $this->assertSame('AT RISK', $result['label']);
-        $this->assertSame('Moderate', $result['risk']);
+        $this->assertSame('low_risk', $result['risk']);
         $this->assertSame('risk-medium', $result['risk_class']);
         $this->assertSame('fill-warning', $result['fill_class']);
         $this->assertSame('var(--amber-600)', $result['dot_color']);
@@ -128,13 +128,13 @@ class ProjectHealthServiceTest extends TestCase
     {
         $project = $this->ongoingProject();
 
-        // expected 60, actual 50 → gap 10 → High
+        // expected 70, actual 50 → gap 20 → high_risk
         $result = $this->service->determine($project, $this->context([
-            'current_month_history' => new ProjectProgressHistory(['planned_progress_percent' => 60]),
+            'current_month_history' => new ProjectProgressHistory(['planned_progress_percent' => 70]),
         ]));
 
         $this->assertSame('at_risk', $result['level']);
-        $this->assertSame('High', $result['risk']);
+        $this->assertSame('high_risk', $result['risk']);
         $this->assertSame('risk-high', $result['risk_class']);
         $this->assertSame('var(--red-600)', $result['dot_color']);
     }
@@ -143,13 +143,13 @@ class ProjectHealthServiceTest extends TestCase
     {
         $project = $this->ongoingProject();
 
-        // expected 65, actual 50 → gap 15 → Critical
+        // expected 80, actual 50 → gap 30 → high_risk (>=15)
         $result = $this->service->determine($project, $this->context([
-            'current_month_history' => new ProjectProgressHistory(['planned_progress_percent' => 65]),
+            'current_month_history' => new ProjectProgressHistory(['planned_progress_percent' => 80]),
         ]));
 
         $this->assertSame('at_risk', $result['level']);
-        $this->assertSame('Critical', $result['risk']);
+        $this->assertSame('high_risk', $result['risk']);
         $this->assertSame('risk-high', $result['risk_class']);
     }
 
@@ -285,7 +285,7 @@ class ProjectHealthServiceTest extends TestCase
         $this->assertSame('at_risk', $result['level']);
         // Gap-driven risk wins — not flagged as "escalated" (it was never on track).
         $this->assertFalse($result['escalated']);
-        $this->assertSame('High', $result['risk']);
+        $this->assertSame('medium_risk', $result['risk']);
     }
 
     /*

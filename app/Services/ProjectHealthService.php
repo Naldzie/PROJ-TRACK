@@ -57,34 +57,35 @@ class ProjectHealthService
      * Classify Risk From Progress Gap
      * ------------------------------------------------------------------------
      *
-     * Maps a progress gap (expected − actual, %) to a severity level.
+     * Maps a progress gap (expected − actual, %) to a unified risk level.
      *
-     * These thresholds are the SAME ladder the AI module used before this
-     * service existed (AIPredictionPresenter). 'Low' means ON TRACK; every
-     * other level renders as AT RISK.
+     * These thresholds are the SAME ladder used across the whole app
+     * (ProjectStatusService, AI module, notifications). Returns one of:
+     *   'ahead', 'on_track', 'low_risk', 'medium_risk', 'high_risk'
      *
      * Levels
      * ------
-     * gap ≤  5   → Low       (on track — including ahead-of-plan, gap ≤ -5)
-     * gap < 10   → Moderate
-     * gap < 15   → High
-     * gap ≥ 15   → Critical
+     * gap ≤ -5  → ahead        (ahead of plan)
+     * gap ≤  5  → on_track     (within tolerance)
+     * gap < 10  → low_risk     (slightly behind)
+     * gap < 15  → medium_risk  (noticeably behind)
+     * gap ≥ 15  → high_risk    (significantly behind)
      */
     public function classifyGap(float $progressGap): string
     {
         if ($progressGap <= -5) {
-            return 'Low';
+            return 'ahead';
         }
         if ($progressGap <= 5) {
-            return 'Low';
+            return 'on_track';
         }
         if ($progressGap < 10) {
-            return 'Moderate';
+            return 'low_risk';
         }
         if ($progressGap < 15) {
-            return 'High';
+            return 'medium_risk';
         }
-        return 'Critical';
+        return 'high_risk';
     }
 
     /**
@@ -188,7 +189,7 @@ class ProjectHealthService
         }
 
         $risk = $this->classifyGap($gap);
-        $level = $risk === 'Low' ? 'on_track' : 'at_risk';
+        $level = in_array($risk, ['ahead', 'on_track']) ? 'on_track' : 'at_risk';
 
         /*
         |----------------------------------------------------------------------
@@ -208,13 +209,13 @@ class ProjectHealthService
             $reason = $this->escalationReason($context);
             if ($reason !== null) {
                 $level = 'at_risk';
-                $risk  = 'High';
+                $risk  = 'high_risk';
                 $escalated = true;
                 $escalationReason = $reason;
             }
         }
 
-        $severity = in_array($risk, ['High', 'Critical'], true);
+        $severity = $risk === 'high_risk';
 
         $base = [
             'fill_class' => $level === 'at_risk' ? 'fill-warning' : 'fill-healthy',

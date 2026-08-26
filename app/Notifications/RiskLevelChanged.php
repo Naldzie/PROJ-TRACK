@@ -97,7 +97,13 @@ class RiskLevelChanged extends Notification
      */
     private function isEscalation(): bool
     {
-        $order = ['ahead' => 0, 'on_track' => 1, 'low_risk' => 2, 'medium_risk' => 3, 'high_risk' => 4];
+        $order = [
+            'Ahead of Schedule' => 0,
+            'On Track'          => 1,
+            'Low Risk'          => 2,
+            'Medium Risk'       => 3,
+            'High Risk'         => 4,
+        ];
         $prev = $order[$this->previousLevel] ?? 1;
         $curr = $order[$this->currentLevel] ?? 1;
         return $curr > $prev;

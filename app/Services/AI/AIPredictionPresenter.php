@@ -5,6 +5,7 @@ namespace App\Services\AI;
 use App\Models\Project;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
+use App\Services\ProjectStatusService;
 use App\Support\DateHelper;
 use Carbon\Carbon;
 
@@ -509,14 +510,12 @@ class AIPredictionPresenter
         | Map Risk to Status Display
         |--------------------------------------------------------------------------
         |
-        | Only 'Low' risk maps to ON TRACK. Everything else (Moderate,
-        | High, Critical) is AT RISK — being up to 10% behind schedule
-        | is a genuine concern, not "on track".
+        | 'ahead' and 'on_track' map to ON TRACK. Everything else is AT RISK.
         |
         */
 
-        $statusDisplay = $overallRisk === 'Low' ? 'ON TRACK' : 'AT RISK';
-        $statusColor   = $overallRisk === 'Low' ? '#10b981' : '#f59e0b';
+        $statusDisplay = in_array($overallRisk, ['ahead', 'on_track']) ? 'ON TRACK' : 'AT RISK';
+        $statusColor   = in_array($overallRisk, ['ahead', 'on_track']) ? '#10b981' : '#f59e0b';
 
         /*
         |--------------------------------------------------------------------------
@@ -695,6 +694,25 @@ class AIPredictionPresenter
 
         /*
         |--------------------------------------------------------------------------
+        | Forecast Risk Level
+        |--------------------------------------------------------------------------
+        |
+        | Separate from the current health gauge. Uses the predicted delay to
+        | project what the risk level will likely be at the forecast month.
+        | Same thresholds as ProjectStatusService (single source of truth).
+        |
+        */
+
+        $statusService  = app(ProjectStatusService::class);
+        $forecastDelay  = (float) ($completion['predicted_delay_days'] ?? 0);
+        $forecastGap    = $daysTotal > 0
+            ? ($forecastDelay / $daysTotal) * 100
+            : 0;
+        $forecastRiskData = $statusService->getRiskLevel(-abs($forecastGap));
+        $forecastRiskLevel = $forecastRiskData['label'];
+
+        /*
+        |--------------------------------------------------------------------------
         | Build Return Array
         |--------------------------------------------------------------------------
         */
@@ -725,6 +743,7 @@ class AIPredictionPresenter
             'status'                 => $statusDisplay,
             'risk_level'             => $overallRisk,
             'status_color'           => $statusColor,
+            'forecast_risk_level'    => $forecastRiskLevel,
 
             /*
             |------------------------------------------------------------------

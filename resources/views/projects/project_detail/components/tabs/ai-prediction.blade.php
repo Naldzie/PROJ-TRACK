@@ -50,12 +50,16 @@
         <!-- STATUS CARD -->
         @php
             $_gap = max(-20, min(20, $prediction['progress_gap'] ?? 0));
-            $_riskColors = ['Low' => '#10b981', 'Moderate' => '#eab308', 'High' => '#f97316', 'Critical' => '#ef4444'];
+            $_riskColors = ['ahead' => '#10b981', 'on_track' => '#10b981', 'low_risk' => '#eab308', 'medium_risk' => '#f97316', 'high_risk' => '#ef4444'];
             $_gaugeColor = $_riskColors[$prediction['risk_level']] ?? '#6b7280';
             $_insufficient = $prediction['is_insufficient_data'] ?? false;
             // A4: pure category-baseline → health overview shows honest
             // "no actual data" state (grey), NOT the baseline-derived gauge.
             $_noData = $_insufficient || ($prediction['is_category_baseline'] ?? false);
+
+            // Unified risk label mapping for display
+            $_riskLabels = ['ahead' => 'Ahead of Schedule', 'on_track' => 'On Track', 'low_risk' => 'Low Risk', 'medium_risk' => 'Medium Risk', 'high_risk' => 'High Risk'];
+            $_currentRiskLabel = $_riskLabels[$prediction['risk_level']] ?? 'Unknown';
         @endphp
         <div class="card" style="margin-bottom: 20px; border-left: 4px solid 
             @if ($_noData) #9ca3af;
@@ -108,7 +112,7 @@
                             <div id="project-health-gauge" style="width:260px;height:260px;"></div>
                             <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;z-index:2;pointer-events:none;">
                                 <div style="font-size:15px;font-weight:700;color:#1f2937;letter-spacing:0.5px;">{{ $prediction['status'] }}</div>
-                                <div style="font-size:12px;font-weight:600;color:{{ $_gaugeColor }};margin-top:4px;">{{ $prediction['risk_level'] }} Risk</div>
+                                <div style="font-size:12px;font-weight:600;color:{{ $_gaugeColor }};margin-top:4px;">{{ $_currentRiskLabel }}</div>
                             </div>
                             <style>
                                 #project-health-gauge text { opacity: 0; }
@@ -139,6 +143,20 @@
                                         @endif
                                     </span>
                                 </div>
+                                @if (!$_noData)
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
+                                    <span style="font-size: 12px; color: #6b7280;">Risk Level</span>
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_gaugeColor }};">
+                                        {{ $_currentRiskLabel }}
+                                    </span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #f9fafb; border-radius: 6px; border: 1px dashed #d1d5db;">
+                                    <span style="font-size: 12px; color: #6b7280;">Forecast Risk</span>
+                                    <span style="font-size: 14px; font-weight: 700; color: {{ $_riskColors[$prediction['forecast_risk_level']] ?? '#9ca3af' }};">
+                                        {{ $_riskLabels[$prediction['forecast_risk_level']] ?? 'N/A' }}
+                                    </span>
+                                </div>
+                                @endif
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: white; border-radius: 6px; border: 1px solid #e5e7eb;">
                                     <span style="font-size: 12px; color: #6b7280;">Confidence</span>
                                     <span style="font-size: 14px; font-weight: 700; color: {{ $_noData ? '#9ca3af' : ($prediction['health_confidence'] === 'High' ? '#10b981' : ($prediction['health_confidence'] === 'Medium' ? '#eab308' : ($prediction['health_confidence'] === 'Low' ? '#ef4444' : '#6b7280'))) }};">

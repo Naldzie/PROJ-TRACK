@@ -462,7 +462,7 @@ class ProjectProgressController extends Controller
             // Fire notification only when the level actually changes.
             $statusService = app(ProjectStatusService::class);
             $riskData = $statusService->getRiskLevel(-$variancePercent);
-            $currentRiskLevel = $riskData['level'];
+            $currentRiskLevel = $riskData['label'];
             $previousRiskLevel = $project->previous_risk_level;
 
             // Backfill: if previous_risk_level is null (project predates this
@@ -473,7 +473,7 @@ class ProjectProgressController extends Controller
                     ->orderBy('month_label', 'desc')
                     ->first();
                 if ($lastProgress && isset($lastProgress->variance_percent)) {
-                    $previousRiskLevel = $statusService->getRiskLevel(-$lastProgress->variance_percent)['level'];
+                    $previousRiskLevel = $statusService->getRiskLevel(-$lastProgress->variance_percent)['label'];
                 }
             }
 

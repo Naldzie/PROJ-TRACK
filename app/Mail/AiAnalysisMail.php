@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\Project;
 use App\Models\AiSolution;
 use App\Models\EmailTracking;
+use App\Services\ProjectStatusService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -36,16 +37,15 @@ class AiAnalysisMail extends Mailable
         $this->plannedProgress = number_format($planned, 1) . '%';
         $this->actualProgress = number_format($actual, 1) . '%';
 
-        if ($variance >= 0) {
-            $this->varianceLabel = 'On Track';
-            $this->varianceColor = '#10b981';
-        } elseif ($variance >= -15) {
-            $this->varianceLabel = 'At Risk';
-            $this->varianceColor = '#f59e0b';
-        } else {
-            $this->varianceLabel = 'Critical';
-            $this->varianceColor = '#ef4444';
-        }
+        $statusService = app(ProjectStatusService::class);
+        $riskData = $statusService->getRiskLevel(-abs($variance));
+        $this->varianceLabel = $riskData['label'];
+        $this->varianceColor = match ($riskData['color']) {
+            'green'  => '#10b981',
+            'yellow' => '#eab308',
+            'orange' => '#f97316',
+            default  => '#ef4444',
+        };
     }
 
     public function build()

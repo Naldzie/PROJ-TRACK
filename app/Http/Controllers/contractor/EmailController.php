@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Contractor;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmailTracking;
+use App\Services\ProjectStatusService;
 use Illuminate\Http\Request;
 
 class EmailController extends Controller
@@ -76,6 +77,9 @@ class EmailController extends Controller
         $delayPct = $planned > 0 ? round((($planned - $actual) / $planned) * 100, 1) : 0;
         $sev = $variance >= 0 ? 'ok' : ($variance >= -15 ? 'warn' : 'crit');
 
+        $statusService = app(ProjectStatusService::class);
+        $riskData = $statusService->getRiskLevel(-abs($variance));
+
         return response()->json([
             'id' => $email->id,
             'subject' => $email->subject,
@@ -88,7 +92,7 @@ class EmailController extends Controller
             'actual_progress' => number_format($actual, 1) . '%',
             'variance' => $variance,
             'delay_percentage' => $delayPct,
-            'risk_level' => $sev === 'crit' ? 'Critical' : ($sev === 'warn' ? 'Warning' : 'On Track'),
+            'risk_level' => $riskData['label'],
             'generated_at' => $email->sent_at?->format('F d, Y h:i A') ?? 'N/A',
             'ai_generated_at' => $email->aiSolution?->created_at?->format('F d, Y h:i A') ?? 'N/A',
             'month' => $email->sent_at?->format('F Y') ?? '',

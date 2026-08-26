@@ -983,7 +983,7 @@ function viewMsg(id) {
     .then(r => r.json())
     .then(m => {
       document.getElementById('v-title').textContent = m.subject;
-      const riskColor = m.risk_level === 'Critical' ? 'CRITICAL' : (m.risk_level === 'Warning' ? 'WARNING' : 'ON TRACK');
+      const riskColor = m.risk_level.includes('High') ? 'CRITICAL' : (m.risk_level.includes('Medium') ? 'WARNING' : 'ON TRACK');
       document.getElementById('v-subbanner').textContent = `Contractor AI Status Report — ${riskColor}`;
       document.getElementById('v-meta').textContent = `To: ${m.recipient_email}  ·  Contractor: ${m.contractor_name}  ·  ${m.month}`;
       document.getElementById('v-details').innerHTML = `
