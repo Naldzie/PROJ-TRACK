@@ -260,4 +260,212 @@ class NotificationTest extends TestCase
         $this->assertSame(1, $this->contractorUser->notifications()->count());
         $this->assertSame(0, $otherContractor->notifications()->count());
     }
+
+    // =====================================================================
+    // Risk-Level Change Notification (Phase 11b)
+    // =====================================================================
+
+    public function test_risk_level_change_fires_on_level_shift(): void
+    {
+        // Create baseline so variance can be computed
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-08',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 8, 31),
+            'planned_progress_percent'   => 50,
+            'original_planned_progress_percent' => 50,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 8, 31),
+        ]);
+
+        // Record first progress — on track (0% variance)
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-08',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-08-15',
+            ]
+        )->assertOk();
+
+        // No notification yet (first recording, no previous level to compare)
+        $this->assertSame(0, $this->admin->notifications()->count());
+
+        // Create second baseline month
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-09',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 9, 30),
+            'planned_progress_percent'   => 70,
+            'original_planned_progress_percent' => 70,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 9, 30),
+        ]);
+
+        // Record second progress — 20% behind (70 planned, 50 actual → variance -20%)
+        // This should trigger risk level change from on_track to high_risk
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-09',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-09-15',
+            ]
+        )->assertOk();
+
+        // Notification should fire to admin, staff, and contractor
+        $this->assertGreaterThan(0, $this->admin->notifications()->count());
+        $adminNotif = $this->admin->notifications()->first();
+        $this->assertStringContainsString('RiskLevelChanged', $adminNotif->type);
+        $this->assertSame('on_track', $adminNotif->data['previous_level']);
+        $this->assertSame('high_risk', $adminNotif->data['current_level']);
+    }
+
+    public function test_risk_level_change_does_not_fire_when_level_unchanged(): void
+    {
+        // Create baseline
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-08',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 8, 31),
+            'planned_progress_percent'   => 50,
+            'original_planned_progress_percent' => 50,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 8, 31),
+        ]);
+
+        // Record first progress — on track
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-08',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-08-15',
+            ]
+        )->assertOk();
+
+        // Create second baseline
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-09',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 9, 30),
+            'planned_progress_percent'   => 55,
+            'original_planned_progress_percent' => 55,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 9, 30),
+        ]);
+
+        // Record second progress — still on track (55 planned, 53 actual → variance -2%)
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-09',
+                'actual_progress_percent' => 53,
+                'inspection_date'         => '2026-09-15',
+            ]
+        )->assertOk();
+
+        // No notification — risk level stayed on_track
+        $this->assertSame(0, $this->admin->notifications()->count());
+    }
+
+    public function test_risk_level_changed_notification_includes_correct_data(): void
+    {
+        // Create baseline
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-08',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 8, 31),
+            'planned_progress_percent'   => 50,
+            'original_planned_progress_percent' => 50,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 8, 31),
+        ]);
+
+        // First recording
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-08',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-08-15',
+            ]
+        )->assertOk();
+
+        // Second baseline
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                 => $this->project->id,
+            'month_label'                => '2026-09',
+            'planned_date'               => \Illuminate\Support\Carbon::create(2026, 9, 30),
+            'planned_progress_percent'   => 70,
+            'original_planned_progress_percent' => 70,
+            'original_planned_date'      => \Illuminate\Support\Carbon::create(2026, 9, 30),
+        ]);
+
+        // Second recording — big variance
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-09',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-09-15',
+            ]
+        )->assertOk();
+
+        $notif = $this->admin->notifications()->first();
+        $this->assertSame($this->project->id, $notif->data['project_id']);
+        $this->assertSame($this->project->title, $notif->data['project_title']);
+        $this->assertSame('2026-09', $notif->data['month_label']);
+        $this->assertSame('September 2026', $notif->data['month_display']);
+        $this->assertArrayHasKey('actual_progress', $notif->data);
+        $this->assertArrayHasKey('planned_progress', $notif->data);
+        $this->assertArrayHasKey('variance', $notif->data);
+    }
+
+    public function test_risk_level_notification_fires_even_when_previous_level_column_is_null(): void
+    {
+        // Simulate project that predates this feature: has a progress record
+        // but previous_risk_level column was never set (null).
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                         => $this->project->id,
+            'month_label'                        => '2026-08',
+            'planned_date'                       => \Illuminate\Support\Carbon::create(2026, 8, 31),
+            'planned_progress_percent'           => 50,
+            'original_planned_progress_percent'  => 50,
+            'original_planned_date'              => \Illuminate\Support\Carbon::create(2026, 8, 31),
+        ]);
+
+        // Record August — on track. This also sets previous_risk_level in DB.
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-08',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-08-15',
+            ]
+        )->assertOk();
+
+        // Simulate legacy: null out previous_risk_level as if it was never set.
+        $this->project->update(['previous_risk_level' => null]);
+
+        // Create September baseline
+        \App\Models\ProjectBaselineSchedule::create([
+            'project_id'                         => $this->project->id,
+            'month_label'                        => '2026-09',
+            'planned_date'                       => \Illuminate\Support\Carbon::create(2026, 9, 30),
+            'planned_progress_percent'           => 70,
+            'original_planned_progress_percent'  => 70,
+            'original_planned_date'              => \Illuminate\Support\Carbon::create(2026, 9, 30),
+        ]);
+
+        // Record September — 20% behind. Should still fire notification
+        // because the backfill derives previous level from the last progress record.
+        $this->actingAs($this->staff)->postJson(
+            route('staff.projects.record-monthly-progress', $this->project),
+            [
+                'month_label'             => '2026-09',
+                'actual_progress_percent' => 50,
+                'inspection_date'         => '2026-09-15',
+            ]
+        )->assertOk();
+
+        $this->assertGreaterThan(0, $this->admin->notifications()->count());
+        $notif = $this->admin->notifications()->first();
+        $this->assertStringContainsString('RiskLevelChanged', $notif->type);
+    }
 }

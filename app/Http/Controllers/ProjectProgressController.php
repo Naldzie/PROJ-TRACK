@@ -11,6 +11,8 @@ use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use App\Services\ProjectDetailService;
+use App\Services\ProjectStatusService;
+use App\Services\NotificationService;
 use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -454,6 +456,55 @@ class ProjectProgressController extends Controller
             // so a second inspection in the same month overrides the prior value
             // instead of corrupting the next month's prediction row.
             $this->syncPredictionHistoryActual($project, $validated['month_label']);
+
+            // Risk-level change detection (Phase 11b)
+            // Compare current risk level with the previously stored level.
+            // Fire notification only when the level actually changes.
+            $statusService = app(ProjectStatusService::class);
+            $riskData = $statusService->getRiskLevel(-$variancePercent);
+            $currentRiskLevel = $riskData['level'];
+            $previousRiskLevel = $project->previous_risk_level;
+
+            // Backfill: if previous_risk_level is null (project predates this
+            // feature), derive it from the last recorded progress so the first
+            // recording after deployment still fires a notification.
+            if ($previousRiskLevel === null) {
+                $lastProgress = $project->progressHistory()
+                    ->orderBy('month_label', 'desc')
+                    ->first();
+                if ($lastProgress && isset($lastProgress->variance_percent)) {
+                    $previousRiskLevel = $statusService->getRiskLevel(-$lastProgress->variance_percent)['level'];
+                }
+            }
+
+            if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
+                $notifService = app(NotificationService::class);
+                $recipients = collect();
+                $recipients = $recipients->merge($notifService->admins());
+                $staff = $notifService->staffForProject($project);
+                if ($staff) {
+                    $recipients->push($staff);
+                }
+                $contractor = $notifService->contractorUserFor($project);
+                if ($contractor) {
+                    $recipients->push($contractor);
+                }
+
+                $notification = new \App\Notifications\RiskLevelChanged(
+                    $project->id,
+                    $project->title,
+                    $previousRiskLevel,
+                    $currentRiskLevel,
+                    $validated['month_label'],
+                    $variancePercent,
+                    $actualProgressPercent,
+                    $plannedProgressPercent,
+                );
+                $notifService->notifyMany($recipients, $notification);
+            }
+
+            // Always update the stored risk level for next comparison
+            $project->update(['previous_risk_level' => $currentRiskLevel]);
 
             // Step 5: Get updated summary data
             $service = app(ProjectDetailService::class);

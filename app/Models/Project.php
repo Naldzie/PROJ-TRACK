@@ -28,6 +28,7 @@ class Project extends Model
         'actual_duration_days',
         'contract_duration_days',
         'status',
+        'previous_risk_level',
         'assigned_project_manager',
         'project_manager_contact',
         'contractor_id',

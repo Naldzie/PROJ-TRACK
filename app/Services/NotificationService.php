@@ -9,6 +9,7 @@ use App\Notifications\DeadlineReminder;
 use App\Notifications\ExtensionStatusChanged;
 use App\Notifications\IssueReported;
 use App\Notifications\OverdueInspectionReminder;
+use App\Notifications\RiskLevelChanged;
 use App\Notifications\RiskReported;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
@@ -149,6 +150,13 @@ class NotificationService
             RiskReported::class => [
                 'High Risk Reported',
                 'System: High risk "' . ($data['risk_name'] ?? '') . '" reported on "' . $project . '".',
+            ],
+            RiskLevelChanged::class => [
+                'Risk Level Changed',
+                'System: Risk level for "' . $project . '" changed from '
+                    . ($data['previous_level'] ?? '') . ' to '
+                    . ($data['current_level'] ?? '')
+                    . ' (month: ' . ($data['month_display'] ?? $data['month_label'] ?? '') . ').',
             ],
             default => ['Notification', 'System notification for "' . $project . '".'],
         };

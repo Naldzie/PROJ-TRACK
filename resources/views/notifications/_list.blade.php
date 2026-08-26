@@ -78,21 +78,26 @@
         @forelse($notifications as $n)
             @php
                 $d = $n->data;
+                $isRiskLevel = str_contains($n->type, 'RiskLevelChanged');
                 $cls = str_contains($n->type, 'DeadlineReminder') ? 'red' : (
                     str_contains($n->type, 'OverdueInspectionReminder') ? 'amber' : (
-                        str_contains($n->type, 'ExtensionStatusChanged') ? 'violet' : 'green'));
+                        $isRiskLevel ? 'red' : (
+                            str_contains($n->type, 'ExtensionStatusChanged') ? 'violet' : 'green')));
                 $icon = str_contains($n->type, 'DeadlineReminder') ? 'bi-clock' : (
                     str_contains($n->type, 'OverdueInspectionReminder') ? 'bi-calendar-x' : (
-                        str_contains($n->type, 'ExtensionStatusChanged') ? 'bi-arrow-repeat' : 'bi-exclamation-triangle'));
+                        $isRiskLevel ? 'bi-shield-exclamation' : (
+                            str_contains($n->type, 'ExtensionStatusChanged') ? 'bi-arrow-repeat' : 'bi-exclamation-triangle')));
                 $title = str_contains($n->type, 'DeadlineReminder')
                     ? ($d['bucket'] === 'overdue'
                         ? 'Project overdue — ' . ($d['project_title'] ?? '')
                         : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days — ' . ($d['project_title'] ?? ''))
-                    : (str_contains($n->type, 'OverdueInspectionReminder')
-                        ? 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')'
-                        : (str_contains($n->type, 'ExtensionStatusChanged')
-                            ? 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? '')
-                            : 'Issue reported' . ($d['severity'] ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? '')));
+                    : ($isRiskLevel
+                        ? 'Risk level changed — ' . ($d['project_title'] ?? '') . ' (' . ($d['previous_level'] ?? '') . ' → ' . ($d['current_level'] ?? '') . ')'
+                        : (str_contains($n->type, 'OverdueInspectionReminder')
+                            ? 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')'
+                            : (str_contains($n->type, 'ExtensionStatusChanged')
+                                ? 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? '')
+                                : 'Issue reported' . (($d['severity'] ?? '') ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? ''))));
             @endphp
             @php
                 $nPid = $d['project_id'] ?? null;
@@ -133,6 +138,11 @@
                         @if(!empty($d['days_extended']))
                             <div class="notif-meta" style="margin-top:2px; color:#6b7280;">Extended by {{ $d['days_extended'] }} day(s)</div>
                         @endif
+                    @endif
+                    @if($isRiskLevel && isset($d['month_display']))
+                        <div class="notif-meta" style="margin-top:4px; color:#374151;">
+                            Planned: {{ number_format($d['planned_progress'] ?? 0, 1) }}% · Actual: {{ number_format($d['actual_progress'] ?? 0, 1) }}% · Variance: {{ number_format($d['variance'] ?? 0, 2) }}%
+                        </div>
                     @endif
                 </div>
                 @if(!$n->read_at)
