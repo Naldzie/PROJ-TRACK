@@ -38,7 +38,7 @@ class AiAnalysisMail extends Mailable
         $this->actualProgress = number_format($actual, 1) . '%';
 
         $statusService = app(ProjectStatusService::class);
-        $riskData = $statusService->getRiskLevel(-abs($variance));
+        $riskData = $statusService->getRiskLevel(-$variance);
         $this->varianceLabel = $riskData['label'];
         $this->varianceColor = match ($riskData['color']) {
             'green'  => '#10b981',

@@ -697,18 +697,24 @@ class AIPredictionPresenter
         | Forecast Risk Level
         |--------------------------------------------------------------------------
         |
-        | Separate from the current health gauge. Uses the predicted delay to
-        | project what the risk level will likely be at the forecast month.
-        | Same thresholds as ProjectStatusService (single source of truth).
+        | Separate from the current health gauge. Computes the predicted gap
+        | at the next month (planned − predicted) and maps it through the
+        | same thresholds as ProjectStatusService (single source of truth).
+        | Falls back to current gap when no forecast data is available.
         |
         */
 
-        $statusService  = app(ProjectStatusService::class);
-        $forecastDelay  = (float) ($completion['predicted_delay_days'] ?? 0);
-        $forecastGap    = $daysTotal > 0
-            ? ($forecastDelay / $daysTotal) * 100
-            : 0;
-        $forecastRiskData = $statusService->getRiskLevel(-abs($forecastGap));
+        $statusService    = app(ProjectStatusService::class);
+        $nextPlanned      = $this->getNextPlannedProgress($project);
+        $nextPredicted    = (float) ($nextPrediction['progress'] ?? 0);
+
+        if ($nextPlanned !== null && $nextPredicted > 0) {
+            $forecastGap = round($nextPlanned - $nextPredicted, 1);
+        } else {
+            $forecastGap = $progressGap;
+        }
+
+        $forecastRiskData  = $statusService->getRiskLevel($forecastGap);
         $forecastRiskLevel = $forecastRiskData['level'];
 
         /*

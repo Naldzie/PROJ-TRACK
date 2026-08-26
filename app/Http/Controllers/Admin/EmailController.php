@@ -84,7 +84,7 @@ class EmailController extends Controller
         $sev = $variance >= 0 ? 'ok' : ($variance >= -15 ? 'warn' : 'crit');
 
         $statusService = app(ProjectStatusService::class);
-        $riskData = $statusService->getRiskLevel(-abs($variance));
+        $riskData = $statusService->getRiskLevel(-$variance);
 
         return response()->json([
             'id' => $email->id,
