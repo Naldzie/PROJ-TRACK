@@ -709,7 +709,7 @@ class AIPredictionPresenter
             ? ($forecastDelay / $daysTotal) * 100
             : 0;
         $forecastRiskData = $statusService->getRiskLevel(-abs($forecastGap));
-        $forecastRiskLevel = $forecastRiskData['label'];
+        $forecastRiskLevel = $forecastRiskData['level'];
 
         /*
         |--------------------------------------------------------------------------
