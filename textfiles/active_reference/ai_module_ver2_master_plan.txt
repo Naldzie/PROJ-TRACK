@@ -797,77 +797,73 @@
 
 
   ╔══════════════════════════════════════════════════════════════════════════╗
-  ║ PHASE 11 — Export / Reporting                                            ║
+  ║ PHASE 11 — Export / Reporting                           ✅ COMPLETE     ║
   ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Status: ✅ COMPLETE (Aug 27 2026) — merged to develop.
+  Branches: ai/phase11-pdf-ai-content, ai/phase11b-risk-level-notification
 
   Objective
   ---------
-  Allow users to export prediction reports and AI analysis as PDF or CSV,
+  Allow users to export prediction reports and AI analysis as PDF,
   and receive email notifications when risk levels change.
 
-  Implementation
-  -------------
-  NEW: app/Services/AI/ExportService.php (or use existing ProjectDocumentService)
-    • exportPredictionReportPdf(Project $project): export prediction data
-    • exportForecastCsv(Project $project): raw forecast data for Excel
-    • Uses: barryvdh/laravel-dompdf or Laravel's built-in PDF capabilities
+  Implementation (all DONE):
+    11a — AI in PDF
+      • AI analysis text + recommendations added to existing Project
+        Summary PDF (dompdf). Pulls from latest ai_solutions record.
+        Includes analysis_text with nl2br rendering and structured
+        recommendations with category badges.
+      • File: app/Services/AIReportSendingService.php
 
-  NEW: resources/views/exports/ai-prediction-pdf.blade.php
-    • Print-friendly layout of the AI Prediction tab
-    • All sections: current state, forecast, assessment, recommendations
+    11b — Risk-Level Change Notification
+      • RiskLevelChanged notification class fires when project risk
+        level changes (e.g., "On Track" → "At Risk" or "Overdue").
+        Compares previous vs current derived risk level.
+      • Dedupe key: risk_level_change:{project_id}:{new_level}:{month_label}
+      • File: app/Notifications/RiskLevelChanged.php
+      • Queued email delivery with try-catch for resilience.
 
-  Email Notifications:
-    • Add notification when risk level changes (e.g., Low → Critical)
-    • Use Laravel's notification system
-    • Queue via jobs table (already exists)
+  DROPPED: CSV forecast export (redundant — PDF covers this).
+  DROPPED: Excel report corruption fix (out of scope, frozen).
 
   ═══════════════════════════════════════════════════════════════════════════
 
 
   ╔══════════════════════════════════════════════════════════════════════════╗
-  ║ PHASE 12 — Architectural Enhancements                                    ║
+  ║ PHASE 12 — Architectural Enhancements                  ✅ COMPLETE     ║
   ╚══════════════════════════════════════════════════════════════════════════╝
+
+  Status: ✅ COMPLETE (Aug 27 2026) — merged to develop.
+  Branch: ai/phase12-architectural-enhancements
+  Plan: textfiles/ai_phase12_architectural_enhancements_plan.md
 
   Objective
   ---------
   Improve performance, configurability, and maintainability.
 
-  Implementation
-  -------------
-  12.1 — Prediction Caching
-    • Cache AIPredictionService results per project
-    • TTL: 1 hour (configurable)
-    • Invalidate cache when: new progress recorded, baseline updated,
-      extension approved
-    • Use Laravel's cache facade (cache driver already configured)
-    • Reduces DB queries and regression computation for frequently
-      viewed projects
+  Implementation (all DONE):
+    12.1 — Prediction Caching
+      • Cache AIPredictionService results per project
+      • TTL: 8 hours (configurable via config('ai.prediction_ttl'))
+      • Two-layer architecture: expensive regression cached, cheap
+        display logic computed at render time (AIPredictionPresenter)
+      • Cache invalidation on 9 paths: progress record/edit/delete,
+        baseline add/edit/lock, extension submit/approve/reject
+      • File: app/Services/AI/AIPredictionService.php (Cache::remember)
 
-  12.2 — Background Jobs for AI Analysis
-    • Move Gemini API call to a queued job
-    • Page returns stale text immediately, job generates new text
-    • Use Laravel Queue + database driver (jobs table exists)
-    • Notify user when new analysis is ready (or use polling)
+    12.2 — Background Jobs for AI Analysis — DEFERRED
+      • Gemini API responds in 2-5s. Synchronous with spinner is
+        standard UX. Background jobs would add complexity for
+      • marginal benefit.
 
-  12.3 — Configurable Thresholds
-    • Move risk level thresholds to config/ai.php:
-      'risk' => [
-        'low_threshold'      => 0,     // variance ≥ 0
-        'moderate_threshold' => -10,   // variance ≥ -10
-        'high_threshold'     => -25,   // variance ≥ -25
-        // below -25 = Critical
-      ]
-    • Move fit quality thresholds to config/ai.php:
-      'fit_quality' => [
-        'excellent' => 0.90,
-        'very_good' => 0.80,
-        'good'      => 0.70,
-        'moderate'  => 0.50,
-      ]
-    • Move recommendation rules to config/ai.php (optional, complex)
-    • PMU staff can adjust thresholds without code changes
-
-  NEW: config/ai.php
+    12.3 — Configurable Thresholds
+      • Moved ~100+ thresholds from 14 service files to config/ai.php
+      • Centralized: risk levels, fit quality, accuracy, trend,
+        recommendation rules, similarity, regression, reliability
+      • EXCEPTION: LinearRegressionService and ForecastReliabilityService
+        keep class constants (pure unit tests, no Laravel container)
+      • File: config/ai.php (279 lines)
 
   ═══════════════════════════════════════════════════════════════════════════
 
@@ -1080,12 +1076,12 @@
     5. Estimated Completion Gauge renders correctly in AI Prediction tab (✅ DONE)
     6. Prediction history tracks accuracy over time (✅ DONE)
     7. Cross-Project Historical Regression supplements or replaces
-       predictions for projects with insufficient data
-    8. Contractor performance metrics are tracked and displayed
-    9. AI-powered recommendations replace or augment rule-based system
-    10. Export/Reporting: PDF prediction reports, CSV forecast exports
-    11. Architectural: prediction caching, configurable thresholds, background jobs
-    12. All 145 V1 tests + new V2 tests pass
+       predictions for projects with insufficient data (✅ DONE)
+    8. Contractor performance metrics are tracked and displayed (✅ DONE)
+    9. AI-powered recommendations replace or augment rule-based system (✅ DONE)
+    10. Export/Reporting: PDF prediction reports + risk-change notification (✅ DONE)
+    11. Architectural: prediction caching + configurable thresholds (✅ DONE)
+    12. All 849 tests pass (V1 + V2)
     13. No V1 functionality is broken (backward compatible)
 
 ================================================================================

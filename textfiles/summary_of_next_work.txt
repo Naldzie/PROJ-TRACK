@@ -1,7 +1,7 @@
 ================================================================================
   SUMMARY OF NEXT / FUTURE WORK
   CSPC PMU System
-   Last Updated: August 25, 2026
+   Last Updated: August 27, 2026
 ================================================================================
 
   Purpose: Single reference of remaining work items. Detailed descriptions
@@ -112,14 +112,14 @@
   tests/Feature/RiskFlagsTest.php. Full suite green: 557 passed / 1993 assertions.
 
 ================================================================================
-  NEXT TO IMPLEMENT — ORDERED WORK LIST (Aug 24, 2026)
+  NEXT TO IMPLEMENT — ORDERED WORK LIST (Aug 27, 2026)
 ================================================================================
 
   The regression thread is CLOSED (all Phase 8 issues resolved via v2.5/v2.6
   polish — MIN_SIMILAR_PROJECTS=3, MIN_SCALE_RATIO=0.5, MIN_SIMILARITY_SCORE=50,
   X-axis merge, honest fit wording, null-safe scoring, 0-obs fallback, reference-
   class blend, kNN weighting, P25/P75 range). Phase 14 (Forecast Reliability) is
-  DONE & merged. Full suite: 656 tests / 2485 assertions.
+  DONE & merged. Full suite: 849 tests / 3000+ assertions.
 
   The remaining work items, in priority order:
 
@@ -132,59 +132,9 @@
         Plan: textfiles/core_monitoring_completion_plan.md §8
         Status: ⏸️ DEFERRED (unless client/panel request)
 
-     2. AI PHASE 9 — Contractor Performance Tracking
-        Compute derived metrics: on-time delivery %, avg delay days,
-        completed projects count. ContractorRating UI already exists;
-        the computed performance metrics do NOT.
-        Branch: ai/phase9-contractor-performance (from develop)
-        Plan: textfiles/contractor_performance_tracking_plan.md
-        Status: ✅ DONE (7259129)
-
-     3. AI PHASE 10 — AI-Powered Recommendations
-        AI-first with rule-based fallback. Gemini generates context-aware
-        recs using contractor performance, issue breakdown, extension
-        patterns, cross-project benchmarks. Falls back to rules on API
-        failure. No UI changes. Same output format.
-        Plan: textfiles/ai_recommendation_plan.md (updated Aug 25)
-        Reference: textfiles/ai_recommendation_data_gaps.txt
-        Status: ✅ DONE (commits 4110f3e, 835f841, 7f4e23d, d8d8add)
-        Added: R² relabeled as "Curve Fit Quality (matches past data only)"
-        in prompt. FORECAST RELIABILITY section added (weighted score from
-        ForecastReliabilityService replaces R² as trust indicator).
-        TextQualityFilter: 4-heuristic gibberish detection for issue names,
-        descriptions, extension reasons. Prompt instructs AI to ignore any
-        remaining gibberish. Saved recommendations to DB. Progress remarks
-        in prompt. R² warning in analysis prompt. 833 tests passing.
-
-     4. AI PHASE 11 — Export / Reporting
-        Scope (revised):
-        a) Add AI analysis text + recommendations to existing Project
-           Summary PDF (dompdf). Pulls from latest ai_solutions record.
-           Includes analysis_text with nl2br rendering and structured
-           recommendations with category badges.
-        b) Risk-level change notification — new Notification class that
-           fires when project risk level changes (e.g., "On Track" →
-           "At Risk" or "Overdue"). Compares previous vs current derived
-           risk level after progress recordings or AI assessments.
-        DROPPED: CSV forecast export (redundant — PDF now covers this).
-        DROPPED: Excel report corruption fix (out of scope, frozen).
-        Status: 🔄 IN PROGRESS (11a DONE, 11b NOT STARTED)
-
-     5. AI PHASE 12 — Architectural Enhancements
-        Prediction caching (TTL 1h), background jobs for Gemini API,
-        configurable thresholds in config/ai.php.
-        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 12
-        Status: ⬜ NOT STARTED
-
-     6. AI PHASE 13 — Testing & Refinement
+     2. AI PHASE 13 — Testing & Refinement
         ~150 new V2 tests; no V1 regressions.
         Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 13
-        Status: ⬜ NOT STARTED
-
-     7. Extension Approval Activity Logging (small pending item)
-        Missing ActivityLog::create() in store() and update().
-        File: app/Http/Controllers/Admin/ProjectExtensionController.php
-        Plan ref: uncertain/baseline_extension_adjustment_plan__4_ (2).txt
         Status: ⬜ NOT STARTED
 
   LOWEST PRIORITY (safe to defer):
@@ -200,7 +150,7 @@
 
 ================================================================================
 
-  🗺️ OVERALL STATUS (Aug 24, 2026)
+  🗺️ OVERALL STATUS (Aug 27, 2026)
   --------------------------------------------------------------------------------
   COMPLETED:
      ✅ Regression thread — all Phase 8 issues resolved (v2.5 safety valves
@@ -214,13 +164,17 @@
      ✅ Core Monitoring Phases A–D — attachments, overview real data, issue
         lifecycle, progress attachments. All merged to main.
      ✅ Risk Register, Notification System, Report Generation — all merged.
+     ✅ AI Phase 9 — Contractor Performance Tracking (incl. extension stats)
+     ✅ AI Phase 10 — AI-Powered Recommendations (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
+     ✅ AI Phase 11a — AI in PDF (analysis text + recommendations in Project Summary PDF)
+     ✅ AI Phase 11b — Risk-Level Change Notification (RiskLevelChanged class, email delivery)
+     ✅ AI Phase 12 — Architectural Enhancements (caching TTL 8h, configurable thresholds, cache invalidation)
+     ✅ Contractor Performance Trends (sparkline chart on admin rating page)
+     ✅ Extension Approval Activity Logging (ActivityLog in store/update/delete)
 
   REMAINING:
      ⏸️ Core Phase E — feedback loop DEFERRED (unless client/panel request)
-     ✅ AI Phase 9 → 10 DONE
-     ⬜ AI Phase 11 (AI in PDF + risk-change notification)
-     ⬜ AI Phase 12 → 13 (architecture + testing)
-     ⬜ Extension approval activity logging (small fix)
+     ⬜ AI Phase 13 — Testing & Refinement (~150 new V2 tests)
      ⬜ Non-AI gaps (deferred, see SECTION 4)
 
 ================================================================================
@@ -337,8 +291,8 @@
     Phase 8  — Cross-Project Historical Regression         ✅ DONE (all issues resolved)
     Phase 9  — Contractor Performance Tracking             ✅ DONE (incl. extension stats)
     Phase 10 — AI-Powered Recommendations                  ✅ DONE (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
-    Phase 11 — Export / Reporting                           ⬜ NOT STARTED (AI in PDF + risk-change notification)
-    Phase 12 — Architectural Enhancements                   ⬜ NOT STARTED
+    Phase 11 — Export / Reporting                           ✅ DONE (AI in PDF + risk-change notification)
+    Phase 12 — Architectural Enhancements                   ✅ DONE (caching TTL 8h, configurable thresholds)
     Phase 13 — Testing & Refinement                         ⬜ NOT STARTED
     Phase 14 — Forecast Reliability Rebase                  ✅ DONE
 
@@ -446,13 +400,12 @@
                                            forecasts even for behind-schedule projects
 
 ================================================================================
-  SECTION 6 — EXTENSION APPROVAL ACTIVITY LOGGING (PENDING)
+  SECTION 6 — EXTENSION APPROVAL ACTIVITY LOGGING (DONE)
 ================================================================================
 
-  File: app/Http/Controllers/Admin/ProjectExtensionController.php
-  Issue: Missing ActivityLog::create() calls in store() and update()
-  No audit trail for submissions, approvals, or rejections
-  Plan ref: uncertain/baseline_extension_adjustment_plan__4_ (2).txt Part A
+  Status: ✅ COMPLETE — ActivityLog::create() already exists in
+  ProjectExtensionController store(), update(), and delete() methods.
+  Full audit trail for submissions, approvals, rejections, and deletions.
 
 ================================================================================
   SECTION 7 — ORGANIZATION STATUS NOTES
@@ -483,10 +436,16 @@
     • Risk Register + Risk-to-Issue Conversion
     • Notification System (N1–N5)
     • Report Generation
+    • AI Phase 9 — Contractor Performance Tracking
+    • AI Phase 10 — AI-Powered Recommendations
+    • AI Phase 11 — Export / Reporting (PDF + risk-change notification)
+    • AI Phase 12 — Architectural Enhancements (caching + configurable thresholds)
+    • Contractor Performance Trends (sparkline chart)
+    • Extension Approval Activity Logging
 
   Active Plans:
     core_monitoring_completion_plan.md   — Phase E NOT STARTED
-    risk_register_plan.txt               — ✅ COMPLETE
+    ai_phase12_architectural_enhancements_plan.md — ✅ COMPLETE
 
 ================================================================================
   KEY FILE LOCATIONS (current organization)
@@ -499,6 +458,7 @@
 
   Plans (mostly DONE; read for decisions & numbers):
     core_monitoring_completion_plan.md                     — Phase E NOT STARTED
+    ai_phase12_architectural_enhancements_plan.md           — ✅ COMPLETE
     regression_v2_5_cross_project_expansion_plan.md         — ✅ (A2/A4/B5/B6/C7 done)
     regression_v2_6_cross_project_prior_flow_plan.md        — ✅ (blend + range)
     forecast_reliability_confidence_plan.md                 — ✅ DONE
