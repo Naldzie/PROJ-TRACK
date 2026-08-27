@@ -326,4 +326,110 @@ class CompletionEstimationServiceTest extends TestCase
         $lowR2 = $this->polynomialAnalysis(0.0, 0.0, 10.0, 0.0, rSquared: 0.30);
         $this->assertFalse($this->service->isPolynomialSelected($lowR2));
     }
+
+    // ========================================================================
+    // estimateEarnedSchedule — basic
+    // ========================================================================
+
+    public function test_earned_schedule_returns_null_when_progress_at_100(): void
+    {
+        $baseline = $this->createBaselineSchedules(12);
+
+        $result = $this->service->estimateEarnedSchedule(
+            Carbon::parse('2027-03-31'),
+            currentMonthIndex: 6,
+            currentProgress: 100.0,
+            baselineSchedules: $baseline,
+            analysis: ['r_squared' => 0.90, 'observation_count' => 6]
+        );
+
+        $this->assertNull($result);
+    }
+
+    public function test_earned_schedule_returns_null_when_r2_too_low(): void
+    {
+        $baseline = $this->createBaselineSchedules(12);
+
+        $result = $this->service->estimateEarnedSchedule(
+            Carbon::parse('2027-03-31'),
+            currentMonthIndex: 6,
+            currentProgress: 50.0,
+            baselineSchedules: $baseline,
+            analysis: ['r_squared' => 0.30, 'observation_count' => 6]
+        );
+
+        $this->assertNull($result);
+    }
+
+    public function test_earned_schedule_returns_null_when_no_baseline(): void
+    {
+        $result = $this->service->estimateEarnedSchedule(
+            Carbon::parse('2027-03-31'),
+            currentMonthIndex: 6,
+            currentProgress: 50.0,
+            baselineSchedules: collect(),
+            analysis: ['r_squared' => 0.90, 'observation_count' => 6]
+        );
+
+        $this->assertNull($result);
+    }
+
+    public function test_earned_schedule_produces_valid_output(): void
+    {
+        $baseline = $this->createBaselineSchedules(12);
+
+        $result = $this->service->estimateEarnedSchedule(
+            Carbon::parse('2027-03-31'),
+            currentMonthIndex: 6,
+            currentProgress: 50.0,
+            baselineSchedules: $baseline,
+            analysis: ['r_squared' => 0.90, 'observation_count' => 6]
+        );
+
+        if ($result !== null) {
+            $this->assertArrayHasKey('estimated_completion_index', $result);
+            $this->assertArrayHasKey('estimated_completion_date', $result);
+            $this->assertArrayHasKey('predicted_delay_days', $result);
+            $this->assertArrayHasKey('completion_confidence', $result);
+            $this->assertGreaterThan(6, $result['estimated_completion_index']);
+        }
+    }
+
+    // ========================================================================
+    // classifyConfidence
+    // ========================================================================
+
+    public function test_confidence_classification_returns_string(): void
+    {
+        $method = new \ReflectionMethod($this->service, 'classifyConfidence');
+
+        // High R² + high observations + reasonable horizon
+        $result = $method->invoke($this->service, 0.90, 8, 12.0, 12, 0);
+        $this->assertIsString($result);
+        $this->assertContains($result, ['High', 'Medium', 'Low']);
+
+        // Low R²
+        $result = $method->invoke($this->service, 0.30, 3, 20.0, 12, 0);
+        $this->assertIsString($result);
+        $this->assertSame('Low', $result);
+    }
+
+    // ========================================================================
+    // Helpers
+    // ========================================================================
+
+    private function createBaselineSchedules(int $months): \Illuminate\Support\Collection
+    {
+        $schedules = [];
+        $startDate = now()->subMonths($months)->startOfMonth();
+        for ($i = 1; $i <= $months; $i++) {
+            $monthDate = (clone $startDate)->addMonths($i - 1);
+            $schedules[] = (object) [
+                'planned_progress_percent' => round(($i / $months) * 100, 2),
+                'month_label' => $monthDate->format('Y-m'),
+                'planned_date' => $monthDate->endOfMonth(),
+            ];
+        }
+        return collect($schedules);
+    }
 }

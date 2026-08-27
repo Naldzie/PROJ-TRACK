@@ -119,7 +119,8 @@
   polish — MIN_SIMILAR_PROJECTS=3, MIN_SCALE_RATIO=0.5, MIN_SIMILARITY_SCORE=50,
   X-axis merge, honest fit wording, null-safe scoring, 0-obs fallback, reference-
   class blend, kNN weighting, P25/P75 range). Phase 14 (Forecast Reliability) is
-  DONE & merged. Full suite: 849 tests / 3000+ assertions.
+  DONE & merged. Phase 13 (Testing & Refinement) is DONE.
+  Full suite: 983 tests / 3468 assertions.
 
   The remaining work items, in priority order:
 
@@ -131,11 +132,6 @@
         systems. The data model supports future addition without rework.
         Plan: textfiles/core_monitoring_completion_plan.md §8
         Status: ⏸️ DEFERRED (unless client/panel request)
-
-     2. AI PHASE 13 — Testing & Refinement
-        ~150 new V2 tests; no V1 regressions.
-        Plan: active_reference/ai_module_ver2_master_plan.txt §Phase 13
-        Status: ⬜ NOT STARTED
 
   LOWEST PRIORITY (safe to defer):
      MLR, Project Comparison, Bulk Ops, User Activity Summary,
@@ -168,13 +164,13 @@
      ✅ AI Phase 10 — AI-Powered Recommendations (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
      ✅ AI Phase 11a — AI in PDF (analysis text + recommendations in Project Summary PDF)
      ✅ AI Phase 11b — Risk-Level Change Notification (RiskLevelChanged class, email delivery)
-     ✅ AI Phase 12 — Architectural Enhancements (caching TTL 8h, configurable thresholds, cache invalidation)
-     ✅ Contractor Performance Trends (sparkline chart on admin rating page)
-     ✅ Extension Approval Activity Logging (ActivityLog in store/update/delete)
+      ✅ AI Phase 12 — Architectural Enhancements (caching TTL 8h, configurable thresholds, cache invalidation)
+      ✅ AI Phase 13 — Testing & Refinement (983 tests pass, 11 new test files, ~170 new tests)
+      ✅ Contractor Performance Trends (sparkline chart on admin rating page)
+      ✅ Extension Approval Activity Logging (ActivityLog in store/update/delete)
 
   REMAINING:
      ⏸️ Core Phase E — feedback loop DEFERRED (unless client/panel request)
-     ⬜ AI Phase 13 — Testing & Refinement (~150 new V2 tests)
      ⬜ Non-AI gaps (deferred, see SECTION 4)
 
 ================================================================================
@@ -293,7 +289,7 @@
     Phase 10 — AI-Powered Recommendations                  ✅ DONE (incl. R² fix, TextQualityFilter, saved recs, progress remarks)
     Phase 11 — Export / Reporting                           ✅ DONE (AI in PDF + risk-change notification)
     Phase 12 — Architectural Enhancements                   ✅ DONE (caching TTL 8h, configurable thresholds)
-    Phase 13 — Testing & Refinement                         ⬜ NOT STARTED
+    Phase 13 — Testing & Refinement                         ✅ DONE (983 tests, ~170 new)
     Phase 14 — Forecast Reliability Rebase                  ✅ DONE
 
 ================================================================================
@@ -440,6 +436,7 @@
     • AI Phase 10 — AI-Powered Recommendations
     • AI Phase 11 — Export / Reporting (PDF + risk-change notification)
     • AI Phase 12 — Architectural Enhancements (caching + configurable thresholds)
+    • AI Phase 13 — Testing & Refinement (11 test files, ~170 new tests)
     • Contractor Performance Trends (sparkline chart)
     • Extension Approval Activity Logging
 

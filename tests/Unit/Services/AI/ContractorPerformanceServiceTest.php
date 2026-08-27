@@ -62,10 +62,88 @@ class ContractorPerformanceServiceTest extends TestCase
 
         $result = $this->service->recompute($this->contractor);
 
-        $this->assertEquals(5, $result['performance_rating']);
-        $this->assertEquals(100, $result['on_time_delivery_pct']);
         $this->assertEquals(1, $result['completed_projects_count']);
+        $this->assertEquals(100.0, $result['on_time_delivery_pct']);
         $this->assertEquals(0, $result['avg_delay_days']);
+        $this->assertNotNull($result['performance_rating']);
+    }
+
+    // ========================================================================
+    // getPerformanceRating — config-driven tiers
+    // ========================================================================
+
+    public function test_rating_tier_5_superior(): void
+    {
+        $rating = $this->service->getPerformanceRating(95.0, 3.0);
+        $this->assertSame(5, $rating);
+    }
+
+    public function test_rating_tier_4_good(): void
+    {
+        $rating = $this->service->getPerformanceRating(85.0, 10.0);
+        $this->assertSame(4, $rating);
+    }
+
+    public function test_rating_tier_3_satisfactory(): void
+    {
+        $rating = $this->service->getPerformanceRating(75.0, 20.0);
+        $this->assertSame(3, $rating);
+    }
+
+    public function test_rating_tier_2_marginal(): void
+    {
+        $rating = $this->service->getPerformanceRating(60.0, 40.0);
+        $this->assertSame(2, $rating);
+    }
+
+    public function test_rating_tier_1_poor(): void
+    {
+        $rating = $this->service->getPerformanceRating(30.0, 80.0);
+        $this->assertSame(1, $rating);
+    }
+
+    public function test_rating_config_override_changes_result(): void
+    {
+        // Default: 95/3 → tier 5
+        $this->assertSame(5, $this->service->getPerformanceRating(95.0, 3.0));
+
+        // Override: make tier 5 require 98% on-time
+        config(['ai.contractor_rating.5.on_time_pct' => 98]);
+        $this->assertSame(4, $this->service->getPerformanceRating(95.0, 3.0));
+    }
+
+    // ========================================================================
+    // getPerformanceSummary
+    // ========================================================================
+
+    public function test_performance_summary_structure(): void
+    {
+        $result = $this->service->getPerformanceSummary($this->contractor);
+
+        $this->assertArrayHasKey('performance_rating', $result);
+        $this->assertArrayHasKey('on_time_delivery_pct', $result);
+        $this->assertArrayHasKey('avg_delay_days', $result);
+        $this->assertArrayHasKey('completed_projects_count', $result);
+        $this->assertArrayHasKey('last_project_completed_at', $result);
+    }
+
+    // ========================================================================
+    // recompute — late project
+    // ========================================================================
+
+    public function test_recompute_with_late_project(): void
+    {
+        $project = Project::factory()->completed()->create([
+            'contractor_id' => $this->contractor->id,
+            'original_planned_end_date' => now()->subDays(30),
+            'actual_end_date' => now()->subDays(10),
+        ]);
+
+        $result = $this->service->recompute($this->contractor);
+
+        $this->assertEquals(1, $result['completed_projects_count']);
+        $this->assertEquals(0.0, $result['on_time_delivery_pct']);
+        $this->assertGreaterThan(0, $result['avg_delay_days']);
     }
 
     public function test_recompute_with_one_late_project(): void

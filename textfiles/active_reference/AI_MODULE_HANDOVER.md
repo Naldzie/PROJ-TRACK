@@ -212,13 +212,13 @@ Per `textfiles/summary_of_next_work.txt` (keep this priority order):
      project risk level changes (e.g., "On Track" → "At Risk").
    - DROPPED: CSV forecast export (redundant — PDF now covers this).
    - DROPPED: Excel report corruption fix (out of scope, frozen).
-3. **AI Phase 12 — Architectural Enhancements** (⬜ NOT STARTED).
-   Prediction caching (TTL 1h), background jobs for Gemini API,
-   configurable thresholds in `config/ai.php`.
-4. **AI Phase 13 — Testing & Refinement** (⬜ NOT STARTED).
-   ~150 new V2 tests; no V1 regressions.
-5. **Extension Approval Activity Logging** (small, ⬜ NOT STARTED).
-   Missing `ActivityLog::create()` in `store()`/`update()`.
+3. **AI Phase 12 — Architectural Enhancements** (✅ DONE).
+   Prediction caching (TTL 8h), configurable thresholds in `config/ai.php`,
+   cache invalidation on progress/baseline/extension changes.
+4. **AI Phase 13 — Testing & Refinement** (✅ DONE).
+   11 test files, ~170 new tests, 983 total passing.
+5. **Extension Approval Activity Logging** (✅ DONE).
+   `ActivityLog::create()` exists in `store()`/`update()`/`delete()`.
 6. **Deferred / low priority (safe to skip):** MLR, Project Comparison, Bulk Operations, User Activity Summary, Project Templates, Data Export/Import, Job Queue utilization, Dead Code Cleanup, Activity Log UI for Staff, completion-date interval UI (A3), k-backtest tuning via C7, `config/ai.php` migration (Phase 12).
 
 **Intentionally excluded by client:** Budget burn-rate tracking, Baseline approval workflow, Contractor self-reporting, Formal REST API, S-Curve polynomial overlay.
