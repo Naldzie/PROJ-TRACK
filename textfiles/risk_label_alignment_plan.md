@@ -165,6 +165,8 @@ The `RiskLevelChanged` title already shows `previous_level → current_level`. A
 - [x] Notification list page renders RiskLevelChanged with human-readable labels
 - [x] Risk-level change notification email shows "On Track → Medium Risk"
 - [x] All existing tests pass with updated label assertions
+- [x] RiskLevelChanged notification is queued (implements ShouldQueue) — SMTP failure does not break progress save
+- [x] Notification dispatch in ProjectProgressController is wrapped in try-catch — progress save succeeds even if notification fails
 
 ## Implementation Log
 
@@ -211,16 +213,25 @@ The `RiskLevelChanged` title already shows `previous_level → current_level`. A
 - `ProjectProgressController::recordMonthlyProgress()`: changed `$riskData['level']` to `$riskData['label']` for notification and DB storage
 - Backfill also uses `['label']`
 
+### Phase 10: Make RiskLevelChanged queued (2026-08-27)
+- **Problem:** `RiskLevelChanged` declared `['database', 'mail']` channels but did NOT implement `ShouldQueue`. When a risk-level change occurred during progress save, `$user->notify()` tried to send email synchronously via SMTP (`smtp.gmail.com:587`). If SMTP was unreachable (dev env, firewall), the entire progress save HTTP request failed with a 422 error.
+- **Root cause:** The notification was designed as database-only (per the original notification system plan §3 rule 10: "No queue needed"), but when `['mail']` was added as a second channel, the synchronous execution model was not updated.
+- **Fix applied:**
+  1. `app/Notifications/RiskLevelChanged.php` — Added `implements ShouldQueue` (class now extends `Notification implements ShouldQueue`). Email delivery is dispatched to the queue worker instead of blocking the HTTP request.
+  2. `app/Http/Controllers/ProjectProgressController.php` — Wrapped the entire notification dispatch block (lines 485–508) in `try { ... } catch (\Throwable $e)` with `\Log::warning(...)` so a notification failure never breaks the progress save response.
+- **Why try-catch is still needed:** Even with `ShouldQueue`, the `notify()` call itself (which dispatches to the queue) can fail if the queue connection is down. The try-catch ensures the progress save is resilient regardless of queue/SMTP state.
+
 ### Bug Fixes (commit 11e65f5)
 - Forecast Risk N/A: `$forecastRiskData['label']` → `$forecastRiskData['level']` (Blade keys by internal level)
 - Forecast Risk wrong value: Changed from `$completion['predicted_delay_days']` to `nextPlanned - nextPredicted` gap
 - Email risk levels inverted: `-abs($variance)` → `-$variance` in 3 EmailControllers + AiAnalysisMail
-- Test updates: `ProjectHealthServiceTest` for new thresholds, `NotificationTest` for display labels
+- Test updates: `ProjectHealthServiceTest` classifyGap assertions + determine risk assertions
 
 ### Tests
 - 843 passed, 2 pre-existing `EmailDraftTest` failures (unrelated)
 - Updated `ProjectHealthServiceTest`: classifyGap assertions + determine risk assertions
 - Updated `NotificationTest`: risk-level stored values now display labels
+- 14/14 `NotificationTest` pass (including 4 risk-level notification tests) after ShouldQueue fix
 
 ### Branch
 - `ai/phase11b-risk-level-notification` (4 commits: `6fa1521`, `12d423f`, `2aaf7fe`, `0043293`, `11e65f5`)

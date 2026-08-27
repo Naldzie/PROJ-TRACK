@@ -483,29 +483,36 @@ class ProjectProgressController extends Controller
             }
 
             if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
-                $notifService = app(NotificationService::class);
-                $recipients = collect();
-                $recipients = $recipients->merge($notifService->admins());
-                $staff = $notifService->staffForProject($project);
-                if ($staff) {
-                    $recipients->push($staff);
-                }
-                $contractor = $notifService->contractorUserFor($project);
-                if ($contractor) {
-                    $recipients->push($contractor);
-                }
+                try {
+                    $notifService = app(NotificationService::class);
+                    $recipients = collect();
+                    $recipients = $recipients->merge($notifService->admins());
+                    $staff = $notifService->staffForProject($project);
+                    if ($staff) {
+                        $recipients->push($staff);
+                    }
+                    $contractor = $notifService->contractorUserFor($project);
+                    if ($contractor) {
+                        $recipients->push($contractor);
+                    }
 
-                $notification = new \App\Notifications\RiskLevelChanged(
-                    $project->id,
-                    $project->title,
-                    $previousRiskLevel,
-                    $currentRiskLevel,
-                    $validated['month_label'],
-                    $variancePercent,
-                    $actualProgressPercent,
-                    $plannedProgressPercent,
-                );
-                $notifService->notifyMany($recipients, $notification);
+                    $notification = new \App\Notifications\RiskLevelChanged(
+                        $project->id,
+                        $project->title,
+                        $previousRiskLevel,
+                        $currentRiskLevel,
+                        $validated['month_label'],
+                        $variancePercent,
+                        $actualProgressPercent,
+                        $plannedProgressPercent,
+                    );
+                    $notifService->notifyMany($recipients, $notification);
+                } catch (\Throwable $e) {
+                    \Log::warning('Risk level notification failed', [
+                        'project_id' => $project->id,
+                        'error'      => $e->getMessage(),
+                    ]);
+                }
             }
 
             // Always update the stored risk level for next comparison
