@@ -295,12 +295,12 @@ For each service file, replace hardcoded literals with `config()` reads:
 | `app/Services/ProjectHealthService.php` | `config('ai.risk.gap.*')` |
 | `app/Services/AI/RecommendationEngine.php` | `config('ai.risk.*')`, `config('ai.recommendations.*')` |
 | `app/Services/AI/AIPredictionPresenter.php` | `config('ai.trend.*')`, `config('ai.fit_quality.*')`, `config('ai.accuracy.*')` |
-| `app/Services/AI/LinearRegressionService.php` | `config('ai.fit_quality.*')` |
-| `app/Services/AI/AIExplanationService.php` | `config('ai.trend.delta')` |
+| `app/Services/AI/LinearRegressionService.php` | **Kept class constants** (pure unit tests, no Laravel container) |
+| `app/Services/AI/AIExplanationService.php` | `config('ai.trend.delta')`, `config('ai.accuracy.*')` |
 | `app/Services/AI/AIRecommendationService.php` | `config('ai.trend.delta')`, `config('ai.recommendations.*')` |
 | `app/Services/AI/CompletionEstimationService.php` | `config('ai.completion.*')` |
 | `app/Services/AI/CompletionComparisonService.php` | `config('ai.completion.*')` |
-| `app/Services/AI/ForecastReliabilityService.php` | `config('ai.reliability.*')`, `config('ai.accuracy.*')` |
+| `app/Services/AI/ForecastReliabilityService.php` | **Kept class constants** (pure unit tests, no Laravel container) |
 | `app/Services/AI/HistoricalSimilarityService.php` | `config('ai.similarity.*')` |
 | `app/Services/AI/ContractorPerformanceService.php` | `config('ai.contractor_rating')` |
 | `app/Services/ProjectOverviewService.php` | `config('ai.notifications.aging_days')` |
@@ -309,26 +309,83 @@ For each service file, replace hardcoded literals with `config()` reads:
 
 ---
 
-## Implementation Log
+## Planned Adjustment: 8-Hour Cache TTL
 
-(To be filled during implementation)
+### Problem
+The cache currently has `null` TTL (never expires). When a project is inactive and the calendar month transitions (e.g., August 31 → September 1), the cached prediction retains the old month's `current_month_index`. The staleness persists until a user manually busts the cache by recording progress, editing baseline, or submitting an extension.
+
+### Solution
+Change `prediction_ttl` from `null` to `480` (8 hours in minutes). This ensures:
+
+- Stale projects recompute at most once per working day (on first morning load)
+- Active projects are unaffected (cache busted by user activity before TTL expires)
+- Month transitions trigger recomputation on first morning load
+
+### Why 8 hours
+- Matches standard office hours (8 AM – 5 PM)
+- Rolling TTL means recomputation happens ~once per day for inactive projects
+- No compute waste during active hours (user activity busts cache before TTL)
+
+### Change
+File: `config/ai.php` line 17
+```php
+// Before
+'prediction_ttl' => null,
+
+// After
+'prediction_ttl' => 480, // 8 hours in minutes
+```
+
+### Impact
+- **Active projects:** No change — cache busted by user activity
+- **Inactive projects:** Recomputes once on first morning load, then cached for 8 hours
+- **Month transitions:** Recomputes on first morning load after transition
+- **Compute cost:** At most 3 recomputes per day per inactive project (negligible)
+
+### Status
+- **Planned** — not yet implemented
+- Implementation: one-line config change
+
+---
+
+## Implementation Log
 
 ### Phase 1: config/ai.php (commit TBD)
 - Created `config/ai.php` with all threshold categories.
+- Categories: risk, trend, fit_quality, accuracy, data_sufficiency, regression, contractor_rating, notifications, recommendations, reliability, similarity, completion.
 
 ### Phase 2: Caching (commit TBD)
-- `AIPredictionService::generatePrediction()` wrapped in `Cache::remember()`.
-- 9 controller paths add `Cache::forget()`.
+- `AIPredictionService::generatePrediction()` wrapped in `Cache::remember('ai_prediction:{project_id}', null, fn() => computePrediction())` — no TTL, invalidated by data changes.
+- Computation extracted to `private computePrediction()`.
+- 9 controller invalidation points added with `Cache::forget()`:
+  - `ProjectProgressController`: `recordMonthlyProgress()`, `editProgressRecord()`, `destroyProgress()`
+  - `BaselineScheduleController`: `storeBaselineSchedule()`, `updateBaselineSchedule()`, `storeInitialBaselineSetup()`
+  - `Admin\ProjectExtensionController`: `store()`, `update()` (staff path), `update()` (admin path)
+- `use Illuminate\Support\Facades\Cache` imported in all 4 files.
 
 ### Phase 3: Threshold Migration (commit TBD)
-- 14 service files updated to read from config.
+- 12 of 14 service files migrated to `config('ai.*')` reads:
+  - `ProjectStatusService.php` — risk gap ladder
+  - `ProjectHealthService.php` — risk gap ladder
+  - `RecommendationEngine.php` — risk gap, trend delta, max recs, escalation/corrective/monitoring/admin thresholds
+  - `AIPredictionPresenter.php` — data certainty, fit certainty, accurate threshold, health confidence, trend delta
+  - `AIExplanationService.php` — accurate threshold, trend delta
+  - `AIRecommendationService.php` — max recs method, trend delta, aging days
+  - `CompletionEstimationService.php` — all 8 class constants removed → config reads
+  - `CompletionComparisonService.php` — agreement day thresholds
+  - `HistoricalSimilarityService.php` — all 15 constants (25 occurrences) replaced
+  - `ContractorPerformanceService.php` — rating tiers → loop over config
+  - `ProjectOverviewService.php` — aging days
+  - `AIPredictionService.php` — `SLR_POLYNOMIAL_R2_THRESHOLD` → config
+- **Exceptions:** `LinearRegressionService` and `ForecastReliabilityService` kept class constants — pure unit tests extending `PHPUnit\Framework\TestCase` (no Laravel container → `config()` unavailable).
 
 ### Phase 4: Tests (commit TBD)
-- Cache behavior tests, config structure tests.
-- All existing tests pass.
+- `AIPredictionServiceTest` updated with `Cache` import + `Cache::forget()` before re-generation calls.
 
-### Tests
-- (To be filled)
+### Test Results (2026-08-27)
+- **849 passed, 2 failed** (2 pre-existing `EmailDraftTest` failures unrelated to Phase 12).
+- No new failures introduced.
 
 ### Branch
 - `ai/phase12-architectural-enhancements`
+- Plan committed at `395ae1e`.
