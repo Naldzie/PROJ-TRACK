@@ -8,13 +8,14 @@ return [
     |--------------------------------------------------------------------------
     |
     | Controls caching for AIPredictionService::generatePrediction() results.
-    | null TTL = no time-based expiry; cache is invalidated only on data changes
-    | (progress recorded, baseline updated, extension approved).
+    | TTL in minutes. null = no time-based expiry (cache only invalidated on
+    | data changes). 480 = 8 hours — stale projects recompute once per working
+    | day on first morning load.
     |
     */
 
     'cache' => [
-        'prediction_ttl' => null,
+        'prediction_ttl' => 480,
     ],
 
     /*
