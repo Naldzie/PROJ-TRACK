@@ -502,3 +502,63 @@ All changes are on branch `ai/phase12-architectural-enhancements`. Files listed 
 **NOT modified (kept constants):**
 - `app/Services/AI/Regression/LinearRegressionService.php` — pure unit tests, no Laravel
 - `app/Services/AI/ForecastReliabilityService.php` — pure unit tests, no Laravel
+
+---
+
+## Two-Layer Architecture (Cache vs Render-Time)
+
+The AI Prediction tab uses a **two-layer architecture** that separates expensive computation from cheap display logic.
+
+### Layer 1: CACHED (expensive, 2-5s)
+
+Stored in Laravel cache under key `ai_prediction:{project_id}` with 8-hour TTL. Computed once, then returned instantly on subsequent loads.
+
+| Component | What it computes |
+|---|---|
+| Regression pipeline | SLR/polynomial fit, R², equation coefficients |
+| Forecast | Predicted progress for future months |
+| Completion estimation | Estimated completion date (3 methods) |
+| Reliability scoring | How trustworthy the prediction is (backtest, data, horizon) |
+| Class standing | Percentile ranking vs similar completed projects |
+| Historical similarity | Finding and blending with similar projects |
+
+**Why this is cached:** These computations scan all progress records, all completed projects for similarity, and run multiple regression models. Previously ran on every page load (2-5s each).
+
+**Staleness risk:** Low. These values only change when progress/baseline/extension data changes — which always triggers `Cache::forget()`. The 8-hour TTL covers edge cases where no user activity happens.
+
+### Layer 2: RENDER-TIME (cheap, < 10ms)
+
+Computed fresh on every page load by `AIPredictionPresenter::present()` using `DateHelper::now()`.
+
+| Component | What it computes | Date-dependent? |
+|---|---|---|
+| Expected progress | Baseline target for the current month | **Yes** — uses `DateHelper::now()` |
+| Progress gap | `expected - actual` | **Yes** — follows expected |
+| Risk classification | ON TRACK / AT RISK | **Yes** — follows gap |
+| "Next Month" / "This Month" label | Compares predicted month vs current date | **Yes** — uses `DateHelper::now()` |
+| Days remaining | `deadline - now` | **Yes** — uses `DateHelper::now()` |
+
+**Why this is NOT cached:** These are trivial computations (one DB query + arithmetic). They must reflect the current date to show accurate risk status. Caching them would add complexity without meaningful performance benefit.
+
+**Staleness risk:** None — these are recomputed on every page load.
+
+### Performance Impact
+
+| | Before Phase 12 | After Phase 12 |
+|---|---|---|
+| Regression pipeline | 2-5s every page load | 2-5s once per 8h (cached) |
+| Display logic | < 10ms every page load | < 10ms every page load (unchanged) |
+| **Total per page load** | **2-5s** | **< 10ms** (after first load) |
+
+### Staleness Analysis
+
+**What becomes stale:** The cached `current_state.month_index` (e.g., still shows 5 when month transitions to 6). However, the presenter does NOT use this value for display — it computes expected progress from the baseline schedule at render time.
+
+**What does NOT become stale:** The regression equation, R², forecast values, completion dates, reliability scores. These are date-independent — they describe the project's trajectory, not its current position.
+
+**Why staleness is mostly harmless:** The cached data describes "where is the project heading" (regression, forecast). The render-time data describes "where is the project now" (expected, gap, risk). The heading doesn't change when the month changes — only the position does, and that's computed fresh.
+
+**If staleness becomes a problem in the future:** It would be connected to this two-layer architecture. Specifically:
+1. If future features add date-dependent values to the **cached layer** (e.g., caching the gap or risk level), those would become stale
+2. If the regression pipeline itself becomes date-sensitive (e.g., using the current month as an input to the model), the cached output would need invalidation on month transitions
+3. The 8-hour TTL is the safety net for any such future changes
