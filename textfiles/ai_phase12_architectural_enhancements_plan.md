@@ -351,41 +351,154 @@ File: `config/ai.php` line 17
 ## Implementation Log
 
 ### Phase 1: config/ai.php (commit TBD)
-- Created `config/ai.php` with all threshold categories.
-- Categories: risk, trend, fit_quality, accuracy, data_sufficiency, regression, contractor_rating, notifications, recommendations, reliability, similarity, completion.
+
+**New file:** `config/ai.php` — 279 lines, 11 threshold categories.
+
+Categories and their config keys:
+- `cache` — prediction cache TTL (currently `null`)
+- `risk.gap` — risk level boundaries (-5, 5, 10, 15)
+- `trend.variance_delta` — trend detection sensitivity (2)
+- `fit_quality` — R² labels (0.90/0.80/0.70/0.50)
+- `accuracy` — prediction accuracy thresholds (2, 5)
+- `data_sufficiency` — observation count gates (3, 6, 2, 4)
+- `regression` — SLR vs polynomial R² improvement threshold (0.02)
+- `contractor_rating` — 5-tier rating with on-time% and avg delay days
+- `notifications.aging_days` — issue aging threshold (30)
+- `recommendations` — 20 thresholds for escalation/corrective/monitoring/admin rules
+- `reliability` — scoring weights, data tiers, horizon tiers, blend shrink params
+- `similarity` — 5 similarity factor weights, 3 tolerances, min score, blend K, scale ratios
+- `completion` — confidence thresholds (R², obs, index ratio), agreement days
 
 ### Phase 2: Caching (commit TBD)
-- `AIPredictionService::generatePrediction()` wrapped in `Cache::remember('ai_prediction:{project_id}', null, fn() => computePrediction())` — no TTL, invalidated by data changes.
-- Computation extracted to `private computePrediction()`.
-- 9 controller invalidation points added with `Cache::forget()`:
-  - `ProjectProgressController`: `recordMonthlyProgress()`, `editProgressRecord()`, `destroyProgress()`
-  - `BaselineScheduleController`: `storeBaselineSchedule()`, `updateBaselineSchedule()`, `storeInitialBaselineSetup()`
-  - `Admin\ProjectExtensionController`: `store()`, `update()` (staff path), `update()` (admin path)
-- `use Illuminate\Support\Facades\Cache` imported in all 4 files.
+
+**File: `app/Services/AI/AIPredictionService.php`**
+- Added `use Illuminate\Support\Facades\Cache;`
+- Removed `private const SLR_POLYNOMIAL_R2_THRESHOLD = 0.02;` — replaced with `config('ai.regression.slr_polynomial_r2_threshold')`
+- `generatePrediction()` now wraps computation in `Cache::remember('ai_prediction:' . $project->id, config('ai.cache.prediction_ttl'), fn() => computePrediction())`
+- Computation extracted to `private computePrediction()` — same logic, separate method for cache closure
+
+**9 controller invalidation points (Cache::forget):**
+
+| Controller | Method | What triggers bust |
+|---|---|---|
+| `ProjectProgressController` | `recordMonthlyProgress()` | New progress recorded |
+| `ProjectProgressController` | `editProgressRecord()` | Progress edited |
+| `ProjectProgressController` | `destroyProgress()` | Progress deleted |
+| `BaselineScheduleController` | `storeBaselineSchedule()` | Baseline month target added |
+| `BaselineScheduleController` | `updateBaselineSchedule()` | Baseline month target updated |
+| `BaselineScheduleController` | `storeInitialBaselineSetup()` | Baseline locked |
+| `Admin\ProjectExtensionController` | `store()` | Extension submitted |
+| `Admin\ProjectExtensionController` | `update()` (staff) | Extension approved/rejected by staff |
+| `Admin\ProjectExtensionController` | `update()` (admin) | Extension approved/rejected/reverted by admin |
+
+Each controller also had `use Illuminate\Support\Facades\Cache;` added to imports.
 
 ### Phase 3: Threshold Migration (commit TBD)
-- 12 of 14 service files migrated to `config('ai.*')` reads:
-  - `ProjectStatusService.php` — risk gap ladder
-  - `ProjectHealthService.php` — risk gap ladder
-  - `RecommendationEngine.php` — risk gap, trend delta, max recs, escalation/corrective/monitoring/admin thresholds
-  - `AIPredictionPresenter.php` — data certainty, fit certainty, accurate threshold, health confidence, trend delta
-  - `AIExplanationService.php` — accurate threshold, trend delta
-  - `AIRecommendationService.php` — max recs method, trend delta, aging days
-  - `CompletionEstimationService.php` — all 8 class constants removed → config reads
-  - `CompletionComparisonService.php` — agreement day thresholds
-  - `HistoricalSimilarityService.php` — all 15 constants (25 occurrences) replaced
-  - `ContractorPerformanceService.php` — rating tiers → loop over config
-  - `ProjectOverviewService.php` — aging days
-  - `AIPredictionService.php` — `SLR_POLYNOMIAL_R2_THRESHOLD` → config
-- **Exceptions:** `LinearRegressionService` and `ForecastReliabilityService` kept class constants — pure unit tests extending `PHPUnit\Framework\TestCase` (no Laravel container → `config()` unavailable).
+
+12 of 14 service files migrated from hardcoded constants/literals to `config('ai.*')` reads:
+
+**`app/Services/ProjectStatusService.php`** — Risk gap ladder
+- Replaced 4 hardcoded comparisons (`<= -5`, `<= 5`, `< 10`, `< 15`) with `config('ai.risk.gap.*')`
+
+**`app/Services/ProjectHealthService.php`** — Risk gap ladder
+- Same pattern as ProjectStatusService: 4 comparisons → config reads
+
+**`app/Services/AI/RecommendationEngine.php`** — Most changes (74 lines)
+- `MAX_RECOMMENDATIONS` constant → `maxRecommendations()` method reading `config('ai.recommendations.max_rule')`
+- `assessEscalation()`: hardcoded `5` → `config('ai.recommendations.systemic_issues_count')`, hardcoded `-20`/`30` → config
+- `assessCorrective()`: 8 hardcoded thresholds → config reads (`-10`, `3`, `2`, rating checks, `2`, `2`, `-5`)
+- `assessMonitoring()`: open count threshold → config
+- `assessAdministrative()`: deadline days/progress → config
+- `determineTrend()`: delta `2` → `config('ai.trend.variance_delta')`
+- `classifyRiskFromGap()`: 4 gap thresholds → `config('ai.risk.gap')`
+- `mergeAndSort()`: cap uses `maxRecommendations()` method
+
+**`app/Services/AI/AIPredictionPresenter.php`** — 22 lines changed
+- `presentNormal()`: accurate threshold (`2`) → config, health confidence obs counts → config
+- `generateCertaintyLabel()`: data cert thresholds (3, 6) → config, fit quality (0.90/0.70/0.50) → config
+- `determineTrend()`: delta `2` → config
+
+**`app/Services/AI/AIExplanationService.php`** — 8 lines changed
+- `buildPrompt()`: accurate threshold (`2`) → `config('ai.accuracy.accurate_threshold')`
+- `determineTrendFromAssessment()`: delta `2` → config
+
+**`app/Services/AI/AIRecommendationService.php`** — 17 lines changed
+- `MAX_RECOMMENDATIONS` constant → `maxRecommendations()` method reading config
+- `buildIssuesSection()`: aging days `30` → `config('ai.notifications.aging_days')`
+- `determineTrend()`: delta `2` → config
+
+**`app/Services/AI/CompletionEstimationService.php`** — Most deletions (45 lines removed)
+- Removed 8 class constants: `MAX_REASONABLE_MONTHS`, `HIGH_CONFIDENCE_R2`, `MEDIUM_CONFIDENCE_R2`, `HIGH_CONFIDENCE_OBS`, `MEDIUM_CONFIDENCE_OBS`, `HIGH_CONFIDENCE_INDEX_RATIO`, `LOW_CONFIDENCE_INDEX_RATIO`, `MIN_R2_FOR_ESTIMATE`
+- All replaced with `config('ai.completion.*')` reads across `estimate()`, `estimatePolynomial()`, `isPolynomialSelected()`, `estimateFromClassReference()`, `estimateEarnedSchedule()`, `classifyConfidence()`
+
+**`app/Services/AI/CompletionComparisonService.php`** — 6 lines changed
+- Agreement spread thresholds (15, 45) → `config('ai.completion.agreement')`
+
+**`app/Services/AI/HistoricalSimilarityService.php`** — Largest refactor (84 lines changed)
+- Removed 15 class constants (25 occurrences): `SIMILARITY_WEIGHT_*`, `BUDGET_TOLERANCE`, `DURATION_TOLERANCE`, `WORKERS_TOLERANCE`, `MIN_OBSERVATIONS_FOR_CURVE`, `MIN_SIMILAR_PROJECTS`, `MIN_SIMILARITY_SCORE`, `MIN_SCALE_RATIO`, `MAX_SCALE_RATIO`, `AGGREGATE_INTERVAL`, `BLEND_K`
+- All replaced with `config('ai.similarity.*')` reads
+- `availableSimilarityWeight()`: 5 weight constants → config
+- `computeSimilarityBreakdown()`: weights + tolerances → config
+- `buildAggregateCurve()`: min observations, min projects, interval → config
+- `blendWeight()`: blend K → config
+- `buildClassReference()`: scale ratio min/max → config
+- `generateSyntheticPoints()`: scale ratio min/max → config
+- `getSimilarProjectsDetails()`: min observations → config
+
+**`app/Services/AI/ContractorPerformanceService.php`** — 18 lines changed
+- `getPerformanceRating()`: 4 hardcoded if-else tiers → loop over `config('ai.contractor_rating')`
+
+**`app/Services/ProjectOverviewService.php`** — 2 lines changed
+- Aging days `30` → `config('ai.notifications.aging_days')`
+
+**Exceptions (NOT migrated):**
+- `LinearRegressionService` — kept class constants (pure unit tests extending `PHPUnit\Framework\TestCase`, no Laravel container)
+- `ForecastReliabilityService` — kept class constants (same reason)
 
 ### Phase 4: Tests (commit TBD)
-- `AIPredictionServiceTest` updated with `Cache` import + `Cache::forget()` before re-generation calls.
+
+**`tests/Unit/Services/AI/AIPredictionServiceTest.php`**
+- Added `use Illuminate\Support\Facades\Cache;`
+- Added `Cache::forget('ai_prediction:' . $project->id)` before re-generation calls in:
+  - `test_prediction_history_persists_and_refreshes_band()` (line 454)
+  - `test_second_inspection_updates_prediction_in_place()` (lines 679, 686)
 
 ### Test Results (2026-08-27)
-- **849 passed, 2 failed** (2 pre-existing `EmailDraftTest` failures unrelated to Phase 12).
-- No new failures introduced.
+- **849 passed, 2 failed** (2 pre-existing `EmailDraftTest` failures unrelated to Phase 12)
+- No new failures introduced
 
 ### Branch
 - `ai/phase12-architectural-enhancements`
-- Plan committed at `395ae1e`.
+- Plan committed at `395ae1e`
+- Changelog update committed at `a511d8f`
+
+---
+
+## Uncommitted Changes Summary
+
+All changes are on branch `ai/phase12-architectural-enhancements`. Files listed by change type:
+
+**NEW file (1):**
+- `config/ai.php` — centralized AI thresholds (279 lines)
+
+**MODIFIED files (16):**
+- `app/Services/AI/AIPredictionService.php` — Cache wrapper + config reads
+- `app/Http/Controllers/ProjectProgressController.php` — Cache::forget in 3 methods
+- `app/Http/Controllers/BaselineScheduleController.php` — Cache::forget in 3 methods
+- `app/Http/Controllers/Admin/ProjectExtensionController.php` — Cache::forget in 3 paths
+- `app/Services/ProjectStatusService.php` — risk gap → config
+- `app/Services/ProjectHealthService.php` — risk gap → config
+- `app/Services/AI/RecommendationEngine.php` — 20+ thresholds → config
+- `app/Services/AI/AIPredictionPresenter.php` — fit/accuracy/data thresholds → config
+- `app/Services/AI/AIExplanationService.php` — trend delta + accuracy → config
+- `app/Services/AI/AIRecommendationService.php` — max recs, aging, trend → config
+- `app/Services/AI/CompletionEstimationService.php` — 8 constants removed → config
+- `app/Services/AI/CompletionComparisonService.php` — agreement days → config
+- `app/Services/AI/HistoricalSimilarityService.php` — 15 constants removed → config
+- `app/Services/AI/ContractorPerformanceService.php` — rating tiers → config
+- `app/Services/ProjectOverviewService.php` — aging days → config
+- `tests/Unit/Services/AI/AIPredictionServiceTest.php` — Cache import + cache busting in tests
+
+**NOT modified (kept constants):**
+- `app/Services/AI/Regression/LinearRegressionService.php` — pure unit tests, no Laravel
+- `app/Services/AI/ForecastReliabilityService.php` — pure unit tests, no Laravel
