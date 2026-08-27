@@ -226,7 +226,7 @@ class ProjectOverviewService
         $totalOpen    = $issues->count();
         $worstSeverity = $issues->first()?->severity ?? null;
         $agingCount   = $issues->filter(
-            fn ($issue) => $issue->created_at && $issue->created_at->lte(now()->subDays(30))
+            fn ($issue) => $issue->created_at && $issue->created_at->lte(now()->subDays(config('ai.notifications.aging_days')))
         )->count();
 
         return [

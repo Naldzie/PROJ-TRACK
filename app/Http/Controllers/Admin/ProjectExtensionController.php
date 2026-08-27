@@ -16,6 +16,7 @@ use App\Services\NotificationService;
 use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
@@ -156,6 +157,8 @@ class ProjectExtensionController extends Controller
                         ? "Extension #{$nextExtensionNumber} created and rejected"
                         : "Extension #{$nextExtensionNumber} created and pending approval"))
                 : "Extension #{$nextExtensionNumber} submitted for admin approval";
+
+            Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
                 'success' => true,
@@ -384,6 +387,8 @@ class ProjectExtensionController extends Controller
                         : ExtensionStatusChanged::REJECTED;
                     $this->notifyExtension($project, $extension, $notifStatus);
 
+                    Cache::forget('ai_prediction:' . $project->id);
+
                     return response()->json([
                         'success' => true,
                         'message' => 'Extension ' . $validated['status'],
@@ -540,6 +545,8 @@ class ProjectExtensionController extends Controller
                 // be stale). Hint the admin to re-run Generate Adjusted Baseline.
                 $revertMessage = 'Extension reverted. Re-approving later only moves the deadline — re-run "Generate Adjusted Baseline" to rebuild the plan.';
             }
+
+            Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
                 'success' => true,

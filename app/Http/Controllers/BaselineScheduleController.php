@@ -10,6 +10,7 @@ use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -262,6 +263,8 @@ class BaselineScheduleController extends Controller
                 // revert restores the exact state the user built (Add Month Target).
                 \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
+                Cache::forget('ai_prediction:' . $project->id);
+
                 return response()->json([
                     'success' => true,
                     'message' => 'S-Curve plan and activities added successfully',
@@ -453,6 +456,8 @@ class BaselineScheduleController extends Controller
 
                 DB::commit();
 
+                Cache::forget('ai_prediction:' . $project->id);
+
                 return response()->json([
                     'success' => true,
                     'message' => 'Baseline schedule locked successfully',
@@ -579,6 +584,8 @@ class BaselineScheduleController extends Controller
             // baseline snapshot in sync with manual edits (Manage Month modal)
             // so a later revert restores the exact state the user built.
             \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
+
+            Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
                 'success' => true,

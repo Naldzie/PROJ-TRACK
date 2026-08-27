@@ -142,10 +142,12 @@ class CompletionComparisonService
 
         $spreadDays = (int) round($earliest->diffInDays($latest));
 
+        $agreementConfig = config('ai.completion.agreement');
+
         $agreement = match (true) {
             $validCount < 2 => 'N/A',
-            $spreadDays <= 15 => 'High',
-            $spreadDays <= 45 => 'Moderate',
+            $spreadDays <= $agreementConfig['high_days'] => 'High',
+            $spreadDays <= $agreementConfig['moderate_days'] => 'Moderate',
             default => 'Low',
         };
 

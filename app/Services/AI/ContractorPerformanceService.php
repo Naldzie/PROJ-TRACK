@@ -218,18 +218,14 @@ class ContractorPerformanceService
      */
     public function getPerformanceRating(float $onTimePct, float $avgDelayDays): int
     {
-        if ($onTimePct >= 90 && $avgDelayDays <= 7) {
-            return 5;
+        $tiers = config('ai.contractor_rating');
+
+        foreach ($tiers as $rating => $thresholds) {
+            if ($onTimePct >= $thresholds['on_time_pct'] && $avgDelayDays <= $thresholds['avg_delay_days']) {
+                return (int) $rating;
+            }
         }
-        if ($onTimePct >= 80 && $avgDelayDays <= 15) {
-            return 4;
-        }
-        if ($onTimePct >= 70 && $avgDelayDays <= 30) {
-            return 3;
-        }
-        if ($onTimePct >= 50 && $avgDelayDays <= 60) {
-            return 2;
-        }
+
         return 1;
     }
 

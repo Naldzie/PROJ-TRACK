@@ -10,16 +10,18 @@ class ProjectStatusService
     // any future dashboard callers, so they can never disagree about risk level.
     public function getRiskLevel(float $behindPercent): array
     {
-        if ($behindPercent <= -5) {
+        $gap = config('ai.risk.gap');
+
+        if ($behindPercent <= $gap['ahead']) {
             return ['level' => 'ahead', 'label' => 'Ahead of Schedule', 'color' => 'green'];
         }
-        if ($behindPercent <= 5) {
+        if ($behindPercent <= $gap['on_track']) {
             return ['level' => 'on_track', 'label' => 'On Track', 'color' => 'green'];
         }
-        if ($behindPercent < 10) {
+        if ($behindPercent < $gap['low']) {
             return ['level' => 'low_risk', 'label' => 'Low Risk', 'color' => 'yellow'];
         }
-        if ($behindPercent < 15) {
+        if ($behindPercent < $gap['medium']) {
             return ['level' => 'medium_risk', 'label' => 'Medium Risk', 'color' => 'orange'];
         }
         return ['level' => 'high_risk', 'label' => 'High Risk', 'color' => 'red'];

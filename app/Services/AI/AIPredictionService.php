@@ -17,6 +17,7 @@ use App\Services\AI\ForecastReliabilityService;
 use App\Services\AI\HistoricalSimilarityService;
 use App\Models\PredictionHistory;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * ============================================================================
@@ -68,7 +69,6 @@ class AIPredictionService
      * by at least this amount. Prevents over-selection when both models
      * produce nearly identical fits.
      */
-    private const SLR_POLYNOMIAL_R2_THRESHOLD = 0.02;
 
     /**
      * ------------------------------------------------------------------------
@@ -219,6 +219,23 @@ class AIPredictionService
      * ProjectDetailService
      */
     public function generatePrediction(Project $project): array
+    {
+        $cacheKey = 'ai_prediction:' . $project->id;
+
+        return Cache::remember($cacheKey, config('ai.cache.prediction_ttl'), function () use ($project) {
+            return $this->computePrediction($project);
+        });
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Compute Prediction (uncached)
+     * ------------------------------------------------------------------------
+     *
+     * The actual prediction pipeline. Called by generatePrediction() which
+     * wraps the result in Cache::remember().
+     */
+    private function computePrediction(Project $project): array
     {
         $dataset = $this->buildDataset($project);
 
@@ -953,7 +970,7 @@ class AIPredictionService
         $improvement = $polyR2 - $slrR2;
 
         if (
-            $polyR2 > $slrR2 + self::SLR_POLYNOMIAL_R2_THRESHOLD
+            $polyR2 > $slrR2 + config('ai.regression.slr_polynomial_r2_threshold')
         ) {
 
             $polyAnalysis['regression_method'] = 'polynomial';

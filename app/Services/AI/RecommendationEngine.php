@@ -56,7 +56,10 @@ class RecommendationEngine
      * Caps the total number of rule-based recommendations returned to avoid
      * overwhelming project managers with too many suggestions.
      */
-    private const MAX_RECOMMENDATIONS = 8;
+    private function maxRecommendations(): int
+    {
+        return config('ai.recommendations.max_rule', 8);
+    }
 
     /**
      * ------------------------------------------------------------------------
@@ -124,9 +127,8 @@ class RecommendationEngine
             return [];
         }
 
-        // Very new projects (1-2 obs): return data-focused recommendations only
-        // Regression cannot produce meaningful risk/trend analysis with so few data points
-        if ($factors['observation_count'] <= 2) {
+        // Insufficient observations — return data-focused recommendations only
+        if ($factors['observation_count'] <= config('ai.recommendations.min_observations')) {
             return $this->generateDataFocusedRecommendations($factors);
         }
 
@@ -450,8 +452,9 @@ class RecommendationEngine
             ];
         }
 
-        // Systemic failure to close issues — 5+ issues open for 30+ days
-        if (($factors['issues_aging_count'] ?? 0) >= 5) {
+        // Systemic failure to close issues — N+ issues open for 30+ days
+        $recConfig = config('ai.recommendations');
+        if (($factors['issues_aging_count'] ?? 0) >= $recConfig['systemic_issues_count']) {
             $recommendations[] = [
                 'message'  => $factors['issues_aging_count']
                     . ' issues unresolved for 30+ days — escalation recommended',
@@ -463,7 +466,7 @@ class RecommendationEngine
         }
 
         // Severe gap with imminent deadline — project will not finish on time
-        if ($factors['progress_gap'] < -20 && $factors['days_remaining'] < 30) {
+        if ($factors['progress_gap'] < $recConfig['escalation_gap'] && $factors['days_remaining'] < $recConfig['escalation_days']) {
             $recommendations[] = [
                 'message'  => 'Urgent corrective action needed — project unlikely to finish on time',
                 'category' => 'escalation',
@@ -496,6 +499,7 @@ class RecommendationEngine
     private function assessCorrective(array $factors): array
     {
         $recommendations = [];
+        $recConfig = config('ai.recommendations');
 
         // High risk or moderate risk that is worsening — schedule review needed
         if ($factors['risk_level'] === 'High' || ($factors['risk_level'] === 'Moderate' && $factors['trend'] === 'DECELERATING')) {
@@ -508,7 +512,7 @@ class RecommendationEngine
         }
 
         // Behind schedule with a history of extensions — resource intervention needed
-        if ($factors['progress_gap'] < -10 && $factors['extension_count'] > 0) {
+        if ($factors['progress_gap'] < $recConfig['progress_gap_for_extension'] && $factors['extension_count'] > 0) {
             $recommendations[] = [
                 'message'  => 'Consider additional resources on critical path items',
                 'category' => 'corrective',
@@ -517,8 +521,8 @@ class RecommendationEngine
             ];
         }
 
-        // Material issues >= 3 may indicate supply chain problems
-        if (($factors['issues_material'] ?? 0) >= 3) {
+        // Material issues may indicate supply chain problems
+        if (($factors['issues_material'] ?? 0) >= $recConfig['material_issues_count']) {
             $recommendations[] = [
                 'message'  => $factors['issues_material']
                     . ' material issues unresolved — review supply chain',
@@ -529,8 +533,8 @@ class RecommendationEngine
             ];
         }
 
-        // Contractor issues >= 2 may indicate performance concerns
-        if (($factors['issues_contractor'] ?? 0) >= 2) {
+        // Contractor issues may indicate performance concerns
+        if (($factors['issues_contractor'] ?? 0) >= $recConfig['contractor_issues_count']) {
             $recommendations[] = [
                 'message'  => $factors['issues_contractor']
                     . ' contractor issues unresolved — address performance',
@@ -543,8 +547,8 @@ class RecommendationEngine
 
         // Phase 9: contractor with history of delays + open issues
         if (($factors['contractor_performance_rating'] ?? null) !== null
-            && $factors['contractor_performance_rating'] <= 2
-            && ($factors['open_issue_count'] ?? 0) >= 2
+            && $factors['contractor_performance_rating'] <= $recConfig['contractor_rating_max']
+            && ($factors['open_issue_count'] ?? 0) >= $recConfig['contractor_issues_count']
         ) {
             $recommendations[] = [
                 'message'  => 'Contractor has a history of delays (rating '
@@ -557,8 +561,8 @@ class RecommendationEngine
             ];
         }
 
-        // Design issues >= 2 may require consultant input
-        if (($factors['issues_design'] ?? 0) >= 2) {
+        // Design issues may require consultant input
+        if (($factors['issues_design'] ?? 0) >= $recConfig['design_issues_count']) {
             $recommendations[] = [
                 'message'  => $factors['issues_design']
                     . ' design issues unresolved — consider design review',
@@ -569,8 +573,8 @@ class RecommendationEngine
             ];
         }
 
-        // Aging issues >= 2 — issues piling up without resolution
-        if (($factors['issues_aging_count'] ?? 0) >= 2) {
+        // Aging issues — issues piling up without resolution
+        if (($factors['issues_aging_count'] ?? 0) >= $recConfig['aging_issues_count']) {
             $recommendations[] = [
                 'message'  => $factors['issues_aging_count']
                     . ' issues unresolved for 30+ days — prioritize resolution',
@@ -583,7 +587,7 @@ class RecommendationEngine
 
         // Activities repeatedly carried over while behind schedule —
         // contractor systematically deferring work instead of completing it
-        if (($factors['carried_over_count'] ?? 0) >= 2 && ($factors['progress_gap'] ?? 0) < -5) {
+        if (($factors['carried_over_count'] ?? 0) >= $recConfig['carryover_count'] && ($factors['progress_gap'] ?? 0) < $recConfig['carryover_gap']) {
             $recommendations[] = [
                 'message'  => $factors['carried_over_count']
                     . ' activities carried forward — review contractor scheduling',
@@ -600,7 +604,7 @@ class RecommendationEngine
         // gauge badge, fed into the recommendation stream as a corrective.
         $classStanding = $factors['class_standing'] ?? [];
         if (($factors['class_behind'] ?? false)
-            && ($factors['class_behind_run'] ?? 0) >= 2
+            && ($factors['class_behind_run'] ?? 0) >= $recConfig['at_risk_run']
             && ($classStanding['usable'] ?? false)
         ) {
             $recommendations[] = [
@@ -639,6 +643,7 @@ class RecommendationEngine
     private function assessMonitoring(array $factors): array
     {
         $recommendations = [];
+        $recConfig = config('ai.recommendations');
 
         // Moderate risk with stable trend — could improve or decline next cycle
         if ($factors['risk_level'] === 'Moderate' && $factors['trend'] === 'STABLE') {
@@ -664,7 +669,7 @@ class RecommendationEngine
         // issues are accumulating faster than they're being resolved
         $openCount = $factors['open_issue_count'] ?? 0;
         $resolved30d = $factors['issues_resolved_30d'] ?? 0;
-        if ($openCount >= 3 && $resolved30d < max(1, $openCount / 3)) {
+        if ($openCount >= $recConfig['issue_resolution_open_count'] && $resolved30d < max(1, $openCount / 3)) {
             $recommendations[] = [
                 'message'  => 'Issue resolution rate is low — review issue management process',
                 'category' => 'monitoring',
@@ -709,6 +714,7 @@ class RecommendationEngine
     private function assessAdministrative(array $factors): array
     {
         $recommendations = [];
+        $recConfig = config('ai.recommendations');
 
         // Always include the standard inspection reminder
         $recommendations[] = [
@@ -729,7 +735,7 @@ class RecommendationEngine
         }
 
         // Project is about to miss its deadline — prepare for extension paperwork
-        if ($factors['days_remaining'] < 15 && $factors['current_progress'] < 90) {
+        if ($factors['days_remaining'] < $recConfig['deadline_days'] && $factors['current_progress'] < $recConfig['deadline_progress']) {
             $recommendations[] = [
                 'message'  => 'Project nearing deadline with incomplete progress — prepare extension evaluation',
                 'category' => 'administrative',
@@ -739,7 +745,7 @@ class RecommendationEngine
         }
 
         // Weak model fit due to sparse data — inform user that more data improves accuracy
-        if ($factors['fit_quality'] === 'Weak' && $factors['observation_count'] < 6) {
+        if ($factors['fit_quality'] === 'Weak' && $factors['observation_count'] < config('ai.data_sufficiency.moderate')) {
             $recommendations[] = [
                 'message'  => 'More progress records needed to improve prediction accuracy',
                 'category' => 'administrative',
@@ -783,7 +789,7 @@ class RecommendationEngine
         usort($unique, fn ($a, $b) => $a['priority'] <=> $b['priority']);
 
         // Cap total recommendations to avoid overwhelming the user
-        return array_slice($unique, 0, self::MAX_RECOMMENDATIONS);
+        return array_slice($unique, 0, $this->maxRecommendations());
     }
 
     /**
@@ -814,16 +820,18 @@ class RecommendationEngine
 
         $delta = $latestVariance - $previousVariance;
 
-        // Variance worsening by 2+ points → falling further behind
-        if ($delta <= -2) {
+        $trendDelta = config('ai.trend.variance_delta', 2);
+
+        // Variance worsening by trend_delta+ points → falling further behind
+        if ($delta <= -$trendDelta) {
             return [
                 'trend' => 'DECELERATING',
                 'label' => 'Falling further behind schedule compared to last month',
             ];
         }
 
-        // Variance improving by 2+ points → catching up
-        if ($delta >= 2) {
+        // Variance improving by trend_delta+ points → catching up
+        if ($delta >= $trendDelta) {
             return [
                 'trend' => 'ACCELERATING',
                 'label' => 'Catching up to baseline schedule compared to last month',
@@ -860,16 +868,18 @@ class RecommendationEngine
      */
     private function classifyRiskFromGap(float $progressGap): string
     {
-        if ($progressGap <= -5) {
+        $gap = config('ai.risk.gap');
+
+        if ($progressGap <= $gap['ahead']) {
             return 'Low';
         }
-        if ($progressGap <= 5) {
+        if ($progressGap <= $gap['on_track']) {
             return 'Low';
         }
-        if ($progressGap < 10) {
+        if ($progressGap < $gap['low']) {
             return 'Moderate';
         }
-        if ($progressGap < 15) {
+        if ($progressGap < $gap['medium']) {
             return 'High';
         }
         return 'Critical';

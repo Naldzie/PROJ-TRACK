@@ -168,7 +168,7 @@ class AIExplanationService
         if ($historyRows->isNotEmpty()) {
             $total = $historyRows->count();
             $accurate = $historyRows->filter(
-                fn ($h) => abs($h->actual_next - $h->predicted_next) < 2
+                fn ($h) => abs($h->actual_next - $h->predicted_next) < config('ai.accuracy.accurate_threshold')
             )->count();
             $avgVariance = round($historyRows->avg(
                 fn ($h) => $h->actual_next - $h->predicted_next
@@ -351,10 +351,12 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
 
         $delta = $latest - $previous;
 
-        if ($delta <= -2) {
+        $trendDelta = config('ai.trend.variance_delta', 2);
+
+        if ($delta <= -$trendDelta) {
             return 'Declining (falling further behind)';
         }
-        if ($delta >= 2) {
+        if ($delta >= $trendDelta) {
             return 'Improving (catching up)';
         }
         return 'Stable';

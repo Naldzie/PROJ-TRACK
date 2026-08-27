@@ -7,46 +7,6 @@ use Illuminate\Support\Collection;
 
 class HistoricalSimilarityService
 {
-    private const SIMILARITY_WEIGHT_CATEGORY  = 30;
-    private const SIMILARITY_WEIGHT_BUDGET     = 25;
-    private const SIMILARITY_WEIGHT_DURATION   = 20;
-    private const SIMILARITY_WEIGHT_CONTRACTOR = 15;
-    private const SIMILARITY_WEIGHT_WORKERS    = 10;
-
-    private const BUDGET_TOLERANCE   = 0.20;
-    private const DURATION_TOLERANCE = 0.30;
-    private const WORKERS_TOLERANCE  = 0.40;
-
-    private const MIN_OBSERVATIONS_FOR_CURVE = 4;
-
-    // Minimum number of USABLE similar curves required before the aggregate
-    // is trusted. One or two curves are not a real reference-class pattern.
-    private const MIN_SIMILAR_PROJECTS = 3;
-
-    // Minimum similarity score (before the recency multiplier) required for a
-    // completed project to be considered "similar". Scored on the factors BOTH
-    // projects record (v2.6 4.3: a field missing on either side is omitted
-    // from the denominator, so lack of metadata never silently tanks a match).
-    // A category match alone is never enough — the candidate must also match
-    // on budget, duration, workers, or contractor (v2.6 4.3). Recency only
-    // reorders candidates (it never disqualifies).
-    private const MIN_SIMILARITY_SCORE = 50;
-
-    // Floors/caps for scaling the borrowed curve onto the project's own
-    // trajectory. The floor prevents a tiny first observation from
-    // flattening the whole curve into a meaningless near-flat line.
-    private const MIN_SCALE_RATIO = 0.5;
-    private const MAX_SCALE_RATIO = 5.0;
-
-    private const AGGREGATE_INTERVAL = 5;
-
-    // Phase 2 (v2.6 §5.3) blend schedule: w = obs / (obs + k). The class
-    // reference enters as a BAYESIAN-style prior/shinkage: a sparse project's
-    // forecast is mostly the class curve, a rich project's forecast is mostly
-    // its own regression. k = 4 means w reaches 0.50 at 4 real observations
-    // (Decision 4 — refined later via the C7 backtest).
-    private const BLEND_K = 4;
-
     private ?Collection $similarProjects = null;
 
     private ?array $aggregateCurve = null;
@@ -125,7 +85,7 @@ class HistoricalSimilarityService
             // Step 5 safety valve: require a minimum similarity score. Filtering
             // on the raw score BEFORE the recency multiplier keeps old-but-
             // perfect matches eligible; recency only reorders, never disqualifies.
-            if ($rawScore < self::MIN_SIMILARITY_SCORE) {
+            if ($rawScore < config('ai.similarity.min_score')) {
                 return null;
             }
 
@@ -160,7 +120,7 @@ class HistoricalSimilarityService
                 'title'     => $candidate->title,
                 'score'     => round($rawScore * $recency, 2),
                 'recency'   => round($recency, 3),
-                'usable'    => $candidate->progressHistory()->count() >= self::MIN_OBSERVATIONS_FOR_CURVE,
+                'usable'    => $candidate->progressHistory()->count() >= config('ai.similarity.min_observations'),
                 'breakdown' => [
                     'category'   => round($breakdown['category'], 2),
                     'budget'     => round($breakdown['budget'], 2),
@@ -197,19 +157,19 @@ class HistoricalSimilarityService
 
         $validCurves = $similar->filter(function ($candidate) {
             $obsCount = $candidate->progressHistory()->count();
-            return $obsCount >= self::MIN_OBSERVATIONS_FOR_CURVE;
+            return $obsCount >= config('ai.similarity.min_observations');
         });
 
         // Safety valve (C8): refuse to borrow when too few usable curves
         // exist. Both dataset generators build from this aggregate, so they
         // return null here and AIPredictionService falls back to the
         // project's own data (data_source stays 'project_history').
-        if ($validCurves->count() < self::MIN_SIMILAR_PROJECTS) {
+        if ($validCurves->count() < config('ai.similarity.min_similar_projects')) {
             $this->aggregateCurve = [];
             return [];
         }
 
-        $percentiles = range(0, 100, self::AGGREGATE_INTERVAL);
+        $percentiles = range(0, 100, config('ai.similarity.aggregate_interval'));
 
         // v2.6 Phase 2 §5.2 (kNN-style weighting): each usable curve carries
         // its similarity weight (final score = raw × recency), so stronger
@@ -320,7 +280,7 @@ class HistoricalSimilarityService
     {
         $obs = max(0, $observationCount);
 
-        return $obs / ($obs + self::BLEND_K);
+        return $obs / ($obs + config('ai.similarity.blend_k'));
     }
 
     // Phase 2 (v2.6 §5.2/§5.4): build the reference-class curve as a
@@ -366,7 +326,7 @@ class HistoricalSimilarityService
         }
 
         $scaleRatio = !empty($ratios) ? $this->medianOfArray($ratios) : 1.0;
-        $scaleRatio = max(self::MIN_SCALE_RATIO, min(self::MAX_SCALE_RATIO, $scaleRatio));
+        $scaleRatio = max(config('ai.similarity.scale_ratio_min'), min(config('ai.similarity.scale_ratio_max'), $scaleRatio));
 
         $reference = [
             'median' => [],
@@ -425,7 +385,7 @@ class HistoricalSimilarityService
     {
         return $this->findSimilarProjects($project)
             ->filter(fn ($candidate) =>
-                $candidate->progressHistory()->count() >= self::MIN_OBSERVATIONS_FOR_CURVE
+                $candidate->progressHistory()->count() >= config('ai.similarity.min_observations')
             )
             ->count();
     }
@@ -476,7 +436,7 @@ class HistoricalSimilarityService
 
         // Clamp scale ratio to reasonable range (MIN_SCALE_RATIO to MAX_SCALE_RATIO)
         // The floor stops a tiny first observation from flattening the curve.
-        $scaleRatio = max(self::MIN_SCALE_RATIO, min(self::MAX_SCALE_RATIO, $scaleRatio));
+        $scaleRatio = max(config('ai.similarity.scale_ratio_min'), min(config('ai.similarity.scale_ratio_max'), $scaleRatio));
 
         $syntheticPoints = [];
         for ($i = 1; $i <= $targetCount; $i++) {
@@ -520,22 +480,22 @@ class HistoricalSimilarityService
     // always compared against what was actually comparable (v2.6 4.3).
     private function availableSimilarityWeight(Project $target, Project $candidate): int
     {
-        $available = self::SIMILARITY_WEIGHT_CATEGORY;
+        $available = config('ai.similarity.weights.category');
 
         if ((float) ($target->approved_budget ?? 0) > 0 && (float) ($candidate->approved_budget ?? 0) > 0) {
-            $available += self::SIMILARITY_WEIGHT_BUDGET;
+            $available += config('ai.similarity.weights.budget');
         }
 
         if ((float) ($target->planned_duration_days ?? 0) > 0 && (float) ($candidate->planned_duration_days ?? 0) > 0) {
-            $available += self::SIMILARITY_WEIGHT_DURATION;
+            $available += config('ai.similarity.weights.duration');
         }
 
         if ($target->contractor_id !== null && $candidate->contractor_id !== null) {
-            $available += self::SIMILARITY_WEIGHT_CONTRACTOR;
+            $available += config('ai.similarity.weights.contractor');
         }
 
         if ((int) ($target->estimated_workers ?? 0) > 0 && (int) ($candidate->estimated_workers ?? 0) > 0) {
-            $available += self::SIMILARITY_WEIGHT_WORKERS;
+            $available += config('ai.similarity.weights.workers');
         }
 
         return $available;
@@ -547,22 +507,22 @@ class HistoricalSimilarityService
     private function computeSimilarityBreakdown(Project $target, Project $candidate): array
     {
         // Category match (mandatory — already filtered in query)
-        $category = self::SIMILARITY_WEIGHT_CATEGORY;
+        $category = config('ai.similarity.weights.category');
 
         // Budget proximity
         $budget = $this->proximityScore(
             (float) ($target->approved_budget ?? 0),
             (float) ($candidate->approved_budget ?? 0),
-            self::BUDGET_TOLERANCE,
-            self::SIMILARITY_WEIGHT_BUDGET
+            config('ai.similarity.tolerances.budget'),
+            config('ai.similarity.weights.budget')
         );
 
         // Duration proximity
         $duration = $this->proximityScore(
             (float) ($target->planned_duration_days ?? 0),
             (float) ($candidate->planned_duration_days ?? 0),
-            self::DURATION_TOLERANCE,
-            self::SIMILARITY_WEIGHT_DURATION
+            config('ai.similarity.tolerances.duration'),
+            config('ai.similarity.weights.duration')
         );
 
         // Contractor match (bonus)
@@ -570,7 +530,7 @@ class HistoricalSimilarityService
             $target->contractor_id !== null
             && $candidate->contractor_id !== null
             && $target->contractor_id === $candidate->contractor_id
-        ) ? self::SIMILARITY_WEIGHT_CONTRACTOR : 0;
+        ) ? config('ai.similarity.weights.contractor') : 0;
 
         // Workers proximity (if both non-null)
         $workers = 0;
@@ -583,8 +543,8 @@ class HistoricalSimilarityService
             $workers = $this->proximityScore(
                 (float) $target->estimated_workers,
                 (float) $candidate->estimated_workers,
-                self::WORKERS_TOLERANCE,
-                self::SIMILARITY_WEIGHT_WORKERS
+                config('ai.similarity.tolerances.workers'),
+                config('ai.similarity.weights.workers')
             );
         }
 

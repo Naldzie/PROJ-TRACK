@@ -7,22 +7,6 @@ use Illuminate\Support\Collection;
 
 class CompletionEstimationService
 {
-    private const MAX_REASONABLE_MONTHS = 1000;
-
-    private const HIGH_CONFIDENCE_R2 = 0.85;
-
-    private const MEDIUM_CONFIDENCE_R2 = 0.70;
-
-    private const HIGH_CONFIDENCE_OBS = 6;
-
-    private const MEDIUM_CONFIDENCE_OBS = 4;
-
-    private const HIGH_CONFIDENCE_INDEX_RATIO = 1.5;
-
-    private const LOW_CONFIDENCE_INDEX_RATIO = 2.0;
-
-    private const MIN_R2_FOR_ESTIMATE = 0.50;
-
     public function estimate(
         Carbon $plannedEndDate,
         array $analysis,
@@ -37,7 +21,7 @@ class CompletionEstimationService
 
         $rSquared = $analysis['r_squared'] ?? 0.0;
 
-        if ($rSquared < self::MIN_R2_FOR_ESTIMATE) {
+        if ($rSquared < config('ai.completion.min_r2_for_estimate')) {
             return null;
         }
 
@@ -66,7 +50,7 @@ class CompletionEstimationService
             return null;
         }
 
-        if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
+        if ($estimationIndex > config('ai.completion.max_reasonable_months')) {
             return null;
         }
 
@@ -124,7 +108,7 @@ class CompletionEstimationService
 
         $rSquared = $analysis['r_squared'] ?? 0.0;
 
-        if ($rSquared < self::MIN_R2_FOR_ESTIMATE) {
+        if ($rSquared < config('ai.completion.min_r2_for_estimate')) {
             return null;
         }
 
@@ -175,7 +159,7 @@ class CompletionEstimationService
             return null;
         }
 
-        if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
+        if ($estimationIndex > config('ai.completion.max_reasonable_months')) {
             return null;
         }
 
@@ -226,7 +210,7 @@ class CompletionEstimationService
     public function isPolynomialSelected(array $analysis): bool
     {
         return (($analysis['regression_method'] ?? 'slr') === 'polynomial')
-            && (float) ($analysis['r_squared'] ?? 0.0) >= self::MIN_R2_FOR_ESTIMATE;
+            && (float) ($analysis['r_squared'] ?? 0.0) >= config('ai.completion.min_r2_for_estimate');
     }
 
     // Class-based completion sanity fallback (A2 — cross-project aggregate).
@@ -289,7 +273,7 @@ class CompletionEstimationService
             return null;
         }
 
-        if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
+        if ($estimationIndex > config('ai.completion.max_reasonable_months')) {
             return null;
         }
 
@@ -395,7 +379,7 @@ class CompletionEstimationService
 
         $rSquared = $analysis['r_squared'] ?? 0.0;
 
-        if ($rSquared < self::MIN_R2_FOR_ESTIMATE) {
+        if ($rSquared < config('ai.completion.min_r2_for_estimate')) {
             return null;
         }
 
@@ -433,7 +417,7 @@ class CompletionEstimationService
             return null;
         }
 
-        if ($estimationIndex > self::MAX_REASONABLE_MONTHS) {
+        if ($estimationIndex > config('ai.completion.max_reasonable_months')) {
             return null;
         }
 
@@ -545,22 +529,23 @@ class CompletionEstimationService
 
         // Use only real observations (exclude synthetic points from cross-project)
         $realObsCount = max(0, $observationCount - $syntheticCount);
+        $compConfig = config('ai.completion');
 
-        if ($estimationIndex > self::LOW_CONFIDENCE_INDEX_RATIO * $plannedEndIndex) {
+        if ($estimationIndex > $compConfig['low_confidence_index_ratio'] * $plannedEndIndex) {
             return 'Low';
         }
 
         if (
-            $rSquared >= self::HIGH_CONFIDENCE_R2
-            && $realObsCount >= self::HIGH_CONFIDENCE_OBS
-            && $estimationIndex <= self::HIGH_CONFIDENCE_INDEX_RATIO * $plannedEndIndex
+            $rSquared >= $compConfig['high_confidence_r2']
+            && $realObsCount >= $compConfig['high_confidence_obs']
+            && $estimationIndex <= $compConfig['high_confidence_index_ratio'] * $plannedEndIndex
         ) {
             return 'High';
         }
 
         if (
-            $rSquared >= self::MEDIUM_CONFIDENCE_R2
-            && $realObsCount >= self::MEDIUM_CONFIDENCE_OBS
+            $rSquared >= $compConfig['medium_confidence_r2']
+            && $realObsCount >= $compConfig['medium_confidence_obs']
         ) {
             return 'Medium';
         }

@@ -58,7 +58,10 @@ class AIRecommendationService
      * Fewer than the rule engine's cap (8) — AI produces higher quality
      * per recommendation.
      */
-    private const MAX_RECOMMENDATIONS = 6;
+    private function maxRecommendations(): int
+    {
+        return config('ai.recommendations.max_ai', 6);
+    }
 
     /**
      * Maximum number of individual issues to include in the prompt.
@@ -174,7 +177,7 @@ class AIRecommendationService
         // Sort by priority ascending (1 = highest urgency)
         usort($valid, fn ($a, $b) => $a['priority'] <=> $b['priority']);
 
-        return array_slice($valid, 0, self::MAX_RECOMMENDATIONS);
+        return array_slice($valid, 0, $this->maxRecommendations());
     }
 
     /**
@@ -396,12 +399,12 @@ RULES:
 
         $agingCount = $project->issues()
             ->whereIn('status', ['Open', 'In Progress'])
-            ->where('created_at', '<=', now()->subDays(30))
+            ->where('created_at', '<=', now()->subDays(config('ai.notifications.aging_days')))
             ->count();
 
         $resolvedLast30 = $project->issues()
             ->whereIn('status', ['Resolved', 'Closed'])
-            ->where('resolved_at', '>=', now()->subDays(30))
+            ->where('resolved_at', '>=', now()->subDays(config('ai.notifications.aging_days')))
             ->count();
 
         $lines = ["ISSUES:"];
@@ -650,10 +653,12 @@ RULES:
 
         $delta = $latest - $previous;
 
-        if ($delta <= -2) {
+        $trendDelta = config('ai.trend.variance_delta', 2);
+
+        if ($delta <= -$trendDelta) {
             return 'Declining (falling further behind)';
         }
-        if ($delta >= 2) {
+        if ($delta >= $trendDelta) {
             return 'Improving (catching up)';
         }
         return 'Stable';

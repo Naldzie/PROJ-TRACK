@@ -15,6 +15,7 @@ use App\Services\ProjectStatusService;
 use App\Services\NotificationService;
 use App\Services\AI\ContractorPerformanceService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -220,6 +221,8 @@ class ProjectProgressController extends Controller
                 $this->syncPredictionHistoryActual($project, $record->month_label);
             }
 
+            Cache::forget('ai_prediction:' . $project->id);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Progress record updated successfully',
@@ -334,6 +337,8 @@ class ProjectProgressController extends Controller
             // never be observed). Partial deletes must NOT prune — that would
             // permanently orphan the month's forecast-vs-actual accuracy link.
             $this->prunePredictionHistoryOnEmpty($project);
+
+            Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
                 'success' => true,
@@ -522,6 +527,8 @@ class ProjectProgressController extends Controller
             $hasFutureMonths = ProjectBaselineSchedule::where('project_id', $project->id)
                 ->where('month_label', '>', $validated['month_label'])
                 ->exists();
+
+            Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
                 'success' => true,

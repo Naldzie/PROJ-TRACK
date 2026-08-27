@@ -73,16 +73,18 @@ class ProjectHealthService
      */
     public function classifyGap(float $progressGap): string
     {
-        if ($progressGap <= -5) {
+        $gap = config('ai.risk.gap');
+
+        if ($progressGap <= $gap['ahead']) {
             return 'ahead';
         }
-        if ($progressGap <= 5) {
+        if ($progressGap <= $gap['on_track']) {
             return 'on_track';
         }
-        if ($progressGap < 10) {
+        if ($progressGap < $gap['low']) {
             return 'low_risk';
         }
-        if ($progressGap < 15) {
+        if ($progressGap < $gap['medium']) {
             return 'medium_risk';
         }
         return 'high_risk';

@@ -19,6 +19,7 @@ use App\Services\AI\Regression\PolynomialRegressionService;
 use App\Services\AI\Regression\RegressionDatasetBuilder;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\Helpers\CreatesProjectWithHistory;
 use Tests\TestCase;
 
@@ -450,6 +451,7 @@ class AIPredictionServiceTest extends TestCase
         // with a new band (keep-latest), not duplicated.
         $firstId = $rows[0]->id;
         $this->createProgressRecord($project, '2026-05', 4.0, '2026-05-15');
+        Cache::forget('ai_prediction:' . $project->id);
         $this->predictionService->generatePrediction($project);
 
         $juneRows = PredictionHistory::where('project_id', $project->id)
@@ -674,12 +676,14 @@ class AIPredictionServiceTest extends TestCase
 
         // May 15 (4%) → prediction for June saved
         $this->createProgressRecord($project, '2026-05', 4.0, '2026-05-15');
+        Cache::forget('ai_prediction:' . $project->id);
         $this->predictionService->generatePrediction($project);
         $this->assertCount(2, PredictionHistory::where('project_id', $project->id)->get());
 
         // May 22 (4.5%) → the June forecast changes: the SAME June row is
         // refreshed in place (keep-latest), not duplicated.
         $this->createProgressRecord($project, '2026-05', 4.5, '2026-05-22');
+        Cache::forget('ai_prediction:' . $project->id);
         $this->predictionService->generatePrediction($project);
 
         $rows = PredictionHistory::where('project_id', $project->id)->orderBy('id')->get();

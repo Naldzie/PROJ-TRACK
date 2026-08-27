@@ -438,7 +438,7 @@ class AIPredictionPresenter
         $withActual      = $predictionHistory->filter(fn ($h) => !$h['pending']);
         $totalWithActual = $withActual->count();
         $accurateCount   = $withActual->filter(
-            fn ($h) => abs($h['variance']) < 2
+            fn ($h) => abs($h['variance']) < config('ai.accuracy.accurate_threshold')
         )->count();
         $avgVariance     = $totalWithActual > 0
             ? round($withActual->avg('variance'), 2)
@@ -544,8 +544,8 @@ class AIPredictionPresenter
         $syntheticCount = (int) ($regression['synthetic_points_count'] ?? 0);
         $realObsCount   = max(0, $observationCount - $syntheticCount);
         $healthConfidence = match (true) {
-            $realObsCount >= 6 => 'High',
-            $realObsCount >= 3 => 'Medium',
+            $realObsCount >= config('ai.data_sufficiency.moderate') => 'High',
+            $realObsCount >= config('ai.data_sufficiency.low') => 'Medium',
             default            => 'Low',
         };
 
@@ -1100,15 +1100,15 @@ class AIPredictionPresenter
         float $rSquared
     ): string {
         $dataCertainty = match (true) {
-            $observationCount <= 3  => 'Low data',
-            $observationCount <= 6  => 'Moderate data',
+            $observationCount <= config('ai.data_sufficiency.low')  => 'Low data',
+            $observationCount <= config('ai.data_sufficiency.moderate')  => 'Moderate data',
             default                 => 'Good data',
         };
 
         $fitCertainty = match (true) {
-            $rSquared >= 0.9  => 'strong fit',
-            $rSquared >= 0.7  => 'good fit',
-            $rSquared >= 0.5  => 'moderate fit',
+            $rSquared >= config('ai.fit_quality.excellent')  => 'strong fit',
+            $rSquared >= config('ai.fit_quality.good')  => 'good fit',
+            $rSquared >= config('ai.fit_quality.moderate')  => 'moderate fit',
             default           => 'weak fit',
         };
 
@@ -1142,14 +1142,16 @@ class AIPredictionPresenter
 
         $delta = $latestVariance - $previousVariance;
 
-        if ($delta <= -2) {
+        $trendDelta = config('ai.trend.variance_delta', 2);
+
+        if ($delta <= -$trendDelta) {
             return [
                 'trend' => 'DECELERATING',
                 'label' => 'Falling further behind schedule compared to last month',
             ];
         }
 
-        if ($delta >= 2) {
+        if ($delta >= $trendDelta) {
             return [
                 'trend' => 'ACCELERATING',
                 'label' => 'Catching up to baseline schedule compared to last month',
