@@ -1,7 +1,7 @@
 # Bugs & Behavior Adjustments
 
 **Date:** August 28, 2026
-**Status:** ALL FIXES IMPLEMENTED (August 28, 2026)
+**Status:** Bug 7 pending — email notification delay (September 2026)
 
 ---
 
@@ -264,6 +264,7 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 | 4 | Inspection reminder late for late-month planned dates | Medium (confusing UX) | Medium | FIXED |
 | 5 | Notification scan includes archived projects | Medium (phantom alerts) | Low | FIXED |
 | 6 | Notification page shows "Issue reported" for new inspection types | Medium (wrong label) | Low | FIXED |
+| 7 | Email notifications delayed 30-60 min (synchronous SMTP blocking) | High (missed alerts) | Medium | IN PROGRESS |
 
 ### Implementation Order
 
@@ -275,6 +276,7 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 6. ~~**Inspection Reminder Overhaul** (3 notification types)~~ — DONE
 7. ~~**Bug 5** (archived project scan exclusion)~~ — DONE
 8. ~~**Bug 6** (notification page label for new inspection types)~~ — DONE
+9. **Bug 7** (email notification delay — queue notifications) — IN PROGRESS
 
 ---
 
@@ -568,3 +570,138 @@ When `PlannedInspectionReminder` or `MonthEndInspectionReminder` notifications a
 ### Effort
 
 Low — 1 file, ~40 lines restructured.
+
+---
+
+## Bug 7: Email Notifications Delayed 30-60 Minutes (Synchronous SMTP Blocking)
+
+**Date:** August 28, 2026
+**Status:** IN PROGRESS — recording and planning phase.
+
+### Problem
+
+In-app notifications (database) appear instantly, but email notifications for all types are delayed by 30 to 60 minutes. This affects:
+- `PlannedInspectionReminder`
+- `MonthEndInspectionReminder`
+- `OverdueInspectionReminder`
+- `RiskLevelChanged`
+- `DeadlineReminder`
+- `ExtensionStatusChanged`
+- `IssueReported`
+- `RiskReported`
+
+The delay is most noticeable when the `notifications:scan` command runs at 07:00 daily, or when a user manually triggers a risk level change by recording progress.
+
+### Root Cause
+
+Three compounding factors create a synchronous SMTP bottleneck:
+
+**Factor 1 — No `ShouldQueue` on any notification class.**
+
+Every notification class uses `via(['database', 'mail'])` and implements `toMail()`, but **none** implements `ShouldQueue`. The `Queueable` trait is imported on 7 of 8 classes but is inert without `ShouldQueue`. This means `$user->notify()` at `NotificationService.php:65` sends emails **synchronously** — it opens a blocking SMTP connection and waits for Gmail to respond before moving to the next recipient.
+
+| Notification Class | File | `Queueable` trait | `ShouldQueue` |
+|---|---|---|---|
+| `PlannedInspectionReminder` | `app/Notifications/PlannedInspectionReminder.php:17` | YES | **NO** |
+| `MonthEndInspectionReminder` | `app/Notifications/MonthEndInspectionReminder.php:21` | YES | **NO** |
+| `OverdueInspectionReminder` | `app/Notifications/OverdueInspectionReminder.php:18` | YES | **NO** |
+| `RiskLevelChanged` | `app/Notifications/RiskLevelChanged.php:18` | **NO** | **NO** |
+| `DeadlineReminder` | `app/Notifications/DeadlineReminder.php:18` | YES | **NO** |
+| `ExtensionStatusChanged` | `app/Notifications/ExtensionStatusChanged.php:18` | YES | **NO** |
+| `IssueReported` | `app/Notifications/IssueReported.php:17` | YES | **NO** |
+| `RiskReported` | `app/Notifications/RiskReported.php:18` | YES | **NO** |
+
+**Factor 2 — Sequential per-project processing in `notifications:scan`.**
+
+`SendNotifications::handle()` loops through ALL ongoing projects one at a time (`SendNotifications.php:71`). For each project, up to 5 notification types × 3 recipients each = sequential SMTP sends. With 50 ongoing projects, that's 750+ blocking SMTP calls in series.
+
+```
+SendNotifications::handle()                     [SendNotifications.php:37]
+  └─ foreach $projects (ALL ongoing projects)   [line 71]
+       ├─ sendDeadlineReminders()              → notifyMany()  → $user->notify() [BLOCKING]
+       ├─ sendPlannedInspectionReminders()     → notifyMany()  → $user->notify() [BLOCKING]
+       ├─ sendMonthEndInspectionReminders()    → notifyMany()  → $user->notify() [BLOCKING]
+       ├─ sendOverdueInspectionReminders()     → notifyMany()  → $user->notify() [BLOCKING]
+       └─ sendRiskLevelChangeNotifications()   → notifyMany()  → $user->notify() [BLOCKING]
+```
+
+**Factor 3 — Gmail SMTP rate limiting on free account.**
+
+The system uses a free Gmail account (`projectmanagementunit57@gmail.com`). Gmail limits:
+- ~500 emails/day max for free accounts
+- ~100-200 rapid sends before throttling (returns `421`/`452` SMTP responses)
+- `config/mail.php:48` sets `'timeout' => null` — no SMTP connection timeout, so slow connections hang indefinitely
+
+### Code Path
+
+**In-app notification (instant):**
+```
+NotificationService::notifyMany()  [NotificationService.php:78]
+  └─ foreach $users
+       └─ notifyUnique()           [line 42]
+            └─ $user->notify()     [line 65]
+                 └─ via(['database', 'mail'])
+                      ├─ database: writes to notifications table (instant)
+                      └─ mail: SMTP send (BLOCKING, 1-10+ seconds per email)
+```
+
+**Event-driven risk level change (same issue):**
+`ProjectProgressController::recordMonthlyProgress()` dispatches `RiskLevelChanged` via the same `notifyMany()` path, blocking the HTTP request.
+
+### Why Queue Is Configured But Unused
+
+The queue infrastructure exists but is completely idle:
+- `QUEUE_CONNECTION=database` in `.env` (line 54)
+- `jobs` table exists (`database/migrations/2026_04_10_110748_create_jobs_table.php`)
+- `composer dev` runs `queue:listen --tries=1 --timeout=0`
+- `config/queue.php` default connection: `database`
+- **But `app/Jobs/` directory does not exist** — zero job classes in the codebase
+- No `ShouldQueue` on any notification or mailable class
+
+### Fix Plan
+
+Make notification classes queueable so emails are dispatched to the database queue and processed by the already-running `queue:listen` worker.
+
+**Step 1 — Add `ShouldQueue` to all notification classes:**
+
+Add `implements ShouldQueue` and ensure `Illuminate\Bus\Queueable` trait + `Illuminate\Contracts\Queue\ShouldQueue` import are present on all 8 notification classes.
+
+**Step 2 — Add dedicated queue for emails:**
+
+In `NotificationService::notifyMany()`, chain `->onQueue('emails')` before dispatch, so email jobs go to a dedicated queue separate from the default.
+
+**Step 3 — Add error handling in `SendNotifications.php`:**
+
+Wrap individual `notifyMany()` calls in try/catch so a single slow SMTP connection doesn't block the entire scan. Log failures and continue.
+
+**Step 4 — Add `ShouldQueue` to Mailable classes (optional, consistency):**
+
+Add `ShouldQueue` to `AiAnalysisMail`, `ContractorAccountMail`, `LoginPageLinkMail`.
+
+### Files to Change
+
+| File | Change |
+|---|---|
+| `app/Notifications/PlannedInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/MonthEndInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/OverdueInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/RiskLevelChanged.php` | Add `implements ShouldQueue`, add `Queueable` trait (missing) |
+| `app/Notifications/DeadlineReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/ExtensionStatusChanged.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/IssueReported.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Notifications/RiskReported.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
+| `app/Services/NotificationService.php` | Chain `->onQueue('emails')` on notify dispatch |
+| `app/Console/Commands/SendNotifications.php` | Add try/catch around individual `notifyMany()` calls |
+
+### Expected Behavior After Fix
+
+| Scenario | Before Fix | After Fix |
+|---|---|---|
+| `notifications:scan` (50 projects) | 30-60 min blocking on SMTP | Completes in seconds; emails processed by queue worker |
+| User records progress (risk level change) | HTTP request blocked 3-10 sec per email | HTTP request instant; emails queued |
+| In-app notifications | Instant (database) | Instant (database, unchanged) |
+| Email delivery | Delayed 30-60 min | Delivered within queue worker's processing cycle |
+
+### Effort
+
+Medium — 10 files, ~30-40 lines changed. No new files needed.
