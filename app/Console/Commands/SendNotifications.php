@@ -56,6 +56,7 @@ class SendNotifications extends Command
         $noEndDate = Project::whereNull('planned_end_date')->count();
 
         $projects = Project::whereIn('status', ['Ongoing'])
+            ->where('is_archived', false)
             ->whereNotNull('planned_end_date')
             ->with(['contractor.user', 'baselineSchedules', 'progressHistory'])
             ->get();

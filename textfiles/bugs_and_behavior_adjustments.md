@@ -262,6 +262,8 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 | 2 | AI tab vs dashboard health inconsistency | Medium (UX confusion) | Low-Medium | FIXED |
 | 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | FIXED |
 | 4 | Inspection reminder late for late-month planned dates | Medium (confusing UX) | Medium | FIXED |
+| 5 | Notification scan includes archived projects | Medium (phantom alerts) | Low | FIXED |
+| 6 | Notification page shows "Issue reported" for new inspection types | Medium (wrong label) | Low | FIXED |
 
 ### Implementation Order
 
@@ -271,6 +273,8 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 4. ~~**Bug 2 Phase 2** (escalation toggle)~~ — DONE
 5. ~~**Bug 3 Phase 2** (risk notification grace period removal)~~ — DONE
 6. ~~**Inspection Reminder Overhaul** (3 notification types)~~ — DONE
+7. ~~**Bug 5** (archived project scan exclusion)~~ — DONE
+8. ~~**Bug 6** (notification page label for new inspection types)~~ — DONE
 
 ---
 
@@ -490,3 +494,77 @@ No conflicts between types — a project can receive all three for the same mont
 ### Effort
 
 Medium — 2 new files, 3 modified files, ~80-100 lines total.
+
+---
+
+## Bug 5: Notification Scan Includes Archived Projects
+
+**Date:** August 28, 2026
+**Status:** FIXED — Added `->where('is_archived', false)` to the scan query.
+
+### Problem
+
+After archiving projects and running the notification scan, archived projects still appeared in the scan output and generated overdue inspection notifications. The scan should only process active (non-archived) projects.
+
+### Root Cause
+
+The `SendNotifications` command filters projects by `status = 'Ongoing'` but does not check `is_archived`. When a project is archived via `ProjectController::archive()`, only `is_archived = true` and `archived_at = now()` are set — the `status` field stays `'Ongoing'`. So archived projects pass the `whereIn('status', ['Ongoing'])` filter.
+
+Every other controller in the app (`DashboardController`, `ProjectController`, contractor `DashboardController`) already adds `->where('is_archived', false)`. The scan command simply missed this filter.
+
+### Fix
+
+**File:** `app/Console/Commands/SendNotifications.php` (line 58)
+
+```php
+// Before:
+$projects = Project::whereIn('status', ['Ongoing'])
+    ->whereNotNull('planned_end_date')
+    ->with([...])
+    ->get();
+
+// After:
+$projects = Project::whereIn('status', ['Ongoing'])
+    ->where('is_archived', false)
+    ->whereNotNull('planned_end_date')
+    ->with([...])
+    ->get();
+```
+
+### Effort
+
+Low — 1 line added.
+
+---
+
+## Bug 6: Notification Page Shows "Issue Reported" for New Inspection Types
+
+**Date:** August 28, 2026
+**Status:** FIXED — Added `PlannedInspectionReminder` and `MonthEndInspectionReminder` branches to `_list.blade.php`.
+
+### Problem
+
+When `PlannedInspectionReminder` or `MonthEndInspectionReminder` notifications appear in the bell dropdown with correct labels, the full notification page (`_list.blade.php`) displays them as "Issue reported" with the default green icon.
+
+### Root Cause
+
+`_list.blade.php` was written before the new inspection notification types were added (Phase N5 / Inspection Reminder Overhaul). The bell widget (`bell.blade.php`) was updated to handle the new types, but the `_list.blade.php` page partial was not. The nested ternary logic for `$title`, `$cls`, `$icon`, and `$nAnchor` had no branches for `PlannedInspectionReminder` or `MonthEndInspectionReminder`, so they fell through to the default "Issue reported" case.
+
+### Fix
+
+**File:** `resources/views/notifications/_list.blade.php`
+
+1. Replaced nested ternaries with `match(true)` expressions for `$cls`, `$icon`, `$title`.
+2. Added branches for both new types:
+
+| Type | `$cls` | `$icon` | `$title` |
+|---|---|---|---|
+| `PlannedInspectionReminder` | `blue` | `bi-calendar-check` | "Inspection scheduled today — {project} ({month})" |
+| `MonthEndInspectionReminder` | `amber` | `bi-calendar-event` | "Month ending soon — inspect {project} ({month})" |
+
+3. Updated `$nAnchor` — both new types link to `#baseline-schedule`.
+4. Added meta lines — both show "Planned inspection: {date}" beneath the title (matching OverdueInspectionReminder's existing meta pattern).
+
+### Effort
+
+Low — 1 file, ~40 lines restructured.

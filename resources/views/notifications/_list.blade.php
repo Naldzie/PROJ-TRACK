@@ -79,27 +79,41 @@
             @php
                 $d = $n->data;
                 $isRiskLevel = str_contains($n->type, 'RiskLevelChanged');
-                $cls = str_contains($n->type, 'DeadlineReminder') ? 'red' : (
-                    str_contains($n->type, 'OverdueInspectionReminder') ? 'amber' : (
-                        $isRiskLevel ? 'red' : (
-                            str_contains($n->type, 'ExtensionStatusChanged') ? 'violet' : 'green')));
-                $icon = str_contains($n->type, 'DeadlineReminder') ? 'bi-clock' : (
-                    str_contains($n->type, 'OverdueInspectionReminder') ? 'bi-calendar-x' : (
-                        $isRiskLevel ? 'bi-shield-exclamation' : (
-                            str_contains($n->type, 'ExtensionStatusChanged') ? 'bi-arrow-repeat' : 'bi-exclamation-triangle')));
-                $title = str_contains($n->type, 'DeadlineReminder')
-                    ? ($d['bucket'] === 'overdue'
+                $isPlannedInsp = str_contains($n->type, 'PlannedInspectionReminder');
+                $isMonthEnd = str_contains($n->type, 'MonthEndInspectionReminder');
+
+                $cls = match(true) {
+                    str_contains($n->type, 'DeadlineReminder')         => 'red',
+                    str_contains($n->type, 'OverdueInspectionReminder') => 'amber',
+                    $isRiskLevel                                       => 'red',
+                    str_contains($n->type, 'ExtensionStatusChanged')  => 'violet',
+                    $isPlannedInsp                                     => 'blue',
+                    $isMonthEnd                                        => 'amber',
+                    default                                            => 'green',
+                };
+
+                $icon = match(true) {
+                    str_contains($n->type, 'DeadlineReminder')         => 'bi-clock',
+                    str_contains($n->type, 'OverdueInspectionReminder') => 'bi-calendar-x',
+                    $isRiskLevel                                       => 'bi-shield-exclamation',
+                    str_contains($n->type, 'ExtensionStatusChanged')  => 'bi-arrow-repeat',
+                    $isPlannedInsp                                     => 'bi-calendar-check',
+                    $isMonthEnd                                        => 'bi-calendar-event',
+                    default                                            => 'bi-exclamation-triangle',
+                };
+
+                $title = match(true) {
+                    str_contains($n->type, 'DeadlineReminder') => ($d['bucket'] === 'overdue'
                         ? 'Project overdue — ' . ($d['project_title'] ?? '')
-                        : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days — ' . ($d['project_title'] ?? ''))
-                    : ($isRiskLevel
-                        ? 'Risk level changed — ' . ($d['project_title'] ?? '') . ' (' . ($d['previous_level'] ?? '') . ' → ' . ($d['current_level'] ?? '') . ')'
-                        : (str_contains($n->type, 'OverdueInspectionReminder')
-                            ? 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')'
-                            : (str_contains($n->type, 'ExtensionStatusChanged')
-                                ? 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? '')
-                                : 'Issue reported' . (($d['severity'] ?? '') ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? ''))));
-            @endphp
-            @php
+                        : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days — ' . ($d['project_title'] ?? '')),
+                    $isRiskLevel => 'Risk level changed — ' . ($d['project_title'] ?? '') . ' (' . ($d['previous_level'] ?? '') . ' → ' . ($d['current_level'] ?? '') . ')',
+                    str_contains($n->type, 'OverdueInspectionReminder') => 'Inspection overdue — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')',
+                    $isPlannedInsp => 'Inspection scheduled today — ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')',
+                    $isMonthEnd => 'Month ending soon — inspect ' . ($d['project_title'] ?? '') . ' (' . ($d['month_display'] ?? $d['month_label'] ?? '') . ')',
+                    str_contains($n->type, 'ExtensionStatusChanged') => 'Extension ' . ucfirst($d['status'] ?? '') . ' #' . ($d['extension_number'] ?? '') . ' — ' . ($d['project_title'] ?? ''),
+                    default => 'Issue reported' . (($d['severity'] ?? '') ? ' (' . $d['severity'] . ')' : '') . ' — ' . ($d['issue_name'] ?? '') . ' on ' . ($d['project_title'] ?? ''),
+                };
+
                 $nPid = $d['project_id'] ?? null;
                 $nRoute = match($rolePrefix ?? 'admin') { 'staff' => 'staff.projects.detail', 'contractor' => 'projects.show', default => 'admin.projects.detail' };
                 $nAnchor = match(true) {
@@ -107,7 +121,9 @@
                     str_contains($n->type, 'IssueReported')             => '#issues',
                     str_contains($n->type, 'RiskReported')              => '#risks',
                     str_contains($n->type, 'OverdueInspectionReminder') => '#baseline-schedule',
-                    default => '#overview',
+                    $isPlannedInsp                                      => '#baseline-schedule',
+                    $isMonthEnd                                         => '#baseline-schedule',
+                    default                                             => '#overview',
                 };
                 $nUrl = $nPid ? route($nRoute, $nPid) . $nAnchor : '';
             @endphp
@@ -123,6 +139,12 @@
                     </div>
                     <div class="notif-meta">{{ $n->created_at?->format('M d, Y h:i A') }}</div>
                     @if(str_contains($n->type, 'OverdueInspectionReminder') && !empty($d['planned_date']))
+                        <div class="notif-meta" style="margin-top:4px; color:#b45309;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
+                    @endif
+                    @if($isPlannedInsp && !empty($d['planned_date']))
+                        <div class="notif-meta" style="margin-top:4px; color:#2563eb;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
+                    @endif
+                    @if($isMonthEnd && !empty($d['planned_date']))
                         <div class="notif-meta" style="margin-top:4px; color:#b45309;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
                     @endif
                     @if(str_contains($n->type, 'ExtensionStatusChanged') && ($d['status'] ?? '') === 'rejected' && !empty($d['rejection_reason']))
