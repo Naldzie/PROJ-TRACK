@@ -53,7 +53,9 @@ Low — 3 files, ~10 lines added.
 
 ## Bug 2: AI Prediction Tab Shows "On Track" While Dashboard/Index Shows "At Risk" for Same Project
 
-**Status: FIXED** — AIPredictionPresenter now calls determine() with escalation context. Escalation Factors section added to AI Prediction Blade. Dashboard/Index health badges show escalation info icon.
+**Status: FIXED (Phase 1)** — AIPredictionPresenter now calls determine() with escalation context. Escalation Factors section added to AI Prediction Blade. Dashboard/Index health badges show escalation info icon.
+
+**Status: Escalation Toggle (Phase 2) — PLANNED.** Escalation will be made configurable via `config('ai.health.escalation_enabled')`. Default OFF. Rationale: reduce complexity for panel; escalation logic needs further refinement before production use. See "Escalation Toggle Plan" section below.
 
 ### Problem
 
@@ -263,3 +265,58 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 1. **Bug 1** (bell label) — quick fix, no design decisions needed
 2. **Bug 3** (notification trigger) — clear fix, adds meaningful functionality
 3. **Bug 2** (health inconsistency) — needs team decision on Option A/B/C/D before implementation
+
+---
+
+## Escalation Toggle Plan (Bug 2 — Phase 2)
+
+**Date:** August 28, 2026
+**Status:** PLANNED — not yet implemented
+
+### Rationale
+
+The escalation feature (gap-based health badge bumped by open issues, aging issues, high risks, pending extensions) adds meaningful risk signals but introduces complexity:
+
+1. **Inconsistency with notifications:** Risk notifications use `ProjectStatusService::getRiskLevel()` (gap-only). Escalation makes the dashboard show "At Risk" while the notification says "On Track." Users see contradictory signals for the same project.
+2. **Escalation logic needs refinement:** The current thresholds (any open High/Critical issue, any issue > 30 days, any high-risk risk score >= 7, any pending extension) are blunt — a single low-severity open issue triggers escalation. This needs tuning before production use.
+3. **Panel simplicity:** For the pre-oral presentation, a simpler gap-only system is easier to explain and defend. Escalation can be enabled later when the logic is more mature.
+4. **Other system parts need attention:** Reducing complexity here frees effort for improving core features (regression accuracy, notification reliability, etc.).
+
+### What Changes When Escalation Is OFF
+
+| Component | Escalation ON (current) | Escalation OFF (toggle) |
+|---|---|---|
+| Dashboard health badge | Gap + escalation factors | Gap only |
+| Project index health badge | Gap + escalation factors | Gap only |
+| AI Prediction tab health | Gap + escalation factors | Gap only |
+| Risk notifications | Gap only (always) | Gap only (unchanged) |
+| Escalation info icon (⚠) | Visible when escalated | Hidden (never renders) |
+| Escalation Factors section (AI tab) | Visible when escalated | Hidden (never renders) |
+
+### Implementation (3 files)
+
+1. **`config/ai.php`** — Add under a new `'health'` section:
+   ```php
+   'health' => [
+       'escalation_enabled' => false,   // default OFF
+   ],
+   ```
+
+2. **`app/Services/ProjectHealthService.php`** — Add config guard in `determine()`:
+   ```php
+   if (config('ai.health.escalation_enabled', false) && $level === 'on_track') {
+       $reason = $this->escalationReason($context);
+       // ...
+   }
+   ```
+
+3. **`tests/Unit/Services/ProjectHealthServiceTest.php`** — Add `config(['ai.health.escalation_enabled' => true])` in escalation test setUp.
+
+### To Re-Enable Escalation
+
+Change `config/ai.php` line:
+```php
+'escalation_enabled' => true,
+```
+
+All surfaces automatically start showing escalation. No code changes needed.
