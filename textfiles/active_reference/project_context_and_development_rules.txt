@@ -47,6 +47,37 @@ The system digitalizes project monitoring, inspection history, baseline
 schedules, activity tracking, documentation, contractor management, and
 project reporting.
 
+LIST OF MODULES(passed the title defense)
+List of System Modules
+
+1. Project Proposal Encoding and Management Module (PMU-Controlled)
+
+This module allows authorized personnel from the Project Management Unit (PMU) to encode, manage, and update project proposal information within the system. It serves as the primary entry point for project data, including project title, contractor details, project scope, approved budget, start and target completion dates, and other essential documentation. The module also enables administrators to edit, validate, and maintain project records to ensure that all information stored in the system is accurate and up-to-date.
+
+2. Milestone Tracking Module(the montly cumulative progress tracking. just not renamed)
+
+The Milestone Tracking Module enables the monitoring of project progress based on predefined milestones and timelines. Through this module, PMU staff can define milestone schedules and monitor whether contractors meet their required deadlines. The system records milestone completion statuses and updates project progress automatically. This module helps improve project transparency and ensures that delays or schedule deviations are immediately visible to project managers.
+
+3. Contractor Viewing Access Module (View-Only Permission)
+
+This module provides contractors with controlled access to the system, allowing them to view relevant project information without modifying any data. Contractors can access details such as project timelines, milestone requirements, submitted documents, and project status updates. By restricting permissions to view-only access, the system ensures data integrity while still allowing contractors to stay informed about project expectations and progress.
+
+4. Automated Notification and Reminder Module
+
+The Automated Notification and Reminder Module is responsible for sending alerts and reminders to relevant users regarding important project events. The system automatically generates notifications for approaching deadlines, overdue milestones, document submission reminders, and status updates. These notifications help ensure timely communication between the Project Management Unit and contractors, reducing the risk of missed deadlines and improving project coordination.
+
+5. Document Archiving and Retrieval Module
+
+This module manages the storage, organization, and retrieval of project-related documents. It allows administrators to upload, categorize, and securely store files such as project proposals, contracts, progress reports, and supporting documents. The module also provides a search and retrieval function, enabling users to quickly locate archived documents whenever they are needed for reference or review.
+
+6. Dashboard and Reporting Module
+
+The Dashboard and Reporting Module provides a centralized interface for visualizing project information and system analytics. It presents summarized project data through charts, graphs, and statistical reports that highlight project progress, milestone completion rates, and project status distributions. The module assists decision-makers in analyzing project performance and generating reports that support monitoring and evaluation activities.
+
+7. Regression-Based Predictive Analytics Module
+
+This module applies regression-based predictive analysis to estimate potential project delays and future milestone outcomes based on historical project data. By analyzing factors such as milestone completion patterns, project duration, and recorded progress rates, the system generates predictive insights that assist the Project Management Unit in identifying potential risks. This feature supports proactive decision-making by allowing administrators to address possible delays before they significantly impact project completion.
+
 
 ===============================================================================
 CLIENT WORKFLOW
@@ -298,7 +329,6 @@ When starting a new development session:
 5. Do NOT redesign completed components unless a defect is discovered.
 
 6. Continue implementation from the next uncompleted step in order.
-
 
 ===============================================================================
 END OF REFERENCE FILE
