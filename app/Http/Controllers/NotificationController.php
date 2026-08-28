@@ -98,6 +98,7 @@ class NotificationController extends Controller
             \App\Notifications\ExtensionStatusChanged::class      => 'Extension Update',
             \App\Notifications\IssueReported::class               => 'Issue Reported',
             \App\Notifications\RiskReported::class                => 'Risk Reported',
+            \App\Notifications\RiskLevelChanged::class            => 'Risk Level Changed',
             default => 'Notification',
         };
     }
@@ -114,6 +115,7 @@ class NotificationController extends Controller
             \App\Notifications\ExtensionStatusChanged::class => 'Extension ' . ($data['status'] ?? '') . ($data['extension_number'] ? " #{$data['extension_number']}" : ''),
             \App\Notifications\IssueReported::class => 'Issue reported' . ($data['severity'] ? " ({$data['severity']})" : ''),
             \App\Notifications\RiskReported::class => 'High risk: ' . ($data['risk_name'] ?? ''),
+            \App\Notifications\RiskLevelChanged::class => 'Risk level changed: ' . ($data['previous_level'] ?? '') . ' → ' . ($data['current_level'] ?? ''),
             default => 'Notification',
         };
     }

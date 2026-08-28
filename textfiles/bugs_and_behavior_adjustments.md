@@ -1,11 +1,13 @@
 # Bugs & Behavior Adjustments
 
 **Date:** August 28, 2026
-**Status:** DOCUMENTED — awaiting discussion before implementation
+**Status:** ALL FIXES IMPLEMENTED (August 28, 2026)
 
 ---
 
 ## Bug 1: Notification Bell Dropdown Shows Wrong Label for Risk Level Changes
+
+**Status: FIXED** — bell.blade.php, NotificationController::humanType(), NotificationController::title() all updated.
 
 ### Problem
 
@@ -50,6 +52,8 @@ Low — 3 files, ~10 lines added.
 ---
 
 ## Bug 2: AI Prediction Tab Shows "On Track" While Dashboard/Index Shows "At Risk" for Same Project
+
+**Status: FIXED** — AIPredictionPresenter now calls determine() with escalation context. Escalation Factors section added to AI Prediction Blade. Dashboard/Index health badges show escalation info icon.
 
 ### Problem
 
@@ -182,6 +186,8 @@ Add a separate "ESCALATED" tag or indicator alongside the health badge, visible 
 ---
 
 ## Bug 3: Risk Level Notification Only Triggers on Manual Progress Recording
+
+**Status: FIXED** — sendRiskLevelChangeNotifications() method added to SendNotifications command. Detects risk-level changes at month boundaries when time advances past a baseline month with no recorded progress.
 
 ### Problem
 

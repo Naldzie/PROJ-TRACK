@@ -3,10 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\Setting;
 use App\Notifications\DeadlineReminder;
 use App\Notifications\OverdueInspectionReminder;
+use App\Notifications\RiskLevelChanged;
 use App\Services\NotificationService;
+use App\Services\ProjectStatusService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 
@@ -57,6 +60,7 @@ class SendNotifications extends Command
 
         $deadlineSent = 0;
         $inspectionSent = 0;
+        $riskLevelSent = 0;
         $projectsChecked = 0;
 
         foreach ($projects as $project) {
@@ -78,10 +82,13 @@ class SendNotifications extends Command
 
             $sent = $this->sendOverdueInspectionReminders($project, $recipients, $service, $graceDays);
             $inspectionSent += $sent;
+
+            $sent = $this->sendRiskLevelChangeNotifications($project, $recipients, $service, $graceDays);
+            $riskLevelSent += $sent;
         }
 
         $this->info("Scope: Ongoing w/ end date: {$projectsChecked} | Planned excluded: {$plannedExcluded} | all w/o end date: {$noEndDate}");
-        $this->info("Done. Projects checked: {$projectsChecked}, Deadline notices: {$deadlineSent}, Overdue-inspection notices: {$inspectionSent}");
+        $this->info("Done. Projects checked: {$projectsChecked}, Deadline notices: {$deadlineSent}, Overdue-inspection notices: {$inspectionSent}, Risk-level notices: {$riskLevelSent}");
 
         return 0;
     }
@@ -209,5 +216,75 @@ class SendNotifications extends Command
         $this->line("  [Inspection] #{$project->id} '{$project->title}' → overdue months " . implode(', ', $overdueMonths) . " ({$totalSent} sent)");
 
         return $totalSent;
+    }
+
+    /**
+     * Detect risk-level changes that occur when time advances past a baseline
+     * month without a new progress recording (Bug 3 fix).
+     *
+     * Compares the project's stored risk level (set at the last progress
+     * recording) with the level that would result from the current month's
+     * planned progress vs. the last recorded actual progress. Fires when the
+     * level actually changes, using a distinct dedupe key per month+level.
+     */
+    private function sendRiskLevelChangeNotifications(
+        Project $project,
+        \Illuminate\Support\Collection $recipients,
+        NotificationService $service,
+        int $graceDays
+    ): int {
+        $now = Carbon::now();
+
+        $lastRecorded = $project->progressHistory()
+            ->orderBy('month_label', 'desc')
+            ->first();
+
+        if (! $lastRecorded) {
+            return 0;
+        }
+
+        // Find a baseline month that is past grace but has no progress recorded
+        // (i.e. time has advanced but nobody recorded progress yet)
+        $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->where('planned_date', '<=', $now->copy()->subDays($graceDays))
+            ->whereNotIn('month_label', $project->progressHistory()->pluck('month_label'))
+            ->orderBy('planned_date', 'desc')
+            ->first();
+
+        if (! $currentMonthBaseline) {
+            return 0;
+        }
+
+        $plannedProgress = (float) $currentMonthBaseline->planned_progress_percent;
+        $actualProgress  = (float) $lastRecorded->actual_progress_percent;
+        $variance        = $actualProgress - $plannedProgress;
+
+        $statusService = app(ProjectStatusService::class);
+        $currentRiskLevel = $statusService->getRiskLevel(-$variance)['label'];
+
+        $previousRiskLevel = $project->previous_risk_level;
+
+        if ($previousRiskLevel === null || $currentRiskLevel === $previousRiskLevel) {
+            return 0;
+        }
+
+        $notification = new RiskLevelChanged(
+            $project->id,
+            $project->title,
+            $previousRiskLevel,
+            $currentRiskLevel,
+            $currentMonthBaseline->month_label,
+            $variance,
+            $actualProgress,
+            $plannedProgress,
+        );
+
+        $sent = $service->notifyMany($recipients, $notification);
+
+        $project->update(['previous_risk_level' => $currentRiskLevel]);
+
+        $this->line("  [Risk Level] #{$project->id} '{$project->title}' {$previousRiskLevel} → {$currentRiskLevel} ({$sent} sent)");
+
+        return $sent;
     }
 }

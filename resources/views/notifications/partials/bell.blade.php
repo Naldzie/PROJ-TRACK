@@ -65,7 +65,9 @@
                                 ? 'Inspection overdue'
                                 : ($n->type === \App\Notifications\ExtensionStatusChanged::class
                                     ? 'Extension ' . ucfirst($d['status'] ?? '')
-                                    : 'Issue reported')) }}
+                                    : ($n->type === \App\Notifications\RiskLevelChanged::class
+                                        ? 'Risk level: ' . ($d['current_level'] ?? '')
+                                        : 'Issue reported'))) }}
                         @if(!$n->read_at)
                             <span class="notification-dot"></span>
                         @endif

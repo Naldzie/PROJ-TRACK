@@ -44,9 +44,9 @@ App UI CSS/JS lives in `public/css` and `public/js`, linked via `asset('...')` i
 
 ## Known Issues
 
-- `RiskLevelChanged` notification: bell dropdown shows "Issue reported" instead of correct label (fix documented in `textfiles/bugs_and_behavior_adjustments.md`).
-- AI Prediction tab shows "ON TRACK" while dashboard/index shows "At Risk" for same project — escalation factors not applied in AI presenter (fix documented in `textfiles/bugs_and_behavior_adjustments.md`).
-- Risk level notification only triggers on manual progress recording, not on month boundaries (fix documented in `textfiles/bugs_and_behavior_adjustments.md`).
+- ~~`RiskLevelChanged` notification: bell dropdown shows "Issue reported" instead of correct label~~ **FIXED** (Aug 28, 2026).
+- ~~AI Prediction tab shows "ON TRACK" while dashboard/index shows "At Risk" for same project — escalation factors not applied in AI presenter~~ **FIXED** (Aug 28, 2026).
+- ~~Risk level notification only triggers on manual progress recording, not on month boundaries~~ **FIXED** (Aug 28, 2026).
 - `GET /admin/projects/{id}/alternative` route exists in `routes/web.php` but controller method is missing (would 500). Safe to remove during dead code cleanup.
 - `MilestoneController` + `ProjectMilestone` model are legacy dead code — the original milestone system replaced by baseline schedules. Not rendered in UI. Can be removed.
 - `EmailDraftTest` — 2 pre-existing test failures (mailable not sent in test context).
@@ -56,4 +56,4 @@ App UI CSS/JS lives in `public/css` and `public/js`, linked via `asset('...')` i
 - Feature tests use `RefreshDatabase` and factories; model factories must stay valid (see `tests/Feature/Infrastructure/FactoryVerificationTest.php`).
 - `Tests\Helpers\CreatesProjectWithHistory` trait builds regression datasets for AI tests, including the known "Project 7" dataset (slope ≈ 5.115, R² ≈ 0.954) — don't change those expected values.
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
-- Full suite: 983 tests / 3468 assertions (2 pre-existing `EmailDraftTest` failures excluded).
+- Full suite: 983 tests / 3469 assertions (2 pre-existing `EmailDraftTest` failures excluded).

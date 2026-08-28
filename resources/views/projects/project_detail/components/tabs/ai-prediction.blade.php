@@ -202,6 +202,25 @@
                     </div>
                 </div>
 
+                {{-- Escalation Factors: shown when determine() escalated the
+                     project from on_track to at_risk due to record-based
+                     factors (open issues, aging issues, high risks, pending
+                     extensions). Uses the same logic as the dashboard. --}}
+                @if (!$_noData && ($prediction['escalated'] ?? false))
+                <div style="margin-top: 12px; padding: 12px 16px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                        <i class="bi bi-exclamation-triangle-fill" style="color: #d97706; font-size: 14px;"></i>
+                        <span style="font-size: 13px; font-weight: 700; color: #92400e;">Escalation Factors</span>
+                    </div>
+                    <span style="font-size: 13px; color: #78350f; font-weight: 600;">
+                        {{ $prediction['escalation_reason'] }}
+                    </span>
+                    <p style="margin: 4px 0 0; font-size: 12px; color: #92400e;">
+                        This project is flagged as At Risk due to record-based factors despite a small progress gap.
+                    </p>
+                </div>
+                @endif
+
                 @if (!$_noData)
                 <script>
                 (function(){

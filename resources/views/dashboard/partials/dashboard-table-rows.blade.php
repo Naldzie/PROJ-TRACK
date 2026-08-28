@@ -184,6 +184,11 @@
                                     <span class="risk-dot" style="background:{{ $dotColor }}"></span>
                                     {{ $riskLabel }}
                                 </span>
+                                @if($health['escalated'] ?? false)
+                                <span style="margin-left: 4px; color: #d97706; cursor: help;" title="{{ $health['escalation_reason'] }}">
+                                    <i class="bi bi-info-circle" style="font-size: 12px;"></i>
+                                </span>
+                                @endif
                             </td>
 
                             {{-- Row action: links to the project detail page --}}

@@ -488,22 +488,28 @@ class AIPredictionPresenter
         | Determine Risk Status
         |--------------------------------------------------------------------------
         |
-        | Risk is based solely on the current progress gap (actual vs planned
-        | at today's date). This reflects the real on-the-ground situation.
-        |
-        | The gap naturally incorporates time: expectedProgress is recalculated
-        | each page load using DateHelper::now(), so as days pass without
-        | progress updates, the gap widens and risk escalates automatically.
-        |
-        | Forecast/prediction data is NOT mixed into health status — it
-        | remains available separately in assessment_data for the forecast
-        | table and analysis sections.
+        | Uses ProjectHealthService::determine() — the same function the
+        | dashboard and project index use — so the AI tab health badge is
+        | consistent across all surfaces. determine() first classifies the
+        | gap, then applies record-based escalation (open High/Critical
+        | issues, aging issues > 30d, high-priority risks, pending
+        | extensions). This ensures the AI tab reflects real risk signals
+        | beyond just the progress gap.
         |
         */
 
-        $currentGapRisk = $healthService->classifyGap($progressGap);
+        $escalationContext = [
+            'open_high_issues'  => $project->issues()->unresolved()
+                ->whereIn('severity', ['High', 'Critical'])->exists(),
+            'aging_issue_count' => $project->issues()->aging(30)->count(),
+            'open_high_risks'   => $project->risks()->open()->highRisk()->exists(),
+            'pending_extension' => $project->extensions()->pending()->exists(),
+        ];
 
-        $overallRisk = $currentGapRisk;
+        $healthResult = $healthService->determine($project, $escalationContext);
+        $overallRisk  = $healthResult['risk'];
+        $escalated    = $healthResult['escalated'] ?? false;
+        $escalationReason = $healthResult['escalation_reason'] ?? null;
 
         /*
         |--------------------------------------------------------------------------
@@ -750,6 +756,8 @@ class AIPredictionPresenter
             'risk_level'             => $overallRisk,
             'status_color'           => $statusColor,
             'forecast_risk_level'    => $forecastRiskLevel,
+            'escalated'              => $escalated,
+            'escalation_reason'      => $escalationReason,
 
             /*
             |------------------------------------------------------------------
