@@ -207,7 +207,7 @@ class ProjectHealthService
         $escalated = false;
         $escalationReason = null;
 
-        if ($level === 'on_track') {
+        if (config('ai.health.escalation_enabled', false) && $level === 'on_track') {
             $reason = $this->escalationReason($context);
             if ($reason !== null) {
                 $level = 'at_risk';

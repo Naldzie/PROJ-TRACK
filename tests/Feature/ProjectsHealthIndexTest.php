@@ -127,6 +127,7 @@ class ProjectsHealthIndexTest extends TestCase
 
     public function test_index_on_plan_project_with_open_critical_issue_escalates(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->makeOngoing(['title' => 'Escalating Build']);
         $this->addCurrentMonthData($project, actual: 50, plannedBaseline: 50);
 

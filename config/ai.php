@@ -39,6 +39,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Health Badge Escalation
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, ProjectHealthService::determine() bumps "on track"
+    | projects to "at risk" if they carry record-based warning signs
+    | (open High/Critical issues, aging issues > 30 days, open high-priority
+    | risks, pending extension requests).
+    |
+    | When disabled, health badges reflect schedule gap only — consistent
+    | with risk notifications and easier to explain during panel defense.
+    |
+    */
+
+    'health' => [
+        'escalation_enabled' => false,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Trend Detection
     |--------------------------------------------------------------------------
     |

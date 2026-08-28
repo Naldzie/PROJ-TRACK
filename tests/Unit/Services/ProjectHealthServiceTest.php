@@ -223,6 +223,7 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_determine_escalates_on_track_project_with_open_high_issue(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->ongoingProject();
 
         $result = $this->service->determine($project, $this->context([
@@ -239,6 +240,7 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_determine_escalates_for_pending_extension(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->ongoingProject();
 
         $result = $this->service->determine($project, $this->context([
@@ -251,6 +253,7 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_determine_escalates_for_aging_issue(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->ongoingProject();
 
         $result = $this->service->determine($project, $this->context([
@@ -263,6 +266,7 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_determine_escalates_for_open_high_risk(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->ongoingProject();
 
         $result = $this->service->determine($project, $this->context([
@@ -275,6 +279,7 @@ class ProjectHealthServiceTest extends TestCase
 
     public function test_determine_does_not_escalate_when_already_at_risk_by_gap(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->ongoingProject();
 
         $result = $this->service->determine($project, $this->context([
@@ -286,6 +291,21 @@ class ProjectHealthServiceTest extends TestCase
         // Gap-driven risk wins — not flagged as "escalated" (it was never on track).
         $this->assertFalse($result['escalated']);
         $this->assertSame('medium_risk', $result['risk']);
+    }
+
+    public function test_determine_does_not_escalate_when_toggle_off(): void
+    {
+        config(['ai.health.escalation_enabled' => false]);
+        $project = $this->ongoingProject();
+
+        $result = $this->service->determine($project, $this->context([
+            'open_high_issues' => true,
+        ]));
+
+        $this->assertSame('on_track', $result['level']);
+        $this->assertSame('ON TRACK', $result['label']);
+        $this->assertFalse($result['escalated']);
+        $this->assertNull($result['escalation_reason']);
     }
 
     /*

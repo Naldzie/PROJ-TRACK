@@ -134,6 +134,7 @@ class DashboardHealthTest extends TestCase
 
     public function test_on_plan_project_with_open_critical_issue_escalates_to_at_risk(): void
     {
+        config(['ai.health.escalation_enabled' => true]);
         $project = $this->makeOngoing();
         $this->addCurrentMonthData($project, actual: 50, plannedBaseline: 50);
 
