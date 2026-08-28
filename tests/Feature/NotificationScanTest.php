@@ -23,8 +23,8 @@ use Tests\TestCase;
  * Validates Phase N2 of the notification system (gaps #12):
  *   - `notifications:scan` sends deadline reminders in the right bucket.
  *   - Buckets escalate (30 → 14 → 7 → overdue) and each fires only once.
- *   - Overdue-inspection alerts fire once per (project, month), only after the
- *     grace window, and not for already-recorded months.
+ *   - Overdue-inspection alerts fire once per (project, month), only for
+ *     previous months (not the current month), and not for already-recorded months.
  *   - notification_enabled=false suppresses the whole scan.
  *   - Contractors receive notices only for their own project.
  *
@@ -165,7 +165,7 @@ class NotificationScanTest extends TestCase
 
     // === Overdue inspections ===
 
-    public function test_overdue_inspection_alert_fires_after_grace(): void
+    public function test_overdue_inspection_alert_fires_for_past_month(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00'));
 
