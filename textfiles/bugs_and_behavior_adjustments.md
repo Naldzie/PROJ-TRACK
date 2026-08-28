@@ -55,7 +55,7 @@ Low — 3 files, ~10 lines added.
 
 **Status: FIXED (Phase 1)** — AIPredictionPresenter now calls determine() with escalation context. Escalation Factors section added to AI Prediction Blade. Dashboard/Index health badges show escalation info icon.
 
-**Status: Escalation Toggle (Phase 2) — PLANNED.** Escalation will be made configurable via `config('ai.health.escalation_enabled')`. Default OFF. Rationale: reduce complexity for panel; escalation logic needs further refinement before production use. See "Escalation Toggle Plan" section below.
+**Status: Escalation Toggle (Phase 2) — FIXED.** `config('ai.health.escalation_enabled')` added, default `false`. Guard in `ProjectHealthService::determine()`. Tests updated.
 
 ### Problem
 
@@ -191,7 +191,7 @@ Add a separate "ESCALATED" tag or indicator alongside the health badge, visible 
 
 **Status: FIXED (Phase 1)** — sendRiskLevelChangeNotifications() method added to SendNotifications command. Detects risk-level changes at month boundaries when time advances past a baseline month with no recorded progress.
 
-**Status: Grace Period Fix (Phase 2) — PLANNED.** The current implementation uses a7-day grace period (inherited from inspection logic) which delays the risk notification incorrectly. See "Risk Notification Grace Period Fix" section below.
+**Status: Grace Period Fix (Phase 2) — FIXED.** Removed `$graceDays` parameter. Query changed to fire immediately when `planned_date <= $now`. Risk notifications are mathematical (gap-based), not action-based — no grace needed.
 
 ### Problem
 
@@ -259,9 +259,9 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 | # | Bug | Severity | Fix Effort | Status |
 |---|---|---|---|---|
 | 1 | Bell dropdown wrong label | Low (cosmetic) | Low | FIXED |
-| 2 | AI tab vs dashboard health inconsistency | Medium (UX confusion) | Low-Medium | FIXED + Toggle PLANNED |
-| 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | FIXED + Grace Period Fix PLANNED |
-| 4 | Inspection reminder late for late-month planned dates | Medium (confusing UX) | Medium | PLANNED |
+| 2 | AI tab vs dashboard health inconsistency | Medium (UX confusion) | Low-Medium | FIXED |
+| 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | FIXED |
+| 4 | Inspection reminder late for late-month planned dates | Medium (confusing UX) | Medium | FIXED |
 
 ### Implementation Order
 
@@ -269,15 +269,15 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 2. ~~**Bug 3 Phase 1** (risk notification on month boundary)~~ — DONE
 3. ~~**Bug 2 Phase 1** (AI presenter consistency)~~ — DONE
 4. ~~**Bug 2 Phase 2** (escalation toggle)~~ — DONE
-5. **Bug 3 Phase 2** (risk notification grace period removal) — PLANNED
-6. **Inspection Reminder Overhaul** (3 notification types) — PLANNED
+5. ~~**Bug 3 Phase 2** (risk notification grace period removal)~~ — DONE
+6. ~~**Inspection Reminder Overhaul** (3 notification types)~~ — DONE
 
 ---
 
 ## Escalation Toggle Plan (Bug 2 — Phase 2)
 
 **Date:** August 28, 2026
-**Status:** PLANNED — not yet implemented
+**Status:** FIXED — `config('ai.health.escalation_enabled')` added, default false. Guard in `ProjectHealthService::determine()`. Tests updated.
 
 ### Rationale
 
@@ -332,7 +332,7 @@ All surfaces automatically start showing escalation. No code changes needed.
 ## Risk Notification Grace Period Fix (Bug 3 — Phase 2)
 
 **Date:** August 28, 2026
-**Status:** PLANNED — not yet implemented
+**Status:** FIXED — Removed `$graceDays` parameter. Query now fires immediately when `planned_date <= $now`.
 
 ### Problem
 
@@ -384,7 +384,7 @@ Low — 1 file, ~5 lines changed.
 ## Inspection Reminder Overhaul
 
 **Date:** August 28, 2026
-**Status:** PLANNED — not yet implemented
+**Status:** FIXED — 3 notification types created. Grace period removed from overdue. All tests passing.
 
 ### Problem
 

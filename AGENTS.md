@@ -10,7 +10,7 @@ PMU System (PROJ-TRACK): a Laravel 12 (PHP 8.2) project-monitoring app for CSPC 
 
 3. **Contractor Viewing Access** (view-only) — Contractors see only their assigned projects. Read-only access to dashboard, project details, S-curves, documents, issues, risks, email reports, extensions. Write access limited to: warranty submissions and profile edit.
 
-4. **Automated Notification and Reminder** — 6 notification types: deadline reminders (30/14/7 days + overdue), overdue inspection alerts, extension status changes, issue reported, risk reported, risk level changed. Scheduled via `notifications:scan` (daily 07:00) + event-driven from controllers. Deduplication via tracking keys. Bell widget + full inbox UI.
+4. **Automated Notification and Reminder** — 7 notification types: deadline reminders (30/14/7 days + overdue), overdue inspection alerts, planned inspection reminders, month-end inspection reminders, extension status changes, issue reported, risk reported, risk level changed. Scheduled via `notifications:scan` (daily 07:00) + event-driven from controllers. Deduplication via tracking keys. Bell widget + full inbox UI.
 
 5. **Document Archiving and Retrieval** — Upload, categorize (configurable document types), inline view, Excel-to-HTML preview, download, delete with physical file cleanup. Contractors: view/download only.
 
@@ -56,4 +56,4 @@ App UI CSS/JS lives in `public/css` and `public/js`, linked via `asset('...')` i
 - Feature tests use `RefreshDatabase` and factories; model factories must stay valid (see `tests/Feature/Infrastructure/FactoryVerificationTest.php`).
 - `Tests\Helpers\CreatesProjectWithHistory` trait builds regression datasets for AI tests, including the known "Project 7" dataset (slope ≈ 5.115, R² ≈ 0.954) — don't change those expected values.
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
-- Full suite: 983 tests / 3469 assertions (2 pre-existing `EmailDraftTest` failures excluded).
+- Full suite: 985 tests / 3474 assertions (2 pre-existing `EmailDraftTest` failures excluded).

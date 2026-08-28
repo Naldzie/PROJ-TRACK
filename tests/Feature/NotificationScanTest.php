@@ -187,9 +187,9 @@ class NotificationScanTest extends TestCase
         $this->assertSame('2026-07-31', $data['planned_date']);
     }
 
-    public function test_overdue_inspection_within_grace_is_skipped(): void
+    public function test_overdue_inspection_fires_immediately_after_planned_date(): void
     {
-        Carbon::setTestNow(Carbon::parse('2026-08-03 08:00:00')); // 3 days past 07-31, grace = 7
+        Carbon::setTestNow(Carbon::parse('2026-08-03 08:00:00')); // 3 days past 07-31, no grace period
 
         $project = $this->projectForInspection();
         ProjectBaselineSchedule::factory()->create([
@@ -200,7 +200,7 @@ class NotificationScanTest extends TestCase
 
         $this->runScan();
 
-        $this->assertSame(0, $this->admin->notifications()->count());
+        $this->assertSame(1, $this->admin->notifications()->count());
     }
 
     public function test_overdue_inspection_skips_recorded_month(): void
@@ -246,7 +246,7 @@ class NotificationScanTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00'));
 
         $project = $this->projectForInspection();
-        foreach (['2026-06' => '2026-06-30', '2026-07' => '2026-07-31', '2026-08' => '2026-08-01'] as $label => $planned) {
+        foreach (['2026-05' => '2026-05-31', '2026-06' => '2026-06-30', '2026-07' => '2026-07-31'] as $label => $planned) {
             ProjectBaselineSchedule::factory()->create([
                 'project_id'   => $project->id,
                 'month_label'  => $label,
@@ -263,11 +263,11 @@ class NotificationScanTest extends TestCase
         $rows = $this->admin->notifications()->get()->sortBy(fn ($n) => $n->data['month_label'])->values();
 
         $this->assertSame('overdue_inspection', $this->typeOf($rows[0]->type));
-        $this->assertSame('2026-06', $rows[0]->data['month_label']);
-        $this->assertSame('June-2026', $rows[0]->data['month_display']);
-        $this->assertSame('2026-06-30', $rows[0]->data['planned_date']);
-        $this->assertSame('July-2026', $rows[1]->data['month_display']);
-        $this->assertSame('August-2026', $rows[2]->data['month_display']);
+        $this->assertSame('2026-05', $rows[0]->data['month_label']);
+        $this->assertSame('May-2026', $rows[0]->data['month_display']);
+        $this->assertSame('2026-05-31', $rows[0]->data['planned_date']);
+        $this->assertSame('June-2026', $rows[1]->data['month_display']);
+        $this->assertSame('July-2026', $rows[2]->data['month_display']);
     }
 
     public function test_completed_project_gets_no_inspection_alert(): void
@@ -319,11 +319,48 @@ class NotificationScanTest extends TestCase
         $this->assertSame(0, $otherContractor->notifications()->count());
     }
 
+    public function test_current_month_not_duplicate_between_overdue_and_month_end(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-27 08:00:00')); // within 7 days of Aug 31
+
+        $project = $this->projectForInspection();
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $project->id,
+            'month_label'  => '2026-07',
+            'planned_date' => '2026-07-31',
+        ]);
+        ProjectBaselineSchedule::factory()->create([
+            'project_id'   => $project->id,
+            'month_label'  => '2026-08',
+            'planned_date' => '2026-08-01',
+        ]);
+
+        $this->runScan();
+
+        $notifications = $this->admin->notifications()->get();
+        $augNotifications = $notifications->filter(
+            fn ($n) => ($n->data['month_label'] ?? '') === '2026-08'
+        );
+
+        $this->assertGreaterThanOrEqual(1, $augNotifications->count());
+        $augNotifications->each(function ($n) {
+            $this->assertStringContainsString('MonthEndInspectionReminder', $n->type);
+        });
+
+        $overdueForAug = $notifications->filter(
+            fn ($n) => ($n->data['month_label'] ?? '') === '2026-08'
+                && str_contains($n->type, 'OverdueInspectionReminder')
+        );
+        $this->assertCount(0, $overdueForAug);
+    }
+
     private function typeOf(string $className): string
     {
         return match (true) {
             str_contains($className, 'DeadlineReminder') => 'deadline',
             str_contains($className, 'OverdueInspectionReminder') => 'overdue_inspection',
+            str_contains($className, 'PlannedInspectionReminder') => 'planned_inspection',
+            str_contains($className, 'MonthEndInspectionReminder') => 'month_end_inspection',
             str_contains($className, 'ExtensionStatusChanged') => 'extension',
             str_contains($className, 'IssueReported') => 'issue',
             default => 'unknown',

@@ -57,22 +57,31 @@
                      data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}"
                      data-navigate-url="{{ $nUrl }}">
                     <div class="notification-item-title">
-                        {{ $n->type === \App\Notifications\DeadlineReminder::class
-                            ? ($d['bucket'] === 'overdue'
-                                ? 'Project overdue'
-                                : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days')
-                            : ($n->type === \App\Notifications\OverdueInspectionReminder::class
-                                ? 'Inspection overdue'
-                                : ($n->type === \App\Notifications\ExtensionStatusChanged::class
-                                    ? 'Extension ' . ucfirst($d['status'] ?? '')
-                                    : ($n->type === \App\Notifications\RiskLevelChanged::class
-                                        ? 'Risk level: ' . ($d['current_level'] ?? '')
-                                        : 'Issue reported'))) }}
+                        @php
+                            $notifLabel = match(true) {
+                                $n->type === \App\Notifications\DeadlineReminder::class
+                                    => $d['bucket'] === 'overdue'
+                                        ? 'Project overdue'
+                                        : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days',
+                                $n->type === \App\Notifications\PlannedInspectionReminder::class
+                                    => 'Inspection scheduled today',
+                                $n->type === \App\Notifications\MonthEndInspectionReminder::class
+                                    => 'Month ending — inspect now',
+                                $n->type === \App\Notifications\OverdueInspectionReminder::class
+                                    => 'Inspection overdue',
+                                $n->type === \App\Notifications\ExtensionStatusChanged::class
+                                    => 'Extension ' . ucfirst($d['status'] ?? ''),
+                                $n->type === \App\Notifications\RiskLevelChanged::class
+                                    => 'Risk level: ' . ($d['current_level'] ?? ''),
+                                default => 'Issue reported',
+                            };
+                        @endphp
+                        {{ $notifLabel }}
                         @if(!$n->read_at)
                             <span class="notification-dot"></span>
                         @endif
                     </div>
-                    <div class="notification-item-meta">{{ $d['project_title'] ?? '' }}{{ $n->type === \App\Notifications\OverdueInspectionReminder::class ? ' · ' . ($d['month_display'] ?? $d['month_label'] ?? '') : '' }} · {{ $n->created_at?->diffForHumans() }}</div>
+                    <div class="notification-item-meta">{{ $d['project_title'] ?? '' }}{{ in_array($n->type, [\App\Notifications\OverdueInspectionReminder::class, \App\Notifications\PlannedInspectionReminder::class, \App\Notifications\MonthEndInspectionReminder::class]) ? ' · ' . ($d['month_display'] ?? $d['month_label'] ?? '') : '' }} · {{ $n->created_at?->diffForHumans() }}</div>
                 </div>
             @empty
                 <div class="notification-empty">No unread notifications</div>

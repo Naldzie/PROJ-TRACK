@@ -6,7 +6,9 @@ use App\Models\Project;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\Setting;
 use App\Notifications\DeadlineReminder;
+use App\Notifications\MonthEndInspectionReminder;
 use App\Notifications\OverdueInspectionReminder;
+use App\Notifications\PlannedInspectionReminder;
 use App\Notifications\RiskLevelChanged;
 use App\Services\NotificationService;
 use App\Services\ProjectStatusService;
@@ -60,6 +62,8 @@ class SendNotifications extends Command
 
         $deadlineSent = 0;
         $inspectionSent = 0;
+        $plannedSent = 0;
+        $monthEndSent = 0;
         $riskLevelSent = 0;
         $projectsChecked = 0;
 
@@ -80,15 +84,21 @@ class SendNotifications extends Command
             $sent = $this->sendDeadlineReminders($project, $recipients, $service, $deadlineBuckets);
             $deadlineSent += $sent;
 
-            $sent = $this->sendOverdueInspectionReminders($project, $recipients, $service, $graceDays);
+            $sent = $this->sendPlannedInspectionReminders($project, $recipients, $service);
+            $plannedSent += $sent;
+
+            $sent = $this->sendMonthEndInspectionReminders($project, $recipients, $service);
+            $monthEndSent += $sent;
+
+            $sent = $this->sendOverdueInspectionReminders($project, $recipients, $service);
             $inspectionSent += $sent;
 
-            $sent = $this->sendRiskLevelChangeNotifications($project, $recipients, $service, $graceDays);
+            $sent = $this->sendRiskLevelChangeNotifications($project, $recipients, $service);
             $riskLevelSent += $sent;
         }
 
         $this->info("Scope: Ongoing w/ end date: {$projectsChecked} | Planned excluded: {$plannedExcluded} | all w/o end date: {$noEndDate}");
-        $this->info("Done. Projects checked: {$projectsChecked}, Deadline notices: {$deadlineSent}, Overdue-inspection notices: {$inspectionSent}, Risk-level notices: {$riskLevelSent}");
+        $this->info("Done. Projects checked: {$projectsChecked}, Deadline: {$deadlineSent}, Planned inspection: {$plannedSent}, Month-end inspection: {$monthEndSent}, Overdue inspection: {$inspectionSent}, Risk-level: {$riskLevelSent}");
 
         return 0;
     }
@@ -166,15 +176,109 @@ class SendNotifications extends Command
     }
 
     /**
-     * Send overdue-inspection alerts for every baseline month past the grace
-     * window with no recorded progress for that month (one per uninspected
-     * month). Returns the number of notifications actually delivered.
+     * Send a reminder on the exact day a baseline's planned inspection date arrives.
+     * Fires once per (project, month) via dedupe key.
+     */
+    private function sendPlannedInspectionReminders(
+        Project $project,
+        \Illuminate\Support\Collection $recipients,
+        NotificationService $service,
+    ): int {
+        if ($project->status === 'Completed') {
+            return 0;
+        }
+
+        $today = Carbon::now()->toDateString();
+        $recordedMonths = $project->progressHistory->pluck('month_label');
+
+        $dueBaselines = $project->baselineSchedules
+            ->filter(fn ($b) => $b->planned_date->toDateString() === $today
+                && ! $recordedMonths->contains($b->month_label))
+            ->values();
+
+        if ($dueBaselines->isEmpty()) {
+            return 0;
+        }
+
+        $totalSent = 0;
+
+        foreach ($dueBaselines as $baseline) {
+            $notification = new PlannedInspectionReminder(
+                $project->id,
+                $project->title,
+                $baseline->month_label,
+                $baseline->month_display,
+                $baseline->planned_date->format('Y-m-d'),
+            );
+
+            $totalSent += $service->notifyMany($recipients, $notification);
+        }
+
+        $this->line("  [Planned Inspection] #{$project->id} '{$project->title}' → " . $dueBaselines->pluck('month_label')->implode(', ') . " ({$totalSent} sent)");
+
+        return $totalSent;
+    }
+
+    /**
+     * Send a month-end nudge when we're in the last 7 days of the month
+     * and no progress has been recorded for the current month's baseline.
+     * Fires once per (project, month) via dedupe key.
+     */
+    private function sendMonthEndInspectionReminders(
+        Project $project,
+        \Illuminate\Support\Collection $recipients,
+        NotificationService $service,
+    ): int {
+        if ($project->status === 'Completed') {
+            return 0;
+        }
+
+        $now = Carbon::now();
+        $daysUntilMonthEnd = (int) abs($now->copy()->endOfMonth()->diffInDays($now));
+
+        if ($daysUntilMonthEnd > 7) {
+            return 0;
+        }
+
+        $currentMonthLabel = $now->format('Y-m');
+        $recordedMonths = $project->progressHistory->pluck('month_label');
+
+        if ($recordedMonths->contains($currentMonthLabel)) {
+            return 0;
+        }
+
+        $currentMonthBaseline = $project->baselineSchedules
+            ->first(fn ($b) => $b->month_label === $currentMonthLabel);
+
+        if (! $currentMonthBaseline) {
+            return 0;
+        }
+
+        $notification = new MonthEndInspectionReminder(
+            $project->id,
+            $project->title,
+            $currentMonthBaseline->month_label,
+            $currentMonthBaseline->month_display,
+            $currentMonthBaseline->planned_date->format('Y-m-d'),
+        );
+
+        $sent = $service->notifyMany($recipients, $notification);
+
+        $this->line("  [Month-End Inspection] #{$project->id} '{$project->title}' → {$currentMonthLabel} ({$sent} sent)");
+
+        return $sent;
+    }
+
+    /**
+     * Send overdue-inspection alerts for every baseline month whose planned_date
+     * has passed with no recorded progress (one per uninspected month).
+     * No grace period — fires immediately when planned_date is past.
+     * Returns the number of notifications actually delivered.
      */
     private function sendOverdueInspectionReminders(
         Project $project,
         \Illuminate\Support\Collection $recipients,
         NotificationService $service,
-        int $graceDays
     ): int {
         if ($project->status === 'Completed') {
             return 0;
@@ -182,19 +286,25 @@ class SendNotifications extends Command
 
         $recordedMonths = $project->progressHistory->pluck('month_label');
 
+        $currentMonthLabel = Carbon::now()->format('Y-m');
+
         $overdueBaselines = $project->baselineSchedules
             ->sortBy('planned_date')
-            ->filter(function ($baseline) use ($recordedMonths, $graceDays) {
+            ->filter(function ($baseline) use ($recordedMonths, $currentMonthLabel) {
                 if ($recordedMonths->contains($baseline->month_label)) {
                     return false;
                 }
 
-                return $baseline->planned_date->lt(Carbon::now()->subDays($graceDays));
+                if ($baseline->month_label === $currentMonthLabel) {
+                    return false;
+                }
+
+                return $baseline->planned_date->lt(Carbon::now());
             })
             ->values();
 
         if ($overdueBaselines->isEmpty()) {
-            $this->line("  [Inspection] #{$project->id} '{$project->title}' → none overdue past {$graceDays}-day grace");
+            $this->line("  [Overdue Inspection] #{$project->id} '{$project->title}' → none overdue");
             return 0;
         }
 
@@ -213,7 +323,7 @@ class SendNotifications extends Command
             $totalSent += $service->notifyMany($recipients, $notification);
         }
 
-        $this->line("  [Inspection] #{$project->id} '{$project->title}' → overdue months " . implode(', ', $overdueMonths) . " ({$totalSent} sent)");
+        $this->line("  [Overdue Inspection] #{$project->id} '{$project->title}' → overdue months " . implode(', ', $overdueMonths) . " ({$totalSent} sent)");
 
         return $totalSent;
     }
@@ -231,7 +341,6 @@ class SendNotifications extends Command
         Project $project,
         \Illuminate\Support\Collection $recipients,
         NotificationService $service,
-        int $graceDays
     ): int {
         $now = Carbon::now();
 
@@ -246,7 +355,7 @@ class SendNotifications extends Command
         // Find a baseline month that is past grace but has no progress recorded
         // (i.e. time has advanced but nobody recorded progress yet)
         $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
-            ->where('planned_date', '<=', $now->copy()->subDays($graceDays))
+            ->where('planned_date', '<=', $now)
             ->whereNotIn('month_label', $project->progressHistory()->pluck('month_label'))
             ->orderBy('planned_date', 'desc')
             ->first();

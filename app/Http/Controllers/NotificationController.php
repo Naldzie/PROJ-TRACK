@@ -94,6 +94,8 @@ class NotificationController extends Controller
     {
         return match ($class) {
             \App\Notifications\DeadlineReminder::class            => 'Deadline Reminder',
+            \App\Notifications\PlannedInspectionReminder::class   => 'Inspection Scheduled',
+            \App\Notifications\MonthEndInspectionReminder::class  => 'Month-End Inspection',
             \App\Notifications\OverdueInspectionReminder::class   => 'Overdue Inspection',
             \App\Notifications\ExtensionStatusChanged::class      => 'Extension Update',
             \App\Notifications\IssueReported::class               => 'Issue Reported',
@@ -106,12 +108,15 @@ class NotificationController extends Controller
     private function title(string $class, array $data): string
     {
         $project = $data['project_title'] ?? '';
+        $month = $data['month_display'] ?? $data['month_label'] ?? '';
 
         return match ($class) {
             \App\Notifications\DeadlineReminder::class => $data['bucket'] === 'overdue'
                     ? ($project ? "Project {$project} is overdue" : 'Project is overdue')
                     : "Project deadline in {$data['days_remaining']} days",
-            \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . ($data['month_display'] ?? $data['month_label'] ?? ''),
+            \App\Notifications\PlannedInspectionReminder::class => 'Inspection scheduled today for ' . $month,
+            \App\Notifications\MonthEndInspectionReminder::class => 'Month ending soon — inspect ' . $month,
+            \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . $month,
             \App\Notifications\ExtensionStatusChanged::class => 'Extension ' . ($data['status'] ?? '') . ($data['extension_number'] ? " #{$data['extension_number']}" : ''),
             \App\Notifications\IssueReported::class => 'Issue reported' . ($data['severity'] ? " ({$data['severity']})" : ''),
             \App\Notifications\RiskReported::class => 'High risk: ' . ($data['risk_name'] ?? ''),
