@@ -384,7 +384,7 @@ Low — 1 file, ~5 lines changed.
 ## Inspection Reminder Overhaul
 
 **Date:** August 28, 2026
-**Status:** FIXED — 3 notification types created. Grace period removed from overdue. All tests passing.
+**Status:** FIXED — 3 notification types created. Grace period removed from overdue. Current-month exclusion prevents overlap. All tests passing (985 total).
 
 ### Problem
 
@@ -415,37 +415,57 @@ Replace the single `OverdueInspectionReminder` with three complementary notifica
 | Date | Notification | Why |
 |---|---|---|
 | Aug 15 | PlannedInspectionReminder | On the planned date |
-| Aug 22 | OverdueInspectionReminder |7 days after planned date (no grace needed — fire on time) |
-| Aug 25 | MonthEndInspectionReminder | Last7 days of month, no inspection |
-| Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately (dedupe handles if already sent) |
+| Aug 22 | OverdueInspectionReminder | 7 days after planned date (fires on time, no grace) |
+| Aug 25–31 | MonthEndInspectionReminder | Last 7 days of month, no inspection |
+| Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately (dedupe handles if MonthEnd already sent) |
 
 **Scenario 2: planned_date = Aug 25 (6 days before Sep)**
 
 | Date | Notification | Why |
 |---|---|---|
 | Aug 25 | PlannedInspectionReminder | On the planned date |
-| Aug 25 | MonthEndInspectionReminder | Last7 days of month (same day) |
-| Aug 26-31 | *(nothing)* | Grace period for OverdueInspection |
+| Aug 25 | MonthEndInspectionReminder | Last 7 days of month (same day) |
+| Aug 26–31 | *(nothing)* | Current month excluded from overdue — MonthEnd handles it |
 | Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately |
 
 **Scenario 3: planned_date = Aug 28 (3 days before Sep)**
 
 | Date | Notification | Why |
 |---|---|---|
+| Aug 25 | MonthEndInspectionReminder | Fires first (last 7 days of month) |
 | Aug 28 | PlannedInspectionReminder | On the planned date |
-| Aug 25 | MonthEndInspectionReminder | Fires first (last7 days of month) |
 | Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately |
 
 ### OverdueInspectionReminder Simplification
 
-Remove the grace period entirely from `OverdueInspectionReminder`. The three types cover all phases:
+Two changes to `sendOverdueInspectionReminders`:
+
+1. **Remove the grace period** — fires immediately when `planned_date < now`
+2. **Exclude current month** — overdue only covers previous months. The current month is handled by PlannedInspectionReminder + MonthEndInspectionReminder, preventing duplicate notifications.
 
 ```php
-// Current (with grace):
+// Current (with grace, all months):
 return $baseline->planned_date->lt(Carbon::now()->subDays($graceDays));
 
-// New (no grace):
+// New (no grace, excludes current month):
+$currentMonthLabel = Carbon::now()->format('Y-m');
+// ... filter:
+if ($baseline->month_label === $currentMonthLabel) {
+    return false;
+}
 return $baseline->planned_date->lt(Carbon::now());
+```
+
+### diffInDays Fix in MonthEndInspectionReminder
+
+`sendMonthEndInspectionReminders` needed `abs()` on the `diffInDays` call. Carbon returns a **negative** value when end-of-month is in the future:
+
+```php
+// Bug: returns -21 for Aug 10 → Aug 31 (negative!)
+$daysUntilMonthEnd = (int) $now->copy()->endOfMonth()->diffInDays($now);
+
+// Fix: wrap with abs()
+$daysUntilMonthEnd = (int) abs($now->copy()->endOfMonth()->diffInDays($now));
 ```
 
 ### Files to Change
