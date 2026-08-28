@@ -189,7 +189,9 @@ Add a separate "ESCALATED" tag or indicator alongside the health badge, visible 
 
 ## Bug 3: Risk Level Notification Only Triggers on Manual Progress Recording
 
-**Status: FIXED** — sendRiskLevelChangeNotifications() method added to SendNotifications command. Detects risk-level changes at month boundaries when time advances past a baseline month with no recorded progress.
+**Status: FIXED (Phase 1)** — sendRiskLevelChangeNotifications() method added to SendNotifications command. Detects risk-level changes at month boundaries when time advances past a baseline month with no recorded progress.
+
+**Status: Grace Period Fix (Phase 2) — PLANNED.** The current implementation uses a7-day grace period (inherited from inspection logic) which delays the risk notification incorrectly. See "Risk Notification Grace Period Fix" section below.
 
 ### Problem
 
@@ -254,17 +256,21 @@ Medium — modify one existing command, add ~30-40 lines. No new files needed.
 
 ## Summary
 
-| # | Bug | Severity | Fix Effort | Blocks Testing? |
+| # | Bug | Severity | Fix Effort | Status |
 |---|---|---|---|---|
-| 1 | Bell dropdown wrong label | Low (cosmetic) | Low | No |
-| 2 | AI tab vs dashboard health inconsistency | Medium (UX confusion) | Low-Medium | Needs discussion |
-| 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | No |
+| 1 | Bell dropdown wrong label | Low (cosmetic) | Low | FIXED |
+| 2 | AI tab vs dashboard health inconsistency | Medium (UX confusion) | Low-Medium | FIXED + Toggle PLANNED |
+| 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | FIXED + Grace Period Fix PLANNED |
+| 4 | Inspection reminder late for late-month planned dates | Medium (confusing UX) | Medium | PLANNED |
 
-### Implementation Order (suggested)
+### Implementation Order
 
-1. **Bug 1** (bell label) — quick fix, no design decisions needed
-2. **Bug 3** (notification trigger) — clear fix, adds meaningful functionality
-3. **Bug 2** (health inconsistency) — needs team decision on Option A/B/C/D before implementation
+1. ~~**Bug 1** (bell label)~~ — DONE
+2. ~~**Bug 3 Phase 1** (risk notification on month boundary)~~ — DONE
+3. ~~**Bug 2 Phase 1** (AI presenter consistency)~~ — DONE
+4. ~~**Bug 2 Phase 2** (escalation toggle)~~ — DONE
+5. **Bug 3 Phase 2** (risk notification grace period removal) — PLANNED
+6. **Inspection Reminder Overhaul** (3 notification types) — PLANNED
 
 ---
 
@@ -320,3 +326,147 @@ Change `config/ai.php` line:
 ```
 
 All surfaces automatically start showing escalation. No code changes needed.
+
+---
+
+## Risk Notification Grace Period Fix (Bug 3 — Phase 2)
+
+**Date:** August 28, 2026
+**Status:** PLANNED — not yet implemented
+
+### Problem
+
+The `sendRiskLevelChangeNotifications()` method uses a 7-day grace period (inherited from `sendOverdueInspectionReminders`). This delays the risk notification incorrectly at month boundaries.
+
+**Example with baseline planned_date = Sep 14, simulated date = Sep 1:**
+- `$now->subDays(7)` = Aug 25
+- Query: `planned_date <= Aug 25`
+- Sep 14 is NOT ≤ Aug 25 → **notification skipped**
+- User expects the notification to fire when the baseline is due (Sep 14), not 7 days later
+
+**Example with baseline planned_date = Aug 25, simulated date = Sep 1:**
+- `$now->subDays(7)` = Aug 25
+- Query: `planned_date <= Aug 25`
+- Aug 25 IS ≤ Aug 25 → notification fires on Sep 1
+- But the baseline was due Aug 25 — firing on Sep 1 is already late
+
+### Root Cause
+
+Risk notifications are mathematical (gap-based), not action-based. The grace period was designed for inspections (give staff time to inspect before alerting). Risk level changes should fire immediately when the baseline's `planned_date` arrives.
+
+### Fix
+
+Remove `$graceDays` from `sendRiskLevelChangeNotifications()`. Change the query from:
+```php
+->where('planned_date', '<=', $now->copy()->subDays($graceDays))
+```
+to:
+```php
+->where('planned_date', '<=', $now)
+```
+
+Remove the `$graceDays` parameter from the method signature.
+
+### Expected Behavior After Fix
+
+| Baseline planned_date | Simulated date | Fires? |
+|---|---|---|
+| Sep 14 | Sep 1 | No — Sep 14 not ≤ Sep 1 |
+| Sep 14 | Sep 14 | **Yes** — fires on the due date |
+| Aug 25 | Aug 25 | **Yes** — fires on the due date |
+
+### Effort
+
+Low — 1 file, ~5 lines changed.
+
+---
+
+## Inspection Reminder Overhaul
+
+**Date:** August 28, 2026
+**Status:** PLANNED — not yet implemented
+
+### Problem
+
+The current `OverdueInspectionReminder` has a 7-day grace period that causes issues for late-month planned dates:
+
+**Example with planned_date = Aug 25, grace = 7 days:**
+- Grace period: fires when `planned_date < now - 7`
+- Aug 25: `Aug 25 < Aug 18`? No → waits
+- Sep 1: `Aug 25 < Aug 25`? No → waits
+- Sep 2: `Aug 25 < Aug 26`? **Yes** → fires on Sep 2
+
+The reminder fires8 days into September for an inspection planned in August. This is confusing for users.
+
+### Solution: Three Notification Types
+
+Replace the single `OverdueInspectionReminder` with three complementary notification types:
+
+| # | Notification | When it fires | Purpose |
+|---|---|---|---|
+| 1 | `PlannedInspectionReminder` | On the planned_date itself | "Today is your scheduled inspection" |
+| 2 | `MonthEndInspectionReminder` | Last 7 days of month, no inspection done | "Month is almost over, inspect now" |
+| 3 | `OverdueInspectionReminder` | After planned_date passes with no inspection | "You missed this inspection" |
+
+### How They Interact
+
+**Scenario 1: planned_date = Aug 15 (early/mid month)**
+
+| Date | Notification | Why |
+|---|---|---|
+| Aug 15 | PlannedInspectionReminder | On the planned date |
+| Aug 22 | OverdueInspectionReminder |7 days after planned date (no grace needed — fire on time) |
+| Aug 25 | MonthEndInspectionReminder | Last7 days of month, no inspection |
+| Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately (dedupe handles if already sent) |
+
+**Scenario 2: planned_date = Aug 25 (6 days before Sep)**
+
+| Date | Notification | Why |
+|---|---|---|
+| Aug 25 | PlannedInspectionReminder | On the planned date |
+| Aug 25 | MonthEndInspectionReminder | Last7 days of month (same day) |
+| Aug 26-31 | *(nothing)* | Grace period for OverdueInspection |
+| Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately |
+
+**Scenario 3: planned_date = Aug 28 (3 days before Sep)**
+
+| Date | Notification | Why |
+|---|---|---|
+| Aug 28 | PlannedInspectionReminder | On the planned date |
+| Aug 25 | MonthEndInspectionReminder | Fires first (last7 days of month) |
+| Sep 1 | OverdueInspectionReminder | Crossed month → fires immediately |
+
+### OverdueInspectionReminder Simplification
+
+Remove the grace period entirely from `OverdueInspectionReminder`. The three types cover all phases:
+
+```php
+// Current (with grace):
+return $baseline->planned_date->lt(Carbon::now()->subDays($graceDays));
+
+// New (no grace):
+return $baseline->planned_date->lt(Carbon::now());
+```
+
+### Files to Change
+
+| File | Change |
+|---|---|
+| `app/Notifications/PlannedInspectionReminder.php` | **New** — fires on planned_date |
+| `app/Notifications/MonthEndInspectionReminder.php` | **New** — fires in last7 days of month |
+| `app/Console/Commands/SendNotifications.php` | Add 2 new methods, simplify `sendOverdueInspectionReminders` (remove grace), remove grace from `sendRiskLevelChangeNotifications` |
+| `resources/views/notifications/partials/bell.blade.php` | Display logic for 2 new types |
+| `app/Http/Controllers/NotificationController.php` | `humanType()` and `title()` for 2 new types |
+
+### Deduplication
+
+Each notification type uses a distinct dedupe key:
+- `PlannedInspectionReminder`: `planned_inspection:{project_id}:{month_label}`
+- `MonthEndInspectionReminder`: `month_end_inspection:{project_id}:{month_label}`
+- `OverdueInspectionReminder`: `overdue_inspection:{project_id}:{month_label}` (existing)
+
+No conflicts between types — a project can receive all three for the same month.
+
+### Effort
+
+Medium — 2 new files, 3 modified files, ~80-100 lines total.
