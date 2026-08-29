@@ -576,38 +576,28 @@ Low — 1 file, ~40 lines restructured.
 ## Bug 7: Email Notifications Delayed 30-60 Minutes (Synchronous SMTP Blocking)
 
 **Date:** August 28, 2026
-**Status: REVERTED** — Queued approach (`SendNotificationEmailJob`) was implemented and then reverted. The queued approach requires a separate `queue:listen` process that conflicts with the team's `php artisan serve` workflow. Synchronous sending is the correct architecture for this setup.
+**Status: RESOLVED via Bug 8** — The delay was specific to RiskLevelChanged notifications (missing `Queueable` trait), not a general SMTP blocking issue. Bug 8 fix resolved it. The queued approach (`SendNotificationEmailJob`) was attempted and reverted — it was unnecessary. Other notification types (DeadlineReminder, IssueReported, etc.) were never delayed.
 
 ### Problem
 
-In-app notifications (database) appear instantly, but email notifications for all types are delayed by 30 to 60 minutes. The delay is most noticeable when the `notifications:scan` command runs at 07:00 daily, or when a user manually triggers a risk level change by recording progress.
+Risk level change notifications had delayed or missing Gmail delivery, while all other notification types sent Gmail within seconds. This was initially misdiagnosed as a general SMTP bottleneck across all notification types.
 
 ### Root Cause
 
-Sequential SMTP sending via free Gmail account. The scan processes projects one at a time, each with multiple notification types × recipients. Gmail throttles after ~100-200 rapid sends.
+`RiskLevelChanged` was the **only** notification class missing the `use Queueable` trait. Without it, Laravel's mail channel pipeline handled the notification differently, causing SMTP delays or silent failures. All other 7 notification classes had `Queueable`.
 
-### What Was Tried
+### What Was Tried (Unnecessary)
 
 | Attempt | Approach | Result |
 |---|---|---|
-| Phase 1 | `ShouldQueue` on notification classes | FAILED — queued ALL channels including `database`, breaking in-app notifications |
-| Phase 2 | Split channels: `via(['database'])` only + `SendNotificationEmailJob` | FAILED — `NotificationSender` not container-resolvable; `Notification` facade resolved to base class; required separate `queue:listen` process |
+| Phase 1 | `ShouldQueue` on all notification classes | FAILED — queued ALL channels including `database`, breaking in-app notifications |
+| Phase 2 | Split channels: `via(['database'])` only + `SendNotificationEmailJob` | FAILED — `NotificationSender` not container-resolvable; required separate `queue:listen` process |
 
-### Why It Was Reverted
+These attempts were unnecessary because the root cause was isolated to one notification class missing a trait.
 
-The queued approach requires `php artisan queue:listen --queue=default,emails` running as a separate process. The team uses `php artisan serve` to start the dev server, which does NOT start a queue worker. Adding a queue worker dependency breaks the team's established workflow.
+### Actual Fix
 
-### Current State
-
-Emails are sent **synchronously** via `$user->notify()` with `via(['database', 'mail'])`. This means:
-- Event notifications: ~2-5 sec per recipient (acceptable)
-- Scan notifications: 30-60 min for full scan (background batch job, acceptable)
-
-### Future Options (not urgent)
-
-1. Use a faster email service (SendGrid/Mailgun free tier) instead of Gmail SMTP
-2. Use `composer dev` which starts queue worker alongside the server
-3. Add a startup check that warns if queue worker is not running
+**Bug 8:** Added `use Queueable;` trait to `RiskLevelChanged.php`. Gmail delivery for risk level notifications now works within seconds, matching all other notification types.
 
 ### Retained Improvements from Bug 7 Effort
 
@@ -971,7 +961,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | 4 | Inspection reminder late for late-month dates | Medium (UX) | Medium | FIXED |
 | 5 | Notification scan includes archived projects | Medium (phantom alerts) | Low | FIXED |
 | 6 | Notification page wrong label for new types | Medium (wrong label) | Low | FIXED |
-| 7 | Email notifications delayed (SMTP blocking) | High (missed alerts) | Medium | REVERTED |
+| 7 | Email notifications delayed (SMTP blocking) | High (missed alerts) | Medium | RESOLVED via Bug 8 |
 | 8 | RiskLevelChanged missing Queueable trait | High (Gmail delay) | Low | FIXED & TESTED |
 | 9 | Scan risk level shows wrong progress data | High (wrong info) | Low | FIXED & TESTED |
 | 10 | RiskLevelChanged recipients missing unique | Low (duplicates) | Low | FIXED & TESTED |
@@ -991,7 +981,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 6. ~~**Inspection Reminder Overhaul** (3 notification types)~~ — DONE
 7. ~~**Bug 5** (archived project scan exclusion)~~ — DONE
 8. ~~**Bug 6** (notification page label for new inspection types)~~ — DONE
-9. ~~**Bug 7** (email notification delay — REVERTED)~~ — REVERTED
+9. ~~**Bug 7** (email notification delay — resolved via Bug 8)~~ — RESOLVED
 10. ~~**Bug 8** (RiskLevelChanged Queueable trait)~~ — DONE & TESTED
 11. ~~**Bug 9** (scan risk level wrong data)~~ — DONE & TESTED
 12. ~~**Bug 10** (recipients missing unique)~~ — DONE & TESTED
