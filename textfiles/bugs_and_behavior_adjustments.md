@@ -968,7 +968,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E1 | Issue notification missing assigned staff | Medium (missed alerts) | Low | FIXED & TESTED |
 | E2 | Remove contractor from inspection notifications | Low (relevance) | Low | FIXED & TESTED |
 | E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | IMPLEMENTED & TESTED |
-| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | IMPLEMENTED — NEEDS FIX (see E4 Fix Plan below) |
+| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | FIXED — live-gap approach, NEEDS USER TESTING |
 | E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | IMPLEMENTED & TESTED (risk notifications deferred) |
 
 ### Implementation Order
@@ -1034,7 +1034,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 ## E4 Fix Plan: Live-Gap Calculation for Edit/Delete Risk Level
 
 **Date:** August 29, 2026
-**Status: PLANNED** — Needs implementation.
+**Status: FIXED** — Live-gap approach implemented. Uses latest actual vs current month's plan. Matches scan logic. Ready for user testing.
 
 ### Problem
 
