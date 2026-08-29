@@ -968,7 +968,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E1 | Issue notification missing assigned staff | Medium (missed alerts) | Low | FIXED & TESTED |
 | E2 | Remove contractor from inspection notifications | Low (relevance) | Low | FIXED & TESTED |
 | E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | IMPLEMENTED & TESTED |
-| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | FIXED — live-gap approach, NEEDS USER TESTING |
+| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | FIXED & TESTED (live-gap approach) |
 | E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | IMPLEMENTED & TESTED (risk notifications deferred) |
 
 ### Implementation Order
@@ -1005,7 +1005,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E1 | Added assigned staff to IssueReported recipients | `app/Http/Controllers/IssueController.php:143` | FIXED & TESTED |
 | E2 | Excluded contractor from inspection notifications | `app/Console/Commands/SendNotifications.php:90` ($internalRecipients) | FIXED & TESTED |
 | E3 | Added overdue deadline detail to notification list | `resources/views/notifications/_list.blade.php:141` | IMPLEMENTED & TESTED |
-| E4 | Added risk level change detection to edit/delete | `app/Http/Controllers/ProjectProgressController.php` | IMPLEMENTED — NEEDS FIX |
+| E4 | Added risk level change detection to edit/delete | `app/Http/Controllers/ProjectProgressController.php` | FIXED & TESTED |
 | E5 | Added trigger user exclusion to event notifications | `RiskController.php`, `IssueController.php`, `ProjectProgressController.php` | IMPLEMENTED & TESTED |
 
 ### User Testing Results (August 29, 2026)
@@ -1018,7 +1018,7 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E1 (staff on issue) | WORKING | Assigned staff receives IssueReported |
 | E2 (contractor excluded) | WORKING | Contractors don't get inspection notifications |
 | E3 (overdue detail) | WORKING | Shows planned_end_date + overdue days |
-| E4 (edit/delete risk) | NEEDS FIX | See E4 Fix Plan below |
+| E4 (edit/delete risk) | WORKING | Live-gap approach: latest actual vs current month's plan |
 | E5 (trigger exclusion — issue/risk) | WORKING | Users don't get their own IssueReported/RiskReported |
 | E5 (trigger exclusion — risk level) | DEFERRED | Low priority, not tested yet |
 | 5a/5b (inspection reminders) | WORKING | Tested in prior session, not touched by this session |
