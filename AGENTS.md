@@ -62,12 +62,7 @@ App UI CSS/JS lives in `public/css` and `public/js`, linked via `asset('...')` i
 
 ### Adjustment Logging (mandatory)
 
-All bug fixes, enhancements, and behavioral changes must be logged in `textfiles/bugs_and_behavior_adjustments.md`. This file serves as the **historical record** of every adjustment the notification system (and related features) goes through during testing and iteration. It enables:
-
-- Future developers (human or AI) to understand **why** a change was made
-- Tracking the **testing status** of each adjustment (implemented, tested, needs fix)
-- Recording **user feedback** and **test results** per session
-- Documenting **fix plans** before implementation when issues are discovered during testing
+All bug fixes, enhancements, and behavioral changes must be logged in plan files under `textfiles/`. Each plan file (e.g. `bugs_and_behavior_adjustments.md`, `extension_notification_fix_plan.txt`, etc.) serves as the **historical record** of every adjustment a feature goes through during development, testing, and iteration. These files collectively form the project's adjustment history — any future developer or AI model can trace how and why a particular implementation evolved.
 
 **What to log:**
 - Each bug/enhancement with its problem, root cause, fix, and status
@@ -76,6 +71,28 @@ All bug fixes, enhancements, and behavioral changes must be logged in `textfiles
 - Any behavioral decisions made during testing (e.g. "recordProgress keeps month-specific variance")
 
 **When to log:**
-- Before committing any notification-related or behavioral change
+- Before committing any behavioral change
 - After each testing session when user provides feedback
 - When a fix plan is created for a discovered issue
+
+**Which file to log in:**
+- `textfiles/bugs_and_behavior_adjustments.md` — notification system bugs, enhancements, and behavioral changes
+- Feature-specific plan files (e.g. `extension_notification_fix_plan.txt`) — changes scoped to that feature
+- When in doubt, create a new plan file in `textfiles/` with a descriptive name
+
+### Existing Development Rules (from project_context_and_development_rules.txt)
+
+The following rules are established in the project. Full reference: `textfiles/active_reference/project_context_and_development_rules.txt`.
+
+1. Always request updated source code before suggesting modifications when uncertain about current implementation.
+2. Provide complete functions or classes — avoid partial implementations unless explicitly requested.
+3. Clearly explain: where code belongs, what it replaces, what depends on it, why the change is necessary.
+4. Every code block should contain descriptive comments explaining its purpose.
+5. Maintain clean separation of responsibilities (math → services → controllers → views).
+6. Avoid unnecessary coupling between services — single primary responsibility per service.
+7. Prefer expanding existing architecture over redesigning completed components.
+8. Test after each implementation step before proceeding to the next.
+9. Every function must include a descriptive comment label (simple → one-line; complex → purpose/caller/dependency).
+10. Inform user before continuing after each phase/sub-phase completion.
+11. Record/update logs on every phase completion.
+12. Branching workflow: new features on separate branches, named `phase-<number>-<short-description>`, no merge to main without explicit confirmation.
