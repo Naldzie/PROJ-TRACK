@@ -420,6 +420,7 @@ class RiskRegisterTest extends TestCase
     public function test_high_risk_creation_notifies_admins_and_project_contractor(): void
     {
         $admin = $this->user('admin');
+        $otherAdmin = $this->user('admin');
         $contractorUser = $this->projectWithContractor();
 
         $this->actingAs($admin);
@@ -431,9 +432,12 @@ class RiskRegisterTest extends TestCase
 
         $this->assertTrue($response->getData()->success);
 
-        // Admin notified
-        $this->assertSame(1, $admin->notifications()->count());
-        $adminNotification = $admin->notifications()->first();
+        // Trigger user does NOT receive their own notification
+        $this->assertSame(0, $admin->notifications()->count());
+
+        // Other admin notified
+        $this->assertSame(1, $otherAdmin->notifications()->count());
+        $adminNotification = $otherAdmin->notifications()->first();
         $this->assertSame(RiskReported::class, $adminNotification->type);
         $this->assertSame('High', $adminNotification->data['severity']);
         $this->assertSame('Structural collapse risk', $adminNotification->data['risk_name']);
@@ -450,6 +454,7 @@ class RiskRegisterTest extends TestCase
     public function test_high_risk_notification_fires_only_once_per_risk(): void
     {
         $admin = $this->user('admin');
+        $otherAdmin = $this->user('admin');
         $this->projectWithContractor();
 
         $this->actingAs($admin);
@@ -467,7 +472,7 @@ class RiskRegisterTest extends TestCase
             'risk_name'   => 'Renamed risk',
         ])), $risk);
 
-        $this->assertSame(1, $admin->notifications()->count());
+        $this->assertSame(1, $otherAdmin->notifications()->count());
     }
 
     public function test_low_medium_risk_creation_sends_no_notification(): void
@@ -643,6 +648,7 @@ class RiskRegisterTest extends TestCase
     public function test_convert_fires_issuereported_notification(): void
     {
         $admin = $this->user('admin');
+        $otherAdmin = $this->user('admin');
         $contractorUser = $this->projectWithContractor();
         $this->actingAs($admin);
 
@@ -651,9 +657,12 @@ class RiskRegisterTest extends TestCase
 
         $issue = Issue::first();
 
-        // Admin notified
-        $this->assertSame(1, $admin->notifications()->count());
-        $adminNotification = $admin->notifications()->first();
+        // Trigger user does NOT receive their own notification
+        $this->assertSame(0, $admin->notifications()->count());
+
+        // Other admin notified
+        $this->assertSame(1, $otherAdmin->notifications()->count());
+        $adminNotification = $otherAdmin->notifications()->first();
         $this->assertSame(IssueReported::class, $adminNotification->type);
         $this->assertSame($issue->id, $adminNotification->data['issue_id']);
 

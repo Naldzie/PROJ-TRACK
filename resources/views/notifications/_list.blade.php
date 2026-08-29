@@ -138,6 +138,13 @@
                         @endif
                     </div>
                     <div class="notif-meta">{{ $n->created_at?->format('M d, Y h:i A') }}</div>
+                    @if(str_contains($n->type, 'DeadlineReminder') && !empty($d['planned_end_date']))
+                        @if(($d['bucket'] ?? '') === 'overdue')
+                            <div class="notif-meta" style="margin-top:4px; color:#b45309;">Due: {{ \Illuminate\Support\Carbon::parse($d['planned_end_date'])->format('M d, Y') }} · Overdue by {{ abs($d['days_remaining'] ?? 0) }} day(s)</div>
+                        @else
+                            <div class="notif-meta" style="margin-top:4px; color:#374151;">Due: {{ \Illuminate\Support\Carbon::parse($d['planned_end_date'])->format('M d, Y') }} · {{ $d['days_remaining'] ?? 0 }} day(s) remaining</div>
+                        @endif
+                    @endif
                     @if(str_contains($n->type, 'OverdueInspectionReminder') && !empty($d['planned_date']))
                         <div class="notif-meta" style="margin-top:4px; color:#b45309;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
                     @endif

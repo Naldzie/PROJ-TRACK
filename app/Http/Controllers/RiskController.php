@@ -122,7 +122,7 @@ class RiskController extends Controller
                     if ($contractorUser) {
                         $recipients->push($contractorUser);
                     }
-                    $service->notifyMany($recipients->unique('id'), new RiskReported(
+                    $service->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== $user->id), new RiskReported(
                         $project->id,
                         $project->title,
                         $risk->id,
@@ -407,7 +407,7 @@ class RiskController extends Controller
                 if ($contractorUser) {
                     $recipients->push($contractorUser);
                 }
-                $service->notifyMany($recipients->unique('id'), new IssueReported(
+                $service->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== $user->id), new IssueReported(
                     $project->id,
                     $project->title,
                     $issue->id,

@@ -322,6 +322,9 @@ class IssueLifecycleTest extends TestCase
     public function test_activity_log_created_on_store_update_destroy(): void
     {
         $admin = $this->admin();
+        // Second admin needed so notification delivery triggers ActivityLog
+        // (trigger user is excluded from their own notifications)
+        $otherAdmin = $this->admin();
         $this->actingAs($admin);
 
         // Store

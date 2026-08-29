@@ -150,7 +150,7 @@ class IssueController extends Controller
                 if ($contractorUser) {
                     $recipients->push($contractorUser);
                 }
-                $service->notifyMany($recipients->unique('id'), new IssueReported(
+                $service->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== auth()->id()), new IssueReported(
                     $project->id,
                     $project->title,
                     $issue->id,

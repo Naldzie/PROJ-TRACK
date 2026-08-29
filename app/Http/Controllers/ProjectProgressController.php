@@ -221,6 +221,59 @@ class ProjectProgressController extends Controller
                 $this->syncPredictionHistoryActual($project, $record->month_label);
             }
 
+            // Risk-level change detection after edit
+            if ($isMonthlyRecord && ! empty($record->month_label)) {
+                $statusService = app(ProjectStatusService::class);
+                $riskData = $statusService->getRiskLevel(-$variancePercent);
+                $currentRiskLevel = $riskData['label'];
+                $previousRiskLevel = $project->previous_risk_level;
+
+                if ($previousRiskLevel === null) {
+                    $lastProgress = $project->progressHistory()
+                        ->reorder()
+                        ->orderBy('month_label', 'desc')
+                        ->first();
+                    if ($lastProgress && isset($lastProgress->variance_percent)) {
+                        $previousRiskLevel = $statusService->getRiskLevel(-$lastProgress->variance_percent)['label'];
+                    }
+                }
+
+                if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
+                    try {
+                        $notifService = app(NotificationService::class);
+                        $recipients = collect();
+                        $recipients = $recipients->merge($notifService->admins());
+                        $staff = $notifService->staffForProject($project);
+                        if ($staff) {
+                            $recipients->push($staff);
+                        }
+                        $contractor = $notifService->contractorUserFor($project);
+                        if ($contractor) {
+                            $recipients->push($contractor);
+                        }
+
+                        $notification = new \App\Notifications\RiskLevelChanged(
+                            $project->id,
+                            $project->title,
+                            $previousRiskLevel,
+                            $currentRiskLevel,
+                            $record->month_label,
+                            $variancePercent,
+                            $newProgressPercent,
+                            $plannedProgressPercent,
+                        );
+                        $notifService->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== auth()->id()), $notification);
+                    } catch (\Throwable $e) {
+                        \Log::warning('Risk level notification failed (edit progress)', [
+                            'project_id' => $project->id,
+                            'error'      => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                $project->update(['previous_risk_level' => $currentRiskLevel]);
+            }
+
             Cache::forget('ai_prediction:' . $project->id);
 
             return response()->json([
@@ -337,6 +390,57 @@ class ProjectProgressController extends Controller
             // never be observed). Partial deletes must NOT prune — that would
             // permanently orphan the month's forecast-vs-actual accuracy link.
             $this->prunePredictionHistoryOnEmpty($project);
+
+            // Risk-level change detection after delete
+            $newLatest = $project->progressHistory()
+                ->reorder()
+                ->orderBy('month_label', 'desc')
+                ->first();
+
+            $previousRiskLevel = $project->previous_risk_level;
+
+            if ($newLatest && isset($newLatest->variance_percent)) {
+                $statusService = app(ProjectStatusService::class);
+                $currentRiskLevel = $statusService->getRiskLevel(-$newLatest->variance_percent)['label'];
+
+                if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
+                    try {
+                        $notifService = app(NotificationService::class);
+                        $recipients = collect();
+                        $recipients = $recipients->merge($notifService->admins());
+                        $staff = $notifService->staffForProject($project);
+                        if ($staff) {
+                            $recipients->push($staff);
+                        }
+                        $contractor = $notifService->contractorUserFor($project);
+                        if ($contractor) {
+                            $recipients->push($contractor);
+                        }
+
+                        $notification = new \App\Notifications\RiskLevelChanged(
+                            $project->id,
+                            $project->title,
+                            $previousRiskLevel,
+                            $currentRiskLevel,
+                            $newLatest->month_label,
+                            $newLatest->variance_percent,
+                            (float) ($newLatest->actual_progress_percent ?? 0),
+                            (float) ($newLatest->planned_progress_percent ?? 0),
+                        );
+                        $notifService->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== auth()->id()), $notification);
+                    } catch (\Throwable $e) {
+                        \Log::warning('Risk level notification failed (delete progress)', [
+                            'project_id' => $project->id,
+                            'error'      => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                $project->update(['previous_risk_level' => $currentRiskLevel]);
+            } elseif (! $newLatest) {
+                // No progress records remain — clear stored risk level
+                $project->update(['previous_risk_level' => null]);
+            }
 
             Cache::forget('ai_prediction:' . $project->id);
 
@@ -506,7 +610,7 @@ class ProjectProgressController extends Controller
                         $actualProgressPercent,
                         $plannedProgressPercent,
                     );
-                    $notifService->notifyMany($recipients->unique('id'), $notification);
+                    $notifService->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== auth()->id()), $notification);
                 } catch (\Throwable $e) {
                     \Log::warning('Risk level notification failed', [
                         'project_id' => $project->id,

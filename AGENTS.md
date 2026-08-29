@@ -57,3 +57,25 @@ App UI CSS/JS lives in `public/css` and `public/js`, linked via `asset('...')` i
 - `Tests\Helpers\CreatesProjectWithHistory` trait builds regression datasets for AI tests, including the known "Project 7" dataset (slope ≈ 5.115, R² ≈ 0.954) — don't change those expected values.
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
 - Full suite: 985 tests / 3474 assertions (2 pre-existing `EmailDraftTest` failures excluded).
+
+## Development Rules
+
+### Adjustment Logging (mandatory)
+
+All bug fixes, enhancements, and behavioral changes must be logged in `textfiles/bugs_and_behavior_adjustments.md`. This file serves as the **historical record** of every adjustment the notification system (and related features) goes through during testing and iteration. It enables:
+
+- Future developers (human or AI) to understand **why** a change was made
+- Tracking the **testing status** of each adjustment (implemented, tested, needs fix)
+- Recording **user feedback** and **test results** per session
+- Documenting **fix plans** before implementation when issues are discovered during testing
+
+**What to log:**
+- Each bug/enhancement with its problem, root cause, fix, and status
+- Session logs with: date, changes implemented, user testing results, test pass/fail counts
+- Fix plans when initial implementation needs correction (e.g. E4 live-gap fix plan)
+- Any behavioral decisions made during testing (e.g. "recordProgress keeps month-specific variance")
+
+**When to log:**
+- Before committing any notification-related or behavioral change
+- After each testing session when user provides feedback
+- When a fix plan is created for a discovered issue

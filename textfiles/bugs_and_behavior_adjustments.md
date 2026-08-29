@@ -967,9 +967,9 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | 10 | RiskLevelChanged recipients missing unique | Low (duplicates) | Low | FIXED & TESTED |
 | E1 | Issue notification missing assigned staff | Medium (missed alerts) | Low | FIXED & TESTED |
 | E2 | Remove contractor from inspection notifications | Low (relevance) | Low | FIXED & TESTED |
-| E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | OPEN |
-| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | OPEN |
-| E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | OPEN |
+| E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | IMPLEMENTED & TESTED |
+| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | IMPLEMENTED — NEEDS FIX (see E4 Fix Plan below) |
+| E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | IMPLEMENTED & TESTED (risk notifications deferred) |
 
 ### Implementation Order
 
@@ -987,6 +987,213 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 12. ~~**Bug 10** (recipients missing unique)~~ — DONE & TESTED
 13. ~~**E1** (issue notification staff recipients)~~ — DONE & TESTED
 14. ~~**E2** (remove contractor from inspection notifications)~~ — DONE & TESTED
-15. **E3** (overdue deadline in-app detail) — NEXT
-16. **E4** (risk level change on edit/delete progress) — NEXT
-17. **E5** (trigger user exclusion for Gmail) — NEXT
+15. ~~**E3** (overdue deadline in-app detail)~~ — DONE & TESTED
+16. **E4** (risk level change on edit/delete — needs fix) — NEXT
+17. ~~**E5** (trigger user exclusion for Gmail)~~ — DONE & TESTED (risk notifications deferred)
+
+---
+
+## Session Log: August 29, 2026 (Afternoon)
+
+### Changes Implemented This Session
+
+| Item | Change | Files | Status |
+|---|---|---|---|
+| Bug 8 | Added `use Queueable;` to `RiskLevelChanged` | `app/Notifications/RiskLevelChanged.php` | FIXED & TESTED |
+| Bug 9 | Added `->reorder()` to scan risk level query | `app/Console/Commands/SendNotifications.php:373` | FIXED & TESTED |
+| Bug 10 | Added `->unique('id')` to RiskLevelChanged recipients | `app/Http/Controllers/ProjectProgressController.php:509` | FIXED & TESTED |
+| E1 | Added assigned staff to IssueReported recipients | `app/Http/Controllers/IssueController.php:143` | FIXED & TESTED |
+| E2 | Excluded contractor from inspection notifications | `app/Console/Commands/SendNotifications.php:90` ($internalRecipients) | FIXED & TESTED |
+| E3 | Added overdue deadline detail to notification list | `resources/views/notifications/_list.blade.php:141` | IMPLEMENTED & TESTED |
+| E4 | Added risk level change detection to edit/delete | `app/Http/Controllers/ProjectProgressController.php` | IMPLEMENTED — NEEDS FIX |
+| E5 | Added trigger user exclusion to event notifications | `RiskController.php`, `IssueController.php`, `ProjectProgressController.php` | IMPLEMENTED & TESTED |
+
+### User Testing Results (August 29, 2026)
+
+| Item | Result | Notes |
+|---|---|---|
+| Bug 8 (Queueable) | WORKING | Gmail sends within seconds |
+| Bug 9 (reorder) | WORKING | Correct progress data shown |
+| Bug 10 (unique) | WORKING | No duplicate notifications |
+| E1 (staff on issue) | WORKING | Assigned staff receives IssueReported |
+| E2 (contractor excluded) | WORKING | Contractors don't get inspection notifications |
+| E3 (overdue detail) | WORKING | Shows planned_end_date + overdue days |
+| E4 (edit/delete risk) | NEEDS FIX | See E4 Fix Plan below |
+| E5 (trigger exclusion — issue/risk) | WORKING | Users don't get their own IssueReported/RiskReported |
+| E5 (trigger exclusion — risk level) | DEFERRED | Low priority, not tested yet |
+| 5a/5b (inspection reminders) | WORKING | Tested in prior session, not touched by this session |
+| 6 (notification page labels) | WORKING | Tested in prior session |
+
+### Test Results
+
+- **985 tests pass** (2 pre-existing `EmailDraftTest` failures unchanged)
+- Tests updated: `RiskRegisterTest` (3 tests) and `IssueLifecycleTest` (1 test) updated for trigger user exclusion (create second admin as recipient)
+
+---
+
+## E4 Fix Plan: Live-Gap Calculation for Edit/Delete Risk Level
+
+**Date:** August 29, 2026
+**Status: PLANNED** — Needs implementation.
+
+### Problem
+
+The current E4 implementation uses the **stored variance** of the edited/deleted record to determine risk level. This is wrong because the stored variance compares actual vs planned **for that specific month**, not against the **current month's plan**.
+
+### Example
+
+| Month | Plan | Actual | Stored Variance |
+|---|---|---|---|
+| July | 18% | 15% | -3% |
+| August | 28% | 20% | -8% |
+
+Current simulated date: **August**
+
+**Delete August's progress record:**
+- Current code: reverts to July's stored variance (-3%) → **Low Risk** (WRONG)
+- Correct: July's actual (15%) vs August's plan (28%) = -13% → **High Risk** (CORRECT)
+
+The project is MORE behind (only 15% done, should be at 28%), but the system says LESS risk.
+
+### Root Cause
+
+Both `destroyProgress()` and `editProgressRecord()` use the **stored variance** from the progress record. The stored variance was computed at record creation time against **that month's plan**. After deletion/edit, the stored variance does not reflect the current project state relative to the current date.
+
+### Correct Approach
+
+Match the scan's logic (`sendRiskLevelChangeNotifications()` at `SendNotifications.php:367-426`):
+
+1. Get the **latest remaining record** (actual progress)
+2. Find the **current month's baseline** (`planned_date <= Carbon::now()`)
+3. Compute **live variance** = latest actual - current month's plan
+4. Use live variance to determine risk level
+
+This is date-aware (respects `Carbon::now()` / simulation) and consistent with the scan.
+
+### Implementation
+
+#### `destroyProgress()` — replace current E4 block
+
+After deleting the record and syncing prediction history:
+
+```php
+// Risk-level change detection after delete (live-gap approach)
+$newLatest = $project->progressHistory()
+    ->reorder()
+    ->orderBy('month_label', 'desc')
+    ->first();
+
+$previousRiskLevel = $project->previous_risk_level;
+
+if ($newLatest) {
+    // Find current month's baseline plan (same as scan logic)
+    $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+        ->where('planned_date', '<=', Carbon::now())
+        ->orderBy('planned_date', 'desc')
+        ->first();
+
+    if ($currentMonthBaseline) {
+        $plannedProgress = (float) $currentMonthBaseline->planned_progress_percent;
+        $actualProgress  = (float) $newLatest->actual_progress_percent;
+        $liveVariance    = $actualProgress - $plannedProgress;
+
+        $statusService = app(ProjectStatusService::class);
+        $currentRiskLevel = $statusService->getRiskLevel(-$liveVariance)['label'];
+
+        if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
+            // Fire RiskLevelChanged notification (exclude trigger user)
+            try {
+                $notifService = app(NotificationService::class);
+                $recipients = collect();
+                $recipients = $recipients->merge($notifService->admins());
+                $staff = $notifService->staffForProject($project);
+                if ($staff) { $recipients->push($staff); }
+                $contractor = $notifService->contractorUserFor($project);
+                if ($contractor) { $recipients->push($contractor); }
+
+                $notification = new \App\Notifications\RiskLevelChanged(
+                    $project->id,
+                    $project->title,
+                    $previousRiskLevel,
+                    $currentRiskLevel,
+                    $newLatest->month_label,
+                    $liveVariance,
+                    $actualProgress,
+                    $plannedProgress,
+                );
+                $notifService->notifyMany($recipients->unique('id')->filter(fn ($u) => $u->id !== auth()->id()), $notification);
+            } catch (\Throwable $e) {
+                \Log::warning('Risk level notification failed (delete progress)', [
+                    'project_id' => $project->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $project->update(['previous_risk_level' => $currentRiskLevel]);
+    }
+} elseif (! $newLatest) {
+    // No progress records remain — clear stored risk level
+    $project->update(['previous_risk_level' => null]);
+}
+```
+
+#### `editProgressRecord()` — replace current E4 block
+
+Same pattern after the edit is saved and synced:
+
+```php
+// Risk-level change detection after edit (live-gap approach)
+if ($isMonthlyRecord && ! empty($record->month_label)) {
+    $latestRecord = $project->progressHistory()
+        ->reorder()
+        ->orderBy('month_label', 'desc')
+        ->first();
+
+    $previousRiskLevel = $project->previous_risk_level;
+
+    if ($latestRecord) {
+        $currentMonthBaseline = ProjectBaselineSchedule::where('project_id', $project->id)
+            ->where('planned_date', '<=', Carbon::now())
+            ->orderBy('planned_date', 'desc')
+            ->first();
+
+        if ($currentMonthBaseline) {
+            $plannedProgress = (float) $currentMonthBaseline->planned_progress_percent;
+            $actualProgress  = (float) $latestRecord->actual_progress_percent;
+            $liveVariance    = $actualProgress - $plannedProgress;
+
+            $statusService = app(ProjectStatusService::class);
+            $currentRiskLevel = $statusService->getRiskLevel(-$liveVariance)['label'];
+
+            if ($previousRiskLevel !== null && $currentRiskLevel !== $previousRiskLevel) {
+                // Fire RiskLevelChanged notification (exclude trigger user)
+                // ... same pattern as destroyProgress block above ...
+            }
+
+            $project->update(['previous_risk_level' => $currentRiskLevel]);
+        }
+    }
+}
+```
+
+### Key Differences from Current (Wrong) Code
+
+| Aspect | Current (wrong) | Proposed (correct) |
+|---|---|---|
+| Variance source | Stored `$variancePercent` from the edited/deleted record | Live calculation: latest actual vs current month's plan |
+| Month used for plan | The record's own month | Current month (same as scan) |
+| Consistent with scan? | No | Yes |
+| Handles date simulation? | No (uses stored value) | Yes (`Carbon::now()` respects simulation) |
+
+### What Stays the Same
+
+- `recordProgress()` — keeps using month-specific variance (user confirmed)
+- E3, E5 — confirmed working, no changes
+- All notification recipients, trigger user exclusion — no changes
+
+### Effort
+
+Low — replacing ~40 lines of wrong logic with ~50 lines of correct logic in 2 methods. Same file: `app/Http/Controllers/ProjectProgressController.php`.
+
+---
