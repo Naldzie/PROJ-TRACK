@@ -506,7 +506,7 @@ class ProjectProgressController extends Controller
                         $actualProgressPercent,
                         $plannedProgressPercent,
                     );
-                    $notifService->notifyMany($recipients, $notification);
+                    $notifService->notifyMany($recipients->unique('id'), $notification);
                 } catch (\Throwable $e) {
                     \Log::warning('Risk level notification failed', [
                         'project_id' => $project->id,

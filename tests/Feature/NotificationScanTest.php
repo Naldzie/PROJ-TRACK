@@ -258,7 +258,7 @@ class NotificationScanTest extends TestCase
 
         $this->assertSame(3, $this->admin->notifications()->count());
         $this->assertSame(3, $this->staff->notifications()->count());
-        $this->assertSame(3, $this->contractorUser->notifications()->count());
+        $this->assertSame(0, $this->contractorUser->notifications()->count());
 
         $rows = $this->admin->notifications()->get()->sortBy(fn ($n) => $n->data['month_label'])->values();
 
@@ -315,7 +315,8 @@ class NotificationScanTest extends TestCase
 
         $this->runScan();
 
-        $this->assertSame(1, $this->contractorUser->notifications()->count());
+        // Contractors don't receive inspection notifications (internal PMU concern)
+        $this->assertSame(0, $this->contractorUser->notifications()->count());
         $this->assertSame(0, $otherContractor->notifications()->count());
     }
 

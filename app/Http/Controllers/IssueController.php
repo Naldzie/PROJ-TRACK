@@ -138,21 +138,31 @@ class IssueController extends Controller
                 'ip_address'  => $request->ip(),
             ]);
 
-            // Notify admins + the project's contractor about the new issue
-            // (all severities — user confirmed).
-            $service = app(NotificationService::class);
-            $recipients = collect($service->admins());
-            $contractorUser = $service->contractorUserFor($project);
-            if ($contractorUser) {
-                $recipients->push($contractorUser);
+            // Notify admins + assigned staff + the project's contractor about the new issue
+            try {
+                $service = app(NotificationService::class);
+                $recipients = collect($service->admins());
+                $staff = $service->staffForProject($project);
+                if ($staff) {
+                    $recipients->push($staff);
+                }
+                $contractorUser = $service->contractorUserFor($project);
+                if ($contractorUser) {
+                    $recipients->push($contractorUser);
+                }
+                $service->notifyMany($recipients->unique('id'), new IssueReported(
+                    $project->id,
+                    $project->title,
+                    $issue->id,
+                    $issue->issue_name,
+                    $issue->severity ?? 'Low'
+                ));
+            } catch (\Throwable $e) {
+                \Log::warning('Issue reported notification failed', [
+                    'project_id' => $project->id,
+                    'error'      => $e->getMessage(),
+                ]);
             }
-            $service->notifyMany($recipients->unique('id'), new IssueReported(
-                $project->id,
-                $project->title,
-                $issue->id,
-                $issue->issue_name,
-                $issue->severity ?? 'Low'
-            ));
 
             return response()->json([
                 'success' => true,

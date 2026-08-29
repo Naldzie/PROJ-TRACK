@@ -27,6 +27,11 @@ use Illuminate\Console\Command;
  *    per uninspected month).
  *
  * Safe to run repeatedly — NotificationService dedupes by tracking key.
+ *
+ * Emails are queued (ShouldQueue on all notification classes) and processed by
+ * the queue:listen worker on the 'emails' queue. Database notifications are
+ * written synchronously for instant in-app display. Per-project error handling
+ * ensures one failure does not block the entire scan (Bug 7 fix).
  */
 class SendNotifications extends Command
 {
@@ -81,21 +86,42 @@ class SendNotifications extends Command
                 $recipients->push($contractorUser);
             }
             $recipients = $recipients->unique('id');
+            $internalRecipients = $recipients->filter(fn ($u) => $u->role !== 'contractor');
 
-            $sent = $this->sendDeadlineReminders($project, $recipients, $service, $deadlineBuckets);
-            $deadlineSent += $sent;
+            try {
+                $sent = $this->sendDeadlineReminders($project, $recipients, $service, $deadlineBuckets);
+                $deadlineSent += $sent;
+            } catch (\Throwable $e) {
+                $this->error("  [ERROR] Deadline for #{$project->id}: {$e->getMessage()}");
+            }
 
-            $sent = $this->sendPlannedInspectionReminders($project, $recipients, $service);
-            $plannedSent += $sent;
+            try {
+                $sent = $this->sendPlannedInspectionReminders($project, $internalRecipients, $service);
+                $plannedSent += $sent;
+            } catch (\Throwable $e) {
+                $this->error("  [ERROR] Planned inspection for #{$project->id}: {$e->getMessage()}");
+            }
 
-            $sent = $this->sendMonthEndInspectionReminders($project, $recipients, $service);
-            $monthEndSent += $sent;
+            try {
+                $sent = $this->sendMonthEndInspectionReminders($project, $internalRecipients, $service);
+                $monthEndSent += $sent;
+            } catch (\Throwable $e) {
+                $this->error("  [ERROR] Month-end inspection for #{$project->id}: {$e->getMessage()}");
+            }
 
-            $sent = $this->sendOverdueInspectionReminders($project, $recipients, $service);
-            $inspectionSent += $sent;
+            try {
+                $sent = $this->sendOverdueInspectionReminders($project, $internalRecipients, $service);
+                $inspectionSent += $sent;
+            } catch (\Throwable $e) {
+                $this->error("  [ERROR] Overdue inspection for #{$project->id}: {$e->getMessage()}");
+            }
 
-            $sent = $this->sendRiskLevelChangeNotifications($project, $recipients, $service);
-            $riskLevelSent += $sent;
+            try {
+                $sent = $this->sendRiskLevelChangeNotifications($project, $recipients, $service);
+                $riskLevelSent += $sent;
+            } catch (\Throwable $e) {
+                $this->error("  [ERROR] Risk level for #{$project->id}: {$e->getMessage()}");
+            }
         }
 
         $this->info("Scope: Ongoing w/ end date: {$projectsChecked} | Planned excluded: {$plannedExcluded} | all w/o end date: {$noEndDate}");
@@ -346,6 +372,7 @@ class SendNotifications extends Command
         $now = Carbon::now();
 
         $lastRecorded = $project->progressHistory()
+            ->reorder()
             ->orderBy('month_label', 'desc')
             ->first();
 

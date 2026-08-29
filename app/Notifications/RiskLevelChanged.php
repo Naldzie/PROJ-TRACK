@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -17,6 +18,7 @@ use Illuminate\Notifications\Notification;
  */
 class RiskLevelChanged extends Notification
 {
+    use Queueable;
 
     public function __construct(
         public int $projectId,

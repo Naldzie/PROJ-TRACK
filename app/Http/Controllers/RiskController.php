@@ -115,18 +115,25 @@ class RiskController extends Controller
 
             // Notify admins + the project's contractor for HIGH-level risks only
             if ($risk->risk_level === 'High') {
-                $service = app(NotificationService::class);
-                $recipients = collect($service->admins());
-                $contractorUser = $service->contractorUserFor($project);
-                if ($contractorUser) {
-                    $recipients->push($contractorUser);
+                try {
+                    $service = app(NotificationService::class);
+                    $recipients = collect($service->admins());
+                    $contractorUser = $service->contractorUserFor($project);
+                    if ($contractorUser) {
+                        $recipients->push($contractorUser);
+                    }
+                    $service->notifyMany($recipients->unique('id'), new RiskReported(
+                        $project->id,
+                        $project->title,
+                        $risk->id,
+                        $risk->risk_name
+                    ));
+                } catch (\Throwable $e) {
+                    \Log::warning('Risk reported notification failed', [
+                        'project_id' => $project->id,
+                        'error'      => $e->getMessage(),
+                    ]);
                 }
-                $service->notifyMany($recipients->unique('id'), new RiskReported(
-                    $project->id,
-                    $project->title,
-                    $risk->id,
-                    $risk->risk_name
-                ));
             }
 
             return response()->json([
@@ -393,19 +400,26 @@ class RiskController extends Controller
             ]);
 
             // Notify admins + the project's contractor (same as IssueController::store)
-            $service = app(NotificationService::class);
-            $recipients = collect($service->admins());
-            $contractorUser = $service->contractorUserFor($project);
-            if ($contractorUser) {
-                $recipients->push($contractorUser);
+            try {
+                $service = app(NotificationService::class);
+                $recipients = collect($service->admins());
+                $contractorUser = $service->contractorUserFor($project);
+                if ($contractorUser) {
+                    $recipients->push($contractorUser);
+                }
+                $service->notifyMany($recipients->unique('id'), new IssueReported(
+                    $project->id,
+                    $project->title,
+                    $issue->id,
+                    $issue->issue_name,
+                    $issue->severity ?? 'Low'
+                ));
+            } catch (\Throwable $e) {
+                \Log::warning('Issue reported notification failed (risk conversion)', [
+                    'project_id' => $project->id,
+                    'error'      => $e->getMessage(),
+                ]);
             }
-            $service->notifyMany($recipients->unique('id'), new IssueReported(
-                $project->id,
-                $project->title,
-                $issue->id,
-                $issue->issue_name,
-                $issue->severity ?? 'Low'
-            ));
 
             return response()->json([
                 'success' => true,

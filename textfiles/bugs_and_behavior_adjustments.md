@@ -1,7 +1,7 @@
 # Bugs & Behavior Adjustments
 
-**Date:** August 28, 2026
-**Status:** Bug 7 pending — email notification delay (September 2026)
+**Date:** August 28, 2026 (updated Aug 29)
+**Status:** Bugs 1–6 FIXED. Bug 7 REVERTED. Bugs 8–10 + E1–E2 FIXED & TESTED. E3 + new items OPEN.
 
 ---
 
@@ -576,132 +576,427 @@ Low — 1 file, ~40 lines restructured.
 ## Bug 7: Email Notifications Delayed 30-60 Minutes (Synchronous SMTP Blocking)
 
 **Date:** August 28, 2026
-**Status:** IN PROGRESS — recording and planning phase.
+**Status: REVERTED** — Queued approach (`SendNotificationEmailJob`) was implemented and then reverted. The queued approach requires a separate `queue:listen` process that conflicts with the team's `php artisan serve` workflow. Synchronous sending is the correct architecture for this setup.
 
 ### Problem
 
-In-app notifications (database) appear instantly, but email notifications for all types are delayed by 30 to 60 minutes. This affects:
-- `PlannedInspectionReminder`
-- `MonthEndInspectionReminder`
-- `OverdueInspectionReminder`
-- `RiskLevelChanged`
-- `DeadlineReminder`
-- `ExtensionStatusChanged`
-- `IssueReported`
-- `RiskReported`
-
-The delay is most noticeable when the `notifications:scan` command runs at 07:00 daily, or when a user manually triggers a risk level change by recording progress.
+In-app notifications (database) appear instantly, but email notifications for all types are delayed by 30 to 60 minutes. The delay is most noticeable when the `notifications:scan` command runs at 07:00 daily, or when a user manually triggers a risk level change by recording progress.
 
 ### Root Cause
 
-Three compounding factors create a synchronous SMTP bottleneck:
+Sequential SMTP sending via free Gmail account. The scan processes projects one at a time, each with multiple notification types × recipients. Gmail throttles after ~100-200 rapid sends.
 
-**Factor 1 — No `ShouldQueue` on any notification class.**
+### What Was Tried
 
-Every notification class uses `via(['database', 'mail'])` and implements `toMail()`, but **none** implements `ShouldQueue`. The `Queueable` trait is imported on 7 of 8 classes but is inert without `ShouldQueue`. This means `$user->notify()` at `NotificationService.php:65` sends emails **synchronously** — it opens a blocking SMTP connection and waits for Gmail to respond before moving to the next recipient.
-
-| Notification Class | File | `Queueable` trait | `ShouldQueue` |
-|---|---|---|---|
-| `PlannedInspectionReminder` | `app/Notifications/PlannedInspectionReminder.php:17` | YES | **NO** |
-| `MonthEndInspectionReminder` | `app/Notifications/MonthEndInspectionReminder.php:21` | YES | **NO** |
-| `OverdueInspectionReminder` | `app/Notifications/OverdueInspectionReminder.php:18` | YES | **NO** |
-| `RiskLevelChanged` | `app/Notifications/RiskLevelChanged.php:18` | **NO** | **NO** |
-| `DeadlineReminder` | `app/Notifications/DeadlineReminder.php:18` | YES | **NO** |
-| `ExtensionStatusChanged` | `app/Notifications/ExtensionStatusChanged.php:18` | YES | **NO** |
-| `IssueReported` | `app/Notifications/IssueReported.php:17` | YES | **NO** |
-| `RiskReported` | `app/Notifications/RiskReported.php:18` | YES | **NO** |
-
-**Factor 2 — Sequential per-project processing in `notifications:scan`.**
-
-`SendNotifications::handle()` loops through ALL ongoing projects one at a time (`SendNotifications.php:71`). For each project, up to 5 notification types × 3 recipients each = sequential SMTP sends. With 50 ongoing projects, that's 750+ blocking SMTP calls in series.
-
-```
-SendNotifications::handle()                     [SendNotifications.php:37]
-  └─ foreach $projects (ALL ongoing projects)   [line 71]
-       ├─ sendDeadlineReminders()              → notifyMany()  → $user->notify() [BLOCKING]
-       ├─ sendPlannedInspectionReminders()     → notifyMany()  → $user->notify() [BLOCKING]
-       ├─ sendMonthEndInspectionReminders()    → notifyMany()  → $user->notify() [BLOCKING]
-       ├─ sendOverdueInspectionReminders()     → notifyMany()  → $user->notify() [BLOCKING]
-       └─ sendRiskLevelChangeNotifications()   → notifyMany()  → $user->notify() [BLOCKING]
-```
-
-**Factor 3 — Gmail SMTP rate limiting on free account.**
-
-The system uses a free Gmail account (`projectmanagementunit57@gmail.com`). Gmail limits:
-- ~500 emails/day max for free accounts
-- ~100-200 rapid sends before throttling (returns `421`/`452` SMTP responses)
-- `config/mail.php:48` sets `'timeout' => null` — no SMTP connection timeout, so slow connections hang indefinitely
-
-### Code Path
-
-**In-app notification (instant):**
-```
-NotificationService::notifyMany()  [NotificationService.php:78]
-  └─ foreach $users
-       └─ notifyUnique()           [line 42]
-            └─ $user->notify()     [line 65]
-                 └─ via(['database', 'mail'])
-                      ├─ database: writes to notifications table (instant)
-                      └─ mail: SMTP send (BLOCKING, 1-10+ seconds per email)
-```
-
-**Event-driven risk level change (same issue):**
-`ProjectProgressController::recordMonthlyProgress()` dispatches `RiskLevelChanged` via the same `notifyMany()` path, blocking the HTTP request.
-
-### Why Queue Is Configured But Unused
-
-The queue infrastructure exists but is completely idle:
-- `QUEUE_CONNECTION=database` in `.env` (line 54)
-- `jobs` table exists (`database/migrations/2026_04_10_110748_create_jobs_table.php`)
-- `composer dev` runs `queue:listen --tries=1 --timeout=0`
-- `config/queue.php` default connection: `database`
-- **But `app/Jobs/` directory does not exist** — zero job classes in the codebase
-- No `ShouldQueue` on any notification or mailable class
-
-### Fix Plan
-
-Make notification classes queueable so emails are dispatched to the database queue and processed by the already-running `queue:listen` worker.
-
-**Step 1 — Add `ShouldQueue` to all notification classes:**
-
-Add `implements ShouldQueue` and ensure `Illuminate\Bus\Queueable` trait + `Illuminate\Contracts\Queue\ShouldQueue` import are present on all 8 notification classes.
-
-**Step 2 — Add dedicated queue for emails:**
-
-In `NotificationService::notifyMany()`, chain `->onQueue('emails')` before dispatch, so email jobs go to a dedicated queue separate from the default.
-
-**Step 3 — Add error handling in `SendNotifications.php`:**
-
-Wrap individual `notifyMany()` calls in try/catch so a single slow SMTP connection doesn't block the entire scan. Log failures and continue.
-
-**Step 4 — Add `ShouldQueue` to Mailable classes (optional, consistency):**
-
-Add `ShouldQueue` to `AiAnalysisMail`, `ContractorAccountMail`, `LoginPageLinkMail`.
-
-### Files to Change
-
-| File | Change |
-|---|---|
-| `app/Notifications/PlannedInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/MonthEndInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/OverdueInspectionReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/RiskLevelChanged.php` | Add `implements ShouldQueue`, add `Queueable` trait (missing) |
-| `app/Notifications/DeadlineReminder.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/ExtensionStatusChanged.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/IssueReported.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Notifications/RiskReported.php` | Add `implements ShouldQueue`, ensure `Queueable` trait |
-| `app/Services/NotificationService.php` | Chain `->onQueue('emails')` on notify dispatch |
-| `app/Console/Commands/SendNotifications.php` | Add try/catch around individual `notifyMany()` calls |
-
-### Expected Behavior After Fix
-
-| Scenario | Before Fix | After Fix |
+| Attempt | Approach | Result |
 |---|---|---|
-| `notifications:scan` (50 projects) | 30-60 min blocking on SMTP | Completes in seconds; emails processed by queue worker |
-| User records progress (risk level change) | HTTP request blocked 3-10 sec per email | HTTP request instant; emails queued |
-| In-app notifications | Instant (database) | Instant (database, unchanged) |
-| Email delivery | Delayed 30-60 min | Delivered within queue worker's processing cycle |
+| Phase 1 | `ShouldQueue` on notification classes | FAILED — queued ALL channels including `database`, breaking in-app notifications |
+| Phase 2 | Split channels: `via(['database'])` only + `SendNotificationEmailJob` | FAILED — `NotificationSender` not container-resolvable; `Notification` facade resolved to base class; required separate `queue:listen` process |
+
+### Why It Was Reverted
+
+The queued approach requires `php artisan queue:listen --queue=default,emails` running as a separate process. The team uses `php artisan serve` to start the dev server, which does NOT start a queue worker. Adding a queue worker dependency breaks the team's established workflow.
+
+### Current State
+
+Emails are sent **synchronously** via `$user->notify()` with `via(['database', 'mail'])`. This means:
+- Event notifications: ~2-5 sec per recipient (acceptable)
+- Scan notifications: 30-60 min for full scan (background batch job, acceptable)
+
+### Future Options (not urgent)
+
+1. Use a faster email service (SendGrid/Mailgun free tier) instead of Gmail SMTP
+2. Use `composer dev` which starts queue worker alongside the server
+3. Add a startup check that warns if queue worker is not running
+
+### Retained Improvements from Bug 7 Effort
+
+The following controller try/catch guards were added and retained (they prevent notification failures from crashing HTTP requests regardless of email delivery method):
+
+| Controller | Method | Notes |
+|---|---|---|
+| `RiskController.php` | `store()` | try/catch around high-risk notification |
+| `RiskController.php` | `convertToIssue()` | try/catch around issue-reported notification |
+| `IssueController.php` | `store()` | try/catch around issue-reported notification |
+| `ProjectExtensionController.php` | `notifyExtension()` | try/catch around extension status notification |
+| `SendNotifications.php` | `handle()` | per-method try/catch for scan resilience |
+
+---
+
+## Bug 8: RiskLevelChanged Missing `Queueable` Trait (Gmail Delay Root Cause)
+
+**Date:** August 29, 2026
+**Status: FIXED & TESTED** — Added `use Queueable;` trait and import. Confirmed working.
+
+### Problem
+
+Risk level change notifications (both event-triggered and scan-triggered) have delayed or missing Gmail delivery, while all other notification types send Gmail within seconds.
+
+### Root Cause
+
+`RiskLevelChanged` is the **only** notification class missing the `use Queueable` trait and its import. All other 7 notification classes have it.
+
+| Notification Class | `use Queueable`? |
+|---|---|
+| `DeadlineReminder` | YES |
+| `PlannedInspectionReminder` | YES |
+| `MonthEndInspectionReminder` | YES |
+| `OverdueInspectionReminder` | YES |
+| `IssueReported` | YES |
+| `RiskReported` | YES |
+| `ExtensionStatusChanged` | YES |
+| **`RiskLevelChanged`** | **NO** |
+
+Without `Queueable`, the notification lacks queue metadata (`$queue`, `$connection`, `$chain`, etc.) that Laravel's mail channel pipeline expects. This causes the mail dispatch to be handled differently — resulting in SMTP delays or silent failures.
+
+### Fix
+
+**File:** `app/Notifications/RiskLevelChanged.php`
+
+Add `use Illuminate\Bus\Queueable;` import and `use Queueable;` inside the class body (matching all other notification classes).
 
 ### Effort
 
-Medium — 10 files, ~30-40 lines changed. No new files needed.
+Low — 2 lines added.
+
+---
+
+## Bug 9: Scan Risk Level Notification Shows Wrong Progress Data
+
+**Date:** August 29, 2026
+**Status: FIXED & TESTED** — Added `->reorder()` to clear relationship's base ordering. Confirmed working.
+
+### Problem
+
+The scan-triggered `RiskLevelChanged` notification shows incorrect progress values. Example: planned 40%, actual 2%, variance -38% — when the actual latest progress should be much higher (e.g., 20%). The notification is using the **first** progress record ever recorded instead of the **latest**.
+
+### Root Cause
+
+The `progressHistory()` relationship in `app/Models/Project.php` has a default `orderBy('inspection_date', 'asc')`:
+
+```php
+public function progressHistory()
+{
+    return $this->hasMany(ProjectProgressHistory::class)->orderBy('inspection_date', 'asc');
+}
+```
+
+In `sendRiskLevelChangeNotifications()` (line 373), the query:
+
+```php
+$lastRecorded = $project->progressHistory()
+    ->orderBy('month_label', 'desc')
+    ->first();
+```
+
+Laravel **appends** `orderBy` calls — it does not replace the relationship's base ordering. The actual SQL becomes:
+
+```sql
+SELECT * FROM project_progress_history
+WHERE project_id = ?
+ORDER BY inspection_date ASC, month_label DESC
+LIMIT 1
+```
+
+This returns the **earliest** record (lowest `inspection_date`), not the latest.
+
+### Impact
+
+The notification displays:
+- **Actual progress**: The very first progress value (e.g., 2%) instead of latest (e.g., 20%)
+- **Variance**: Wildly wrong (e.g., 2 - 40 = -38 instead of the real variance)
+- This affects both the in-app notification and the Gmail notification
+
+### Fix
+
+**File:** `app/Console/Commands/SendNotifications.php`, line 373
+
+Add `->reorder()` to clear the relationship's base ordering:
+
+```php
+// Before:
+$lastRecorded = $project->progressHistory()
+    ->orderBy('month_label', 'desc')
+    ->first();
+
+// After:
+$lastRecorded = $project->progressHistory()
+    ->reorder()
+    ->orderBy('month_label', 'desc')
+    ->first();
+```
+
+### Effort
+
+Low — 1 line added.
+
+---
+
+## Bug 10: RiskLevelChanged Recipients Missing `->unique('id')`
+
+**Date:** August 29, 2026
+**Status: FIXED & TESTED** — Added `->unique('id')` to recipients. Confirmed working.
+
+### Problem
+
+In `ProjectProgressController.php`, the RiskLevelChanged notification recipients collection does not call `->unique('id')`. If the same user resolves as both admin and staff/contractor, they receive duplicate notifications.
+
+### Comparison
+
+| Dispatch Point | `->unique('id')`? |
+|---|---|
+| `RiskController.php` (store) | YES |
+| `RiskController.php` (convertToIssue) | YES |
+| `IssueController.php` (store) | YES |
+| `ProjectExtensionController.php` (notifyExtension) | YES |
+| **`ProjectProgressController.php` (RiskLevelChanged)** | **NO** |
+
+### Fix
+
+**File:** `app/Http/Controllers/ProjectProgressController.php`, line 509
+
+Add `->unique('id')`:
+
+```php
+// Before:
+$notifService->notifyMany($recipients, $notification);
+
+// After:
+$notifService->notifyMany($recipients->unique('id'), $notification);
+```
+
+### Effort
+
+Low — 1 line changed.
+
+---
+
+## Enhancement 1: Issue Notification Should Include Assigned Staff
+
+**Date:** August 29, 2026
+**Status: FIXED & TESTED** — Added `$service->staffForProject($project)` to IssueReported recipients. Confirmed working.
+
+### Problem
+
+`IssueReported` notifications are sent to admins + contractor only. The assigned staff (project manager) should also be notified since they manage the project.
+
+### Current Recipients
+
+| Notification Type | Admins | Staff | Contractor |
+|---|---|---|---|
+| `IssueReported` | YES | **NO** | YES |
+| `RiskReported` | YES | NO | YES |
+| `RiskLevelChanged` | YES | YES | YES |
+| `ExtensionStatusChanged` | YES | YES | YES |
+
+### Fix
+
+**File:** `app/Http/Controllers/IssueController.php`, around line 143
+
+Add `$service->staffForProject($project)` to the recipients collection (same pattern as RiskLevelChanged dispatch in ProjectProgressController).
+
+### Effort
+
+Low — ~3 lines added.
+
+---
+
+## Enhancement 2: Remove Contractor from Inspection Notifications
+
+**Date:** August 29, 2026
+**Status: FIXED & TESTED** — Filtered contractor from inspection method recipients via `$internalRecipients`. Tests updated. Confirmed working.
+
+### Problem
+
+Contractors are external users. They don't need to know about missing inspections — that's an internal PMU concern. The client confirmed contractors should only receive notifications relevant to their work (deadlines, issues, extensions).
+
+### Affected Notification Types
+
+| Type | Contractor Should Receive? |
+|---|---|
+| `DeadlineReminder` | YES — they need to know about deadlines |
+| `PlannedInspectionReminder` | **NO** — internal only |
+| `MonthEndInspectionReminder` | **NO** — internal only |
+| `OverdueInspectionReminder` | **NO** — internal only |
+| `RiskLevelChanged` | YES — they need to know about risk |
+| `IssueReported` | YES — they need to know about issues |
+| `ExtensionStatusChanged` | YES — they need to know about extensions |
+
+### Fix
+
+**File:** `app/Console/Commands/SendNotifications.php`
+
+The scan's `handle()` loop builds a shared `$recipients` collection that includes the contractor. The inspection methods (`sendPlannedInspectionReminders`, `sendMonthEndInspectionReminders`, `sendOverdueInspectionReminders`) should filter out the contractor before calling `notifyMany()`.
+
+Option A: Pass separate recipient sets per notification type.
+Option B: Filter contractor inside each inspection method.
+Option C: Build inspection-specific recipients inside each method (like RiskLevelChanged already does).
+
+Recommended: Option B — filter out contractor in each inspection method before calling `$service->notifyMany()`.
+
+### Effort
+
+Low — ~6 lines added across 3 methods.
+
+---
+
+## Enhancement 3: Overdue Deadline In-App Notification Enhancement
+
+**Date:** August 29, 2026
+**Status: OPEN** — Needs implementation. Data is already in `toDatabase()` payload but Blade template doesn't display it.
+
+### Problem
+
+The overdue deadline notification's in-app display doesn't show the due date or how many days overdue — but the Gmail version does. Users want the same detail in the bell/notification inbox.
+
+### Current In-App Display
+
+```
+Project overdue — {project_title}
+```
+
+### Desired In-App Display
+
+```
+Project overdue — {project_title}
+Due: {planned_end_date} | Overdue by {days} day(s)
+```
+
+### Fix
+
+Update the notification list/bell template to show due date and overdue days from the notification data (`planned_end_date` and `days_remaining` are already in `toDatabase()` payload).
+
+### Effort
+
+Low — 1–2 lines in Blade template.
+
+---
+
+## Enhancement 4: Risk Level Change Notification on Edit/Delete Progress
+
+**Date:** August 29, 2026
+**Status: OPEN** — Needs implementation.
+
+### Problem
+
+`RiskLevelChanged` notification only fires when progress is **recorded** via `recordProgress()` (`ProjectProgressController.php:465-516`). It does **not** fire when:
+
+- A user **edits** the latest progress record (`editProgressRecord()` — line 75-243)
+- An admin **deletes** the latest progress record (`destroyProgress()` — line 245-356)
+
+Both edit and delete can change the project's risk level, but no notification is sent.
+
+### Current Behavior
+
+| Action | Recalculates Variance? | Fires RiskLevelChanged? | Updates previous_risk_level? |
+|---|---|---|---|
+| `recordProgress()` | YES | YES | YES |
+| `editProgressRecord()` | YES (line 172) | **NO** | **NO** |
+| `destroyProgress()` | **NO** | **NO** | **NO** |
+
+### Fix
+
+#### `editProgressRecord()` — after sync block (~line 222)
+
+Add risk level change detection (same pattern as `recordProgress()` lines 465-516):
+1. Compute new risk level from updated variance
+2. Compare with `$project->previous_risk_level`
+3. Fire `RiskLevelChanged` if changed (exclude `auth()->id()` from recipients)
+4. Update `$project->previous_risk_level`
+
+#### `destroyProgress()` — after sync/prune block (~line 341)
+
+After deleting the latest record, recalculate risk level from the new latest record:
+1. Get the new latest progress record (after deletion)
+2. Derive risk level from its variance
+3. Compare with `$project->previous_risk_level`
+4. Fire `RiskLevelChanged` if changed (exclude `auth()->id()` from recipients)
+5. Update `$project->previous_risk_level`
+
+### Effort
+
+Medium — ~30-40 lines added across 2 methods.
+
+---
+
+## Enhancement 5: Trigger User Exclusion for Gmail (All Event-Triggered Notifications)
+
+**Date:** August 29, 2026
+**Status: OPEN** — Needs implementation.
+
+### Problem
+
+Most event-triggered notifications do **not** exclude the user who triggered the event. The user receives their own notification via both in-app and Gmail.
+
+`ProjectExtensionController::notifyExtension()` already excludes the trigger user (lines 1476, 1495, 1500). All other event-triggered notifications should follow the same pattern.
+
+### Current State
+
+| Controller | Method | Excludes trigger user? |
+|---|---|---|
+| `ProjectExtensionController` | `notifyExtension()` | **YES** (all channels) |
+| `RiskController` | `store()` | NO |
+| `RiskController` | `convertToIssue()` | NO |
+| `IssueController` | `store()` | NO |
+| `ProjectProgressController` | `recordProgress()` (RiskLevelChanged) | NO |
+| `ProjectProgressController` | `editProgressRecord()` (RiskLevelChanged) | N/A (not yet implemented — see E4) |
+| `ProjectProgressController` | `destroyProgress()` (RiskLevelChanged) | N/A (not yet implemented — see E4) |
+
+### Fix
+
+For each event-triggered notification, add `->filter(fn ($u) => $u->id !== auth()->id())` to the recipients collection before calling `notifyMany()`. This excludes the triggering user from **both** database and Gmail notifications (full exclusion, matching `ProjectExtensionController` pattern).
+
+| File | Line(s) | Change |
+|---|---|---|
+| `RiskController.php` `store()` | ~120-125 | Add `->filter(fn ($u) => $u->id !== $user->id)` |
+| `RiskController.php` `convertToIssue()` | ~117-130 | Add `->filter(fn ($u) => $u->id !== $user->id)` |
+| `IssueController.php` `store()` | ~143-153 | Add `->filter(fn ($u) => $u->id !== auth()->id())` |
+| `ProjectProgressController.php` `recordProgress()` | ~486-509 | Add `->filter(fn ($u) => $u->id !== auth()->id())` |
+| `ProjectProgressController.php` `editProgressRecord()` | new block (E4) | Include exclusion in new code |
+| `ProjectProgressController.php` `destroyProgress()` | new block (E4) | Include exclusion in new code |
+
+### Effort
+
+Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch points).
+
+---
+
+## Summary
+
+| # | Bug/Enhancement | Severity | Effort | Status |
+|---|---|---|---|---|
+| 1 | Bell dropdown wrong label | Low (cosmetic) | Low | FIXED |
+| 2 | AI tab vs dashboard health inconsistency | Medium (UX) | Low-Medium | FIXED |
+| 3 | Risk notification only on manual recording | Medium (missed alerts) | Medium | FIXED |
+| 4 | Inspection reminder late for late-month dates | Medium (UX) | Medium | FIXED |
+| 5 | Notification scan includes archived projects | Medium (phantom alerts) | Low | FIXED |
+| 6 | Notification page wrong label for new types | Medium (wrong label) | Low | FIXED |
+| 7 | Email notifications delayed (SMTP blocking) | High (missed alerts) | Medium | REVERTED |
+| 8 | RiskLevelChanged missing Queueable trait | High (Gmail delay) | Low | FIXED & TESTED |
+| 9 | Scan risk level shows wrong progress data | High (wrong info) | Low | FIXED & TESTED |
+| 10 | RiskLevelChanged recipients missing unique | Low (duplicates) | Low | FIXED & TESTED |
+| E1 | Issue notification missing assigned staff | Medium (missed alerts) | Low | FIXED & TESTED |
+| E2 | Remove contractor from inspection notifications | Low (relevance) | Low | FIXED & TESTED |
+| E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | OPEN |
+| E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | OPEN |
+| E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | OPEN |
+
+### Implementation Order
+
+1. ~~**Bug 1** (bell label)~~ — DONE
+2. ~~**Bug 3 Phase 1** (risk notification on month boundary)~~ — DONE
+3. ~~**Bug 2 Phase 1** (AI presenter consistency)~~ — DONE
+4. ~~**Bug 2 Phase 2** (escalation toggle)~~ — DONE
+5. ~~**Bug 3 Phase 2** (risk notification grace period removal)~~ — DONE
+6. ~~**Inspection Reminder Overhaul** (3 notification types)~~ — DONE
+7. ~~**Bug 5** (archived project scan exclusion)~~ — DONE
+8. ~~**Bug 6** (notification page label for new inspection types)~~ — DONE
+9. ~~**Bug 7** (email notification delay — REVERTED)~~ — REVERTED
+10. ~~**Bug 8** (RiskLevelChanged Queueable trait)~~ — DONE & TESTED
+11. ~~**Bug 9** (scan risk level wrong data)~~ — DONE & TESTED
+12. ~~**Bug 10** (recipients missing unique)~~ — DONE & TESTED
+13. ~~**E1** (issue notification staff recipients)~~ — DONE & TESTED
+14. ~~**E2** (remove contractor from inspection notifications)~~ — DONE & TESTED
+15. **E3** (overdue deadline in-app detail) — NEXT
+16. **E4** (risk level change on edit/delete progress) — NEXT
+17. **E5** (trigger user exclusion for Gmail) — NEXT

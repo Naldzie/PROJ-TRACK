@@ -1460,48 +1460,57 @@ class ProjectExtensionController extends Controller
             $daysExtended
         );
 
-        $recipients = collect();
+        try {
+            $recipients = collect();
 
-        // Always include assigned staff (except the trigger user).
-        $assignedStaff = $service->staffForProject($project);
-        if ($assignedStaff && $assignedStaff->id !== $triggerUserId) {
-            $recipients->push($assignedStaff);
-        }
+            // Always include assigned staff (except the trigger user).
+            $assignedStaff = $service->staffForProject($project);
+            if ($assignedStaff && $assignedStaff->id !== $triggerUserId) {
+                $recipients->push($assignedStaff);
+            }
 
-        if ($status === ExtensionStatusChanged::SUBMITTED) {
-            // Submission → all admins (except trigger) + assigned staff.
-            // Dedupe bypassed so resubmissions re-notify.
+            if ($status === ExtensionStatusChanged::SUBMITTED) {
+                // Submission → all admins (except trigger) + assigned staff.
+                // Dedupe bypassed so resubmissions re-notify.
+                foreach ($service->admins() as $admin) {
+                    if ($admin->id !== $triggerUserId) {
+                        $recipients->push($admin);
+                    }
+                }
+                $service->notifyMany($recipients->unique('id'), $notification, dedupe: false);
+                return;
+            }
+
+            // Approved / Rejected → requester + contractor + assigned staff + admins,
+            // minus the trigger user so nobody receives their own notification.
+
+            if ($extension->created_by_user_id && $extension->created_by_user_id !== $triggerUserId) {
+                $requester = User::find($extension->created_by_user_id);
+                if ($requester && $requester->is_active) {
+                    $recipients->push($requester);
+                }
+            }
+
+            $contractorUser = $service->contractorUserFor($project);
+            if ($contractorUser && $contractorUser->id !== $triggerUserId) {
+                $recipients->push($contractorUser);
+            }
+
             foreach ($service->admins() as $admin) {
                 if ($admin->id !== $triggerUserId) {
                     $recipients->push($admin);
                 }
             }
-            $service->notifyMany($recipients->unique('id'), $notification, dedupe: false);
-            return;
+
+            $service->notifyMany($recipients->unique('id'), $notification);
+        } catch (\Throwable $e) {
+            \Log::warning('Extension status notification failed', [
+                'project_id'   => $project->id,
+                'extension_id' => $extension->id,
+                'status'       => $status,
+                'error'        => $e->getMessage(),
+            ]);
         }
-
-        // Approved / Rejected → requester + contractor + assigned staff + admins,
-        // minus the trigger user so nobody receives their own notification.
-
-        if ($extension->created_by_user_id && $extension->created_by_user_id !== $triggerUserId) {
-            $requester = User::find($extension->created_by_user_id);
-            if ($requester && $requester->is_active) {
-                $recipients->push($requester);
-            }
-        }
-
-        $contractorUser = $service->contractorUserFor($project);
-        if ($contractorUser && $contractorUser->id !== $triggerUserId) {
-            $recipients->push($contractorUser);
-        }
-
-        foreach ($service->admins() as $admin) {
-            if ($admin->id !== $triggerUserId) {
-                $recipients->push($admin);
-            }
-        }
-
-        $service->notifyMany($recipients->unique('id'), $notification);
     }
 
     /**
