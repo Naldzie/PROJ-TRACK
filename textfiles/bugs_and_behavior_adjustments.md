@@ -1636,3 +1636,101 @@ Both the Dashboard table and the Project Index table sorted only by deadline pro
 Sort priority: non-completed first → overdue float (overdue first) → deadline ASC → health priority (AT RISK before ON TRACK before NO DATA).
 
 ---
+
+## Enhancement: Projects Index — Data Table & Pagination (E10)
+
+**Status: PLANNED** — consultant feedback, implementation pending
+
+### Consultant Feedback
+
+"Data table and pagination" — the projects index table lacks standard data table features.
+
+### Problem
+
+| Feature | Current State |
+|---|---|
+| Pagination controls | **Missing** — controller uses `paginate(15)` but Blade never renders `->links()` |
+| Row count | **Missing** — no "Showing X of Y" info |
+| Column sorting | **Missing** — no click-to-sort on headers |
+| Per-page selector | **Missing** |
+| Client-side search | Exists (global text search) |
+
+The table is a plain `<table>` rendered server-side with Blade `@foreach`. Filtering is JS `display:none` toggling within the current 15 rows. Users have **no way to reach page 2+**.
+
+### Approach: Vanilla JS + Server-Side (No Library)
+
+**Why NOT a library (DataTables.js / Grid.js) for now:**
+- The existing Blade table has rich formatting (health badges, progress bars, expandable sections) that would need to be re-implemented as JS cell formatters — high effort, low reward
+- Server-side pagination/sorting handles any dataset size without a library
+- No new dependencies — matches project conventions
+- If a library is needed later, Grid.js (~60KB, no jQuery) is the recommended choice
+
+**Note:** Grid.js may be considered in the future if the client wants instant client-side sorting, column resizing, export features, or other advanced data table capabilities. Grid.js does NOT require jQuery.
+
+### jQuery Note
+
+The PMU system does **not** use jQuery and does not need it. All JavaScript is vanilla (ES6+). jQuery is only required if using DataTables.js. Grid.js has zero dependencies. If a data table library is added later, Grid.js is preferred to avoid adding jQuery.
+
+### Implementation Plan
+
+#### Step 1: Pagination Controls + Info Bar
+**File:** `resources/views/projects/index.blade.php`
+
+- Add `{{ $projects->links('vendor.pagination.bootstrap-5') }}` below both grid view and table view
+- Add info text: "Showing {{ $projects->firstItem() }}–{{ $projects->lastItem() }} of {{ $projects->total() }} projects"
+- Guard with `@if($projects->hasPages())`
+- Existing pagination view (`vendor/pagination/bootstrap-5.blade.php`) already renders "Showing X to Y of Z results" + page numbers + prev/next
+
+#### Step 2: Server-Side Column Sorting
+**Files:** `app/Http/Controllers/ProjectController.php`, `resources/views/projects/index.blade.php`
+
+- Controller: accept `sort_by` and `sort_dir` query params, apply to the query (whitelist allowed columns to prevent SQL injection)
+- View: make `<th>` headers clickable links to `?sort_by=code&sort_dir=asc`
+- Add sort indicator arrows (▲/▼) to the active sort column
+- Sort state persists in URL — works with pagination and year filters
+- Existing server-side sort (overdue float + health tertiary) remains as default when no `sort_by` param
+
+#### Step 3: Per-Page Selector
+**Files:** `resources/views/projects/index.blade.php`, `app/Http/Controllers/ProjectController.php`
+
+- Controller: read `request('per_page')`, default 15, clamp to max 50
+- View: `<select>` dropdown (10 / 15 / 25 / 50) next to the info bar
+- On change: reload page with `?per_page=X` (preserves other query filters via `withQueryString()`)
+- Store preference in `localStorage` so it persists across visits
+
+#### Step 4: Style Additions
+**File:** `public/css/admin/projects/projects.css`
+
+- Pagination wrapper styling (margins, alignment below table)
+- Sort arrow indicators in table headers (`.sort-arrow`, `.sortable-th`)
+- Per-page selector styling (matching existing filter dropdowns)
+- Info bar styling
+
+#### Step 5: Grid View Pagination
+Add the same `{{ $projects->links() }}` below the grid view — it uses the same `$projects` collection.
+
+### Files to Modify
+
+| File | Changes |
+|---|---|
+| `resources/views/projects/index.blade.php` | Pagination links, info bar, per-page selector, sort headers |
+| `public/css/admin/projects/projects.css` | Sort arrows, pagination wrapper, info bar, per-page selector |
+| `app/Http/Controllers/ProjectController.php` | Accept `sort_by`, `sort_dir`, `per_page` params |
+| `textfiles/bugs_and_behavior_adjustments.md` | Log the adjustment (this entry) |
+
+### What Stays Unchanged
+
+- Grid/table toggle: untouched
+- Client-side search + status filters: still work within current page
+- Server-side sort (overdue float + health tertiary): remains as default sort
+- Existing table CSS styling: preserved, only additions
+- Archived projects page: unaffected (separate controller/view)
+- Dashboard table: unaffected (capped at 10, no pagination needed)
+
+### Edge Cases
+
+- **Client-side filters + pagination**: Status/search filters hide rows within the current page. Changing per-page resets visible filters (full page reload). Standard behavior.
+- **Sort + overdue float**: When user sorts by a column, the overdue float + health tertiary sort is overridden. When no sort is active, the default sort (overdue float → health → deadline) applies.
+- **Archived projects page**: Uses same `.projects-table` CSS — new styles must not break it. Pagination already rendered there via `$projects->links()`.
+
+---
