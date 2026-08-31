@@ -128,16 +128,53 @@ class ProjectController extends Controller
                   ->where('planned_end_date', '<=', $deadlineYear . '-12-31');
         }
 
-        // Sort: non-completed first, overdue float to top, nearest deadline first, completed last.
-        $projects = $query
-            ->orderByRaw("status = 'Completed'")
-            ->orderByRaw("CASE WHEN planned_end_date < ? AND status != 'Completed' THEN 0 ELSE 1 END", [now()])
-            ->orderBy('planned_end_date', 'asc')
-            ->paginate(15)
-            ->withQueryString();
+        // ── COLUMN SORTING (from data-table headers) ──────────────────────
+        // When sort_by is provided, apply user-selected column sort.
+        // Otherwise fall through to the default overdue-float + health sort.
+        $sortBy  = $request->get('sort_by');
+        $sortDir = strtolower($request->get('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+        $allowedSorts = [
+            'code' => 'code', 'title' => 'title', 'status' => 'status',
+            'planned_start_date' => 'planned_start_date',
+            'planned_end_date' => 'planned_end_date',
+            'approved_budget' => 'approved_budget',
+            'category' => 'categories.name',
+        ];
+
+        // Per-page selector (default 15, max 50).
+        $perPage = (int) $request->get('per_page', 15);
+        if (!in_array($perPage, [10, 15, 25, 50])) {
+            $perPage = 15;
+        }
+
+        if ($sortBy && array_key_exists($sortBy, $allowedSorts)) {
+            // Column sort: non-completed first, then user sort, then completed last.
+            $sortCol = $allowedSorts[$sortBy];
+            // Eager-load category for category name sort.
+            if ($sortBy === 'category') {
+                $query->with('category');
+            }
+            $projects = $query
+                ->orderByRaw("status = 'Completed'")
+                ->orderByRaw("CASE WHEN planned_end_date < ? AND status != 'Completed' THEN 0 ELSE 1 END", [now()])
+                ->orderBy($sortCol, $sortDir)
+                ->paginate($perPage)
+                ->withQueryString();
+        } else {
+            // Default sort: non-completed first, overdue float, nearest deadline, completed last.
+            $projects = $query
+                ->orderByRaw("status = 'Completed'")
+                ->orderByRaw("CASE WHEN planned_end_date < ? AND status != 'Completed' THEN 0 ELSE 1 END", [now()])
+                ->orderBy('planned_end_date', 'asc')
+                ->paginate($perPage)
+                ->withQueryString();
+        }
 
         //Prepare data array
         $data = compact('projects');
+        $data['currentSort'] = $sortBy;
+        $data['currentSortDir'] = $sortDir;
+        $data['perPage'] = $perPage;
 
         // Year filter dropdown options — extract years in PHP for SQLite
         // compatibility. Query only the columns we need.

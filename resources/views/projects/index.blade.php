@@ -44,6 +44,21 @@
 
 @section('content')
 
+@php
+    // Sort URL builder — preserves existing query params (status, filter, year, per_page)
+    // and toggles sort direction on repeated clicks.
+    $sortUrl = function ($column) use ($currentSort, $currentSortDir) {
+        $params = request()->query();
+        if ($currentSort === $column) {
+            $params['sort_dir'] = $currentSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $params['sort_by'] = $column;
+            $params['sort_dir'] = 'asc';
+        }
+        unset($params['page']); // Reset to page 1 on sort change
+        return route(request()->route()->getName(), $params);
+    };
+@endphp
 @if($activeFilterLabel && in_array(auth()->user()->role, ['admin', 'staff']))
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;">
         <i class="bi bi-funnel-fill" style="color:#2563eb;"></i>
@@ -427,23 +442,46 @@
     @endif
 </div>
 
+{{-- GRID VIEW PAGINATION --}}
+<div class="dt-info-bar grid-pagination" style="display:none;">
+    <div class="dt-info-text">
+        @if($projects->total() > 0)
+            Showing <strong>{{ $projects->firstItem() }}</strong>–<strong>{{ $projects->lastItem() }}</strong> of <strong>{{ $projects->total() }}</strong> projects
+        @endif
+    </div>
+    <div class="dt-per-page">
+        <label for="perPageSelectGrid">Show</label>
+        <select id="perPageSelectGrid" onchange="changePerPage(this.value)">
+            @foreach([10, 15, 25, 50] as $size)
+                <option value="{{ $size }}" {{ $perPage === $size ? 'selected' : '' }}>{{ $size }}</option>
+            @endforeach
+        </select>
+        <span>per page</span>
+    </div>
+</div>
+@if($projects->hasPages())
+    <div class="dt-pagination-wrap grid-pagination" style="display:none;">
+        {{ $projects->links('vendor.pagination.bootstrap-5') }}
+    </div>
+@endif
+
 <!-- TABLE VIEW -->
 <div class="projects-table-wrap">
     <table class="projects-table" id="projectsTable">
     <thead>
         <tr>
-            <th>Code</th>
-            <th>Title</th>
-            <th>Category</th>
-            <th>Status</th>
+            <th><a href="{{ $sortUrl('code') }}" class="sortable-th">Code {!! $currentSort === 'code' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th><a href="{{ $sortUrl('title') }}" class="sortable-th">Title {!! $currentSort === 'title' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th><a href="{{ $sortUrl('category') }}" class="sortable-th">Category {!! $currentSort === 'category' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th><a href="{{ $sortUrl('status') }}" class="sortable-th">Status {!! $currentSort === 'status' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Health</th>
             <th>Progress</th>
-            <th>Start Date</th>
+            <th><a href="{{ $sortUrl('planned_start_date') }}" class="sortable-th">Start Date {!! $currentSort === 'planned_start_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Duration</th>
-            <th>Deadline</th>
+            <th><a href="{{ $sortUrl('planned_end_date') }}" class="sortable-th">Deadline {!! $currentSort === 'planned_end_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Days Left</th>
             <th>Manager</th>
-            <th>Budget</th>
+            <th><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Budget {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Actions</th>
         </tr>
     </thead>
@@ -592,6 +630,32 @@
     </table>
 </div>
 
+{{-- PAGINATION CONTROLS + INFO BAR --}}
+<div class="dt-info-bar">
+    <div class="dt-info-text">
+        @if($projects->total() > 0)
+            Showing <strong>{{ $projects->firstItem() }}</strong>–<strong>{{ $projects->lastItem() }}</strong> of <strong>{{ $projects->total() }}</strong> projects
+        @else
+            No projects found
+        @endif
+    </div>
+    <div class="dt-per-page">
+        <label for="perPageSelect">Show</label>
+        <select id="perPageSelect" onchange="changePerPage(this.value)">
+            @foreach([10, 15, 25, 50] as $size)
+                <option value="{{ $size }}" {{ $perPage === $size ? 'selected' : '' }}>{{ $size }}</option>
+            @endforeach
+        </select>
+        <span>per page</span>
+    </div>
+</div>
+
+@if($projects->hasPages())
+    <div class="dt-pagination-wrap">
+        {{ $projects->links('vendor.pagination.bootstrap-5') }}
+    </div>
+@endif
+
 @include('components.delete-confirmation-modal')
 @include('components.loading-overlay', ['id' => 'archiveProjectLoadingOverlay', 'label' => 'Working…'])
 
@@ -672,6 +736,13 @@ function archiveProject(url, projectTitle) {
 let currentSearchTerm = '';
 let currentStatusFilter = 'all';
 
+function changePerPage(value) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('per_page', value);
+    params.delete('page');
+    window.location.search = params.toString();
+}
+
 function filterProjects(status) {
     const buttons = document.querySelectorAll('.filter-btn');
     buttons.forEach(btn => btn.classList.remove('active'));
@@ -737,17 +808,23 @@ function toggleViewMode(mode) {
     const table = document.getElementById('projectsTable');
     const gridBtn = document.getElementById('gridViewBtn');
     const tableBtn = document.getElementById('tableViewBtn');
+    const gridPaginations = document.querySelectorAll('.grid-pagination');
+    const tablePaginations = document.querySelectorAll('.dt-info-bar:not(.grid-pagination), .dt-pagination-wrap:not(.grid-pagination)');
 
     if (mode === 'grid') {
         grid.style.setProperty('display', 'grid', 'important');
         table.classList.remove('show');
         gridBtn.classList.add('active');
         tableBtn.classList.remove('active');
+        gridPaginations.forEach(el => el.style.display = '');
+        tablePaginations.forEach(el => el.style.display = 'none');
     } else if (mode === 'table') {
         grid.style.setProperty('display', 'none', 'important');
         table.classList.add('show');
         gridBtn.classList.remove('active');
         tableBtn.classList.add('active');
+        gridPaginations.forEach(el => el.style.display = 'none');
+        tablePaginations.forEach(el => el.style.display = '');
     }
 
     saveViewPreference(mode);

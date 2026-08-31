@@ -1639,7 +1639,7 @@ Sort priority: non-completed first → overdue float (overdue first) → deadlin
 
 ## Enhancement: Projects Index — Data Table & Pagination (E10)
 
-**Status: PLANNED** — consultant feedback, implementation pending
+**Status: IMPLEMENTED** — `phase-e10-data-table-plan` branch, 3 files modified
 
 ### Consultant Feedback
 
@@ -1665,58 +1665,33 @@ The table is a plain `<table>` rendered server-side with Blade `@foreach`. Filte
 - No new dependencies — matches project conventions
 - If a library is needed later, Grid.js (~60KB, no jQuery) is the recommended choice
 
-**Note:** Grid.js may be considered in the future if the client wants instant client-side sorting, column resizing, export features, or other advanced data table capabilities. Grid.js does NOT require jQuery.
+### Implementation
 
-### jQuery Note
+**ProjectController.php** — `index()`:
+- Accepts `sort_by`, `sort_dir`, `per_page` query params
+- Column sorting with whitelist (`code`, `title`, `category`, `status`, `planned_start_date`, `planned_end_date`, `approved_budget`) to prevent SQL injection
+- Per-page selector: 10/15/25/50, default 15, clamped
+- Passes `$currentSort`, `$currentSortDir`, `$perPage` to view
 
-The PMU system does **not** use jQuery and does not need it. All JavaScript is vanilla (ES6+). jQuery is only required if using DataTables.js. Grid.js has zero dependencies. If a data table library is added later, Grid.js is preferred to avoid adding jQuery.
+**index.blade.php**:
+- Sort URL builder preserves existing query params (status, filter, year, per_page)
+- Sortable column headers for: Code, Title, Category, Status, Start Date, Deadline, Budget
+- Sort arrow indicators (▲/▼ active states)
+- "Showing X–Y of Z projects" info bar
+- Per-page selector dropdown
+- Pagination controls via `{{ $projects->links('vendor.pagination.bootstrap-5') }}` (both grid and table views)
+- Grid/table toggle shows/hides appropriate pagination elements
 
-### Implementation Plan
+**projects.css**:
+- `.sortable-th` — clickable header styling with hover
+- `.sort-arrow` / `.sort-arrow.active` — arrow indicators
+- `.dt-info-bar` — info bar layout
+- `.dt-per-page` — per-page selector styling
+- `.dt-pagination-wrap` — pagination button styling
 
-#### Step 1: Pagination Controls + Info Bar
-**File:** `resources/views/projects/index.blade.php`
+### Result
 
-- Add `{{ $projects->links('vendor.pagination.bootstrap-5') }}` below both grid view and table view
-- Add info text: "Showing {{ $projects->firstItem() }}–{{ $projects->lastItem() }} of {{ $projects->total() }} projects"
-- Guard with `@if($projects->hasPages())`
-- Existing pagination view (`vendor/pagination/bootstrap-5.blade.php`) already renders "Showing X to Y of Z results" + page numbers + prev/next
-
-#### Step 2: Server-Side Column Sorting
-**Files:** `app/Http/Controllers/ProjectController.php`, `resources/views/projects/index.blade.php`
-
-- Controller: accept `sort_by` and `sort_dir` query params, apply to the query (whitelist allowed columns to prevent SQL injection)
-- View: make `<th>` headers clickable links to `?sort_by=code&sort_dir=asc`
-- Add sort indicator arrows (▲/▼) to the active sort column
-- Sort state persists in URL — works with pagination and year filters
-- Existing server-side sort (overdue float + health tertiary) remains as default when no `sort_by` param
-
-#### Step 3: Per-Page Selector
-**Files:** `resources/views/projects/index.blade.php`, `app/Http/Controllers/ProjectController.php`
-
-- Controller: read `request('per_page')`, default 15, clamp to max 50
-- View: `<select>` dropdown (10 / 15 / 25 / 50) next to the info bar
-- On change: reload page with `?per_page=X` (preserves other query filters via `withQueryString()`)
-- Store preference in `localStorage` so it persists across visits
-
-#### Step 4: Style Additions
-**File:** `public/css/admin/projects/projects.css`
-
-- Pagination wrapper styling (margins, alignment below table)
-- Sort arrow indicators in table headers (`.sort-arrow`, `.sortable-th`)
-- Per-page selector styling (matching existing filter dropdowns)
-- Info bar styling
-
-#### Step 5: Grid View Pagination
-Add the same `{{ $projects->links() }}` below the grid view — it uses the same `$projects` collection.
-
-### Files to Modify
-
-| File | Changes |
-|---|---|
-| `resources/views/projects/index.blade.php` | Pagination links, info bar, per-page selector, sort headers |
-| `public/css/admin/projects/projects.css` | Sort arrows, pagination wrapper, info bar, per-page selector |
-| `app/Http/Controllers/ProjectController.php` | Accept `sort_by`, `sort_dir`, `per_page` params |
-| `textfiles/bugs_and_behavior_adjustments.md` | Log the adjustment (this entry) |
+All data table features implemented: sortable column headers (Code, Title, Category, Status, Start Date, Deadline, Budget), server-side pagination with page numbers + prev/next, "Showing X–Y of Z" info bar, per-page selector (10/15/25/50). Works for any dataset size via server-side processing.
 
 ### What Stays Unchanged
 
