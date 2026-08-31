@@ -720,23 +720,6 @@
     {{-- RIGHT COLUMN --}}
     <div class="right-col">
 
-      {{-- STATUS DONUT --}}
-      <div class="d-card">
-        <div class="d-card-head"><span class="d-card-title">Status overview</span></div>
-        <div class="donut-wrap">
-          <div style="position:relative;width:96px;height:96px;flex-shrink:0">
-            <canvas id="statusDonut" role="img" aria-label="Donut chart: {{ $completedCount }} completed, {{ $ongoingCount }} in progress, {{ $plannedCount }} not started">
-              {{ $completedCount }} completed, {{ $ongoingCount }} in progress, {{ $plannedCount }} not started.
-            </canvas>
-          </div>
-          <div style="flex:1">
-            <div class="leg-row"><span class="leg-sq" style="background:#059669"></span>Completed<span class="leg-val">{{ $completedCount }}</span></div>
-            <div class="leg-row"><span class="leg-sq" style="background:#2563eb"></span>In progress<span class="leg-val">{{ $ongoingCount }}</span></div>
-            <div class="leg-row"><span class="leg-sq" style="background:#f59e0b"></span>Not started<span class="leg-val">{{ $plannedCount }}</span></div>
-          </div>
-        </div>
-      </div>
-
       {{-- UPCOMING DEADLINES --}}
       <div class="d-card">
         <div class="d-card-head"><span class="d-card-title">Upcoming deadlines</span></div>
@@ -770,48 +753,45 @@
       </div>
 
       {{-- ANALYTICS GRID --}}
-      <div class="d-card">
-        <div class="d-card-head"><span class="d-card-title"><i class="bi bi-bar-chart-line"></i> Analytics</span></div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px;">
+      <div style="display:flex; flex-direction:column; gap:14px;">
 
-          {{-- Status Donut --}}
-          <div style="text-align: center;">
-            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Project Status</div>
-            <div style="height: 160px;"><canvas id="statusDonut"></canvas></div>
-          </div>
+        {{-- Status Donut --}}
+        <div class="d-card">
+          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-pie-chart"></i> Project Status</span></div>
+          <div style="height:200px; position:relative;"><canvas id="statusDonut"></canvas></div>
+        </div>
 
-          {{-- Health Donut --}}
-          <div style="text-align: center;">
-            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Health Distribution</div>
-            <div style="height: 160px;"><canvas id="healthDonut"></canvas></div>
-          </div>
+        {{-- Health Donut --}}
+        <div class="d-card">
+          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-heart-pulse"></i> Health Distribution</span></div>
+          <div style="height:200px; position:relative;"><canvas id="healthDonut"></canvas></div>
+        </div>
 
-          {{-- Extension Summary --}}
-          <div style="grid-column: span 2;">
-            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Extensions</div>
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;">
-              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
-                <div style="font-size: 18px; font-weight: 700; color: #2563eb;">{{ $extensionSummary['approved'] }}</div>
-                <div style="font-size: 11px; color: #6b7280;">Granted</div>
-              </div>
-              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
-                <div style="font-size: 18px; font-weight: 700; color: #f59e0b;">{{ $extensionSummary['pending'] }}</div>
-                <div style="font-size: 11px; color: #6b7280;">Pending</div>
-              </div>
-              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
-                <div style="font-size: 18px; font-weight: 700; color: #ef4444;">{{ $extensionSummary['total_days'] }}</div>
-                <div style="font-size: 11px; color: #6b7280;">Days Added</div>
-              </div>
+        {{-- Extension Summary --}}
+        <div class="d-card">
+          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-calendar2-plus"></i> Extensions</span></div>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;">
+            <div style="text-align:center; padding:8px; background:#f9fafb; border-radius:6px;">
+              <div style="font-size:18px; font-weight:700; color:#2563eb;">{{ $extensionSummary['approved'] }}</div>
+              <div style="font-size:11px; color:#6b7280;">Granted</div>
+            </div>
+            <div style="text-align:center; padding:8px; background:#f9fafb; border-radius:6px;">
+              <div style="font-size:18px; font-weight:700; color:#f59e0b;">{{ $extensionSummary['pending'] }}</div>
+              <div style="font-size:11px; color:#6b7280;">Pending</div>
+            </div>
+            <div style="text-align:center; padding:8px; background:#f9fafb; border-radius:6px;">
+              <div style="font-size:18px; font-weight:700; color:#ef4444;">{{ $extensionSummary['total_days'] }}</div>
+              <div style="font-size:11px; color:#6b7280;">Days Added</div>
             </div>
           </div>
-
-          {{-- Budget by Category --}}
-          <div style="grid-column: span 2;">
-            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Budget by Category</div>
-            <div style="height: 140px;"><canvas id="budgetBar"></canvas></div>
-          </div>
-
         </div>
+
+        {{-- Budget by Category --}}
+        <div class="d-card">
+          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-bar-chart-line"></i> Budget by Category</span></div>
+          <div style="height:160px; position:relative;"><canvas id="budgetBar"></canvas></div>
+        </div>
+
       </div>
 
     </div>{{-- end right-col --}}
