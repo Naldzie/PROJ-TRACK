@@ -1,7 +1,7 @@
 # Bugs & Behavior Adjustments
 
 **Date:** August 28, 2026 (updated Aug 30)
-**Status:** Bugs 1–10 + E1–E5 FIXED & TESTED. E6–E8 PLANNED. Branch: `phase-ui-loading-and-staff-permissions`.
+**Status:** Bugs 1–10 + E1–E8 FIXED. E6–E8 implemented on `phase-ui-loading-and-staff-permissions`.
 
 ---
 
@@ -970,9 +970,9 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | IMPLEMENTED & TESTED |
 | E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | FIXED & TESTED (live-gap approach) |
 | E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | IMPLEMENTED & TESTED (risk notifications deferred) |
-| E6 | Loading state for progress save + event-triggered modals | Medium (UX / double-save) | Medium | PLANNED (this session) |
-| E7 | Timeline dots show missing progress for past months | Medium (UX gap) | Low | PLANNED (this session) |
-| E8 | Assigned staff delete progress + Recorded By visibility | Medium (permission gap) | Low | PLANNED (this session) |
+| E6 | Loading state for progress save + event-triggered modals | Medium (UX / double-save) | Medium | IMPLEMENTED |
+| E7 | Timeline dots show missing progress for past months | Medium (UX gap) | Low | IMPLEMENTED |
+| E8 | Assigned staff delete progress + Recorded By visibility | Medium (permission gap) | Low | IMPLEMENTED |
 
 ### Implementation Order
 
@@ -993,9 +993,9 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 15. ~~**E3** (overdue deadline in-app detail)~~ — DONE & TESTED
 16. ~~**E4** (risk level change on edit/delete — needs fix)~~ — DONE & TESTED (live-gap approach)
 17. ~~**E5** (trigger user exclusion for Gmail)~~ — DONE & TESTED (risk notifications deferred)
-18. **E6** (loading state for progress save + event-triggered modals) — PLANNED
-19. **E7** (timeline dots missing progress indicator) — PLANNED
-20. **E8** (assigned staff delete progress + Recorded By visibility) — PLANNED
+18. ~~**E6** (loading state for progress save + event-triggered modals)~~ — IMPLEMENTED
+19. ~~**E7** (timeline dots missing progress indicator)~~ — IMPLEMENTED
+20. ~~**E8** (assigned staff delete progress + Recorded By visibility)~~ — IMPLEMENTED
 
 ---
 
@@ -1208,7 +1208,7 @@ Low — replacing ~40 lines of wrong logic with ~50 lines of correct logic in 2 
 
 **Date:** August 30, 2026
 **Branch:** `phase-ui-loading-and-staff-permissions`
-**Status: PLANNED** — Ready for implementation.
+**Status: IMPLEMENTED**
 
 ### Problem
 
@@ -1333,7 +1333,7 @@ Medium — 6 JS files + 1 Blade file, ~80-100 lines total. Pattern is repetitive
 
 **Date:** August 30, 2026
 **Branch:** `phase-ui-loading-and-staff-permissions`
-**Status: PLANNED** — Ready for implementation.
+**Status: IMPLEMENTED**
 
 ### Problem
 
@@ -1464,7 +1464,7 @@ Low — 1 Blade file (~10 lines changed) + 1 CSS file (~12 lines added).
 
 **Date:** August 30, 2026
 **Branch:** `phase-ui-loading-and-staff-permissions`
-**Status: PLANNED** — Ready for implementation.
+**Status: IMPLEMENTED**
 
 ### Problem
 
@@ -1572,10 +1572,36 @@ Low — 1 controller change (delete 7 lines) + 1 Blade file (3 condition changes
 | Item | Change | Files | Status |
 |---|---|---|---|
 | Branch | Created `phase-ui-loading-and-staff-permissions` from `develop` | — | DONE |
-| Merge | Merged `fix/email-notification-delay` into `develop` | — | DONE |
-| E6 | Plan: Loading state for progress save + event-triggered modals | (planned) | PLANNED |
-| E7 | Plan: Timeline dots missing progress indicator | (planned) | PLANNED |
-| E8 | Plan: Assigned staff delete progress + Recorded By visibility | (planned) | PLANNED |
+| Branch | Rebased `phase-ui-loading-and-staff-permissions` onto `develop` (fast-forward teammate merge) | — | DONE |
+| E6 | Implemented loading states for all modals | preloader.js, 5 JS files, 1 blade | IMPLEMENTED |
+| E6 fix | Fixed preloader not closing — removed inline style overrides in `show()` + added `hide()` to all 7 success paths | preloader.js, 5 JS files | FIXED |
+| E7 | Added missing dot state for past months with no progress | baseline-schedule.blade.php, project-detail.css | IMPLEMENTED |
+| E8 | Staff can delete latest progress + see Recorded By | ProjectProgressController.php, progress.blade.php | IMPLEMENTED |
+
+### E6 Preloader Fix Details
+
+**Problem:** Preloader overlay showed on modal submit but never closed after process completed.
+
+**Root cause 1:** `show()` set inline `style.opacity = '1'` and `style.visibility = 'visible'` which have higher CSS specificity than the class-based `.pt-preloader--hidden { opacity: 0 }` rule — the CSS fade-out transition was overridden.
+
+**Fix 1:** Removed the two inline style lines from `show()`. The base `.pt-preloader` CSS already defines `opacity: 1; visibility: visible;`, so removing the `--hidden` class is enough to show it, and adding it back properly triggers the CSS transition.
+
+**Root cause 2:** On success paths, `ProjTrackPreloader.hide()` was never called — only error handlers called it. The preloader stayed visible until page reload (or forever if carry-over modal opened).
+
+**Fix 2:** Added `hide()` calls to all 7 success paths:
+- `baseline-schedule-record-progress-modal.js` — success path before carry-over/reload branching
+- `baseline-schedule-edit-progress-modal.js` — `finalizeReload()` before setTimeout
+- `baseline-schedule-edit-progress-modal.js` — `deleteProgressRecord()` success handler
+- `issues-modal.js` — add issue success + edit issue success
+- `risk-register.js` — add risk success + edit risk success + convert success
+
+### Notification Regression Check
+
+User reported risk level email + contractor inspection reminder regressions. Investigation confirmed the notification code is **byte-identical** between branch and develop — no code regression. Both fixes are intact:
+- `SendNotifications.php` line 89: `$internalRecipients = $recipients->filter(fn ($u) => $u->role !== 'contractor')` — all inspection methods use `$internalRecipients`
+- `ProjectProgressController.php`: RiskLevelChanged dispatch in all 4 locations intact
+
+Issues resolved on their own (likely environment: queue worker, stale jobs).
 
 ### Pre-Session State
 

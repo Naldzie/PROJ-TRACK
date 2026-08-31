@@ -190,7 +190,15 @@
                         $hasActual = $latestProgress && $latestProgress->actual_progress_percent !== null;
                         $isCurrentMonth = $plan->month_label === $currentMonthLabel;
                         $isPastMonth = $plan->month_label < $currentMonthLabel;
-                        $dotState = ($hasActual || $isPastMonth) ? 'completed' : ($isCurrentMonth ? 'current' : 'future');
+                        if ($hasActual) {
+                            $dotState = 'completed';
+                        } elseif ($isPastMonth) {
+                            $dotState = 'missing';
+                        } elseif ($isCurrentMonth) {
+                            $dotState = 'current';
+                        } else {
+                            $dotState = 'future';
+                        }
                     @endphp
 
                     {{-- DOT --}}
@@ -211,6 +219,8 @@
                         <div class="timeline-dot-circle">
                             @if($dotState === 'completed')
                                 <i class="bi bi-check-lg"></i>
+                            @elseif($dotState === 'missing')
+                                <i class="bi bi-exclamation-lg"></i>
                             @endif
                         </div>
 
@@ -234,6 +244,9 @@
                                 <i class="bi bi-calendar3" style="font-size:10px;"></i>
                                 {{ \Carbon\Carbon::parse($latestProgress->inspection_date)->format('M d, Y') }}
                             </div>
+                            @endif
+                            @if($dotState === 'missing')
+                                <div style="color: #f97316; font-size: 10px; margin-top: 4px;">No progress recorded</div>
                             @endif
                         </div>
                     </div>

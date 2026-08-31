@@ -310,12 +310,14 @@ function saveProgressEdit() {
     }
 
     if (errors.length > 0) {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showEditProgressErrors(errors);
         return;
     }
 
     var token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
     if (!token) {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showEditProgressErrors(['Security error: CSRF token not found.']);
         return;
     }
@@ -334,6 +336,14 @@ function saveProgressEdit() {
     };
 
     var endpoint = buildProgressEndpoint(recordId);
+
+    try {
+        var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
+        if (modal) modal.hide();
+    } catch (err) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Updating your progress&hellip;');
+    }
 
     fetch(endpoint, {
         method: 'PUT',
@@ -390,6 +400,8 @@ function saveProgressEdit() {
                 attachmentFailed ? 'warning' : 'success'
             );
 
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+
             try {
                 var modal = bootstrap.Modal.getInstance(document.getElementById('editProgressModal'));
                 if (modal) modal.hide();
@@ -411,6 +423,7 @@ function saveProgressEdit() {
             });
     })
     .catch(function(error) {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showEditProgressErrors(['Error: ' + error.message]);
     });
 }
@@ -434,6 +447,10 @@ function deleteProgressRecord(recordId) {
 
             var endpoint = buildProgressEndpoint(recordId);
 
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+                window.ProjTrackPreloader.show('Deleting progress record&hellip;');
+            }
+
             fetch(endpoint, {
                 method: 'DELETE',
                 headers: {
@@ -444,6 +461,7 @@ function deleteProgressRecord(recordId) {
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (data.success) {
+                    if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                     queueToastAfterReload('Progress record deleted.', 'success');
                     delete window._progressRecordData[recordId];
 
@@ -453,10 +471,12 @@ function deleteProgressRecord(recordId) {
                     }
                     setTimeout(function() { location.reload(); }, 600);
                 } else {
+                    if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                     showToast('Error: ' + (data.message || 'Unable to delete'), 'error');
                 }
             })
             .catch(function(error) {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 showToast('Error deleting record: ' + error.message, 'error');
             });
         }
