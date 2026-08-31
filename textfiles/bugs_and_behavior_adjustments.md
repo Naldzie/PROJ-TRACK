@@ -1610,3 +1610,29 @@ Issues resolved on their own (likely environment: queue worker, stale jobs).
 - `main` remains at `2767f7d` (unaffected)
 
 ---
+
+## Enhancement: Health-Based Table Sorting (E9)
+
+**Status: IMPLEMENTED** — `feature/project-table-sorting` branch, 2 files modified
+
+### Problem
+
+Both the Dashboard table and the Project Index table sorted only by deadline proximity. Projects that are overdue or at-risk didn't automatically float to the top, making it harder for PMU staff to identify and prioritize problem projects at a glance.
+
+### Changes
+
+**DashboardController.php** — `index()` and `filter()`:
+- Added `healthSortValue()` private helper mapping health level → sort priority int (overdue=0, at_risk=1, on_track=2, no_data=3, default=4)
+- Added tertiary sort after overdue float + deadline: computes health for each project using `ProjectHealthService::determine()`, then re-sorts collection by health priority
+- Added `progressHistory` and `baselineSchedules` to eager-loaded relations (required for health computation)
+
+**ProjectController.php** — `index()`:
+- Added overdue float to DB-level sort: `CASE WHEN planned_end_date < ? AND status != 'Completed' THEN 0 ELSE 1 END`
+- Added `healthSortValue()` private helper
+- After `buildHealthMap()`, re-sorts paginated collection by health priority within the paginator
+
+### Result
+
+Sort priority: non-completed first → overdue float (overdue first) → deadline ASC → health priority (AT RISK before ON TRACK before NO DATA).
+
+---

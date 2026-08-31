@@ -24,6 +24,21 @@ class DashboardController extends Controller
             $query->where('assigned_project_manager', Auth::id());
         }
     }
+
+    /**
+     * Numeric priority for health-based sorting (lower = higher priority).
+     * Used as a tertiary sort after overdue float and deadline proximity.
+     */
+    private function healthSortValue(string $healthLevel): int
+    {
+        return match ($healthLevel) {
+            'overdue'  => 0,
+            'at_risk'  => 1,
+            'on_track' => 2,
+            'no_data'  => 3,
+            default    => 4,
+        };
+    }
     public function index()
     {
         // ── ONGOING PROJECTS (table — capped at 10 rows) ──────────────────
@@ -31,7 +46,7 @@ class DashboardController extends Controller
         // Limit 10 keeps the dashboard summary concise with minimal scrolling.
         $ongoingProjects = Project::where('status', 'Ongoing')
             ->where('is_archived', false)
-            ->with(['contractor', 'category']);
+            ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
         $this->scopeToAssigned($ongoingProjects);
         $ongoingProjects = $ongoingProjects
             ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
@@ -51,6 +66,35 @@ class DashboardController extends Controller
         $agingIssueCounts         = $progressData['agingIssueCounts'];
         $openHighRiskCounts       = $progressData['openHighRiskCounts'];
         $pendingExtensionCounts   = $progressData['pendingExtensionCounts'];
+
+        // ── HEALTH-BASED TERTIARY SORT ───────────────────────────────────
+        // After overdue float + deadline, sort by health priority:
+        // OVERDUE (0) > AT RISK (1) > ON TRACK (2) > NO DATA (3) > neutral (4).
+        $healthService = app(ProjectHealthService::class);
+        $currentMonthLabel = now()->format('Y-m');
+        $ongoingProjects = $ongoingProjects->sortBy(function ($project) use ($healthService, $currentMonthLabel) {
+            $history = $project->progressHistory ?? collect();
+            $latest = $history->last();
+            $monthHistory = $history->filter(fn ($r) => $r->month_label === $currentMonthLabel)->last();
+            $baselines = $project->baselineSchedules ?? collect();
+            $monthBaseline = $baselines->first(fn ($b) =>
+                ($b->month_label && $b->month_label === $currentMonthLabel)
+                || ($b->planned_date && $b->planned_date->format('Y-m') === $currentMonthLabel)
+            );
+
+            $health = $healthService->determine($project, [
+                'latest_progress'        => $latest,
+                'current_month_history'  => $monthHistory,
+                'current_month_baseline' => $monthBaseline,
+                'baseline_schedules'     => $baselines,
+                'open_high_issues'       => (int) ($openHighIssueCounts[$project->id] ?? 0) > 0,
+                'aging_issue_count'      => (int) ($agingIssueCounts[$project->id] ?? 0),
+                'open_high_risks'        => (int) ($openHighRiskCounts[$project->id] ?? 0) > 0,
+                'pending_extension'      => (int) ($pendingExtensionCounts[$project->id] ?? 0) > 0,
+            ]);
+
+            return $this->healthSortValue($health['level']);
+        })->values();
 
         // ── STATS CARD COUNTS ─────────────────────────────────────────────
         // Separate COUNT queries covering projects visible to the current user.
@@ -157,7 +201,7 @@ class DashboardController extends Controller
             $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->where('planned_end_date', '<', now())
-                ->with(['contractor', 'category']);
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
             $this->scopeToAssigned($query);
             $projects = $query->orderBy('planned_end_date', 'asc')->get();
 
@@ -165,7 +209,7 @@ class DashboardController extends Controller
             $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereIn('id', $this->atRiskProjectIds())
-                ->with(['contractor', 'category']);
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
             $this->scopeToAssigned($query);
             $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
@@ -180,7 +224,7 @@ class DashboardController extends Controller
             $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereNotIn('id', $projectsWithRecord)
-                ->with(['contractor', 'category']);
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
             $this->scopeToAssigned($query);
             $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
@@ -190,7 +234,7 @@ class DashboardController extends Controller
             // Ongoing projects with an uninspected baseline month past the grace
             // window — same definition as the overdue-inspection notification scan.
             $projects = $this->overdueInspectionQuery($graceDays)
-                ->with(['contractor', 'category'])
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules'])
                 ->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
                 ->get();
@@ -199,7 +243,7 @@ class DashboardController extends Controller
             $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
                 ->whereHas('extensions', fn ($q) => $q->pending())
-                ->with(['contractor', 'category']);
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
             $this->scopeToAssigned($query);
             $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
@@ -208,7 +252,7 @@ class DashboardController extends Controller
         } else {
             $query = Project::where('status', 'Ongoing')
                 ->where('is_archived', false)
-                ->with(['contractor', 'category']);
+                ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
             $this->scopeToAssigned($query);
             $projects = $query->orderByRaw("CASE WHEN planned_end_date < ? THEN 0 ELSE 1 END", [now()])
                 ->orderBy('planned_end_date', 'asc')
@@ -219,6 +263,33 @@ class DashboardController extends Controller
         // ── FETCH PROGRESS DATA FOR THE FILTERED COLLECTION ───────────────
         // Uses the same shared helper as index() — consistent behavior.
         $progressData = $this->getProgressData($projects);
+
+        // ── HEALTH-BASED TERTIARY SORT ───────────────────────────────────
+        $healthService = app(ProjectHealthService::class);
+        $currentMonthLabel = now()->format('Y-m');
+        $projects = $projects->sortBy(function ($project) use ($healthService, $currentMonthLabel, $progressData) {
+            $history = $project->progressHistory ?? collect();
+            $latest = $history->last();
+            $monthHistory = $history->filter(fn ($r) => $r->month_label === $currentMonthLabel)->last();
+            $baselines = $project->baselineSchedules ?? collect();
+            $monthBaseline = $baselines->first(fn ($b) =>
+                ($b->month_label && $b->month_label === $currentMonthLabel)
+                || ($b->planned_date && $b->planned_date->format('Y-m') === $currentMonthLabel)
+            );
+
+            $health = $healthService->determine($project, [
+                'latest_progress'        => $latest,
+                'current_month_history'  => $monthHistory,
+                'current_month_baseline' => $monthBaseline,
+                'baseline_schedules'     => $baselines,
+                'open_high_issues'       => (int) ($progressData['openHighIssueCounts'][$project->id] ?? 0) > 0,
+                'aging_issue_count'      => (int) ($progressData['agingIssueCounts'][$project->id] ?? 0),
+                'open_high_risks'        => (int) ($progressData['openHighRiskCounts'][$project->id] ?? 0) > 0,
+                'pending_extension'      => (int) ($progressData['pendingExtensionCounts'][$project->id] ?? 0) > 0,
+            ]);
+
+            return $this->healthSortValue($health['level']);
+        })->values();
 
         // ── RETURN PARTIAL VIEW (HTML rows only, no layout) ───────────────
         return view('dashboard.partials.dashboard-table-rows', array_merge(

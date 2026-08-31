@@ -128,9 +128,10 @@ class ProjectController extends Controller
                   ->where('planned_end_date', '<=', $deadlineYear . '-12-31');
         }
 
-        // Sort: non-completed first (nearest deadline first), completed last.
+        // Sort: non-completed first, overdue float to top, nearest deadline first, completed last.
         $projects = $query
             ->orderByRaw("status = 'Completed'")
+            ->orderByRaw("CASE WHEN planned_end_date < ? AND status != 'Completed' THEN 0 ELSE 1 END", [now()])
             ->orderBy('planned_end_date', 'asc')
             ->paginate(15)
             ->withQueryString();
@@ -168,6 +169,16 @@ class ProjectController extends Controller
         // eagerly-loaded relations + grouped escalation counts, so the blade does
         // ZERO per-row queries. Shared by grid and table views, all roles.
         $data['healthMap'] = $this->buildHealthMap($projects);
+
+        // ── HEALTH-BASED TERTIARY SORT ───────────────────────────────────
+        // After non-completed + overdue float + deadline, sort remaining
+        // projects by health priority within the paginated collection.
+        $healthMap = $data['healthMap'];
+        $sorted = $projects->getCollection()->sortBy(function ($project) use ($healthMap) {
+            $level = $healthMap[$project->id]['level'] ?? 'neutral';
+            return $this->healthSortValue($level);
+        })->values();
+        $projects->setCollection($sorted);
         
         //return view('admin.projects', $data);
         
@@ -235,6 +246,21 @@ class ProjectController extends Controller
             'risks as open_high_risk_count'   => fn ($q) => $q->open()->highRisk(),
             'extensions as pending_extension_count' => fn ($q) => $q->pending(),
         ];
+    }
+
+    /**
+     * Numeric priority for health-based sorting (lower = higher priority).
+     * Used as a tertiary sort after overdue float and deadline proximity.
+     */
+    private function healthSortValue(string $healthLevel): int
+    {
+        return match ($healthLevel) {
+            'overdue'  => 0,
+            'at_risk'  => 1,
+            'on_track' => 2,
+            'no_data'  => 3,
+            default    => 4,
+        };
     }
 
     /**
