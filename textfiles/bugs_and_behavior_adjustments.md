@@ -1780,3 +1780,5 @@ Client feedback: completed projects should not be able to add extensions. The "A
 - Added responsive breakpoints (2-col at 1200px, 1-col at 768px)
 
 ---
+
+**Continued in:** `textfiles/bugs_and_behavior_adjustments_part2.md` (E12 onward)
