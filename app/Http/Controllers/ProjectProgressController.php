@@ -308,14 +308,6 @@ class ProjectProgressController extends Controller
     {
         $this->authorizeProjectAccess(auth()->user(), $project);
 
-        // Admin-only deletion
-        if (! auth()->user() || auth()->user()->role !== 'admin') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Only admin users can delete progress records.',
-            ], 403);
-        }
-
         $record = ProjectProgressHistory::where('project_id', $project->id)
             ->where('id', $progressId)
             ->firstOrFail();

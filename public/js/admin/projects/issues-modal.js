@@ -491,6 +491,14 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
     
     const apiUrl = getIssuesApiUrl();
     
+    try {
+        var addModal = bootstrap.Modal.getInstance(document.getElementById('addIssueModal'));
+        if (addModal) addModal.hide();
+    } catch (err) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Saving issue&hellip;');
+    }
+
     fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -525,10 +533,12 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
         if (typeof loadTabIssues === 'function') {
             loadTabIssues();
         }
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showSuccessMessage('Issue created successfully');
     })
     .catch(error => {
         console.error('Error creating issue:', error);
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         if (error && error.data && error.data.errors) {
             const firstError = Object.values(error.data.errors)[0];
             showErrorMessage(firstError ? firstError[0] : 'Error creating issue');
@@ -560,6 +570,14 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
     };
     const apiUrl = getIssuesApiUrl(issueId);
     
+    try {
+        var editModal = bootstrap.Modal.getInstance(document.getElementById('editIssueModal'));
+        if (editModal) editModal.hide();
+    } catch (err) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Updating issue&hellip;');
+    }
+
     fetch(apiUrl, {
         method: 'PUT',
         headers: {
@@ -596,10 +614,12 @@ document.getElementById('editIssueForm')?.addEventListener('submit', function(e)
         if (typeof loadTabIssues === 'function') {
             loadTabIssues();
         }
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showSuccessMessage('Issue updated successfully');
     })
     .catch(error => {
         console.error('Error updating issue:', error);
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         if (error && error.data && error.data.errors) {
             const firstError = Object.values(error.data.errors)[0];
             showErrorMessage(firstError ? firstError[0] : 'Error updating issue');

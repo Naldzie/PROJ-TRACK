@@ -58,10 +58,41 @@ function showDeleteConfirmation(title, message, onConfirm) {
 }
 
 function confirmDeleteAction() {
-    if (deleteActionCallback) {
-        deleteActionCallback();
+    if (!deleteActionCallback) {
+        closeDeleteConfirmationModal();
+        return;
     }
-    closeDeleteConfirmationModal();
+
+    var btn = document.getElementById('deleteConfirmBtn');
+    var originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Deleting&hellip;';
+
+    var result;
+    try {
+        result = deleteActionCallback();
+    } catch (e) {
+        closeDeleteConfirmationModal();
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+        return;
+    }
+
+    if (result && typeof result.then === 'function') {
+        result.then(function() {
+            closeDeleteConfirmationModal();
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }).catch(function() {
+            closeDeleteConfirmationModal();
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+    } else {
+        closeDeleteConfirmationModal();
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
 }
 
 function closeDeleteConfirmationModal() {

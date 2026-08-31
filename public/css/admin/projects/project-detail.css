@@ -1758,6 +1758,21 @@
     box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
 }
 
+.timeline-dot.missing .timeline-dot-circle {
+    background: #f97316;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+}
+
+.timeline-dot.missing .bi-exclamation-lg {
+    color: white;
+    font-size: 10px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
 .timeline-dot.current .timeline-dot-circle {
     background: #667eea;
     border-color: #667eea;

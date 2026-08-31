@@ -1,7 +1,7 @@
 # Bugs & Behavior Adjustments
 
-**Date:** August 28, 2026 (updated Aug 29)
-**Status:** Bugs 1–6 FIXED. Bug 7 REVERTED. Bugs 8–10 + E1–E2 FIXED & TESTED. E3 + new items OPEN.
+**Date:** August 28, 2026 (updated Aug 30)
+**Status:** Bugs 1–10 + E1–E8 FIXED. E6–E8 implemented on `phase-ui-loading-and-staff-permissions`.
 
 ---
 
@@ -970,6 +970,9 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 | E3 | Overdue deadline in-app notification enhancement | Low (UX) | Low | IMPLEMENTED & TESTED |
 | E4 | Risk level change on edit/delete progress | Medium (missed alerts) | Medium | FIXED & TESTED (live-gap approach) |
 | E5 | Trigger user exclusion for Gmail (event notifications) | Medium (UX) | Low-Medium | IMPLEMENTED & TESTED (risk notifications deferred) |
+| E6 | Loading state for progress save + event-triggered modals | Medium (UX / double-save) | Medium | IMPLEMENTED |
+| E7 | Timeline dots show missing progress for past months | Medium (UX gap) | Low | IMPLEMENTED |
+| E8 | Assigned staff delete progress + Recorded By visibility | Medium (permission gap) | Low | IMPLEMENTED |
 
 ### Implementation Order
 
@@ -988,8 +991,11 @@ Low-Medium — ~12-15 lines added across 4 existing controllers (6 dispatch poin
 13. ~~**E1** (issue notification staff recipients)~~ — DONE & TESTED
 14. ~~**E2** (remove contractor from inspection notifications)~~ — DONE & TESTED
 15. ~~**E3** (overdue deadline in-app detail)~~ — DONE & TESTED
-16. **E4** (risk level change on edit/delete — needs fix) — NEXT
+16. ~~**E4** (risk level change on edit/delete — needs fix)~~ — DONE & TESTED (live-gap approach)
 17. ~~**E5** (trigger user exclusion for Gmail)~~ — DONE & TESTED (risk notifications deferred)
+18. ~~**E6** (loading state for progress save + event-triggered modals)~~ — IMPLEMENTED
+19. ~~**E7** (timeline dots missing progress indicator)~~ — IMPLEMENTED
+20. ~~**E8** (assigned staff delete progress + Recorded By visibility)~~ — IMPLEMENTED
 
 ---
 
@@ -1195,5 +1201,412 @@ if ($isMonthlyRecord && ! empty($record->month_label)) {
 ### Effort
 
 Low — replacing ~40 lines of wrong logic with ~50 lines of correct logic in 2 methods. Same file: `app/Http/Controllers/ProjectProgressController.php`.
+
+---
+
+## E6: Loading State for Progress Save + Event-Triggered Modals
+
+**Date:** August 30, 2026
+**Branch:** `phase-ui-loading-and-staff-permissions`
+**Status: IMPLEMENTED**
+
+### Problem
+
+When the user clicks Save on the progress record modal (and other modals that dispatch event-triggered notifications), there is no visual feedback. The modal stays still, making it look like the save button was not clicked. This causes users to click again, resulting in duplicate entries. The delay is caused by synchronous email notification dispatch — especially `RiskLevelChanged` which sends emails to multiple recipients (admins + staff + contractor) via SMTP.
+
+### Affected Modals (No Loading State)
+
+| Modal | JS File | Lines |
+|---|---|---|
+| Record Progress | `baseline-schedule-record-progress-modal.js` | 138-309 (`saveMonthlyProgress()`) |
+| Edit Progress | `baseline-schedule-edit-progress-modal.js` | 263-416 (`saveProgressEdit()`) |
+| Delete Progress | `baseline-schedule-edit-progress-modal.js` | 421-464 (`deleteProgressRecord()`) |
+| Add/Edit Issue | `issues-modal.js` | 481-614 |
+| Add/Edit Risk | `risk-register.js` | 684-862 |
+| Convert Risk to Issue | `risk-register.js` | 533-596 |
+
+### Already Have Loading State (No Change Needed)
+
+| Modal | JS File |
+|---|---|
+| Request Extension | `request_extension_modal.blade.php` (lines 470-557) |
+| Review Extension | `review_extension_modal.blade.php` (lines 342-387) |
+
+### Root Cause
+
+None of the affected JS handlers disable the submit button, show a spinner, or change button text before sending the `fetch()` request. The only feedback comes after the response arrives (modal closes + page reloads 600ms later). During the SMTP delay window (1-10+ seconds per recipient), the UI appears frozen.
+
+### Approach: Full Preloader Overlay
+
+Per user preference: close the modal immediately on click, then show the full preloader overlay with a contextual message (e.g. "Saving your progress..."). Hide the preloader when the request completes.
+
+### Implementation (6 phases)
+
+#### Phase 1: Extend `preloader.js` to Support Re-Showing
+
+The current `preloader.js` unmounts the `#pt-preloader` element after page load, making it unavailable for reuse. Add a `show(label)` method that re-injects the preloader HTML if it was unmounted.
+
+**File:** `public/js/components/preloader.js`
+
+Add `show(label)` method to `window.ProjTrackPreloader`:
+1. If `#pt-preloader` was unmounted, re-inject the HTML from a stored template string
+2. Update the label text (e.g. "Saving your progress...")
+3. Set `opacity: 1`, `visibility: visible`, remove `pt-preloader--hidden` class
+4. Reset `hideFired = false` so `.hide()` can work again
+
+#### Phase 2: Progress Save/Edit/Delete Loading States
+
+**File:** `public/js/admin/projects/baseline-schedule-record-progress-modal.js` — `saveMonthlyProgress()` (line 138)
+
+After validation passes, before `fetch()`:
+1. Close the record progress modal (`bootstrap.Modal.getInstance(...).hide()`)
+2. Call `ProjTrackPreloader.show('Saving your progress...')`
+
+In `.then()` (success) and `.catch()` (error):
+1. Call `ProjTrackPreloader.hide()` before proceeding with existing success/error logic
+
+---
+
+**File:** `public/js/admin/projects/baseline-schedule-edit-progress-modal.js` — `saveProgressEdit()` (line 263)
+
+Same pattern: close modal → show preloader → hide on completion.
+
+---
+
+**File:** `public/js/admin/projects/baseline-schedule-edit-progress-modal.js` — `deleteProgressRecord()` (line 421)
+
+Inside the `showDeleteConfirmation` callback, before `fetch()`:
+1. Close the delete confirmation modal
+2. Call `ProjTrackPreloader.show('Deleting progress record...')`
+
+In `.then()` and `.catch()`: hide preloader.
+
+#### Phase 3: Shared Delete Confirmation Async Support
+
+**File:** `resources/views/components/delete-confirmation-modal.blade.php`
+
+Modify `confirmDeleteAction()` to:
+1. Disable the `#deleteConfirmBtn` and show a spinner
+2. If the callback returns a Promise, wait for it before closing the modal
+3. If the callback is synchronous (backward-compatible), close immediately
+
+This benefits all delete confirmations (issue attachments, risk attachments, risk delete, extension archive, progress delete).
+
+#### Phase 4: Issue Modal Loading States
+
+**File:** `public/js/admin/projects/issues-modal.js`
+
+- Add Issue form submit (line 481): disable button + show preloader
+- Edit Issue form submit (line 545): disable button + show preloader
+- Close modal → preloader → hide on completion
+
+#### Phase 5: Risk Modal Loading States
+
+**File:** `public/js/admin/projects/risk-register.js`
+
+- Add Risk (line 684): close modal → preloader → hide
+- Edit Risk (line 804): close modal → preloader → hide
+- Convert Risk to Issue (line 533): close modal → preloader → hide
+
+#### Phase 6: Verify Extension Modals (No Changes Expected)
+
+Request Extension and Review Extension already have loading states. Verify they work correctly after `preloader.js` changes. No code changes expected.
+
+### Files Touched
+
+| File | Change |
+|---|---|
+| `public/js/components/preloader.js` | Add `show(label)` method for re-injection |
+| `public/js/admin/projects/baseline-schedule-record-progress-modal.js` | Add preloader around `saveMonthlyProgress()` |
+| `public/js/admin/projects/baseline-schedule-edit-progress-modal.js` | Add preloader around `saveProgressEdit()` + `deleteProgressRecord()` |
+| `resources/views/components/delete-confirmation-modal.blade.php` | Make `confirmDeleteAction()` handle async callbacks |
+| `public/js/admin/projects/issues-modal.js` | Add preloader around add/edit issue |
+| `public/js/admin/projects/risk-register.js` | Add preloader around add/edit risk, convert to issue |
+
+### Effort
+
+Medium — 6 JS files + 1 Blade file, ~80-100 lines total. Pattern is repetitive (close modal → show preloader → hide on completion).
+
+---
+
+## E7: Timeline Dots Should Reflect Missing Progress for Past Months
+
+**Date:** August 30, 2026
+**Branch:** `phase-ui-loading-and-staff-permissions`
+**Status: IMPLEMENTED**
+
+### Problem
+
+The timeline dot state logic at `baseline-schedule.blade.php:193` treats ALL past months as `completed` regardless of whether a progress record exists:
+
+```php
+$dotState = ($hasActual || $isPastMonth) ? 'completed' : ($isCurrentMonth ? 'current' : 'future');
+```
+
+A past month with no progress record shows the same green checkmark as a properly recorded month. This is misleading — users cannot distinguish between months that were inspected and months that were skipped.
+
+### Current Dot States
+
+| State | Condition | Visual |
+|---|---|---|
+| `completed` | Has actual progress OR is past month | Green filled circle + checkmark |
+| `current` | Matches current month, no progress yet | Purple filled circle + pulse animation |
+| `future` | After current month | Gray bordered empty circle |
+
+### Desired Dot States
+
+| State | Condition | Visual |
+|---|---|---|
+| `completed` | Has actual progress record | Green filled circle + checkmark |
+| `missing` | Past month, NO progress record | Orange filled circle + exclamation icon |
+| `current` | Matches current month, no progress yet | Purple filled circle + pulse animation |
+| `future` | After current month | Gray bordered empty circle |
+
+### Implementation
+
+#### Step 1: Update Dot State Logic
+
+**File:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` (lines 190-193)
+
+Change from:
+```php
+$hasActual = $latestProgress && $latestProgress->actual_progress_percent !== null;
+$isCurrentMonth = $plan->month_label === $currentMonthLabel;
+$isPastMonth = $plan->month_label < $currentMonthLabel;
+$dotState = ($hasActual || $isPastMonth) ? 'completed' : ($isCurrentMonth ? 'current' : 'future');
+```
+
+To:
+```php
+$hasActual = $latestProgress && $latestProgress->actual_progress_percent !== null;
+$isCurrentMonth = $plan->month_label === $currentMonthLabel;
+$isPastMonth = $plan->month_label < $currentMonthLabel;
+if ($hasActual) {
+    $dotState = 'completed';
+} elseif ($isPastMonth) {
+    $dotState = 'missing';   // past month, no progress recorded
+} elseif ($isCurrentMonth) {
+    $dotState = 'current';
+} else {
+    $dotState = 'future';
+}
+```
+
+#### Step 2: Add Missing Dot Icon
+
+**File:** `baseline-schedule.blade.php` (lines 212-214)
+
+Change from:
+```blade
+@if($dotState === 'completed')
+    <i class="bi bi-check-lg"></i>
+@endif
+```
+
+To:
+```blade
+@if($dotState === 'completed')
+    <i class="bi bi-check-lg"></i>
+@elseif($dotState === 'missing')
+    <i class="bi bi-exclamation-lg"></i>
+@endif
+```
+
+#### Step 3: Add CSS for `.missing` State
+
+**File:** `public/css/admin/projects/project-detail.css`
+
+Add after the `.timeline-dot.completed .timeline-dot-circle` rule (line ~1760):
+
+```css
+/* Past month with no progress record */
+.timeline-dot.missing .timeline-dot-circle {
+    background: #f97316;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+}
+.timeline-dot.missing .bi-exclamation-lg {
+    color: white;
+    font-size: 10px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+```
+
+#### Step 4: Update Tooltip for Missing Dots (Optional Enhancement)
+
+**File:** `baseline-schedule.blade.php` (lines 226-230)
+
+When `$latestProgress` is null for a past month, the tooltip already shows `—` for Actual. Add a note:
+
+```blade
+@if($dotState === 'missing')
+    <div style="color: #f97316; font-size: 10px; margin-top: 4px;">No progress recorded</div>
+@endif
+```
+
+### Files Touched
+
+| File | Change |
+|---|---|
+| `resources/views/.../tabs/baseline-schedule.blade.php` | Add `missing` dot state + icon + tooltip note |
+| `public/css/admin/projects/project-detail.css` | Add `.timeline-dot.missing` styles |
+
+### Effort
+
+Low — 1 Blade file (~10 lines changed) + 1 CSS file (~12 lines added).
+
+---
+
+## E8: Assigned Staff Delete Progress + Recorded By Visibility
+
+**Date:** August 30, 2026
+**Branch:** `phase-ui-loading-and-staff-permissions`
+**Status: IMPLEMENTED**
+
+### Problem
+
+Assigned staff currently cannot delete progress records (admin-only check in controller) and cannot see the "Recorded By" column in the progress history table. Both capabilities should be available to assigned staff for project management.
+
+### Current State
+
+| Capability | Staff (assigned) | Admin |
+|---|---|---|
+| Add progress | YES (routes + UI exist) | YES |
+| Edit latest record | YES (controller allows) | YES |
+| Edit older records | NO (controller blocks) | YES |
+| **Delete latest record** | **NO** (admin-only check) | YES |
+| **See "Recorded By" column** | **NO** (admin-only check) | YES |
+
+### Desired State (per user confirmation)
+
+| Capability | Staff (assigned) | Admin |
+|---|---|---|
+| Add progress | YES | YES |
+| Edit latest record | YES | YES |
+| Edit older records | NO (unchanged) | YES |
+| **Delete latest record** | **YES** (limited to latest, same as edit) | YES |
+| **See "Recorded By" column** | **YES** | YES |
+
+### Implementation
+
+#### Step 1: Remove Admin-Only Check from `destroyProgress()`
+
+**File:** `app/Http/Controllers/ProjectProgressController.php` (lines 311-317)
+
+Remove or change the hard admin-only block:
+
+```php
+// BEFORE (lines 311-317):
+if (! auth()->user() || auth()->user()->role !== 'admin') {
+    return response()->json([
+        'success' => false,
+        'message' => 'Only admin users can delete progress records.',
+    ], 403);
+}
+```
+
+**Action:** Remove these lines entirely. The `authorizeProjectAccess()` at line 309 already ensures only admins or assigned staff can access. The existing "latest record only" guard at lines 326-337 already prevents deleting non-latest records.
+
+#### Step 2: Show Delete Button for Assigned Staff in Progress Tab
+
+**File:** `resources/views/projects/project_detail/components/tabs/progress.blade.php` (line 209)
+
+Change from:
+```blade
+@if(auth()->user()->role === 'admin' && $loop->first)
+```
+
+To:
+```blade
+@if((auth()->user()->role === 'admin' || $isAssignedStaff) && $loop->first)
+```
+
+#### Step 3: Show "Recorded By" Column Header to Staff
+
+**File:** `progress.blade.php` (line 115)
+
+Change from:
+```blade
+@if(auth()->user()->role === 'admin')
+```
+
+To:
+```blade
+@if(in_array(auth()->user()->role, ['admin', 'staff']))
+```
+
+#### Step 4: Show "Recorded By" Column Data to Staff
+
+**File:** `progress.blade.php` (line 173)
+
+Change from:
+```blade
+@if(auth()->user()->role === 'admin')
+```
+
+To:
+```blade
+@if(in_array(auth()->user()->role, ['admin', 'staff']))
+```
+
+### Files Touched
+
+| File | Change |
+|---|---|
+| `app/Http/Controllers/ProjectProgressController.php` | Remove admin-only check from `destroyProgress()` |
+| `resources/views/.../tabs/progress.blade.php` | Show delete button + Recorded By for staff |
+
+### Effort
+
+Low — 1 controller change (delete 7 lines) + 1 Blade file (3 condition changes).
+
+---
+
+## Session Log: August 30, 2026
+
+### Changes Implemented This Session
+
+| Item | Change | Files | Status |
+|---|---|---|---|
+| Branch | Created `phase-ui-loading-and-staff-permissions` from `develop` | — | DONE |
+| Branch | Rebased `phase-ui-loading-and-staff-permissions` onto `develop` (fast-forward teammate merge) | — | DONE |
+| E6 | Implemented loading states for all modals | preloader.js, 5 JS files, 1 blade | IMPLEMENTED |
+| E6 fix | Fixed preloader not closing — removed inline style overrides in `show()` + added `hide()` to all 7 success paths | preloader.js, 5 JS files | FIXED |
+| E7 | Added missing dot state for past months with no progress | baseline-schedule.blade.php, project-detail.css | IMPLEMENTED |
+| E8 | Staff can delete latest progress + see Recorded By | ProjectProgressController.php, progress.blade.php | IMPLEMENTED |
+
+### E6 Preloader Fix Details
+
+**Problem:** Preloader overlay showed on modal submit but never closed after process completed.
+
+**Root cause 1:** `show()` set inline `style.opacity = '1'` and `style.visibility = 'visible'` which have higher CSS specificity than the class-based `.pt-preloader--hidden { opacity: 0 }` rule — the CSS fade-out transition was overridden.
+
+**Fix 1:** Removed the two inline style lines from `show()`. The base `.pt-preloader` CSS already defines `opacity: 1; visibility: visible;`, so removing the `--hidden` class is enough to show it, and adding it back properly triggers the CSS transition.
+
+**Root cause 2:** On success paths, `ProjTrackPreloader.hide()` was never called — only error handlers called it. The preloader stayed visible until page reload (or forever if carry-over modal opened).
+
+**Fix 2:** Added `hide()` calls to all 7 success paths:
+- `baseline-schedule-record-progress-modal.js` — success path before carry-over/reload branching
+- `baseline-schedule-edit-progress-modal.js` — `finalizeReload()` before setTimeout
+- `baseline-schedule-edit-progress-modal.js` — `deleteProgressRecord()` success handler
+- `issues-modal.js` — add issue success + edit issue success
+- `risk-register.js` — add risk success + edit risk success + convert success
+
+### Notification Regression Check
+
+User reported risk level email + contractor inspection reminder regressions. Investigation confirmed the notification code is **byte-identical** between branch and develop — no code regression. Both fixes are intact:
+- `SendNotifications.php` line 89: `$internalRecipients = $recipients->filter(fn ($u) => $u->role !== 'contractor')` — all inspection methods use `$internalRecipients`
+- `ProjectProgressController.php`: RiskLevelChanged dispatch in all 4 locations intact
+
+Issues resolved on their own (likely environment: queue worker, stale jobs).
+
+### Pre-Session State
+
+- All Bugs 1–10 + E1–E5 FIXED & TESTED (985 tests, 2 pre-existing EmailDraftTest failures)
+- `fix/email-notification-delay` merged into `develop` (fast-forward, 120+ commits)
+- `main` remains at `2767f7d` (unaffected)
 
 ---

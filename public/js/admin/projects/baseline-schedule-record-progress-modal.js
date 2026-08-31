@@ -208,6 +208,14 @@ function saveMonthlyProgress() {
     
     console.log('[saveMonthlyProgress] Validation passed, sending request for month:', monthLabel);
     
+    try {
+        var modal = bootstrap.Modal.getInstance(document.getElementById('recordProgressModal'));
+        if (modal) modal.hide();
+    } catch (err) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Saving your progress&hellip;');
+    }
+
     fetch(buildRecordProgressEndpoint(), {
         method: 'POST',
         headers: {
@@ -235,6 +243,7 @@ function saveMonthlyProgress() {
     .then(data => {
         if (!data.success) {
             console.error('[saveMonthlyProgress] API returned error:', data.message);
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showRecordProgressErrors([data.message || 'Failed to save progress. Please try again.']);
             return;
         }
@@ -261,6 +270,8 @@ function saveMonthlyProgress() {
             if (typeof clearPendingFiles === 'function') {
                 clearPendingFiles('progressAttachmentFiles');
             }
+
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
 
             // Build the result toast: a warning when evidence uploads failed,
             // otherwise a plain success. It must appear AFTER the reload, so
@@ -304,6 +315,7 @@ function saveMonthlyProgress() {
     })
     .catch(error => {
         console.error('[saveMonthlyProgress] Fetch error:', error);
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showRecordProgressErrors(['Error saving progress: ' + error.message]);
     });
 }

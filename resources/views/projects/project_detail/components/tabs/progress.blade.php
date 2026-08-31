@@ -112,7 +112,7 @@
                                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Planned %</th>
                                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Actual %</th>
                                 <th style="padding: 12px 15px; text-align: center; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Variance</th>
-                                @if(auth()->user()->role === 'admin')
+                                @if(in_array(auth()->user()->role, ['admin', 'staff']))
                                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Recorded By</th>
                                 @endif
                                 <th style="padding: 12px 15px; text-align: left; font-size: 12px; font-weight: 600; color: #374151; text-transform: uppercase;">Notes</th>
@@ -170,7 +170,7 @@
                                             <i class="bi bi-{{ $varianceIcon }}" style="margin-right: 4px;"></i>{{ $variance > 0 ? '+' : '' }}{{ $variance }}%
                                         </span>
                                     </td>
-                                    @if(auth()->user()->role === 'admin')
+                                    @if(in_array(auth()->user()->role, ['admin', 'staff']))
                                     <td style="padding: 12px 15px; color: #6b7280;">
                                         @if($history->recordedBy)
                                             <div style="font-weight: 500; color: #111827;">{{ $history->recordedBy->name }}</div>
@@ -206,7 +206,7 @@
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                         @endif
-                                        @if(auth()->user()->role === 'admin' && $loop->first)
+                                        @if((auth()->user()->role === 'admin' || auth()->user()->role === 'staff') && $loop->first)
                                         <button onclick="deleteProgressRecord({{ $history->id }})"
                                                 style="background: #fee2e2; color: #dc2626; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"
                                                 title="Delete Record (only the latest record can be deleted)">

@@ -546,6 +546,14 @@ function initConvertRiskForm() {
             baseline_schedule_id: document.getElementById('convertIssueBaselineId').value || null,
         };
 
+        try {
+            var convertModal = bootstrap.Modal.getInstance(document.getElementById('riskToIssueModal'));
+            if (convertModal) convertModal.hide();
+        } catch (err) {}
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+            window.ProjTrackPreloader.show('Converting risk to issue&hellip;');
+        }
+
         fetch(getRisksApiUrl(riskId + '/convert'), {
             method: 'POST',
             headers: {
@@ -574,6 +582,7 @@ function initConvertRiskForm() {
                     if (typeof clearPendingFiles === 'function') clearPendingFiles('convertRiskAttachmentFiles');
                     loadTabRisks();
                     if (typeof loadTabIssues === 'function') loadTabIssues();
+                    if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                     showSuccessMessage('Risk converted to issue successfully');
                 })
                 .catch(err => {
@@ -586,10 +595,12 @@ function initConvertRiskForm() {
                     showErrorMessage('Issue created, but some attachment changes failed. Manage attachments from the issue edit modal.');
                 });
             } else {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 showErrorMessage(data.message || 'Error converting risk');
             }
         })
         .catch(error => {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('Error converting risk:', error);
             showErrorMessage('Error converting risk');
         });
@@ -701,6 +712,14 @@ function initAddRiskForm() {
             baseline_schedule_id: document.getElementById('riskBaselineId').value || null,
         };
 
+        try {
+            var riskModal = bootstrap.Modal.getInstance(document.getElementById('riskModal'));
+            if (riskModal) riskModal.hide();
+        } catch (err) {}
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+            window.ProjTrackPreloader.show('Saving risk&hellip;');
+        }
+
         fetch(getRisksApiUrl(), {
             method: 'POST',
             headers: {
@@ -716,10 +735,12 @@ function initAddRiskForm() {
             if (data.success) {
                 return uploadRiskFiles(data.risk.id, riskFiles).then(() => data);
             } else if (data.errors) {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 const first = Object.values(data.errors)[0];
                 showErrorMessage(first ? first[0] : 'Validation error');
                 return Promise.reject({ silent: true });
             } else {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 showErrorMessage(data.message || 'Error creating risk');
                 return Promise.reject({ silent: true });
             }
@@ -729,10 +750,12 @@ function initAddRiskForm() {
             form.reset();
             if (typeof clearPendingFiles === 'function') clearPendingFiles('riskAttachmentFiles');
             loadTabRisks();
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showSuccessMessage('Risk created successfully');
         })
         .catch(error => {
             if (error && error.silent) return;
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('Error:', error);
             showErrorMessage('Error creating risk');
         });
@@ -821,6 +844,14 @@ function initEditRiskForm() {
             baseline_schedule_id: document.getElementById('editRiskBaselineId').value || null,
         };
 
+        try {
+            var editRiskModal = bootstrap.Modal.getInstance(document.getElementById('editRiskModal'));
+            if (editRiskModal) editRiskModal.hide();
+        } catch (err) {}
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+            window.ProjTrackPreloader.show('Updating risk&hellip;');
+        }
+
         fetch(getRisksApiUrl(id), {
             method: 'PUT',
             headers: {
@@ -839,10 +870,12 @@ function initEditRiskForm() {
                     uploadRiskFiles(id, editFiles)
                 ]).then(() => data);
             } else if (data.errors) {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 const first = Object.values(data.errors)[0];
                 showErrorMessage(first ? first[0] : 'Validation error');
                 return Promise.reject({ silent: true });
             } else {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 showErrorMessage(data.message || 'Error updating risk');
                 return Promise.reject({ silent: true });
             }
@@ -852,10 +885,12 @@ function initEditRiskForm() {
             window._pendingRiskDeleteAttachmentIds = [];
             if (typeof clearPendingFiles === 'function') clearPendingFiles('editRiskAttachmentFiles');
             loadTabRisks();
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showSuccessMessage('Risk updated successfully');
         })
         .catch(error => {
             if (error && error.silent) return;
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('Error:', error);
             showErrorMessage('Error updating risk');
         });
