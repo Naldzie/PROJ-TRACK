@@ -250,31 +250,31 @@
             </table>
         </div>
 
-        {{-- ── ANALYTICS GRID ────────────────────────────────────────────── --}}
+        {{-- ── ANALYTICS (right column — 1-col vertical stack) ──────── --}}
         <div class="db-analytics-grid">
 
             {{-- 1. Project Status Donut --}}
             <div class="db-chart-card">
                 <div class="db-chart-title"><i class="bi bi-pie-chart"></i> Project Status</div>
-                <canvas id="statusDonut" height="180"></canvas>
+                <div style="height:200px; position:relative;"><canvas id="statusDonut"></canvas></div>
             </div>
 
             {{-- 2. Health Distribution Donut --}}
             <div class="db-chart-card">
                 <div class="db-chart-title"><i class="bi bi-heart-pulse"></i> Health Distribution</div>
-                <canvas id="healthDonut" height="180"></canvas>
+                <div style="height:200px; position:relative;"><canvas id="healthDonut"></canvas></div>
             </div>
 
             {{-- 3. Budget by Category --}}
             <div class="db-chart-card">
                 <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Category</div>
-                <canvas id="budgetBar" height="180"></canvas>
+                <div style="height:200px; position:relative;"><canvas id="budgetBar"></canvas></div>
             </div>
 
             {{-- 4. Progress Performance --}}
             <div class="db-chart-card">
                 <div class="db-chart-title"><i class="bi bi-graph-up"></i> Progress: Planned vs Actual</div>
-                <canvas id="progressBar" height="180"></canvas>
+                <div style="height:200px; position:relative;"><canvas id="progressBar"></canvas></div>
             </div>
 
             {{-- 5. Extension Summary --}}
@@ -294,12 +294,13 @@
                         <div class="db-ext-mini-label">Days Added</div>
                     </div>
                 </div>
-                <canvas id="extensionDonut" height="120"></canvas>
+                <div style="height:140px; position:relative;"><canvas id="extensionDonut"></canvas></div>
             </div>
 
         </div>
 
-    </div>
+    </div>{{-- /db-main-grid --}}
+
 </div>{{-- /tab-overview --}}
 
 {{-- ════════════════════════════════
@@ -328,6 +329,7 @@
      Blade-injected variables defined here first.
      Pure JS loaded from public/js/dashboard.js after.
 ════════════════════════════════════════════════════════ --}}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
     // Blade-injected — must be defined BEFORE dashboard.js loads
     const DASHBOARD_FILTER_URL = "{{ auth()->user()->role === 'staff'

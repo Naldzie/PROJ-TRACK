@@ -168,7 +168,7 @@ class DashboardController extends Controller
         $extensionSummary = [
             'approved'   => \App\Models\ProjectExtension::where('status', 'approved')->count(),
             'pending'    => \App\Models\ProjectExtension::where('status', 'pending')->count(),
-            'total_days' => \App\Models\ProjectExtension::where('status', 'approved')->sum('days_added'),
+            'total_days' => \App\Models\ProjectExtension::where('status', 'approved')->sum('duration_days'),
         ];
 
         return view('admin.dashboard', compact(

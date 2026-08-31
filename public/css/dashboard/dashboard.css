@@ -166,7 +166,7 @@
    2-COL GRID + PANELS
 ══════════════════════════════════════════ */
 .db-main-grid {
-    display:grid; grid-template-columns:1fr 300px;
+    display:grid; grid-template-columns:1fr 380px;
     gap:18px; align-items:start;
 }
 .db-panel {
@@ -529,10 +529,9 @@
    Compact layout to keep projects table visible.
 ══════════════════════════════════════════ */
 .db-analytics-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    display: flex;
+    flex-direction: column;
     gap: 14px;
-    margin-bottom: 16px;
 }
 .db-chart-card {
     background: white;
@@ -576,9 +575,6 @@
 }
 
 /* Responsive */
-@media (max-width:1200px) {
-    .db-analytics-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width:768px) {
-    .db-analytics-grid { grid-template-columns: 1fr; }
+@media (max-width:900px) {
+    .db-main-grid { grid-template-columns:1fr; }
 }
