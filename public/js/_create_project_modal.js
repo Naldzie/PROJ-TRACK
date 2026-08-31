@@ -885,6 +885,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // ===================================================
+    // DATE RANGE CONSTRAINTS (gray out invalid dates)
+    // ===================================================
+    // When start date changes, end date cannot be before it
+    if (startDateInput) {
+        startDateInput.addEventListener('change', function() {
+            if (endDateInput && startDateInput.value) {
+                endDateInput.min = startDateInput.value;
+            }
+        });
+    }
+
+    // When end date changes, start date cannot be after it
+    if (endDateInput) {
+        endDateInput.addEventListener('change', function() {
+            if (startDateInput && endDateInput.value) {
+                startDateInput.max = endDateInput.value;
+            }
+            // Handover date must be on or after end date
+            const handoverInput = document.getElementById('projectHandoverDate');
+            if (handoverInput && endDateInput.value) {
+                handoverInput.min = endDateInput.value;
+            }
+        });
+    }
+
     // Initialize on page load if values exist
     calculateEndDateFromDuration();
 });

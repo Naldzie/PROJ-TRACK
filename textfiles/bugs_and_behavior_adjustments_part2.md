@@ -10,7 +10,7 @@
 
 **Date:** September 1, 2026
 **Branch:** `fix/project-date-restriction`
-**Status: PLANNED** — Not yet implemented.
+**Status: IMPLEMENTED** — Frontend date constraints + backend symmetric rule added.
 
 ### Problem
 
@@ -65,11 +65,21 @@ Low — ~17 lines total across 2 files.
 
 | Item | Change | Files | Status |
 |---|---|---|---|
-| E12 | Frontend date constraints + backend symmetric rule | `_create_project_modal.js`, `ProjectController.php` | PLANNED |
+| E12 | Frontend date constraints + backend symmetric rule | `_create_project_modal.js`, `ProjectController.php` | IMPLEMENTED |
+
+### Implementation Details
+
+**Frontend** (`public/js/_create_project_modal.js`):
+- Added `plannedStartDate` change handler → sets `plannedEndDate.min` (gray out dates before start)
+- Added `plannedEndDate` change handler → sets `plannedStartDate.max` (gray out dates after end) + `projectHandoverDate.min` (enforce handover after end)
+
+**Backend** (`app/Http/Controllers/ProjectController.php`):
+- `store()` line 609: `planned_start_date` rule changed from `['nullable', 'date']` to `['nullable', 'date', 'before_or_equal:planned_end_date']`
+- `update()` line 999: same change
 
 ### Implementation Order
 
-1. **E12** (date restriction on create project modal) — PLANNED
+1. ~~**E12** (date restriction on create project modal)~~ — IMPLEMENTED
 
 ---
 
