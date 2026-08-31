@@ -151,16 +151,25 @@ class DashboardController extends Controller
             ->whereHas('extensions', fn ($q) => $q->pending())
             ->count();
 
-        // ── RECENT ACTIVITY FEED ──────────────────────────────────────────────
-        // Latest 6 activity log entries. Admins see everything. Staff see
-        // visibility='all' entries minus routine deletions and admin-housekeeping
-        // (Edit User, Password Change); Delete Project is still shown. Deletions
-        // stay visible on the project-scoped Overview feed.
-        $recentActivities = ActivityLog::with('user')
-            ->forDashboard(auth()->user()->role)
-            ->latest()
-            ->limit(6)
-            ->get();
+        // ── ANALYTICS DATA ──────────────────────────────────────────────
+        // Additional status counts for the Status Donut chart.
+        $plannedCount   = (clone $baseQuery)->where('status', 'Planned')->count();
+        $suspendedCount = (clone $baseQuery)->where('status', 'Suspended')->count();
+        $cancelledCount = (clone $baseQuery)->where('status', 'Cancelled')->count();
+
+        // Budget grouped by category for the horizontal bar chart.
+        $budgetByCategory = Project::where('is_archived', false)
+            ->selectRaw('categories.name as category_name, SUM(approved_budget) as total_budget')
+            ->join('categories', 'projects.category_id', '=', 'categories.id')
+            ->groupBy('categories.name')
+            ->pluck('total_budget', 'category_name');
+
+        // Extension summary for mini stat cards + donut.
+        $extensionSummary = [
+            'approved'   => \App\Models\ProjectExtension::where('status', 'approved')->count(),
+            'pending'    => \App\Models\ProjectExtension::where('status', 'pending')->count(),
+            'total_days' => \App\Models\ProjectExtension::where('status', 'approved')->sum('days_added'),
+        ];
 
         return view('admin.dashboard', compact(
             'ongoingProjects',
@@ -181,7 +190,11 @@ class DashboardController extends Controller
             'pendingUpdateCount',
             'overdueInspectionCount',
             'pendingExtensionCount',
-            'recentActivities'
+            'plannedCount',
+            'suspendedCount',
+            'cancelledCount',
+            'budgetByCategory',
+            'extensionSummary',
         ));
     }
 

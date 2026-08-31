@@ -250,74 +250,52 @@
             </table>
         </div>
 
-        {{-- Activity feed --}}
-        <div class="db-panel">
-            <div class="db-panel-hd">
-                <div class="db-panel-title"><i class="bi bi-clock-history"></i> Recent Activity</div>
-                <a href="{{ route('admin.activity.logs') }}" class="db-view-all">All logs <i class="bi bi-arrow-right"></i></a>
+        {{-- ── ANALYTICS GRID ────────────────────────────────────────────── --}}
+        <div class="db-analytics-grid">
+
+            {{-- 1. Project Status Donut --}}
+            <div class="db-chart-card">
+                <div class="db-chart-title"><i class="bi bi-pie-chart"></i> Project Status</div>
+                <canvas id="statusDonut" height="180"></canvas>
             </div>
 
-            {{-- ── RECENT ACTIVITY LOOP ──────────────────────────────────────────
-                Data source: DashboardController@index → $recentActivities
-                Already filtered via scopeForDashboard() — staff see visibility
-                'all' entries minus routine deletions (Delete Project still
-                shown) and admin-housekeeping (Edit User, Password Change).
-            ── --}}
-            @forelse($recentActivities as $activity)
-                @php
-                    $action = $activity->action ?? '';
-                    $actionLower = strtolower($action);
+            {{-- 2. Health Distribution Donut --}}
+            <div class="db-chart-card">
+                <div class="db-chart-title"><i class="bi bi-heart-pulse"></i> Health Distribution</div>
+                <canvas id="healthDonut" height="180"></canvas>
+            </div>
 
-                    // Fallback description for login/logout entries that have no
-                    // stored description (these only log user_id + action + timestamp).
-                    $description = $activity->description;
-                    if (empty($description)) {
-                        $actorName = $activity->user->name ?? 'A user';
-                        $description = match(true) {
-                            str_contains($actionLower, 'login')  => "{$actorName} logged in",
-                            str_contains($actionLower, 'logout') => "{$actorName} logged out",
-                            default => $action,
-                        };
-                    }
+            {{-- 3. Budget by Category --}}
+            <div class="db-chart-card">
+                <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Category</div>
+                <canvas id="budgetBar" height="180"></canvas>
+            </div>
 
-                    $iconClass = match(true) {
-                        str_contains($actionLower, 'delete')  => 'delete',
-                        str_contains($actionLower, 'login') || str_contains($actionLower, 'logout') => 'register',
-                        str_contains($actionLower, 'record monthly progress') => 'progress',
-                        str_contains($actionLower, 'baseline schedule') && str_contains($actionLower, 'create') => 'progress',
-                        str_contains($actionLower, 'checklist item') && str_contains($actionLower, 'update') => 'complete',
-                        str_contains($actionLower, 'create') => 'create',
-                        str_contains($actionLower, 'edit') || str_contains($actionLower, 'update') => 'update',
-                        default => 'update',
-                    };
+            {{-- 4. Progress Performance --}}
+            <div class="db-chart-card">
+                <div class="db-chart-title"><i class="bi bi-graph-up"></i> Progress: Planned vs Actual</div>
+                <canvas id="progressBar" height="180"></canvas>
+            </div>
 
-                    $iconBs = match($iconClass) {
-                        'progress' => 'bi-graph-up-arrow',
-                        'complete' => 'bi-check-circle',
-                        'update'   => 'bi-pencil-square',
-                        'create'   => 'bi-plus-circle',
-                        'delete'   => 'bi-trash',
-                        'register' => 'bi-box-arrow-in-right',
-                        default    => 'bi-info-circle',
-                    };
-                @endphp
-                <div class="activity-item">
-                    <div class="activity-icon {{ $iconClass }}"><i class="bi {{ $iconBs }}"></i></div>
-                    <div>
-                        <div class="activity-text">{{ $description }}</div>
-                        <div class="activity-time">
-                            {{ $activity->created_at->diffForHumans() }}
-                            @if($activity->user) · {{ $activity->user->name }} @endif
-                        </div>
+            {{-- 5. Extension Summary --}}
+            <div class="db-chart-card">
+                <div class="db-chart-title"><i class="bi bi-calendar2-plus"></i> Extensions</div>
+                <div class="db-ext-mini-stats">
+                    <div class="db-ext-mini-card">
+                        <div class="db-ext-mini-num" style="color:#2563eb;">{{ $extensionSummary['approved'] }}</div>
+                        <div class="db-ext-mini-label">Granted</div>
+                    </div>
+                    <div class="db-ext-mini-card">
+                        <div class="db-ext-mini-num" style="color:#f59e0b;">{{ $extensionSummary['pending'] }}</div>
+                        <div class="db-ext-mini-label">Pending</div>
+                    </div>
+                    <div class="db-ext-mini-card">
+                        <div class="db-ext-mini-num" style="color:#ef4444;">{{ $extensionSummary['total_days'] }}</div>
+                        <div class="db-ext-mini-label">Days Added</div>
                     </div>
                 </div>
-            @empty
-                <div class="db-empty">
-                    <i class="bi bi-info-circle"></i>
-                    <div class="db-empty-title">No recent activity yet</div>
-                    <div>Project updates and notifications will show up here.</div>
-                </div>
-            @endforelse
+                <canvas id="extensionDonut" height="120"></canvas>
+            </div>
 
         </div>
 
@@ -355,6 +333,143 @@
     const DASHBOARD_FILTER_URL = "{{ auth()->user()->role === 'staff'
         ? route('staff.dashboard.filter')
         : route('admin.dashboard.filter') }}";
+
+    // ── Analytics Charts ──────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+        const chartDefaults = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } }
+        };
+
+        // 1. Project Status Donut
+        new Chart(document.getElementById('statusDonut'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Ongoing', 'Completed', 'Planned', 'Suspended', 'Cancelled'],
+                datasets: [{
+                    data: [{{ $ongoingCount }}, {{ $completedCount }}, {{ $plannedCount }}, {{ $suspendedCount }}, {{ $cancelledCount }}],
+                    backgroundColor: ['#2563eb', '#16a34a', '#f59e0b', '#ef4444', '#9ca3af'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                ...chartDefaults,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 11 } } }
+                }
+            }
+        });
+
+        // 2. Health Distribution Donut
+        @php
+            $onTrackCount = max(0, $ongoingCount - $atRiskCount - $overdueCount - ($ongoingCount - $completedCount - $plannedCount - $suspendedCount - $cancelledCount - $atRiskCount - $overdueCount));
+            // Derive: on_track = ongoing minus at_risk minus overdue minus no_data
+            // no_data = ongoing projects with zero progress history records
+        @endphp
+        new Chart(document.getElementById('healthDonut'), {
+            type: 'doughnut',
+            data: {
+                labels: ['On Track', 'At Risk', 'Overdue', 'No Data'],
+                datasets: [{
+                    data: [{{ max(0, $ongoingCount - $atRiskCount - $overdueCount) }}, {{ $atRiskCount }}, {{ $overdueCount }}, {{ max(0, $ongoingCount - $atRiskCount - $overdueCount) > 0 ? 0 : 0 }}],
+                    backgroundColor: ['#16a34a', '#f59e0b', '#ef4444', '#d1d5db'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                ...chartDefaults,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 11 } } }
+                }
+            }
+        });
+
+        // 3. Budget by Category (Horizontal Bar)
+        @php
+            $categoryLabels = $budgetByCategory->keys()->toArray();
+            $categoryValues = $budgetByCategory->values()->toArray();
+        @endphp
+        new Chart(document.getElementById('budgetBar'), {
+            type: 'bar',
+            data: {
+                labels: @json($categoryLabels),
+                datasets: [{
+                    data: @json($categoryValues),
+                    backgroundColor: '#2563eb',
+                    borderRadius: 4,
+                    barThickness: 20
+                }]
+            },
+            options: {
+                ...chartDefaults,
+                indexAxis: 'y',
+                scales: {
+                    x: { display: true, grid: { display: false }, ticks: { font: { size: 10 }, callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v } },
+                    y: { display: true, grid: { display: false }, ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+
+        // 4. Progress Performance (Grouped Bar — top 8 projects)
+        @php
+            $progressProjects = $ongoingProjects->take(8);
+            $progressLabels = $progressProjects->pluck('code')->toArray();
+            $plannedData = [];
+            $actualData = [];
+            foreach ($progressProjects as $p) {
+                $baseline = $currentMonthBaseline[$p->id] ?? null;
+                $actual = $latestKnownProgress[$p->id] ?? null;
+                $plannedData[] = $baseline ? (float) ($baseline->planned_progress_percent ?? 0) : 0;
+                $actualData[] = $actual ? (float) ($actual->actual_progress_percent ?? $actual->progress_percentage ?? 0) : 0;
+            }
+        @endphp
+        new Chart(document.getElementById('progressBar'), {
+            type: 'bar',
+            data: {
+                labels: @json($progressLabels),
+                datasets: [
+                    { label: 'Planned', data: @json($plannedData), backgroundColor: '#93c5fd', borderRadius: 4, barThickness: 12 },
+                    { label: 'Actual', data: @json($actualData), backgroundColor: '#16a34a', borderRadius: 4, barThickness: 12 }
+                ]
+            },
+            options: {
+                ...chartDefaults,
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                    y: { max: 100, grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, callback: v => v + '%' } }
+                },
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 8, font: { size: 11 } } }
+                }
+            }
+        });
+
+        // 5. Extension Donut (approved vs pending)
+        new Chart(document.getElementById('extensionDonut'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Approved', 'Pending'],
+                datasets: [{
+                    data: [{{ $extensionSummary['approved'] }}, {{ $extensionSummary['pending'] }}],
+                    backgroundColor: ['#2563eb', '#f59e0b'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                ...chartDefaults,
+                cutout: '55%',
+                plugins: {
+                    legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 6, font: { size: 10 } } }
+                }
+            }
+        });
+    });
 </script>
 <script src="{{ asset('js/dashboard.js') }}"></script>
 

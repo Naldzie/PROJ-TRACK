@@ -1730,3 +1730,53 @@ Client feedback: completed projects should not be able to add extensions. The "A
 - Prevents extension creation even if someone bypasses the UI
 
 ---
+
+## Enhancement: Dashboard Analytics Upgrade (E11)
+
+**Status: IMPLEMENTED** — `phase-dashboard-analytics-plan` branch, 5 files modified
+
+### Consultant Feedback
+
+"Dashboard should be statistics and analysis — remove activity log."
+
+### Changes
+
+**DashboardController.php** — `index()`:
+- Removed `$recentActivities` query and ActivityLog dependency
+- Added `$plannedCount`, `$suspendedCount`, `$cancelledCount` for Status Donut
+- Added `$budgetByCategory` query (grouped by category name, sum of approved_budget)
+- Added `$extensionSummary` array (approved count, pending count, total days)
+- All new data passed to view via `compact()`
+
+**contractor/DashboardController.php** — `index()`:
+- Removed `$recentActivities` query
+- Added `$suspendedCount`, `$cancelledCount` (from contractor's projects collection)
+- Added `$budgetByCategory` (grouped from contractor's projects)
+- Added `$extensionSummary` (scoped to contractor's project IDs)
+
+**admin/dashboard.blade.php**:
+- Removed activity feed section (lines 253-322)
+- Added analytics grid with 5 Chart.js widgets:
+  1. Project Status Donut (Ongoing/Completed/Planned/Suspended/Cancelled)
+  2. Health Distribution Donut (On Track/At Risk/Overdue)
+  3. Budget by Category (horizontal bar)
+  4. Progress Performance (grouped bar — planned vs actual, top 8 projects)
+  5. Extension Summary (3 mini stat cards + donut)
+- Added Chart.js DOMContentLoaded initialization block
+
+**contractor/dashboard.blade.php**:
+- Removed activity section (lines 772-791)
+- Added analytics grid (2-column layout within right column):
+  1. Status Donut
+  2. Health Donut
+  3. Extension Summary (3 mini cards)
+  4. Budget by Category (horizontal bar)
+- Updated existing Chart.js script with new charts
+
+**dashboard.css**:
+- Added `.db-analytics-grid` (3-column grid, compact spacing)
+- Added `.db-chart-card`, `.db-chart-title` styles
+- Added `.db-ext-mini-stats`, `.db-ext-mini-card`, `.db-ext-mini-num`, `.db-ext-mini-label`
+- Added responsive breakpoints (2-col at 1200px, 1-col at 768px)
+
+---

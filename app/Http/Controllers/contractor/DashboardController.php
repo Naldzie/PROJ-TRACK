@@ -151,6 +151,23 @@ class DashboardController extends Controller
             ->limit(6)
             ->get();
 
+        // ── ANALYTICS DATA ──────────────────────────────────────────────────
+        // Additional status counts for the Status Donut chart.
+        $suspendedCount = $projects->where('status', 'Suspended')->count();
+        $cancelledCount = $projects->where('status', 'Cancelled')->count();
+
+        // Budget grouped by category for the horizontal bar chart.
+        $budgetByCategory = $projects
+            ->groupBy(fn ($p) => $p->category?->name ?? 'Uncategorized')
+            ->map(fn ($group) => $group->sum('approved_budget'));
+
+        // Extension summary for mini stat cards + donut.
+        $extensionSummary = [
+            'approved'   => \App\Models\ProjectExtension::whereIn('project_id', $projectIds)->where('status', 'approved')->count(),
+            'pending'    => \App\Models\ProjectExtension::whereIn('project_id', $projectIds)->where('status', 'pending')->count(),
+            'total_days' => \App\Models\ProjectExtension::whereIn('project_id', $projectIds)->where('status', 'approved')->sum('days_added'),
+        ];
+
         return view('contractor.dashboard', compact(
             'projects',
             'totalProjects',
@@ -168,7 +185,10 @@ class DashboardController extends Controller
             'totalBudget',
             'budgetProjects',
             'deadlineProjects',
-            'recentActivities'
+            'suspendedCount',
+            'cancelledCount',
+            'budgetByCategory',
+            'extensionSummary',
         ));
     }
 }

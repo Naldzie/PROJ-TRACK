@@ -769,25 +769,49 @@
         @endforelse
       </div>
 
-      {{-- RECENT ACTIVITY --}}
+      {{-- ANALYTICS GRID --}}
       <div class="d-card">
-        <div class="d-card-head"><span class="d-card-title">Recent activity</span></div>
+        <div class="d-card-head"><span class="d-card-title"><i class="bi bi-bar-chart-line"></i> Analytics</span></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 4px;">
 
-        @forelse($recentActivities as $activity)
-          <div class="act-row">
-            <div class="act-dot" style="background:#2563eb"></div>
-            <div class="act-body">
-              <div class="act-proj">{{ $activity->project?->title ?? 'System' }}</div>
-              <div class="act-text">{{ $activity->description }}</div>
+          {{-- Status Donut --}}
+          <div style="text-align: center;">
+            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Project Status</div>
+            <div style="height: 160px;"><canvas id="statusDonut"></canvas></div>
+          </div>
+
+          {{-- Health Donut --}}
+          <div style="text-align: center;">
+            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Health Distribution</div>
+            <div style="height: 160px;"><canvas id="healthDonut"></canvas></div>
+          </div>
+
+          {{-- Extension Summary --}}
+          <div style="grid-column: span 2;">
+            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Extensions</div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px;">
+              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
+                <div style="font-size: 18px; font-weight: 700; color: #2563eb;">{{ $extensionSummary['approved'] }}</div>
+                <div style="font-size: 11px; color: #6b7280;">Granted</div>
+              </div>
+              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
+                <div style="font-size: 18px; font-weight: 700; color: #f59e0b;">{{ $extensionSummary['pending'] }}</div>
+                <div style="font-size: 11px; color: #6b7280;">Pending</div>
+              </div>
+              <div style="text-align: center; padding: 8px; background: #f9fafb; border-radius: 6px;">
+                <div style="font-size: 18px; font-weight: 700; color: #ef4444;">{{ $extensionSummary['total_days'] }}</div>
+                <div style="font-size: 11px; color: #6b7280;">Days Added</div>
+              </div>
             </div>
-            <div class="act-time">{{ $activity->created_at?->diffForHumans() }}</div>
           </div>
-        @empty
-          <div style="text-align:center;padding:24px;color:var(--text-light)">
-            <i class="bi bi-activity" style="font-size:20px;display:block;margin-bottom:8px"></i>
-            No recent activity.
+
+          {{-- Budget by Category --}}
+          <div style="grid-column: span 2;">
+            <div style="font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 8px;">Budget by Category</div>
+            <div style="height: 140px;"><canvas id="budgetBar"></canvas></div>
           </div>
-        @endforelse
+
+        </div>
       </div>
 
     </div>{{-- end right-col --}}
@@ -796,21 +820,76 @@
 </div>{{-- end dashboard-page --}}
 
 <script>
+  // Status Donut
   new Chart(document.getElementById('statusDonut'), {
     type: 'doughnut',
     data: {
-      labels: ['Completed', 'In Progress', 'Not Started'],
+      labels: ['Completed', 'In Progress', 'Not Started', 'Suspended', 'Cancelled'],
       datasets: [{
-        data: [{{ $completedCount }}, {{ $ongoingCount }}, {{ $plannedCount }}],
-        backgroundColor: ['#059669', '#2563eb', '#f59e0b'],
-        borderWidth: 0,
-        hoverOffset: 3
+        data: [{{ $completedCount }}, {{ $ongoingCount }}, {{ $plannedCount }}, {{ $suspendedCount ?? 0 }}, {{ $cancelledCount ?? 0 }}],
+        backgroundColor: ['#059669', '#2563eb', '#f59e0b', '#ef4444', '#9ca3af'],
+        borderWidth: 2,
+        borderColor: '#fff'
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: '70%',
+      cutout: '65%',
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 6, font: { size: 10 } } } }
+    }
+  });
+
+  // Health Donut
+  @php
+      $ongoingForHealth = $projects->where('status', 'Ongoing');
+      $hAtRisk = $ongoingForHealth->filter(fn ($p) => ($healthMap[$p->id]['level'] ?? '') === 'at_risk')->count();
+      $hOverdue = $ongoingForHealth->filter(fn ($p) => ($healthMap[$p->id]['level'] ?? '') === 'overdue')->count();
+      $hOnTrack = max(0, $ongoingForHealth->count() - $hAtRisk - $hOverdue);
+  @endphp
+  new Chart(document.getElementById('healthDonut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['On Track', 'At Risk', 'Overdue'],
+      datasets: [{
+        data: [{{ $hOnTrack }}, {{ $hAtRisk }}, {{ $hOverdue }}],
+        backgroundColor: ['#16a34a', '#f59e0b', '#ef4444'],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, padding: 6, font: { size: 10 } } } }
+    }
+  });
+
+  // Budget by Category (Horizontal Bar)
+  @php
+      $catLabels = $budgetByCategory->keys()->toArray();
+      $catValues = $budgetByCategory->values()->toArray();
+  @endphp
+  new Chart(document.getElementById('budgetBar'), {
+    type: 'bar',
+    data: {
+      labels: @json($catLabels),
+      datasets: [{
+        data: @json($catValues),
+        backgroundColor: '#2563eb',
+        borderRadius: 4,
+        barThickness: 18
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: 'y',
+      scales: {
+        x: { display: true, grid: { display: false }, ticks: { font: { size: 9 }, callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'K' : v } },
+        y: { display: true, grid: { display: false }, ticks: { font: { size: 9 } } }
+      },
       plugins: { legend: { display: false } }
     }
   });

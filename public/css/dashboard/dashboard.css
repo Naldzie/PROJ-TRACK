@@ -522,3 +522,63 @@
 .overdue-text  { color: var(--red-600); }
 .days-urgent   { color: var(--amber-600); }
 .days-ok       { color: var(--green-600); }
+
+/* ══════════════════════════════════════════
+   ANALYTICS GRID
+   Replaces activity feed with chart widgets.
+   Compact layout to keep projects table visible.
+══════════════════════════════════════════ */
+.db-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 16px;
+}
+.db-chart-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.db-chart-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #374151;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.db-chart-title i { color: #6b7280; font-size: 14px; }
+
+/* Extension mini stat cards */
+.db-ext-mini-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.db-ext-mini-card {
+    text-align: center;
+    padding: 8px;
+    background: #f9fafb;
+    border-radius: 6px;
+}
+.db-ext-mini-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+}
+.db-ext-mini-label {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* Responsive */
+@media (max-width:1200px) {
+    .db-analytics-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width:768px) {
+    .db-analytics-grid { grid-template-columns: 1fr; }
+}
