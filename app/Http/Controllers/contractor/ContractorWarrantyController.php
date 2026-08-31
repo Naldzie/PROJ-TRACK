@@ -20,7 +20,7 @@ class ContractorWarrantyController extends Controller
         $projects = Project::where('contractor_id', $contractor->id)->get();
 
         // Warranties only from those projects
-        $warranties = Warranty::with('project')
+        $warranties = Warranty::with(['project', 'contractor'])
             ->whereIn('project_id', $projects->pluck('id'))
             ->latest()
             ->get();
@@ -28,7 +28,7 @@ class ContractorWarrantyController extends Controller
         return view('contractor.warranty', compact('warranties', 'projects'));
     }
 
-    // ✅ STORE (SECURED)
+    // ✅ STORE (SECURED) - Contractors can only add basic warranty info
     public function store(Request $request)
     {
         $user = Auth::user();
@@ -54,13 +54,17 @@ class ContractorWarrantyController extends Controller
 
         $filePath = $request->file('file')->store('warranties', 'public');
 
+        // Only allow contractor to set basic fields; inspection fields are admin/staff only
         Warranty::create([
             'project_id' => $project->id,
+            'contractor_id' => $contractor->id,
             'title' => $request->title,
             'start_date' => $request->start_date,
             'end_date' => $request->end_date,
             'status' => $request->status,
             'file_path' => $filePath,
+            // These fields are intentionally omitted - only admin/staff can set them:
+            // 'completion_date', 'mid_year_inspection', 'final_inspection', 'remarks'
         ]);
 
         return back()->with('success', 'Warranty added successfully');

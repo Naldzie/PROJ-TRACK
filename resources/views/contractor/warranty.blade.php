@@ -391,6 +391,160 @@
 }
 .btn-open:hover { background: #1d4ed8; color: #fff; }
 
+/* ── INSPECTION SCHEDULE ── */
+.inspection-schedule {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.inspection-card {
+    background: var(--color-background-secondary, #f9fafb);
+    border: 0.5px solid var(--color-border-tertiary, #e5e7eb);
+    border-radius: 10px;
+    padding: 12px 14px;
+}
+
+.inspection-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.inspection-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.inspection-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.inspection-icon.mid-year { background: #dbeafe; color: #2563eb; }
+.inspection-icon.final { background: #fef3c7; color: #d97706; }
+
+.inspection-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-primary, #111);
+}
+
+.inspection-date {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-primary, #111);
+}
+
+.inspection-badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.badge-upcoming { background: #dbeafe; color: #1e40af; }
+.badge-overdue { background: #fee2e2; color: #991b1b; }
+.badge-done { background: #dcfce7; color: #166534; }
+.badge-not-scheduled { background: #f3f4f6; color: #6b7280; }
+
+.inspection-desc {
+    font-size: 11px;
+    color: var(--color-text-tertiary, #9ca3af);
+    margin: 0;
+}
+
+/* ── REMARKS ── */
+.remarks-section {
+    margin-top: 12px;
+}
+
+.remarks-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary, #9ca3af);
+    margin-bottom: 6px;
+    display: block;
+}
+
+.remarks-content {
+    background: var(--color-background-secondary, #f9fafb);
+    border: 0.5px solid var(--color-border-tertiary, #e5e7eb);
+    border-radius: 10px;
+    padding: 12px;
+    min-height: 60px;
+    white-space: pre-wrap;
+    font-size: 13px;
+    color: var(--color-text-primary, #111);
+    line-height: 1.5;
+}
+
+.remarks-empty {
+    color: var(--color-text-tertiary, #9ca3af);
+    font-style: italic;
+}
+
+/* ── LEFT PANEL ENHANCEMENTS ── */
+.item-contractor {
+    font-size: 10px;
+    color: var(--color-text-tertiary, #9ca3af);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.item-next-inspection {
+    font-size: 10px;
+    color: var(--color-text-secondary, #6b7280);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.item-next-inspection.upcoming { color: #2563eb; }
+.item-next-inspection.overdue { color: #dc2626; }
+
+/* ── DETAIL GRID ENHANCEMENTS ── */
+.detail-grid-enhanced {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+/* ── FORM ENHANCEMENTS ── */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.form-row-single {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 640px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    .detail-grid-enhanced {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ── MODAL ── */
 .modal-content {
     border: 0.5px solid var(--color-border-secondary, rgba(0,0,0,0.15));
@@ -532,18 +686,59 @@
                     </div>
 
                     @foreach($grouped[$statusGroup] as $w)
+                        @php
+                            $contractorName = $w->contractor ? $w->contractor->company_name : 'N/A';
+                            $nextInspection = null;
+                            $nextInspectionLabel = '';
+                            $nextInspectionClass = '';
+                            $today = \Carbon\Carbon::today();
+                            if ($w->mid_year_inspection && \Carbon\Carbon::parse($w->mid_year_inspection)->gte($today)) {
+                                $nextInspection = \Carbon\Carbon::parse($w->mid_year_inspection);
+                                $nextInspectionLabel = 'Mid-Year: ' . $nextInspection->format('M d, Y');
+                                $nextInspectionClass = 'upcoming';
+                            } elseif ($w->final_inspection && \Carbon\Carbon::parse($w->final_inspection)->gte($today)) {
+                                $nextInspection = \Carbon\Carbon::parse($w->final_inspection);
+                                $nextInspectionLabel = 'Final: ' . $nextInspection->format('M d, Y');
+                                $nextInspectionClass = 'upcoming';
+                            } elseif ($w->mid_year_inspection && \Carbon\Carbon::parse($w->mid_year_inspection)->lt($today)) {
+                                $nextInspection = \Carbon\Carbon::parse($w->mid_year_inspection);
+                                $nextInspectionLabel = 'Mid-Year overdue: ' . $nextInspection->format('M d, Y');
+                                $nextInspectionClass = 'overdue';
+                            } elseif ($w->final_inspection && \Carbon\Carbon::parse($w->final_inspection)->lt($today)) {
+                                $nextInspection = \Carbon\Carbon::parse($w->final_inspection);
+                                $nextInspectionLabel = 'Final overdue: ' . $nextInspection->format('M d, Y');
+                                $nextInspectionClass = 'overdue';
+                            } else {
+                                $nextInspectionLabel = 'Not scheduled';
+                                $nextInspectionClass = '';
+                            }
+                        @endphp
                         <div class="wm-item"
-                             data-title="{{ strtolower($w->title ?? '') }}"
-                             data-project="{{ strtolower($w->project->title) }}"
-                             onclick="viewWarranty(
+                            data-id="{{ $w->id }}"
+                            data-title="{{ strtolower($w->title ?? '') }}"
+                            data-project="{{ strtolower($w->project->title) }}"
+                            data-contractor="{{ strtolower($contractorName) }}"
+                            data-completion-date="{{ $w->completion_date ?? '' }}"
+                            data-start-date="{{ $w->start_date }}"
+                            data-end-date="{{ $w->end_date }}"
+                            data-mid-year="{{ $w->mid_year_inspection ?? '' }}"
+                            data-final-inspection="{{ $w->final_inspection ?? '' }}"
+                            data-status="{{ $w->status }}"
+                            data-remarks="{{ addslashes($w->remarks ?? '') }}"
+                            onclick="viewWarranty(
                                 this,
                                 '{{ asset('storage/'.$w->file_path) }}',
                                 '{{ addslashes($w->title ?? 'Warranty') }}',
                                 '{{ addslashes($w->project->title) }}',
+                                '{{ addslashes($contractorName) }}',
+                                '{{ $w->completion_date ?? '' }}',
                                 '{{ $w->start_date }}',
                                 '{{ $w->end_date }}',
-                                '{{ $w->status }}'
-                             )">
+                                '{{ $w->mid_year_inspection ?? '' }}',
+                                '{{ $w->final_inspection ?? '' }}',
+                                '{{ $w->status }}',
+                                '{{ addslashes($w->remarks ?? '') }}'
+                            )">
 
                             <div class="item-row">
                                 <div class="item-name">{{ $w->title ?? 'Warranty' }}</div>
@@ -560,12 +755,26 @@
                                 {{ $w->project->title }}
                             </div>
 
+                            @if($contractorName !== 'N/A')
+                            <div class="item-contractor">
+                                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 1a2 2 0 1 1 0 4 2 2 0 0 1 0-4ZM9 11a5 5 0 0 0-5 5v1h10v-1a5 5 0 0 0-5-5Z" stroke="currentColor" stroke-width="1.2"/></svg>
+                                {{ $contractorName }}
+                            </div>
+                            @endif
+
                             <div class="item-footer">
                                 <span class="item-date">
                                     {{ $w->status == 'Expired' ? 'Ended' : 'Ends' }}
                                     {{ \Carbon\Carbon::parse($w->end_date)->format('M d, Y') }}
                                 </span>
                             </div>
+
+                            @if($nextInspectionLabel)
+                            <div class="item-next-inspection {{ $nextInspectionClass }}">
+                                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2"/><path d="M6 3.5V6l2 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                                Next: {{ $nextInspectionLabel }}
+                            </div>
+                            @endif
 
                         </div>
                     @endforeach
@@ -615,7 +824,23 @@
             </div>
 
             {{-- Detail cards --}}
-            <div class="detail-grid" id="detailGrid" style="display:none;">
+            <div class="detail-grid-enhanced" id="detailGrid" style="display:none;">
+                <div class="detail-card">
+                    <div class="detail-card-label">Project</div>
+                    <div class="detail-card-value" id="dcProject"></div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-label">Contractor</div>
+                    <div class="detail-card-value" id="dcContractor"></div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-label">Date of Completion</div>
+                    <div class="detail-card-value" id="dcCompletion"></div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-label">Warranty Period</div>
+                    <div class="detail-card-value" id="dcWarrantyPeriod"></div>
+                </div>
                 <div class="detail-card">
                     <div class="detail-card-label">Coverage start</div>
                     <div class="detail-card-value" id="dcStart"></div>
@@ -625,13 +850,54 @@
                     <div class="detail-card-value" id="dcEnd"></div>
                 </div>
                 <div class="detail-card">
-                    <div class="detail-card-label">Linked project</div>
-                    <div class="detail-card-value" id="dcProject"></div>
-                </div>
-                <div class="detail-card">
                     <div class="detail-card-label">Current status</div>
                     <div class="detail-card-value" id="dcStatus"></div>
                 </div>
+            </div>
+
+            {{-- Inspection Schedule --}}
+            <div id="inspectionSchedule" style="display:none;">
+                <div class="inspection-schedule">
+                    <div class="inspection-card" id="midYearCard">
+                        <div class="inspection-header">
+                            <div class="inspection-title">
+                                <div class="inspection-icon mid-year">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <path d="M12 6v6l4 2"/>
+                                    </svg>
+                                </div>
+                                <span class="inspection-label">Mid-Year Inspection</span>
+                            </div>
+                            <span class="inspection-badge" id="midYearBadge">—</span>
+                        </div>
+                        <div class="inspection-date" id="midYearDate">—</div>
+                        <p class="inspection-desc" id="midYearDesc">6 months after completion</p>
+                    </div>
+                    <div class="inspection-card" id="finalCard">
+                        <div class="inspection-header">
+                            <div class="inspection-title">
+                                <div class="inspection-icon final">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <path d="M12 6v6l4 2"/>
+                                        <path d="M9 11l3 3L22 4"/>
+                                    </svg>
+                                </div>
+                                <span class="inspection-label">Final Inspection</span>
+                            </div>
+                            <span class="inspection-badge" id="finalBadge">—</span>
+                        </div>
+                        <div class="inspection-date" id="finalDate">—</div>
+                        <p class="inspection-desc" id="finalDesc">11 months after completion</p>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Remarks --}}
+            <div id="remarksSection" style="display:none;" class="remarks-section">
+                <span class="remarks-label">Remarks</span>
+                <div class="remarks-content" id="remarksContent"></div>
             </div>
 
             {{-- File preview --}}
@@ -688,11 +954,11 @@
 
                 <div class="wm-date-row mb-3">
                     <div>
-                        <label class="form-label">Start date</label>
+                        <label class="form-label">Warranty Start</label>
                         <input type="date" name="start_date" class="form-control" required>
                     </div>
                     <div>
-                        <label class="form-label">End date</label>
+                        <label class="form-label">Warranty End</label>
                         <input type="date" name="end_date" class="form-control" required>
                     </div>
                 </div>
@@ -717,7 +983,7 @@
 </div>
 
 <script>
-function viewWarranty(el, file, title, project, start, end, status) {
+function viewWarranty(el, file, title, project, contractor, completionDate, start, end, midYear, finalInspection, status, remarks) {
     document.querySelectorAll('.wm-item').forEach(i => i.classList.remove('active'));
     el.classList.add('active');
 
@@ -733,10 +999,79 @@ function viewWarranty(el, file, title, project, start, end, status) {
 
     // Detail cards
     document.getElementById('detailGrid').style.display = 'grid';
-    document.getElementById('dcStart').innerText   = formatDate(start);
-    document.getElementById('dcEnd').innerText     = formatDate(end);
     document.getElementById('dcProject').innerText = project;
-    document.getElementById('dcStatus').innerText  = status;
+    document.getElementById('dcContractor').innerText = contractor || 'N/A';
+    document.getElementById('dcCompletion').innerText = formatDate(completionDate);
+    document.getElementById('dcWarrantyPeriod').innerText = formatDate(start) + ' → ' + formatDate(end);
+    document.getElementById('dcStart').innerText = formatDate(start);
+    document.getElementById('dcEnd').innerText = formatDate(end);
+    document.getElementById('dcStatus').innerText = status;
+
+    // Inspection Schedule
+    const midYearCard = document.getElementById('midYearCard');
+    const finalCard = document.getElementById('finalCard');
+    const midYearBadge = document.getElementById('midYearBadge');
+    const finalBadge = document.getElementById('finalBadge');
+    const midYearDate = document.getElementById('midYearDate');
+    const finalDate = document.getElementById('finalDate');
+    const midYearDesc = document.getElementById('midYearDesc');
+    const finalDesc = document.getElementById('finalDesc');
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Mid-Year Inspection
+    if (midYear) {
+        midYearCard.style.display = 'block';
+        const midYearDateObj = new Date(midYear + 'T00:00:00');
+        midYearDateObj.setHours(0, 0, 0, 0);
+        midYearDate.innerText = formatDate(midYear);
+        midYearDesc.innerText = '6 months after completion';
+
+        if (midYearDateObj < today) {
+            midYearBadge.className = 'inspection-badge badge-overdue';
+            midYearBadge.innerText = 'Overdue';
+        } else {
+            midYearBadge.className = 'inspection-badge badge-upcoming';
+            midYearBadge.innerText = 'Upcoming';
+        }
+    } else {
+        midYearCard.style.display = 'none';
+    }
+
+    // Final Inspection
+    if (finalInspection) {
+        finalCard.style.display = 'block';
+        const finalDateObj = new Date(finalInspection + 'T00:00:00');
+        finalDateObj.setHours(0, 0, 0, 0);
+        finalDate.innerText = formatDate(finalInspection);
+        finalDesc.innerText = '11 months after completion';
+
+        if (finalDateObj < today) {
+            finalBadge.className = 'inspection-badge badge-overdue';
+            finalBadge.innerText = 'Overdue';
+        } else {
+            finalBadge.className = 'inspection-badge badge-upcoming';
+            finalBadge.innerText = 'Upcoming';
+        }
+    } else {
+        finalCard.style.display = 'none';
+    }
+
+    document.getElementById('inspectionSchedule').style.display = (midYear || finalInspection) ? 'block' : 'none';
+
+    // Remarks
+    const remarksSection = document.getElementById('remarksSection');
+    const remarksContent = document.getElementById('remarksContent');
+    if (remarks) {
+        remarksSection.style.display = 'block';
+        remarksContent.innerText = remarks;
+        remarksContent.classList.remove('remarks-empty');
+    } else {
+        remarksSection.style.display = 'block';
+        remarksContent.innerText = 'No remarks provided.';
+        remarksContent.classList.add('remarks-empty');
+    }
 
     // Hide placeholder
     document.getElementById('placeholder').style.display = 'none';
@@ -773,14 +1108,26 @@ function viewWarranty(el, file, title, project, start, end, status) {
 
 function formatDate(str) {
     if (!str) return '—';
+    // Parse Y-m-d format safely (avoid timezone issues)
+    const parts = str.split(/[-\sT:]/);
+    if (parts.length >= 3) {
+        const year = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1; // 0-indexed
+        const day = parseInt(parts[2], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+            const d = new Date(year, month, day);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+    }
+    // Fallback for other formats
     const d = new Date(str);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 function filterWarranties(q) {
     q = q.toLowerCase();
     document.querySelectorAll('.wm-item').forEach(el => {
-        const t = (el.dataset.title || '') + (el.dataset.project || '');
+        const t = (el.dataset.title || '') + (el.dataset.project || '') + (el.dataset.contractor || '');
         el.style.display = t.includes(q) ? '' : 'none';
     });
 }

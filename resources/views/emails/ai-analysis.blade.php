@@ -24,6 +24,26 @@
         .footer-note strong { color: #075985; }
         .footer { text-align: center; padding: 20px 24px; font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9; }
 
+        /* Report section styles */
+        .report-section { margin-bottom: 16px; }
+        .report-section-title {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #2563eb;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+        }
+        .report-section-content { font-size: 13px; color: #475569; line-height: 1.7; }
+        .report-section-content p { margin: 0 0 10px; }
+        .report-section-content p:last-child { margin-bottom: 0; }
+        .report-section-content ul { margin: 8px 0; padding-left: 20px; }
+        .report-section-content li { margin: 4px 0; }
+        .report-section-content ol { margin: 8px 0; padding-left: 20px; }
+        .report-section-content ol li { margin: 4px 0; }
+
     </style>
 </head>
 <body>
@@ -68,17 +88,18 @@
                     <strong>Status:</strong> {{ $project->status ?? 'N/A' }}
                 </p>
 
-                @if(!empty($tracking->body))
-                <div class="analysis-block">
-                    <div class="analysis-label">Message</div>
-                    <p class="analysis-text" style="margin:0; white-space:pre-line;">{{ $tracking->body }}</p>
-                </div>
-                @else
+                @php
+                    $parser = app(\App\Services\AiReportParser::class);
+                    $sourceContent = !empty($tracking->body) ? $tracking->body : ($aiSolution->analysis_text ?? '');
+                    $analysisHtml = $parser->parseToHtml($sourceContent);
+                @endphp
+
                 <div class="analysis-block">
                     <div class="analysis-label">AI-Generated Analysis</div>
-                    <p class="analysis-text" style="margin:0;">{{ $aiSolution->analysis_text ?? 'Analysis not available.' }}</p>
+                    <div class="report-content">
+                        {!! $analysisHtml !!}
+                    </div>
                 </div>
-                @endif
 
                 <div class="analysis-block">
                     <div class="analysis-label">Project Progress Analysis</div>

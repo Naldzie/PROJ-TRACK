@@ -1047,7 +1047,20 @@ function viewMsg(id) {
       const actualPct = parseFloat(m.actual_progress) || 0;
       const variance = m.variance;
       const color = variance >= 0 ? '#10b981' : (variance >= -15 ? '#f59e0b' : '#ef4444');
-      
+      const delayPct = parseFloat(m.delay_percentage) || 0;
+      let delayLabel = '';
+      let delayColor = '';
+      if (delayPct > 0) {
+        delayLabel = `${delayPct}% Behind`;
+        delayColor = '#ef4444';
+      } else if (delayPct < 0) {
+        delayLabel = `${Math.abs(delayPct)}% Ahead`;
+        delayColor = '#10b981';
+      } else {
+        delayLabel = 'On Track';
+        delayColor = '#10b981';
+      }
+
       // Parse AI analysis sections from m.body (which contains the AI analysis)
       const analysisHtml = parseAiAnalysis(m.body);
       document.getElementById('v-analysis').innerHTML = `
@@ -1060,7 +1073,7 @@ function viewMsg(id) {
           <div class="metric-row"><span class="metric-label">Actual Progress</span><span class="metric-val">${m.actual_progress}</span></div>
           <div class="progress-bar"><div class="progress-fill" style="width:${actualPct}%;background:${color};"></div></div>
         </div>
-        <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val">${m.delay_percentage}%</span></div></div>
+        <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val" style="color:${delayColor};">${delayLabel}</span></div></div>
         <div><div class="metric-row"><span class="metric-label">Risk Level</span><span class="metric-val" style="color:${color};">${m.risk_level}</span></div></div>
         ${analysisHtml}
       `;

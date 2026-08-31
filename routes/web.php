@@ -72,6 +72,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/warranty', [StaffWarrantyController::class, 'index'])
         ->name('staff.warranty');
 
+    Route::get('/warranty/preview', [StaffWarrantyController::class, 'preview'])
+        ->name('staff.warranty.preview');
+
     Route::post('/warranty', [StaffWarrantyController::class, 'store'])
         ->name('staff.warranty.store');
 
@@ -768,6 +771,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/warranty', [WarrantyController::class, 'index'])
         ->name('admin.warranty');
+
+    Route::get('/warranty/preview', [WarrantyController::class, 'preview'])
+        ->name('admin.warranty.preview');
 
     Route::post('/warranty', [WarrantyController::class, 'store'])
         ->name('admin.warranty.store');
