@@ -10,7 +10,7 @@
             <p style="margin: 0; font-size: 12px; color: #6b7280;">Track project deadline extensions and view extension history</p>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
-            @if(auth()->user()->role === 'admin' || (!empty($isAssignedStaff) && $isAssignedStaff))
+            @if($project->status !== 'Completed' && (auth()->user()->role === 'admin' || (!empty($isAssignedStaff) && $isAssignedStaff)))
                 <button id="addExtensionBtn" onclick="openRequestExtensionModal()" 
                         style="background: #f59e0b; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: all 0.2s;"
                         onmouseover="this.style.background='#d97706'; this.style.transform='translateY(-2px)';"

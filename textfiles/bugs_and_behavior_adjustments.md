@@ -1709,3 +1709,24 @@ All data table features implemented: sortable column headers (Code, Title, Categ
 - **Archived projects page**: Uses same `.projects-table` CSS — new styles must not break it. Pagination already rendered there via `$projects->links()`.
 
 ---
+
+## Bug: Completed Projects Can Add Extensions (Client Feedback)
+
+**Status: FIXED** — `phase-extension-block-completed` branch, 2 files modified
+
+### Problem
+
+Client feedback: completed projects should not be able to add extensions. The "Add Extension" button was visible for all projects regardless of status, and the controller had no server-side guard.
+
+### Changes
+
+**extensions-section.blade.php** (line 13):
+- Added `$project->status !== 'Completed'` check to the `@if` condition
+- Button now hidden for completed projects (still visible for admin/staff on non-completed projects)
+
+**ProjectExtensionController.php** `store()` method:
+- Added server-side guard after the staff assignment check
+- Returns 422 JSON error if `$project->status === 'Completed'`
+- Prevents extension creation even if someone bypasses the UI
+
+---

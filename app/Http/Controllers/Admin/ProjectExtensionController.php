@@ -55,6 +55,14 @@ class ProjectExtensionController extends Controller
                 abort(403, 'You are not assigned to this project.');
             }
 
+            // Completed projects cannot receive extensions.
+            if ($project->status === 'Completed') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Extensions cannot be added to completed projects.',
+                ], 422);
+            }
+
             // Admin and assigned staff may pick the review status at creation time
             // (defaults to approved, preserving the auto-approve behavior).
             if ($isAdmin || $project->isAssignedTo(auth()->user())) {
