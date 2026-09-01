@@ -710,3 +710,49 @@ The code added ALL extension months from the auto-generated state to `setupRemov
 
 **Branch:** `fix/resubmit-modal-status-field`
 **Date:** 2026-09-01
+
+---
+
+## Enhancement 24: Hide Resubmit Button When a Pending Extension Exists
+
+**Problem:** Both client and consultant confirmed only 1 pending extension request is allowed at a time. The "Add Extension" button is already hidden when a pending extension exists (line 75-76 of `baseline-schedule-extensions.js`), but the "Resubmit" button on rejected extensions still shows. This would allow creating a second pending row via resubmit.
+
+**Gaps found:**
+
+1. **Frontend** (`baseline-schedule-extensions.js:183`):
+   - `canResubmit` only checks `ext.status === 'rejected'` and ownership/role
+   - Does NOT check `hasPending` (already computed at line 75, used only for Add button)
+   - Resubmit button visible on rejected extensions even when a pending extension exists
+
+2. **Backend** (`ProjectExtensionController.php:resubmit()`):
+   - `store()` has the 1-pending guard (lines 80-91): queries for existing pending row, returns 422 if found
+   - `resubmit()` has NO equivalent check — would allow creating a second pending row if status = `pending`
+
+**Proposed fix (two-layer enforcement):**
+
+1. **Frontend** (`baseline-schedule-extensions.js:183`):
+   - Add `!hasPending` to `canResubmit` condition:
+     ```js
+     const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || (isStaff && isOwner));
+     ```
+   - `hasPending` is already in scope (line 75)
+
+2. **Backend** (`ProjectExtensionController.php` — `resubmit()`):
+   - Add same pending-check guard from `store()`, after status is determined, before `DB::beginTransaction()`:
+     ```php
+     if ($status === 'pending') {
+         $hasPending = ProjectExtension::where('project_id', $project->id)
+             ->where('status', 'pending')
+             ->exists();
+         if ($hasPending) {
+             DB::rollBack();
+             return response()->json([
+                 'success' => false,
+                 'message' => 'There is already a pending extension request. Wait for it to be reviewed before resubmitting.',
+             ], 422);
+         }
+     }
+     ```
+
+**Status:** PLANNED — awaiting implementation
+**Date:** 2026-09-01
