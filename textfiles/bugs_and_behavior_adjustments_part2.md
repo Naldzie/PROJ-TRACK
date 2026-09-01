@@ -575,3 +575,47 @@ $showRecordButton = (!$hasActual && $plan->month_label <= $currentMonthLabel) ||
 **Files:**
 - `_setup_baseline_modal.blade.php` — added button HTML inside remaining work wrapper
 - `baseline-schedule-setup-modal.js` — new `rerunAutoAdjust()` function
+
+---
+
+### Fix: E20 — Add Monthly Target Modal Defaults to First Month Instead of Gap
+
+**Problem:** Opening the "Add Monthly Target" modal always defaulted the month picker to the **first month** of the project timeline instead of the **first gap** (missing month). The gap-aware restriction logic was correct in principle, but the DOM scraping that collected existing months used an outdated selector.
+
+**Root cause:** `openAddMonthTargetModal()` in `baseline-schedule-add-month-modal.js` (line 49) scraped existing months using:
+```js
+const cardElements = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
+```
+The current UI uses a **timeline layout** with `.timeline-dot[data-month-label]` elements, not cards with inline `background: white`. The selector matched nothing, so `existingMonths` was always empty, and `firstMissing` always resolved to the project start month.
+
+**Secondary issue:** Lines 139-141 (`dateInput.setAttribute('min/max', projStart/projEnd)`) overwrote the tight gap-aware date constraints with the full project range, allowing users to pick any date in the project.
+
+**Tertiary issue:** The `highestProgress` calculation (default progress value) also used the broken `cardElements` selector.
+
+**Fix:**
+1. **Replaced DOM selector** — now reads from `.timeline-dot[data-month-label]` elements inside `#sCurvePlanTableBody`
+2. **Removed override lines** — deleted the 3 lines that overwrote gap-aware date constraints with full project range
+3. **Fixed highestProgress** — reads from `dot.dataset.plannedProgress` on timeline dots
+4. **Added `data-planned-progress`** attribute to timeline dots in `baseline-schedule.blade.php`
+
+**Files:**
+- `public/js/admin/projects/baseline-schedule-add-month-modal.js` — fixed selector, removed override, fixed highestProgress
+- `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — added `data-planned-progress` and `data-actual-progress` attrs
+
+### Fix: E20 Extended — All Broken DOM Selectors (card → timeline dot)
+
+**Problem:** The same broken card-layout selector `#sCurvePlanTableBody > div[style*="background: white"]` was used in multiple JS files. Since the UI switched to a timeline layout, all these selectors match nothing, causing various features to silently malfunction.
+
+**All affected files and fixes:**
+
+| File | Function | Fix |
+|---|---|---|
+| `baseline-schedule-add-month-modal.js` | `openAddMonthTargetModal()` | Replaced card selector with `.timeline-dot[data-month-label]` |
+| `baseline-schedule-add-month-modal.js` | `saveMonthTarget()` validation | Replaced card selector for maxProgressPercent and existingMonthLabels |
+| `baseline-schedule-record-progress-modal.js` | `saveMonthlyProgress()` validation | Replaced card selector, reads `data-actual-progress` from dots |
+| `baseline-schedule-carry-over.js` | `populateTargetMonthDropdown()` | Replaced card selector, reads label from `.timeline-dot-label` |
+| `baseline-schedule-carry-over.js` | `findBaselineScheduleIdByMonthLabel()` | Replaced card selector, reads `data-planId` from dots |
+| `baseline-schedule-carry-over.js` | `openCarryOverForMonth()` | Replaced card selector, finds collapse panel by `activities-{planId}` |
+| `baseline-schedule-manage-activities-modal.js` | `reloadInlineActivities()` | Replaced card selector, finds collapse panel by `activities-{planId}` |
+
+**Additional blade change:** Added `data-actual-progress` attribute to timeline dots for record progress validation.

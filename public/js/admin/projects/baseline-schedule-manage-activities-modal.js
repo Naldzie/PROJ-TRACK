@@ -85,38 +85,31 @@ function loadActivitiesForMonth(monthLabel) {
 function reloadInlineActivities(monthLabel) {
     console.log('[reloadInlineActivities] Starting for monthLabel:', monthLabel);
     
-    // Find the card more robustly by searching through all cards
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    let targetCard = null;
+    // Find the timeline dot for this month, then locate its collapse panel
+    const dots = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
+    let targetDot = null;
     let collapseElement = null;
     
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge) {
-            const badgeText = monthBadge.textContent.trim();
-            console.log('[reloadInlineActivities] Found badge with text:', badgeText, 'comparing with:', monthLabel);
-            if (badgeText === monthLabel) {
-                targetCard = card;
-                const collapseDiv = card.querySelector('[id^="activities-"]');
-                if (collapseDiv) {
-                    collapseElement = collapseDiv;
-                    break;
-                }
-            }
+    for (const dot of dots) {
+        if (dot.dataset.monthLabel === monthLabel) {
+            targetDot = dot;
+            const planId = dot.dataset.planId;
+            collapseElement = document.getElementById('activities-' + planId);
+            break;
         }
     }
     
-    if (!collapseElement || !targetCard) {
-        console.error('[reloadInlineActivities] Could not find collapse element or target card for:', monthLabel);
+    if (!collapseElement || !targetDot) {
+        console.error('[reloadInlineActivities] Could not find collapse element or target dot for:', monthLabel);
         return;
     }
     
-    console.log('[reloadInlineActivities] Found target card and collapse element');
+    console.log('[reloadInlineActivities] Found target dot and collapse element');
     
-    // Extract existing button data from the card
-    const recordProgressBtn = targetCard.querySelector('button[onclick*="openRecordProgressModal"]');
-    const manageBtn = targetCard.querySelector('button[onclick*="openManageMonthModal"]');
-    const deleteBtn = targetCard.querySelector('button[onclick*="deleteMonthTarget"]');
+    // Extract existing button data from the collapse panel
+    const recordProgressBtn = collapseElement.querySelector('button[onclick*="openRecordProgressModal"]');
+    const manageBtn = collapseElement.querySelector('button[onclick*="openManageMonthModal"]');
+    const deleteBtn = collapseElement.querySelector('button[onclick*="deleteMonthTarget"]');
     
     if (!recordProgressBtn || !manageBtn || !deleteBtn) {
         console.error('[reloadInlineActivities] Could not find action buttons');

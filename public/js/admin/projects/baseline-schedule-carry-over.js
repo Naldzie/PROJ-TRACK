@@ -145,20 +145,15 @@ function populateTargetMonthDropdown(fromMonthLabel) {
     const select = document.getElementById('carryOverTargetMonth');
     select.innerHTML = '<option value="">— Select target month —</option>';
 
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
+    const dots = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
     const futureOptions = [];
 
-    cards.forEach((card) => {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (!monthBadge) return;
-        // The machine month label (e.g. "2026-10") lives in data-month-label —
-        // the badge text is the human-readable "October - 2026" form.
-        const cardMonth = monthBadge.dataset.monthLabel;
+    dots.forEach((dot) => {
+        const cardMonth = dot.dataset.monthLabel;
 
         // Only include months after the source month
         if (cardMonth && cardMonth > fromMonthLabel) {
-            const monthDisplay = card.querySelector('span[style*="color: #6b7280"]');
-            const dateLabel = monthDisplay ? monthDisplay.textContent.trim() : '';
+            const dateLabel = dot.querySelector('.timeline-dot-label') ? dot.querySelector('.timeline-dot-label').textContent.trim() : '';
             futureOptions.push({ value: cardMonth, label: `${cardMonth} ${dateLabel}` });
         }
     });
@@ -183,14 +178,10 @@ function populateTargetMonthDropdown(fromMonthLabel) {
  * The card structure embeds the month_label in the activities collapse ID pattern
  */
 function findBaselineScheduleIdByMonthLabel(monthLabel) {
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
-            const collapseDiv = card.querySelector('[id^="activities-"]');
-            if (collapseDiv) {
-                return collapseDiv.id.replace('activities-', '');
-            }
+    const dots = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
+    for (const dot of dots) {
+        if (dot.dataset.monthLabel === monthLabel) {
+            return dot.dataset.planId || null;
         }
     }
     return null;
@@ -350,14 +341,14 @@ function clearCarryOverErrors() {
  * @param {string} monthLabel - The month label (e.g., "2026-01")
  */
 function openCarryOverForMonth(monthLabel) {
-    // Find the card's collapsible section to get activities
-    const cards = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
+    // Find the timeline dot for this month, then locate its collapse panel
+    const dots = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
     let activities = [];
 
-    for (const card of cards) {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel === monthLabel) {
-            const collapseDiv = card.querySelector('[id^="activities-"]');
+    for (const dot of dots) {
+        if (dot.dataset.monthLabel === monthLabel) {
+            const planId = dot.dataset.planId;
+            const collapseDiv = document.getElementById('activities-' + planId);
             if (collapseDiv) {
                 const checkboxes = collapseDiv.querySelectorAll('input[type="checkbox"].activity-checkbox');
                 checkboxes.forEach(cb => {

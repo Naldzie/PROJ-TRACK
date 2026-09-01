@@ -160,22 +160,13 @@ function saveMonthlyProgress() {
     }
     
     // Validate against all months' actual progress (including current month)
-    const cardElements = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
+    const cardElements = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
     let maxActualProgress = 0;
     let foundCurrentMonth = false;
     
-    cardElements.forEach((card) => {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        const rowMonth = monthBadge ? (monthBadge.dataset.monthLabel || null) : null;
-        
-        // Get actual progress - find the SECOND span with color: #10b981 (actual progress, not planned)
-        // Structure: Planned has color #667eea, Actual has color #10b981
-        const actualProgressSpan = card.querySelector('span[style*="color: #10b981"]');
-        let actualProgressValue = 0;
-        if (actualProgressSpan) {
-            const percentText = actualProgressSpan.textContent.match(/[\d.]+/);
-            actualProgressValue = percentText ? parseFloat(percentText[0]) : 0;
-        }
+    cardElements.forEach((dot) => {
+        const rowMonth = dot.dataset.monthLabel || null;
+        const actualProgressValue = parseFloat(dot.dataset.actualProgress) || 0;
         
         if (rowMonth === monthLabel) {
             // Found current month - include it in comparison

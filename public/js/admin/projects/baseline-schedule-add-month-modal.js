@@ -44,14 +44,11 @@ function openAddMonthTargetModal() {
         '<div style="text-align: center; color: #9ca3af; font-size: 12px; padding: 20px;">Click "Add Row" to add activities for this month</div>';
     
     // ── Gap-aware date restrictions ──────────────────────────────────────────
-    // Collect existing month labels from DOM cards
+    // Collect existing month labels from timeline dots
     let existingMonths = [];
-    const cardElements = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    cardElements.forEach(card => {
-        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel) {
-            existingMonths.push(monthBadge.dataset.monthLabel);
-        }
+    const dotElements = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
+    dotElements.forEach(dot => {
+        existingMonths.push(dot.dataset.monthLabel);
     });
     existingMonths.sort();
 
@@ -138,24 +135,13 @@ function openAddMonthTargetModal() {
     // Set month and date inputs
     if (nextMonth) monthInput.value = nextMonth;
     if (nextDate) dateInput.value = nextDate;
-
-    // Bound the date picker to the project timeline (start .. current end)
-    if (projStart) dateInput.setAttribute('min', projStart);
-    if (projEnd) dateInput.setAttribute('max', projEnd);
     
-    // Calculate and set default progress value (highest planned target from existing cards)
+    // Calculate and set default progress value (highest planned target from existing timeline dots)
     let highestProgress = 0;
-    if (existingMonths.length > 0) {
-        cardElements.forEach(card => {
-            const plannedProgressSpan = card.querySelector('span[style*="color: #667eea"]');
-            if (plannedProgressSpan) {
-                const percentText = plannedProgressSpan.textContent.match(/[\d.]+/);
-                if (percentText) {
-                    highestProgress = Math.max(highestProgress, parseFloat(percentText[0]));
-                }
-            }
-        });
-    }
+    dotElements.forEach(dot => {
+        const pp = parseFloat(dot.dataset.plannedProgress);
+        if (!isNaN(pp)) highestProgress = Math.max(highestProgress, pp);
+    });
     
     // Set default value to highest progress, or 50 if no existing targets
     const defaultValue = highestProgress > 0 ? highestProgress : 50;
@@ -372,17 +358,12 @@ function saveMonthTarget() {
         errors.push({ field: 'plannedProgressPercent', message: 'Target Progress % must be a number between 0 and 100' });
     }
     
-    // Get max progress % from existing cards in the container
-    const cardElements = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
+    // Get max progress % from existing timeline dots
+    const cardElements = document.querySelectorAll('#sCurvePlanTableBody .timeline-dot[data-month-label]');
     let maxProgressPercent = 0;
-    cardElements.forEach(card => {
-        const progressSpans = card.querySelectorAll('span[style*="color: #667eea"]');
-        if (progressSpans.length > 0) {
-            const percentText = progressSpans[0].textContent.match(/[\d.]+/);
-            if (percentText) {
-                maxProgressPercent = Math.max(maxProgressPercent, parseFloat(percentText[0]));
-            }
-        }
+    cardElements.forEach(dot => {
+        const pp = parseFloat(dot.dataset.plannedProgress);
+        if (!isNaN(pp)) maxProgressPercent = Math.max(maxProgressPercent, pp);
     });
 
     // NEW: extension-aware validation — mirrors BaselineScheduleController::storeBaselineSchedule()
@@ -422,9 +403,8 @@ function saveMonthTarget() {
     
     // Collect existing month labels for Rules B and C
     var existingMonthLabels = [];
-    cardElements.forEach(function (card) {
-        var monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-        if (monthBadge && monthBadge.dataset.monthLabel) existingMonthLabels.push(monthBadge.dataset.monthLabel);
+    cardElements.forEach(function (dot) {
+        if (dot.dataset.monthLabel) existingMonthLabels.push(dot.dataset.monthLabel);
     });
     if (existingMonthLabels.length > 0) {
         existingMonthLabels.sort();

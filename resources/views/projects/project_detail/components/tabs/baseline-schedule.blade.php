@@ -201,7 +201,7 @@
                     @endphp
 
                     {{-- DOT --}}
-                    <div class="timeline-dot {{ $dotState }}" data-month-label="{{ $plan->month_label }}" data-plan-id="{{ $plan->id }}"
+                    <div class="timeline-dot {{ $dotState }}" data-month-label="{{ $plan->month_label }}" data-plan-id="{{ $plan->id }}" data-planned-progress="{{ $plan->planned_progress_percent }}" data-actual-progress="{{ $latestProgress ? $latestProgress->actual_progress_percent : '' }}"
                          onclick="toggleTimelineDetail('{{ $collapseId }}', this)">
                         {{-- Always-visible info for current month (above label) --}}
                         @if($isCurrentMonth)
