@@ -2,7 +2,7 @@
 
 **Continuation of:** `textfiles/bugs_and_behavior_adjustments.md`
 **Date:** September 1, 2026
-**Status:** E12 IMPLEMENTED, E13 PLANNED.
+**Status:** E12 IMPLEMENTED, E13 IMPLEMENTED.
 
 ---
 
@@ -88,7 +88,7 @@ Low — ~17 lines total across 2 files.
 
 **Date:** September 1, 2026
 **Branch:** `fix/baseline-setup-date-restrictions`
-**Status: PLANNED** — Not yet implemented.
+**Status: IMPLEMENTED** — Dynamic month/date constraints + save-time warning modal.
 
 ### Problem
 
@@ -210,9 +210,35 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 | Item | Change | Files | Status |
 |---|---|---|---|
 | E12 | Frontend date constraints + backend symmetric rule | `_create_project_modal.js`, `ProjectController.php` | IMPLEMENTED |
-| E13 | Baseline setup month/date restrictions + save-time warnings | `warning-confirm-modal.blade.php` (new), `baseline-schedule-setup-modal.js`, `baseline-schedule.blade.php` | PLANNED |
+| E13 | Baseline setup month/date restrictions + save-time warnings | `warning-confirm-modal.blade.php` (new), `baseline-schedule-setup-modal.js`, `baseline-schedule.blade.php`, `admin/projects.blade.php`, `projects/index.blade.php` | IMPLEMENTED |
+
+### Implementation Details
+
+**Frontend** (`public/js/_create_project_modal.js`):
+- Added `plannedStartDate` change handler → sets `plannedEndDate.min` (gray out dates before start)
+- Added `plannedEndDate` change handler → sets `plannedStartDate.max` (gray out dates after end) + `projectHandoverDate.min` (enforce handover after end)
+
+**Backend** (`app/Http/Controllers/ProjectController.php`):
+- `store()` line 609: `planned_start_date` rule changed from `['nullable', 'date']` to `['nullable', 'date', 'before_or_equal:planned_end_date']`
+- `update()` line 999: same change
+
+**E13 — Baseline Setup Modal** (`public/js/admin/projects/baseline-schedule-setup-modal.js`):
+- `resetSetupForm()`: Dynamic month/date min/max constraints
+  - First target: month picker min = max(today, planned start month), no max
+  - Subsequent targets: month picker locked to next month only (min=max)
+  - When next month exceeds planned end month: disables "Add Month" button
+- `onSetupBaselineDone()`: Refactored to `performBaselineSave()` + warning check via `getBaselineMonthWarnings()`
+  - Checks first month vs planned start month, last month vs planned end month
+  - Shows `warning-confirm-modal` if mismatches found; user confirms to proceed or cancels
+- Extracted `resetActivitiesContainer()` helper for reuse
+
+**E13 — New Component** (`resources/views/components/warning-confirm-modal.blade.php`):
+- Amber/orange themed confirmation modal (same pattern as delete-confirmation-modal)
+- Global JS: `showWarningConfirm(title, message, onConfirm)` / `confirmWarningAction()` / `closeWarningConfirmModal()`
+- z-index 1080 to stack above setup baseline modal
+- Included in: `baseline-schedule.blade.php`, `admin/projects.blade.php`, `projects/index.blade.php`
 
 ### Implementation Order
 
 1. ~~**E12** (date restriction on create project modal)~~ — IMPLEMENTED
-2. **E13** (baseline setup modal month/date restrictions + save-time warnings) — PLANNED
+2. ~~**E13** (baseline setup modal month/date restrictions + save-time warnings)~~ — IMPLEMENTED

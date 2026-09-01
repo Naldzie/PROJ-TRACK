@@ -479,6 +479,7 @@ function toggleActivityCompletion(activityId, isCompleted) {
 
 
 @include('components.delete-confirmation-modal')
+@include('components.warning-confirm-modal')
 
 <!-- MODALS FOR PROJECT PROGRESS TRACKING -->
 @include('projects.project_detail.components.modals.add_month_target_modal')

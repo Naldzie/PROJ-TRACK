@@ -784,6 +784,69 @@ function onSetupBaselineDone() {
         return; // no server call, no page reload
     }
 
+    // ── Warning check: first/last month vs project start/end month ────────
+    var warnings = getBaselineMonthWarnings();
+    if (warnings.length > 0) {
+        showWarningConfirm(
+            'Baseline Month Mismatch',
+            '<p style="margin-bottom: 8px; color: #92400e;">The following issues were detected:</p>' +
+            '<ul style="margin: 0; padding-left: 18px; color: #78350f;">' +
+            warnings.map(function(w) { return '<li style="margin-bottom: 4px;">' + w + '</li>'; }).join('') +
+            '</ul>' +
+            '<p style="margin-top: 10px; font-weight: 600; color: #92400e;">Do you want to proceed anyway?</p>',
+            function() {
+                // User confirmed — proceed with the actual save
+                performBaselineSave();
+            }
+        );
+        return; // pause until user responds
+    }
+
+    // No warnings — proceed directly
+    performBaselineSave();
+}
+
+/**
+ * Check if first/last monthly target month matches project start/end month.
+ * @returns {string[]} Array of warning messages (empty if all match)
+ */
+function getBaselineMonthWarnings() {
+    var warnings = [];
+    var bounds = getSetupDateBounds();
+
+    if (setupLocalMonths.length === 0) return warnings;
+
+    // Check first month vs project start month
+    if (bounds.min) {
+        var startMonth = bounds.min.substring(0, 7); // YYYY-MM
+        if (setupLocalMonths[0].month_label !== startMonth) {
+            warnings.push(
+                'First monthly target (' + formatMonthLabel(setupLocalMonths[0].month_label) +
+                ') does not match the project\'s planned start month (' + formatMonthLabel(startMonth) + ').'
+            );
+        }
+    }
+
+    // Check last month vs project end month
+    if (bounds.max) {
+        var endMonth = bounds.max.substring(0, 7); // YYYY-MM
+        var lastLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
+        if (lastLabel !== endMonth) {
+            warnings.push(
+                'Last monthly target (' + formatMonthLabel(lastLabel) +
+                ') does not match the project\'s planned end month (' + formatMonthLabel(endMonth) + ').'
+            );
+        }
+    }
+
+    return warnings;
+}
+
+/**
+ * Perform the actual save after warning check passes (or no warnings).
+ * Handles both adjust-baseline and default save-immediately modes.
+ */
+function performBaselineSave() {
     // ── Adjust-baseline / edit-original modes: POST to dedicated endpoint ──
     if (setupAdjustMode || setupEditOriginalMode) {
         var token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
@@ -843,8 +906,8 @@ function onSetupBaselineDone() {
     }
 
     // ── Default mode: save-immediately — POST to server ───────────────────
-    token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
-    doneBtn = document.getElementById('setupDoneBtn');
+    var token = window.csrfToken || document.querySelector('meta[name="csrf-token"]')?.content;
+    var doneBtn = document.getElementById('setupDoneBtn');
 
     // Disable button while saving to prevent double-submit
     doneBtn.disabled = true;
@@ -1666,23 +1729,115 @@ function resetSetupForm() {
     monthInput.value = '';
     monthInput.removeAttribute('readonly');
     dateInput.value = '';
-    // Bound the date picker to the project timeline (start .. current end).
-    // The baseline IS the plan, so targets must fall within project dates.
+
+    // ── Dynamic month/date constraints ─────────────────────────────────────
+    // First target: month picker min = max(today, planned start month), no max
+    // Subsequent targets: locked to next month only (min=max=next month)
     var bounds = getSetupDateBounds();
-    if (bounds.min) {
-        dateInput.setAttribute('min', bounds.min);
+    var now = new Date();
+    var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var todayStr = now.toISOString().split('T')[0];
+
+    // effectiveMinMonth = max(current month, planned start month)
+    var startMonth = bounds.min ? bounds.min.substring(0, 7) : null;
+    var effectiveMinMonth = startMonth && startMonth > currentMonth ? startMonth : currentMonth;
+
+    // Effective max month from planned end date
+    var endMonth = bounds.max ? bounds.max.substring(0, 7) : null;
+
+    // Re-enable the Add Month button (may have been disabled previously)
+    var addBtn = document.getElementById('addSetupMonthBtn');
+    addBtn.disabled = false;
+    addBtn.style.opacity = '1';
+    addBtn.style.cursor = 'pointer';
+
+    if (setupLocalMonths.length === 0) {
+        // FIRST TARGET: month picker min = max(today, start), no upper cap
+        monthInput.setAttribute('min', effectiveMinMonth);
+        monthInput.removeAttribute('max');
+
+        // Date picker min = max(today, planned start date)
+        var dateMin = todayStr;
+        if (bounds.min && bounds.min > todayStr) dateMin = bounds.min;
+        dateInput.setAttribute('min', dateMin);
+
+        // Date picker max = planned end date
+        if (bounds.max) {
+            dateInput.setAttribute('max', bounds.max);
+        } else {
+            dateInput.removeAttribute('max');
+        }
     } else {
-        dateInput.removeAttribute('min');
+        // SUBSEQUARY TARGETS: lock to next month only
+        var latestLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
+        var parts = latestLabel.split('-').map(Number);
+        var nextYear = parts[0];
+        var nextMon = parts[1] + 1;
+        if (nextMon > 12) { nextMon = 1; nextYear++; }
+        var nextMonth = nextYear + '-' + String(nextMon).padStart(2, '0');
+
+        // If next month exceeds planned end month, disable Add Month button
+        if (endMonth && nextMonth > endMonth) {
+            addBtn.disabled = true;
+            addBtn.style.opacity = '0.5';
+            addBtn.style.cursor = 'not-allowed';
+            showSetupErrors(['All months up to the planned end date have been added. Click "Done \u2014 Lock Baseline" to save.']);
+            // Still clear the form fields but don't constrain inputs
+            monthInput.removeAttribute('min');
+            monthInput.removeAttribute('max');
+            dateInput.removeAttribute('min');
+            dateInput.removeAttribute('max');
+            document.getElementById('setupProgressPercent').value = '';
+            document.getElementById('setupDescription').value = '';
+            resetActivitiesContainer();
+            updateSetupActivitiesButtonLabel();
+            setupEditingIndex = null;
+            addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
+            addBtn.style.background = '#0d9488';
+            var cancelBtn = document.getElementById('setupEditCancel');
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            return;
+        }
+
+        // Lock month picker to exactly one month
+        monthInput.setAttribute('min', nextMonth);
+        monthInput.setAttribute('max', nextMonth);
+
+        // Constrain date picker to the next month's range
+        var nextLastDay = new Date(nextYear, nextMon, 0).getDate();
+        var monthMin = nextYear + '-' + String(nextMon).padStart(2, '0') + '-01';
+        var monthMax = nextYear + '-' + String(nextMon).padStart(2, '0') + '-' + String(nextLastDay).padStart(2, '0');
+
+        // Cap at planned end date if it falls within this month
+        if (bounds.max && bounds.max < monthMax) monthMax = bounds.max;
+
+        dateInput.setAttribute('min', monthMin);
+        dateInput.setAttribute('max', monthMax);
     }
-    if (bounds.max) {
-        dateInput.setAttribute('max', bounds.max);
-    } else {
-        dateInput.removeAttribute('max');
-    }
+
     document.getElementById('setupProgressPercent').value = '';
     document.getElementById('setupDescription').value     = '';
 
     // Reset activities container back to placeholder state
+    resetActivitiesContainer();
+
+    // NEW: reset the "Manage Activities" button label back to its default text
+    updateSetupActivitiesButtonLabel();
+
+    // Exit edit mode if active
+    setupEditingIndex = null;
+    addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
+    addBtn.style.background = '#0d9488';
+    var cancelBtn = document.getElementById('setupEditCancel');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
+    hideSetupErrors();
+}
+
+/**
+ * Reset activities container to placeholder state.
+ */
+function resetActivitiesContainer() {
     const activitiesContainer = document.getElementById('setupActivitiesContainer');
     if (activitiesContainer) {
         activitiesContainer.innerHTML = `
@@ -1692,19 +1847,6 @@ function resetSetupForm() {
                 Click "Add Row" to add activities for this month
             </div>`;
     }
-
-    // NEW: reset the "Manage Activities" button label back to its default text
-    updateSetupActivitiesButtonLabel();
-
-    // Exit edit mode if active
-    setupEditingIndex = null;
-    var addBtn = document.getElementById('addSetupMonthBtn');
-    addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
-    addBtn.style.background = '#0d9488';
-    var cancelBtn = document.getElementById('setupEditCancel');
-    if (cancelBtn) cancelBtn.style.display = 'none';
-
-    hideSetupErrors();
 }
 
 /**

@@ -657,6 +657,7 @@
 @endif
 
 @include('components.delete-confirmation-modal')
+@include('components.warning-confirm-modal')
 @include('components.loading-overlay', ['id' => 'archiveProjectLoadingOverlay', 'label' => 'Working…'])
 
 {{-- Show the success toast AFTER the post-archive page reload (flash set by

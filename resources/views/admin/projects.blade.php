@@ -519,6 +519,7 @@
 @include('admin._create_project_modal')
 @include('admin._manage_categories_modal')
 @include('components.delete-confirmation-modal')
+@include('components.warning-confirm-modal')
 @include('projects.project_detail.components.modals._setup_baseline_modal')
 
 {{-- Chart.js for S-Curve preview in Set Up Baseline modal --}}
