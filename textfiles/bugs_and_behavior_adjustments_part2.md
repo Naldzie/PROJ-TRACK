@@ -756,3 +756,58 @@ The code added ALL extension months from the auto-generated state to `setupRemov
 
 **Status:** PLANNED — awaiting implementation
 **Date:** 2026-09-01
+
+---
+
+## Enhancement 25: Review Modal Date Validation — Allow Equal to Current Deadline
+
+**Problem:** When admin/staff reviews (approves) a pending extension, they can set the `new_end_date` equal to the current project deadline, resulting in a 0-day extension. Both client and consultant require extensions to extend the deadline — a 0-day extension is meaningless.
+
+**Root cause — two layers:**
+
+### Layer 1: Backend `update()` review paths (lines 342-346 and 428-432)
+
+Both staff and admin review paths use `after_or_equal`:
+```php
+$reviewRules['new_end_date'] = [
+    'sometimes', 'required', 'date_format:Y-m-d',
+    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+    'before_or_equal:2030-12-31',
+];
+```
+
+`store()` and `resubmit()` both use `validateExtension()` which has `after:` (strictly after). The review path is inconsistent.
+
+### Layer 2: Frontend review modal (`review_extension_modal.blade.php:220-224`)
+
+The `min` on the date picker is set to `original_end_date` (the pre-extension date), NOT the current deadline:
+```js
+dateInput.setAttribute('min', `${minYear}-${minMonth}-${minDay}`);
+```
+
+If a prior extension already moved the deadline forward, the reviewer can select a date that's after `original_end_date` but before or equal to the current deadline.
+
+### Current validation summary:
+
+| Flow | Backend Rule | Allows equal to deadline? |
+|---|---|---|
+| `store()` (create) | `validateExtension()` → `after:` | No ✅ |
+| `resubmit()` (new row) | `validateExtension()` → `after:` | No ✅ |
+| `update()` staff review | `after_or_equal:` | **Yes** ❌ |
+| `update()` admin review | `after_or_equal:` | **Yes** ❌ |
+
+### Proposed fix:
+
+**Backend** (`ProjectExtensionController.php`):
+- Lines 344 and 430: Change `after_or_equal:` to `after:` in both staff and admin review paths
+
+**Frontend** (`review_extension_modal.blade.php:220-224`):
+- Set `min` to the current deadline (same logic as `request_extension_modal.blade.php` for non-edit mode: current deadline + 1 day)
+- Add JS validation in `submitReviewExtension()` to block `new_end_date <= currentDeadline` before sending the request
+
+**Files modified:**
+- `app/Http/Controllers/Admin/ProjectExtensionController.php` — `after_or_equal` → `after` in staff + admin review paths; added `current_deadline` to `formatExtension()`; custom error messages
+- `resources/views/projects/project_detail/components/modals/review_extension_modal.blade.php` — `min` date uses `current_deadline + 1 day`; added JS validation in `submitReviewExtension()`; removed unused `currentEndDate`
+
+**Status:** COMPLETED
+**Date:** 2026-09-01

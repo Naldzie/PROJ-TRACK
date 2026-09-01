@@ -341,12 +341,15 @@ class ProjectExtensionController extends Controller
                     } else {
                         $reviewRules['new_end_date'] = [
                             'sometimes', 'required', 'date_format:Y-m-d',
-                            'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                            'after:' . $project->planned_end_date->format('Y-m-d'),
                             'before_or_equal:2030-12-31',
                         ];
                     }
 
-                    $validated = $request->validate($reviewRules);
+                    $validated = $request->validate($reviewRules, [
+                        'new_end_date.after' => 'New end date must be after the current deadline (' . $project->planned_end_date->format('M d, Y') . ')',
+                        'new_end_date.before_or_equal' => 'New end date cannot be beyond 2030',
+                    ]);
 
                     DB::beginTransaction();
 
@@ -427,12 +430,15 @@ class ProjectExtensionController extends Controller
             } else {
                 $baseRules['new_end_date'] = [
                     'sometimes', 'required', 'date_format:Y-m-d',
-                    'after_or_equal:' . $project->planned_end_date->format('Y-m-d'),
+                    'after:' . $project->planned_end_date->format('Y-m-d'),
                     'before_or_equal:2030-12-31',
                 ];
             }
 
-            $validated = $request->validate($baseRules);
+            $validated = $request->validate($baseRules, [
+                'new_end_date.after' => 'New end date must be after the current deadline (' . $project->planned_end_date->format('M d, Y') . ')',
+                'new_end_date.before_or_equal' => 'New end date cannot be beyond 2030',
+            ]);
 
             DB::beginTransaction();
 
@@ -1571,6 +1577,7 @@ class ProjectExtensionController extends Controller
             'original_end_date' => $ext->original_end_date->format('Y-m-d'),
             'new_end_date' => $ext->new_end_date->format('Y-m-d'),
             'effective_end_date' => $ext->effectiveEndDate()->format('Y-m-d'),
+            'current_deadline' => $ext->project->planned_end_date?->format('Y-m-d'),
             'duration_days' => $ext->duration_days,
             'reason' => $ext->reason,
             'reason_category' => $ext->reason_category,

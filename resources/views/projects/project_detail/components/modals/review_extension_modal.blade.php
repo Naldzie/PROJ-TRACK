@@ -213,15 +213,14 @@ window.openReviewExtensionModal = function (extension) {
 
     // Pre-fill both fields from the requested new_end_date.
     const requestedDate = reviewParseDate(extension.new_end_date);
-    const currentEndDate = reviewParseDate(extension.original_end_date);
 
-    // Set min on the date picker — browser grays out dates earlier than this.
+    // Set min on the date picker — must be strictly after the current deadline
+    // (same rule as create/resubmit: no 0-day extensions).
     const dateInput = document.getElementById('reviewNewEndDate');
-    if (currentEndDate) {
-        const minYear = currentEndDate.getFullYear();
-        const minMonth = String(currentEndDate.getMonth() + 1).padStart(2, '0');
-        const minDay = String(currentEndDate.getDate()).padStart(2, '0');
-        dateInput.setAttribute('min', `${minYear}-${minMonth}-${minDay}`);
+    const currentDeadline = reviewParseDate(extension.current_deadline);
+    if (currentDeadline) {
+        const minDate = reviewAddDays(currentDeadline, 1);
+        dateInput.setAttribute('min', reviewToInputDate(minDate));
     }
 
     dateInput.value = extension.new_end_date || '';
@@ -319,6 +318,13 @@ window.submitReviewExtension = function () {
     if (decision === 'approved') {
         const newEndDate = document.getElementById('reviewNewEndDate').value.trim();
         if (newEndDate) {
+            // Block 0-day or negative extensions — must be strictly after current deadline.
+            const picked = reviewParseDate(newEndDate);
+            const deadline = reviewParseDate(_reviewExtension.current_deadline);
+            if (picked && deadline && picked <= deadline) {
+                reviewShowError('New end date must be after the current deadline.');
+                return;
+            }
             formData.new_end_date = newEndDate;
         }
     }
