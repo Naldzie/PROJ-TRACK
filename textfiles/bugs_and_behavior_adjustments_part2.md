@@ -303,3 +303,17 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
    - Shows `showWarningConfirm()` with a count-based message.
    - On confirm: tracks removed DB record IDs for server deletion (adjust/edit-original modes), empties `setupLocalMonths`, re-renders list, resets form, hides errors.
 3. **`updateSetupProgress()`:** Added toggle for the Clear All button — `display: inline-flex` when months > 0, `none` when empty.
+
+### Session Log: September 1, 2026 (E13 — Switch Discard Baseline Cancel to Warning Modal)
+
+**Request:** Change the "discard unsaved baseline" confirmation (triggered by closing the setup modal with months) from the red delete-confirmation-modal to the amber warning-confirm-modal.
+
+**Change:** `onSetupBaselineCancel()` (line ~706): replaced `showDeleteConfirmation(...)` with `showWarningConfirm(...)`. No other changes needed — the function signature and callback pattern are identical.
+
+### Session Log: September 1, 2026 (E13 — Chronological Insert for Re-Added Gap Months)
+
+**Problem:** After deleting a monthly target (e.g., Jan 2027) and re-adding it, the entry was appended to the end of the list instead of slotting into its correct chronological position between Dec 2026 and Feb 2027.
+
+**Root cause:** `addSetupBaselineMonth()` used `setupLocalMonths.push(entry)` which always appends, ignoring `month_label` order.
+
+**Fix:** Replaced `push(entry)` with a sorted insertion that scans `setupLocalMonths` for the first entry with a greater `month_label` and `splice`s the new entry at that index. This keeps the array always chronologically ordered. The existing edit path (`setupLocalMonths[setupEditingIndex] = entry`) is unaffected since it updates in-place.

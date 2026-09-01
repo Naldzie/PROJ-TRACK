@@ -1131,8 +1131,15 @@ function addSetupBaselineMonth() {
         setupLocalMonths[setupEditingIndex] = entry;
         setupEditingIndex = null;
     } else {
-        // Push new entry
-        setupLocalMonths.push(entry);
+        // Insert at correct chronological position by month_label
+        var insertIdx = setupLocalMonths.length;
+        for (var i = 0; i < setupLocalMonths.length; i++) {
+            if (setupLocalMonths[i].month_label > monthLabel) {
+                insertIdx = i;
+                break;
+            }
+        }
+        setupLocalMonths.splice(insertIdx, 0, entry);
     }
 
     // Reset form (including activities container) for the next month entry
