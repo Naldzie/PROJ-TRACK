@@ -497,10 +497,11 @@ function saveMonthTarget() {
     
     console.log('[saveMonthTarget] Submitting with', activities.length, 'activities');
     
-    // Show full-screen preloader during save (modal stays open for error display)
-    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
-        window.ProjTrackPreloader.show('Saving monthly target&hellip;');
-    }
+    // Disable save button and show inline spinner during fetch
+    var saveBtn = document.getElementById('monthTargetSaveBtn');
+    var saveBtnText = document.getElementById('monthTargetSaveBtnText');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.6'; saveBtn.style.cursor = 'not-allowed'; }
+    if (saveBtnText) saveBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving&hellip;';
 
     fetch(buildBaselineScheduleEndpoint(), {
         method: 'POST',
@@ -530,8 +531,12 @@ function saveMonthTarget() {
     .then(data => {
         if (data.success) {
             console.log('[saveMonthTarget] Success response:', data);
-            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             
+            // Show full-screen preloader for the reload transition (the actual DB save succeeded)
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+                window.ProjTrackPreloader.show('Saving monthly target&hellip;');
+            }
+
             // Queue success toast to display after the reload (fixes the
             // toast-before-reload flicker) and remember the active tab.
             queueToastAfterReload('Month target and activities saved successfully!', 'success');
@@ -545,13 +550,17 @@ function saveMonthTarget() {
                 location.reload();
             }, 600);
         } else {
-            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+            // Re-enable button — validation failed, no preloader needed
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+            if (saveBtnText) saveBtnText.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Save Target';
             console.error('[saveMonthTarget] Backend error:', data);
             showMonthTargetErrors(parseServerErrors(data.message));
         }
     })
     .catch(error => {
-        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+        // Re-enable button — network or parse error
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.style.opacity = '1'; saveBtn.style.cursor = 'pointer'; }
+        if (saveBtnText) saveBtnText.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Save Target';
         console.error('[saveMonthTarget] Fetch error:', error);
         var msg = (error && error.message) ? error.message : 'An unexpected error occurred.';
         showMonthTargetErrors(parseServerErrors(msg));
@@ -614,10 +623,11 @@ function saveMonthTargetEdit() {
         return;
     }
 
-    // Show full-screen preloader during save (modal stays open for error display)
-    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
-        window.ProjTrackPreloader.show('Updating monthly target&hellip;');
-    }
+    // Disable save button and show inline spinner during fetch
+    var editBtn = document.getElementById('monthTargetSaveBtn');
+    var editBtnText = document.getElementById('monthTargetSaveBtnText');
+    if (editBtn) { editBtn.disabled = true; editBtn.style.opacity = '0.6'; editBtn.style.cursor = 'not-allowed'; }
+    if (editBtnText) editBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Updating&hellip;';
 
     fetch(`${buildBaselineScheduleEndpoint()}/${editingScheduleId}`, {
         method: 'PATCH',
@@ -645,7 +655,12 @@ function saveMonthTargetEdit() {
     .then(data => {
         if (data.success) {
             console.log('[saveMonthTargetEdit] Success response:', data);
-            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+
+            // Show full-screen preloader for the reload transition (the actual DB save succeeded)
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+                window.ProjTrackPreloader.show('Updating monthly target&hellip;');
+            }
+
             queueToastAfterReload('Month target updated successfully!', 'success');
             sessionStorage.setItem('activeTab', 's-curve-planning');
             editingScheduleId = null;
@@ -654,13 +669,17 @@ function saveMonthTargetEdit() {
                 location.reload();
             }, 600);
         } else {
-            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+            // Re-enable button — validation failed, no preloader needed
+            if (editBtn) { editBtn.disabled = false; editBtn.style.opacity = '1'; editBtn.style.cursor = 'pointer'; }
+            if (editBtnText) editBtnText.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Update Target';
             console.error('[saveMonthTargetEdit] Backend error:', data);
             showMonthTargetErrors(parseServerErrors(data.message));
         }
     })
     .catch(error => {
-        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+        // Re-enable button — network or parse error
+        if (editBtn) { editBtn.disabled = false; editBtn.style.opacity = '1'; editBtn.style.cursor = 'pointer'; }
+        if (editBtnText) editBtnText.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Update Target';
         console.error('[saveMonthTargetEdit] Fetch error:', error);
         var msg = (error && error.message) ? error.message : 'An unexpected error occurred.';
         showMonthTargetErrors(parseServerErrors(msg));
