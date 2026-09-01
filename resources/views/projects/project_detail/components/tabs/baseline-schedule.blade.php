@@ -536,6 +536,13 @@ function confirmDeleteMonthTarget() {
         closeDeleteConfirmModal();
         return;
     }
+
+    // Dismiss confirmation modal and show full-screen preloader
+    closeDeleteConfirmModal();
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Deleting month target&hellip;');
+    }
+
     fetch(`${buildBaselineScheduleEndpoint()}/${planId}`, {
         method: 'DELETE',
         headers: { 'X-CSRF-TOKEN': token, 'Accept': 'application/json' }
@@ -547,14 +554,14 @@ function confirmDeleteMonthTarget() {
             sessionStorage.setItem('activeTab', 's-curve-planning');
             setTimeout(() => location.reload(), 600);
         } else {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showToast('Error: ' + (data.message || 'Failed to delete'), 'error');
-            closeDeleteConfirmModal();
         }
     })
     .catch(error => {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('Error:', error);
         showToast('Error deleting month target: ' + error.message, 'error');
-        closeDeleteConfirmModal();
     });
 }
 </script>

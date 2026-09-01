@@ -402,3 +402,16 @@ This gave admins blanket delete access to any month, including original baseline
 - **Extension/additional months** (`original_planned_progress_percent` is NULL): delete button retained for admin and assigned staff, provided no progress has been recorded.
 
 **Files:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` (line 388)
+
+### Enhancement 17: Full-Screen Preloader for Delete Month Target
+
+**Problem:** Deleting a non-original monthly target from the timeline only showed an inline delete confirmation modal, then reloaded the page with no loading indicator. This felt instantaneous for the user but could have a delay.
+
+**Established pattern:** Other destructive operations (baseline save, create project) now use `ProjTrackPreloader.show()` after dismissing the confirmation modal.
+
+**Changes in `confirmDeleteMonthTarget()` (`baseline-schedule.blade.php` line ~529):**
+1. Before fetch: dismiss the delete confirmation modal via `closeDeleteConfirmModal()`, then show `window.ProjTrackPreloader.show('Deleting month target…')`.
+2. On success: preloader stays visible through `location.reload()`.
+3. On error: hide preloader, then show error toast.
+
+**Files:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — `confirmDeleteMonthTarget()`
