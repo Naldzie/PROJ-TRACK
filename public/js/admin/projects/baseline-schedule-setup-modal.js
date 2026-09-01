@@ -1245,6 +1245,9 @@ function editSetupBaselineMonth(index) {
 
     // Switch button to "Update Month" mode
     var addBtn = document.getElementById('addSetupMonthBtn');
+    addBtn.disabled = false;
+    addBtn.style.opacity = '1';
+    addBtn.style.cursor = 'pointer';
     addBtn.innerHTML = '<i class="bi bi-check-lg"></i> Update Month';
     addBtn.style.background = '#ca8a04';
 

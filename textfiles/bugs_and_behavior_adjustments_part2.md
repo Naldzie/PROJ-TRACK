@@ -253,3 +253,11 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 - If current > planned end → min = planned end (overdue project)
 - If current < planned start → min = current (plan from today)
 - Else → min = planned start (plan from project start, regardless of current date)
+
+### Session Log: September 1, 2026 (E13 Bug Fix — Edit Button Blocked)
+
+**Problem:** After auto-generating S-curve (which fills all months up to planned end), clicking "Edit" on a month changes the button text to "Update Month" but the button stays disabled.
+
+**Root cause:** `resetSetupForm()` disables the "Add Month" button when `nextMonth > endMonth` (all months added). When user clicks "Edit", `editSetupBaselineMonth()` changes `innerHTML` and `style.background` but never sets `addBtn.disabled = false`. The button remains in its disabled state.
+
+**Fix:** Added `addBtn.disabled = false`, `addBtn.style.opacity = '1'`, `addBtn.style.cursor = 'pointer'` in `editSetupBaselineMonth()` before setting innerHTML. Ensures button is always re-enabled when entering edit mode.
