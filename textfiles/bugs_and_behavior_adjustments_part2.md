@@ -344,3 +344,28 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 3. **Success paths** already do `location.reload()`, so the preloader stays visible during reload — no change needed there.
 
 **Files:** `public/js/admin/projects/baseline-schedule-setup-modal.js` — `performBaselineSave()` (line ~849)
+
+### Enhancement 15: Full-Screen Preloader for Create/Edit Project Modal
+
+**Problem:** The create/edit project modal only uses plain text "Saving..."/"Creating..." on the submit button with no spinner icon. No preloader is shown during the save, which can take time with file uploads and baseline schedule targets.
+
+**Plan:** Add `ProjTrackPreloader` overlay to the create project modal's submit handler in `_create_project_modal.js`, matching the established pattern:
+
+1. **Before the `fetch` call** (line ~774): dismiss the modal, then show preloader:
+   ```js
+   try {
+       var modal = bootstrap.Modal.getInstance(document.getElementById('createProjectModal'));
+       if (modal) modal.hide();
+   } catch (err) {}
+   if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+       window.ProjTrackPreloader.show(window._projectModalMode === 'edit' ? 'Saving changes…' : 'Creating project…');
+   }
+   ```
+
+2. **In the error `else` branch** (validation/non-success response): hide preloader before showing errors.
+
+3. **In the `catch` block** (network errors): hide preloader before showing error.
+
+4. **On success** (`window.location.href = data.redirect`): preloader stays visible through navigation.
+
+**Files:** `public/js/_create_project_modal.js` — submit handler (line ~694)

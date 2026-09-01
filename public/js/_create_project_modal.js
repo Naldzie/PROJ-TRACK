@@ -771,6 +771,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     formData.append('baseline_schedule_targets', JSON.stringify(baselinePayload));
                 }
                 
+                // Dismiss modal and show full-screen preloader during save
+                try {
+                    var modal = bootstrap.Modal.getInstance(document.getElementById('createProjectModal'));
+                    if (modal) modal.hide();
+                } catch (err) {}
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+                    window.ProjTrackPreloader.show(window._projectModalMode === 'edit' ? 'Saving changes&hellip;' : 'Creating project&hellip;');
+                }
+
                 const response = await fetch(createProjectForm.action, {
                     method: 'POST',
                     body: formData,
@@ -791,6 +800,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Success - redirect to project detail
                     window.location.href = data.redirect;
                 } else {
+                    // Hide preloader on validation/error response
+                    if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+
                     // Handle validation errors
                     if (data.errors) {
                         for (const [field, messages] of Object.entries(data.errors)) {
@@ -807,6 +819,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             } catch (error) {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 console.error('Error:', error);
                 showError('An unexpected error occurred. Please try again.');
             } finally {
