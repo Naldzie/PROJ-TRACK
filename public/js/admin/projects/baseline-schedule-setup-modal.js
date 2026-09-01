@@ -1451,6 +1451,7 @@ function renderSetupMonthList(months) {
                 ${emptyMsg}
             </div>
         `;
+        updateAutoGenVisibility();
         return;
     }
 

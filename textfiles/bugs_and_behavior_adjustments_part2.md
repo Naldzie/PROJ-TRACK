@@ -261,3 +261,11 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 **Root cause:** `resetSetupForm()` disables the "Add Month" button when `nextMonth > endMonth` (all months added). When user clicks "Edit", `editSetupBaselineMonth()` changes `innerHTML` and `style.background` but never sets `addBtn.disabled = false`. The button remains in its disabled state.
 
 **Fix:** Added `addBtn.disabled = false`, `addBtn.style.opacity = '1'`, `addBtn.style.cursor = 'pointer'` in `editSetupBaselineMonth()` before setting innerHTML. Ensures button is always re-enabled when entering edit mode.
+
+### Session Log: September 1, 2026 (E13 Bug Fix — Auto-Generate Button Missing After Remove)
+
+**Problem:** After manually adding one monthly target then removing it, the auto-generate S-curve section doesn't reappear even though there are no months.
+
+**Root cause:** `renderSetupMonthList()` has an early return (line 1454) for the empty state that exits before reaching `updateAutoGenVisibility()` (line 1549). So the auto-gen section's display is never updated back to `block` when all months are removed.
+
+**Fix:** Added `updateAutoGenVisibility()` call before the early return in the empty-state branch of `renderSetupMonthList()`.
