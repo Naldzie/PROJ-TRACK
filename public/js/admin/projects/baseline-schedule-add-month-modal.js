@@ -466,8 +466,7 @@ function saveMonthTarget() {
     
     console.log('[saveMonthTarget] Submitting with', activities.length, 'activities');
     
-    // Dismiss modal and show full-screen preloader during save
-    try { bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide(); } catch (e) {}
+    // Show full-screen preloader during save (modal stays open for error display)
     if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
         window.ProjTrackPreloader.show('Saving monthly target&hellip;');
     }
@@ -499,6 +498,7 @@ function saveMonthTarget() {
     .then(data => {
         if (data.success) {
             console.log('[saveMonthTarget] Success response:', data);
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             
             // Queue success toast to display after the reload (fixes the
             // toast-before-reload flicker) and remember the active tab.
@@ -581,10 +581,9 @@ function saveMonthTargetEdit() {
         return;
     }
 
-    // Dismiss modal and show full-screen preloader during save
-    try { bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide(); } catch (e) {}
+    // Show full-screen preloader during save (modal stays open for error display)
     if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
-        window.ProjTrackPreloader.show('Saving monthly target&hellip;');
+        window.ProjTrackPreloader.show('Updating monthly target&hellip;');
     }
 
     fetch(`${buildBaselineScheduleEndpoint()}/${editingScheduleId}`, {
@@ -609,6 +608,7 @@ function saveMonthTargetEdit() {
     .then(data => {
         if (data.success) {
             console.log('[saveMonthTargetEdit] Success response:', data);
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             queueToastAfterReload('Month target updated successfully!', 'success');
             sessionStorage.setItem('activeTab', 's-curve-planning');
             editingScheduleId = null;
