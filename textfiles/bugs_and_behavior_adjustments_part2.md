@@ -415,3 +415,119 @@ This gave admins blanket delete access to any month, including original baseline
 3. On error: hide preloader, then show error toast.
 
 **Files:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` — `confirmDeleteMonthTarget()`
+
+---
+
+## Batch: UI Loading States, Validation, and Baseline Adjustments
+
+**Branch:** `batch/ui-loading-and-validation-improvements`
+**Date:** September 1, 2026
+**Status:** PLANNED — not yet implemented
+
+---
+
+### Enhancement 18: Record Progress Button — Show for All Unrecorded Past/Current Months
+
+**Problem:** The Record Progress button only appears on the latest recorded month and the very next unrecorded month. Users cannot skip a month or go back to record progress for an earlier unrecorded month.
+
+**Current condition** (`baseline-schedule.blade.php` lines 186, 272):
+```php
+$showRecordButton = $plan->month_label === $latestProgressMonth || $plan->month_label === $nextPendingMonth;
+```
+
+**Proposed condition:**
+```php
+$showRecordButton = !$hasActual && $plan->month_label <= $currentMonthLabel;
+```
+
+This shows the Record Progress button for any month that:
+- Has no actual progress recorded (`$hasActual` is false — already computed at line 190)
+- Is current or past (month_label ≤ current month)
+
+Future months remain hidden. The backend already allows out-of-order progress recording.
+
+**Files:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` (lines 186 and 272)
+
+---
+
+### Enhancement 19: Full-Screen Preloader for Add/Edit Extension
+
+**Problem:** The extension modal has a button spinner but no full-screen preloader. Saving extensions can take time (evidence uploads).
+
+**Proposed change:** Add `ProjTrackPreloader` to `submitExtension()`:
+1. Before `fetch`: dismiss modal, show `ProjTrackPreloader.show('Saving extension…')`
+2. On error: hide preloader
+3. On success: preloader stays through `location.reload()`
+
+**File:** `resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php` — `submitExtension()` (line ~470)
+
+---
+
+### Enhancement 20: Add Monthly Target Modal — Date Restrictions (Gap-Aware)
+
+**Problem:** The single Add Monthly Target modal does not constrain the month picker or date picker to valid ranges. Users can pick any month/date within the project bounds, potentially creating duplicates or out-of-order entries.
+
+**Proposed change:** Apply the same gap-aware logic used in the setup modal:
+1. In `openAddMonthTargetModal()`: calculate all expected months from project start to end, find the first missing month, lock the month picker to that month (min=max).
+2. Constrain the date picker to the selected month's date range.
+3. When all months are filled, disable the Save button.
+
+**File:** `public/js/admin/projects/baseline-schedule-add-month-modal.js` — `openAddMonthTargetModal()` (lines 47-122)
+
+---
+
+### Enhancement 21: Add Monthly Target Modal — Loading State
+
+**Problem:** No loading indicator when saving a monthly target.
+
+**Proposed change:** Add `ProjTrackPreloader` to both `saveMonthTarget()` and `saveMonthTargetEdit()`:
+1. Before `fetch`: dismiss modal, show `ProjTrackPreloader.show('Saving monthly target…')`
+2. On error: hide preloader
+3. On success: preloader stays through `location.reload()`
+
+**Files:** `public/js/admin/projects/baseline-schedule-add-month-modal.js` — `saveMonthTarget()` (line ~467), `saveMonthTargetEdit()` (line ~574)
+
+---
+
+### Enhancement 22: Resubmit Modal — Include Status Field (Default: Approved)
+
+**Problem:** When admin/staff opens the extension modal in resubmit mode, the status dropdown is hidden. Resubmit always creates a "pending" row. Admins should be able to approve immediately on resubmit.
+
+**Proposed change:** In `_populateExtensionEditFields()` (line 308), remove the `&& editMode !== 'resubmit'` condition so the status field shows for admin/staff in all modes. Default the status to `"approved"` when in resubmit mode.
+
+**File:** `resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php` — `_populateExtensionEditFields()` (line 308), `openResubmitExtensionModal()` (line 266)
+
+---
+
+### Enhancement 23: Improve Inline Error Messages in Add Monthly Target Modal
+
+**Problem:** Most validation errors are pushed as plain strings (`errors.push('...')`) and display in the top-level error container. The blade already has inline error divs (`monthLabelError`, `plannedDateError`, `plannedProgressPercentError`) and `showMonthTargetErrors()` already maps `{ field, message }` objects to them — but the validation code doesn't use the field-mapped format.
+
+**Proposed change:** Convert plain-string error pushes to `{ field, message }` objects where they relate to a specific input:
+- Chronological order violation → `{ field: 'monthLabel', message: '...' }`
+- Progress not higher than previous → `{ field: 'plannedProgressPercent', message: '...' }`
+- Progress at 100% cap → `{ field: 'plannedProgressPercent', message: '...' }`
+- Date within month (Rule A) → `{ field: 'plannedDate', message: '...' }` (already done)
+- Date within bounds (Rule BOUNDS) → `{ field: 'plannedDate', message: '...' }` (already done)
+- Duplicate month / before first target → keep as generic (no specific field)
+
+**File:** `public/js/admin/projects/baseline-schedule-add-month-modal.js` — `saveMonthTarget()` validation (lines 330-428)
+
+---
+
+### Enhancement 24: Setup Modal — "Restore to Original" Button in Adjust Mode
+
+**Problem:** In adjust mode, the "Clear All" button empties everything. Users need a way to revert all adjustments back to the original baseline values.
+
+**Proposed changes:**
+1. In the blade template, add a second button (`setupRestoreBtn`) with "Restore to Original" label (amber theme, reset icon). Hide it by default.
+2. `updateSetupProgress()`: toggle between "Clear All" (setup mode) and "Restore to Original" (adjust mode) based on `setupAdjustMode`.
+3. New function `restoreToOriginalBaseline()`:
+   - Reloads `setupLocalMonths` from the saved original baseline data (captured in `openAdjustBaselineModal()`)
+   - Clears `setupRemovedIds` (no longer removing original months)
+   - Re-renders the list, progress, S-curve preview, and resets the form
+   - Shows a `showWarningConfirm()` before proceeding
+
+**Files:**
+- `resources/views/projects/project_detail/components/modals/_setup_baseline_modal.blade.php` — add restore button
+- `public/js/admin/projects/baseline-schedule-setup-modal.js` — new `restoreToOriginalBaseline()`, update `updateSetupProgress()`, update `openAdjustBaselineModal()`
