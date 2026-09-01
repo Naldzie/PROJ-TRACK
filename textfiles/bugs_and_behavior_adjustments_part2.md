@@ -317,3 +317,30 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 **Root cause:** `addSetupBaselineMonth()` used `setupLocalMonths.push(entry)` which always appends, ignoring `month_label` order.
 
 **Fix:** Replaced `push(entry)` with a sorted insertion that scans `setupLocalMonths` for the first entry with a greater `month_label` and `splice`s the new entry at that index. This keeps the array always chronologically ordered. The existing edit path (`setupLocalMonths[setupEditingIndex] = entry`) is unaffected since it updates in-place.
+
+### Enhancement 14: Full-Screen Preloader for Baseline Save
+
+**Problem:** The "Done — Lock Baseline" save only shows an inline button spinner (`spinner-border` on the Done button). Saving multiple monthly targets is a heavier operation that can take noticeable time, and users have no indication that processing is happening beyond the button state.
+
+**Established pattern:** Other modals that trigger heavy saves (record-progress, edit-progress, issues, risk-register) dismiss the modal and show `window.ProjTrackPreloader.show('Action…')` — a full-screen branded overlay that persists until the page reloads or an error occurs.
+
+**Plan:** Add the `ProjTrackPreloader` overlay to `performBaselineSave()` in `baseline-schedule-setup-modal.js`, matching the established pattern:
+
+1. **Before each `fetch` call** (both adjust/save-immediately paths): dismiss the setup modal, then show preloader:
+   ```js
+   try {
+       if (setupModalInstance) setupModalInstance.hide();
+   } catch (err) {}
+   if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+       window.ProjTrackPreloader.show('Saving baseline schedule…');
+   }
+   ```
+
+2. **In error/restore paths** (both `.catch()` and non-success `.then()`): hide preloader before re-enabling the button:
+   ```js
+   if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+   ```
+
+3. **Success paths** already do `location.reload()`, so the preloader stays visible during reload — no change needed there.
+
+**Files:** `public/js/admin/projects/baseline-schedule-setup-modal.js` — `performBaselineSave()` (line ~849)
