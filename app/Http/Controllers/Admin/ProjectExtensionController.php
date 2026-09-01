@@ -589,11 +589,11 @@ class ProjectExtensionController extends Controller
      * Resubmit a REJECTED extension as a brand-new row (Decision 6).
      *
      * Copies the rejected request's details into a NEW extension row (next
-     * extension_number) in 'pending' status; the rejected row is NEVER mutated
-     * and keeps its rejection_reason for the audit trail. Both staff and admin
-     * may resubmit; the new row is always pending (even for admin — it goes
-     * back through review so the rejection lesson stays visible). Staff may
-     * only resubmit their OWN rejected rows (Decision 14).
+     * extension_number). Admin/assigned staff may set the status at resubmit
+     * time (defaults to 'pending'); staff-only resubmits default to pending.
+     * The rejected row is NEVER mutated and keeps its rejection_reason for
+     * the audit trail. Staff may only resubmit their OWN rejected rows
+     * (Decision 14).
      */
     public function resubmit(Request $request, Project $project, ProjectExtension $extension)
     {
@@ -619,6 +619,21 @@ class ProjectExtensionController extends Controller
 
             $validated = $this->validateExtension($request, $project);
 
+            // Admin and assigned staff may pick the review status at resubmit
+            // time (defaults to pending for safe re-review).
+            $isAdmin = auth()->user()->role === 'admin';
+            if ($isAdmin || $project->isAssignedTo(auth()->user())) {
+                $statusValidated = $request->validate([
+                    'status' => 'sometimes|nullable|in:pending,approved,rejected',
+                    'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                ]);
+                $status = $statusValidated['status'] ?? 'pending';
+                $rejectionReason = ($status === 'rejected') ? ($statusValidated['rejection_reason'] ?? null) : null;
+            } else {
+                $status = 'pending';
+                $rejectionReason = null;
+            }
+
             DB::beginTransaction();
 
             $maxExtensionNumber = DB::table('project_extensions')
@@ -637,7 +652,8 @@ class ProjectExtensionController extends Controller
                 'duration_days' => $originalEndDate->diffInDays($newEndDate),
                 'reason' => $validated['reason'],
                 'reason_category' => $validated['reason_category'] ?? null,
-                'status' => 'pending',
+                'status' => $status,
+                'rejection_reason' => $rejectionReason,
                 'created_by_user_id' => auth()->id(),
             ]);
 
@@ -647,13 +663,18 @@ class ProjectExtensionController extends Controller
                 'user_id' => auth()->id(),
                 'project_id' => $project->id,
                 'action' => 'Resubmit Extension',
-                'description' => auth()->user()->name . " resubmitted extension #{$extension->extension_number} as extension #{$nextExtensionNumber} for project: {$project->title}",
+                'description' => auth()->user()->name . " resubmitted extension #{$extension->extension_number} as extension #{$nextExtensionNumber} ({$status}) for project: {$project->title}",
                 'ip_address' => request()->ip(),
                 'visibility' => 'all',
             ]);
 
-            // The new pending row re-notifies the admins for review.
-            $this->notifyExtension($project, $newExtension, ExtensionStatusChanged::SUBMITTED);
+            // Notify based on the chosen status.
+            $notifStatus = match ($status) {
+                'approved' => ExtensionStatusChanged::APPROVED,
+                'rejected' => ExtensionStatusChanged::REJECTED,
+                default    => ExtensionStatusChanged::SUBMITTED,
+            };
+            $this->notifyExtension($project, $newExtension, $notifStatus);
 
             return response()->json([
                 'success' => true,

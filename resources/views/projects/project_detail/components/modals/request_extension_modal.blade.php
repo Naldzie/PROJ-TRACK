@@ -449,9 +449,8 @@ document.addEventListener('DOMContentLoaded', function() {
             reason_category: document.getElementById('reasonCategory')?.value || null
         };
 
-        // Admin and assigned staff contexts include status. Applies in BOTH
-        // create and edit; resubmit never carries status — the new row is always pending.
-        if ((isAdminContext() || window.isAssignedStaff === true) && editMode !== 'resubmit') {
+        // Admin and assigned staff contexts include status in create, edit, and resubmit modes.
+        if (isAdminContext() || window.isAssignedStaff === true) {
             const selectedStatus = document.getElementById('extensionStatus').value;
             formData.status = selectedStatus;
 

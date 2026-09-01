@@ -666,3 +666,47 @@ The code added ALL extension months from the auto-generated state to `setupRemov
 - `app/Http/Controllers/Admin/ProjectExtensionController.php` — new `latestSnapshot()` method
 - `routes/web.php` — new routes for admin and staff
 - `public/js/admin/projects/baseline-schedule-setup-modal.js` — `restoreToOriginalBaseline()` rewritten to use snapshot
+
+---
+
+## Enhancement 23: Resubmit Modal — Status Field Now Respected
+
+**Problem:** E22 added a status dropdown to the resubmit modal (defaulting to "approved") but it was non-functional. Frontend JS excluded `status` from the formData in resubmit mode (`editMode !== 'resubmit'` guard), and the backend hardcoded `'status' => 'pending'`. The dropdown was purely cosmetic.
+
+**Root cause:** Two layers:
+1. Frontend guard at `request_extension_modal.blade.php:454` excluded status from the payload in resubmit mode
+2. Backend `ProjectExtensionController::resubmit()` hardcoded `'status' => 'pending'` at line 640
+
+**Fix (Option A — let admin/staff control status during resubmit):**
+
+1. **Frontend** (`request_extension_modal.blade.php`):
+   - Removed the `editMode !== 'resubmit'` condition from the status inclusion guard
+   - Status + rejection_reason now included in payload for all modes (create, edit, resubmit)
+   - Frontend already defaults status to "approved" in resubmit mode (line 312)
+
+2. **Backend** (`ProjectExtensionController.php`):
+   - Added inline validation for `status` and `rejection_reason` in `resubmit()` (mirrors `store()`)
+   - Reads `$request->input('status')` with fallback to `'pending'` for staff-only resubmits
+   - Sends correct notification based on chosen status: `APPROVED`, `REJECTED`, or `SUBMITTED`
+   - ActivityLog description now includes the status
+   - Updated docblock to reflect new behavior
+
+**Behavior summary:**
+| Actor | Mode | Status dropdown | Default | Backend |
+|---|---|---|---|---|
+| Admin/Staff | Create | Visible | approved | Respects selection |
+| Admin/Staff | Edit | Visible | Current value | Respects selection |
+| Admin/Staff | Resubmit | Visible | approved (E22) | Now respects selection ✓ |
+| Contractor | Any | Hidden | N/A | Always pending |
+
+**Status → Notification mapping on resubmit:**
+- `approved` → `APPROVED` notification (project team)
+- `rejected` → `REJECTED` notification (submitter + contractor)
+- `pending` → `SUBMITTED` notification (admins for review)
+
+**Files modified:**
+- `resources/views/projects/project_detail/components/modals/request_extension_modal.blade.php` — removed `editMode !== 'resubmit'` guard
+- `app/Http/controllers/Admin/ProjectExtensionController.php` — `resubmit()` reads status from request, validates, sends correct notification
+
+**Branch:** `fix/resubmit-modal-status-field`
+**Date:** 2026-09-01
