@@ -1195,6 +1195,39 @@ function removeSetupBaselineMonth(index) {
     updateSetupSCurvePreview();
 }
 
+/**
+ * Clear all monthly targets from the setup modal after confirmation.
+ * Shows a warning-confirm modal; on confirm, empties setupLocalMonths,
+ * re-renders the list, resets the form, and hides the Clear All button.
+ */
+function clearAllSetupMonths() {
+    if (setupLocalMonths.length === 0) return;
+
+    showWarningConfirm(
+        'Clear All Monthly Targets',
+        '<p>This will <strong>remove all ' + setupLocalMonths.length + ' monthly target(s)</strong> from the baseline plan.</p>' +
+        '<p style="margin-top:8px; color:#6b7280; font-size:13px;">You will need to re-add them manually or use Auto-Generate.</p>',
+        function () {
+            // Track removed DB records for deletion on save (adjust / edit-original modes)
+            if (setupAdjustMode || setupEditOriginalMode) {
+                setupLocalMonths.forEach(function (m) {
+                    if (m.scheduleId && setupRemovedIds.indexOf(m.scheduleId) === -1) {
+                        setupRemovedIds.push(m.scheduleId);
+                    }
+                });
+            }
+
+            setupLocalMonths = [];
+            setupEditingIndex = null;
+            renderSetupMonthList(setupLocalMonths);
+            updateSetupProgress(setupLocalMonths);
+            updateSetupSCurvePreview();
+            resetSetupForm();
+            hideSetupErrors();
+        }
+    );
+}
+
 // ─── EDIT A MONTH ──────────────────────────────────────────────────────────────
 
 /**
@@ -1605,6 +1638,12 @@ function updateSetupProgress(months) {
     doneBtn.disabled      = !isComplete;
     doneBtn.style.opacity = isComplete ? '1'    : '0.5';
     doneBtn.style.cursor  = isComplete ? 'pointer' : 'not-allowed';
+
+    // Show/hide the Clear All button
+    var clearBtn = document.getElementById('setupClearAllBtn');
+    if (clearBtn) {
+        clearBtn.style.display = months.length > 0 ? 'inline-flex' : 'none';
+    }
 }
 
 // ─── AUTO-GENERATE S-CURVE ──────────────────────────────────────────────────────

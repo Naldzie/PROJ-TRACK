@@ -292,3 +292,14 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
    - Progress % must be strictly between the previous and next existing months' progress (found via sorted-neighbor scan). Default prev = 0%, next = 100%.
 
 3. **`removeSetupBaselineMonth()` (line ~1176):** Added an `else` branch after the `setupEditingIndex` checks to call `resetSetupForm()` when not in edit mode, ensuring the Add Month button re-enables if gaps remain after removal.
+
+### Session Log: September 1, 2026 (E13 — Clear All Baseline Months Button)
+
+**Request:** User wanted a one-click button to remove all monthly targets at once.
+
+**Changes:**
+1. **`_setup_baseline_modal.blade.php`:** Added a "Clear All" button (`#setupClearAllBtn`) inline in the "Months Added" header. Red-themed, hidden by default, shown when months exist.
+2. **`baseline-schedule-setup-modal.js`:** Added `clearAllSetupMonths()` function:
+   - Shows `showWarningConfirm()` with a count-based message.
+   - On confirm: tracks removed DB record IDs for server deletion (adjust/edit-original modes), empties `setupLocalMonths`, re-renders list, resets form, hides errors.
+3. **`updateSetupProgress()`:** Added toggle for the Clear All button — `display: inline-flex` when months > 0, `none` when empty.

@@ -210,6 +210,12 @@
                             <i class="bi bi-list-check" style="color: #0d9488;"></i>
                             Months Added
                             <span id="setupMonthCount" style="background: #ccfbf1; color: #0f766e; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700;">0</span>
+                            <button type="button" id="setupClearAllBtn" onclick="clearAllSetupMonths()"
+                                    style="display: none; margin-left: auto; padding: 3px 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; font-weight: 600; font-size: 10px; cursor: pointer; transition: all 0.2s;"
+                                    onmouseover="this.style.background='#fee2e2'; this.style.borderColor='#f87171'"
+                                    onmouseout="this.style.background='#fef2f2'; this.style.borderColor='#fca5a5'">
+                                <i class="bi bi-trash3"></i> Clear All
+                            </button>
                         </h6>
 
                         <!-- Progress toward 100% indicator -->
