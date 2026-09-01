@@ -269,3 +269,26 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 **Root cause:** `renderSetupMonthList()` has an early return (line 1454) for the empty state that exits before reaching `updateAutoGenVisibility()` (line 1549). So the auto-gen section's display is never updated back to `block` when all months are removed.
 
 **Fix:** Added `updateAutoGenVisibility()` call before the early return in the empty-state branch of `renderSetupMonthList()`.
+
+### Session Log: September 1, 2026 (E13 — Gap-Aware Month Adding)
+
+**Problem:** After auto-generating an S-curve and removing a month (especially from the middle), the "Add Month" button stays disabled. The old logic only checked if the month after the *latest* added month exceeded the planned end, so mid-timeline gaps were unreachable.
+
+**Root cause:** Two issues:
+1. `resetSetupForm()` only calculated `nextMonth = latest + 1` — it didn't scan for missing months in the timeline.
+2. `removeSetupBaselineMonth()` never called `resetSetupForm()` when the user wasn't in edit mode (no `else` branch after the `setupEditingIndex` checks).
+
+**Fix (3 changes in `baseline-schedule-setup-modal.js`):**
+
+1. **`resetSetupForm()` — subsequent-targets branch (line ~1810):** Replaced the sequential `nextMonth = latest + 1` logic with gap-aware logic:
+   - Calculates all expected months from `planned_start` to `planned_end` (inclusive of both endpoints).
+   - Collects existing month labels from `setupLocalMonths`.
+   - Finds the **first missing month** in chronological order.
+   - If a gap exists: locks the month picker (min=max) and date picker to that missing month.
+   - If no gaps remain: disables the Add Month button and shows the "all months added" message.
+
+2. **`addSetupBaselineMonth()` — new-entry validation (line ~1058):** Replaced the "must be after all existing months" sequential check and the "must be > current max %" check with gap-aware validation:
+   - Month must fall within the project timeline bounds.
+   - Progress % must be strictly between the previous and next existing months' progress (found via sorted-neighbor scan). Default prev = 0%, next = 100%.
+
+3. **`removeSetupBaselineMonth()` (line ~1176):** Added an `else` branch after the `setupEditingIndex` checks to call `resetSetupForm()` when not in edit mode, ensuring the Add Month button re-enables if gaps remain after removal.

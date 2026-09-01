@@ -1056,27 +1056,52 @@ function addSetupBaselineMonth() {
             }
         }
     } else {
-        // ── NEW ENTRY MODE: existing checks ────────────────────────────────────
-        // Chronological order: new month must be after ALL existing months
-        if (monthLabel && setupLocalMonths.length > 0) {
-            var latestMonthLabel = setupLocalMonths.reduce(
-                function (max, m) { return m.month_label > max ? m.month_label : max; },
-                setupLocalMonths[0].month_label
-            );
-            if (monthLabel <= latestMonthLabel) {
-                errors.push(
-                    '"' + formatMonthLabel(monthLabel) + '" must be chronologically after all previously added months ' +
-                    '(latest: ' + formatMonthLabel(latestMonthLabel) + '). Add months in chronological order.'
-                );
+        // ── NEW ENTRY MODE: gap-aware validation ──────────────────────────────
+        // The month picker is constrained to the first missing month by resetSetupForm().
+        // Validate that the selected month falls within the project timeline.
+        if (monthLabel) {
+            var bounds = getSetupDateBounds();
+            if (bounds.min) {
+                var startMonth = bounds.min.substring(0, 7);
+                if (monthLabel < startMonth) {
+                    errors.push('"' + formatMonthLabel(monthLabel) + '" is before the project start month (' + formatMonthLabel(startMonth) + ').');
+                }
+            }
+            if (bounds.max) {
+                var endMo = bounds.max.substring(0, 7);
+                if (monthLabel > endMo) {
+                    errors.push('"' + formatMonthLabel(monthLabel) + '" is after the project end month (' + formatMonthLabel(endMo) + ').');
+                }
             }
         }
 
-        // Progress must be strictly increasing
-        if (!isNaN(progressPercent) && progressPercent <= setupCurrentMaxPercent) {
-            errors.push(
-                `Progress % must be higher than the current highest target ` +
-                `(${setupCurrentMaxPercent}%). You entered ${progressPercent}%.`
-            );
+        // Progress must fall between the previous and next existing months' progress
+        if (monthLabel && !isNaN(progressPercent) && setupLocalMonths.length > 0) {
+            var sortedMonths = setupLocalMonths.slice().sort(function(a, b) {
+                return a.month_label.localeCompare(b.month_label);
+            });
+            // Find the neighbors for this month
+            var prevProg = 0;
+            var nextProg = 100;
+            for (var i = 0; i < sortedMonths.length; i++) {
+                if (sortedMonths[i].month_label < monthLabel) {
+                    prevProg = parseFloat(sortedMonths[i].planned_progress_percent);
+                }
+                if (sortedMonths[i].month_label > monthLabel && nextProg === 100) {
+                    nextProg = parseFloat(sortedMonths[i].planned_progress_percent);
+                    break;
+                }
+            }
+            if (progressPercent <= prevProg) {
+                errors.push(
+                    'Progress % must be higher than the previous month (' + prevProg.toFixed(0) + '%).'
+                );
+            }
+            if (progressPercent >= nextProg) {
+                errors.push(
+                    'Progress % must be lower than the next month (' + nextProg.toFixed(0) + '%).'
+                );
+            }
         }
     }
 
@@ -1160,6 +1185,10 @@ function removeSetupBaselineMonth(index) {
         // Edited month was removed or index now out of range — clean up
         setupEditingIndex = null;
         cancelEdit();
+    } else {
+        // Not in edit mode — re-run gap-aware reset so the Add Month button
+        // re-enables if there are still missing months in the timeline
+        resetSetupForm();
     }
 
     // Update S-Curve preview chart
@@ -1783,51 +1812,79 @@ function resetSetupForm() {
             dateInput.removeAttribute('max');
         }
     } else {
-        // SUBSEQUARY TARGETS: lock to next month only
-        var latestLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
-        var parts = latestLabel.split('-').map(Number);
-        var nextYear = parts[0];
-        var nextMon = parts[1] + 1;
-        if (nextMon > 12) { nextMon = 1; nextYear++; }
-        var nextMonth = nextYear + '-' + String(nextMon).padStart(2, '0');
+        // ── SUBSEQUARY TARGETS: find first missing month in timeline ────────
+        // Calculate all months from planned start to planned end
+        var startMonth = bounds.min ? bounds.min.substring(0, 7) : null;
+        var existingMonths = setupLocalMonths.map(function(m) { return m.month_label; });
 
-        // If next month exceeds planned end month, disable Add Month button
-        if (endMonth && nextMonth > endMonth) {
-            addBtn.disabled = true;
-            addBtn.style.opacity = '0.5';
-            addBtn.style.cursor = 'not-allowed';
-            showSetupErrors(['All months up to the planned end date have been added. Click "Done \u2014 Lock Baseline" to save.']);
-            // Still clear the form fields but don't constrain inputs
-            monthInput.removeAttribute('min');
-            monthInput.removeAttribute('max');
-            dateInput.removeAttribute('min');
-            dateInput.removeAttribute('max');
-            document.getElementById('setupProgressPercent').value = '';
-            document.getElementById('setupDescription').value = '';
-            resetActivitiesContainer();
-            updateSetupActivitiesButtonLabel();
-            setupEditingIndex = null;
-            addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
-            addBtn.style.background = '#0d9488';
-            var cancelBtn = document.getElementById('setupEditCancel');
-            if (cancelBtn) cancelBtn.style.display = 'none';
-            return;
+        if (startMonth && endMonth) {
+            // Build array of all expected months from start to end
+            var allExpected = [];
+            var cursorParts = startMonth.split('-').map(Number);
+            var endParts = endMonth.split('-').map(Number);
+            while (cursorParts[0] < endParts[0] || (cursorParts[0] === endParts[0] && cursorParts[1] <= endParts[1])) {
+                allExpected.push(cursorParts[0] + '-' + String(cursorParts[1]).padStart(2, '0'));
+                cursorParts[1]++;
+                if (cursorParts[1] > 12) { cursorParts[1] = 1; cursorParts[0]++; }
+            }
+
+            // Find the first missing month
+            var firstMissing = null;
+            for (var i = 0; i < allExpected.length; i++) {
+                if (existingMonths.indexOf(allExpected[i]) === -1) {
+                    firstMissing = allExpected[i];
+                    break;
+                }
+            }
+
+            if (firstMissing) {
+                // There are gaps — allow adding the first missing month
+                monthInput.setAttribute('min', firstMissing);
+                monthInput.setAttribute('max', firstMissing);
+
+                // Constrain date picker to the missing month's range
+                var mParts = firstMissing.split('-').map(Number);
+                var lastDay = new Date(mParts[0], mParts[1], 0).getDate();
+                var monthMinDate = firstMissing + '-01';
+                var monthMaxDate = firstMissing + '-' + String(lastDay).padStart(2, '0');
+                dateInput.setAttribute('min', monthMinDate);
+                dateInput.setAttribute('max', monthMaxDate);
+            } else {
+                // All months filled — disable Add Month button
+                addBtn.disabled = true;
+                addBtn.style.opacity = '0.5';
+                addBtn.style.cursor = 'not-allowed';
+                showSetupErrors(['All months up to the planned end date have been added. Click "Done \u2014 Lock Baseline" to save.']);
+                monthInput.removeAttribute('min');
+                monthInput.removeAttribute('max');
+                dateInput.removeAttribute('min');
+                dateInput.removeAttribute('max');
+                document.getElementById('setupProgressPercent').value = '';
+                document.getElementById('setupDescription').value = '';
+                resetActivitiesContainer();
+                updateSetupActivitiesButtonLabel();
+                setupEditingIndex = null;
+                addBtn.innerHTML = '<i class="bi bi-plus-circle"></i> Add Month';
+                addBtn.style.background = '#0d9488';
+                var cancelBtn = document.getElementById('setupEditCancel');
+                if (cancelBtn) cancelBtn.style.display = 'none';
+                return;
+            }
+        } else {
+            // No bounds available — fallback: allow next month after latest
+            var latestLabel = setupLocalMonths[setupLocalMonths.length - 1].month_label;
+            var parts = latestLabel.split('-').map(Number);
+            var nextYear = parts[0];
+            var nextMon = parts[1] + 1;
+            if (nextMon > 12) { nextMon = 1; nextYear++; }
+            var nextMonth = nextYear + '-' + String(nextMon).padStart(2, '0');
+            monthInput.setAttribute('min', nextMonth);
+            monthInput.setAttribute('max', nextMonth);
+
+            var nextLastDay = new Date(nextYear, nextMon, 0).getDate();
+            dateInput.setAttribute('min', nextMonth + '-01');
+            dateInput.setAttribute('max', nextMonth + '-' + String(nextLastDay).padStart(2, '0'));
         }
-
-        // Lock month picker to exactly one month
-        monthInput.setAttribute('min', nextMonth);
-        monthInput.setAttribute('max', nextMonth);
-
-        // Constrain date picker to the next month's range
-        var nextLastDay = new Date(nextYear, nextMon, 0).getDate();
-        var monthMin = nextYear + '-' + String(nextMon).padStart(2, '0') + '-01';
-        var monthMax = nextYear + '-' + String(nextMon).padStart(2, '0') + '-' + String(nextLastDay).padStart(2, '0');
-
-        // Cap at planned end date if it falls within this month
-        if (bounds.max && bounds.max < monthMax) monthMax = bounds.max;
-
-        dateInput.setAttribute('min', monthMin);
-        dateInput.setAttribute('max', monthMax);
     }
 
     document.getElementById('setupProgressPercent').value = '';
