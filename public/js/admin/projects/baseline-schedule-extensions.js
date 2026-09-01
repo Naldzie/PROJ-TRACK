@@ -70,9 +70,9 @@ function reloadExtensionsTable() {
         console.log('[reloadExtensionsTable] Extensions data received:', data);
 
         // Toggle "Add Extension" button: hidden when a pending extension exists.
+        const hasPending = data.extensions && data.extensions.some(e => e.status === 'pending');
         const addBtn = document.getElementById('addExtensionBtn');
         if (addBtn) {
-            const hasPending = data.extensions && data.extensions.some(e => e.status === 'pending');
             addBtn.style.display = hasPending ? 'none' : 'inline-flex';
         }
         
@@ -180,7 +180,8 @@ function reloadExtensionsTable() {
                         : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
                     // Resubmit (Decision 6): only rejected rows; staff may only
                     // resubmit their OWN (Decision 14). Admin may resubmit any.
-                    const canResubmit = ext.status === 'rejected' && (isAdmin || (isStaff && isOwner));
+                    // Hidden when a pending extension already exists (1 pending max).
+                    const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || (isStaff && isOwner));
                     // Review: admin or assigned staff decides on pending requests
                     // via the dedicated Review modal. Only the latest extension
                     // can be reviewed to prevent out-of-order decisions.

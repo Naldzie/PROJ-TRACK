@@ -634,6 +634,19 @@ class ProjectExtensionController extends Controller
                 $rejectionReason = null;
             }
 
+            // Only ONE pending extension allowed at a time (consultant + client decision).
+            if ($status === 'pending') {
+                $hasPending = ProjectExtension::where('project_id', $project->id)
+                    ->where('status', 'pending')
+                    ->exists();
+                if ($hasPending) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'There is already a pending extension request. Wait for it to be reviewed before resubmitting.',
+                    ], 422);
+                }
+            }
+
             DB::beginTransaction();
 
             $maxExtensionNumber = DB::table('project_extensions')
