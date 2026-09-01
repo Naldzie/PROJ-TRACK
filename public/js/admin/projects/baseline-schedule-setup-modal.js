@@ -703,7 +703,7 @@ function onSetupBaselineCancel() {
         : (setupAdjustMode
             ? 'You have <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' in the adjusted plan. Changes will be lost if you continue.'
             : 'You have added <strong>' + count + '</strong> month target' + (count > 1 ? 's' : '') + ' that ' + (count > 1 ? 'have' : 'has') + ' not been saved yet. If you continue, this data will be lost.');
-    showDeleteConfirmation(
+    showWarningConfirm(
         title,
         msg,
         function () {
