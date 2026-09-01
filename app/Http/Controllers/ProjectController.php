@@ -564,8 +564,8 @@ class ProjectController extends Controller
             ], 422);
         }
 
-        // Check if title exists (excluding current project in edit mode)
-        $query = Project::where('title', $title);
+        // Check if title exists (excluding current project in edit mode, excluding archived)
+        $query = Project::where('title', $title)->where('is_archived', false);
         if ($projectId) {
             $query->where('id', '!=', $projectId);
         }
@@ -975,8 +975,8 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
 
-        // Check if title already exists (excluding this project)
-        if (Project::where('title', $request->input('title'))->where('id', '!=', $id)->exists()) {
+        // Check if title already exists (excluding this project and archived projects)
+        if (Project::where('title', $request->input('title'))->where('is_archived', false)->where('id', '!=', $id)->exists()) {
             if ($request->ajax() || $request->wantsJson()) {
                 return response()->json([
                     'success' => false,

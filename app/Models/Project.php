@@ -490,7 +490,7 @@ class Project extends Model
      */
     public static function titleExists($title, $excludeId = null)
     {
-        $query = self::where('title', $title);
+        $query = self::where('title', $title)->where('is_archived', false);
         if ($excludeId) {
             $query->where('id', '!=', $excludeId);
         }

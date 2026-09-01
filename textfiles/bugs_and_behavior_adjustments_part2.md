@@ -369,3 +369,15 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 4. **On success** (`window.location.href = data.redirect`): preloader stays visible through navigation.
 
 **Files:** `public/js/_create_project_modal.js` — submit handler (line ~694)
+
+### Bug: Title Validation Should Exclude Archived Projects
+
+**Problem:** Title uniqueness validation checks against ALL projects including archived ones. Users cannot reuse a title from an archived (deleted) project, which is unnecessary since archived projects are inactive.
+
+**Fix:** Added `->where('is_archived', false)` to all three title-check paths:
+
+1. **`Project::titleExists()` model method** (`app/Models/Project.php` line ~491): Added `->where('is_archived', false)` to the query. Affects the store validation.
+2. **AJAX title uniqueness check** (`ProjectController.php` line ~568): Added `->where('is_archived', false)` to the query used for real-time validation in the create/edit form.
+3. **Update method check** (`ProjectController.php` line ~979): Added `->where('is_archived', false)` to the inline query used during project updates.
+
+**Branch:** `fix/project-title-validation-archived`
