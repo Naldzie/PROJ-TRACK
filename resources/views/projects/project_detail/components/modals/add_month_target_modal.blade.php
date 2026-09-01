@@ -106,7 +106,7 @@
             </div>
             <div class="modal-footer" style="padding: 16px 24px; border-top: 1px solid #e5e7eb; background: #f9fafb;">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" style="border-color: #d1d5db;">Cancel</button>
-                <button type="button" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; font-weight: 600; padding: 8px 20px;"
+                <button type="button" id="monthTargetSaveBtn" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; font-weight: 600; padding: 8px 20px;"
                         onclick="saveMonthTarget()">
                     <i class="bi bi-check-lg" style="margin-right: 6px;"></i><span id="monthTargetSaveBtnText">Save Target</span>
                 </button>

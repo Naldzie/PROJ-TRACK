@@ -305,14 +305,13 @@ function _populateExtensionEditFields(extension) {
     const rejectionReasonWrapper = document.getElementById('rejectionReasonWrapper');
     const rejectionReasonNotice = document.getElementById('rejectionReasonNotice');
 
-    if ((isAdminContext() || window.isAssignedStaff === true) && document.getElementById('extensionEditMode').value !== 'resubmit') {
+    if (isAdminContext() || window.isAssignedStaff === true) {
         statusWrapper.style.display = 'block';
-        document.getElementById('extensionStatus').value = extension.status;
+        // In resubmit mode, default to approved; otherwise use the extension's current status
+        const currentMode = document.getElementById('extensionEditMode').value;
+        document.getElementById('extensionStatus').value = currentMode === 'resubmit' ? 'approved' : extension.status;
         pendingNotice.style.display = 'none';
         rejectionReasonNotice.style.display = 'none';
-        // Pre-fill in case admin is re-viewing an already-rejected one,
-        // but the field only actually SHOWS if status is still 'rejected'
-        // when the dropdown is checked just below.
         document.getElementById('rejectionReason').value = extension.rejection_reason || '';
         window.toggleRejectionReasonField();
     } else {
@@ -472,6 +471,12 @@ document.addEventListener('DOMContentLoaded', function() {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
 
+        // Dismiss modal and show full-screen preloader during save
+        try { modal.hide(); } catch (e) {}
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+            window.ProjTrackPreloader.show('Saving extension&hellip;');
+        }
+
         // Resubmit (Decision 6) posts a new row to the resubmit route.
         const isResubmit = editMode === 'resubmit';
         const url = isResubmit
@@ -549,6 +554,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
         })
         .catch(error => {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showErrorMessage(error.message || 'Failed to save extension. Please try again.');
         })
         .finally(() => {

@@ -183,13 +183,12 @@
                         $carriedInCount = $project->activities()->where('month_label', $plan->month_label)->whereHas('carryovers')->count();
                         $incompleteCount = $activitiesCount - $activitiesCompleted;
                         $hasFutureMonths = $project->baselineSchedules()->where('planned_date', '>', $plan->planned_date)->exists();
-                        $showRecordButton = $plan->month_label === $latestProgressMonth || $plan->month_label === $nextPendingMonth;
-                        $prevTarget = $project->baselineSchedules()->where('planned_date', '<', $plan->planned_date)->max('planned_progress_percent');
-                        $nextTarget = $project->baselineSchedules()->where('planned_date', '>', $plan->planned_date)->min('planned_progress_percent');
-
                         $hasActual = $latestProgress && $latestProgress->actual_progress_percent !== null;
                         $isCurrentMonth = $plan->month_label === $currentMonthLabel;
                         $isPastMonth = $plan->month_label < $currentMonthLabel;
+                        $showRecordButton = !$hasActual && $plan->month_label <= $currentMonthLabel;
+                        $prevTarget = $project->baselineSchedules()->where('planned_date', '<', $plan->planned_date)->max('planned_progress_percent');
+                        $nextTarget = $project->baselineSchedules()->where('planned_date', '>', $plan->planned_date)->min('planned_progress_percent');
                         if ($hasActual) {
                             $dotState = 'completed';
                         } elseif ($isPastMonth) {
@@ -269,7 +268,8 @@
             $carriedInCount = $project->activities()->where('month_label', $plan->month_label)->whereHas('carryovers')->count();
             $incompleteCount = $activitiesCount - $activitiesCompleted;
             $hasFutureMonths = $project->baselineSchedules()->where('planned_date', '>', $plan->planned_date)->exists();
-            $showRecordButton = $plan->month_label === $latestProgressMonth || $plan->month_label === $nextPendingMonth;
+            $hasActual = $latestProgress && $latestProgress->actual_progress_percent !== null;
+            $showRecordButton = !$hasActual && $plan->month_label <= $currentMonthLabel;
             $prevTarget = $project->baselineSchedules()->where('planned_date', '<', $plan->planned_date)->max('planned_progress_percent');
             $nextTarget = $project->baselineSchedules()->where('planned_date', '>', $plan->planned_date)->min('planned_progress_percent');
             $monthActivities = $project->activities()->where('month_label', $plan->month_label)->with('carryovers')->get();

@@ -43,83 +43,105 @@ function openAddMonthTargetModal() {
     document.getElementById('activitiesContainer').innerHTML = 
         '<div style="text-align: center; color: #9ca3af; font-size: 12px; padding: 20px;">Click "Add Row" to add activities for this month</div>';
     
-    // Find the latest month from existing targets
-    let latestMonthLabel = null;
+    // ── Gap-aware date restrictions ──────────────────────────────────────────
+    // Collect existing month labels from DOM cards
+    let existingMonths = [];
     const cardElements = document.querySelectorAll('#sCurvePlanTableBody > div[style*="background: white"]');
-    const hasExistingTargets = cardElements.length > 0;
-    
-    if (hasExistingTargets) {
-        cardElements.forEach(card => {
-            const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
-            if (monthBadge && monthBadge.dataset.monthLabel) {
-                const currentMonth = monthBadge.dataset.monthLabel;
-                if (!latestMonthLabel || currentMonth > latestMonthLabel) {
-                    latestMonthLabel = currentMonth;
-                }
+    cardElements.forEach(card => {
+        const monthBadge = card.querySelector('span[style*="background: #dbeafe"]');
+        if (monthBadge && monthBadge.dataset.monthLabel) {
+            existingMonths.push(monthBadge.dataset.monthLabel);
+        }
+    });
+    existingMonths.sort();
+
+    // Get project start/end dates
+    const planningSection = document.getElementById('s-curve-planning');
+    const projStart = planningSection ? planningSection.getAttribute('data-project-start-date') : null;
+    const projEnd = planningSection ? planningSection.getAttribute('data-project-end-date') : null;
+    const startMonth = projStart ? projStart.substring(0, 7) : null;
+    const endMonth = projEnd ? projEnd.substring(0, 7) : null;
+
+    let nextMonth = null;
+    let nextDate = null;
+    const saveBtn = document.getElementById('monthTargetSaveBtn');
+
+    if (startMonth && endMonth) {
+        // Calculate all expected months from start to end
+        let allExpected = [];
+        let cursorParts = startMonth.split('-').map(Number);
+        const endParts = endMonth.split('-').map(Number);
+        while (cursorParts[0] < endParts[0] || (cursorParts[0] === endParts[0] && cursorParts[1] <= endParts[1])) {
+            allExpected.push(cursorParts[0] + '-' + String(cursorParts[1]).padStart(2, '0'));
+            cursorParts[1]++;
+            if (cursorParts[1] > 12) { cursorParts[1] = 1; cursorParts[0]++; }
+        }
+
+        // Find the first missing month
+        let firstMissing = null;
+        for (let i = 0; i < allExpected.length; i++) {
+            if (existingMonths.indexOf(allExpected[i]) === -1) {
+                firstMissing = allExpected[i];
+                break;
             }
-        });
-    }
-    
-    // Determine the month and date for the new target
-    let nextMonth;
-    let nextDate;
-    
-    if (!hasExistingTargets || !latestMonthLabel) {
-        // First month target - use project's start date
-        const projectStartDate = document.getElementById('s-curve-planning').getAttribute('data-project-start-date');
-        
-        if (projectStartDate && projectStartDate.trim() !== '') {
-            // Parse the project start date
-            const startDate = new Date(projectStartDate + 'T00:00:00');
-            const year = startDate.getFullYear();
-            const month = String(startDate.getMonth() + 1).padStart(2, '0');
-            
-            nextMonth = `${year}-${month}`;
-            
-            // Set date to the last day of the start month
-            const lastDay = new Date(year, parseInt(month), 0);
-            nextDate = formatDateForInput(lastDay);
+        }
+
+        if (firstMissing) {
+            nextMonth = firstMissing;
+            const mParts = firstMissing.split('-').map(Number);
+            const lastDay = new Date(mParts[0], mParts[1], 0).getDate();
+            nextDate = firstMissing + '-' + String(lastDay).padStart(2, '0');
+
+            // Lock month picker to the missing month
+            monthInput.setAttribute('min', firstMissing);
+            monthInput.setAttribute('max', firstMissing);
+
+            // Constrain date picker to the month's range
+            dateInput.setAttribute('min', firstMissing + '-01');
+            dateInput.setAttribute('max', nextDate);
+
+            // Enable save button
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.style.opacity = '1';
+                saveBtn.style.cursor = 'pointer';
+            }
         } else {
-            // Fallback: use current month if no project start date
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            nextMonth = `${year}-${month}`;
-            
-            const lastDay = new Date(year, parseInt(month), 0);
-            nextDate = formatDateForInput(lastDay);
+            // All months filled — disable save button
+            nextMonth = null;
+            nextDate = null;
+            monthInput.removeAttribute('min');
+            monthInput.removeAttribute('max');
+            dateInput.removeAttribute('min');
+            dateInput.removeAttribute('max');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.style.opacity = '0.5';
+                saveBtn.style.cursor = 'not-allowed';
+            }
         }
     } else {
-        // Subsequent months - calculate next month from latest
-        const [year, month] = latestMonthLabel.split('-');
-        const monthNum = parseInt(month);
-        const yearNum = parseInt(year);
-        
-        // Calculate next month
-        if (monthNum === 12) {
-            nextMonth = `${yearNum + 1}-01`;
-        } else {
-            nextMonth = `${yearNum}-${String(monthNum + 1).padStart(2, '0')}`;
+        // No project bounds — fallback to current month
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        nextMonth = `${year}-${month}`;
+        const lastDay = new Date(year, parseInt(month), 0).getDate();
+        nextDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.style.opacity = '1';
+            saveBtn.style.cursor = 'pointer';
         }
-        
-        // Set date to last day of next month
-        const [nextYear, nextMonthStr] = nextMonth.split('-');
-        const lastDay = new Date(nextYear, parseInt(nextMonthStr), 0);
-        nextDate = formatDateForInput(lastDay);
     }
-    
+
     // Set month and date inputs
-    monthInput.value = nextMonth;
-    dateInput.value = nextDate;
+    if (nextMonth) monthInput.value = nextMonth;
+    if (nextDate) dateInput.value = nextDate;
 
     // Bound the date picker to the project timeline (start .. current end)
-    const planningSection = document.getElementById('s-curve-planning');
-    if (planningSection) {
-        const projStart = planningSection.getAttribute('data-project-start-date');
-        const projEnd = planningSection.getAttribute('data-project-end-date');
-        if (projStart) dateInput.setAttribute('min', projStart);
-        if (projEnd) dateInput.setAttribute('max', projEnd);
-    }
+    if (projStart) dateInput.setAttribute('min', projStart);
+    if (projEnd) dateInput.setAttribute('max', projEnd);
     
     // Calculate and set default progress value (highest planned target from existing cards)
     let highestProgress = 0;
@@ -369,9 +391,9 @@ function saveMonthTarget() {
     if (window.projectExtensionCount > 0 && maxProgressPercent >= 100) {
         // Extension mode: skip the cap block entirely, fall through with no error pushed here
     } else if (maxProgressPercent < 100 && newProgressPercent <= maxProgressPercent) {
-        errors.push(`Target progress % must be higher than the previous month (${maxProgressPercent}%). You entered ${newProgressPercent}%`);
+        errors.push({ field: 'plannedProgressPercent', message: 'Target progress % must be higher than the previous month (' + maxProgressPercent + '%). You entered ' + newProgressPercent + '%' });
     } else if (maxProgressPercent === 100) {
-        errors.push(`Previous month has already reached 100%. No additional targets can be added without an approved extension.`);
+        errors.push({ field: 'plannedProgressPercent', message: 'Previous month has already reached 100%. No additional targets can be added without an approved extension.' });
     }
     
     // Rule A: target date must fall within the selected calendar month
@@ -419,7 +441,7 @@ function saveMonthTarget() {
         
         // Rule B: new target must be chronologically after all existing targets
         if (monthLabel && monthLabel < latestMonth) {
-            errors.push('"' + formatMonthLabel(monthLabel) + '" must be chronologically after all previously added months (latest: "' + formatMonthLabel(latestMonth) + '"). Add months in chronological order.');
+            errors.push({ field: 'monthLabel', message: '"' + formatMonthLabel(monthLabel) + '" must be chronologically after all previously added months (latest: "' + formatMonthLabel(latestMonth) + '").' });
         }
         
         // Rule C: new target must not be before the project's first baseline target
@@ -464,6 +486,12 @@ function saveMonthTarget() {
     
     console.log('[saveMonthTarget] Submitting with', activities.length, 'activities');
     
+    // Dismiss modal and show full-screen preloader during save
+    try { bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide(); } catch (e) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Saving monthly target&hellip;');
+    }
+
     fetch(buildBaselineScheduleEndpoint(), {
         method: 'POST',
         headers: {
@@ -505,11 +533,13 @@ function saveMonthTarget() {
                 location.reload();
             }, 600);
         } else {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('[saveMonthTarget] Backend error:', data);
             showMonthTargetErrors([data.message || 'Failed to save month target. Please try again.']);
         }
     })
     .catch(error => {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('[saveMonthTarget] Fetch error:', error);
         showMonthTargetErrors(['Error saving month target: ' + error.message]);
     });
@@ -571,6 +601,12 @@ function saveMonthTargetEdit() {
         return;
     }
 
+    // Dismiss modal and show full-screen preloader during save
+    try { bootstrap.Modal.getInstance(document.getElementById('addMonthTargetModal')).hide(); } catch (e) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Saving monthly target&hellip;');
+    }
+
     fetch(`${buildBaselineScheduleEndpoint()}/${editingScheduleId}`, {
         method: 'PATCH',
         headers: {
@@ -601,11 +637,13 @@ function saveMonthTargetEdit() {
                 location.reload();
             }, 600);
         } else {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('[saveMonthTargetEdit] Backend error:', data);
             showMonthTargetErrors([data.message || 'Failed to update month target. Please try again.']);
         }
     })
     .catch(error => {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('[saveMonthTargetEdit] Fetch error:', error);
         showMonthTargetErrors(['Error updating month target: ' + error.message]);
     });

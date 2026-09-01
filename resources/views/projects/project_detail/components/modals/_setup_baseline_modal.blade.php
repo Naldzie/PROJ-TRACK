@@ -216,6 +216,12 @@
                                     onmouseout="this.style.background='#fef2f2'; this.style.borderColor='#fca5a5'">
                                 <i class="bi bi-trash3"></i> Clear All
                             </button>
+                            <button type="button" id="setupRestoreBtn" onclick="restoreToOriginalBaseline()"
+                                    style="display: none; margin-left: auto; padding: 3px 10px; background: #fffbeb; color: #92400e; border: 1px solid #fcd34d; border-radius: 6px; font-weight: 600; font-size: 10px; cursor: pointer; transition: all 0.2s;"
+                                    onmouseover="this.style.background='#fef3c7'; this.style.borderColor='#fbbf24'"
+                                    onmouseout="this.style.background='#fffbeb'; this.style.borderColor='#fcd34d'">
+                                <i class="bi bi-arrow-counterclockwise"></i> Restore to Original
+                            </button>
                         </h6>
 
                         <!-- Progress toward 100% indicator -->
