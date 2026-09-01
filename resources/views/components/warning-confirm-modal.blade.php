@@ -1,4 +1,4 @@
-<!-- Reusable Warning Confirmation Modal --}}
+<!-- Reusable Warning Confirmation Modal -->
 {{-- NOTE: z-index ensures this modal appears above any stacked modals (e.g. setup baseline modal). --}}
 <div class="modal fade" id="warningConfirmModal" tabindex="-1" aria-hidden="true" style="z-index: 1080;">
     <div class="modal-dialog">
