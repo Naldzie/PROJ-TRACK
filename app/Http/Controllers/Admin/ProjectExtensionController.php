@@ -1564,4 +1564,27 @@ class ProjectExtensionController extends Controller
             ])->values()->all(),
         ];
     }
+
+    /**
+     * Return the baseline_snapshot JSON from the latest approved extension.
+     * Used by the frontend's "Restore to Original" button in the adjust baseline modal.
+     */
+    public function latestSnapshot(Project $project)
+    {
+        $latestApproved = $this->activeApproved($project);
+
+        if (!$latestApproved || !$latestApproved->baseline_snapshot) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No approved extension with a baseline snapshot found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'snapshot' => $latestApproved->baseline_snapshot,
+            'extension_id' => $latestApproved->id,
+            'extension_number' => $latestApproved->extension_number,
+        ]);
+    }
 }

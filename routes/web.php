@@ -239,6 +239,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/projects/{project}/extensions/{extension}/resubmit', [ProjectExtensionController::class, 'resubmit'])
         ->name('staff.projects.extensions.resubmit');
 
+    // Baseline snapshot endpoint — used by "Restore to Original" in adjust modal
+    Route::get('/projects/{project}/extensions/latest-snapshot', [ProjectExtensionController::class, 'latestSnapshot'])
+        ->name('staff.projects.extensions.latestSnapshot');
+
     // === CATEGORY ROUTES (READ-ONLY) ===
     Route::get('/categories', [CategoryController::class, 'getCategories'])
         ->name('staff.categories.list');
@@ -621,6 +625,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::delete('/projects/{project}/extensions/{extension}/force', [ProjectExtensionController::class, 'forceDestroy'])
         ->name('admin.projects.extensions.forceDestroy')
         ->withTrashed();
+
+    // Baseline snapshot endpoint — used by "Restore to Original" in adjust modal
+    Route::get('/projects/{project}/extensions/latest-snapshot', [ProjectExtensionController::class, 'latestSnapshot'])
+        ->name('admin.projects.extensions.latestSnapshot');
 
     // === MILESTONE ROUTES ===
     Route::get('/projects/{projectId}/milestones', [MilestoneController::class, 'index'])

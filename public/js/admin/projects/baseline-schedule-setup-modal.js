@@ -1319,56 +1319,6 @@ function clearAllSetupMonths() {
     );
 }
 
-/**
- * Restore the baseline plan to the original baseline in adjust mode.
- * Original months (with non-null original_planned_progress_percent) get their
- * planned_progress_percent and planned_date reverted to the original values.
- * Extension months (null original) are removed entirely.
- */
-function restoreToOriginalBaseline() {
-    if (!setupAdjustMode || setupRawOriginalMonths.length === 0) return;
-
-    showWarningConfirm(
-        'Restore to Original Baseline',
-        '<p>This will <strong>revert all adjustments</strong> and restore the original baseline plan:</p>' +
-        '<ul style="margin: 8px 0; padding-left: 18px; color: #78350f; font-size: 13px;">' +
-        '<li>Original months will revert to their <strong>original planned progress %</strong> and dates.</li>' +
-        '<li>Extension months (added after extension) will be <strong>removed</strong>.</li>' +
-        '</ul>' +
-        '<p style="margin-top: 8px; color: #92400e; font-size: 13px;">Any recorded progress on extension months will also be unlinked.</p>',
-        function () {
-            // Track removed extension months for server deletion
-            setupLocalMonths.forEach(function (m) {
-                if (m.original_planned_progress_percent === null && m.scheduleId && setupRemovedIds.indexOf(m.scheduleId) === -1) {
-                    setupRemovedIds.push(m.scheduleId);
-                }
-            });
-
-            // Restore only original baseline months with their original values
-            setupLocalMonths = setupRawOriginalMonths.map(function (m) {
-                return {
-                    scheduleId:                       m.scheduleId,
-                    month_label:                      m.month_label,
-                    planned_date:                     m.original_planned_progress_percent !== null ? m.planned_date : m.planned_date,
-                    planned_progress_percent:         m.original_planned_progress_percent !== null ? m.original_planned_progress_percent : m.planned_progress_percent,
-                    original_planned_progress_percent: m.original_planned_progress_percent,
-                    description:                      m.description || '',
-                    has_actual_progress:              m.has_actual_progress || false,
-                    activities:                       m.activities || [],
-                    isNew:                            false
-                };
-            });
-
-            setupEditingIndex = null;
-            renderSetupMonthList(setupLocalMonths);
-            updateSetupProgress(setupLocalMonths);
-            updateSetupSCurvePreview();
-            resetSetupForm();
-            hideSetupErrors();
-        }
-    );
-}
-
 // ─── EDIT A MONTH ──────────────────────────────────────────────────────────────
 
 /**
@@ -1780,14 +1730,10 @@ function updateSetupProgress(months) {
     doneBtn.style.opacity = isComplete ? '1'    : '0.5';
     doneBtn.style.cursor  = isComplete ? 'pointer' : 'not-allowed';
 
-    // Show/hide the Clear All and Restore to Original buttons based on mode
+    // Show/hide the Clear All button — hidden in adjust mode, visible in setup/edit modes
     var clearBtn = document.getElementById('setupClearAllBtn');
-    var restoreBtn = document.getElementById('setupRestoreBtn');
     if (clearBtn) {
         clearBtn.style.display = (months.length > 0 && !setupAdjustMode && !setupEditOriginalMode) ? 'inline-flex' : 'none';
-    }
-    if (restoreBtn) {
-        restoreBtn.style.display = (months.length > 0 && setupAdjustMode) ? 'inline-flex' : 'none';
     }
 }
 
