@@ -678,6 +678,68 @@ function onAdditionalWorkChange() {
 }
 
 /**
+ * Re-run the auto-adjust baseline distribution without closing/reopening the modal.
+ * Resets to the original months, re-runs auto-distribution, and reapplies the
+ * current additional work % if any.
+ */
+function rerunAutoAdjust() {
+    if (!setupAdjustMode) return;
+
+    showWarningConfirm(
+        'Re-run Auto Adjust',
+        '<p>This will <strong>regenerate the adjusted baseline</strong> using the current Additional Work %.</p>' +
+        '<p style="margin-top: 6px; color: #6b7280; font-size: 13px;">Any manual edits to month targets will be overwritten.</p>',
+        function () {
+            // Reset to original months (deep copy)
+            setupLocalMonths = JSON.parse(JSON.stringify(setupOriginalMonthsForAdjust));
+
+            // Re-run the base stretching algorithm
+            generateAutoDistribution();
+
+            // Read additional work %
+            var rwInput = document.getElementById('setupAdditionalWorkPercent');
+            var additionalWork = parseFloat(rwInput ? rwInput.value : 0) || 0;
+
+            if (additionalWork > 0) {
+                // Re-apply additional work % — mirrors onAdditionalWorkChange()
+                var clamped = Math.min(additionalWork, 100);
+                var targetAtDeadline = Math.round((100 - clamped) * 100) / 100;
+
+                var deadlineIdx = -1;
+                for (var i = 0; i < setupLocalMonths.length; i++) {
+                    if (setupLocalMonths[i].month_label === setupOriginalDeadlineLabel) {
+                        deadlineIdx = i;
+                        break;
+                    }
+                }
+
+                if (deadlineIdx !== -1) {
+                    // Adjust the deadline month
+                    var origDeadline = parseFloat(setupOriginalMonthsForAdjust[deadlineIdx].planned_progress_percent) || 0;
+                    setupLocalMonths[deadlineIdx].planned_progress_percent = Math.min(origDeadline, targetAtDeadline);
+
+                    // Scale extension months (after deadline)
+                    var extMonths = setupLocalMonths.slice(deadlineIdx + 1);
+                    if (extMonths.length > 0 && origDeadline > targetAtDeadline) {
+                        var step = (origDeadline - targetAtDeadline) / extMonths.length;
+                        for (var k = 0; k < extMonths.length; k++) {
+                            extMonths[k].planned_progress_percent = Math.round((targetAtDeadline + step * (k + 1)) * 100) / 100;
+                        }
+                    }
+                }
+            }
+
+            setupEditingIndex = null;
+            renderSetupMonthList(setupLocalMonths);
+            updateSetupProgress(setupLocalMonths);
+            updateSetupSCurvePreview();
+            resetSetupForm();
+            hideSetupErrors();
+        }
+    );
+}
+
+/**
  * Called when the user clicks "Cancel / Finish Later" or the X button.
  *
  * In 'return-data' mode (B3.1 — create-project flow):

@@ -427,6 +427,12 @@ function performArchiveExtension(ext) {
         return;
     }
 
+    // Dismiss confirmation modal and show full-screen preloader during archive
+    closeDeleteConfirmationModal();
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Archiving extension&hellip;');
+    }
+
     fetch(buildExtensionsEndpoint(ext.id), {
         method: 'DELETE',
         headers: {
@@ -447,11 +453,13 @@ function performArchiveExtension(ext) {
             sessionStorage.setItem('activeTab', 's-curve-planning');
             setTimeout(() => window.location.reload(), 600);
         } else {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showToast(body.message || `Could not archive extension #${ext.extension_number}.`, 'danger');
             reloadExtensionsTable();
         }
     })
     .catch(error => {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('[performArchiveExtension] Error:', error);
         showToast('Could not archive this extension.', 'danger');
         reloadExtensionsTable();

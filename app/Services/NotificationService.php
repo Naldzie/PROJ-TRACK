@@ -62,7 +62,15 @@ class NotificationService
             }
         }
 
-        $user->notify($notification);
+        try {
+            $user->notify($notification);
+        } catch (\Exception $e) {
+            \Log::warning('Notification delivery failed (mail channel may be unavailable): ' . $e->getMessage(), [
+                'user_id' => $user->id,
+                'notification' => get_class($notification),
+            ]);
+            // Database notification was still created — email failure should not block the process
+        }
         return true;
     }
 

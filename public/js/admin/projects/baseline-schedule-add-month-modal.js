@@ -145,7 +145,7 @@ function openAddMonthTargetModal() {
     
     // Calculate and set default progress value (highest planned target from existing cards)
     let highestProgress = 0;
-    if (hasExistingTargets) {
+    if (existingMonths.length > 0) {
         cardElements.forEach(card => {
             const plannedProgressSpan = card.querySelector('span[style*="color: #667eea"]');
             if (plannedProgressSpan) {

@@ -65,6 +65,14 @@
                                    style="width: 100px; padding: 8px 10px; border: 1px solid #f59e0b; border-radius: 6px; font-size: 12px; font-weight: 600;"
                                    oninput="onAdditionalWorkChange()">
                         </div>
+                        <div style="flex: 0 0 auto;">
+                            <button type="button" onclick="rerunAutoAdjust()"
+                                    style="padding: 8px 14px; background: #f59e0b; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s;"
+                                    onmouseover="this.style.background='#d97706'"
+                                    onmouseout="this.style.background='#f59e0b'">
+                                <i class="bi bi-arrow-clockwise"></i> Re-run Auto Adjust
+                            </button>
+                        </div>
                         <div style="flex: 1; min-width: 200px;">
                             <small style="color: #78350f; font-size: 11px; line-height: 1.4; display: block;">
                                 <i class="bi bi-info-circle"></i>

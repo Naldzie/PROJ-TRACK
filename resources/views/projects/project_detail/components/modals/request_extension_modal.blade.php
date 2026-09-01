@@ -474,7 +474,10 @@ document.addEventListener('DOMContentLoaded', function() {
         // Dismiss modal and show full-screen preloader during save
         try { modal.hide(); } catch (e) {}
         if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
-            window.ProjTrackPreloader.show('Saving extension&hellip;');
+            var preloaderMsg = editMode === 'edit' ? 'Updating extension&hellip;'
+                : editMode === 'resubmit' ? 'Resubmitting extension&hellip;'
+                : 'Saving extension&hellip;';
+            window.ProjTrackPreloader.show(preloaderMsg);
         }
 
         // Resubmit (Decision 6) posts a new row to the resubmit route.

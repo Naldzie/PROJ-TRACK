@@ -531,3 +531,47 @@ Future months remain hidden. The backend already allows out-of-order progress re
 **Files:**
 - `resources/views/projects/project_detail/components/modals/_setup_baseline_modal.blade.php` — add restore button
 - `public/js/admin/projects/baseline-schedule-setup-modal.js` — new `restoreToOriginalBaseline()`, update `updateSetupProgress()`, update `openAdjustBaselineModal()`
+
+---
+
+## Session Log: September 1, 2026 (Post-Implementation Fixes)
+
+### Fix: E18 — Record Progress Button Missing for Latest Month with Progress
+
+**Problem:** The new condition `!$hasActual && $plan->month_label <= $currentMonthLabel` removed the button from the latest month that already has progress. Users could no longer add a second progress record to the same month.
+
+**Fix:** Added `|| $plan->month_label === $latestProgressMonth` to the condition in both timeline dots and detail panel loops:
+```php
+$showRecordButton = (!$hasActual && $plan->month_label <= $currentMonthLabel) || $plan->month_label === $latestProgressMonth;
+```
+
+### Fix: E19 — Preloader Text + Email Failure Handling
+
+**Changes:**
+1. **Preloader text per context:** Updated `submitExtension()` to show mode-aware preloader text:
+   - Create mode: "Saving extension…"
+   - Edit mode: "Updating extension…"
+   - Resubmit mode: "Resubmitting extension…"
+
+2. **Archive extension preloader:** Added `ProjTrackPreloader.show('Archiving extension…')` to `performArchiveExtension()` in `baseline-schedule-extensions.js`.
+
+3. **Email failure graceful handling:** Wrapped `$user->notify()` in `NotificationService::notifyUnique()` with try-catch. Email failures now log a warning instead of blocking the request. Database notifications are still created.
+
+### Fix: E20 — `hasExistingTargets` Not Defined
+
+**Problem:** Replacing the card-scanning logic removed the `hasExistingTargets` variable, but it was still referenced at line 148 for the highestProgress calculation.
+
+**Fix:** Replaced `hasExistingTargets` with `existingMonths.length > 0` (the variable from the new gap-aware logic).
+
+### Addition: E24 — Re-run Auto Adjust Button
+
+**Added:** A "Re-run Auto Adjust" button inside the remaining work wrapper (adjust mode only). When clicked:
+1. Shows a warning confirmation modal.
+2. Resets to original months (deep copy).
+3. Re-runs `generateAutoDistribution()`.
+4. Re-applies the current Additional Work % if any.
+5. Re-renders the list, progress, S-curve preview, and resets the form.
+
+**Files:**
+- `_setup_baseline_modal.blade.php` — added button HTML inside remaining work wrapper
+- `baseline-schedule-setup-modal.js` — new `rerunAutoAdjust()` function
