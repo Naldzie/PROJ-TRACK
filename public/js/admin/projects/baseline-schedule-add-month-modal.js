@@ -21,6 +21,37 @@
 // NEW: tracks whether the modal is currently in "edit" mode and, if so, which schedule row
 let editingScheduleId = null;
 
+/**
+ * Parse a server error message and route known patterns to inline field errors.
+ * Returns an array of { field, message } objects or plain strings for the error container.
+ */
+function parseServerErrors(message) {
+    if (!message || typeof message !== 'string') return [message || 'An unexpected error occurred.'];
+
+    // Target progress % too low — map to the progress input
+    if (/target progress % must be higher/i.test(message)) {
+        return [{ field: 'plannedProgressPercent', message: message }];
+    }
+    // Already reached 100% — map to the progress input
+    if (/previous month has already reached 100%/i.test(message)) {
+        return [{ field: 'plannedProgressPercent', message: message }];
+    }
+    // Month already exists — map to the month input
+    if (/already been added/i.test(message)) {
+        return [{ field: 'monthLabel', message: message }];
+    }
+    // Date must fall within month — map to the date input
+    if (/target date must fall within/i.test(message)) {
+        return [{ field: 'plannedDate', message: message }];
+    }
+    // Date out of project bounds — map to the date input
+    if (/target date must not be (before|after)/i.test(message)) {
+        return [{ field: 'plannedDate', message: message }];
+    }
+    // Fallback: show in general error container
+    return [message];
+}
+
 function openAddMonthTargetModal() {
     console.log('[openAddMonthTargetModal] Opening modal');
     clearMonthTargetErrors();
@@ -488,9 +519,10 @@ function saveMonthTarget() {
     })
     .then(response => {
         if (!response.ok) {
-            return response.text().then(text => {
-                console.error('[saveMonthTarget] Response error:', text);
-                throw new Error(`HTTP ${response.status}: ${text}`);
+            return response.json().catch(() => response.text()).then(body => {
+                var msg = (typeof body === 'object' && body !== null) ? body.message : 'Server error (' + response.status + ')';
+                console.error('[saveMonthTarget] Response error:', msg);
+                throw { status: response.status, message: msg, body: body };
             });
         }
         return response.json();
@@ -515,13 +547,14 @@ function saveMonthTarget() {
         } else {
             if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('[saveMonthTarget] Backend error:', data);
-            showMonthTargetErrors([data.message || 'Failed to save month target. Please try again.']);
+            showMonthTargetErrors(parseServerErrors(data.message));
         }
     })
     .catch(error => {
         if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('[saveMonthTarget] Fetch error:', error);
-        showMonthTargetErrors(['Error saving month target: ' + error.message]);
+        var msg = (error && error.message) ? error.message : 'An unexpected error occurred.';
+        showMonthTargetErrors(parseServerErrors(msg));
     });
 }
 
@@ -601,7 +634,11 @@ function saveMonthTargetEdit() {
     })
     .then(response => {
         if (!response.ok) {
-            return response.text().then(text => { throw new Error(`HTTP ${response.status}: ${text}`); });
+            return response.json().catch(() => response.text()).then(body => {
+                var msg = (typeof body === 'object' && body !== null) ? body.message : 'Server error (' + response.status + ')';
+                console.error('[saveMonthTargetEdit] Response error:', msg);
+                throw { status: response.status, message: msg, body: body };
+            });
         }
         return response.json();
     })
@@ -619,12 +656,13 @@ function saveMonthTargetEdit() {
         } else {
             if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             console.error('[saveMonthTargetEdit] Backend error:', data);
-            showMonthTargetErrors([data.message || 'Failed to update month target. Please try again.']);
+            showMonthTargetErrors(parseServerErrors(data.message));
         }
     })
     .catch(error => {
         if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         console.error('[saveMonthTargetEdit] Fetch error:', error);
-        showMonthTargetErrors(['Error updating month target: ' + error.message]);
+        var msg = (error && error.message) ? error.message : 'An unexpected error occurred.';
+        showMonthTargetErrors(parseServerErrors(msg));
     });
 }
