@@ -861,6 +861,12 @@ function performBaselineSave() {
         // Build payload: months + removed_ids
         var payload = buildSetupUpsertPayload();
 
+        // Dismiss modal and show full-screen preloader during save
+        try { if (setupModalInstance) setupModalInstance.hide(); } catch (e) {}
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+            window.ProjTrackPreloader.show('Saving baseline schedule&hellip;');
+        }
+
         fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -891,12 +897,14 @@ function performBaselineSave() {
                 sessionStorage.setItem('activeTab', 's-curve-planning');
                 setTimeout(function () { location.reload(); }, 600);
             } else {
+                if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
                 showSetupErrors([data.message || 'Failed to save baseline.']);
                 doneBtn.disabled = false;
                 doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>' + doneLabel;
             }
         })
         .catch(function (err) {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showSetupErrors(['Error saving: ' + err.message]);
             doneBtn.disabled = false;
             doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>' + doneLabel;
@@ -912,6 +920,12 @@ function performBaselineSave() {
     // Disable button while saving to prevent double-submit
     doneBtn.disabled = true;
     doneBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+
+    // Dismiss modal and show full-screen preloader during save
+    try { if (setupModalInstance) setupModalInstance.hide(); } catch (e) {}
+    if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
+        window.ProjTrackPreloader.show('Saving baseline schedule&hellip;');
+    }
 
     // Submit the whole local array to the atomic bulk-create endpoint
     fetch(buildBaselineScheduleEndpoint() + '/setup', {
@@ -945,12 +959,14 @@ function performBaselineSave() {
             // Reload page so the tab re-renders with the new frozen baseline
             setTimeout(function () { location.reload(); }, 600);
         } else {
+            if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
             showSetupErrors([data.message || 'Failed to save baseline. Please try again.']);
             doneBtn.disabled = false;
             doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Done \u2014 Lock Baseline';
         }
     })
     .catch(function (err) {
+        if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
         showSetupErrors(['Error saving baseline: ' + err.message]);
         doneBtn.disabled = false;
         doneBtn.innerHTML = '<i class="bi bi-check-lg" style="margin-right: 6px;"></i>Done \u2014 Lock Baseline';
