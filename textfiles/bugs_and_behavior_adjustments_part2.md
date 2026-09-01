@@ -88,7 +88,7 @@ Low — ~17 lines total across 2 files.
 
 **Date:** September 1, 2026
 **Branch:** `fix/baseline-setup-date-restrictions`
-**Status: IMPLEMENTED** — Dynamic month/date constraints + save-time warning modal.
+**Status: IMPLEMENTED** — Dynamic month/date constraints + save-time warning modal. **Updated:** First-month min logic corrected per user feedback.
 
 ### Problem
 
@@ -242,3 +242,14 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 
 1. ~~**E12** (date restriction on create project modal)~~ — IMPLEMENTED
 2. ~~**E13** (baseline setup modal month/date restrictions + save-time warnings)~~ — IMPLEMENTED
+
+### Session Log: September 1, 2026 (E13 Fix)
+
+**User feedback:** With planned_start = Aug 1 and current = Sep 1, the system only allowed Sep 2026+ for the first month. Expected: Aug 2026+ (planned start month).
+
+**Root cause:** `effectiveMinMonth` used `max(currentMonth, startMonth)` which always picked the later of current/start. For a project that started in Aug but is being set up in Sep, this blocked Aug.
+
+**Fix:** Changed logic to:
+- If current > planned end → min = planned end (overdue project)
+- If current < planned start → min = current (plan from today)
+- Else → min = planned start (plan from project start, regardless of current date)

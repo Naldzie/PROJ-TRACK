@@ -1731,16 +1731,29 @@ function resetSetupForm() {
     dateInput.value = '';
 
     // ── Dynamic month/date constraints ─────────────────────────────────────
-    // First target: month picker min = max(today, planned start month), no max
+    // First target:
+    //   - If current < planned start → min = current (plan from today)
+    //   - If current ≥ planned start AND current ≤ planned end → min = planned start
+    //   - If current > planned end → min = planned end (overdue project)
     // Subsequent targets: locked to next month only (min=max=next month)
     var bounds = getSetupDateBounds();
     var now = new Date();
-    var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    var todayStr = now.toISOString().split('T')[0];
+    var todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    var currentMonth = todayStr.substring(0, 7);
 
-    // effectiveMinMonth = max(current month, planned start month)
-    var startMonth = bounds.min ? bounds.min.substring(0, 7) : null;
-    var effectiveMinMonth = startMonth && startMonth > currentMonth ? startMonth : currentMonth;
+    // Compute effective min date for first target
+    var effectiveMinDate;
+    if (bounds.max && todayStr > bounds.max) {
+        // Current date is past planned end — overdue project, min = planned end
+        effectiveMinDate = bounds.max;
+    } else if (bounds.min && todayStr < bounds.min) {
+        // Current date is before planned start — plan from today
+        effectiveMinDate = todayStr;
+    } else {
+        // Current date is within project timeline — plan from planned start
+        effectiveMinDate = bounds.min || todayStr;
+    }
+    var effectiveMinMonth = effectiveMinDate ? effectiveMinDate.substring(0, 7) : currentMonth;
 
     // Effective max month from planned end date
     var endMonth = bounds.max ? bounds.max.substring(0, 7) : null;
@@ -1752,14 +1765,12 @@ function resetSetupForm() {
     addBtn.style.cursor = 'pointer';
 
     if (setupLocalMonths.length === 0) {
-        // FIRST TARGET: month picker min = max(today, start), no upper cap
+        // FIRST TARGET: month picker min = effectiveMinMonth, no upper cap
         monthInput.setAttribute('min', effectiveMinMonth);
         monthInput.removeAttribute('max');
 
-        // Date picker min = max(today, planned start date)
-        var dateMin = todayStr;
-        if (bounds.min && bounds.min > todayStr) dateMin = bounds.min;
-        dateInput.setAttribute('min', dateMin);
+        // Date picker min = effectiveMinDate
+        dateInput.setAttribute('min', effectiveMinDate);
 
         // Date picker max = planned end date
         if (bounds.max) {
