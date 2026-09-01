@@ -385,7 +385,7 @@
                         <i class="bi bi-pencil-square"></i> Manage Month
                     </button>
                     @endif
-                    @if(auth()->user()->role === 'admin' || ($isAssignedStaff && !$latestProgress && $plan->original_planned_progress_percent === null))
+                    @if($plan->original_planned_progress_percent === null && !$latestProgress && ($isAssignedStaff || auth()->user()->role === 'admin'))
                     <button onclick="deleteMonthTarget({{ $plan->id }})"
                             style="flex:1; background:#fee2e2; color:#dc2626; border:1px solid #fca5a5; padding:10px 12px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12px; display:inline-flex; align-items:center; justify-content:center; gap:6px; transition:all 0.2s;"
                             title="Delete Month Target">

@@ -381,3 +381,24 @@ Medium — 1 new component (~90 lines) + ~55 lines in setup modal JS + 1 line Bl
 3. **Update method check** (`ProjectController.php` line ~979): Added `->where('is_archived', false)` to the inline query used during project updates.
 
 **Branch:** `fix/project-title-validation-archived`
+
+### Enhancement 16: Remove Delete Button for Original Baseline Months
+
+**Problem:** Admin users could delete original baseline months from the timeline, but original baseline targets should only be editable through the Edit Original Baseline modal. Only extension/additional months (added after an extension) should be deletable.
+
+**Original condition** (`baseline-schedule.blade.php` line 388):
+```php
+@if(auth()->user()->role === 'admin' || ($isAssignedStaff && !$latestProgress && $plan->original_planned_progress_percent === null))
+```
+This gave admins blanket delete access to any month, including original baseline targets.
+
+**New condition:**
+```php
+@if($plan->original_planned_progress_percent === null && !$latestProgress && ($isAssignedStaff || auth()->user()->role === 'admin'))
+```
+
+**Behavior after change:**
+- **Original baseline months** (`original_planned_progress_percent` is NOT NULL): delete button hidden for everyone. Edits go through the Edit Original Baseline modal only.
+- **Extension/additional months** (`original_planned_progress_percent` is NULL): delete button retained for admin and assigned staff, provided no progress has been recorded.
+
+**Files:** `resources/views/projects/project_detail/components/tabs/baseline-schedule.blade.php` (line 388)
