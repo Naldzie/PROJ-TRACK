@@ -37,7 +37,9 @@ function applyWizardMode() {
 
         if (indicator) indicator.style.display = '';
         if (connector) connector.style.display = '';
-        if (label && labels[i - 1]) label.textContent = labels[i - 1];
+        // Edit mode hides step 1 (Documents), so labels shift: DOM step 2 should show edit label 0 (Project Info)
+        const labelIndex = isEdit ? i - 2 : i - 1;
+        if (label && labelIndex >= 0 && labels[labelIndex]) label.textContent = labels[labelIndex];
     }
 
     // Clickable step-skipping is edit-mode only.
@@ -477,9 +479,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window._projectModalMode !== 'edit') return;
             const item = e.target.closest('.step-item');
             if (!item) return;
-            const step = parseInt(item.id.replace('step', '').replace('-indicator', ''), 10);
-            if (step && typeof goToStep === 'function') {
-                goToStep(step);
+            const domStep = parseInt(item.id.replace('step', '').replace('-indicator', ''), 10);
+            // Edit hides DOM step 1 (Documents), so DOM 2 → logical 1 (Project Info)
+            const logicalStep = window._projectModalMode === 'edit' ? domStep - 1 : domStep;
+            if (logicalStep && typeof goToStep === 'function') {
+                goToStep(logicalStep);
             }
         });
     }

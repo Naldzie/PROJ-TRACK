@@ -70,9 +70,11 @@ function updatePageDisplay() {
 
 function updateStepIndicators() {
     for (let i = 1; i <= getTotalPages(); i++) {
-        const indicator = document.getElementById(`step${i}-indicator`);
+        // Edit mode hides DOM step 1 (Documents), so logical step 1 = DOM step 2
+        const domIndex = window._projectModalMode === 'edit' ? i + 1 : i;
+        const indicator = document.getElementById(`step${domIndex}-indicator`);
         const dot = indicator ? indicator.querySelector('.step-dot') : null;
-        const connector = document.getElementById(`step${i}-connector`);
+        const connector = document.getElementById(`step${domIndex}-connector`);
 
         if (i < currentFormPage) {
             // Completed step — green check inside the dot

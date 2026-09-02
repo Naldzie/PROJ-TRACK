@@ -295,3 +295,70 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 **Fix:** Changed stat card from `formatCurrencyShort` to `formatCurrency` which handles K/M/B magnitudes properly (e.g. ₱500K, ₱1.5M, ₱2.3B).
 
 **Test results:** 6 pre-existing failures, 981 passed, 0 new failures.
+
+---
+
+## Edit Mode Wizard Bug — Create Project Modal (Reported 2026-09-02)
+
+**Branch for plan:** `fix/edit-modal-wizard` (off `develop` @ `bd03358`)
+**Status:** ✅ IMPLEMENTED 2026-09-02 — fix pushed as `a4c3052`, now updating plan with result + merging to develop
+
+### Simple Explanation (Natural Language) — For Anyone, No Tech Needed
+
+*Imagine the create-project window is like a 6-page booklet you flip through:*
+
+- **Page 1 = Documents, 2 = Project Info, 3 = Description, 4 = Project Setup, 5 = Timeline, 6 = Assignment** — the circles `1 2 3 4 5 6` at the top are the table of contents.
+
+- **When you create a new project**, you see all 6 pages — that’s correct (your Image 1).
+
+- **When you edit an existing project**, you don’t need to re-upload documents, so the booklet hides Page 1. What you *should* see is a 5-page booklet: `1 Project Info | 2 Description | 3 Project Setup | 4 Timeline | 5 Assignment`.
+
+- **What was broken (your Image 2):** The cover still hid Page 1 correctly, but the table of contents was mislabeled as `2 Description | 3 Project Setup | 4 Timeline | 5 Assignment | 6 Assignment`. So “Project Info” as `1` vanished and “Assignment” showed up twice as `5` and `6`. The pages inside still worked, but the top bar was confusing — tapping `2` opened the wrong page.
+
+- *Why it happened — plain words:* The team once had 5 pages, then split one page (“Details”) into two (“Description” + “Project Setup”), making it 6. The code that hides the first page in edit mode was updated, but the code that renames the circles wasn’t — it still counted from the old position, so every label slid one step to the right and the last one ran out of names, leaving the old hard-coded `6` behind.
+
+- *What we fixed — plain words:* We told the code: “in edit mode, when you rename the circles, count one less.” So now edit mode correctly shows `1 Project Info … 5 Assignment` with no duplicate, the blue highlight follows `1`, and tapping `2` truly opens Description. Create mode stays `1 Documents … 6 Assignment`.
+
+### Technical Root Cause
+
+**Files:** `resources/views/admin/_create_project_modal.blade.php:21-51` (hard-coded dots `1..6` at `24,29,34,39,44,49`, labels `step1-label..step6-label`) + `public/js/_create_project_modal.js:19-47` + `public/js/admin/projects/form-navigation.js:71-96`
+
+1. **Label renumbering off-by-one** `public/js/_create_project_modal.js:38-40` `applyWizardMode()`:
+   ```js
+   const STEP_LABELS_EDIT = ['Project Info','Description','Project Setup','Timeline','Assignment']; // 5
+   for (i=1..6) { if(isEdit && i===1) {hide; continue} label.textContent = labels[i-1] }
+   // Edit: i=2 → labels[1]='Description' (should be labels[0]='Project Info') → Project Info lost
+   //       i=6 → labels[5]=undefined → stays hard-coded 'Assignment' → duplicate
+   ```
+
+2. **Indicator highlight off-by-one** `public/js/admin/projects/form-navigation.js:71-96` `updateStepIndicators()`:
+   ```js
+   for(i=1;i<=5;i++){ indicator=getElementById('step'+i+'-indicator') } // logical 1..5 → DOM step1..step5
+   // Edit: DOM step1 is hidden (Documents), so i=1 highlights hidden step1 (invisible), i=2 highlights visible step2 as upcoming 2, and DOM step6 never updated → stays 6.
+   ```
+
+3. **Click offset** `public/js/_create_project_modal.js:474-483` `goToStep(parseInt(item.id))` on visible `step2` passes DOM `2` → logical `2` (Description) off by `+1`.
+
+Existing page mapping `form-navigation.js:14` `getDomPageForStep(step){ return edit?step+1:step }` is correct for pages — only the top bar was missed.
+
+### Budget Source Relation
+
+Budget source itself is **not causal** — it only added the `projectBudgetSource` select inside `page4` `Project Setup` (`blade:207-218`, `js:338,1003`). The wizard regression was introduced when the 6-step layout landed (`61f86a0 refactor(create-project-modal): split Details step`) without updating the edit-mode translation layers.
+
+### What Was Fixed (Implemented as `a4c3052`)
+
+- `public/js/_create_project_modal.js:38-40` — now `label.textContent = labels[isEdit ? i-2 : i-1]` for `i>=2` (edit `i=2→0` → Project Info).
+- `public/js/admin/projects/form-navigation.js:72` — now `domId = isEdit ? i+1 : i` for indicator/dot/connector inside `updateStepIndicators()` loop `1..getTotalPages()`, so logical `1` highlights DOM `step2`.
+- `public/js/_create_project_modal.js:483` — now `goToStep(domStep - (isEdit?1:0))` so click on visible `step2` goes to logical `1`.
+- Kept `getTotalPages()`/`getDomPageForStep()` as is (already correct for pages).
+
+### Verification
+
+- Create mode: `1 Documents` visible, `1` active, Next → `2 Project Info` — still correct.
+- Edit mode: `1 Project Info` visible as active circle `1` (not `2`), no duplicate `6`, clicking `2` opens Description (page3), clicking `5` opens Assignment (page6) — fixed.
+- No change to budget source dropdown behavior — `loadBudgetSources()` staff read fix (`staff.budget-sources.list`) remains separate. `node --check` on both JS files OK.
+
+### Session Log
+
+- 2026-09-02 — User reported edit mode shows `2 3 4 5 6` missing `1 Project Info` with duplicated `Assignment` (Images 1 vs 2). Audited `budget_source_plan.md` — it does mention create-project modal adjustment (Step 8 add Budget Source dropdown + Step 17 add + button) but not wizard numbering. Traced regression to `61f86a0` split Details → Description+Project Setup (5→6 steps) leaving `applyWizardMode` and `updateStepIndicators` off-by-one. Created branch `fix/edit-modal-wizard` and added this plan section (no code yet).
+- 2026-09-02 — Implemented fix on `fix/edit-modal-wizard` as `a4c3052` (3 edits), verified with `node --check`, confirmed edit mode now shows `1 Project Info … 5 Assignment`. Updated this plan section to Implemented, added simple language summary, committing and merging to `develop` as requested.
