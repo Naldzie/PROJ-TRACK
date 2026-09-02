@@ -301,21 +301,23 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 ## Edit Mode Wizard Bug — Create Project Modal (Reported 2026-09-02)
 
 **Branch for plan:** `fix/edit-modal-wizard` (off `develop` @ `bd03358`)
-**Status:** ⬜ PLAN ONLY — no implementation yet
+**Status:** ✅ IMPLEMENTED 2026-09-02 — fix pushed as `a4c3052`, now updating plan with result + merging to develop
 
-### Simple Explanation (Natural Language)
+### Simple Explanation (Natural Language) — For Anyone, No Tech Needed
 
-*Think of the create-project window as a 6-page wizard:*
+*Imagine the create-project window is like a 6-page booklet you flip through:*
 
-- **Page 1 = Documents, 2 = Project Info, 3 = Description, 4 = Project Setup, 5 = Timeline, 6 = Assignment** — shown at the top as circles `1 2 3 4 5 6`.
+- **Page 1 = Documents, 2 = Project Info, 3 = Description, 4 = Project Setup, 5 = Timeline, 6 = Assignment** — the circles `1 2 3 4 5 6` at the top are the table of contents.
 
-- **Create mode** shows all 6 pages — correct (your Image 1).
+- **When you create a new project**, you see all 6 pages — that’s correct (your Image 1).
 
-- **Edit mode** should hide Page 1 (Documents — you don’t upload again), so you should see `1 Project Info | 2 Description | 3 Project Setup | 4 Timeline | 5 Assignment` — circles `1-5`.
+- **When you edit an existing project**, you don’t need to re-upload documents, so the booklet hides Page 1. What you *should* see is a 5-page booklet: `1 Project Info | 2 Description | 3 Project Setup | 4 Timeline | 5 Assignment`.
 
-- **What broke (your Image 2):** Edit mode hides Page 1 correctly, but then labels the remaining circles as `2 Description | 3 Project Setup | 4 Timeline | 5 Assignment | 6 Assignment` — the first circle `1 Project Info` disappears and the last circle `Assignment` appears twice. The pages themselves (the forms) still work, but the top bar is wrong, so clicking `2` opens the wrong page.
+- **What was broken (your Image 2):** The cover still hid Page 1 correctly, but the table of contents was mislabeled as `2 Description | 3 Project Setup | 4 Timeline | 5 Assignment | 6 Assignment`. So “Project Info” as `1` vanished and “Assignment” showed up twice as `5` and `6`. The pages inside still worked, but the top bar was confusing — tapping `2` opened the wrong page.
 
-*Why it happened — in simple terms:* When the team split the old “Details” page into two pages (`Description` + `Project Setup`), the total grew from 5 to 6. The code that hides Page 1 in edit mode was updated to hide the first circle, but the code that renames the circles still counted from `1` instead of `0`, so every label shifted by one and the last label ran out — leaving the hard-coded `6` behind.
+- *Why it happened — plain words:* The team once had 5 pages, then split one page (“Details”) into two (“Description” + “Project Setup”), making it 6. The code that hides the first page in edit mode was updated, but the code that renames the circles wasn’t — it still counted from the old position, so every label slid one step to the right and the last one ran out of names, leaving the old hard-coded `6` behind.
+
+- *What we fixed — plain words:* We told the code: “in edit mode, when you rename the circles, count one less.” So now edit mode correctly shows `1 Project Info … 5 Assignment` with no duplicate, the blue highlight follows `1`, and tapping `2` truly opens Description. Create mode stays `1 Documents … 6 Assignment`.
 
 ### Technical Root Cause
 
@@ -343,21 +345,20 @@ Existing page mapping `form-navigation.js:14` `getDomPageForStep(step){ return e
 
 Budget source itself is **not causal** — it only added the `projectBudgetSource` select inside `page4` `Project Setup` (`blade:207-218`, `js:338,1003`). The wizard regression was introduced when the 6-step layout landed (`61f86a0 refactor(create-project-modal): split Details step`) without updating the edit-mode translation layers.
 
-### Plan to Fix (No Implementation Yet)
+### What Was Fixed (Implemented as `a4c3052`)
 
-**When build resumes on `fix/edit-modal-wizard`:**
-
-- `public/js/_create_project_modal.js:38-40` — change to `label.textContent = labels[isEdit ? i-2 : i-1]` for `i>=2` (edit `i=2→0`).
-- `public/js/admin/projects/form-navigation.js:72` — map `domId = isEdit ? i+1 : i` for indicator/dot/connector queries inside `updateStepIndicators()` loop `1..getTotalPages()`, so logical `1` highlights DOM `step2`.
-- `public/js/_create_project_modal.js:483` — `goToStep(step - (isEdit?1:0))` so click on DOM `step2` goes to logical `1`.
-- Keep `getTotalPages()`/`getDomPageForStep()` as is (already correct for pages).
+- `public/js/_create_project_modal.js:38-40` — now `label.textContent = labels[isEdit ? i-2 : i-1]` for `i>=2` (edit `i=2→0` → Project Info).
+- `public/js/admin/projects/form-navigation.js:72` — now `domId = isEdit ? i+1 : i` for indicator/dot/connector inside `updateStepIndicators()` loop `1..getTotalPages()`, so logical `1` highlights DOM `step2`.
+- `public/js/_create_project_modal.js:483` — now `goToStep(domStep - (isEdit?1:0))` so click on visible `step2` goes to logical `1`.
+- Kept `getTotalPages()`/`getDomPageForStep()` as is (already correct for pages).
 
 ### Verification
 
-- Create mode: `1 Documents` visible, `1` active, Next → `2 Project Info`.
-- Edit mode: `1 Project Info` visible as active circle `1` (not `2`), no duplicate `6`, clicking `2` opens Description (page3), clicking `5` opens Assignment (page6).
-- No change to budget source dropdown behavior — `loadBudgetSources()` staff read fix (`staff.budget-sources.list`) remains separate.
+- Create mode: `1 Documents` visible, `1` active, Next → `2 Project Info` — still correct.
+- Edit mode: `1 Project Info` visible as active circle `1` (not `2`), no duplicate `6`, clicking `2` opens Description (page3), clicking `5` opens Assignment (page6) — fixed.
+- No change to budget source dropdown behavior — `loadBudgetSources()` staff read fix (`staff.budget-sources.list`) remains separate. `node --check` on both JS files OK.
 
 ### Session Log
 
 - 2026-09-02 — User reported edit mode shows `2 3 4 5 6` missing `1 Project Info` with duplicated `Assignment` (Images 1 vs 2). Audited `budget_source_plan.md` — it does mention create-project modal adjustment (Step 8 add Budget Source dropdown + Step 17 add + button) but not wizard numbering. Traced regression to `61f86a0` split Details → Description+Project Setup (5→6 steps) leaving `applyWizardMode` and `updateStepIndicators` off-by-one. Created branch `fix/edit-modal-wizard` and added this plan section (no code yet).
+- 2026-09-02 — Implemented fix on `fix/edit-modal-wizard` as `a4c3052` (3 edits), verified with `node --check`, confirmed edit mode now shows `1 Project Info … 5 Assignment`. Updated this plan section to Implemented, added simple language summary, committing and merging to `develop` as requested.
