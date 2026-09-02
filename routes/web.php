@@ -26,6 +26,7 @@ use App\Http\Controllers\Admin\WarrantyController;
 use App\Http\Controllers\Contractor\ContractorWarrantyController;
 use App\Http\Controllers\staff\StaffWarrantyController;
 use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\BudgetSourceController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AttachmentController;
@@ -667,6 +668,22 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])
         ->name('admin.categories.destroy');
+
+    // Budget Sources
+    Route::get('/budget-sources', [BudgetSourceController::class, 'getBudgetSources'])
+        ->name('admin.budget-sources.list');
+
+    Route::get('/budget-sources/all', [BudgetSourceController::class, 'getAllForManagement'])
+        ->name('admin.budget-sources.all');
+
+    Route::post('/budget-sources', [BudgetSourceController::class, 'store'])
+        ->name('admin.budget-sources.store');
+
+    Route::put('/budget-sources/{budgetSource}', [BudgetSourceController::class, 'update'])
+        ->name('admin.budget-sources.update');
+
+    Route::delete('/budget-sources/{budgetSource}', [BudgetSourceController::class, 'destroy'])
+        ->name('admin.budget-sources.destroy');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])

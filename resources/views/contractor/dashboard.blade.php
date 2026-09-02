@@ -786,9 +786,9 @@
           </div>
         </div>
 
-        {{-- Budget by Category --}}
+        {{-- Budget by Source --}}
         <div class="d-card">
-          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-bar-chart-line"></i> Budget by Category</span></div>
+          <div class="d-card-head"><span class="d-card-title"><i class="bi bi-bar-chart-line"></i> Budget by Source</span></div>
           <div style="height:160px; position:relative;"><canvas id="budgetBar"></canvas></div>
         </div>
 
@@ -846,17 +846,17 @@
     }
   });
 
-  // Budget by Category (Horizontal Bar)
+  // Budget by Source (Horizontal Bar)
   @php
-      $catLabels = $budgetByCategory->keys()->toArray();
-      $catValues = $budgetByCategory->values()->toArray();
+      $sourceLabels = $budgetBySource->keys()->toArray();
+      $sourceValues = $budgetBySource->values()->toArray();
   @endphp
   new Chart(document.getElementById('budgetBar'), {
     type: 'bar',
     data: {
-      labels: @json($catLabels),
+      labels: @json($sourceLabels),
       datasets: [{
-        data: @json($catValues),
+        data: @json($sourceValues),
         backgroundColor: '#2563eb',
         borderRadius: 4,
         barThickness: 18

@@ -175,7 +175,7 @@
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-credit-card"></i> Project Setup</h6>
                             <div class="row g-3">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <label class="form-label">Approved Budget <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
@@ -184,7 +184,13 @@
                                 </div>
                                 <div class="invalid-feedback"></div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
+                                <label class="form-label">Budget Source</label>
+                                <select name="budget_source_id" id="projectBudgetSource" class="form-select">
+                                    <option value="">-- Select Source --</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
                                 <label class="form-label">Contractor</label>
                                 <select name="contractor_id" id="contractorSelect" class="form-select">
                                     <option value="">-- Select Contractor --</option>
@@ -377,7 +383,8 @@ window._projectModalConfig = {
     validateTitleRoute: '{{ route($routePrefix . '.validateTitle') }}',
     categoriesListRoute: '{{ route("admin.categories.list") }}',
     staffCategoriesListRoute: '{{ route("staff.categories.list") }}',
-    contractorCategoriesListRoute: '{{ route("contractor.categories.list") }}'
+    contractorCategoriesListRoute: '{{ route("contractor.categories.list") }}',
+    budgetSourcesListRoute: '{{ route("admin.budget-sources.list") }}',
 };
 
 // Initialize modal state

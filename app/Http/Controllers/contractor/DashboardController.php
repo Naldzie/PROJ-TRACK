@@ -156,9 +156,9 @@ class DashboardController extends Controller
         $suspendedCount = $projects->where('status', 'Suspended')->count();
         $cancelledCount = $projects->where('status', 'Cancelled')->count();
 
-        // Budget grouped by category for the horizontal bar chart.
-        $budgetByCategory = $projects
-            ->groupBy(fn ($p) => $p->category?->name ?? 'Uncategorized')
+        // Budget grouped by source for the horizontal bar chart.
+        $budgetBySource = $projects
+            ->groupBy(fn ($p) => $p->budgetSource?->name ?? 'Unspecified')
             ->map(fn ($group) => $group->sum('approved_budget'));
 
         // Extension summary for mini stat cards + donut.
@@ -187,7 +187,7 @@ class DashboardController extends Controller
             'deadlineProjects',
             'suspendedCount',
             'cancelledCount',
-            'budgetByCategory',
+            'budgetBySource',
             'extensionSummary',
         ));
     }

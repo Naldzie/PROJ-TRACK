@@ -811,3 +811,40 @@ If a prior extension already moved the deadline forward, the reviewer can select
 
 **Status:** COMPLETED
 **Date:** 2026-09-01
+
+---
+
+### E25 TEST FIX — `ProjectExtensionLifecycleTest` updated for `after` rule
+
+**Problem:** After E25 changed `after_or_equal` → `after`, the test `test_admin_editing_active_approved_can_keep_its_own_date_equal_to_live_deadline` failed (expected 200, got 422).
+
+**Root cause:** Test was written for the old `after_or_equal` behavior. The new E25 rule intentionally requires the date to be strictly after the current deadline.
+
+**Fix:** Renamed test to `test_admin_editing_active_approved_cannot_keep_its_own_date_equal_to_live_deadline` and changed `assertOk()` to `assertStatus(422)`.
+
+**Test results:** 64/64 `ProjectExtensionLifecycleTest` pass. 7 total failures in full suite (5 pre-existing, 2 EmailDraftTest pre-existing).
+
+**Date:** 2026-09-02
+
+---
+
+### BUDGET SOURCE — Full implementation committed
+
+**Problem:** Dashboard "Budget by Category" chart should be "Budget by Source" — grouped by funding source, not project category.
+
+**Changes:**
+- New `budget_sources` table + `budget_source_id` FK on `projects` (nullable for backward compat)
+- `BudgetSource` model, seeder (9 PH govt sources: GAA, CHED, DPWH, LGU, GAD, Special Trust Fund, Regular Agency Fund, Foreign Assisted, PPP)
+- `BudgetSourceController` with full CRUD
+- Create/edit modal: 3-column layout (Budget | Budget Source | Contractor)
+- Overview tab: Budget Source row below Total Budget
+- Admin + contractor dashboard charts switched to "Budget by Source"
+- Routes added in admin group
+
+**Bug fix during implementation:** Accidentally removed 7 validation rules (planned dates, actual dates, status) from `store()` in `ProjectController.php` when adding `budget_source_id` rule — restored.
+
+**Test results:** 6 pre-existing failures, 981 passed, 0 new failures.
+
+**Files:** 5 new, 11 modified
+
+**Date:** 2026-09-02

@@ -336,6 +336,7 @@ function populateFormWithProjectData(project) {
     
     // Budget and Contractor
     document.getElementById('projectBudget').value = project.approved_budget || '';
+    document.getElementById('projectBudgetSource').value = project.budget_source_id || '';
     document.getElementById('contractorSelect').value = project.contractor_id || '';
     
     // Status
@@ -947,6 +948,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Load categories on page load
     loadProjectCategories();
+    loadBudgetSources();
 });
 
 // ===================================================
@@ -990,6 +992,42 @@ async function loadProjectCategories() {
         return true;
     } catch (error) {
         console.error('Error loading categories:', error);
+        return false;
+    }
+}
+
+// ===================================================
+// LOAD BUDGET SOURCES DYNAMICALLY
+// ===================================================
+async function loadBudgetSources() {
+    try {
+        const route = window._projectModalConfig.budgetSourcesListRoute;
+        if (!route) return false;
+
+        const response = await fetch(route);
+        const sources = await response.json();
+
+        const select = document.getElementById('projectBudgetSource');
+        if (!select) return false;
+
+        const currentValue = select.value;
+
+        select.innerHTML = '<option value="">-- Select Source --</option>';
+
+        sources.forEach(source => {
+            const option = document.createElement('option');
+            option.value = source.id;
+            option.textContent = source.name;
+            select.appendChild(option);
+        });
+
+        if (currentValue) {
+            select.value = currentValue;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Error loading budget sources:', error);
         return false;
     }
 }

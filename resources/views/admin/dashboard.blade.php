@@ -265,9 +265,9 @@
                 <div style="height:200px; position:relative;"><canvas id="healthDonut"></canvas></div>
             </div>
 
-            {{-- 3. Budget by Category --}}
+            {{-- 3. Budget by Source --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Category</div>
+                <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Source</div>
                 <div style="height:200px; position:relative;"><canvas id="budgetBar"></canvas></div>
             </div>
 
@@ -391,17 +391,17 @@
             }
         });
 
-        // 3. Budget by Category (Horizontal Bar)
+        // 3. Budget by Source (Horizontal Bar)
         @php
-            $categoryLabels = $budgetByCategory->keys()->toArray();
-            $categoryValues = $budgetByCategory->values()->toArray();
+            $sourceLabels = $budgetBySource->keys()->toArray();
+            $sourceValues = $budgetBySource->values()->toArray();
         @endphp
         new Chart(document.getElementById('budgetBar'), {
             type: 'bar',
             data: {
-                labels: @json($categoryLabels),
+                labels: @json($sourceLabels),
                 datasets: [{
-                    data: @json($categoryValues),
+                    data: @json($sourceValues),
                     backgroundColor: '#2563eb',
                     borderRadius: 4,
                     barThickness: 20

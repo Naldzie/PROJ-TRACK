@@ -1,7 +1,7 @@
 # Budget Source Feature — Implementation Plan
 
 **Date:** 2026-09-02
-**Status:** PLANNED
+**Status:** COMPLETED
 **Branch:** `feature/budget-source`
 
 ---
@@ -220,6 +220,17 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 | 13 | `resources/views/admin/dashboard.blade.php` | **Modify** — rename chart |
 | 14 | `app/Http/Controllers/contractor/DashboardController.php` | **Modify** — group by source |
 | 15 | `resources/views/contractor/dashboard.blade.php` | **Modify** — rename chart |
+
+---
+
+## Implementation Log
+
+### 2026-09-02 — All 15 steps implemented
+
+- All migrations, model, seeder, controller, routes, views, and JS created/modified as planned.
+- Accidentally dropped 7 validation rules from `store()` in ProjectController when adding `budget_source_id` rule — fixed by restoring `planned_dates`, `actual_dates`, and `status` rules.
+- Updated `ProjectExtensionLifecycleTest` to reflect E25 `after` rule (date must be strictly after current deadline).
+- Test results: 6 pre-existing failures, 981 passed, zero new failures from our changes.
 
 ---
 

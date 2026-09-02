@@ -19,6 +19,7 @@ class Project extends Model
         'location',
         'description',
         'approved_budget',
+        'budget_source_id',
         'proposal_id',
         'planned_start_date',
         'planned_duration_days',
@@ -65,6 +66,11 @@ class Project extends Model
     public function category()
     {
         return $this->belongsTo(Category::class);
+    }
+
+    public function budgetSource()
+    {
+        return $this->belongsTo(BudgetSource::class);
     }
 
     public function contractor()

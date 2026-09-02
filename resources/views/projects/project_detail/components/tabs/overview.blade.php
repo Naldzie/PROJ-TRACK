@@ -65,6 +65,8 @@
         ? ('PHP ' . number_format((float) $project->approved_budget, 2))
         : 'Not set';
 
+    $budgetSourceDisplay = $project->budgetSource?->name ?? 'Not set';
+
     $plannedTimelineDisplay = ($project->planned_start_date || $project->planned_end_date)
         ? ($plannedStartDisplay . ' to ' . $plannedEndDisplay)
         : 'Not set';
@@ -137,6 +139,12 @@
                                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Total Budget</div>
                                     <div>
                                         <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $totalBudgetDisplay }}</div>
+                                    </div>
+                                </div>
+                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Budget Source</div>
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $budgetSourceDisplay }}</div>
                                     </div>
                                 </div>
                             </div>

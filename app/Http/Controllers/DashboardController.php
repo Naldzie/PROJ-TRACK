@@ -157,12 +157,12 @@ class DashboardController extends Controller
         $suspendedCount = (clone $baseQuery)->where('status', 'Suspended')->count();
         $cancelledCount = (clone $baseQuery)->where('status', 'Cancelled')->count();
 
-        // Budget grouped by category for the horizontal bar chart.
-        $budgetByCategory = Project::where('is_archived', false)
-            ->selectRaw('categories.name as category_name, SUM(approved_budget) as total_budget')
-            ->join('categories', 'projects.category_id', '=', 'categories.id')
-            ->groupBy('categories.name')
-            ->pluck('total_budget', 'category_name');
+        // Budget grouped by source for the horizontal bar chart.
+        $budgetBySource = Project::where('is_archived', false)
+            ->selectRaw('budget_sources.name as source_name, SUM(approved_budget) as total_budget')
+            ->join('budget_sources', 'projects.budget_source_id', '=', 'budget_sources.id')
+            ->groupBy('budget_sources.name')
+            ->pluck('total_budget', 'source_name');
 
         // Extension summary for mini stat cards + donut.
         $extensionSummary = [
@@ -193,7 +193,7 @@ class DashboardController extends Controller
             'plannedCount',
             'suspendedCount',
             'cancelledCount',
-            'budgetByCategory',
+            'budgetBySource',
             'extensionSummary',
         ));
     }

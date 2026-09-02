@@ -230,12 +230,10 @@ class ProjectExtensionLifecycleTest extends TestCase
         )->assertStatus(422);
     }
 
-    public function test_admin_editing_active_approved_can_keep_its_own_date_equal_to_live_deadline(): void
+    public function test_admin_editing_active_approved_cannot_keep_its_own_date_equal_to_live_deadline(): void
     {
-        // The active approved extension's new_end_date IS the live deadline
-        // (recomputeProjectDeadline pointed planned_end_date at it). Editing
-        // that row without changing the date must be allowed — equality is not
-        // "before the deadline".
+        // E25: new_end_date must be strictly AFTER current deadline (after, not after_or_equal).
+        // Keeping the same date is now rejected.
         $only = $this->extension(1, 'approved', 1);
         $this->project->update([
             'planned_end_date' => $only->new_end_date,
@@ -248,11 +246,7 @@ class ProjectExtensionLifecycleTest extends TestCase
                 'new_end_date' => $only->new_end_date->format('Y-m-d'),
                 'reason'       => 'Revised justification for the same deadline',
             ]
-        )->assertOk();
-
-        $this->assertSame('approved', $only->fresh()->status);
-        $this->assertSame('Revised justification for the same deadline', $only->fresh()->reason);
-        $this->assertTrue($this->project->fresh()->planned_end_date->equalTo($only->fresh()->new_end_date));
+        )->assertStatus(422);
     }
 
     // === Revert approved -> rejected/pending (deadline rollback) ===
