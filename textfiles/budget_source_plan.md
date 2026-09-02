@@ -220,6 +220,9 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 | 13 | `resources/views/admin/dashboard.blade.php` | **Modify** — rename chart |
 | 14 | `app/Http/Controllers/contractor/DashboardController.php` | **Modify** — group by source |
 | 15 | `resources/views/contractor/dashboard.blade.php` | **Modify** — rename chart |
+| 16 | `resources/views/admin/_manage_budget_sources_modal.blade.php` | **Create** — CRUD management modal |
+| 17 | `resources/views/admin/_create_project_modal.blade.php` | **Modify** — add + button for budget source |
+| 18 | `resources/views/projects/project_detail/project_detail.blade.php` | **Modify** — include budget sources modal |
 
 ---
 
@@ -239,6 +242,17 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 **Fix:** Changed admin `DashboardController.php` from `join()` to `leftJoin()` with `COALESCE(budget_sources.name, 'Unspecified')` so null-source projects appear as "Unspecified". Contractor dashboard already handled this via collection `groupBy`.
 
 **Test results:** 6 pre-existing failures, 981 passed, 0 new failures.
+
+### 2026-09-02 — Budget Source Management Modal
+
+**Problem:** No way for admin to add/edit/delete budget sources from the UI.
+
+**Solution:** Cloned the category management modal pattern:
+- Created `_manage_budget_sources_modal.blade.php` with inline add form + list with edit/delete
+- Wrapped budget source `<select>` in `input-group` with `+` button (same as category)
+- Added `openManageBudgetSourcesFromCreateProject()` JS function for stacking modal flow
+- Included modal in `project_detail.blade.php` for admin role
+- Uses existing API routes (`admin.budget-sources.manage`, `.store`, `.update`, `.destroy`)
 
 ---
 

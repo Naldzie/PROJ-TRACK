@@ -720,6 +720,7 @@ function archiveProject(url, projectTitle) {
     @include('projects.project_detail.components.modals._setup_baseline_modal')
     @if(auth()->user()->role === 'admin')
         @include('admin._manage_categories_modal')
+        @include('admin._manage_budget_sources_modal')
         @include('admin._manage_document_types_modal')
     @endif
 @endif

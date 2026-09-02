@@ -83,6 +83,7 @@
     @if(auth()->user()->role === 'admin')
         <!-- Include category management modal -->
         @include('admin._manage_categories_modal')
+        @include('admin._manage_budget_sources_modal')
         @include('admin._manage_document_types_modal')
     @endif
 @endcan

@@ -186,9 +186,17 @@
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Budget Source</label>
-                                <select name="budget_source_id" id="projectBudgetSource" class="form-select">
-                                    <option value="">-- Select Source --</option>
-                                </select>
+                                <div class="input-group">
+                                    <select name="budget_source_id" id="projectBudgetSource" class="form-select">
+                                        <option value="">-- Select Source --</option>
+                                    </select>
+                                    @can('create', App\Models\BudgetSource::class)
+                                    <button class="btn btn-outline-primary" type="button" id="addBudgetSourceBtn"
+                                            title="Add new budget source" onclick="openManageBudgetSourcesFromCreateProject()">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </button>
+                                    @endcan
+                                </div>
                             </div>
                             <div class="col-md-4">
                                 <label class="form-label">Contractor</label>
@@ -403,6 +411,14 @@ window.openManageDocTypesFromCreateProject = function () {
 // ── Open manage categories modal (stacking — create modal stays open) ──
 window.openManageCategoriesFromCreateProject = function () {
     const manageModal = document.getElementById('manageCategoriesModal');
+    if (!manageModal) return;
+    manageModal.dataset.returnModal = 'addProjectModal';
+    new bootstrap.Modal(manageModal).show();
+};
+
+// ── Open manage budget sources modal (stacking — create modal stays open) ──
+window.openManageBudgetSourcesFromCreateProject = function () {
+    const manageModal = document.getElementById('manageBudgetSourcesModal');
     if (!manageModal) return;
     manageModal.dataset.returnModal = 'addProjectModal';
     new bootstrap.Modal(manageModal).show();
