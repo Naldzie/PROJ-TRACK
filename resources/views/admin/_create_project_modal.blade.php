@@ -412,6 +412,9 @@ window._projectModalConfig = {
     staffCategoriesListRoute: '{{ route("staff.categories.list") }}',
     contractorCategoriesListRoute: '{{ route("contractor.categories.list") }}',
     budgetSourcesListRoute: '{{ route("admin.budget-sources.list") }}',
+    // Staff can CHOOSE budget source when creating/editing (only admin can MANAGE add/edit/delete)
+    staffBudgetSourcesListRoute: '{{ route("staff.budget-sources.list") }}',
+    contractorBudgetSourcesListRoute: '{{ route("contractor.budget-sources.list") }}',
 };
 
 // Initialize modal state

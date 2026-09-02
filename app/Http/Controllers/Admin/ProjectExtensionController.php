@@ -417,6 +417,155 @@ class ProjectExtensionController extends Controller
                     ]);
                 }
 
+                // B1.1 — Assigned staff parity: allow editing APPROVED extensions on assigned project
+                // (pending already handled above; rejected stays immutable — must resubmit as new row per Decision 14,
+                // test staff cannot edit own rejected expects 403). Mirrors admin path but without archived/bulk access.
+                if ($isAssignedStaff) {
+                    // Rejected/superseded are immutable for staff in-place — use resubmit for rejected
+                    if ($extension->isRejected() || $extension->isSuperseded()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'You do not have permission to modify this extension.',
+                        ], 403);
+                    }
+                    // Only approved remains here (pending already returned above), so guard non-approved
+                    if (!$extension->isApproved()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'You do not have permission to modify this extension.',
+                        ], 403);
+                    }
+                    $isRejectingAssigned = $request->input('status') === 'rejected';
+
+                    $assignedRules = [
+                        'reason' => 'sometimes|required|string|min:5|max:500',
+                        'reason_category' => 'sometimes|nullable|string|in:' . implode(',', ProjectExtension::REASON_CATEGORIES),
+                        'status' => 'sometimes|required|in:pending,approved,rejected',
+                        'rejection_reason' => 'required_if:status,rejected|nullable|string|min:5|max:500',
+                    ];
+
+                    if ($isRejectingAssigned) {
+                        $assignedRules['new_end_date'] = 'sometimes|nullable|date_format:Y-m-d';
+                    } else {
+                        $assignedRules['new_end_date'] = [
+                            'sometimes', 'required', 'date_format:Y-m-d',
+                            'after:' . $project->planned_end_date->format('Y-m-d'),
+                            'before_or_equal:2030-12-31',
+                        ];
+                    }
+
+                    $validated = $request->validate($assignedRules, [
+                        'new_end_date.after' => 'New end date must be after the current deadline (' . $project->planned_end_date->format('M d, Y') . ')',
+                        'new_end_date.before_or_equal' => 'New end date cannot be beyond 2030',
+                    ]);
+
+                    DB::beginTransaction();
+
+                    $wasApprovedAssigned = $extension->isApproved();
+                    $transitioningToApprovedAssigned = isset($validated['status'])
+                        && $validated['status'] === 'approved'
+                        && !$wasApprovedAssigned;
+                    $isRevertingAssigned = isset($validated['status'])
+                        && in_array($validated['status'], ['pending', 'rejected'], true)
+                        && $wasApprovedAssigned;
+
+                    if ($isRevertingAssigned) {
+                        $activeApproved = $this->activeApproved($project);
+                        if (!$activeApproved || $activeApproved->id !== $extension->id) {
+                            DB::rollBack();
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Only the active approved extension can be reverted. Clean up older approved extensions by reverting them in reverse order.',
+                            ], 403);
+                        }
+                    }
+
+                    if (isset($validated['new_end_date'])) {
+                        $newEndDate = Carbon::parse($validated['new_end_date']);
+                        $extension->new_end_date = $newEndDate;
+                        $extension->duration_days = $extension->original_end_date->diffInDays($newEndDate);
+                    }
+                    if (isset($validated['reason'])) {
+                        $extension->reason = $validated['reason'];
+                    }
+                    if (array_key_exists('reason_category', $validated)) {
+                        $extension->reason_category = $validated['reason_category'];
+                    }
+                    if (isset($validated['status'])) {
+                        $extension->status = $validated['status'];
+                        if ($validated['status'] === 'approved') {
+                            $extension->approved_by_user_id = $user->id;
+                            $extension->approved_at = now();
+                            $extension->reviewed_by_user_id = $user->id;
+                            $extension->reviewed_at = now();
+                            $extension->rejection_reason = null;
+                        } elseif ($validated['status'] === 'rejected') {
+                            $extension->approved_by_user_id = $user->id;
+                            $extension->approved_at = now();
+                            $extension->reviewed_by_user_id = $user->id;
+                            $extension->reviewed_at = now();
+                            $extension->rejection_reason = $validated['rejection_reason'];
+                        } elseif ($validated['status'] === 'pending') {
+                            $extension->approved_by_user_id = null;
+                            $extension->approved_at = null;
+                            $extension->reviewed_by_user_id = null;
+                            $extension->reviewed_at = null;
+                            $extension->rejection_reason = null;
+                        }
+                    }
+
+                    $extension->save();
+
+                    if ($isRevertingAssigned) {
+                        $this->restoreBaselineForRevert($project, $extension);
+                    }
+
+                    $this->recomputeProjectDeadline($project);
+
+                    if ($transitioningToApprovedAssigned || ($wasApprovedAssigned && ($validated['status'] ?? null) === 'approved')) {
+                        $this->resolvePendingQueue($project, $extension);
+                    }
+
+                    DB::commit();
+
+                    $logAction = 'Update Extension';
+                    if ($transitioningToApprovedAssigned) {
+                        $logAction = 'Approve Extension';
+                    } elseif ($isRevertingAssigned) {
+                        $logAction = 'Revert Extension';
+                    } elseif (($validated['status'] ?? null) === 'rejected') {
+                        $logAction = 'Reject Extension';
+                    }
+
+                    ActivityLog::create([
+                        'user_id' => auth()->id(),
+                        'project_id' => $project->id,
+                        'action' => $logAction,
+                        'description' => auth()->user()->name . " {$logAction} for project: {$project->title}",
+                        'ip_address' => request()->ip(),
+                        'visibility' => $isRevertingAssigned ? 'staff' : 'all',
+                    ]);
+
+                    if ($transitioningToApprovedAssigned) {
+                        $this->notifyExtension($project, $extension, ExtensionStatusChanged::APPROVED);
+                    } elseif (($validated['status'] ?? null) === 'rejected') {
+                        $this->notifyExtension($project, $extension, ExtensionStatusChanged::REJECTED);
+                    }
+
+                    $revertMessage = null;
+                    if ($isRevertingAssigned) {
+                        $revertMessage = 'Extension reverted. Re-approving later only moves the deadline — re-run "Generate Adjusted Baseline" to rebuild the plan.';
+                    }
+
+                    Cache::forget('ai_prediction:' . $project->id);
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => $revertMessage ?? 'Extension updated',
+                        'extension' => $this->formatExtension($extension->load('attachments')),
+                    ]);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'You do not have permission to modify this extension.',
@@ -633,7 +782,9 @@ class ProjectExtensionController extends Controller
             }
 
             $user = auth()->user();
-            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+            // B1.1: assigned staff may resubmit any rejected on their assigned project
+            $isAssignedStaffResubmit = $project->isAssignedTo($user);
+            if ($user->role !== 'admin' && !$isAssignedStaffResubmit && $extension->created_by_user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You can only resubmit your own rejected extension requests.',
@@ -773,8 +924,10 @@ class ProjectExtensionController extends Controller
                 ], 400);
             }
 
-            // Decision 14: staff may only archive their OWN non-approved rows.
-            if ($user->role !== 'admin' && $extension->created_by_user_id !== $user->id) {
+            // B1.1: assigned staff may archive any pending/rejected on their assigned project (like admin),
+            // other staff only own rows. Approved never directly deletable (Decision 10 above).
+            $isAssignedStaffDestroy = $project->isAssignedTo($user);
+            if ($user->role !== 'admin' && !$isAssignedStaffDestroy && $extension->created_by_user_id !== $user->id) {
                 return response()->json([
                     'success' => false,
                     'message' => 'You can only archive your own extension requests.',

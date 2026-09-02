@@ -1,8 +1,8 @@
 # EXTENSION REVIEWER TRACKING PLAN — B1 (Current Reviewer) + B2 (History Table) Deferred
 
 **Branch:** `phase-extension-reviewer-tracking` (off `feature/budget-savings` @ `61f86a0`)
-**Status:** 🟡 B1 IMPLEMENTED & PUSHED (66c1345) — B1.1 PLANNED, no implementation yet.
-**Date:** 2026-09-02 (updated 2026-09-02 for B1.1 plan)
+**Status:** ✅ B1 IMPLEMENTED & PUSHED (66c1345) — ✅ B1.1 IMPLEMENTED (assigned staff parity + budget source read), not yet committed — pending push + merge to develop
+**Date:** 2026-09-02 (updated 2026-09-02 for B1.1 implementation — simple language summary added)
 **Author:** Muse Spark (plan mode)
 **Related docs:** `textfiles/extension_notification_fix_plan.md:1`, `textfiles/active_reference/project_context_and_development_rules.txt:1`, `AGENTS.md:1`
 
@@ -56,11 +56,10 @@ Phase overview:
 
   ✅ COMPLETE  Extension lifecycle (store / update / resubmit / softDelete / archived / bulk ops / baseline snapshot)
   ✅ COMPLETE  Extension notification fix (935312b) — trigger exclusion, recipient fan-out
-  ⬜ NOT STARTED  B1 — Reviewer attribution: reviewed_by_user_id + reviewed_at + actor in email (THIS PLAN)
+  ✅ COMPLETE  B1 — Reviewer attribution: reviewed_by_user_id + reviewed_at + actor in email + table Reviewed By/At + reports/inbox (66c1345)
+  ✅ COMPLETE  B1.1 — Assigned staff parity (edit approved, archive any pending/rejected on assigned project) + budget source read for staff dropdown (routes + JS picker)
   ⬜ NOT STARTED  B2 — Per-extension status history table (deferred, see §9 Flagged for Future)
-  ⬜ NOT STARTED  UI: Reviewed By rename + rejected display + inbox actor + report columns
-  ⬜ NOT STARTED  Tests: lifecycle + notification assertions for reviewer
-  ⬜ NOT STARTED  Verification (manual + composer test) + docs
+  ⬜ NOT STARTED  Verification (full suite + manual browser) + docs update + merge to develop
 
 ===============================================================================
   3. PROBLEM STATEMENT
@@ -483,6 +482,13 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
     - User: assigned staff should do most of admin on extensions for their project but not permanent delete/archived; budget source 403 while staff cannot choose dropdown (loadBudgetSources always admin route at _create_project_modal.js:1003).
     - Clarified: 4 approved hide Edit for staff is due to canEdit:193 pending-only gate + controller 287, not B1; pending still shows buttons. Budget 403 is GET /admin/budget-sources role:admin 673 vs staff categories have staff route 248 — loadBudgetSources missing role picker at 965 vs 1003.
     - User confirmed: staff archive yes all on assigned project; budget source choose should be available to both admin+staff when creating/editing, only manage (add) admin-only. Added §15 NEXT STEPS plan B1.1a parity + B1.1b budget read route, no implementation yet. Updated this plan file for second commit.
+  2026-09-02 — B1.1 implementation (build mode, Muse Spark) — not yet committed
+    - Implemented budget read: routes/web.php:248 staff.budget-sources.list + contractor 393, _create_project_modal.js:1003 role-aware picker + content-type guard, admin/_create_project_modal.blade.php:414 expose staff/contractor routes.
+    - Implemented staff parity: baseline-schedule-extensions.js:193 canEdit→ (isAdmin||isAssignedStaff) for pending/approved (rejected stays immutable), canDelete→ (isAdmin||isAssignedStaff)?(pending||rejected), canResubmit→ (isAdmin||isAssignedStaff) for any rejected.
+    - Backend ProjectExtensionController.php:777 destroy allow assigned staff to archive any pending/rejected on assigned project, 636 resubmit any rejected for assigned staff, 420-480 update() new block for assigned staff to edit approved (including revert with active-only guard) while blocking rejected in-place edit to keep test “staff cannot edit own rejected” passing.
+    - Verified: php -l OK, route:list shows staff/contractor budget routes, ProjectExtensionLifecycleTest 64 pass (was 1 fail before rejected guard fix), full suite 981 pass +6 pre-existing. Left uncommitted per user request.
+  2026-09-02 — Plan update with simple language + commit & merge to develop (build mode, Muse Spark)
+    - Added §16 SIMPLE EXPLANATION in natural language for B1/B1.1, updated Status and §2/§15 to mark B1.1 implemented, updated Session Logs. Committing all B1.1 code + plan update and pushing, then merging phase-extension-reviewer-tracking → develop as requested.
 
 ===============================================================================
   13. OPEN QUESTIONS / STILL TO RESOLVE (before build)
@@ -511,8 +517,8 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
   15. NEXT STEPS — B1.1 ASSIGNED STAFF PARITY + BUDGET SOURCE LIST (PLAN ONLY)
 ===============================================================================
 
-  Status: ⬜ NOT STARTED — planned per user 2026-09-02, no implementation yet.
-  Context: Same branch phase-extension-reviewer-tracking (B1 committed 66c1345, this plan update is second commit).
+  Status: ✅ IMPLEMENTED 2026-09-02 — code done, not yet committed (pending push + merge). See simple explanation in §16.
+  Context: Same branch phase-extension-reviewer-tracking (B1 committed 66c1345, B1.1 implemented on top).
            User confirmed: assigned staff should do most of admin on extensions for their assigned project
            but NOT permanent delete / archived panel access. Also: staff cannot choose Budget Source
            (dropdown empty) due to admin-only read route causing 403, though staff should be able to CHOOSE
@@ -587,6 +593,33 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
   -----------------
     - Broadening canEdit to any status for assigned staff must still respect isReverting active-only guard, else out-of-order edits could break deadline recompute.
     - Budget read route must not expose manage capabilities — keep store/update/destroy admin-only; getBudgetSources must not leak sensitive data.
+
+  15.7 Result (simple terms)
+  -----------------
+    - After B1.1, assigned staff on project 159 with 5 extensions (4 approved +1 rejected) will now see Edit on the 4 approved (was hidden) and Archive on any pending/rejected (not just own). Pending still shows Review. Rejected stays not editable in-place — must use Resubmit (keeps history).
+    - Budget Source dropdown will now load for staff (no more 403/SyntaxError on page load), but the “Manage Budget Sources” popup (add/edit/delete) stays admin-only.
+
+===============================================================================
+  16. SIMPLE EXPLANATION — WHAT WAS BUILT (Natural Language)
+===============================================================================
+
+  For non-technical readers:
+
+  B1 — Who approved or rejected? + When?
+  -----------------
+    Before: When an extension was approved or rejected, the email just said “your extension was approved/rejected” with no name, and the table showed a name only for approved, and showed nothing for rejected. The time of the decision was saved in the database but never shown anywhere.
+    After: We added two new fields to the extension: “Reviewed By” (who clicked approve or reject) and “Reviewed At” (when they clicked). Now the email says “Approved by Alice — Reviewed on Sep 02, 2026 02:30 PM” or “Rejected by Bob — Reviewed on ... + reason”. The table has two new columns “Reviewed By” and “Reviewed At” that work for both approved and rejected (shows “—” for pending). Reports (Excel) and the inbox also show the same. If an approved extension is later changed to rejected two days later, the name/time changes to the person who rejected it — the old name is still kept in the Activity Log history (B2 will make that history easier to see later).
+
+  B1.1a — Assigned staff same as admin for their project (but not delete forever)
+  -----------------
+    Before: Assigned staff could only edit a pending extension; they could not fix an approved extension even if the deadline was wrong, and they could only archive their own pending/rejected extensions, not others on the same project. Admin could edit any.
+    After: For the project they are assigned to, assigned staff can now do almost everything admin can do on extensions: edit any pending or approved extension (change date, reason, category, or revert an approved back to pending/rejected if it’s the latest one), archive any pending or rejected (not just their own), and resubmit any rejected (not just their own). They still cannot permanently delete or open the Archived panel — that stays admin-only. Rejected extensions are still not editable in place for staff; they must use “Resubmit” so the old rejected row stays as history — this keeps the existing test passing.
+
+  B1.1b — Budget Source dropdown (simple)
+  -----------------
+    Budget Source is just “where does the money come from?” (like General Fund, Grant, etc.) — you pick it when you create or edit a project. Everyone who can create/edit a project (admin and assigned staff) should be able to pick from the list, but only admin should be able to add new choices in the manage window.
+    Before: The list lived only at an admin-only address. When a staff user opened any staff page, the page tried to load the list, got a 403 Unauthorized HTML page, tried to read it as JSON and crashed — so the dropdown stayed empty and staff couldn’t pick anything, even without opening the modal.
+    After: We added a staff-only read address for the same list and made the page smart: if you are on a staff page it fetches from the staff address, if on contractor page from contractor address, otherwise admin. The manage (add/edit/delete) addresses stay admin-only.
 
 ===============================================================================
   END OF PLAN

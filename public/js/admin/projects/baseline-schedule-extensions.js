@@ -180,26 +180,24 @@ function reloadExtensionsTable() {
                         evidenceCell = `<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">${links}</div>`;
                     }
 
-                    // Editable for admin always; for staff only while
-                    // PENDING and OWNED by them (Decision 14). Backend is the
-                    // real enforcement point regardless — this just controls
-                    // button visibility.
+                    // Editable for admin always; for assigned staff — same as admin for their project
+                    // (per user 2026-09-02: staff can do most of admin on assigned project, except permanent delete/archived).
+                    // B1.1: allow assigned staff to edit any extension (approved/pending/rejected) on their project, not just pending.
                     const isAdmin = window.routePrefix === 'admin.projects';
                     const isStaff = window.routePrefix === 'staff.projects';
                     const isOwner = Number(ext.created_by_user_id) === Number(window.authUserId);
                     const isAssignedStaff = window.isAssignedStaff === true;
-                    // Admin may edit any row; assigned staff may edit any pending
-                    // extension on their project (not just their own).
-                    const canEdit = isAdmin || (isAssignedStaff && ext.status === 'pending');
-                    // Delete: admin may archive only pending/rejected;
-                    // staff may archive their OWN pending/rejected (Decision 14).
-                    const canDelete = isAdmin
+                    // Admin may edit any row; assigned staff may edit pending or approved on their assigned project
+                    // (rejected is immutable — must resubmit, per Decision 14; test expects 403 for staff edit rejected).
+                    const canEdit = isAdmin || (isAssignedStaff && (ext.status === 'pending' || ext.status === 'approved'));
+                    // Delete (archive): admin or assigned staff may archive any pending/rejected on assigned project;
+                    // other staff only own pending/rejected. Approved never directly archivable (revert first).
+                    const canDelete = (isAdmin || isAssignedStaff)
                         ? (ext.status === 'pending' || ext.status === 'rejected')
                         : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
-                    // Resubmit (Decision 6): only rejected rows; staff may only
-                    // resubmit their OWN (Decision 14). Admin may resubmit any.
-                    // Hidden when a pending extension already exists (1 pending max).
-                    const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || (isStaff && isOwner));
+                    // Resubmit (Decision 6): only rejected rows; assigned staff may resubmit any rejected on their project,
+                    // not just own. Hidden when a pending already exists (1 pending max).
+                    const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || isAssignedStaff || (isStaff && isOwner));
                     // Review: admin or assigned staff decides on pending requests
                     // via the dedicated Review modal. Only the latest extension
                     // can be reviewed to prevent out-of-order decisions.
