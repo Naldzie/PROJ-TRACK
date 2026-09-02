@@ -158,10 +158,11 @@ class DashboardController extends Controller
         $cancelledCount = (clone $baseQuery)->where('status', 'Cancelled')->count();
 
         // Budget grouped by source for the horizontal bar chart.
+        // LEFT JOIN ensures projects without a budget source appear as "Unspecified".
         $budgetBySource = Project::where('is_archived', false)
-            ->selectRaw('budget_sources.name as source_name, SUM(approved_budget) as total_budget')
-            ->join('budget_sources', 'projects.budget_source_id', '=', 'budget_sources.id')
-            ->groupBy('budget_sources.name')
+            ->selectRaw("COALESCE(budget_sources.name, 'Unspecified') as source_name, SUM(approved_budget) as total_budget")
+            ->leftJoin('budget_sources', 'projects.budget_source_id', '=', 'budget_sources.id')
+            ->groupBy('source_name')
             ->pluck('total_budget', 'source_name');
 
         // Extension summary for mini stat cards + donut.

@@ -232,6 +232,14 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 - Updated `ProjectExtensionLifecycleTest` to reflect E25 `after` rule (date must be strictly after current deadline).
 - Test results: 6 pre-existing failures, 981 passed, zero new failures from our changes.
 
+### 2026-09-02 — Budget by Source: include "Unspecified" for projects with no source
+
+**Problem:** Admin dashboard used inner JOIN on `budget_sources`, so projects with `budget_source_id = NULL` were silently excluded from the chart.
+
+**Fix:** Changed admin `DashboardController.php` from `join()` to `leftJoin()` with `COALESCE(budget_sources.name, 'Unspecified')` so null-source projects appear as "Unspecified". Contractor dashboard already handled this via collection `groupBy`.
+
+**Test results:** 6 pre-existing failures, 981 passed, 0 new failures.
+
 ---
 
 ## Notes
