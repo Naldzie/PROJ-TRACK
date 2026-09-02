@@ -12,31 +12,31 @@ window._baselineSetupMonths = null;
 // ===================================================
 // WIZARD MODE
 // Edit mode removes the Documents step entirely (docs live on the project
-// detail page's dedicated tab), so the wizard shrinks from 5 to 4 steps and
+// detail page's dedicated tab), so the wizard shrinks from 6 to 5 steps and
 // its step indicators become clickable for quick skipping. Create mode keeps
-// the full 5-step sequential flow (document autofill depends on the order).
+// the full 6-step sequential flow (document autofill depends on the order).
 // ===================================================
-const STEP_LABELS_CREATE = ['Documents', 'Project Info', 'Details', 'Timeline', 'Assignment'];
-const STEP_LABELS_EDIT = ['Project Info', 'Details', 'Timeline', 'Assignment'];
+const STEP_LABELS_CREATE = ['Documents', 'Project Info', 'Description', 'Project Setup', 'Timeline', 'Assignment'];
+const STEP_LABELS_EDIT = ['Project Info', 'Description', 'Project Setup', 'Timeline', 'Assignment'];
 
 function applyWizardMode() {
     const isEdit = window._projectModalMode === 'edit';
     const labels = isEdit ? STEP_LABELS_EDIT : STEP_LABELS_CREATE;
 
-    for (let i = 1; i <= 5; i++) {
+    for (let i = 1; i <= 6; i++) {
         const indicator = document.getElementById('step' + i + '-indicator');
         const label = document.getElementById('step' + i + '-label');
         const connector = document.getElementById('step' + i + '-connector');
 
-        if (isEdit && i === 5) {
-            // Step 5 + its leading connector are removed in edit mode.
+        if (isEdit && i === 1) {
+            // Step 1 (Documents) + its trailing connector are removed in edit mode.
             if (indicator) indicator.style.display = 'none';
             if (connector) connector.style.display = 'none';
             continue;
         }
 
         if (indicator) indicator.style.display = '';
-        if (connector) connector.style.display = (isEdit && i === 4) ? 'none' : '';
+        if (connector) connector.style.display = '';
         if (label && labels[i - 1]) label.textContent = labels[i - 1];
     }
 

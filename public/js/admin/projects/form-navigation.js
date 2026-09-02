@@ -3,10 +3,10 @@
 // ===================================================
 let currentFormPage = 1;
 
-// In edit mode the Documents step is removed, so the wizard runs 4 steps
-// (Project Info → Details → Timeline → Assignment) mapped to DOM pages 2-5.
+// In edit mode the Documents step is removed, so the wizard runs 5 steps
+// (Project Info → Description → Project Setup → Timeline → Assignment) mapped to DOM pages 2-6.
 function getTotalPages() {
-    return window._projectModalMode === 'edit' ? 4 : 5;
+    return window._projectModalMode === 'edit' ? 5 : 6;
 }
 
 // Map a logical step number (1-based, as shown in the wizard) to the actual
@@ -28,8 +28,8 @@ function goToStep(step) {
 }
 
 function updatePageDisplay() {
-    // Hide all DOM pages (1-5)
-    for (let i = 1; i <= 5; i++) {
+    // Hide all DOM pages (1-6)
+    for (let i = 1; i <= 6; i++) {
         const page = document.getElementById(`page${i}`);
         if (page) page.classList.remove('active');
     }
@@ -243,12 +243,18 @@ function validatePage(pageNum) {
             requiredFields = [];
             break;
         case 3:
-            requiredFields = ['projectBudget', 'projectStatus'];
+            // Page 3: Description - no required fields
+            requiredFields = [];
             break;
         case 4:
-            requiredFields = ['plannedStartDate', 'plannedEndDate'];
+            // Page 4: Project Setup
+            requiredFields = ['projectBudget', 'projectStatus'];
             break;
         case 5:
+            // Page 5: Timeline
+            requiredFields = ['plannedStartDate', 'plannedEndDate'];
+            break;
+        case 6:
             // Assignment validation is optional
             break;
     }
@@ -263,8 +269,8 @@ function validatePage(pageNum) {
         }
     }
     
-    // DOM Page 3 - Additional validation for budget
-    if (domPage === 3) {
+    // DOM Page 4 - Additional validation for budget
+    if (domPage === 4) {
         const budgetField = document.getElementById('projectBudget');
         if (budgetField && budgetField.value) {
             const budget = parseFloat(budgetField.value);

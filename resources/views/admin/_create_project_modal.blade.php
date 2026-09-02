@@ -32,17 +32,22 @@
                         <div class="step-connector" id="step2-connector"></div>
                         <div class="step-item upcoming" id="step3-indicator" role="listitem">
                             <div class="step-dot">3</div>
-                            <div class="step-label" id="step3-label">Details</div>
+                            <div class="step-label" id="step3-label">Description</div>
                         </div>
                         <div class="step-connector" id="step3-connector"></div>
                         <div class="step-item upcoming" id="step4-indicator" role="listitem">
                             <div class="step-dot">4</div>
-                            <div class="step-label" id="step4-label">Timeline</div>
+                            <div class="step-label" id="step4-label">Project Setup</div>
                         </div>
                         <div class="step-connector" id="step4-connector"></div>
                         <div class="step-item upcoming" id="step5-indicator" role="listitem">
                             <div class="step-dot">5</div>
-                            <div class="step-label" id="step5-label">Assignment</div>
+                            <div class="step-label" id="step5-label">Timeline</div>
+                        </div>
+                        <div class="step-connector" id="step5-connector"></div>
+                        <div class="step-item upcoming" id="step6-indicator" role="listitem">
+                            <div class="step-dot">6</div>
+                            <div class="step-label" id="step6-label">Assignment</div>
                         </div>
                     </div>
                 </div>
@@ -161,7 +166,7 @@
                     </div>
                     </div>
 
-                    <!-- === PAGE 3: DESCRIPTION, BUDGET, CONTRACTOR & STATUS === -->
+                    <!-- === PAGE 3: DESCRIPTION === -->
                     <div id="page3" class="form-page">
                         <!-- === PROJECT DESCRIPTION === -->
                         <div class="mb-4">
@@ -170,12 +175,15 @@
                                       rows="4" placeholder="Project description..."></textarea>
                             <div class="invalid-feedback"></div>
                         </div>
+                    </div>
 
+                    <!-- === PAGE 4: BUDGET, CONTRACTOR & STATUS === -->
+                    <div id="page4" class="form-page">
                         <!-- === BUDGET AND CONTRACTOR SECTION === -->
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-credit-card"></i> Project Setup</h6>
                             <div class="row g-3">
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label">ABC <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
@@ -185,7 +193,7 @@
                                     <small class="text-muted">Approved Budget for the Contract</small>
                                     <div class="invalid-feedback"></div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label">Contract Price <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
@@ -195,7 +203,7 @@
                                     <small class="text-muted">Winning bid amount</small>
                                     <div class="invalid-feedback"></div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label">Budget Source</label>
                                     <div class="input-group">
                                         <select name="budget_source_id" id="projectBudgetSource" class="form-select">
@@ -209,7 +217,7 @@
                                         @endcan
                                     </div>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-6">
                                     <label class="form-label">Contractor</label>
                                     <select name="contractor_id" id="contractorSelect" class="form-select">
                                     <option value="">-- Select Contractor --</option>
@@ -239,8 +247,8 @@
                         </div>
                     </div>
 
-                    <!-- === PAGE 4: TIMELINE === -->
-                    <div id="page4" class="form-page">
+                    <!-- === PAGE 5: TIMELINE === -->
+                    <div id="page5" class="form-page">
                         <!-- === TIMELINE SECTION === -->
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-calendar"></i> Timeline</h6>
@@ -306,8 +314,8 @@
                         </div>
                     </div>
 
-                    <!-- === PAGE 5: ASSIGNMENT & DETAILS === -->
-                    <div id="page5" class="form-page">
+                    <!-- === PAGE 6: ASSIGNMENT & DETAILS === -->
+                    <div id="page6" class="form-page">
                         <!-- === ASSIGNMENT & DETAILS === -->
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-people"></i> Assignment & Details</h6>
