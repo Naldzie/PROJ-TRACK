@@ -134,9 +134,10 @@ Rationale
     Reviewed At might be good too".
 
 Consequences
-  - Existing rejected rows will have reviewed_by = null until backfilled (optional one-off script).
+  -   Existing rejected rows will have reviewed_by = null until backfilled (optional one-off script).
   - approved_by becomes alias to reviewed_by; after B1 both columns contain same id on approved/rejected.
   - JS, reports, notifications must read reviewed_* (fall back to approved_* for old rows).
+  - Reviewed At was never visible in table before (payload approved_at at formatExtension:1589 existed but not rendered via baseline-schedule-extensions.js); B1 makes it mandatory column + email line (user confirmed 2026-09-02: JS local short date+time + include "Reviewed on" in email for approved/rejected).
 
 ===============================================================================
   5. DECISION LOG
@@ -239,18 +240,23 @@ Step 3 — Controller: store / update / resubmit writes                 ⬜ NOT 
 
 Step 4 — Notification: actor plumbing                                 ⬜ NOT STARTED
   File: app/Notifications/ExtensionStatusChanged.php:24
-  - Constructor add: public ?string $actorName = null, public ?int $actorId = null (after daysExtended)
+  - Constructor add: public ?string $actorName = null, public ?int $actorId = null, public ?string $reviewedAt = null (after daysExtended)
+    // reviewedAt = Y-m-d H:i:s from reviewed_at / approved_at at decision time, passed so email can render "Reviewed on"
   - toMail():42:
         if ($this->status === self::APPROVED) $lines['Approved by'] = $this->actorName ?? 'System';
         if ($this->status === self::REJECTED) $lines['Rejected by'] = $this->actorName ?? 'System';
-        // optional: also $lines['Reviewed at'] = $this->approvedEndDate? no — keep separate Rejected/Approved lines only
+        // Reviewed timestamp — shown for both APPROVED and REJECTED (user confirmed 2026-09-02: include on email)
+        if (in_array($this->status, [self::APPROVED, self::REJECTED], true) && $this->reviewedAt) {
+            $lines['Reviewed on'] = \Carbon\Carbon::parse($this->reviewedAt)->format('M d, Y h:i A');
+        }
         // update intro via match to include actor:
         self::APPROVED => $this->actorName ? "Your project extension request has been approved by {$this->actorName}." : "Your project extension request has been approved.",
         self::REJECTED => $this->actorName ? "Your project extension request was rejected by {$this->actorName}. See the reason below." : ...
-  - toDatabase():87 add: 'actor_name' => $this->actorName, 'actor_id' => $this->actorId, 'reviewed_by_name' => $this->actorName
+  - toDatabase():87 add: 'actor_name' => $this->actorName, 'actor_id' => $this->actorId, 'reviewed_by_name' => $this->actorName, 'reviewed_at' => $this->reviewedAt
   File: app/Http/Controllers/Admin/ProjectExtensionController.php:1488 notifyExtension()
   - Fetch actor: $actor = auth()->user(); $actorName = $actor->name ?? $actor->email; $actorId = $actor->id;
-  - Pass to new ExtensionStatusChanged(..., $daysExtended, $actorName, $actorId)
+  - Reviewed timestamp: $reviewedAt = $extension->reviewed_at?->format('Y-m-d H:i:s') ?? $extension->approved_at?->format('Y-m-d H:i:s') ?? now()->format('Y-m-d H:i:s');
+  - Pass to new ExtensionStatusChanged(..., $daysExtended, $actorName, $actorId, $reviewedAt)
   - Keep dedup key extension:{pid}:{eid}:{status} (document that second reject of same extension is same status so dedup suppresses — notifyUnique dedupe:true for APPROVED/REJECTED at L1553; resubmit uses dedupe:false)
 
 Step 5 — Service tweaks (optional but nice)                            ⬜ NOT STARTED
@@ -258,13 +264,18 @@ Step 5 — Service tweaks (optional but nice)                            ⬜ NOT
   - Append actor if present in data['actor_name']: "Extension approved #N for "Title" by {actor}"
   - Keep logForAdmins behavior (already excludes trigger user via notifyMany unique).
 
-Step 6 — Table + email View                                            ⬜ NOT STARTED
+Step 6 — Table + email View (Reviewed At MANDATORY per user 2026-09-02)   ⬜ NOT STARTED
   File: resources/views/projects/project_detail/components/tabs/partials/extensions-section.blade.php:121
-  - <th>Approved By</th> → <th>Reviewed By</th>
-  - Add <th>Reviewed At</th> if space allows, or reuse Approved At column renamed to Reviewed At.
+  - <th>Approved By</th> → <th>Reviewed By</th> (mandatory rename)
+  - Add <th>Reviewed At</th> AFTER Reviewed By, BEFORE Action — now 11 cols: Extension # / Requested By / From Date / To Date / Days Added / Category / Reason / Status / Reviewed By / Reviewed At / Action. Width ~90px, same 12px uppercase style. Confirmed: timestamp was never rendered before despite being in payload (formatExtension:1589 approved_at), so this is a new visible column.
   File: public/js/admin/projects/baseline-schedule-extensions.js:202
-  - Change Approved By cell: `${(ext.status === 'approved' || ext.status === 'rejected') ? (ext.reviewed_by_name || ext.approved_by_name || ext.reviewed_by || ext.approved_by || '—') : '—'}`
-  - Approved At cell (if exists) similarly: show reviewed_at for approved+rejected, fallback approved_at.
+  - Reviewed By cell: `${(ext.status === 'approved' || ext.status === 'rejected') ? (ext.reviewed_by_name || ext.approved_by_name || ext.reviewed_by || ext.approved_by || '<span style="color:#cbd5e1;">—</span>') : '<span style="color:#cbd5e1;">—</span>'}`
+  - NEW Reviewed At cell (mandatory, JS local short date+time per user 2026-09-02):
+      const _rawAt = ext.reviewed_at || ext.approved_at || null;
+      const reviewedAtLabel = (ext.status === 'approved' || ext.status === 'rejected') && _rawAt
+          ? new Date(_rawAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' + new Date(_rawAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})
+          : '<span style="color:#cbd5e1;">—</span>';
+      // Render in <td> with font-size:11px; color:#475569; white-space:nowrap; title=_rawAt (hover shows raw Y-m-d H:i:s)
   - Keep rejection_reason tooltip on status badge (already there at L142).
   File: resources/views/notifications/_list.blade.php:113
   - Show actor_name if data.actor_name exists: `<div class="text-xs text-slate-500">By {{ actor_name }}</div>` for extension notifications.
@@ -272,10 +283,11 @@ Step 6 — Table + email View                                            ⬜ NOT
   File: resources/views/emails/notification.blade.php:50
   - No edit needed if lines drives it — "Approved by"/"Rejected by" row auto-renders. Verify disclaimer still only for approved.
 
-Step 7 — Reports                                                       ⬜ NOT STARTED
+Step 7 — Reports (Reviewed At mandatory)                             ⬜ NOT STARTED
   File: app/Services/ReportExportService.php:142
-  - Header 'Approved By' → 'Reviewed By', 'Approved At' → 'Reviewed At'
-  - Value: $extension->reviewer?->name ?? $extension->approver?->name ?? '—'  (cover old rows that may only have approved_by)
+  - Header 'Approved By' → 'Reviewed By', 'Approved At' → 'Reviewed At' (both mandatory now, not optional)
+  - Value By: $extension->reviewer?->name ?? $extension->approver?->name ?? '—'  (fallback approved_by for old rows)
+  - Value At: $extension->reviewed_at?->format('M d, Y h:i A') ?? $extension->approved_at?->format('M d, Y h:i A') ?? '—' — shown for approved+rejected, '—' for pending/superseded
   - Keep duration/status/reason columns unchanged.
   File: resources/views/reports/project-summary.blade.php:220
   - Optionally add Reviewed By column to Extension History PDF (if width allows) — at minimum ensure Excel fix covers client need; PDF can remain status/reason/duration for now to avoid layout break. Note in plan.
@@ -459,13 +471,18 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
     - User follow-up: what happens on reversal (approved→rejected) — should we show both?
     - Researched audit patterns (hyrelog, Palmyra, Formaloo) — recommended current-state column + append log, deferred B2 history table.
     - User: "for now please make a new md file for the implementation plan. lets go with b1 first. but do note ... b2 after b1. make a new branch and commit and push this. no implementation yet"
-    - Created branch phase-extension-reviewer-tracking, wrote this plan file, pending commit+push.
+    - Created branch phase-extension-reviewer-tracking, wrote this plan file, committed 2211103, pushed to origin.
+  2026-09-02 — Plan amendment (build mode, Muse Spark)
+    - User: "on the extension section can we also show the reviewed at (since currently the approval or rejection timestamp is not yet being shown despite having it if im not wrong)"
+    - Verified: formatExtension:1589 payload has approved_at but baseline-schedule-extensions.js:202 never renders it; header extensions-section.blade.php:121 only "Approved By".
+    - User confirmed 2026-09-02: Reviewed At mandatory via JS local short date+time (toLocaleDateString+toLocaleTimeString), and include "Reviewed on" in email for approved/rejected.
+    - Amended plan: Step 4 adds reviewedAt param + "Reviewed on" line to ExtensionStatusChanged toMail + toDatabase; Step 6 makes Reviewed At mandatory 11th column after Reviewed By with JS local conversion + fallback approved_at; Step 7 makes Reviewed At mandatory in ReportExportService; updated §4 Consequences + §13 Q1 → resolved.
 
 ===============================================================================
   13. OPEN QUESTIONS / STILL TO RESOLVE (before build)
 ===============================================================================
 
-  Q1 — Confirm Reviewed By / Reviewed At label wording? (user leaning yes — confirm final)
+  Q1 — ✅ RESOLVED 2026-09-02: Reviewed By / Reviewed At confirmed. Reviewed At is MANDATORY column in extension section (not optional) — JS local short date+time, "—" for pending/superseded. Email must also include "Reviewed on" line for approved/rejected.
   Q2 — Sync copy: should rejected set approved_by also (so old reports work) or leave approved_by null for rejected? Plan assumes sync copy (both = actor) for BC. Confirm preference.
   Q3 — Backfill: OK to leave old rejected rows as "—" until manual backfill, or want artisan backfill from ActivityLog in B1?
   Q4 — Confirm B1 scope excludes PDF column change (ReportExportService Excel only) — okay to defer PDF to B2?
