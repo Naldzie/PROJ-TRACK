@@ -1,8 +1,8 @@
 # EXTENSION REVIEWER TRACKING PLAN — B1 (Current Reviewer) + B2 (History Table) Deferred
 
 **Branch:** `phase-extension-reviewer-tracking` (off `feature/budget-savings` @ `61f86a0`)
-**Status:** 🟡 PLAN ONLY — no implementation yet. Awaiting approval to build.
-**Date:** 2026-09-02
+**Status:** 🟡 B1 IMPLEMENTED & PUSHED (66c1345) — B1.1 PLANNED, no implementation yet.
+**Date:** 2026-09-02 (updated 2026-09-02 for B1.1 plan)
 **Author:** Muse Spark (plan mode)
 **Related docs:** `textfiles/extension_notification_fix_plan.md:1`, `textfiles/active_reference/project_context_and_development_rules.txt:1`, `AGENTS.md:1`
 
@@ -477,6 +477,12 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
     - Verified: formatExtension:1589 payload has approved_at but baseline-schedule-extensions.js:202 never renders it; header extensions-section.blade.php:121 only "Approved By".
     - User confirmed 2026-09-02: Reviewed At mandatory via JS local short date+time (toLocaleDateString+toLocaleTimeString), and include "Reviewed on" in email for approved/rejected.
     - Amended plan: Step 4 adds reviewedAt param + "Reviewed on" line to ExtensionStatusChanged toMail + toDatabase; Step 6 makes Reviewed At mandatory 11th column after Reviewed By with JS local conversion + fallback approved_at; Step 7 makes Reviewed At mandatory in ReportExportService; updated §4 Consequences + §13 Q1 → resolved.
+  2026-09-02 — B1 implementation + push (build mode, Muse Spark)
+    - Implemented B1 reviewed_by/at: migration 2026_09_02_000001, model reviewer(), controller store/update/resubmit/notifyExtension/formatExtension with reviewed_* sync copy, notification actor+reviewedAt + inbox Reviewed on, blade Reviewed By/At, JS local conversion, reports Reviewed By/At, factory rejected() state. php -l OK, migrate done, ProjectExtensionLifecycleTest 64 pass, Notification 72 pass, full suite 981 pass + 6 pre-existing. Committed 66c1345 and pushed.
+  2026-09-02 — B1.1 planning (build mode, Muse Spark)
+    - User: assigned staff should do most of admin on extensions for their project but not permanent delete/archived; budget source 403 while staff cannot choose dropdown (loadBudgetSources always admin route at _create_project_modal.js:1003).
+    - Clarified: 4 approved hide Edit for staff is due to canEdit:193 pending-only gate + controller 287, not B1; pending still shows buttons. Budget 403 is GET /admin/budget-sources role:admin 673 vs staff categories have staff route 248 — loadBudgetSources missing role picker at 965 vs 1003.
+    - User confirmed: staff archive yes all on assigned project; budget source choose should be available to both admin+staff when creating/editing, only manage (add) admin-only. Added §15 NEXT STEPS plan B1.1a parity + B1.1b budget read route, no implementation yet. Updated this plan file for second commit.
 
 ===============================================================================
   13. OPEN QUESTIONS / STILL TO RESOLVE (before build)
@@ -500,6 +506,87 @@ Step 11 — Docs + logs                                                 ⬜ NOT 
   4. Continue from Step 1 migration in order (§6). Test after each step (Rule 8) before next.
   5. Log every phase completion to this file (§12) and to bugs_and_behavior_adjustments.md (Rule 11).
   6. For B2, branch off phase-extension-reviewer-tracking (not main) since B2 depends on B1's reviewed_* columns.
+
+===============================================================================
+  15. NEXT STEPS — B1.1 ASSIGNED STAFF PARITY + BUDGET SOURCE LIST (PLAN ONLY)
+===============================================================================
+
+  Status: ⬜ NOT STARTED — planned per user 2026-09-02, no implementation yet.
+  Context: Same branch phase-extension-reviewer-tracking (B1 committed 66c1345, this plan update is second commit).
+           User confirmed: assigned staff should do most of admin on extensions for their assigned project
+           but NOT permanent delete / archived panel access. Also: staff cannot choose Budget Source
+           (dropdown empty) due to admin-only read route causing 403, though staff should be able to CHOOSE
+           when creating/editing, only admin can MANAGE (add/edit/delete sources).
+
+  15.1 Problem — Staff extension edit blocked
+  -----------------
+    Today baseline-schedule-extensions.js:193 canEdit = isAdmin || (isAssignedStaff && pending)
+    + ProjectExtensionController.php:287 staff edit only pending (no status). So 4 approved extensions show
+    no Edit for assigned staff, while admin sees Edit. User wants assigned staff = admin for their project
+    except permanent delete/archived. Backend staff path 334 only allows pending review; admin 488 can edit
+    approved/rejected fields + status with isReverting guard 465. 403 log in console is NOT this — it is
+    budget source (see 15.2).
+
+  15.2 Problem — Budget Source 403 for staff
+  -----------------
+    Budget Source = fund origin options (General Fund, MOOE, Grants) used in project create/edit
+    Budget Source select is loaded via public/js/_create_project_modal.js:1003 loadBudgetSources()
+    fetching window._projectModalConfig.budgetSourcesListRoute = {{ route('admin.budget-sources.list') }}
+    at admin/_create_project_modal.blade.php:414 inside admin group routes/web.php:673
+    role:admin (451). No staff.budget-sources.list exists (unlike categories at 248/385 which have
+    staff/contractor routes and JS picks by URL at 965). Staff on /staff/projects page auto-calls
+    loadBudgetSources at 951 on load → RoleMiddleware.php:17 redirect to GET /unauthorized:932 → HTML 403
+    → response.json() at 1009 throws Unexpected token '<' at 1031 → dropdown empty. Management routes
+    (GET /admin/budget-sources/manage/list, POST store:31, PUT update:56, DELETE destroy:82 in
+    BudgetSourceController.php:1) should stay admin-only — only the READ list for the select should be shared.
+
+  15.3 Chosen direction — B1.1
+  -----------------
+    B1.1a Assigned staff parity (no permanent delete / no archived access):
+      - Frontend canEdit broadened to (isAdmin || isAssignedStaff) for any status on assigned project
+        (not just pending). So approved can be edited by assigned staff.
+      - canDelete broadened to (isAdmin || isAssignedStaff) ? (pending||rejected) : own — so assigned staff
+        can Archive any pending/rejected on their project (user confirmed "staff archive yes all extensions
+        on the project they are assigned"), not just own. isApproved still blocked (Decision 10 revert first).
+      - canResubmit broadened similarly to (isAdmin || isAssignedStaff) for any rejected on assigned project
+        (not just own) when !hasPending — matches "most of admin".
+      - canReview already parity (isAdmin||isAssignedStaff) && pending && latest — keep.
+      - Backend ProjectExtensionController.php:287-334 staff path extended to mirror admin 488-505 for
+        assigned project: allow editing new_end_date/reason/reason_category/status (pending/approved/rejected)
+        with same isReverting active-only guard 465; keep destroy():777 allow any pending/rejected for
+        assigned staff (archive), but keep archived():824 / restore():855 / forceDestroy():899 / bulk*:950
+        admin-only. No change to isAssignedTo() at Project.php:570 (string cast already correct).
+
+    B1.1b Budget source read for staff (choose vs manage separation):
+      - Add GET /staff/budget-sources → BudgetSourceController@getBudgetSources name staff.budget-sources.list
+        inside staff group routes/web.php:248 (read-only, allow staff + maybe contractor), keep manage/list
+        + store/update/destroy admin-only.
+      - Make getBudgetSources:17 allow admin||staff (and contractor if desired) — or simply rely on route
+        middleware role:staff vs role:admin; keep internal check if needed.
+      - Fix _create_project_modal.js:1003 loadBudgetSources() to pick route by window.routePrefix like
+        loadCategories at 965: if /staff/ → staff route, else if /contractor/ → contractor route, else admin.
+      - Pass both routes via Blade window._projectModalConfig (admin/_create_project_modal 414 + staff counterpart).
+
+  15.4 Implementation steps — B1.1 (no implementation yet, planning)
+  -----------------
+    Step B1.1a-1 — routes/web.php: add staff budget list route inside staff group
+    Step B1.1a-2 — app/Http/Controllers/Admin/BudgetSourceController.php:17 getBudgetSources allow staff read
+    Step B1.1a-3 — resources/views/admin/_create_project_modal.blade.php:414 expose staff route + public/js/_create_project_modal.js:1003 route picker fix
+    Step B1.1a-4 — public/js/admin/projects/baseline-schedule-extensions.js:193-206 update canEdit/canDelete/canResubmit as above
+    Step B1.1a-5 — app/Http/Controllers/Admin/ProjectExtensionController.php:287 extend staff update() to same admin logic for assigned project (status handling, reviewed_* writes already from B1, isReverting guard)
+    Step B1.1a-6 — tests: staff can edit approved, staff can archive any pending/rejected on assigned project, staff cannot access archived/restore/forceDelete (403), staff budget list 200 while manage still 403.
+
+  15.5 Files touched — B1.1
+  -----------------
+    Modified: routes/web.php:248 (new staff budget route), app/Http/Controllers/Admin/BudgetSourceController.php:17,
+              public/js/_create_project_modal.js:1003, resources/views/admin/_create_project_modal.blade.php:414,
+              public/js/admin/projects/baseline-schedule-extensions.js:193, app/Http/Controllers/Admin/ProjectExtensionController.php:287
+    Not modified: database/migrations, App/Models/ProjectExtension.php, NotificationService, archived panel Blade (stays admin-only)
+
+  15.6 Risks
+  -----------------
+    - Broadening canEdit to any status for assigned staff must still respect isReverting active-only guard, else out-of-order edits could break deadline recompute.
+    - Budget read route must not expose manage capabilities — keep store/update/destroy admin-only; getBudgetSources must not leak sensitive data.
 
 ===============================================================================
   END OF PLAN
