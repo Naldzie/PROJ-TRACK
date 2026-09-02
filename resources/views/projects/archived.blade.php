@@ -42,7 +42,7 @@
                 <th>Archived Date</th>
                 <th>Manager</th>
                 <th>Contractor</th>
-                <th>Budget</th>
+                <th>Contract Price</th>
                 <th>Actions</th>
             </tr>
         </thead>

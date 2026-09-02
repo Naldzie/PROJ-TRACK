@@ -296,7 +296,7 @@
 
                     <div class="budget-info">
                         <div class="budget-row">
-                            <span class="budget-label"><i class="bi bi-cash-coin"></i>Approved Budget:</span>
+                            <span class="budget-label"><i class="bi bi-cash-coin"></i>Contract Price:</span>
                             <span class="budget-value">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span>
                         </div>
                     </div>
@@ -481,7 +481,7 @@
             <th><a href="{{ $sortUrl('planned_end_date') }}" class="sortable-th">Deadline {!! $currentSort === 'planned_end_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Days Left</th>
             <th>Manager</th>
-            <th><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Budget {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Contract Price {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th>Actions</th>
         </tr>
     </thead>

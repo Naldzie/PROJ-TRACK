@@ -336,6 +336,7 @@ function populateFormWithProjectData(project) {
     
     // Budget and Contractor
     document.getElementById('projectBudget').value = project.approved_budget || '';
+    document.getElementById('projectAbc').value = project.abc || '';
     document.getElementById('projectBudgetSource').value = project.budget_source_id || '';
     document.getElementById('contractorSelect').value = project.contractor_id || '';
     

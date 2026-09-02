@@ -105,6 +105,14 @@ class DashboardController extends Controller
         $completedCount = (clone $baseQuery)->where('status', 'Completed')->count();
         $completedBudget = (clone $baseQuery)->where('status', 'Completed')->sum('approved_budget');
 
+        // ── TOTAL SAVINGS (ABC - contract price) across all projects ─────
+        // Only counts projects where both abc and approved_budget are set.
+        $totalSavings = (clone $baseQuery)
+            ->whereNotNull('abc')
+            ->whereNotNull('approved_budget')
+            ->selectRaw('SUM(abc - approved_budget) as total_savings')
+            ->value('total_savings') ?? 0;
+
         // ── AT RISK COUNT (gap-based, ALL ongoing) ────────────────────────
         // Same ProjectHealthService definition as the table badges: expected
         // progress (baseline) minus actual progress, gap ≥ 10 → AT RISK.
@@ -186,6 +194,7 @@ class DashboardController extends Controller
             'ongoingCount',
             'completedCount',
             'completedBudget',
+            'totalSavings',
             'atRiskCount',
             'overdueCount',
             'pendingUpdateCount',

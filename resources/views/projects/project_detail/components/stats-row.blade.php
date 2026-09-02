@@ -1,9 +1,9 @@
 <!-- STATS ROW -->
 <div class="stats-row">
     <div class="stat-cell orange">
-        <div class="stat-label">Budget</div>
+        <div class="stat-label">Contract Price</div>
         <div class="stat-value orange">{{ \App\Helpers\FormatHelper::formatCurrency($data['overview']['totalBudget'] ?? 0) }}</div>
-        <div class="stat-sub">Total Approved</div>
+        <div class="stat-sub">Winning Bid</div>
     </div>
     @if($data['overview']['isCompleted'])
         <div class="stat-cell {{ $data['overview']['timeVarianceColor'] ?? 'blue' }}">

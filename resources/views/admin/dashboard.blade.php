@@ -201,6 +201,22 @@
             </div>
         </a>
 
+        {{-- Total Savings --}}
+        <div class="db-stat-card s-green" title="Total government savings across all projects (ABC − Contract Price)">
+            <div class="db-stat-icon"><i class="bi bi-piggy-bank-fill"></i></div>
+            <div>
+                <div class="db-stat-num">{{ \App\Helpers\FormatHelper::formatCurrency($totalSavings) }}</div>
+                <div class="db-stat-label">Total Savings</div>
+                <div class="db-stat-sub {{ $totalSavings >= 0 ? 'pos' : 'neg' }}">
+                    @if($totalSavings >= 0)
+                        <i class="bi bi-arrow-down-right"></i> from ABC
+                    @else
+                        <i class="bi bi-arrow-up-right"></i> exceeded ABC
+                    @endif
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <div class="db-main-grid">

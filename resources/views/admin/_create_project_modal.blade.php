@@ -175,32 +175,43 @@
                         <div class="mb-4">
                             <h6 class="mb-3"><i class="bi bi-credit-card"></i> Project Setup</h6>
                             <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label class="form-label">Approved Budget <span class="text-danger">*</span></label>
+                                <div class="col-md-3">
+                                    <label class="form-label">ABC <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">₱</span>
+                                        <input type="number" step="0.01" name="abc" id="projectAbc" class="form-control"
+                                           placeholder="0.00">
+                                    </div>
+                                    <small class="text-muted">Approved Budget for the Contract</small>
+                                    <div class="invalid-feedback"></div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Contract Price <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
                                         <input type="number" step="0.01" name="approved_budget" id="projectBudget" class="form-control" 
                                            placeholder="0.00" required>
+                                    </div>
+                                    <small class="text-muted">Winning bid amount</small>
+                                    <div class="invalid-feedback"></div>
                                 </div>
-                                <div class="invalid-feedback"></div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Budget Source</label>
-                                <div class="input-group">
-                                    <select name="budget_source_id" id="projectBudgetSource" class="form-select">
-                                        <option value="">-- Select Source --</option>
-                                    </select>
-                                    @can('create', App\Models\BudgetSource::class)
-                                    <button class="btn btn-outline-primary" type="button" id="addBudgetSourceBtn"
-                                            title="Add new budget source" onclick="openManageBudgetSourcesFromCreateProject()">
-                                        <i class="bi bi-plus-circle"></i>
-                                    </button>
-                                    @endcan
+                                <div class="col-md-3">
+                                    <label class="form-label">Budget Source</label>
+                                    <div class="input-group">
+                                        <select name="budget_source_id" id="projectBudgetSource" class="form-select">
+                                            <option value="">-- Select Source --</option>
+                                        </select>
+                                        @can('create', App\Models\BudgetSource::class)
+                                        <button class="btn btn-outline-primary" type="button" id="addBudgetSourceBtn"
+                                                title="Add new budget source" onclick="openManageBudgetSourcesFromCreateProject()">
+                                            <i class="bi bi-plus-circle"></i>
+                                        </button>
+                                        @endcan
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Contractor</label>
-                                <select name="contractor_id" id="contractorSelect" class="form-select">
+                                <div class="col-md-3">
+                                    <label class="form-label">Contractor</label>
+                                    <select name="contractor_id" id="contractorSelect" class="form-select">
                                     <option value="">-- Select Contractor --</option>
                                     @foreach($contractors as $c)
                                         <option value="{{ $c->id }}">{{ $c->company_name ?: ($c->contractor_name ?: ($c->user?->name ?? 'Unnamed')) }}</option>

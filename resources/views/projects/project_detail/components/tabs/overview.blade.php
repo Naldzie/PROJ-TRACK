@@ -65,7 +65,20 @@
         ? ('PHP ' . number_format((float) $project->approved_budget, 2))
         : 'Not set';
 
+    $abcDisplay = $project->abc !== null
+        ? ('PHP ' . number_format((float) $project->abc, 2))
+        : 'Not set';
+
     $budgetSourceDisplay = $project->budgetSource?->name ?? 'Not set';
+
+    // Savings = ABC - Contract Price (approved_budget)
+    $savingsAmount = ($project->abc !== null && $project->approved_budget !== null)
+        ? (float) $project->abc - (float) $project->approved_budget
+        : null;
+    $savingsDisplay = $savingsAmount !== null
+        ? ('PHP ' . number_format(abs($savingsAmount), 2))
+        : null;
+    $savingsSign = $savingsAmount !== null ? ($savingsAmount >= 0 ? '+' : '-') : null;
 
     $plannedTimelineDisplay = ($project->planned_start_date || $project->planned_end_date)
         ? ($plannedStartDisplay . ' to ' . $plannedEndDisplay)
@@ -135,12 +148,29 @@
                                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Estimated Workforce</div>
                                     <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $estimatedWorkersDisplay }}</div>
                                 </div>
-                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0;">
-                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Total Budget</div>
+                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px dashed #e5e7eb;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">ABC</div>
                                     <div>
-                                        <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $totalBudgetDisplay }}</div>
+                                        <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $abcDisplay }}</div>
+                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">Approved Budget for the Contract</div>
                                     </div>
                                 </div>
+                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px dashed #e5e7eb;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Contract Price</div>
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $totalBudgetDisplay }}</div>
+                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">Winning bid amount</div>
+                                    </div>
+                                </div>
+                                @if($savingsAmount !== null)
+                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px dashed #e5e7eb;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Savings</div>
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 700; color: {{ $savingsAmount >= 0 ? '#059669' : '#dc2626' }}; line-height: 1.35; word-break: break-word;">{{ $savingsSign }}{{ $savingsDisplay }}</div>
+                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">{{ $savingsAmount >= 0 ? 'Government saved from ABC' : 'Exceeded ABC' }}</div>
+                                    </div>
+                                </div>
+                                @endif
                                 <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0;">
                                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Budget Source</div>
                                     <div>

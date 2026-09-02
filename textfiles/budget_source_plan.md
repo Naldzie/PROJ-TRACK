@@ -263,3 +263,35 @@ Pass `$budgetBySource` instead of `$budgetByCategory` to the view.
 - The AI similarity service uses `approved_budget` for comparison — `budget_source_id` is intentionally not added there since funding source doesn't affect project similarity for prediction.
 - `ProjectHealthService` deliberately excludes cost/budget health — no changes needed there.
 - Document parser (`document-parser.js`) may benefit from auto-extracting budget source from PDFs, but this is a future enhancement — not in scope for this phase.
+
+---
+
+## Budget Savings Feature (ABC + Savings)
+
+**Branch:** `feature/budget-savings`
+**Date:** 2026-09-02
+
+### 2026-09-02 — Initial Implementation
+
+**Context:** Philippine government procurement (RA 9184 / RA 12009) uses ABC (Approved Budget for the Contract) as the government ceiling. Savings = ABC − Contract Price (winning bid). The existing `approved_budget` field represents the Contract Price.
+
+**Changes:**
+- New migration `2026_09_02_000003_add_abc_to_projects_table.php`: adds `abc` column (decimal 15,2, nullable) after `approved_budget`
+- `Project.php`: added `abc` to `$fillable` + `'abc' => 'decimal:2'` to `$casts`
+- `ProjectController.php`: added `abc` validation rule in `store()` + `update()`, added to `getProjectData()` return
+- `_create_project_modal.blade.php`: renamed "Approved Budget" → "Contract Price"; added ABC field; 4-column layout
+- `_create_project_modal.js`: pre-fill `abc` on edit
+- `overview.blade.php`: renamed "Total Budget" → "Contract Price"; added ABC + Savings rows (green + / red −)
+- `stats-row.blade.php`: "Budget" → "Contract Price", "Total Approved" → "Winning Bid"
+- `DashboardController.php`: computes `SUM(abc - approved_budget)` for total savings; passed to view
+- `admin/dashboard.blade.php`: new "Total Savings" stat card with piggy bank icon
+- `projects/index.blade.php`: "Budget" → "Contract Price" column header + card label
+- `projects/archived.blade.php`: "Budget" → "Contract Price" column header
+
+### 2026-09-02 — FormatHelper Fix
+
+**Problem:** `formatCurrencyShort` always divides by 1M, so any savings under ₱1M displayed as `₱0.0M` — appearing as zero/not updating on the dashboard.
+
+**Fix:** Changed stat card from `formatCurrencyShort` to `formatCurrency` which handles K/M/B magnitudes properly (e.g. ₱500K, ₱1.5M, ₱2.3B).
+
+**Test results:** 6 pre-existing failures, 981 passed, 0 new failures.

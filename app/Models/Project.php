@@ -19,6 +19,7 @@ class Project extends Model
         'location',
         'description',
         'approved_budget',
+        'abc',
         'budget_source_id',
         'proposal_id',
         'planned_start_date',
@@ -46,6 +47,7 @@ class Project extends Model
 
     protected $casts = [
         'approved_budget' => 'decimal:2',
+        'abc' => 'decimal:2',
         'planned_start_date' => 'date:Y-m-d',
         'planned_end_date' => 'date:Y-m-d',
         'planned_handing_over_date' => 'date:Y-m-d',
