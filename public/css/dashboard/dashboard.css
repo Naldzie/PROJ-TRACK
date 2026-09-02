@@ -128,7 +128,7 @@
 ══════════════════════════════════════════ */
 .db-stats {
     display:grid;
-    grid-template-columns:repeat(5,1fr);
+    grid-template-columns:repeat(6,1fr);
     gap:14px; margin-bottom:20px;
 }
 .db-stat-card {
@@ -155,7 +155,7 @@
 .s-violet .db-stat-icon { background:var(--violet-100); color:var(--violet-600); }
 .s-amber  .db-stat-icon { background:var(--amber-100);  color:var(--amber-600); }
 .s-red    .db-stat-icon { background:var(--red-100);    color:var(--red-600); }
-.db-stat-num   { font-size:28px; font-weight:700; color:var(--gray-800); line-height:1; }
+.db-stat-num   { font-size:24px; font-weight:700; color:var(--gray-800); line-height:1; }
 .db-stat-label { font-size:12px; font-weight:500; color:var(--gray-500); margin-top:4px; }
 .db-stat-sub   { font-size:11px; margin-top:6px; padding-top:6px; border-top:1px solid var(--gray-100); }
 .db-stat-sub.pos { color:var(--green-600); }
