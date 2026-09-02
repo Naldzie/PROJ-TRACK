@@ -1002,10 +1002,27 @@ async function loadProjectCategories() {
 // ===================================================
 async function loadBudgetSources() {
     try {
-        const route = window._projectModalConfig.budgetSourcesListRoute;
+        // Pick role-aware route like categories — staff was getting 403 on admin route
+        const currentUrl = window.location.pathname;
+        let route = window._projectModalConfig.budgetSourcesListRoute;
+        if (currentUrl.includes('/staff/')) {
+            route = window._projectModalConfig.staffBudgetSourcesListRoute || route;
+        } else if (currentUrl.includes('/contractor/')) {
+            route = window._projectModalConfig.contractorBudgetSourcesListRoute || route;
+        }
+        // Fallback to routePrefix-based check for modals opened from staff layouts
+        if (!route || route.includes('/admin/') && window._projectModalConfig.routePrefix === 'staff.projects') {
+            route = window._projectModalConfig.staffBudgetSourcesListRoute || route;
+        }
         if (!route) return false;
 
         const response = await fetch(route);
+        // If middleware redirects to /unauthorized (HTML), treat as empty rather than throwing SyntaxError
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            console.warn('Budget sources endpoint did not return JSON (likely unauthorized), skipping.');
+            return false;
+        }
         const sources = await response.json();
 
         const select = document.getElementById('projectBudgetSource');

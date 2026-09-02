@@ -149,6 +149,24 @@ function reloadExtensionsTable() {
                         agingBadge = `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px;" title="Days awaiting admin review">${ext.days_awaiting_review}d</span>`;
                     }
 
+                    // B1 — reviewer attribution + reviewed timestamp (fallback to approved_* for old rows)
+                    // JS converts Y-m-d H:i:s to local short date + time per user confirmation 2026-09-02
+                    const reviewedByLabel = (ext.status === 'approved' || ext.status === 'rejected')
+                        ? (ext.reviewed_by_name || ext.approved_by_name || ext.reviewed_by || ext.approved_by || '<span style="color:#cbd5e1;">—</span>')
+                        : '<span style="color:#cbd5e1;">—</span>';
+                    const _rawReviewedAt = ext.reviewed_at || ext.approved_at || null;
+                    let reviewedAtLabel = '<span style="color:#cbd5e1;">—</span>';
+                    let reviewedAtTitle = '';
+                    if ((ext.status === 'approved' || ext.status === 'rejected') && _rawReviewedAt) {
+                        try {
+                            const d = new Date(_rawReviewedAt);
+                            reviewedAtLabel = d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) + ' ' + d.toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'});
+                            reviewedAtTitle = ` title="${_rawReviewedAt.replace(/"/g,'&quot;')}"`;
+                        } catch (e) {
+                            reviewedAtLabel = _rawReviewedAt;
+                        }
+                    }
+
                     // Evidence (Decision 4): count chip + clickable chips that
                     // open the document viewer modal (same pattern as issues/
                     // progress/risk attachments).
@@ -162,26 +180,24 @@ function reloadExtensionsTable() {
                         evidenceCell = `<div style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">${links}</div>`;
                     }
 
-                    // Editable for admin always; for staff only while
-                    // PENDING and OWNED by them (Decision 14). Backend is the
-                    // real enforcement point regardless — this just controls
-                    // button visibility.
+                    // Editable for admin always; for assigned staff — same as admin for their project
+                    // (per user 2026-09-02: staff can do most of admin on assigned project, except permanent delete/archived).
+                    // B1.1: allow assigned staff to edit any extension (approved/pending/rejected) on their project, not just pending.
                     const isAdmin = window.routePrefix === 'admin.projects';
                     const isStaff = window.routePrefix === 'staff.projects';
                     const isOwner = Number(ext.created_by_user_id) === Number(window.authUserId);
                     const isAssignedStaff = window.isAssignedStaff === true;
-                    // Admin may edit any row; assigned staff may edit any pending
-                    // extension on their project (not just their own).
-                    const canEdit = isAdmin || (isAssignedStaff && ext.status === 'pending');
-                    // Delete: admin may archive only pending/rejected;
-                    // staff may archive their OWN pending/rejected (Decision 14).
-                    const canDelete = isAdmin
+                    // Admin may edit any row; assigned staff may edit pending or approved on their assigned project
+                    // (rejected is immutable — must resubmit, per Decision 14; test expects 403 for staff edit rejected).
+                    const canEdit = isAdmin || (isAssignedStaff && (ext.status === 'pending' || ext.status === 'approved'));
+                    // Delete (archive): admin or assigned staff may archive any pending/rejected on assigned project;
+                    // other staff only own pending/rejected. Approved never directly archivable (revert first).
+                    const canDelete = (isAdmin || isAssignedStaff)
                         ? (ext.status === 'pending' || ext.status === 'rejected')
                         : (isStaff && isOwner && (ext.status === 'pending' || ext.status === 'rejected'));
-                    // Resubmit (Decision 6): only rejected rows; staff may only
-                    // resubmit their OWN (Decision 14). Admin may resubmit any.
-                    // Hidden when a pending extension already exists (1 pending max).
-                    const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || (isStaff && isOwner));
+                    // Resubmit (Decision 6): only rejected rows; assigned staff may resubmit any rejected on their project,
+                    // not just own. Hidden when a pending already exists (1 pending max).
+                    const canResubmit = ext.status === 'rejected' && !hasPending && (isAdmin || isAssignedStaff || (isStaff && isOwner));
                     // Review: admin or assigned staff decides on pending requests
                     // via the dedicated Review modal. Only the latest extension
                     // can be reviewed to prevent out-of-order decisions.
@@ -199,7 +215,8 @@ function reloadExtensionsTable() {
                         <td style="padding: 12px 15px; text-align: center;">
                             <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>${agingBadge}
                         </td>
-                        <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${ext.status === 'approved' ? (ext.approved_by_name || ext.approved_by || '<span style="color:#cbd5e1;">—</span>') : '<span style="color:#cbd5e1;">—</span>'}</td>
+                        <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${reviewedByLabel}</td>
+                        <td${reviewedAtTitle} style="padding: 12px 15px; text-align: center; font-size: 11px; color: #475569; white-space: nowrap;">${reviewedAtLabel}</td>
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
                             ${canReview ? `<button onclick='openReviewExtensionModal(${JSON.stringify(ext)})' style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Approve or reject this request"><i class="bi bi-gavel"></i> Review</button>` : ''}
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}

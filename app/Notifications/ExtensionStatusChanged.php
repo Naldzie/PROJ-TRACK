@@ -31,6 +31,10 @@ class ExtensionStatusChanged extends Notification
         public ?string $approvedEndDate = null,
         public ?string $currentEndDate = null,
         public ?int $daysExtended = null,
+        // B1 — actor attribution + reviewed timestamp for email/database
+        public ?string $actorName = null,
+        public ?int $actorId = null,
+        public ?string $reviewedAt = null,
     ) {
     }
 
@@ -49,6 +53,21 @@ class ExtensionStatusChanged extends Notification
             'Extension' => $this->extensionNumber ? '#' . $this->extensionNumber : '—',
             'Status'    => $statusLabel,
         ];
+
+        // B1 — actor attribution + reviewed timestamp (user confirmed 2026-09-02: include for approved/rejected)
+        if ($this->status === self::APPROVED && $this->actorName) {
+            $lines['Approved by'] = $this->actorName;
+        }
+        if ($this->status === self::REJECTED && $this->actorName) {
+            $lines['Rejected by'] = $this->actorName;
+        }
+        if (in_array($this->status, [self::APPROVED, self::REJECTED], true) && $this->reviewedAt) {
+            try {
+                $lines['Reviewed on'] = \Carbon\Carbon::parse($this->reviewedAt)->format('M d, Y h:i A');
+            } catch (\Throwable $e) {
+                $lines['Reviewed on'] = $this->reviewedAt;
+            }
+        }
 
         if ($this->status === self::REJECTED) {
             $lines['Rejection reason'] = $this->rejectionReason ?? 'Not provided';
@@ -75,8 +94,8 @@ class ExtensionStatusChanged extends Notification
                 'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
                 'intro'         => match ($this->status) {
                     self::SUBMITTED => 'A new project extension request has been submitted and requires your review.',
-                    self::APPROVED  => 'Your project extension request has been approved.',
-                    self::REJECTED  => 'Your project extension request was rejected. See the reason below.',
+                    self::APPROVED  => $this->actorName ? "Your project extension request has been approved by {$this->actorName}." : 'Your project extension request has been approved.',
+                    self::REJECTED  => $this->actorName ? "Your project extension request was rejected by {$this->actorName}. See the reason below." : 'Your project extension request was rejected. See the reason below.',
                     default         => 'The status of a project extension request has changed.',
                 },
                 'lines'         => $lines,
@@ -97,6 +116,11 @@ class ExtensionStatusChanged extends Notification
             'approved_end_date'=> $this->approvedEndDate,
             'current_end_date' => $this->currentEndDate,
             'days_extended'    => $this->daysExtended,
+            // B1 — actor attribution for inbox filtering/history
+            'actor_name'       => $this->actorName,
+            'actor_id'         => $this->actorId,
+            'reviewed_at'      => $this->reviewedAt,
+            'reviewed_by_name' => $this->actorName,
         ];
     }
 

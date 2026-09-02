@@ -248,6 +248,12 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/categories', [CategoryController::class, 'getCategories'])
         ->name('staff.categories.list');
 
+    // === BUDGET SOURCE ROUTES (READ-ONLY for dropdown) ===
+    // Staff can CHOOSE a budget source when creating/editing their assigned project;
+    // only admin can MANAGE (add/edit/delete) sources. This mirrors categories pattern.
+    Route::get('/budget-sources', [BudgetSourceController::class, 'getBudgetSources'])
+        ->name('staff.budget-sources.list');
+
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
         ->name('staff.documents.upload');
@@ -384,6 +390,10 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
     // === CATEGORY ROUTES (READ-ONLY) ===
     Route::get('/categories', [CategoryController::class, 'getCategories'])
         ->name('contractor.categories.list');
+
+    // === BUDGET SOURCE ROUTES (READ-ONLY for dropdown) ===
+    Route::get('/budget-sources', [BudgetSourceController::class, 'getBudgetSources'])
+        ->name('contractor.budget-sources.list');
 
 // === DOCUMENT ROUTES (READ-ONLY) ===
     Route::get('/projects/{project}/documents', [DocumentController::class, 'getProjectDocuments'])

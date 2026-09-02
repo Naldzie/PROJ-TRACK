@@ -149,6 +149,7 @@ class NotificationService
                 'System: Extension ' . $data['status']
                     . ($data['extension_number'] ? ' #' . $data['extension_number'] : '')
                     . ' for "' . $project . '"'
+                    . (!empty($data['actor_name']) ? ' by ' . $data['actor_name'] : '')
                     . '.',
             ],
             IssueReported::class => [
