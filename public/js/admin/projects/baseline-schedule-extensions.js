@@ -149,6 +149,24 @@ function reloadExtensionsTable() {
                         agingBadge = `<span style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-left: 4px;" title="Days awaiting admin review">${ext.days_awaiting_review}d</span>`;
                     }
 
+                    // B1 — reviewer attribution + reviewed timestamp (fallback to approved_* for old rows)
+                    // JS converts Y-m-d H:i:s to local short date + time per user confirmation 2026-09-02
+                    const reviewedByLabel = (ext.status === 'approved' || ext.status === 'rejected')
+                        ? (ext.reviewed_by_name || ext.approved_by_name || ext.reviewed_by || ext.approved_by || '<span style="color:#cbd5e1;">—</span>')
+                        : '<span style="color:#cbd5e1;">—</span>';
+                    const _rawReviewedAt = ext.reviewed_at || ext.approved_at || null;
+                    let reviewedAtLabel = '<span style="color:#cbd5e1;">—</span>';
+                    let reviewedAtTitle = '';
+                    if ((ext.status === 'approved' || ext.status === 'rejected') && _rawReviewedAt) {
+                        try {
+                            const d = new Date(_rawReviewedAt);
+                            reviewedAtLabel = d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'}) + ' ' + d.toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'});
+                            reviewedAtTitle = ` title="${_rawReviewedAt.replace(/"/g,'&quot;')}"`;
+                        } catch (e) {
+                            reviewedAtLabel = _rawReviewedAt;
+                        }
+                    }
+
                     // Evidence (Decision 4): count chip + clickable chips that
                     // open the document viewer modal (same pattern as issues/
                     // progress/risk attachments).
@@ -199,7 +217,8 @@ function reloadExtensionsTable() {
                         <td style="padding: 12px 15px; text-align: center;">
                             <span${statusTitle} style="background: ${statusStyle.bg}; color: ${statusStyle.color}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: ${ext.status === 'rejected' && ext.rejection_reason ? 'help' : 'default'};">${statusStyle.label}</span>${agingBadge}
                         </td>
-                        <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${ext.status === 'approved' ? (ext.approved_by_name || ext.approved_by || '<span style="color:#cbd5e1;">—</span>') : '<span style="color:#cbd5e1;">—</span>'}</td>
+                        <td style="padding: 12px 15px; text-align: center; font-size: 12px; color: #475569;">${reviewedByLabel}</td>
+                        <td${reviewedAtTitle} style="padding: 12px 15px; text-align: center; font-size: 11px; color: #475569; white-space: nowrap;">${reviewedAtLabel}</td>
                         <td style="padding: 12px 15px; text-align: center; white-space: nowrap;">
                             ${canReview ? `<button onclick='openReviewExtensionModal(${JSON.stringify(ext)})' style="background: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;" title="Approve or reject this request"><i class="bi bi-gavel"></i> Review</button>` : ''}
                             ${canEdit ? `<button onclick='openEditExtensionModal(${JSON.stringify(ext)})' style="background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px;"><i class="bi bi-pencil"></i> Edit</button>` : ''}

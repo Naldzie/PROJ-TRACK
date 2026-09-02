@@ -154,6 +154,10 @@
                     @if($isMonthEnd && !empty($d['planned_date']))
                         <div class="notif-meta" style="margin-top:4px; color:#b45309;">Planned inspection: {{ \Illuminate\Support\Carbon::parse($d['planned_date'])->format('M d, Y') }}</div>
                     @endif
+                    {{-- B1 — reviewer attribution + reviewed timestamp --}}
+                    @if(str_contains($n->type, 'ExtensionStatusChanged') && !empty($d['actor_name']))
+                        <div class="notif-meta" style="margin-top:4px; color:#475569;">{{ ucfirst($d['status'] ?? 'Reviewed') }} by {{ $d['actor_name'] }}@if(!empty($d['reviewed_at'])) · {{ \Illuminate\Support\Carbon::parse($d['reviewed_at'])->format('M d, Y h:i A') }}@elseif(!empty($d['reviewed_by_name'])) · {{ $d['reviewed_by_name'] }}@endif</div>
+                    @endif
                     @if(str_contains($n->type, 'ExtensionStatusChanged') && ($d['status'] ?? '') === 'rejected' && !empty($d['rejection_reason']))
                         <div class="notif-meta" style="margin-top:4px; color:#b91c1c;">Reason: {{ $d['rejection_reason'] }}</div>
                     @endif

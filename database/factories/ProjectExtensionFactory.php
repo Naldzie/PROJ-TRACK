@@ -40,6 +40,9 @@ class ProjectExtensionFactory extends Factory
             'status'              => fake()->randomElement(['pending', 'approved', 'rejected']),
             'approved_by_user_id' => null,
             'approved_at'         => null,
+            // B1 — reviewer attribution (current actor for approved OR rejected)
+            'reviewed_by_user_id' => null,
+            'reviewed_at'         => null,
         ];
     }
 
@@ -53,6 +56,22 @@ class ProjectExtensionFactory extends Factory
         return $this->state(fn () => [
             'status'     => 'approved',
             'approved_at' => now(),
+            'reviewed_at' => now(),
+        ]);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Rejected Extension State — B1 (reviewer = rejector)
+     * ------------------------------------------------------------------------
+     */
+    public function rejected(): static
+    {
+        return $this->state(fn () => [
+            'status'           => 'rejected',
+            'approved_at'      => now(),
+            'reviewed_at'      => now(),
+            'rejection_reason' => fake()->sentence(12),
         ]);
     }
 

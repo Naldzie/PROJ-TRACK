@@ -102,6 +102,9 @@ class ProjectExtensionController extends Controller
             $durationDays = $originalEndDate->diffInDays($newEndDate);
 
             $canAutoApprove = ($isAdmin || $project->isAssignedTo(auth()->user())) && $status === 'approved';
+            // B1 — reviewer attribution: record actor for both approved and rejected at creation time
+            // Keep approved_* as sync copy for one release (so old reports reading approved_by still show rejector)
+            $canReviewAtCreation = ($isAdmin || $project->isAssignedTo(auth()->user())) && in_array($status, ['approved', 'rejected'], true);
 
             $extension = ProjectExtension::create([
                 'project_id' => $project->id,
@@ -113,8 +116,10 @@ class ProjectExtensionController extends Controller
                 'reason_category' => $validated['reason_category'] ?? null,
                 'status' => $status,
                 'rejection_reason' => $rejectionReason,
-                'approved_by_user_id' => $canAutoApprove ? auth()->id() : null,
-                'approved_at' => $canAutoApprove ? now() : null,
+                'approved_by_user_id' => $canReviewAtCreation ? auth()->id() : null,
+                'approved_at' => $canReviewAtCreation ? now() : null,
+                'reviewed_by_user_id' => $canReviewAtCreation ? auth()->id() : null,
+                'reviewed_at' => $canReviewAtCreation ? now() : null,
                 'created_by_user_id' => auth()->id(),
             ]);
 
@@ -199,7 +204,7 @@ class ProjectExtensionController extends Controller
     {
         try {
             $extensions = $project->extensions()
-                ->with(['approver', 'attachments'])
+                ->with(['approver', 'reviewer', 'attachments'])
                 ->orderBy('extension_number', 'asc')
                 ->get()
                 ->map(fn ($ext) => $this->formatExtension($ext));
@@ -228,7 +233,7 @@ class ProjectExtensionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Extension not found'], 404);
             }
 
-            $extension->load(['approver', 'attachments']);
+            $extension->load(['approver', 'reviewer', 'attachments']);
 
             return response()->json([
                 'success' => true,
@@ -366,13 +371,18 @@ class ProjectExtensionController extends Controller
                     }
 
                     $extension->status = $validated['status'];
+                    // B1 — record reviewer for both approved and rejected; keep approved_* as sync copy for BC
                     if ($validated['status'] === 'approved') {
                         $extension->approved_by_user_id = $user->id;
                         $extension->approved_at = now();
+                        $extension->reviewed_by_user_id = $user->id;
+                        $extension->reviewed_at = now();
                         $extension->rejection_reason = null;
                     } else {
-                        $extension->approved_by_user_id = null;
-                        $extension->approved_at = null;
+                        $extension->approved_by_user_id = $user->id;
+                        $extension->approved_at = now();
+                        $extension->reviewed_by_user_id = $user->id;
+                        $extension->reviewed_at = now();
                         $extension->rejection_reason = $validated['rejection_reason'];
                     }
 
@@ -479,18 +489,25 @@ class ProjectExtensionController extends Controller
                 if ($validated['status'] === 'approved') {
                     $extension->approved_by_user_id = $user->id;
                     $extension->approved_at = now();
+                    $extension->reviewed_by_user_id = $user->id;
+                    $extension->reviewed_at = now();
                     // Approving clears any stale rejection reason from a
                     // PRIOR rejection cycle on this same extension.
                     $extension->rejection_reason = null;
                 } elseif ($validated['status'] === 'rejected') {
-                    $extension->approved_by_user_id = null;
-                    $extension->approved_at = null;
+                    // B1 — record rejector; keep approved_* as sync copy for one release so old reports still show actor
+                    $extension->approved_by_user_id = $user->id;
+                    $extension->approved_at = now();
+                    $extension->reviewed_by_user_id = $user->id;
+                    $extension->reviewed_at = now();
                     $extension->rejection_reason = $validated['rejection_reason'];
                 } elseif ($validated['status'] === 'pending') {
                     // Manually reverting to pending (rare, but keep state
                     // clean) — clear both approval and rejection traces.
                     $extension->approved_by_user_id = null;
                     $extension->approved_at = null;
+                    $extension->reviewed_by_user_id = null;
+                    $extension->reviewed_at = null;
                     $extension->rejection_reason = null;
                 }
             }
@@ -663,6 +680,8 @@ class ProjectExtensionController extends Controller
             $originalEndDate = $project->planned_end_date;
             $newEndDate = Carbon::parse($validated['new_end_date']);
 
+            // B1 — set reviewer fields for approved/rejected resubmits (keep approved_* sync copy)
+            $canReviewResubmit = in_array($status, ['approved', 'rejected'], true);
             $newExtension = ProjectExtension::create([
                 'project_id' => $project->id,
                 'extension_number' => $nextExtensionNumber,
@@ -673,6 +692,10 @@ class ProjectExtensionController extends Controller
                 'reason_category' => $validated['reason_category'] ?? null,
                 'status' => $status,
                 'rejection_reason' => $rejectionReason,
+                'approved_by_user_id' => $canReviewResubmit ? auth()->id() : null,
+                'approved_at' => $canReviewResubmit ? now() : null,
+                'reviewed_by_user_id' => $canReviewResubmit ? auth()->id() : null,
+                'reviewed_at' => $canReviewResubmit ? now() : null,
                 'created_by_user_id' => auth()->id(),
             ]);
 
@@ -804,7 +827,7 @@ class ProjectExtensionController extends Controller
 
             $extensions = $project->extensions()
                 ->onlyTrashed()
-                ->with(['approver', 'attachments'])
+                ->with(['approver', 'reviewer', 'attachments'])
                 ->orderBy('extension_number', 'asc')
                 ->get()
                 ->map(fn ($ext) => $this->formatExtension($ext));
@@ -1494,6 +1517,14 @@ class ProjectExtensionController extends Controller
         $effectiveEnd = \Carbon\Carbon::parse($extension->effectiveEndDate());
         $daysExtended = $currentEnd->diffInDays($effectiveEnd);
 
+        // B1 — actor + reviewed timestamp for email attribution
+        $actor = auth()->user();
+        $actorName = $actor?->name ?? $actor?->email ?? null;
+        $actorId = $actor?->id ?? null;
+        $reviewedAt = $extension->reviewed_at?->format('Y-m-d H:i:s')
+            ?? $extension->approved_at?->format('Y-m-d H:i:s')
+            ?? now()->format('Y-m-d H:i:s');
+
         $notification = new ExtensionStatusChanged(
             $project->id,
             $project->title,
@@ -1505,7 +1536,10 @@ class ProjectExtensionController extends Controller
                 ? $effectiveEnd->format('M d, Y')
                 : null,
             $currentEnd->format('M d, Y'),
-            $daysExtended
+            $daysExtended,
+            $actorName,
+            $actorId,
+            $reviewedAt
         );
 
         try {
@@ -1587,6 +1621,10 @@ class ProjectExtensionController extends Controller
             // Decision 15: human-friendly approver name for the table.
             'approved_by_name' => $ext->approver?->name ?? null,
             'approved_at' => $ext->approved_at?->format('Y-m-d H:i:s'),
+            // B1 — current reviewer (approved OR rejected). Fallback to approver for old rows.
+            'reviewed_by' => $ext->reviewer?->email ?? $ext->approver?->email ?? null,
+            'reviewed_by_name' => $ext->reviewer?->name ?? $ext->approver?->name ?? null,
+            'reviewed_at' => $ext->reviewed_at?->format('Y-m-d H:i:s') ?? $ext->approved_at?->format('Y-m-d H:i:s'),
             // Review aging (Decision 5): days awaiting review for pendings.
             'days_awaiting_review' => $ext->isPending() ? $ext->daysAwaitingReview() : 0,
             // Decision 14/15: requester id (for ownership checks) + name.

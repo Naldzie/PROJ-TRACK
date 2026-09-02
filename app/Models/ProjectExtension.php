@@ -31,6 +31,10 @@ class ProjectExtension extends Model
         'rejection_reason',
         'approved_by_user_id',
         'approved_at',
+        // B1 — reviewer attribution (current actor for approved OR rejected)
+        // reviewed_* mirrors approved_* for one release for BC; see migration 2026_09_02_000001
+        'reviewed_by_user_id',
+        'reviewed_at',
         'created_by_user_id',
         // Partial approval: granted date when an admin awards less than requested
         // (Decision 7). Baseline restore point captured on adjusted-baseline save (§4).
@@ -42,6 +46,8 @@ class ProjectExtension extends Model
         'original_end_date' => 'date',
         'new_end_date' => 'date',
         'approved_at' => 'datetime',
+        // B1 — current reviewer timestamp (approved or rejected)
+        'reviewed_at' => 'datetime',
         // The date actually granted by the admin (may be < new_end_date).
         'approved_new_end_date' => 'date',
         // JSON snapshot of the whole baseline schedule at save time.
@@ -59,6 +65,13 @@ class ProjectExtension extends Model
     public function approver()
     {
         return $this->belongsTo(User::class, 'approved_by_user_id');
+    }
+
+    // B1 — current reviewer (approved OR rejected). For BC, approver() is kept as alias;
+    // new code should use reviewer(). See Plan §4 Decision 1.
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by_user_id');
     }
 
     public function requester()

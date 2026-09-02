@@ -139,7 +139,7 @@ class ReportExportService
 
         $this->writeHeaderRow($sheet, [
             'Extension #', 'Original End Date', 'New End Date', 'Duration (days)',
-            'Status', 'Reason', 'Rejection Reason', 'Approved At', 'Approved By',
+            'Status', 'Reason', 'Rejection Reason', 'Reviewed At', 'Reviewed By',
         ]);
 
         $row = 2;
@@ -152,8 +152,9 @@ class ReportExportService
                 ucfirst($extension->status ?? ''),
                 $extension->reason,
                 $extension->rejection_reason,
-                $extension->approved_at?->format('Y-m-d H:i'),
-                $extension->approver?->name,
+                // B1 — show reviewer timestamp/name for both approved & rejected; fallback to approved_* for old rows
+                ($extension->reviewed_at ?? $extension->approved_at)?->format('Y-m-d H:i'),
+                ($extension->reviewer?->name ?? $extension->approver?->name),
             ], null, "A{$row}");
             $row++;
         }
