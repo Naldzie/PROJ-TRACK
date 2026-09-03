@@ -94,6 +94,30 @@ Related plan
     - Summary rows ("CUMULATIVE %", "COST") look like activity rows.
     - Excel hardening helps but every new contractor can break it with a
       synonym not in the hardcoded list.
+    - Activities extracted but not grouped to correct months: the working
+      Excel parser (Updated-S-Curve-3-Storey-Bldg.xlsx) extracts all 59
+      activities but the assignment to their monthly buckets appears off
+      (monthPesoTotal grouping via SUM(pair) I:J etc. vs Setup modal
+      `baseline-schedule-setup-modal.js:150` per-month `activities[]`
+      checklist). Cause TBD — could be `SCurveImportService.php:458`
+      paired-column inference leaking to wrong spans, or the modal's flat
+      `description = names.join(', ')` grouping vs `ProjectActivity` per
+      `month_label` linkage. Needs targeted QA (see §8 New Question + §11).
+
+  3.4 Known Issue — Activity Month Grouping (NEW, to verify)  ⚠️ OPEN
+  -------------------------------------------------------------
+    - Report 2026-09-03: "activities did not able to assign the projects
+      properly to their own months" — unsure if parser fault
+      (`SCurveImportService.php:510` activitiesByMonth loop / `scurve-
+      import-core.js:62` passthrough) or system grouping fault
+      (`baseline-schedule-setup-modal.js:1618` display/payload or
+      `BaselineScheduleController::storeInitialBaselineSetup:425` DB).
+    - Current code on paper correctly loops all months `if(value>0)` per
+      month (not `break` after first), verified via explore 2026-09-03.
+      Test gap: SCurveImportTest checks `count(activities)=59` not per-month
+      distribution, so a swap is not caught.
+    - Logged as issue to investigate; flagged for future fix without
+      delaying plan commit. Will be verified in Step 0 QA before any code.
 
   Goal of this plan: make the parser "as accurate as possible so creating a
   new project is automated, manual input is only for correction, and the
@@ -542,6 +566,17 @@ Related plan
       not auto-popup) plus §11 flagged entry for guided matcher. Plan stays
       implementation-ready, no code touched.
 
+  2026-09-03 — Activity grouping issue noted (no code changed).
+    - User: working Excel parser extracts all 59 activities but "did not able
+      to assign the projects properly to their own months" — unsure if parser
+      or system grouping fault.
+    - Explore 2026-09-03 verified SCurveImportService.php:458 paired SUM + 510
+      loop adds to each month with value>0 (no break) and core passthrough is
+      1:1, but tests lack per-month distribution asserts (test gap).
+    - Logged as §3.4 Known Issue + §8 open question + §11 flagged item.
+      Flagged for Step 2d / Step 5 verification before implementation. No code
+      touched per user request "for now please note as issue".
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
@@ -554,6 +589,13 @@ Related plan
   - Should we keep tesseract.js as a third fallback or remove it to
     simplify? Recommendation: keep but hide behind Gemini — only run
     tesseract if Gemini key missing.
+  - NEW 2026-09-03: Activity month grouping — is the bug in
+    SCurveImportService.php:458 SUM(pair) vs single-column file, or in
+    baseline-schedule-setup-modal.js per-month activities[] vs joined
+    description? Need a minimal Excel fixture: activity A with pesos
+    only in Month 1 (I+J), activity B only in Month 2 (K+L) and check
+    that payload months[0].activities = [A], months[1].activities = [B]
+    not [A,B] lumped. Also verify J→K gap !=2 edge.
 
 ===============================================================================
   9. DECISION LOG
@@ -676,6 +718,12 @@ Related plan
 ===============================================================================
   11. FLAGGED FOR FUTURE
 ===============================================================================
+
+  - Activity month grouping investigation (from §3.4): verify
+    SCurveImportService.php:510 activitiesByMonth leak, single-column
+    vs paired inference, and baseline-schedule-setup-modal.js grouping;
+    add per-month tests (see §8). Flagged for immediate Step 2d if confirmed
+    before implementation — otherwise carry into Step 5 polish.
 
   - If a new S-curve layout appears (e.g., quarterly columns Q1..Q4), add a
     third layout path in scurve-pdf-parser-core.js following the weekly-
