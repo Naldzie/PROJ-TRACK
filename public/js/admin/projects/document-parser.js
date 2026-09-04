@@ -120,6 +120,21 @@ async function runDocumentAutofill() {
                 for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
                     if (pooled[f]) parsed[f] = pooled[f];
                 }
+                // Step 1f-2 vote inspector: stash + log every find and the winner.
+                // How to use: in the browser console run `window._parserDebug = true`,
+                // then upload the PDF(s) again. Copy the tables and paste them here.
+                try {
+                    window._autofillVoteDebug = pooled._debug || null;
+                    if (typeof window !== 'undefined' && window._parserDebug && pooled._debug) {
+                        console.groupCollapsed('[Parser] pooled vote inspector (all finds → winner)');
+                        for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+                            const rows = (pooled._debug && pooled._debug[f]) || [];
+                            console.log('[Parser] field:', f, '| winner:', pooled[f], '| finds:', rows.length);
+                            if (rows.length && console.table) console.table(rows.slice(0, 10));
+                        }
+                        console.groupEnd();
+                    }
+                } catch (e) { /* inspector is best-effort only */ }
             }
         } catch (e) { /* pooled vote is best-effort — fall back to per-file vote */ }
         const mismatchInfo = getMismatchInfo(perFileData);

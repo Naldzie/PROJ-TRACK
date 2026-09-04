@@ -270,3 +270,48 @@ test('Step 1e-4/1e-5: pooled vote — repeats beat a wrong first hit', () => {
     ]);
     assert.equal(pooled.budget, '6495049.29');
 });
+
+// ─── Step 1f: Contract: title label + vote inspector + table tightening ──────
+
+test('Step 1f-1: Contract: label title with Savings tail, cut at located at', () => {
+    // Acceptance certificate wording (user Image 1): title inline + location after.
+    const lines = core.buildLinesFromText(
+        'Contract: Construction of Four-Storey\nAcademic Building (College of Health Sciences) - Savings located at Camarines Sur'
+    );
+    const title = core.extractTitle(lines, lines.join('\n'));
+    assert.ok(title.includes('Construction of Four-Storey'));
+    assert.ok(title.toLowerCase().includes('savings'));
+    assert.ok(!title.toLowerCase().includes('located at'));
+    assert.ok(!title.toLowerCase().includes('camarines'));
+});
+
+test('Step 1f-1: Contract Amount/Time lines are NOT titles (guard)', () => {
+    // A bare money/time line must not become the project title.
+    const money = core.buildLinesFromText('Contract Amount: Php 6,495,049.29');
+    assert.equal(core.extractTitle(money, money.join('\n')), null);
+    const time = core.buildLinesFromText('Contract Time: 90 calendar days');
+    assert.equal(core.extractTitle(time, time.join('\n')), null);
+});
+
+test('Step 1f-2/1f-3: inspector debug + contract label beats repeated table guesses', () => {
+    // 1x contract-summary hit must beat 3x accomplishment-table repeats of 92025.
+    const summary = 'Original Contract Amount: Php 6,495,049.29';
+    const table = [
+        'Accomplishment Report breakdown table',
+        'Line item Total Cost P 92,025.00',
+        'Line item Total Cost P 92,025.00',
+        'Line item Total Cost P 92,025.00',
+    ].join('\n');
+    const pooled = core.parseProjectInfoPooled([
+        { text: summary, fileName: 'summary.pdf' },
+        { text: table, fileName: 'accomplishment.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+    // Inspector shape: every find listed with the winner on top.
+    assert.ok(pooled._debug && Array.isArray(pooled._debug.budget));
+    assert.ok(pooled._debug.budget.length >= 2);
+    assert.equal(pooled._debug.budget[0].value, '6495049.29');
+    // Table section weighs less than contract summary.
+    assert.equal(core.getSectionWeight('Original Contract Amount summary'), 1.0);
+    assert.ok(core.getSectionWeight('Accomplishment Report breakdown table') < 0.6);
+});

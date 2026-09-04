@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 IN PROGRESS — Step 1e IMPLEMENTED + tested (JS 44/44: core 24/24 incl. 5 new Step 1e fixtures); awaiting user browser re-test on real CHS-Savings.pdf bundle; S-curve Steps 2-4 still deferred
+# Status: ✅ Step 1f COMMITTED (JS 47/47) — ⏸️ PAUSED per user. NEXT = Step 1g (Choice B: ask-user on disagreeing labeled amounts + inspector source snippets). S-curve Steps 2-4 still deferred. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -545,6 +545,105 @@ Related plan
       files unchanged.
     - No new deps, no vite, S-curve still deferred.
 
+  STEP 1f — CHS-Savings re-test fixes: Contract: title + vote inspector + table tightening  🔄 IMPLEMENTED, NOT COMMITTED (2026-09-04)
+    Context: user re-test after Step 1e on real CHS - Savings.pdf bundle:
+      title still short (acceptable per user, fix if possible), budget 92025.00
+      (NEW wrong, was 5049.29 tail), start/end/duration now accurate.
+      User Image 1 (Certificate of Preliminary Acceptance §1): the bundle calls the
+      title "Contract: Construction of Four-Storey Academic Building (College of
+      Health Sciences) - Savings located at Camarines Sur Polytechnic Colleges
+      (CSPC), Nabua ... dated December 9, 2024". "Contract:" was never a title
+      label, so that full-tail line was ignored and a shorter "Project name"
+      occurrence won. Accomplishment report has a cost-breakdown table whose bottom
+      row carries the true total 6,495,049.29; user could not find 92,025 by eye
+      (pure scan, Ctrl+F unusable) and asked if the system sums rows (it does not —
+      it only picks single numbers; 92025 is one extracted string or OCR misread).
+      User requested a console vote log (all finds + winner per field).
+
+    1f-1. Guarded "Contract:" title label + "located at" stop (core extractTitle).
+        - New scanContractLabelTitle(): matches /contract\s*:\s*(.*)/ only when the
+          line does NOT contain amount|time|price|period|duration|no.|number, and the
+          value contains a construction-family word. Short values (<60) join
+          continuation lines (Title-Case / value-keyword / ALL-CAPS part) until
+          located-at / DESCRIPTION_NEXT_FIELD / hereinafter / WHEREAS, with hyphen-
+          break glue. cutAtLocatedAt() splits value at /\s+located\s+at\b/i so the
+          location never leaks into the title. Preferred when it yields ≥20 chars
+          (acceptance tail beats short Project-name block); otherwise falls through
+          to the existing Project-label path unchanged. Project path also cuts its
+          inline value and continuation at located-at. Guard tests: "Contract Amount:
+          Php ..." and "Contract Time: 90 ..." return null as titles.
+    1f-2. Vote inspector (user request).
+        - Core: voteCandidatePoolDebug(cands) → { winner, rows:[{value,norm,count,
+          score,labeledCount,files}] } sorted score-desc; parseProjectInfoPooled now
+          returns _debug { budget, duration, startDate, endDate } alongside winners
+          (return shape backward compatible — pooled.budget etc. still strings).
+        - Wrapper (document-parser.js): stashes pooled._debug to window._autofillVoteDebug
+          and, when window._parserDebug is true, console.groupCollapsed + per-field
+          console.table (top 10). Use: console → `window._parserDebug = true` →
+          re-upload → copy tables here. Best-effort try/catch, never blocks preview.
+    1f-3. Price vote tightening (reproduced 92025 in-test, then fixed).
+        - Root cause (verified by new failing-then-passing test): collectBudgetCandidates
+          labeled loop gave every "Total Cost P 92,025" table row weight 0.4–0.85 with
+          no penalty, and ctxOf ±1 missed the table header for the 2nd+ row (0.85
+          neutral), so 3x table (1.05) outvoted 1x contract summary (1.0).
+        - Fix: (i) getSectionWeight table 0.6→0.4 for accomplishment/quantity/
+          breakdown/table contexts (contract still 1.0, other supporting 0.5);
+          (ii) labeled money without any contract word nearby (original/revised/
+          contract amount|price|time, effectivity) halves weight (table row 0.4→0.2,
+          neutral row 0.85→0.425); true bottom-row "Total Contract Amount ..." keeps
+          1.0 via the contract-word exemption; (iii) unlabeled fallbacks 0.8→0.5
+          multiplier; (iv) budget ctxOf widened ±1→±2 so rows see the table header.
+          Result: 1x summary (1.0) beats 3x table (0.6). "It never sums rows" stays
+          true — pooling sums WEIGHTS (confidence), never money values.
+    - Tests (+3 Step 1f fixtures, core 27/27): Contract:-label tail with located-at cut;
+      Amount/Time guard nulls; pooled prefers 1x summary over 3x table + _debug shape
+      (winner first row) + getSectionWeight contract 1.0 / table <0.6. Full JS 47/47
+      (core 27 + scurve 20). No PHP touched.
+    - Next: user re-uploads real bundle with `window._parserDebug = true` and pastes
+      the budget table here if 92025 (or another figure) persists — the log will show
+      the exact source line/section instead of guessing. Short title acceptable fallback.
+
+  STEP 1g — Choice B (ask-user) + inspector source snippets  ⬜ NOT STARTED (planned, user approved)
+    Context: real-bundle inspector output (user pasted 2026-09-04):
+      budget winner 92025.00 (count 2, score 2, labeled 2) beats 6495049.29
+      (count 1, score 1, labeled 1) and 5049.29 (1/1/1). Duration 90, start
+      2024-12-09, end 2025-03-09 all single-find winners. So the two 92025 hits are
+      FULL-weight labeled finds — weight tightening alone cannot stop them.
+      User decision (plain words): for now Choice B — when two trusted prices
+      disagree, do NOT silently pick the bigger one; fill best guess but pop a note
+      asking the user to pick. Choice A (automatic bigger-wins) or both (confidence-
+      based: auto when clear, ask when close) may come later.
+      Related notes from a parallel session (committed alongside, read before designing):
+      textfiles/others(notes)/pdf_parser_contract_amount_resolution_plan.md (evidence
+      hierarchy: label/context > structure > frequency > history > ask-user; "bigger
+      wins" must NOT be the main rule) and
+      textfiles/others(notes)/contract_amount_duration_accidental_discovery.md (37-project
+      amount-vs-duration table is LOW priority, secondary plausibility signal only —
+      document evidence > historical evidence; do NOT build it now).
+
+    1g-1. Inspector source snippets (do FIRST — reveals where the two 92025s live).
+        - Extend each pooled candidate with: matched label/pattern name, ±2-line source
+          excerpt, page/section tag when available. Log rows gain {pattern, excerpt}.
+          Pure in core (testable), rendered via existing _parserDebug console.table.
+        - User re-runs once and pastes the budget table → determines Case A (duplicates
+          of one line → dedupe: count near-identical excerpts once) vs Case B (two truly
+          different labeled lines → Choice B ask-user below).
+    1g-2. Choice B disagree handling (preview modal, document-parser.js + Blade preview).
+        - Trigger: pooled top-2 budget candidates both labeled with score gap SMALL
+          (e.g., winner score < 2× runner-up) and different normalized values.
+        - Behavior: preview fills the current winner BUT shows an amber note under
+          Contract Price: "I found two different prices — X (n files/lines) and Y.
+          Please pick the right one." with both values as one-click buttons + keep-
+          editable input. Never blocks Apply (same non-blocking pattern as the red
+          mis-upload banner). Title/contractor/etc. keep existing behavior.
+        - Future (NOT now): Choice A / both — auto-pick when gap is LARGE (e.g., ≥3×)
+          or contract-word label beats table label outright; historical plausibility
+          (amount-vs-duration table) only as secondary warning, never the decider.
+    - Tests: (i) excerpt present in _debug rows; (ii) disagree fixture (1x 6.4M labeled
+      vs 2x 92k labeled → winner filled + disagree flag true); (iii) agree fixture
+      (single clear winner → flag false); (iv) full JS suite green + 4 contract files unchanged.
+    - No new deps, no vite, S-curve still deferred.
+
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
     File: app/Services/SCurveImportService.php
     (also mirrors to public/js/admin/projects/scurve-pdf-parser-core.js for PDF)
@@ -960,6 +1059,38 @@ Related plan
     - Note: existing "ignores ambient amounts" test still passes (fallback keeps Php/NET
       TOTAL/P-prefix + >100k guard). Next: user re-uploads real CHS - Savings.pdf in
       browser and reports title/price/duration/start per-field results before any S-curve work.
+
+  2026-09-04 — Step 1f IMPLEMENTED (code + tests, NOT committed per user).
+    - Trigger: user re-test (title still short-acceptable, price 92025.00 NEW wrong,
+      dates/duration accurate) + Image 1 (acceptance "Contract: ... - Savings located
+      at ..." label) + accomplishment breakdown table with true total at bottom +
+      "system adding rows?" Q (answered: never sums values, only weights) + console
+      vote-log request.
+    - Files: document-parser-core.js (scanContractLabelTitle + cutAtLocatedAt both paths,
+      Amount/Time guard, voteCandidatePoolDebug + _debug, table weights 0.4/halve/0.5,
+      budget ctx ±2), document-parser.js (window._autofillVoteDebug + _parserDebug
+      console.table inspector), tests/js/document-parser-core.test.mjs (+3 Step 1f
+      fixtures incl. failing-then-passing 1x-summary-vs-3x-table test).
+    - Tests: core 27/27, full JS 47/47 (core 27 + scurve 20). No PHP touched.
+    - No commit per user instruction; S-curve still deferred. Next: user browser
+      re-test with inspector output paste-back if price still off.
+
+  2026-09-04 — SESSION HANDOFF (pausing here per user; all work committed).
+    - Where we are: Step 1f code+tests done and COMMITTED this session (Contract: title
+      label + located-at cut, vote inspector, table tightening). Browser re-test by user:
+      TITLE NOW CORRECT (acceptance "Contract:" line works), dates/duration accurate,
+      price still wrong: inspector shows 92025.00 (2 finds, score 2) beats 6495049.29
+      (1 find, score 1). The two 92025s are full-weight LABELED finds — weights alone
+      cannot fix; need source excerpts (Step 1g-1) then Choice B ask-user (Step 1g-2).
+    - User decisions banked: Revised wins over Original (D11); try-ALL-pages pooled VALUE
+      vote + per-file WARNING vote (D12); Best-guess + correction always; short title
+      acceptable fallback; Choice B now, Choice A/both later.
+    - For the next model/session: start at STEP 1g above (NOT STARTED). Read
+      §7 session logs (last 3 entries), Decision 11/12, the two others(notes)/ files, and
+      run `node --test tests/js/document-parser-core.test.mjs` (expect 27/27) before
+      touching code. Test files that must stay green: the 4 contract PDFs + CHS bundle
+      browser check. Branch: phase-5-parser-accuracy (do NOT merge without user OK).
+    - Working tree after this commit: CLEAN.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE

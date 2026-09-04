@@ -385,11 +385,66 @@ const DocumentParserCore = (function () {
     function extractTitle(lines, text) {
         // Try greedy: find "Project:" line and join continuation lines
         const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // Cut a title where the location begins inline ("... - Savings located at ...").
+        // The acceptance certificate writes title + location on one reflowed line.
+        // Called by: contract-label scan + greedy joins below.
+        const cutAtLocatedAt = (s) => String(s || '').split(/\s+located\s+at\b/i)[0].trim();
+        // Step 1f-1: guarded "Contract:" title label (acceptance certificates say
+        // "Contract: Construction of Four-Storey Academic Building (...) - Savings").
+        // Guard: reject Contract Amount/Time/Price/Period/Duration/No./Number lines.
+        // Returns the full title or null so the Project-label path below still runs.
+        const scanContractLabelTitle = () => {
+            for (let i = 0; i < nonEmpty.length; i++) {
+                const line = nonEmpty[i];
+                if (!/contract\s*:/i.test(line)) continue;
+                if (/contract\s*(amount|time|price|period|duration|no\.?|number)/i.test(line)) continue;
+                const m = line.match(/contract\s*:\s*(.*)/i);
+                if (!m) continue;
+                let value = cutAtLocatedAt(cleanValue(m[1] || ''));
+                if (!value || value.length < 5) {
+                    const nxt = cutAtLocatedAt(cleanValue(nonEmpty[i + 1] || ''));
+                    if (nxt && nxt.length >= 5) value = nxt;
+                }
+                if (!value) continue;
+                if (!/construction|building|renovation|rehabilitation|provision|completion|upgrading|repair|engineering/i.test(value.toLowerCase())) continue;
+                // Short split title → join continuation lines (same rules as Project path).
+                if (value.length < 60) {
+                    const parts = [value];
+                    for (let j = i + 1; j < nonEmpty.length && parts.join(' ').length < 200; j++) {
+                        const next = nonEmpty[j];
+                        if (/located\s+at\b/i.test(next)) {
+                            const before = cutAtLocatedAt(next);
+                            if (before && before.length >= 5) parts.push(before);
+                            break;
+                        }
+                        if (DESCRIPTION_NEXT_FIELD.test(next)) break;
+                        if (/hereinafter|to\s+be\s+completed\s+within|WITNESSETH|WHEREAS/i.test(next)) break;
+                        const isAllCapsPart = next === next.toUpperCase() && /[A-Z]/.test(next) && next.length >= 5 && next.length <= 150;
+                        if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsPart) {
+                            parts.push(cutAtLocatedAt(next));
+                            if (parts.join(' ').length >= 40) break;
+                        } else if (parts.length > 0) break;
+                    }
+                    if (parts.length > 1) value = parts.join(' ').replace(/-\s+(?=[A-Za-z])/g, '-');
+                }
+                value = cutAtLocatedAt(value);
+                if (/^oe\s+/i.test(value)) value = value.replace(/^oe\s+/i, '').trim();
+                const normalized = lenRange(20, 200)(cleanValue(value));
+                if (normalized) return normalized;
+            }
+            return null;
+        };
+        // Prefer the Contract-label title when it is fuller than the Project-label one
+        // (acceptance page carries the "(College ...)-Savings" tail the bundle's
+        // "Project name" block truncates). Falls through when absent/short.
+        const contractTitle = scanContractLabelTitle();
+        if (contractTitle) return contractTitle;
         for (let i = 0; i < nonEmpty.length; i++) {
             const line = nonEmpty[i];
             const m = line.match(/(?:project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|project)\s*[:\-]\s*(.*)/i);
             if (!m) continue;
-            let value = cleanValue(m[1] || '');
+            // Step 1f-1: cut inline location tail ("... - Savings located at CSPC ...").
+            let value = cutAtLocatedAt(cleanValue(m[1] || ''));
             // If same-line value empty or short (split title), try next lines greedily
             if (!value || value.length < 30) {
                 const inline = value;
@@ -413,6 +468,12 @@ const DocumentParserCore = (function () {
                     // which fails the Title-Case test and has no value-keyword phrase.
                     const isAllCapsTitlePart = (t) => t === t.toUpperCase() && /[A-Z]/.test(t) && t.length >= 5 && t.length <= 150 && /BUILDING|CAMPUS|SAVINGS|COLLEGE|SCIENCES|ACADEMIC|CONSTRUCTION|COMPLETION/i.test(t);
                     if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsTitlePart(next)) {
+                        // Step 1f-1: stop the title where the location starts inline.
+                        if (/located\s+at\b/i.test(next)) {
+                            const before = cutAtLocatedAt(next);
+                            if (before && before.length >= 5) greedyParts.push(before);
+                            break;
+                        }
                         greedyParts.push(next);
                         // If next line ends with comma, title continues; if ends without comma and next line is WHEREAS, stop
                         if (next.endsWith(',')) continue;
@@ -841,8 +902,12 @@ const DocumentParserCore = (function () {
         const s = String(contextText || '');
         const isContract = /contract\s*amount|contract\s*time|effectivity|original\s*contract|revised\s*contract/i.test(s);
         if (isContract) return 1.0;
+        // Step 1f-3: accomplishment / breakdown tables count less than before (0.4,
+        // was 0.6) so a repeated table figure cannot outvote one contract-summary hit.
+        const isTable = /accomplishment|quantity|breakdown|\btable\b/i.test(s);
         const isSupporting = /inspection|accomplishment|acceptance|time\s*elapsed/i.test(s);
-        if (isSupporting) return 0.6;
+        if (isTable && !isContract) return 0.4;
+        if (isSupporting) return 0.5;
         return 0.85;
     }
 
@@ -862,7 +927,9 @@ const DocumentParserCore = (function () {
     function collectBudgetCandidates(lines, fileName) {
         const out = [];
         const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
-        const ctxOf = (i) => [norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].join(' ');
+        // Step 1f-3: ±2-line window so a table row sees the table header above it
+        // (a ±1 window misses it for the 2nd+ row, letting repeats outvote summary).
+        const ctxOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].join(' ');
         // All labeled hits (revised + final-anchor + generic incl. original).
         const labelRes = [
             { re: /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
@@ -879,7 +946,17 @@ const DocumentParserCore = (function () {
                 for (const t of tryStrs) {
                     if (!t) continue;
                     const val = asMoney(t);
-                    if (val) { out.push({ value: val, labeled, weight: getSectionWeight(ctxOf(i)), fileName }); break; }
+                    // Step 1f-3: a money label inside a breakdown table without any
+                    // contract word nearby ("Total Cost P 92,025" per line item) is a
+                    // weaker witness than the contract summary — halve its weight so
+                    // repeats of a table figure cannot outvote one summary hit.
+                    if (val) {
+                        const ctx = ctxOf(i);
+                        let w = getSectionWeight(ctx);
+                        if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price/i.test(ctx)) w *= 0.5;
+                        out.push({ value: val, labeled, weight: w, fileName });
+                        break;
+                    }
                 }
             }
         }
@@ -889,7 +966,9 @@ const DocumentParserCore = (function () {
             const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
             if (phpOnly) {
                 const val = asMoney(combined);
-                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.8, fileName });
+                // Step 1f-3: unlabeled guesses count less (0.5, was 0.8) — a contract
+                // label (1.0) beats several table guesses even when they repeat.
+                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName });
             }
         }
         return out;
@@ -913,9 +992,10 @@ const DocumentParserCore = (function () {
             // "within N days calendar days" clause on this line or paired with next.
             for (const t of [norm[i], [norm[i], norm[i + 1] || ''].join(' ')]) {
                 const wm = String(t).match(/within\s+(.+?calendar\s*days.*)/i);
+                // Step 1f-3: unlabeled duration guesses count less (0.5, was 0.8).
                 if (wm) {
                     const val = asDays(wm[1]) || asDays(wm[0]);
-                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.8, fileName }); break; }
+                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName }); break; }
                 }
             }
         }
@@ -963,6 +1043,32 @@ const DocumentParserCore = (function () {
         return best ? best.original : null;
     }
 
+    // Vote inspector: same scoring as voteCandidatePool but returns the full table
+    // so the browser console can show every find, its votes, and the winner.
+    // Row: { value, norm, count, score, labeledCount }. Sorted by score desc.
+    // Called by: parseProjectInfoPooled() for _debug; document-parser.js logs it
+    // when window._parserDebug is true. Pure (no DOM) so tests can assert it.
+    function voteCandidatePoolDebug(cands) {
+        const rows = [];
+        if (!cands || cands.length === 0) return { winner: null, rows };
+        const groups = new Map(); // norm -> { original, score, count, labeledCount, files:Set }
+        for (const c of cands) {
+            const norm = normalizeForPool(c.value);
+            if (!norm) continue;
+            if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, count: 0, labeledCount: 0, files: new Set() });
+            const g = groups.get(norm);
+            g.score += (c.weight || 0.85);
+            g.count += 1;
+            if (c.labeled) g.labeledCount += 1;
+            if (c.fileName) g.files.add(c.fileName);
+        }
+        for (const [norm, g] of groups.entries()) {
+            rows.push({ value: g.original, norm, count: g.count, score: Math.round(g.score * 100) / 100, labeledCount: g.labeledCount, files: [...g.files] });
+        }
+        rows.sort((a, b) => b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
+        return { winner: rows.length ? rows[0].value : null, rows };
+    }
+
     // Pooled parse across files (Step 1e-4 VALUE track).
     // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
     // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
@@ -978,11 +1084,17 @@ const DocumentParserCore = (function () {
             pile.startDate.push(...collectDateCandidates(lines, fn, 'start'));
             pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
         }
+        // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
+        const bDbg = voteCandidatePoolDebug(pile.budget);
+        const dDbg = voteCandidatePoolDebug(pile.duration);
+        const sDbg = voteCandidatePoolDebug(pile.startDate);
+        const eDbg = voteCandidatePoolDebug(pile.endDate);
         return {
-            budget: voteCandidatePool(pile.budget),
-            duration: voteCandidatePool(pile.duration),
-            startDate: voteCandidatePool(pile.startDate),
-            endDate: voteCandidatePool(pile.endDate),
+            budget: bDbg.winner,
+            duration: dDbg.winner,
+            startDate: sDbg.winner,
+            endDate: eDbg.winner,
+            _debug: { budget: bDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
         };
     }
 
@@ -1084,6 +1196,7 @@ const DocumentParserCore = (function () {
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,
+        voteCandidatePoolDebug,
         parseProjectInfoPooled,
     };
 })();
