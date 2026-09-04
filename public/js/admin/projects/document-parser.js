@@ -74,8 +74,9 @@ async function runDocumentAutofill() {
     showAutofillScanning('Scanning documents…');
 
     try {
-        // Extract text from ALL PDF files, merged into one big string.
-        let combinedText = '';
+        // Phase 5 Step 1d: per-file extraction + voting (greedy title / cut contractor already handled in core).
+        // This gives cross-file validation: 3 files agreeing raises confidence, 2 different titles flags mismatch.
+        const perFileData = []; // [{ fileName, text, parsed }]
         let ocrUsed = false;
 
         for (const doc of pdfDocs) {
@@ -85,7 +86,8 @@ async function runDocumentAutofill() {
                 const { text, ocr } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 if (text && text.trim().length > 0) {
-                    combinedText += '\n\n--- Document: ' + doc.fileName + ' ---\n\n' + text;
+                    const parsedSingle = getCore().parseProjectInfo({ text });
+                    perFileData.push({ fileName: doc.fileName, text, parsed: parsedSingle });
                 }
             } catch (err) {
                 // One file failing shouldn't stop the rest
@@ -95,7 +97,7 @@ async function runDocumentAutofill() {
 
         if (myRunId !== _autofillRunId) return;
 
-        if (!combinedText.trim()) {
+        if (perFileData.length === 0) {
             showAutofillWarning(
                 'Could not extract text from the uploaded PDF(s). ' +
                 'The files may be scanned images with no readable text.'
@@ -103,7 +105,9 @@ async function runDocumentAutofill() {
             return;
         }
 
-        const parsed = getCore().parseProjectInfo({ text: combinedText });
+        // Vote per field across files (>50% = auto-fill, else top vote + red banner let user pick)
+        const parsed = voteParsedFields(perFileData);
+        const mismatchInfo = getMismatchInfo(perFileData);
 
         if (myRunId !== _autofillRunId) return;
 
@@ -115,8 +119,17 @@ async function runDocumentAutofill() {
             return;
         }
 
+        // If files disagree (e.g., 2 titles for 2 different projects), red banner will show in preview.
+        // Do NOT block Apply — let user pick (user choice 2026-09-04).
+        if (mismatchInfo.hasMismatch) {
+            // Store for preview modal to render
+            window._autofillMismatch = mismatchInfo;
+        } else {
+            window._autofillMismatch = null;
+        }
+
         // Show the preview modal — nothing is written to the form until Apply.
-        showAutofillPreview(parsed, { ocrUsed });
+        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo });
 
     } catch (err) {
         console.error('[DocumentParser] Autofill failed:', err);
@@ -237,6 +250,97 @@ async function extractTextFromPDF(file, runId) {
 }
 
 // ===================================================
+// VOTING / CROSS-FILE VALIDATION (Step 1d)
+// Per-file extract then vote >50% majority, red banner let user pick on mismatch.
+// ===================================================
+
+// Normalize a value for voting: lowercase, trim, strip hereinafter tail, collapse spaces.
+function normalizeForVote(v) {
+    if (!v) return '';
+    let s = String(v).trim().toLowerCase();
+    s = s.replace(/\s*\(hereinafter.*/i, '').trim();
+    s = s.replace(/\s+/g, ' ');
+    return s;
+}
+
+// Vote across per-file parsed results. Returns single merged parsed object.
+// For each field, count normalized values, pick most common (>50% = high confidence).
+// Single file: just return its parsed (60 guessed single-file fallback).
+function voteParsedFields(perFileData) {
+    if (!perFileData || perFileData.length === 0) return {};
+    if (perFileData.length === 1) {
+        // Single file: return as-is but clean contractor parentheses already done in core
+        // Also strip "oe " OCR artifact at start of title (t -> o misread)
+        const single = Object.assign({}, perFileData[0].parsed);
+        if (single.title && /^oe\s+/i.test(single.title)) single.title = single.title.replace(/^oe\s+/i, '').trim();
+        return single;
+    }
+
+    const fields = ['title', 'location', 'description', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration', 'contractor'];
+    const voted = {};
+    for (const field of fields) {
+        const freq = new Map(); // normalized -> { original, count }
+        const originalMap = new Map(); // normalized -> original first seen
+        for (const entry of perFileData) {
+            const raw = entry.parsed[field];
+            if (!raw) continue;
+            const norm = normalizeForVote(raw);
+            if (!norm) continue;
+            if (!freq.has(norm)) { freq.set(norm, 0); originalMap.set(norm, raw); }
+            freq.set(norm, freq.get(norm) + 1);
+        }
+        if (freq.size === 0) { voted[field] = null; continue; }
+        // Find max count
+        let bestNorm = null; let bestCount = 0;
+        for (const [norm, count] of freq.entries()) {
+            if (count > bestCount) { bestCount = count; bestNorm = norm; }
+        }
+        // >50% majority = auto-fill with high confidence, else top vote = still auto-fill but flagged
+        voted[field] = originalMap.get(bestNorm) || null;
+        voted['_' + field + '_votes'] = bestCount;
+        voted['_' + field + '_total'] = perFileData.length;
+    }
+    // Preserve internal confidence from first file merged with vote boost
+    const avgConfidence = Math.round(perFileData.reduce((sum, e) => sum + (e.parsed._confidence || 0), 0) / perFileData.length);
+    voted._confidence = Math.min(100, avgConfidence);
+    // Clean known OCR artifact
+    if (voted.title && /^oe\s+/i.test(voted.title)) voted.title = voted.title.replace(/^oe\s+/i, '').trim();
+    // Cut contractor tail if still present (fallback)
+    if (voted.contractor) voted.contractor = voted.contractor.split(/\s*\(hereinafter.*/i)[0].trim();
+    return voted;
+}
+
+// Build mismatch info for red banner: detects when files have different values for same field (mis-upload 2 projects).
+function getMismatchInfo(perFileData) {
+    if (!perFileData || perFileData.length <= 1) return { hasMismatch: false, details: [] };
+    const fields = ['title', 'contractor', 'budget', 'budgetSource', 'category'];
+    const details = [];
+    for (const field of fields) {
+        const normToFiles = new Map(); // norm -> [fileNames]
+        for (const entry of perFileData) {
+            const raw = entry.parsed[field];
+            if (!raw) continue;
+            const norm = normalizeForVote(raw);
+            if (!norm) continue;
+            if (!normToFiles.has(norm)) normToFiles.set(norm, []);
+            normToFiles.get(norm).push(entry.fileName);
+        }
+        if (normToFiles.size > 1) {
+            // Mismatch: same field has different values across files
+            const variants = [];
+            for (const [norm, files] of normToFiles.entries()) {
+                // Find original
+                const orig = perFileData.find(e => normalizeForVote(e.parsed[field]) === norm).parsed[field];
+                variants.push({ value: orig, norm, files, count: files.length });
+            }
+            variants.sort((a,b) => b.count - a.count);
+            details.push({ field, variants });
+        }
+    }
+    return { hasMismatch: details.length > 0, details };
+}
+
+// ===================================================
 // AUTOFILL FIELD TRACKING
 // Tracks which fields autofill actually wrote, so a later
 // clear only touches those — never the user's manual input.
@@ -301,6 +405,28 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
 
     const ocrNote = document.getElementById('autofillPreviewOcrNote');
     if (ocrNote) ocrNote.style.display = ocrUsed ? '' : 'none';
+
+    // Mismatch (mis-upload 2 different projects) — red banner, let user pick, do NOT block Apply
+    const mismatch = arguments[1] && arguments[1].mismatch ? arguments[1].mismatch : window._autofillMismatch;
+    let mismatchEl = document.getElementById('autofillPreviewMismatch');
+    if (mismatch && mismatch.hasMismatch && mismatch.details && mismatch.details.length > 0) {
+        if (!mismatchEl) {
+            mismatchEl = document.createElement('div');
+            mismatchEl.id = 'autofillPreviewMismatch';
+            mismatchEl.className = 'alert alert-danger d-flex flex-column gap-2 mt-3';
+            const container = modalEl.querySelector('.modal-body') || modalEl;
+            container.appendChild(mismatchEl);
+        }
+        const rows = mismatch.details.map(d => {
+            const label = d.field === 'title' ? 'Project Title' : d.field === 'contractor' ? 'Contractor' : d.field;
+            const variants = d.variants.map(v => escapeHtml(v.value) + ' — ' + v.files.map(f => escapeHtml(f)).join(', ') + ' (' + v.count + ' file' + (v.count>1?'s':'') + ')').join('<br>');
+            return '<div><strong>' + escapeHtml(label) + ' mismatch — files disagree:</strong><br><span style="font-size:0.9em;">' + variants + '</span></div>';
+        }).join('');
+        mismatchEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> <strong>Possible mis-upload detected — files appear to be from different projects.</strong> Please verify which file to keep. The preview shows the majority vote (' + (mismatch.details[0].variants[0].count) + '/' + (mismatch.details[0].variants.reduce((s,v)=>s+v.count,0)) + ' files). You can still edit and Apply.' + '<div class="mt-2">' + rows + '</div>';
+        mismatchEl.style.display = '';
+    } else if (mismatchEl) {
+        mismatchEl.style.display = 'none';
+    }
 
     hideAutofillBanner();
 

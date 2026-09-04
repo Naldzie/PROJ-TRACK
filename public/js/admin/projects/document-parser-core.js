@@ -252,13 +252,98 @@ const DocumentParserCore = (function () {
     // - Added standalone "Project:" (italic Project: Completion of … in WHEREAS clause).
     // - Demoted ALL-CAPS fallback when a Title-Case "Project:" line exists — contractor bold
     //   ALL-CAPS (CHRISTINA JOY…) should not steal the title.
+    // - Greedy continuation 2026-09-04: if "Project: Completion of Three-Storey" is split
+    //   across 2-3 lines (Academic Building, Buhi Campus on next line), join until
+    //   "," or "hereinafter" or DESCRIPTION_NEXT_FIELD.
     function extractTitle(lines, text) {
+        // Try greedy: find "Project:" line and join continuation lines
+        const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        for (let i = 0; i < nonEmpty.length; i++) {
+            const line = nonEmpty[i];
+            const m = line.match(/(?:project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|project)\s*[:\-]\s*(.*)/i);
+            if (!m) continue;
+            let value = cleanValue(m[1] || '');
+            // If same-line value empty or short (split title), try next lines greedily
+            if (!value || value.length < 30) {
+                const inline = value;
+                // Try to build greedy title from next lines until stop condition
+                const greedyParts = [];
+                if (inline) greedyParts.push(inline);
+                for (let j = i + 1; j < nonEmpty.length && greedyParts.join(' ').length < 200; j++) {
+                    const next = nonEmpty[j];
+                    // Stop at next field label or hereinafter / to be completed within
+                    if (DESCRIPTION_NEXT_FIELD.test(next)) break;
+                    if (/hereinafter|to\s+be\s+completed\s+within|WITNESSETH|WHEREAS/i.test(next)) {
+                        // If next line contains hereinafter but also has title continuation before comma, take up to comma
+                        const beforeHere = next.split(/,?\s*hereinafter/i)[0].trim();
+                        if (beforeHere && beforeHere.length >= 5 && greedyParts.length < 2) {
+                            greedyParts.push(beforeHere);
+                        }
+                        break;
+                    }
+                    // Greedy join: if next line looks like title continuation (Title Case, contains building etc.)
+                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw))) {
+                        greedyParts.push(next);
+                        // If next line ends with comma, title continues; if ends without comma and next line is WHEREAS, stop
+                        if (next.endsWith(',')) continue;
+                        // Check if we've got a plausible title length
+                        const joined = greedyParts.join(' ');
+                        if (joined.length >= 20 && /building|campus|completion|provision|rehabilitation/i.test(joined.toLowerCase())) {
+                            // Peek ahead: if next+1 is WHEREAS, stop after this
+                            const peek = nonEmpty[j + 1] || '';
+                            if (/WHEREAS|WITNESSETH/i.test(peek)) break;
+                        }
+                    } else if (greedyParts.length > 0) {
+                        break;
+                    }
+                }
+                if (greedyParts.length > 0) {
+                    let joined = cleanValue(greedyParts.join(' '));
+                    if (/^oe\s+/i.test(joined)) joined = joined.replace(/^oe\s+/i, '').trim();
+                    const normalized = lenRange(5, 200)(joined);
+                    if (normalized) return normalized;
+                }
+            } else {
+                // Same-line has value but might be truncated (e.g., "Completion of Three-Storey" only) — greedy expand if short
+                if (value.length < 40) {
+                    const greedyParts = [value];
+                    for (let j = i + 1; j < nonEmpty.length && greedyParts.join(' ').length < 200; j++) {
+                        const next = nonEmpty[j];
+                        if (DESCRIPTION_NEXT_FIELD.test(next)) break;
+                        if (/hereinafter/i.test(next)) {
+                            const before = next.split(/,?\s*hereinafter/i)[0].trim();
+                            if (before) greedyParts.push(before);
+                            break;
+                        }
+                        if (next.length >= 5 && next.length <= 150) {
+                            greedyParts.push(next);
+                            const peek = nonEmpty[j + 1] || '';
+                            if (/WHEREAS/i.test(peek) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) === false && greedyParts.length >= 2) break;
+                            if (greedyParts.join(' ').length >= 40) break;
+                        }
+                    }
+                    if (greedyParts.length > 1) {
+                        let joined = cleanValue(greedyParts.join(' '));
+                        if (/^oe\s+/i.test(joined)) joined = joined.replace(/^oe\s+/i, '').trim();
+                        const normalized = lenRange(5, 200)(joined);
+                        if (normalized && normalized.length > value.length) return normalized;
+                    }
+                }
+                let out = value;
+                if (/^oe\s+/i.test(out)) out = out.replace(/^oe\s+/i, '').trim();
+                const normalized = lenRange(5, 200)(out);
+                if (normalized) return normalized;
+            }
+        }
+
+        // OCR artifact strip: "oe Completion..." where "the" misread
+        const stripOe = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
         const labeled = findLabeledValue(lines, [
             /(?:project\s*title|name\s*of\s*project|project\s*name)\s*[:\-]\s*(.*)/i,
             /(?:title\s*of\s*project)\s*[:\-]\s*(.*)/i,
             /(?:project)\s*[:\-]\s*(.*)/i,
-        ], lenRange(5, 200));
-        if (labeled) return labeled;
+        ], (v) => { const c = lenRange(5, 200)(v); return c ? stripOe(c) : null; });
+        if (labeled) return stripOe(labeled);
 
         // Fallback: an ALL-CAPS line that looks like a project title
         const candidate = (lines || []).find(line => (
@@ -385,10 +470,22 @@ const DocumentParserCore = (function () {
 
     // Contractor Name (used for fuzzy-matching the dropdown).
     // Enhanced in Phase 5: added winning bidder + contractor name synonyms.
+    // Greedy cut 2026-09-04: strip " (hereinafter called the ...)" tail so preview shows clean company name.
     function extractContractor(lines) {
-        return findLabeledValue(lines, [
+        let raw = findLabeledValue(lines, [
             /(?:contractor|contractor\s*name|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name)\s*[:\-]\s*(.*)/i,
         ], lenRange(3, 150));
+        if (!raw) return null;
+        // Try labeled with next-two-lines already handled by findLabeledValue, but also handle inline wrap:
+        // If contractor name is bold ALL-CAPS across 2 lines, findLabeledValue already joins next line.
+        // Now strip parenthetical " (hereinafter called the ..." tail (Image 2 bold/italic).
+        raw = String(raw).trim();
+        // Cut at " (hereinafter" or " (hereinafter called the"
+        const cut = raw.split(/\s*\(hereinafter.*/i)[0].trim();
+        // Also cut at " — hereinafter" etc. and trailing " (hereinafter called the "CONTRACTOR")"
+        const cleaned = cut.replace(/\s*\(.*$/, '').trim();
+        const normalized = lenRange(3, 150)(cleanValue(cleaned || cut));
+        return normalized || cleanValue(cut);
     }
 
     // ─── VALUE-SIDE KEYWORD DICTIONARIES (HARDCODED Phase 5) ───────────────────
@@ -419,25 +516,32 @@ const DocumentParserCore = (function () {
     // Check if a line looks like a title based purely on value keywords.
     // Called by: parseProjectInfo() fallback when extractTitle labeled returns null.
     // Returns the cleaned line or null. Confidence lower than label (60 vs 95).
+    // Also strips OCR "oe " artifact where "the" misread as "oe" at line start.
     function isTitleValueCandidate(line) {
-        const s = String(line || '').toLowerCase().trim();
+        let raw = String(line || '').trim();
+        // OCR artifact: "oe Completion..." → strip leading "oe "
+        if (/^oe\s+/i.test(raw)) raw = raw.replace(/^oe\s+/i, '').trim();
+        const s = raw.toLowerCase().trim();
         if (s.length < 15 || s.length > 200) return null;
         const hasKeyword = TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw));
         if (!hasKeyword) return null;
         // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
         if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
-        return cleanValue(line);
+        return cleanValue(raw);
     }
 
     // Check if a line looks like a contractor name based on suffix keywords.
-    // Returns cleaned line or null.
+    // Returns cleaned line or null. Strips parenthetical tail like " (hereinafter..."
     function isContractorValueCandidate(line) {
-        const s = String(line || '').toLowerCase().trim();
+        let raw = String(line || '').trim();
+        // Strip parenthetical tail for clean name
+        raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
+        const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
         const hasSuffix = CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw));
         if (!hasSuffix) return null;
         if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
-        return cleanValue(line);
+        return cleanValue(raw);
     }
 
     // ─── PUBLIC API ─────────────────────────────────────────────────────────

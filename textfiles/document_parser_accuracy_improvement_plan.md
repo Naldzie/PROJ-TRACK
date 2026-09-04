@@ -732,6 +732,50 @@ Related plan
     - Plan status updated to IN PROGRESS (Step 1 core implemented on branch
       phase-5-parser-accuracy); S-curve deferred per user.
 
+  2026-09-04 — Plan adjustment committed 99dbe09 + new fixes planned (not yet committed as new code).
+    - User: "maybe we should start with the normal doc accurance improvements first
+      before the s curve." Agreed — Step 1 is normal-doc only (core done), Steps 2-4
+      are S-curve and remain deferred.
+    - Greedy title fix queued: "Project: Completion of Three-Storey" split across
+      two printed lines (27 ReportLab lines y547→y536) — current findLabeledValue
+      returns only "Completion of Three-Storey" and stops. Need greedy join until
+      "," or "hereinafter" / "to be completed within". Contractor fix queued:
+      strip " (hereinafter called the …)" tail (currently "(hereinafter called the"
+      leaks into preview "THE (THE ()"). Both identified from contract_test_sample.pdf
+      (ReportLab 28KB 1 page 91 items) vs original scanned (0 items, single reflow
+      paragraph giving "oe Completion …" oe artifact). Contract Price already fixed
+      via Php-preference asMoney (44/100) + final anchor.
+    - S-curve exclusion already committed (document-parser.js:53 !isSCurveCandidate)
+      so S-curve numbers no longer bleed into normal budget/title.
+    - Plan updated to note location is project site (nullable CSPC text, consultant
+      geotag future), Step 1 location fix already committed (project address only).
+
+  2026-09-04 — User test results 1-5 + next scope (this commit, normal-first, no S-curve yet).
+    - Q: "is per-file voting including cross checking of multiple informations such as
+      project title and contractor?" Yes — per-file voting cross-checks each field
+      separately (title, contractor, budget, budgetSource, category etc.) then flags
+      mismatch per field. Plan already has Step 1d voting >50% + red banner picker.
+    - Test 1 original scanned pdf: all 3 (title, contract price, contractor) now accurate.
+    - Test 2 pdf recreation (contract_test_sample.pdf cropped top, ReportLab non-scanned,
+      instant, no OCR): also accurate.
+    - Test 3 upload both at same time: also accurate (cross-file check works, single blob
+      merged previously now per-file voted).
+    - Test 4 pdf recreation + intentionally added 2nd contract pdf from different project:
+      it worked; with only 2 docs it prioritized first uploaded file (user OK with this,
+      voting 1 vs 1 split → red banner let user pick, top vote shown).
+    - Test 5 two similar pdfs + the different one (3 files, 2 identical vs 1 different):
+      auto-fill prioritized the two similar datas (2/3 majority >50% wins — as designed).
+    - Interpretation: per-file voting is indeed used for accuracy when same data repeats
+      across docs, and it also detects mismatch/mis-upload (2-project case). Single-file
+      case stays 1/1 =60 guessed, still accurate as above. Greedy title + cut still needed
+      for multi-line titles (now accurate per test 2) — will be kept as polished fix.
+    - User scope: no new implementation now; still wants other normal-doc improvements
+      before S-curve (currently only title/price/contractor validated, other fields like
+      location/category/budgetSource/description/dates not yet tested beyond test 4 file).
+      So S-curve Steps 2-4 remain deferred; next normal-doc polish is value-side keyword
+      confidence + ABC/price wording + S-curve exclusion already done.
+    - Logged as requested before commit; no new implementation in this commit.
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
