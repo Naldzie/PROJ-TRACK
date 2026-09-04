@@ -923,5 +923,92 @@ Related plan
     4. Run `npm run test:js` and `composer test` after each step (Rule 8).
 
 ===============================================================================
+  13. PLAIN LANGUAGE SUMMARY — Non-Technical Detailed Explanation
+===============================================================================
+
+  Goal: Make creating a new project almost automatic. The system reads your
+  uploaded PDFs or Excel files, fills the form for you, and you only fix what
+  it got wrong. Keep using the free AI tier and send as little data as possible.
+
+  What works today:
+    - Excel S-curve (Updated-S-Curve-3-Storey-Bldg.xlsx) is accurate. It uses
+      PhpSpreadsheet to read the 24 small boxes (15,15,5 days) that make up the
+      12 months (I:J = Month 1, K:L = Month 2 … AE:AF = Month 12). For each
+      activity row it adds the two boxes for a month (e.g., 7,469 + 7,469). If
+      the sum is greater than zero, that activity is listed under that month.
+      Example: Clearing shows money only in box I → only Month 1; Field Office
+      shows 7,469 in every box → all 12 months. This was re-checked and is
+      correct — the earlier "59 projects" comment was confusion with the list.
+
+    - PDF S-curve has 2 layouts that work: monthly columns (Month 1..12) and
+      weekly (WEEK 1..12 under DECEMBER/JANUARY/FEBRUARY, A3 2-page overflow).
+      Your CONSCHEDSAVINGS.pdf weekly case works using the exact position (x,y)
+      of each word on the page. Scanned PDFs fail — your new scurvepdfsample2.pdf
+      (389KB Letter, photo from phone, Skia export) has zero selectable words;
+      the same happens for ## (Excel showed "###" when the column was too narrow
+      to print the money) and the other copy's weighted % (1.20% per month)
+      — both are ignored today because the code only looks for plain numbers.
+
+    - Normal contract PDFs (Title, ABC/Contract Price, Budget Source, Category,
+      Contractor, dates) are found by labels. It looks for "Project Title:" then
+      takes what is after it, same line or the next two lines (tables often put
+      the value below). ABC as a lone "ABC:" , Budget Source, and Category have
+      no extractor yet. Your 15 title phrases (Provision of, Rehabilitation…,
+      Design and Build…) and 6 contractor suffixes (Construction and Supply…)
+      are value-side hints — today the system only checks the label, not the
+      value word.
+
+  How we will make it more accurate — 4 tiers, least data sent:
+    - Tier 1 — Fast local (no internet, no cost). Widen the dictionaries:
+      add lone ABC, Source of Fund / Funding Source, Category / Project Type,
+      extra NTP Date, and your 15 title + 6 contractor value lists as a fallback
+      when no label exists (hardcoded now, learned from the database later).
+      If the budget source or contractor name is not in the 9 BudgetSource or
+      4 Category entries or the contractor table, we show: "Budget source 'GAD
+      Trust Fund' not found — ask admin via (+) (admin only per
+      BudgetSourceController.php:33)". Same for contractor — keep the text, warn.
+
+    - Tier 2 — Local OCR, automatic, with tilt fix. When pdf.js finds fewer
+      than 10 words (like scurvepdfsample2.pdf 0 words), the browser automatically
+      turns the page into a picture and reads it with tesseract.js (already used
+      for contracts: document-parser.js:142). Now with language eng+osd — it
+      detects and straightens a slightly tilted phone photo, adds about 2 seconds
+      on slow campus Wi-Fi (you approved auto, not a button), cached after first
+      use, no document leaves the server. It treats ## as "activity present in
+      this month" and 1.20% as a number.
+
+    - Tier 3 — AI, very last, tiny slice, Opt-in. Only if the scan still looks
+      unsure (fewer than 2 months, or the summary vs activity math differs by
+      more than 1%, or table miss), we show a quiet banner: "Parsing looks
+      uncertain — [Try AI assist (free)?] · [Show advanced mapping]" (you chose
+      Opt-in, not auto-popup). If clicked, only the 1-2 important pages as a
+      small 150 DPI picture (not the whole 5 MB contract) go to Gemini 2.0 Flash
+      (config/services.php:45 existing key) for a strict JSON answer, then we
+      clamp it to 0-100% and warn if the contractor's summary 6.5% vs our activity
+      sum 6.74% mismatch — Validated (you chose validation over blind trust).
+      Handles label-less CONSCHEDSAVINGS.pdf via pattern findCumulativeRow:379.
+
+    - Tier 4 — Fully offline fallback (poppler) — only if the client later
+      rejects any cloud. smalot/pdfparser is rejected for S-curves (loses
+      positions). Python pdfplumber/PyMuPDF is flagged for future only (needs a
+      Python server, not your current Windows XAMPP PHP on shared hosting).
+
+  Libraries: Keep PhpSpreadsheet + pdfjs-dist@4.4.168, reuse tesseract.js
+  eng+osd for scans, reuse google/apiclient Http for Gemini — no new paid
+  library, no extra PHP install in v1.
+
+  Steps when approved: Step 0 baseline tests on sampledocs → Step 1 widened
+  labels + hardcoded value lists (+ Option A warnings) → Step 2 summary-row
+  Validated (use summary when it exists, warn >1% else use activity; + ##/% +
+  single-col fix) → Step 3a OCR auto + Step 3b AI very last slice → Step 4
+  confidence gate (Auto OCR vs Opt-in AI) → Step 5 tests/manual QA + Step 6 logs.
+  Branch phase-5-parser-accuracy from phase-3-pdf-scurve-import (Rule 12).
+
+  Flagged later: per-month activity distribution test fix, parser_keywords
+  table after enough projects, parser_templates column-map per contractor
+  (Opt-in advanced mapper), and Python pdfplumber 3-rule micro-service only
+  if JS + OCR + Gemini still miss a layout.
+
+===============================================================================
   END OF PLAN
 ===============================================================================
