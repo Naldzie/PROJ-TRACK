@@ -603,45 +603,62 @@ Related plan
       the budget table here if 92025 (or another figure) persists — the log will show
       the exact source line/section instead of guessing. Short title acceptable fallback.
 
-  STEP 1g — Choice B (ask-user) + inspector source snippets  ⬜ NOT STARTED (planned, user approved)
+  STEP 1g — Choice B (ask-user, ANY field) + inspector excerpts FIRST  ⬜ NOT STARTED (scope finalized with user 2026-09-04, no code yet)
     Context: real-bundle inspector output (user pasted 2026-09-04):
       budget winner 92025.00 (count 2, score 2, labeled 2) beats 6495049.29
       (count 1, score 1, labeled 1) and 5049.29 (1/1/1). Duration 90, start
       2024-12-09, end 2025-03-09 all single-find winners. So the two 92025 hits are
       FULL-weight labeled finds — weight tightening alone cannot stop them.
-      User decision (plain words): for now Choice B — when two trusted prices
+      User decisions (plain words): (a) Choice B for now — when two trusted values
       disagree, do NOT silently pick the bigger one; fill best guess but pop a note
-      asking the user to pick. Choice A (automatic bigger-wins) or both (confidence-
-      based: auto when clear, ask when close) may come later.
-      Related notes from a parallel session (committed alongside, read before designing):
-      textfiles/others(notes)/pdf_parser_contract_amount_resolution_plan.md (evidence
-      hierarchy: label/context > structure > frequency > history > ask-user; "bigger
-      wins" must NOT be the main rule) and
-      textfiles/others(notes)/contract_amount_duration_accidental_discovery.md (37-project
-      amount-vs-duration table is LOW priority, secondary plausibility signal only —
-      document evidence > historical evidence; do NOT build it now).
+      asking the user to pick. Choice A (automatic) or both (confidence-based: auto
+      when clear, ask when close) may come later. (b) Excerpts FIRST, page numbers
+      only if excerpts cannot pinpoint the source. (c) Choice B for ANY voted box
+      (budget/duration/start/end), not price-only — automation goal unchanged: the note
+      appears ONLY on genuinely ambiguous files, clean files see nothing extra.
+      User Q answered: single-file tests are PART of the problem (no cross-file pile-up
+      to bury repeats — proven by the earlier 3-file majority test), but NOT the whole
+      problem: full-weight labeled repeats need the evidence rule below regardless.
+      Codebase study (2026-09-04, read-only): candidates {value,labeled,weight,fileName}
+      (core:927+) and debug rows {value,norm,count,score,labeledCount,files} (core:1066)
+      carry NO pattern/excerpt/page. Page numbers are LOST at extractTextFromPDF merge
+      (document-parser.js:273 fullText+=pageText) — never stored, mirroring needed from
+      scurve-pdf-parser.js:34-40 itemsByPage pattern if pages are ever wanted. Preview
+      modal shell is components/autofill-preview-modal.blade.php (rows built dynamically
+      by showAutofillPreview :389-465; NO per-field note areas exist — mismatch banner is
+      created dynamically at :441-448, and the Choice B note follows that same pattern).
+      Related notes (read before building): others(notes)/pdf_parser_contract_amount_
+      resolution_plan.md (evidence hierarchy; "bigger wins" must NOT be main rule) and
+      others(notes)/contract_amount_duration_accidental_discovery.md (37-project table is
+      LOW priority secondary signal only; do NOT build now).
 
-    1g-1. Inspector source snippets (do FIRST — reveals where the two 92025s live).
-        - Extend each pooled candidate with: matched label/pattern name, ±2-line source
-          excerpt, page/section tag when available. Log rows gain {pattern, excerpt}.
-          Pure in core (testable), rendered via existing _parserDebug console.table.
-        - User re-runs once and pastes the budget table → determines Case A (duplicates
-          of one line → dedupe: count near-identical excerpts once) vs Case B (two truly
-          different labeled lines → Choice B ask-user below).
-    1g-2. Choice B disagree handling (preview modal, document-parser.js + Blade preview).
-        - Trigger: pooled top-2 budget candidates both labeled with score gap SMALL
-          (e.g., winner score < 2× runner-up) and different normalized values.
-        - Behavior: preview fills the current winner BUT shows an amber note under
-          Contract Price: "I found two different prices — X (n files/lines) and Y.
-          Please pick the right one." with both values as one-click buttons + keep-
-          editable input. Never blocks Apply (same non-blocking pattern as the red
-          mis-upload banner). Title/contractor/etc. keep existing behavior.
-        - Future (NOT now): Choice A / both — auto-pick when gap is LARGE (e.g., ≥3×)
-          or contract-word label beats table label outright; historical plausibility
+    1g-1. Inspector excerpts FIRST (core only, no extraction change).
+        - Each pooled candidate gains: pattern name (labelRes entries get name: e.g.
+          'revised'/'final-anchor'/'generic'; fallbacks 'paren-php'/'net-total'/'p-prefix')
+          + ±2-line source excerpt (from the collecting loop's own norm window).
+          Debug rows gain {pattern, excerpt}. Pure in core (testable), rendered via the
+          existing _parserDebug console.table (+ window._autofillVoteDebug).
+        - User re-runs once and pastes the budget table → Case A (near-identical excerpts
+          → dedupe: count once) vs Case B (two truly different labeled lines → 1g-2).
+        - Page numbers DEFERRED: only if excerpts cannot pinpoint (requires
+          extractTextFromPDF per-page return + pooledDocs page tagging).
+    1g-2. Choice B disagree handling for ANY pooled field (budget/duration/startDate/endDate).
+        - Trigger per field: pooled top-2 rows both labeled (labeledCount>0), different
+          norms, winner score < 2× runner-up. Computed in the pooled-override block
+          (document-parser.js:112-139), stored as window._autofillDisagree per field.
+        - Behavior: preview fills the current winner BUT renders an amber note under that
+          field's row: "I found two different {label}s — X and Y. Please pick the right
+          one." with both values as one-click buttons writing into previewInput-<id>;
+          input stays editable. Never blocks Apply (same non-blocking pattern as the red
+          mis-upload banner). Title/contractor/location keep existing behavior (red banner
+          already covers them cross-file). Silent when one clear winner exists.
+        - Future (NOT now): Choice A / both — auto-pick when gap LARGE (≥3×) or
+          contract-word label beats table label outright; historical plausibility
           (amount-vs-duration table) only as secondary warning, never the decider.
-    - Tests: (i) excerpt present in _debug rows; (ii) disagree fixture (1x 6.4M labeled
-      vs 2x 92k labeled → winner filled + disagree flag true); (iii) agree fixture
-      (single clear winner → flag false); (iv) full JS suite green + 4 contract files unchanged.
+    - Tests: (i) pattern+excerpt present in _debug rows; (ii) disagree fixture per field
+      (1x 6.4M labeled vs 2x 92k labeled → winner filled + disagree flag true);
+      (iii) agree fixture (single clear winner → flag false); (iv) full JS suite green
+      (47/47 baseline) + 4 contract files + bundle browser check unchanged.
     - No new deps, no vite, S-curve still deferred.
 
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
@@ -1091,6 +1108,16 @@ Related plan
       touching code. Test files that must stay green: the 4 contract PDFs + CHS bundle
       browser check. Branch: phase-5-parser-accuracy (do NOT merge without user OK).
     - Working tree after this commit: CLEAN.
+
+  2026-09-04 — Step 1g scope FINALIZED (plan only, no code).
+    - User: excerpts first (pages only if excerpts fail); Choice B for ANY voted box
+      (automation untouched for clean files — note appears only on ambiguity); single-file
+      Q answered (part of the problem, not all of it — labeled repeats need the rule anyway).
+    - Codebase study done (core collectors :924-1023, vote/debug :1028-1099, wrapper
+      :46-169/:389-465, Blade shell components/autofill-preview-modal.blade.php).
+      Page numbers confirmed LOST at :273 merge — deferred by design.
+    - Action: Step 1g section rewritten with final scope + file:line map; committing and
+      pushing per user, no implementation yet. NEXT = build 1g-1 when user says go.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
