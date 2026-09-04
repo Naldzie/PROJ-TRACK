@@ -331,12 +331,28 @@ const DocumentParserCore = (function () {
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
+    // Glue split money tokens back together before parsing (Step 1e-2).
+    // Scanned bundle PDFs often break "6,495,049.29" across a line/cell gap as
+    // "6,495,0 49.29" or "6,495,049 .29" or "6, 495,049.29". Without gluing,
+    // asMoney returns only the tail (e.g., 5049.29).
+    // Called by: asMoney() on every money string.
+    function glueMoneyFragments(s) {
+        if (!s) return s;
+        let out = String(s);
+        // "6, 495" → "6,495" (space after comma from column gap)
+        out = out.replace(/,\s+(\d)/g, ',$1');
+        // "6,495,0 49.29" → "6,495,049.29" (space between head and decimal tail)
+        out = out.replace(/(\d)\s+(\d{2,3}\.\d{2}\b)/g, '$1$2');
+        // "6,495,049 .29" → "6,495,049.29" (space before decimal)
+        out = out.replace(/(\d)\s+\.(\d{2}\b)/g, '$1.$2');
+        return out;
+    }
     // Parse a money value. Prefers Php/P/₱-prefixed amounts to avoid bare 44/100 fractions.
     // Enhanced 2026-09-04: for lines like "PESOS & 44/100 (Php 32,588,531.44)" the first
     // number is 44 — we must prefer the Php amount, not the fraction.
     // Additional adjustment 2026-09-04: handle "(P 6,495,049.29)" single-P as Php alias (NET TOTAL P6,495,049.29) and (P 6,495,049.29).
     const asMoney = (v) => {
-        const s = String(v);
+        const s = glueMoneyFragments(String(v));
         // Prefer Php/P/₱-prefixed amount first (Php or single P in "(P 6,495,049.29)" context)
         const phpM = s.match(/(?:php|₱)\s*([\d,]+(?:\.\d{1,2})?)/i) || s.match(/\(\s*P\s*([\d,]+\.\d{2})\s*\)/i) || s.match(/\bP\s*([\d,]+\.\d{2})/i);
         if (phpM) {
@@ -393,7 +409,10 @@ const DocumentParserCore = (function () {
                         break;
                     }
                     // Greedy join: if next line looks like title continuation (Title Case, contains building etc.)
-                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw))) {
+                    // Step 1e-3: also accept ALL-CAPS continuation ("ACADEMIC BUILDING (COLLEGE ...)-SAVINGS")
+                    // which fails the Title-Case test and has no value-keyword phrase.
+                    const isAllCapsTitlePart = (t) => t === t.toUpperCase() && /[A-Z]/.test(t) && t.length >= 5 && t.length <= 150 && /BUILDING|CAMPUS|SAVINGS|COLLEGE|SCIENCES|ACADEMIC|CONSTRUCTION|COMPLETION/i.test(t);
+                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsTitlePart(next)) {
                         greedyParts.push(next);
                         // If next line ends with comma, title continues; if ends without comma and next line is WHEREAS, stop
                         if (next.endsWith(',')) continue;
@@ -409,7 +428,8 @@ const DocumentParserCore = (function () {
                     }
                 }
                 if (greedyParts.length > 0) {
-                    let joined = cleanValue(greedyParts.join(' '));
+                    // Step 1e-3: glue hyphen line-breaks ("FOUR- / STOREY" → "FOUR-STOREY").
+                    let joined = cleanValue(greedyParts.join(' ').replace(/-\s+(?=[A-Za-z])/g, '-'));
                     if (/^oe\s+/i.test(joined)) joined = joined.replace(/^oe\s+/i, '').trim();
                     const normalized = lenRange(5, 200)(joined);
                     if (normalized) return normalized;
@@ -426,6 +446,8 @@ const DocumentParserCore = (function () {
                             if (before) greedyParts.push(before);
                             break;
                         }
+                        // Step 1e-3: accept ALL-CAPS continuation here too (second loop
+                        // pushes any 5-150 char line, which already covers ALL-CAPS).
                         if (next.length >= 5 && next.length <= 150) {
                             greedyParts.push(next);
                             const peek = nonEmpty[j + 1] || '';
@@ -434,7 +456,7 @@ const DocumentParserCore = (function () {
                         }
                     }
                     if (greedyParts.length > 1) {
-                        let joined = cleanValue(greedyParts.join(' '));
+                        let joined = cleanValue(greedyParts.join(' ').replace(/-\s+(?=[A-Za-z])/g, '-'));
                         if (/^oe\s+/i.test(joined)) joined = joined.replace(/^oe\s+/i, '').trim();
                         const normalized = lenRange(5, 200)(joined);
                         if (normalized && normalized.length > value.length) return normalized;
@@ -482,7 +504,9 @@ const DocumentParserCore = (function () {
     // NOTE: Expanded in Phase 5 to include ABC standalone, budget source,
     //       category, winning bidder, and NTP variations so description
     //       stops before those fields. Location generic "address" removed.
-    const DESCRIPTION_NEXT_FIELD = /^\s*(?:approved\s*budget\s*(?:for\s*the\s*contract)?(?:\s*\(abc\))?|abc|contract\s*amount|project\s*cost|total\s*cost|budget|contract\s*price|source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing|category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification|contractor|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name|contractor\s*name|start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|date\s*started|contract\s*start|end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion|duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?|location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address|project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|workers?|manpower|headcount)\s*[:\-]/i;
+    // Step 1e: also include Original/Revised Contract Amount, Original Contract
+    // Time / Contract Time, and Date of Effectivity so description stops there too.
+    const DESCRIPTION_NEXT_FIELD = /^\s*(?:approved\s*budget\s*(?:for\s*the\s*contract)?(?:\s*\(abc\))?|abc|original\s*contract\s*amount|revised\s*contract\s*amount|contract\s*amount|project\s*cost|total\s*cost|budget|contract\s*price|source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing|category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification|contractor|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name|contractor\s*name|start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start|date\s*of\s*effectivity(?:\s*of\s*contract)?|effectivity|end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion|duration|contract\s*period|contract\s*duration|original\s*contract\s*time|contract\s*time|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?|location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address|project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|workers?|manpower|headcount)\s*[:\-]/i;
 
     // Description / Scope of Work — prose, so collect the label line plus every
     // following line until another known field label starts (or the text ends).
@@ -516,6 +540,14 @@ const DocumentParserCore = (function () {
     // Enhanced 2026-09-04: prioritize "final Contract Amount is … (Php X)" over generic budget,
     // and handle "WHEREAS, after applying 3% discount, the final Contract Amount is …".
     function extractBudget(lines) {
+        // Step 1e: Revised Contract Amount wins over Original (user decision 11).
+        // Check revised first — a completed project with a change order should
+        // auto-fill the current amount, not the original bid.
+        const revised = findLabeledValue(lines, [
+            /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+        ], asMoney);
+        if (revised) return revised;
+
         // First try: final/after-discount contract amount context anchor (scanned contract Image 3)
         const finalAmount = findLabeledValue(lines, [
             /(?:final\s*contract\s*amount\s*is)\s*(.*)/i,
@@ -525,7 +557,7 @@ const DocumentParserCore = (function () {
         if (finalAmount) return finalAmount;
 
         const generic = findLabeledValue(lines, [
-            /(?:contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+            /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
             /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ], asMoney);
         if (generic) return generic;
@@ -634,7 +666,7 @@ const DocumentParserCore = (function () {
     // Enhanced in Phase 5: added NTP variations + next-two-lines.
     function extractStartDate(lines) {
         return findLabeledValue(lines, [
-            /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start)\s*[:\-]?\s*(.*)/i,
+            /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start|date\s*of\s*effectivity(?:\s*of\s*(?:the\s*)?contract)?|effectivity)\s*[:\-]?\s*(.*)/i,
         ], asDate);
     }
 
@@ -653,8 +685,9 @@ const DocumentParserCore = (function () {
     function extractDuration(lines) {
         const normLines = (lines || []).map(l => String(l).trim()).filter(Boolean);
         // First try labeled patterns (Duration: etc.)
+        // Step 1e: also accept "Original Contract Time" / "Contract Time" (CHS bundle).
         let labeled = findLabeledValue(normLines, [
-            /(?:duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?)\s*[:\-]?\s*(.*)/i,
+            /(?:duration|contract\s*period|contract\s*duration|original\s*contract\s*time|contract\s*time|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?)\s*[:\-]?\s*(.*)/i,
         ], asDays);
         if (labeled) return labeled;
 
@@ -793,6 +826,166 @@ const DocumentParserCore = (function () {
         return cleanValue(raw);
     }
 
+    // ─── STEP 1e-4/1e-5: POOLED VOTE HELPERS ───────────────────────────────────
+    // Collect EVERY find (not just the first) so repeats inside one bundle file
+    // and across files can vote together. Same pool feeds two tracks:
+    //   VALUE track (fills preview): one pooled pile across all files.
+    //   WARNING track (red banner): one winner per file (kept in document-parser.js).
+    // Section weights keep recall ("try all pages") without letting inspection /
+    // accomplishment pages outvote the contract summary.
+
+    // Weight for a candidate from its nearby lines (Step 1e-5).
+    // Contract summary = 1.0, neutral = 0.85, supporting section = 0.6.
+    // Called by: collectFieldCandidates() for every candidate.
+    function getSectionWeight(contextText) {
+        const s = String(contextText || '');
+        const isContract = /contract\s*amount|contract\s*time|effectivity|original\s*contract|revised\s*contract/i.test(s);
+        if (isContract) return 1.0;
+        const isSupporting = /inspection|accomplishment|acceptance|time\s*elapsed/i.test(s);
+        if (isSupporting) return 0.6;
+        return 0.85;
+    }
+
+    // Normalize a value for voting (same rule as document-parser.js).
+    // Called by: voteCandidatePool().
+    function normalizeForPool(v) {
+        if (!v) return '';
+        let s = String(v).trim().toLowerCase();
+        s = s.replace(/\s*\(hereinafter.*/i, '').trim();
+        s = s.replace(/\s+/g, ' ');
+        return s;
+    }
+
+    // Collect every budget candidate in one file (labeled + fallbacks).
+    // Each entry: { value, labeled, weight, fileName }.
+    // Called by: parseProjectInfoPooled() per file.
+    function collectBudgetCandidates(lines, fileName) {
+        const out = [];
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const ctxOf = (i) => [norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].join(' ');
+        // All labeled hits (revised + final-anchor + generic incl. original).
+        const labelRes = [
+            { re: /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
+            { re: /(?:final\s*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { re: /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { re: /(?:contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { re: /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
+        ];
+        for (let i = 0; i < norm.length; i++) {
+            for (const { re, labeled } of labelRes) {
+                const m = norm[i].match(re);
+                if (!m) continue;
+                const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
+                for (const t of tryStrs) {
+                    if (!t) continue;
+                    const val = asMoney(t);
+                    if (val) { out.push({ value: val, labeled, weight: getSectionWeight(ctxOf(i)), fileName }); break; }
+                }
+            }
+        }
+        // All fallback Php amounts (glued, >100k guard kept).
+        for (let i = 0; i < norm.length; i++) {
+            const combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
+            const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
+            if (phpOnly) {
+                const val = asMoney(combined);
+                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.8, fileName });
+            }
+        }
+        return out;
+    }
+
+    // Collect every duration candidate in one file.
+    // Called by: parseProjectInfoPooled() per file.
+    function collectDurationCandidates(lines, fileName) {
+        const out = [];
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const labelRe = /(?:duration|contract\s*period|contract\s*duration|original\s*contract\s*time|contract\s*time|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?)\s*[:\-]?\s*(.*)/i;
+        for (let i = 0; i < norm.length; i++) {
+            const m = norm[i].match(labelRe);
+            if (m) {
+                for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
+                    if (!t) continue;
+                    const val = asDays(t);
+                    if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName }); break; }
+                }
+            }
+            // "within N days calendar days" clause on this line or paired with next.
+            for (const t of [norm[i], [norm[i], norm[i + 1] || ''].join(' ')]) {
+                const wm = String(t).match(/within\s+(.+?calendar\s*days.*)/i);
+                if (wm) {
+                    const val = asDays(wm[1]) || asDays(wm[0]);
+                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.8, fileName }); break; }
+                }
+            }
+        }
+        return out;
+    }
+
+    // Collect every start/end date candidate in one file.
+    // Called by: parseProjectInfoPooled() per file.
+    function collectDateCandidates(lines, fileName, which) {
+        const out = [];
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const re = which === 'start'
+            ? /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start|date\s*of\s*effectivity(?:\s*of\s*(?:the\s*)?contract)?|effectivity)\s*[:\-]?\s*(.*)/i
+            : /(?:end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion)\s*[:\-]?\s*(.*)/i;
+        for (let i = 0; i < norm.length; i++) {
+            const m = norm[i].match(re);
+            if (!m) continue;
+            for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
+                if (!t) continue;
+                const val = asDate(t);
+                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName }); break; }
+            }
+        }
+        return out;
+    }
+
+    // Vote one pooled pile: weighted frequency first, tie-break labeled count,
+    // then full-length money (digit-count) so tails like 5049.29 lose to full.
+    // Called by: parseProjectInfoPooled() per field.
+    function voteCandidatePool(cands) {
+        if (!cands || cands.length === 0) return null;
+        const groups = new Map(); // norm -> { original, score, labeledCount, len }
+        for (const c of cands) {
+            const norm = normalizeForPool(c.value);
+            if (!norm) continue;
+            if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, labeledCount: 0, len: String(c.value).replace(/\D/g, '').length });
+            const g = groups.get(norm);
+            g.score += (c.weight || 0.85);
+            if (c.labeled) g.labeledCount += 1;
+        }
+        let best = null;
+        for (const g of groups.values()) {
+            if (!best || g.score > best.score || (g.score === best.score && (g.labeledCount > best.labeledCount || (g.labeledCount === best.labeledCount && g.len > best.len)))) best = g;
+        }
+        return best ? best.original : null;
+    }
+
+    // Pooled parse across files (Step 1e-4 VALUE track).
+    // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
+    // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
+    // Per-file single values (parseProjectInfo) are still used for the WARNING track.
+    // Called by: document-parser.js runDocumentAutofill() when available.
+    function parseProjectInfoPooled(docs) {
+        const pile = { budget: [], duration: [], startDate: [], endDate: [] };
+        for (const d of (docs || [])) {
+            const lines = d.lines || buildLinesFromText(d.text || '');
+            const fn = d.fileName || d.name || '';
+            pile.budget.push(...collectBudgetCandidates(lines, fn));
+            pile.duration.push(...collectDurationCandidates(lines, fn));
+            pile.startDate.push(...collectDateCandidates(lines, fn, 'start'));
+            pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
+        }
+        return {
+            budget: voteCandidatePool(pile.budget),
+            duration: voteCandidatePool(pile.duration),
+            startDate: voteCandidatePool(pile.startDate),
+            endDate: voteCandidatePool(pile.endDate),
+        };
+    }
+
     // ─── PUBLIC API ─────────────────────────────────────────────────────────
 
     // Parse a document into structured field values. Accepts { text, lines }.
@@ -885,6 +1078,13 @@ const DocumentParserCore = (function () {
         DESCRIPTION_NEXT_FIELD,
         parseProjectInfo,
         countFilled,
+        glueMoneyFragments,
+        getSectionWeight,
+        collectBudgetCandidates,
+        collectDurationCandidates,
+        collectDateCandidates,
+        voteCandidatePool,
+        parseProjectInfoPooled,
     };
 })();
 

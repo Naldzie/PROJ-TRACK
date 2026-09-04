@@ -209,3 +209,64 @@ test('parseProjectInfo handles PDF.js bottom-up y coordinates (top of page = lar
     assert.equal(parsed.endDate, '2026-06-01');
     assert.equal(parsed.description, 'test Pdf document file to test if the pdf document parser is working properly');
 });
+
+// ─── Step 1e: CHS-Savings bundle (Original/Revised, Effectivity, Contract Time) ─
+
+test('Step 1e-1: Original/Revised Contract Amount labels (revised wins)', () => {
+    // Revised present → revised fills Contract Price.
+    const both = core.buildLinesFromText(
+        'Original Contract Amount: Php 6,495,049.29\nRevised Contract Amount: Php 6,600,000.00'
+    );
+    assert.equal(core.extractBudget(both), '6600000.00');
+    // Original only → original fills Contract Price.
+    const only = core.buildLinesFromText('Original Contract Amount: Php 6,495,049.29');
+    assert.equal(core.extractBudget(only), '6495049.29');
+});
+
+test('Step 1e-1: Date of Effectivity + Original Contract Time labels', () => {
+    // CHS bundle wording for start length.
+    const start = core.buildLinesFromText('Date of Effectivity of Contract\nJanuary 15, 2026');
+    assert.equal(core.extractStartDate(start), '2026-01-15');
+    assert.equal(core.extractStartDate(core.buildLinesFromText('Effectivity: January 15, 2026')), '2026-01-15');
+    assert.equal(core.extractDuration(core.buildLinesFromText('Original Contract Time: 90 calendar days')), '90');
+    assert.equal(core.extractDuration(core.buildLinesFromText('Contract Time: 90 calendar days')), '90');
+});
+
+test('Step 1e-2: split money glue (tail 5049.29 → full amount)', () => {
+    // Scan split "6,495,0 49.29" across a cell gap glues back before parsing.
+    assert.equal(core.glueMoneyFragments('P 6,495,0 49.29'), 'P 6,495,049.29');
+    assert.equal(core.glueMoneyFragments('Php 6,495,049 .29'), 'Php 6,495,049.29');
+    const lines = core.buildLinesFromText('Original Contract Amount: Php 6,495,0 49.29');
+    assert.equal(core.extractBudget(lines), '6495049.29');
+});
+
+test('Step 1e-3: ALL-CAPS two-line title join with Savings tail', () => {
+    const lines = core.buildLinesFromText(
+        'Project name: CONSTRUCTION OF FOUR-STOREY\nACADEMIC BUILDING (COLLEGE OF HEALTH SCIENCES)-SAVINGS'
+    );
+    const title = core.extractTitle(lines, lines.join('\n'));
+    assert.ok(title.includes('CONSTRUCTION OF FOUR-STOREY'));
+    assert.ok(title.includes('ACADEMIC BUILDING'));
+    assert.ok(title.toLowerCase().includes('savings'));
+});
+
+test('Step 1e-4/1e-5: pooled vote — repeats beat a wrong first hit', () => {
+    // File A: wrong tail first, correct amount 3x after (bundle repeats).
+    // File B: correct amount 2x. Pooled 5x correct must beat 1x wrong.
+    const fileA = [
+        'Inspection Report',
+        'Amount: P 49.29',
+        'Original Contract Amount: Php 6,495,049.29',
+        'Revised Contract Amount: Php 6,495,049.29',
+        'Summary Total: Php 6,495,049.29',
+    ].join('\n');
+    const fileB = [
+        'Original Contract Amount: Php 6,495,049.29',
+        'Accomplishment: Php 6,495,049.29',
+    ].join('\n');
+    const pooled = core.parseProjectInfoPooled([
+        { text: fileA, fileName: 'CHS - Savings.pdf' },
+        { text: fileB, fileName: 'Contract - CHS Savings.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+});

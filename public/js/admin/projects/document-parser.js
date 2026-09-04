@@ -106,7 +106,22 @@ async function runDocumentAutofill() {
         }
 
         // Vote per field across files (>50% = auto-fill, else top vote + red banner let user pick)
-        const parsed = voteParsedFields(perFileData);
+        // Step 1e-4 VALUE track: pool ALL finds from ALL files (not winners-only) when
+        // core.parseProjectInfoPooled exists; WARNING track (red banner) still uses
+        // per-file winners via getMismatchInfo so file accountability is kept.
+        let parsed = voteParsedFields(perFileData);
+        try {
+            const core = getCore();
+            if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
+                const pooledDocs = perFileData.map(e => ({ text: e.text, fileName: e.fileName }));
+                const pooled = core.parseProjectInfoPooled(pooledDocs) || {};
+                // Override only fields the pool resolved (budget/duration/dates);
+                // keep voted title/contractor/location/etc. from per-file vote.
+                for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+                    if (pooled[f]) parsed[f] = pooled[f];
+                }
+            }
+        } catch (e) { /* pooled vote is best-effort — fall back to per-file vote */ }
         const mismatchInfo = getMismatchInfo(perFileData);
 
         if (myRunId !== _autofillRunId) return;

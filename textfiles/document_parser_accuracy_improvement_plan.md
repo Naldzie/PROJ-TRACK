@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 IN PROGRESS — Step 1 core done (39/39); NEW Step 1e planned (CHS-Savings bundle: new labels + Revised-wins + intra-file voting + price glue + ALL-CAPS title join, NOT STARTED, no code); S-curve Steps 2-4 deferred
+# Status: 🔄 IN PROGRESS — Step 1e IMPLEMENTED + tested (JS 44/44: core 24/24 incl. 5 new Step 1e fixtures); awaiting user browser re-test on real CHS-Savings.pdf bundle; S-curve Steps 2-4 still deferred
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -946,6 +946,20 @@ Related plan
       WARNING track = keep one winner per file for red mis-upload banner. Same
       candidate pool feeds both — accuracy from pile, accountability per file.
     - Decision 12 updated accordingly. No code touched.
+
+  2026-09-04 — Step 1e IMPLEMENTED (code + tests, awaiting user browser re-test).
+    - Files: document-parser-core.js (1e-1 labels: original/revised amount w/ revised-wins,
+      effectivity/date-of-effectivity, original/contract time; 1e-2 glueMoneyFragments in
+      asMoney; 1e-3 ALL-CAPS title continuation + hyphen-break glue; 1e-4/1e-5 pooled
+      helpers getSectionWeight/collectBudget|Duration|Date/voteCandidatePool/
+      parseProjectInfoPooled + exports), document-parser.js (VALUE track pooled override,
+      WARNING track unchanged via getMismatchInfo), tests/js/document-parser-core.test.mjs
+      (+5 Step 1e fixtures).
+    - Tests: node --test core 24/24 (19 old kept + 5 new), all JS 44/44 (core 24 + scurve 20).
+      No PHP touched (parser is JS-only); SCurveImportTest unaffected.
+    - Note: existing "ignores ambient amounts" test still passes (fallback keeps Php/NET
+      TOTAL/P-prefix + >100k guard). Next: user re-uploads real CHS - Savings.pdf in
+      browser and reports title/price/duration/start per-field results before any S-curve work.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
