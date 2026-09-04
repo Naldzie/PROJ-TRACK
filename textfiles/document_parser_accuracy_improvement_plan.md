@@ -116,8 +116,34 @@ Related plan
       month (not `break` after first), verified via explore 2026-09-03.
       Test gap: SCurveImportTest checks `count(activities)=59` not per-month
       distribution, so a swap is not caught.
+    - Re-confirmation 2026-09-04: user double-checked BUHI Excel and
+      confirmed grouping is actually accurate ("properly list the activities
+      on those months") — the earlier report was a misunderstanding of the
+      24 fortnight buckets `I:AF` (15,15,5 days) → 12 months `I:J` etc.
+      Keep flagged for Step 2d per-month fixture (see §8) but de-prioritized.
     - Logged as issue to investigate; flagged for future fix without
       delaying plan commit. Will be verified in Step 0 QA before any code.
+
+  3.5 Known Issue — Scanned S-Curve PDF with ## / Weighted %  ⚠️ OPEN
+  ---------------------------------------------------------------------
+    - New sample `sampledocs/scurvepdfsample2.pdf` (389KB, 04/09/2026,
+      1-page Letter 612×792, Skia/PDF m154, `paintImageXObject:1`)
+      is a physical-copy photo scan: `pdf.js getTextContent()` Page1: 0 items
+      vs control `CONSCHEDSAVINGS.pdf` 2045+915 items — pure image, no
+      selectable text layer (Google Docs export of a scanned JPG).
+    - Two variants flagged: CONSCHEDSAVINGS `##` is Excel column-width overflow
+      (cell value exists but printed as `###`) — current
+      `scurve-pdf-parser-core.js:214` isNumericToken `/^\d+(\.\d+)?$/` rejects
+      `##` so hasMonthValue stays false and activity is never assigned.
+      Physical copy `scurvepdfsample2.pdf` `weighted %` (e.g., `1.20%` per
+      month column) is intentional activity weight, not peso — also rejected
+      by isNumericToken (needs `%` strip + parseNumeric).
+    - Current parsers (5.1-5.5) never see these tokens: monthly path
+      detectHeaderColumns:129 header=null, weekly path 411 weekRow=null →
+      parseSCurvePdf:489 returns null → UI fallback `upload .xlsx`.
+    - Will be handled by Tier 2 OCR (eng+osd) → hOCR x/y + presence flags
+      (see §4 Tier 2, §6 Step 3). Keep Excel import as preferred path
+      (recommended: require original .xlsx from contractor).
 
   Goal of this plan: make the parser "as accurate as possible so creating a
   new project is automated, manual input is only for correction, and the
@@ -133,27 +159,43 @@ Related plan
 
   Tier 1 — Local, free, instant (always runs)
     Normal PDF: pdf.js → groupItemsIntoLines → findLabeledValue (expanded
-                synonym dict + fuzzy label match) → parseProjectInfo
+                synonym dict + fuzzy label match + value-side keywords) →
+                parseProjectInfo + table lookup (Option A)
     Excel     : PhpSpreadsheet (keep — no replacement needed)
     PDF S-curve: pdf.js with x/y → parseSCurvePdf / parseWeeklySchedulePdf
-    If confidence is high → show preview modal directly (no AI cost).
+                (Summary-Row Validated: primary summary, compare activity sum)
+    If confidence is high → show preview modal directly (no OCR/AI cost).
 
-  Tier 2 — AI fallback, minimized data (only if Tier 1 confidence low)
-    Trigger: countFilled < 3 fields for normal PDFs, or S-curve returns null
-             or < 2 months, or warnings[] non-empty, or user clicks "Try AI".
-    Action: server-side Gemini 2.0 Flash reads ONLY the relevant pages
-            (not the whole 50-page PDF) rendered to images or a 2-page PDF
-            slice, via inline_data (base64 + mimeType). Prompt asks for
-            strict JSON, server validates & clamps it to the same
-            {months, meta} shape.
-    Why Gemini: you ALREADY call Gemini server-side (AIExplanationService,
-                AIRecommendationService) so no new provider key is needed,
-                and it understands any table layout without hardcoding synonyms.
+  Tier 2 — Local OCR, auto (image scans, no cloud)
+    Trigger: pdf.js items <10 or header==null (e.g., scurvepdfsample2.pdf
+              1-page Letter 389KB Skia/PDF image-only, 0 items) → auto-run.
+    Action: reuse existing tesseract.js loader (document-parser.js:142
+             _tesseractPromise cached) — render page to canvas@2x via pdf.js
+             getPage().render() then Tesseract.recognize(canvas, 'eng+osd',
+             { tessjs_create_hocr: '1' }) to get TSV bbox x/y. Convert hOCR
+             to synthetic pdf.js items {str, transform[4]=x, transform[5]=y,
+             width, hasEOL} and re-feed to scurve-pdf-parser-core.js:76
+             groupItemsIntoLines / 379 findCumulativeRow. Handles
+             CONSCHEDSAVINGS ## overflow (## → presence flag) and
+             physical-copy weighted % (e.g., "1.20%") without cloud.
+    Why OCR Tier 2, not AI: user choice 2026-09-04 — OCR first, AI very last;
+             keeps PMU on free tier, no doc leaves server, works offline after
+             first 30MB WASM cache.
 
-  Tier 3 — Offline fallback (if client rejects cloud at deployment)
-    Optional: poppler pdftotext -layout -bbox via spatie/pdf-to-text so
-    layout text is preserved without AI. Less accurate than Gemini but
-    better than smalot/pdfparser which strips all coordinates.
+  Tier 3 — AI fallback (very last, minimized data, only if Tier 2 low)
+    Trigger: OCR countFilled <3 / months <2 / Validated warnings still low,
+              or user clicks "[Try AI assist]" (Opt-in).
+    Action: server-side Gemini 2.0 Flash reads ONLY the relevant 1-3 pages
+            as 150 DPI PNG slice (client canvas.toDataURL base64, inline_data).
+            Prompt asks for strict JSON, server validates & clamps to same
+            {months, meta} shape + Validated check (summary vs activity >1%).
+    Why Gemini Tier 3: you ALREADY call Gemini server-side
+             (AIExplanationService, AIRecommendationService) — no new key,
+             understands any table. Used only when local OCR is unsure.
+
+  Tier 4 — Offline poppler fallback (if client rejects cloud at deployment)
+    Optional: poppler pdftotext -layout -bbox via spatie/pdf-to-text — less
+             accurate than OCR but better than smalot/pdfparser.
 
   Data minimization to stay on free tier:
     - Never send the whole contract. For S-curve, extract only pages that
@@ -180,30 +222,41 @@ Related plan
       lib that gives x/y coordinates. Keep CDN + add local fallback copy
       in public/js/vendor/ for offline dev.
 
-  5.2 Add for Tier 2 (recommended, small)
-  ---------------------------------------
-    google/apiclient is ALREADY in composer.json — reuse it. No new
-    composer package strictly needed; the Gemini call is a plain HTTP POST
-    via Illuminate\Support\Facades\Http (same as AIExplanationService:393).
-    If you prefer a typed SDK: `composer require google/cloud-ai-platform`
-    is overkill — plain Http is lighter and matches existing code.
+  5.2 Add for Tier 2 — Local OCR auto (eng+osd) + Tier 3 AI (very last)
+  -------------------------------------------------------------------------
+    Tier 2 OCR: tesseract.js is ALREADY in system for supporting docs
+    (public/js/admin/projects/document-parser.js:142 loadTesseract, 164
+    ocrPage, OCR_PAGE_LIMIT 10). Current S-curve PDF has none. For
+    scurvepdfsample2.pdf (0 items) reuse the same CDN loader with
+    language `eng+osd` (orientation/script detection handles phone-tilted
+    physical photos) — user choice 2026-09-04. No new composer dep; the
+    30MB WASM is cached after first load (~2s on slow campus Wi-Fi per
+    user approval, auto-OCR not Opt-in per user).
+
+    Tier 3 AI: google/apiclient is ALREADY in composer.json — reuse it.
+    Gemini call is a plain HTTP POST via Illuminate\Support\Facades\Http
+    (same as AIExplanationService:393). If you prefer a typed SDK:
+    `composer require google/cloud-ai-platform` is overkill — plain Http
+    is lighter and matches existing code. Demoted to very last per user
+    `OCR first, AI very last`.
 
     Optional helper for prompt validation:
       No new library — use json_decode + manual clamp (same as
       SCurveImportService monotonic clamp). Keeps dependencies lean.
 
-  5.3 Add only if you need offline (Tier 3, requires sysadmin)
-  -------------------------------------------------------------
+  5.3 Add only if you need offline poppler (Tier 4, requires sysadmin)
+  ------------------------------------------------------------------------
     spatie/pdf-to-text  `composer require spatie/pdf-to-text`
       + poppler-utils binary (choco install poppler / apt install poppler-utils)
       Wraps `pdftotext -layout -bbox`. Gives layout-preserved text with
-      x/y when AI is disabled. Rejected in earlier plan because Windows had
-      no binary — document it in README if you choose this path.
+      x/y when OCR/AI are disabled. Rejected in earlier plan because
+      Windows had no binary — document it in README if you choose this path.
 
     thiagoalessio/tesseract_ocr + intervention/image
-      Only if you want better scanned-PDF preprocessing than the current
-      tesseract.js CDN. Needs `tesseract-ocr` binary on server. Heavier,
-      not needed when Gemini vision is available.
+      Only if you want server-side OCR instead of browser tesseract.js.
+      Needs `tesseract-ocr` binary on server. Heavier — browser OCR
+      (Tier 2) already covers scurvepdfsample2.pdf 1-page scan, so not
+      needed when Tier 2 is auto.
 
   5.4 Do NOT add
   --------------
@@ -425,7 +478,38 @@ Related plan
       (ii) outlier with no summary row (weekly PDF via buildMonthsFromRows),
       (iii) single-column layout.
 
-  STEP 3 — Tier 2 Gemini slice service (server)             ⬜ NOT STARTED
+  STEP 3 — Tier 2 OCR auto (eng+osd) + Tier 3 Gemini very last ⬜ NOT STARTED
+
+  STEP 3a — OCR auto for scanned S-curve PDF (new Tier 2, user choice 2026-09-04)
+    Files: public/js/admin/projects/scurve-pdf-parser.js
+           public/js/admin/projects/document-parser.js (share loader)
+           public/js/vendor/tesseract-loader.js (NEW, optional extract)
+    Trigger: auto (not Opt-in) — if pdf.js items <10 (scurvepdfsample2.pdf
+             0 items, CONSCHEDSAVINGS 2045 items skip) or header==null.
+    Flow:
+      - Reuse _tesseractPromise cached loader from document-parser.js:142
+        (CDN jsDelivr Tesseract@5). Extend to load with language 'eng+osd'
+        (orientation/script detection handles phone-tilted physical photos
+        per user approval). WASM ~30MB cached after first load, ~2s on
+        slow campus Wi-Fi (user approved auto, not Opt-in).
+      - For each textless page (cap 3 pages for S-curve, not 10 like
+        supporting docs): page.getViewport 2x → render to canvas →
+        Tesseract.recognize(canvas, 'eng+osd', { tessjs_create_hocr: '1' })
+        → parse hOCR TSV bbox → synthetic items
+          {str, transform:[4]=x, transform:[5]=y, width, hasEOL}
+        → groupItemsIntoLines:76 / findCumulativeRow:379.
+      - ## / % handling (§3.5): in buildRows monthVals loop, accept
+        token.str /^#+$/ as presence flag (hasMonthValue=true, do not sum)
+        and /^\d+(\.\d+)?\s*%$/ as numeric (strip % → parseNumeric) so
+        CONSCHEDSAVINGS ## overflow and weighted % physical copy both map
+        to activity presence without double-counting.
+      - Validation: reuse Validated logic §2b (summary vs activity) +
+        monotonic 100% + Additive Check Wₙ + Cₙ₋₁ = Cₙ (flag if >0.05 off
+        for OCR 8→B misread).
+    No new PHP dep; keeps Excel on PhpSpreadsheet. Falls through to Tier 3
+    if OCR still <2 months / low confidence.
+
+  STEP 3b — Gemini slice service (new Tier 3, very last)        ⬜ NOT STARTED
     New file: app/Services/AI/GeminiDocumentParserService.php
       - method parseProjectSlice(array $pageImagesBase64): ?array
         Prompt: "Extract JSON {title, location, description, budget,
@@ -457,53 +541,61 @@ Related plan
     Routes: POST /{role}/s-curve/parse-gemini and
             POST /{role}/document/parse-gemini in routes/web.php
             (all 3 role groups, same as existing s-curve routes).
-      NOTE Q2 = Opt-in: no auto-popup route change — the Gemini endpoint is
-      only called when user clicks "Try AI assist" or "Show advanced mapping"
-      after a low-confidence / Table-miss banner.
+      NOTE now Tier 3 very last — only called when OCR still low
+      confidence / Table-miss / Validated mismatch, and only on user
+      "[Try AI assist]" click (keeps Q2 Opt-in for AI, but OCR is auto).
 
     Data minimization: new helper app/Services/PdfSliceService.php
       - Given PDF path, use Smalot? No — use Imagick/Poppler to render
         only pages containing S-CURVE keywords, or do it client-side:
         client renders 2 pages to canvas via pdf.js → canvas.toDataURL →
         uploads base64 images (smaller than PDF). Prefer client-side slice
-        to avoid poppler binary.
+        to avoid poppler binary. For scanned image-only PDFs, the slice
+        is the already-rendered OCR canvas.
 
-  STEP 4 — Client-side confidence gate & slice upload (Opt-in) ⬜ NOT STARTED
+  Ordering: Tier1 pdf.js → Tier2 OCR auto (eng+osd) → Tier3 AI very last
+            (user: OCR first, AI last 2026-09-04). Previous plan had AI Tier2;
+            swapped per user request.
+
+  STEP 4 — Client-side confidence gate & slice upload (Opt-in for AI, Auto for OCR) ⬜ NOT STARTED
     Files: public/js/admin/projects/document-parser.js
            public/js/admin/projects/scurve-import-ui.js
+           public/js/admin/projects/scurve-pdf-parser.js
            resources/views/admin/_create_project_modal.blade.php
            resources/views/admin/_manage_budget_sources_modal.blade.php (NO CHANGE)
-    - After Tier 1 parse, compute confidence:
-        normal: confidence = (label hits + 0.6*valueKeyword hits)/8, plus
-                table-match bonus (+10 if contractor/budget source found in DB)
-        s-curve: confidence = months.length >=3 && warnings.length==0
-                 && no Validated mismatch warning ? high : low
-    - If low OR if any Validated mismatch warning (Step 2b) OR any Table-lookup
-      miss (contractor/budget source/category warning from Step 1c): show
-      an OPT-IN amber banner (not auto-popup, per Q2) under the preview
-      button with a discreet link:
+    - OCR is AUTO (Tier 2): after Tier 1 pdf.js if items<10 / header==null
+      (scurvepdfsample2.pdf 0 items), scurve-pdf-parser.js auto-renders →
+      OCR 'eng+osd' without user click (~2s, user approved). Show
+      "Scanning documents… (OCR reading scanned pages)" banner
+      document-parser.js:178 style, then re-run scurve-pdf-parser-core.js.
+    - AI is OPT-IN (Tier 3, very last): after OCR still low confidence
+      (months<2 or Validated mismatch Step2b or Table-miss Step1c),
+      show amber banner (not auto-popup, per Q2) under preview button:
         "Parsing looks uncertain — [Try AI assist (free)?]  ·  [Show advanced mapping]"
-      The first link calls the new Gemini endpoint with the pre-rendered
-      slice images (or the original File if images not ready); the second
-      opens the Guided Column Matcher (see §11) — both require explicit
-      user click, they do NOT block Next. This satisfies Opt-in: wizard
-      stays quiet unless user asks for help.
-      For Table-miss, also show the Option A warning inline next to the
-      field (see Step 1c) — staff sees:
+      First link calls Gemini endpoint with the already-rendered 150 DPI slice
+      (canvas.toDataURL); second opens Guided Column Matcher (§11). Neither
+      blocks Next. This respects user "OCR first, AI very last".
+
+    - Confidence:
+        normal: (label hits + 0.6*valueKeyword hits)/8 + table-match bonus
+        s-curve: high iff months>=3 && warnings==0 && no Validated mismatch
+                 && no ## presence ambiguity; else low → OCR auto, then AI Opt-in.
+
+    - For Table-miss, also show Option A warning inline next to field
+      (see Step1c) — staff sees:
         Budget source "GAD Trust Fund" not in database → please select from
         existing 9 sources or ask admin to add via (+) (admin only).
         Contractor "XYZ Builders" not found → will be kept as text.
-      No new add-modal for staff — admin-only create is preserved
+      No new add-modal for staff — admin-only create preserved
       (BudgetSourceController.php:33 + Policy create:admin only).
     - On Gemini success: merge AI result into preview modal (user still reviews
-      before Apply — never auto-apply without confirmation). If Gemini also
-      returns an unknown budget source, same Option A warning applies (do not
-      auto-create).
-    - Reuse existing preview modal pattern (editable inputs, Apply reads
-      corrected values). Add a dedicated budget-source/contractor warning
-      area below the table-matched indicator. Add a small Validated note
-      "Using summary row value (activity check: 6.74% — mismatch flagged)"
-      when Step 2b triggers.
+      before Apply — never auto-apply). If Gemini also returns unknown budget
+      source, same Option A warning applies (do not auto-create).
+    - Reuse preview modal pattern (editable inputs, Apply reads corrected
+      values). Add dedicated budget-source/contractor + OCR/Validated notes
+      area below indicator. Add "Using summary row (activity check 6.74% —
+      mismatch flagged)" when Step2b triggers, and "OCR read (tilt-corrected)"
+      when eng+osd used.
 
   STEP 5 — Polish & tests                                   ⬜ NOT STARTED
     - tests/js/document-parser-core.test.mjs: add low-confidence fixtures.
@@ -577,6 +669,23 @@ Related plan
       Flagged for Step 2d / Step 5 verification before implementation. No code
       touched per user request "for now please note as issue".
 
+  2026-09-04 — Scanned S-curve sample + OCR first, AI last (no code changed).
+    - User clarified BUHI Excel was misunderstanding — grouping is actually
+      accurate (I:AF fortnight 15,15,5 → 12 months I:J etc., value>0 per
+      month correctly assigns multi-month spanning like Field Office 7469×24).
+    - New issue: CONSCHEDSAVINGS.pdf ## (Excel column-width overflow) and
+      new sample scurvepdfsample2.pdf (389KB Letter Skia image-only 0 items
+      vs control 2045 items) physical weighted % scan — both need presence
+      handling. User confirmed physical copy scan will be added to sampledocs.
+    - User asked about Python pdfplumber: naive regex snippet fails without
+      x-bins (December 18.24% vs 26.86% week-span) — recommended JS 3-rule
+      improvement instead. Logged as §5.5 future Python flagged, not v1.
+    - User decided: OCR first with eng+osd auto (~2s WASM ok) and AI very last.
+      Updated §4 Tiers (1 local, 2 OCR auto eng+osd, 3 AI Opt-in, 4 poppler),
+      §5.2 Tier split, §6 Steps 3a (OCR auto) / 3b (AI Tier3) / 4 (Auto vs Opt-in),
+      §5.5 Python flagged future, §8 + §9 Decisions 9/10 (OCR + ##/% handling),
+      §3.5 new scanned issue. Plan stays implementation-ready, no code touched.
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
@@ -596,6 +705,14 @@ Related plan
     only in Month 1 (I+J), activity B only in Month 2 (K+L) and check
     that payload months[0].activities = [A], months[1].activities = [B]
     not [A,B] lumped. Also verify J→K gap !=2 edge.
+  - NEW 2026-09-04: Scanned S-curve scurvepdfsample2.pdf (389KB Letter,
+    1-page Skia image-only 0 items) + CONSCHEDSAVINGS ## overflow and
+    weighted % physical copy: how to treat ## as presence and 1.20%
+    as numeric in OCR? Verify in Step 3a that ## → hasMonthValue=true
+    and 1.20% → strip % → parseNumeric, and that Additive Check
+    Wₙ + Cₙ₋₁ = Cₙ catches OCR 8→B errors. Also verify eng+osd corrects
+    phone-tilted photos (Skia Letter scan) without adding latency
+    beyond ~2s auto OCR the user approved.
 
 ===============================================================================
   9. DECISION LOG
@@ -645,6 +762,38 @@ Related plan
     Consequences: Step 1b adds two const arrays + helpers
       isTitleValueCandidate / isContractorValueCandidate; flagged for future
       DB-driven replacement in §11.
+
+  Decision 9 — OCR Auto eng+osd Tier 2 (not Opt-in), AI Tier 3 Very Last
+    Context: New sample scurvepdfsample2.pdf 389KB Letter Skia image-only
+      0 items vs CONSCHEDSAVINGS.pdf 2045 items text-based; physical copy is
+      phone-tilted scan of weighted % S-curve; supporting-doc parser already
+      has tesseract.js Tier 2 (document-parser.js:142 eng) but S-curve has none.
+    Options: (A) AI first, (B) OCR first auto eng vs eng+osd vs Opt-in link,
+      C) Keep Excel-only message.
+    Decision: OCR first auto with eng+osd (user 2026-09-04), AI demoted to Tier 3
+      very last. Reuse document-parser.js _tesseractPromise cached loader,
+      add language eng+osd for photo tilt, auto after items<10 (not Opt-in),
+      30MB WASM ~2s approved. Handles CONSCHEDSAVINGS ## (## → presence)
+      and weighted % (1.20% → numeric) without cloud.
+    Rationale: User: "OCR first, AI very last"; OCR keeps docs on server
+      (government transparency, no doc leaves), covers offline after cache,
+      already approved for supporting docs.
+    Consequences: Step 3a new (OCR auto), Step 3b becomes Tier 3 (AI Opt-in),
+      Step 4 split Auto vs Opt-in; scurve-pdf-parser.js + tesseract-loader.js
+      share promise; Step 2b adds ##/% presence handling.
+
+  Decision 10 — Handle ## as presence, % as numeric in OCR/PDF S-curve
+    Context: CONSCHEDSAVINGS ## is Excel column-width overflow (###) not data;
+      scurvepdfsample2.pdf weighted % is intentional per-month weight.
+      isNumericToken /^\\d+(\\.\\d+)?$/ rejects both.
+    Options: (A) ignore, (B) flag presence.
+    Decision: (B) In scurve-pdf-parser-core.js buildRows: /^#+$/ → hasMonthValue
+      true (activity in month, no sum); /^\\d+(\\.\\d+)?\\s*%$/ → strip % →
+      parseNumeric (active). For ##, do not sum peso; for %, treat as numeric
+      presence (weight).
+    Rationale: Restores activity checklist per month for scanned/overflow PDFs
+      without changing Validated % math (findCumulativeRow already handles %).
+    Consequences: §3.5 + Step 3a handling, test fixtures for ## row + % row.
 
   Decision 7 — Summary-Row Validated (not Authoritative)
     Context: Suggestion Summary Row Targeting — read CUMULATIVE % row
@@ -697,23 +846,25 @@ Related plan
     app/Services/AI/GeminiDocumentParserService.php
     app/Services/AI/GeminiSCurveOcrService.php  (or single combined service)
     app/Services/PdfSliceService.php  (if server-side slice)
+    public/js/vendor/tesseract-loader.js  (optional extract, share promise)
     tests/Feature/GeminiParserTest.php (mocked Http::fake)
+    tests/Feature/ScurveOcrTest.php (OCR ##/% presence fixtures)
 
   MODIFY
-    public/js/admin/projects/document-parser-core.js  (synonyms, confidence)
-    public/js/admin/projects/document-parser.js       (confidence gate, AI button)
-    public/js/admin/projects/scurve-import-ui.js      (confidence gate, slice upload)
-    app/Services/SCurveImportService.php              (synonyms, single-col fallback)
-    app/Http/Controllers/SCurveImportController.php   (Gemini endpoint)
+    public/js/admin/projects/document-parser-core.js  (synonyms, confidence, ##/%)
+    public/js/admin/projects/document-parser.js       (share _tesseractPromise, eng+osd)
+    public/js/admin/projects/scurve-pdf-parser.js     (auto OCR Tier 2)
+    public/js/admin/projects/scurve-import-ui.js      (Auto vs Opt-in gate)
+    public/js/admin/projects/scurve-pdf-parser-core.js (## → presence, % numeric + Additive)
+    app/Services/SCurveImportService.php              (synonyms, single-col fallback, Validated)
+    app/Http/Controllers/SCurveImportController.php   (Gemini Tier3 endpoint)
     routes/web.php                                     (2 new POST routes x3 roles)
-    resources/views/admin/_create_project_modal.blade.php (AI assist button)
+    resources/views/admin/_create_project_modal.blade.php (AI assist button + OCR note)
     resources/views/projects/project_detail/components/... (baseline button note)
 
-  NO CHANGE (keep)
-    public/js/admin/projects/scurve-pdf-parser-core.js (already handles 2 layouts;
-      extend only if a new layout appears after QA)
-    composer.json  (no new PHP dep required for Gemini Http path)
-    package.json   (no new npm dep)
+  NO CHANGE (keep for v1 except §3.5 OCR handling)
+    composer.json  (no new PHP dep for OCR — tesseract.js CDN reused)
+    package.json   (no new npm dep — tesseract.js CDN, no install)
 
 ===============================================================================
   11. FLAGGED FOR FUTURE
