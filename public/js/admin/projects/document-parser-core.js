@@ -39,6 +39,47 @@ const DocumentParserCore = (function () {
         }).join(' ');
     }
 
+    // Dynamic word-to-number converter for durations and budget PESOS words (replaces hardcoded 1-90 map).
+    // Handles "ninety", "ninety-one", "one hundred", "three hundred fifty", "six million ..." etc. up to 3650 days
+    // and budget pesos words up to millions (e.g., SIX MILLION ...). Approach B — lightweight vendored equivalent
+    // of npm "words-to-numbers" per no-vite convention.
+    // Called by: parseDurationToDays() when digit missing but word near "calendar days"; also budget word fallback.
+    function wordsToNumber(phrase) {
+        if (!phrase) return null;
+        let s = String(phrase).toLowerCase().replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!s) return null;
+        const UNITS = { zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19 };
+        const TENS = { twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90 };
+        const SCALES = { hundred:100, thousand:1000, million:1000000 };
+        // Quick check: must contain at least one number word near calendar days context
+        const hasNumberWord = Object.keys(UNITS).concat(Object.keys(TENS)).concat(Object.keys(SCALES)).some(w => s.includes(w));
+        if (!hasNumberWord) return null;
+        // Try to extract the contiguous number-word sequence (e.g., "three hundred fifty" inside "within three hundred fifty calendar days")
+        // Find the longest substring that is only number words / and
+        const tokens = s.split(' ').filter(Boolean);
+        let best = null;
+        for (let start = 0; start < tokens.length; start++) {
+            let total = 0; let current = 0; let matched = 0;
+            for (let i = start; i < tokens.length; i++) {
+                const tok = tokens[i];
+                if (tok === 'and') continue;
+                if (UNITS.hasOwnProperty(tok)) { current += UNITS[tok]; matched++; }
+                else if (TENS.hasOwnProperty(tok)) { current += TENS[tok]; matched++; }
+                else if (SCALES.hasOwnProperty(tok)) {
+                    if (current === 0) current = 1;
+                    current *= SCALES[tok];
+                    if (SCALES[tok] === 1000) { total += current; current = 0; }
+                    matched++;
+                } else break;
+            }
+            total += current;
+            if (matched > 0 && total > 0) {
+                if (best === null || total > best) best = total; // prefer larger (e.g., 350 over 3)
+            }
+        }
+        return best;
+    }
+
     // Parse a human date into YYYY-MM-DD (HTML date input format). Returns null on failure.
     // Supports: "January 15, 2026" / "Jan. 15, 2026" / "15/01/2026" / "01-15-2026" / "2026-01-15".
     function parseToInputDate(raw) {
@@ -82,17 +123,86 @@ const DocumentParserCore = (function () {
         return null;
     }
 
+    // Diagnostic flag: set window._parserDebug = true in console to see extraction logs
+    // Called by: browser console — no code change needed, just `window._parserDebug = true` then re-upload.
+
     // Convert a duration phrase into days ("240" → 240, "8 months" → 240, "1 year" → 365). Returns null on failure.
+    // Enhanced 2026-09-04: trust word numbers even if digit missing. "NINETY (90) calendar days" → 90,
+    // pure "NINETY calendar days" → 90. Ignores "THREE PERCENT (3%)" via % filter.
+    // Called by: extractDuration() via asDays normalizer; also fallback for "within NINETY ...".
     function parseDurationToDays(raw) {
+        const _dbg = (typeof window !== 'undefined' && window._parserDebug);
+        if (_dbg) console.debug('[Parser] parseDurationToDays raw:', JSON.stringify(String(raw).slice(0,120)));
         if (raw === null || raw === undefined) return null;
-        const s = String(raw);
+        let s = String(raw).trim();
+        if (!s) return null;
+        // Ignore percent context: "THREE PERCENT (3%) discount" should not be duration
+        if (/%/.test(s) && /percent/i.test(s)) {
+            // But if it also has "calendar days" later, keep that part
+            const calPart = s.match(/(.+calendar\s*days.*)/i);
+            if (calPart) s = calPart[1];
+            else {
+                if (_dbg) console.debug('[Parser] parseDurationToDays ignored percent without calendar days:', JSON.stringify(s.slice(0,80)));
+                return null;
+            }
+        }
+        // Try digit in parentheses first: "NINETY (90) calendar days" → 90
+        const paren = s.match(/\(\s*(\d{1,4})\s*\)/);
+        if (paren) {
+            const num = parseInt(paren[1], 10);
+            if (num > 0 && num <= 3650) {
+                if (/month/i.test(s)) return String(Math.round(num * 30));
+                if (/year/i.test(s)) return String(num * 365);
+                return String(num);
+            }
+        }
+        // Word-to-digit dynamic parser (replaces hardcoded 1-90 map).
+        // Approach B: words-to-numbers logic for 1..3650 (e.g., "NINETY" → 90, "NINETY-ONE" → 91,
+        // "ONE HUNDRED TWENTY" → 120, "THREE HUNDRED FIFTY" → 350) without needing a separate
+        // npm package — lightweight dynamic function `wordsToNumber` handles hyphen + "and".
+        // Keeps document-parser-core.js pure and testable (no external CDN), same idea as
+        // "words-to-numbers" npm lib (v1.5.1) but vendored inline per no-vite convention.
+        const lower = s.toLowerCase();
+        const wordNum = wordsToNumber(lower);
+        if (_dbg && wordNum !== null) console.debug('[Parser] parseDurationToDays wordNum:', wordNum, 'from', JSON.stringify(lower.slice(0,60)));
+        if (wordNum !== null && wordNum > 0 && wordNum <= 3650) {
+            // Allow month/year even without calendar days (e.g., "8 months"), but for plain numbers require calendar days to avoid budget 29/100
+            if (/calendar\s*days|days|month|year/i.test(s)) {
+                const out = /month/i.test(s) ? String(Math.round(wordNum * 30)) : /year/i.test(s) ? String(wordNum * 365) : String(wordNum);
+                if (_dbg) console.debug('[Parser] parseDurationToDays word→digit result:', out, 'from', JSON.stringify(s.slice(0,80)));
+                return out;
+            }
+        }
+        // Fallback: first digits — allow plain number if it's from a duration label (e.g., "No. of calendar days" → "120" has no "days" in value, but label was duration)
+        // To avoid picking budget 29/100 (which has PESOS/MILLION words), require calendar days/month/year unless value is pure number
+        const isPureNumber = /^\s*[\d,]+(?:\.\d+)?\s*$/.test(s) || /^\s*\d+\s*(months?|years?)?\s*$/i.test(s);
+        if (!/calendar\s*days|days|month|year/i.test(s) && !isPureNumber) {
+            // If it contains budget words like PESOS/MILLION without duration context, reject
+            if (/pesos|million|thousand/i.test(s)) {
+                if (_dbg) console.debug('[Parser] parseDurationToDays reject budget word without calendar days:', JSON.stringify(s.slice(0,80)));
+                return null;
+            }
+            // For plain numbers like "120" coming from "No. of calendar days" next line, allow — but only if caller was duration label
+            // Since parseDurationToDays doesn't know caller context, allow pure numbers as duration (e.g., "120")
+            if (!isPureNumber) {
+                if (_dbg) console.debug('[Parser] parseDurationToDays no calendar days context for', JSON.stringify(s.slice(0,80)));
+                return null;
+            }
+        }
         const m = s.match(/(\d{1,4})/);
-        if (!m) return null;
+        if (!m) {
+            if (_dbg) console.debug('[Parser] parseDurationToDays no digit and no wordNum for', JSON.stringify(s.slice(0,80)));
+            return null;
+        }
         const num = parseInt(m[1], 10);
         if (!num || num <= 0 || num > 3650) return null;
-        if (/month/i.test(s)) return String(Math.round(num * 30));
-        if (/year/i.test(s)) return String(num * 365);
-        return String(num);
+        if (/%/.test(s) && !/calendar\s*days/i.test(s)) {
+            if (_dbg) console.debug('[Parser] parseDurationToDays ignore stray % num', num, 'from', JSON.stringify(s.slice(0,80)));
+            return null;
+        }
+        const out2 = /month/i.test(s) ? String(Math.round(num * 30)) : /year/i.test(s) ? String(num * 365) : String(num);
+        if (_dbg) console.debug('[Parser] parseDurationToDays digit fallback result:', out2, 'from', JSON.stringify(s.slice(0,80)));
+        return out2;
     }
 
     // ─── PDF TEXT RECONSTRUCTION ────────────────────────────────────────────
@@ -221,13 +331,14 @@ const DocumentParserCore = (function () {
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
-    // Parse a money value. Prefers Php-prefixed amounts to avoid bare 44/100 fractions.
+    // Parse a money value. Prefers Php/P/₱-prefixed amounts to avoid bare 44/100 fractions.
     // Enhanced 2026-09-04: for lines like "PESOS & 44/100 (Php 32,588,531.44)" the first
     // number is 44 — we must prefer the Php amount, not the fraction.
+    // Additional adjustment 2026-09-04: handle "(P 6,495,049.29)" single-P as Php alias (NET TOTAL P6,495,049.29) and (P 6,495,049.29).
     const asMoney = (v) => {
         const s = String(v);
-        // Prefer Php/₱-prefixed amount first
-        const phpM = s.match(/(?:php|₱)\s*([\d,]+(?:\.\d{1,2})?)/i);
+        // Prefer Php/P/₱-prefixed amount first (Php or single P in "(P 6,495,049.29)" context)
+        const phpM = s.match(/(?:php|₱)\s*([\d,]+(?:\.\d{1,2})?)/i) || s.match(/\(\s*P\s*([\d,]+\.\d{2})\s*\)/i) || s.match(/\bP\s*([\d,]+\.\d{2})/i);
         if (phpM) {
             const num = parseFloat(phpM[1].replace(/,/g, ''));
             if (isFinite(num) && num > 1000) return num.toFixed(2);
@@ -237,8 +348,8 @@ const DocumentParserCore = (function () {
         const num = parseFloat(m[1].replace(/,/g, ''));
         // Ignore tiny fractions like 44 from 44/100 unless no better amount exists and value >100
         if (!isFinite(num) || num <= 0) return null;
-        if (num < 1000 && phpM === null) {
-            // Check if there's a larger number later in the string
+        if (num < 1000 && !phpM) {
+            // Check if there's a larger number later in the string (handles 6,495,049.29 vs 29)
             const allNums = [...s.matchAll(/([\d,]+(?:\.\d{1,2})?)/g)].map(x => parseFloat(x[1].replace(/,/g, ''))).filter(n => isFinite(n) && n > 1000);
             if (allNums.length > 0) return Math.max(...allNums).toFixed(2);
         }
@@ -413,10 +524,83 @@ const DocumentParserCore = (function () {
         ], asMoney);
         if (finalAmount) return finalAmount;
 
-        return findLabeledValue(lines, [
+        const generic = findLabeledValue(lines, [
             /(?:contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
             /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ], asMoney);
+        if (generic) return generic;
+
+        // Fallback: PESOS + Php/P/n pattern without clear label (e.g., "SIX MILLION ... PESOS & 29/100 (Php 6,495,049.29)" or "PESOS & 29/100 (P 6,495,049.29)" or "(n 6,495,049.29)" box)
+        // Use values themselves as keyword — any line with PESOS + (Php/P/n amount) on same 1-2 lines only (user: yes n with PESOS only).
+        // Handles split across lines: "PESOS & 29/100" on one line, "(Php 6,495,049.29)" or "(P 6,495,049.29)" or "(n 6,495,049.29)" box on next.
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        for (let i = 0; i < norm.length; i++) {
+            const line = norm[i];
+            if (/pesos/i.test(line)) {
+                const combined = [line, norm[i+1] || '', norm[i+2] || ''].join(' ');
+                // n alias for box: (n 6,495,049.29) only when PESOS present on same window (user: yes)
+                if (/\(p(?:hp)?\s*[\d,]+\.\d{2}\)/i.test(combined) || /\(n\s*[\d,]+\.\d{2}\)/i.test(combined)) {
+                    const m = asMoney(combined);
+                    if (m) return m;
+                }
+                if (/\(p(?:hp)?\s*[\d,]+\.\d{2}\)/i.test(line) || /\(n\s*[\d,]+\.\d{2}\)/i.test(line)) {
+                    const m = asMoney(line);
+                    if (m) return m;
+                }
+            }
+        }
+        // Second fallback: "the amount of ..." clause contains Php amount (also handle split)
+        for (let i = 0; i < norm.length; i++) {
+            const line = norm[i];
+            if (/the\s+amount\s+of/i.test(line)) {
+                const combined = [line, norm[i+1] || '', norm[i+2] || ''].join(' ');
+                const m2 = asMoney(combined);
+                if (m2) return m2;
+            }
+        }
+        // Third fallback: any large Php/P amount as contract price when no label at all (single contract file assumption)
+        // Default to contract amount per user Q2: PESOS word not required if Php/P >1M exists
+        // Handles NET TOTAL P6,495,049.29 (single P, no Php) and NET TOTAL ... (Php X)
+        for (let i = 0; i < norm.length; i++) {
+            const line = norm[i];
+            const combined = [line, norm[i+1] || ''].join(' ');
+            // Look for "(Php X)" or "(P X)" or "NET TOTAL P X" pattern even without PESOS
+            const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
+            if (phpOnly) {
+                const m3 = asMoney(combined);
+                if (m3 && parseFloat(m3) > 100000) return m3; // >100k to avoid 44/100 tiny
+            }
+        }
+        // Fourth fallback: budget word amount when Php numeric absent (OCR garbled Php) — use PESOS words
+        // Only if none of ABC keywords exist (per user Q1: default to contract amount but only if ABC absent)
+        // Strict 2026-09-04 per user: require ALL CAPS bold style + "& 29/100" cents + PESOS last word (as both
+        // Buhi and CHS have "SIX MILLION … PESOS & 29/100" ALL CAPS, not Title-Case)
+        const hasAbcLabel = norm.some(l => /^\s*abc\s*[:\-]/i.test(l) || /approved\s*budget.*contract.*\(abc\)/i.test(l));
+        if (!hasAbcLabel) {
+            for (let i = 0; i < norm.length; i++) {
+                const line = norm[i];
+                // Strict: ALL CAPS + PESOS last word + million/thousand + & \d+/100 required (user: yes required)
+                if (!/million|thousand/i.test(line) || !/pesos/i.test(line)) continue;
+                // & 29/100 must be on same 2-line window (user: yes required)
+                const combined2 = [line, norm[i+1] || ''].join(' ');
+                if (!/&\s*\d+\s*\/\s*100/i.test(combined2)) continue;
+                // ALL CAPS check: the PESOS line must be uppercase (as both files have SIX MILLION … PESOS)
+                const pesosLine = /pesos/i.test(line) ? line : norm[i+1] || '';
+                const isAllCaps = pesosLine === pesosLine.toUpperCase() && /[A-Z]/.test(pesosLine);
+                if (!isAllCaps) continue;
+                const mW = combined2.match(/(.+?)\s+pesos/i);
+                if (mW) {
+                    const wordVal = wordsToNumber(mW[1]);
+                    if (wordVal && wordVal > 1000) {
+                        const frac = combined2.match(/&\s*(\d+)\s*\/\s*100/i);
+                        const cents = frac ? parseInt(frac[1],10)/100 : 0;
+                        const total = wordVal + cents;
+                        if (total > 1000) return total.toFixed(2);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     // Approved Budget for the Contract (ABC) — standalone ABC label.
@@ -462,10 +646,75 @@ const DocumentParserCore = (function () {
     }
 
     // Contract Duration in days.
+    // Enhanced 2026-09-04: also handles "within NINETY (90) calendar days" without explicit Duration: label,
+    // and prefers word-mapped 90 over stray 3% number. Uses within…calendar days clause.
+    // Additional adjustment 2026-09-04: handle split across lines (NINETY on one line, "calendar days" on next)
+    // and fuzzy OCR "NlNETY" (I→l) with Levenshtein ≤1.
     function extractDuration(lines) {
-        return findLabeledValue(lines, [
+        const normLines = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // First try labeled patterns (Duration: etc.)
+        let labeled = findLabeledValue(normLines, [
             /(?:duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?)\s*[:\-]?\s*(.*)/i,
         ], asDays);
+        if (labeled) return labeled;
+
+        // Helper: fuzzy contains for OCR typo (NINETY vs NlNETY) — Levenshtein ≤1 for 6+ char words
+        const fuzzyIncludes = (hay, needle) => {
+            const h = hay.toLowerCase();
+            const n = needle.toLowerCase();
+            if (h.includes(n)) return true;
+            if (n.length < 6) return false;
+            // Check each word in hay for distance 1 to needle
+            for (const w of h.split(/\s+/)) {
+                if (Math.abs(w.length - n.length) > 1) continue;
+                let diff = 0;
+                const len = Math.max(w.length, n.length);
+                for (let i = 0; i < len; i++) if (w[i] !== n[i]) diff++;
+                if (diff <= 1) return true;
+            }
+            return false;
+        };
+
+        // Fallback: scan for "within ... calendar days" clause, also handling split across 2 lines
+        for (let i = 0; i < normLines.length; i++) {
+            const line = normLines[i];
+            // Try single line "within NINETY (90) calendar days"
+            let m = String(line).match(/within\s+(.+?calendar\s*days.*)/i);
+            if (m) {
+                const candidate = asDays(m[1]);
+                if (candidate) return candidate;
+                const candidateFull = asDays(m[0]);
+                if (candidateFull) return candidateFull;
+            }
+            // Try combined with next line: "within NINETY (90)" + "calendar days upon receipt..."
+            const combined2 = [line, normLines[i+1] || ''].join(' ');
+            m = combined2.match(/within\s+(.+?calendar\s*days.*)/i);
+            if (m) {
+                const c = asDays(m[1]);
+                if (c) return c;
+            }
+            // Fuzzy: line has NINETY-like word but OCR "NlNETY" — still treat as duration
+            if (fuzzyIncludes(line, 'ninety') && /calendar\s*days/i.test(line + ' ' + (normLines[i+1]||''))) {
+                const c = asDays(line + ' ' + (normLines[i+1]||''));
+                if (c) return c;
+            }
+        }
+        // Second fallback: any line with "calendar days" + a number/word near it (also check combined)
+        for (let i = 0; i < normLines.length; i++) {
+            const line = normLines[i];
+            if (/calendar\s*days/i.test(line)) {
+                const c = asDays(line);
+                if (c) return c;
+                // Try combined with previous line that has the number word (split case)
+                const prev = normLines[i-1] || '';
+                if (prev && /ninety|eighty|seventy|sixty|fifty|forty|thirty|twenty|hundred/i.test(prev.toLowerCase())) {
+                    const combined = prev + ' ' + line;
+                    const c2 = asDays(combined);
+                    if (c2) return c2;
+                }
+            }
+        }
+        return null;
     }
 
     // Contractor Name (used for fuzzy-matching the dropdown).

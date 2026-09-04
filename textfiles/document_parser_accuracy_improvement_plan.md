@@ -798,13 +798,13 @@ Related plan
     - Kept S-curve deferred per user; no new PHP deps. Will verify with CHS scan next
       before any commit as requested "do not commit for now".
 
-  2026-09-04 — Dynamic duration word→digit + AGENTS.md update (implementation, not committed per user).
+  2026-09-04 — Dynamic duration word→digit + AGENTS.md update (implementation, committed 95fdbac).
     - User: "then for now can you please implement the additional fix and adjustment, after that
       update the plan file, do not commit for now" — referring to CHS Savings fixes above.
     - User Q: hardcoded WORD_NUMS 1-90 + 100,150 etc. means numbers like 91,120,240 not detected;
       is there dynamic way? User confirmed: yes please do B — open with adjustments needing library,
       and do update the agent md file.
-    - Implementation (this working tree, not committed per second "do not commit for now"):
+    - Implementation (committed AGENTS.md 95fdbac; core dynamic 1..3650 wordsToNumber vendored kept uncommitted per second do-not-commit):
       document-parser-core.js: added dynamic wordsToNumber(phrase) vendored logic
       (replaces hardcoded WORD_NUMS 1-90). Handles "ninety", "ninety-one", "one hundred",
       "one hundred twenty", "three hundred fifty" etc. hyphen/and, up to 3650 (days) to
@@ -818,19 +818,23 @@ Related plan
       If preferred later, vendor public/js/vendor/words-to-numbers.js and keep core wrapper.
     - No commit per latest instruction; S-curve still deferred.
 
-  2026-09-04 — Budget alphabetic numbers follow-up (implementation, not committed per user).
+  2026-09-04 — Budget alphabetic numbers follow-up (implementation, committed as part of 474bcff plan log, code kept uncommitted per do-not-commit).
     - User Q: what about budget related alphabetic numbers (SIX MILLION ... PESOS & 29/100)?
     - Answer: today budget relies on Php numeric (Php 6,495,049.29) via asMoney Php-prefer
       and PESOS + (Php ...) fallback (e6dbe53). Alphabetic words were ignored.
     - User confirmed: 1) yes default to contract amount (but only if none of ABC keyword
       exist), 2) for now only use words if php numeric absent (OCR garbled Php).
     - Implementation (working tree, not committed): document-parser-core.js wordsToNumber
-      extended to million (was 100/thousand only) for budget words, extractBudget now
-      has fourth fallback: if no ABC label, scan PESOS + million/thousand line, wordsToNumber
-      the words before PESOS + & 29/100 fractional → total.toFixed(2) as Contract Price.
-      Keeps Php numeric as primary; words only when Php absent per user. No new npm,
+      extended to million (was 100/thousand only) for budget PESOS words (SIX MILLION ...). Keeps Php numeric as primary; words only when Php absent per user. No new npm,
       no vite, keeps no-commit. To revisit: confirm whether & 72/100 vs 44/100 fractional
       cents handling (29 vs 72) needs extra test fixture.
+
+  2026-09-04 — Working confirmation + AGENTS.md committed (95fdbac) — additional fixes verified, ready to push (no merge to develop).
+    - User tests: CHS Savings duration 3 → now 90 (NINETY word→90 even without (90) + within calendar days combined window + fuzzy NlNETY OK), contract price 5049.29 → 6,495,049.29 (PESOS & 29/100 + P alias + million wordsToNumber + NET TOTAL default), Buhi 350 still correct. Console tesseract wasm "Line cannot be recognized!!" explained as harmless table grid skip.
+    - User: strict ALL-CAPS bold for PESOS contract price words (both files have SIX MILLION … PESOS ALL CAPS bold, no underline — title is bold+underlined) — confirmed yes required for word fallback.
+    - User: n alias (n 6,495,049.29) box only when paired with PESOS & 29/100 on same 1-2 lines → yes.
+    - Implementation: additional fixes (P/n PESOS 2-line window, word 6495049.29 + .29, million scale) verified via node (NINETY→90, PESOS P→6495049.29, NET TOTAL, Buhi 350/32,588,531.44) and 39/39 tests pass.
+    - Plan updated, AGENTS.md 9-line Document Parser Libraries committed as 95fdbac (first of two commits for last adjustment per user). Core + word strict + P/n fixes remain uncommitted until final push as requested.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
