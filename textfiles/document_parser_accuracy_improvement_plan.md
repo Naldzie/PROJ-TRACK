@@ -776,6 +776,62 @@ Related plan
       confidence + ABC/price wording + S-curve exclusion already done.
     - Logged as requested before commit; no new implementation in this commit.
 
+  2026-09-04 — CHS Savings scanned contract new issue + plan for next normal-only fixes (implementation started, not yet committed).
+    - New file sampledocs/Completed Project/Contract - CHS Savings.pdf (EPSON Scan 2.2MB 7 pages,
+      0 Tj, image-only, same OCR 10-page limit path) — bold underlined title
+      "Construction of Four-Storey Academic Building (College of Health Sciences)-Savings"
+      was already accurate via isTitleValueCandidate, but contract price empty and duration
+      wrong (3 instead of 90). Evidence: Images 1 title bold underline already caught,
+      but NINETY (90) calendar days read as 3 from "THREE PERCENT (3%)" discount line.
+    - Q1 yes trust word even if digit missing: NINETY without (90) must still be 90.
+      Q2 default to contract amount: the PESOS … (Php X) amount without a clear label
+      should go to Contract Price (approved_budget), not ABC (ABC is ceiling, savings = ABC-price).
+      Plus user: is it possible to use "PESOS" as keyword fallback if no clear label?
+      Yes — same format in both Buhi and CHS: full words THIRTY-TWO MILLION … PESOS & 44/100
+      (Php 32,588,531.44) and SIX MILLION … PESOS & 29/100 (Php 6,495,049.29).
+    - Implementation started (this branch, not committed): document-parser-core.js
+      parseDurationToDays now prefers (90) parentheses, then WORD_NUMS map
+      ninety→90 etc. with % filter to ignore 3% unless calendar days present;
+      extractDuration now scans "within … calendar days" fallback; extractBudget now
+      falls back to PESOS … (Php X) and "the amount of …" clause via asMoney Php-prefer
+      (>1000) so 6,495,049.29 wins over 29/100.
+    - Kept S-curve deferred per user; no new PHP deps. Will verify with CHS scan next
+      before any commit as requested "do not commit for now".
+
+  2026-09-04 — Dynamic duration word→digit + AGENTS.md update (implementation, not committed per user).
+    - User: "then for now can you please implement the additional fix and adjustment, after that
+      update the plan file, do not commit for now" — referring to CHS Savings fixes above.
+    - User Q: hardcoded WORD_NUMS 1-90 + 100,150 etc. means numbers like 91,120,240 not detected;
+      is there dynamic way? User confirmed: yes please do B — open with adjustments needing library,
+      and do update the agent md file.
+    - Implementation (this working tree, not committed per second "do not commit for now"):
+      document-parser-core.js: added dynamic wordsToNumber(phrase) vendored logic
+      (replaces hardcoded WORD_NUMS 1-90). Handles "ninety", "ninety-one", "one hundred",
+      "one hundred twenty", "three hundred fifty" etc. hyphen/and, up to 3650 (days) to
+      cover 90 vs 91, 120, 240 etc. Extends SCALES to million for budget PESOS words
+      (SIX MILLION ...). Keeps core pure/node --test, no extra public/js/vendor
+      bundle yet. AGENTS.md new § Document Parser Libraries documents pdfjs-dist, tesseract.js,
+      phpspreadsheet, and duration words-to-numbers v1.5.1 concept as vendored.
+    - Verified npm: words-to-numbers v1.5.1 and number-parsing v0.3.2 exist on registry.
+      Decision: vendored dynamic function inside document-parser-core.js keeps no-vite
+      (public/js) and avoids extra vendor file until a full npm words-to-numbers is preferred.
+      If preferred later, vendor public/js/vendor/words-to-numbers.js and keep core wrapper.
+    - No commit per latest instruction; S-curve still deferred.
+
+  2026-09-04 — Budget alphabetic numbers follow-up (implementation, not committed per user).
+    - User Q: what about budget related alphabetic numbers (SIX MILLION ... PESOS & 29/100)?
+    - Answer: today budget relies on Php numeric (Php 6,495,049.29) via asMoney Php-prefer
+      and PESOS + (Php ...) fallback (e6dbe53). Alphabetic words were ignored.
+    - User confirmed: 1) yes default to contract amount (but only if none of ABC keyword
+      exist), 2) for now only use words if php numeric absent (OCR garbled Php).
+    - Implementation (working tree, not committed): document-parser-core.js wordsToNumber
+      extended to million (was 100/thousand only) for budget words, extractBudget now
+      has fourth fallback: if no ABC label, scan PESOS + million/thousand line, wordsToNumber
+      the words before PESOS + & 29/100 fractional → total.toFixed(2) as Contract Price.
+      Keeps Php numeric as primary; words only when Php absent per user. No new npm,
+      no vite, keeps no-commit. To revisit: confirm whether & 72/100 vs 44/100 fractional
+      cents handling (29 vs 72) needs extra test fixture.
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
