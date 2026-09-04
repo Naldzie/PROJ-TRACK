@@ -506,30 +506,42 @@ Related plan
           ("CONSTRUCTION OF FOUR-STOREY" / "ACADEMIC BUILDING (...) - Savings").
           Fix: allow greedy continuation for ALL-CAPS lines with hyphen break
           (Four- + Storey) until "(...)-Savings" tail, same as Title-Case path.
-    1e-4. Intra-file voting (user request: use repeats INSIDE one file):
+    1e-4. Pooled global vote for the filled VALUE + per-file winners for the WARNING
+        (user revision 2026-09-04: "get all finds in all files"):
         - Today: per file = FIRST match wins (findLabeledValue returns first;
           parseProjectInfo has one value per field). voteParsedFields counts ONE
           vote per FILE, and single-file returns as-is with no vote. So a correct
-          value repeated 3x in one bundle loses to a wrong first hit.
-        - Fix: collect ALL candidates per field per file (all labeled hits + all
-          fallback Php amounts + all duration/date hits with page/section tag),
-          then intra-file vote: frequency first, tie-break prefer (1) labeled over
-          fallback, (2) contract-summary section over inspection/accomplishment
-          section (section weight via keywords: contract/summary/amount/time vs
-          inspection/accomplishment/report), (3) full-length money over tail
-          (digit-count). Then existing cross-file vote runs on the per-file
-          winners unchanged. Single-file case goes from 1/1 passthrough to N/1
-          voted (e.g., 3x 6,495,049.29 beats 1x 5049.29).
+          value repeated 3x in one bundle loses to a wrong first hit, and a wrong
+          first-hit per file propagates to the cross-file vote.
+        - Fix (two tracks, same candidate pool):
+          (a) VALUE track (what fills the preview): collect ALL candidates per
+          field from ALL files into ONE pooled pile (all labeled hits + all
+          fallback Php amounts + all duration/date hits, each tagged with
+          file/section/page + weight). Score each candidate: frequency across the
+          pile first, tie-break (1) labeled over fallback, (2) contract-summary
+          section (weight 1.0) over inspection/accomplishment section (0.6),
+          (3) full-length money over tail (digit-count). Highest score fills the
+          preview. Single-file goes 1/1 passthrough → N/1 voted (e.g., 3x
+          6,495,049.29 beats 1x 5049.29); multi-file goes winners-vote → all-finds
+          pooled vote (e.g., 3x + 2x = 5 pooled beats a wrong first-hit).
+          (b) WARNING track (red mis-upload banner): keep ONE winner per FILE
+          (intra-file vote with same weights) so getMismatchInfo can still say
+          "File 1 says X, File 2 says Y". Value and warning are computed from the
+          same pool but reported separately — accuracy from the pile, accountability
+          from per-file winners.
+        - Guard: a thick bundle cannot cheat by sheer repetition — weight beats
+          count when sections differ (contract 1.0 vs supporting 0.6), and
+          labeled beats fallback at equal weight.
     1e-5. Bundle section weighting (supports "try all pages"):
-        - Keep reading ALL pages (user choice), but tag each candidate with its
-          section (scan nearby lines for `contract amount|contract time|
-          effectivity` = contract weight 1.0 vs `inspection|accomplishment|
-          acceptance|time elapsed` = supporting weight 0.6). Prevents supporting
-          pages from outvoting the summary while keeping recall.
+        - Keep reading ALL pages (user choice), tag each pooled candidate with its
+          section (nearby lines: `contract amount|contract time|effectivity` =
+          contract 1.0 vs `inspection|accomplishment|acceptance|time elapsed` =
+          supporting 0.6). Same weights feed both tracks above.
     - Tests: (i) Original/Revised label fixtures (revised wins; original-only
       falls back); (ii) split-money glue fixture ("6,495,0"+"49.29" → full);
-      (iii) ALL-CAPS two-line title fixture; (iv) intra-file vote fixture
-      (3x correct vs 1x wrong first → correct wins); (v) re-run 39/39 + 4 contract
+      (iii) ALL-CAPS two-line title fixture; (iv) pooled-vote fixture
+      (3x correct in file A + 2x in file B beats 1x wrong first-hit per file;
+      mismatch banner still lists per-file winners); (v) re-run 39/39 + 4 contract
       files unchanged.
     - No new deps, no vite, S-curve still deferred.
 
@@ -927,6 +939,14 @@ Related plan
     - Action: plan file updated with Step 1e (NOT STARTED) and committed per user
       "update plan then commit, no implementation". No JS/PHP touched in this commit.
 
+  2026-09-04 — Step 1e revision: pooled global vote (plan only, committed, no code).
+    - User Q: will cross-file vote use all finds from all files, not winners-only?
+      Yes — revised per user "get all finds in all files is better".
+    - Change: VALUE track = ONE pooled pile across all files (frequency + weights);
+      WARNING track = keep one winner per file for red mis-upload banner. Same
+      candidate pool feeds both — accuracy from pile, accountability per file.
+    - Decision 12 updated accordingly. No code touched.
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
@@ -1090,18 +1110,21 @@ Related plan
     Consequences: Step 1e-1 adds both labels with revised-override rule; no schema
       change (still fills approved_budget).
 
-  Decision 12 — Bundle PDFs read ALL pages with section-weighted intra-file vote
+  Decision 12 — Bundle PDFs read ALL pages: pooled VALUE vote + per-file WARNING vote
     Context: CHS-Savings.pdf bundles inspection/acceptance/accomplishment/time-elapsed.
-      User asked: try all pages — won't keywords + cross-check raise accuracy?
+      User asked: try all pages — won't keywords + cross-check raise accuracy? Then
+      revised: get ALL finds in ALL files pooled, not winners-only.
     Options: (A) contract-pages only, (B) all pages merged first-match, (C) all pages
-      with per-candidate intra-file vote + section weights.
-    Decision: (C) All pages, but candidates vote inside the file (frequency +
+      with per-file winners voting, (D) all finds pooled for VALUE + per-file winners
+      for WARNING.
+    Decision: (D) ONE pooled pile across all files for the preview value (frequency +
       labeled-prefer + contract-section weight 1.0 vs supporting 0.6 + full-length
-      money tie-break), then existing cross-file vote (user 2026-09-04).
-    Rationale: Keeps recall (title p1, price p5, dates p8 all found) while stopping
-      supporting pages from outvoting the summary; answers "single data repeated
-      many times should count" — today first-match wins, single-file = passthrough.
-    Consequences: Step 1e-4/1e-5; single-file goes 1/1 passthrough → N/1 voted.
+      money tie-break; weight beats sheer count so a thick bundle can't cheat), plus
+      ONE winner per FILE kept separately for the red mis-upload banner (user 2026-09-04).
+    Rationale: Accuracy from the pile (3x + 2x = 5 pooled beats a wrong first-hit);
+      accountability from per-file winners ("File 1 says X, File 2 says Y").
+    Consequences: Step 1e-4/1e-5; single-file 1/1 passthrough → N/1 voted; multi-file
+      winners-vote → pooled-vote for value, per-file winners retained for mismatch.
 
 ===============================================================================
   10. FILES TO TOUCH (when implementation starts)
