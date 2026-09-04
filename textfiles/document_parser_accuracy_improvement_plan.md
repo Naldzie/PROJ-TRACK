@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 IN PROGRESS — Step 1 (normal PDF: location/ABC/category/budgetSource + hardcoded value keywords) implemented and tested (39/39); S-curve Steps 2-4 deferred until normal accuracy re-tested on scanned contract
+# Status: 🔄 IN PROGRESS — Step 1 core done (39/39); NEW Step 1e planned (CHS-Savings bundle: new labels + Revised-wins + intra-file voting + price glue + ALL-CAPS title join, NOT STARTED, no code); S-curve Steps 2-4 deferred
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -463,6 +463,76 @@ Related plan
       line, (ii) title matched only via value keywords (no label), (iii)
       budget source standalone "ABC:" label, (iv) contractor suffix match.
 
+  STEP 1e — CHS-Savings bundle fixes + intra-file voting (NEW 2026-09-04)  ⬜ NOT STARTED, NO CODE YET
+    Context: user tested ONLY `sampledocs/Completed Project/CHS - Savings.pdf`
+    (2.4MB scanned bundle: inspection + acceptance + accomplishment + time-elapsed
+    reports for same 4-storey CHS project). Result: title short (missing
+    "(College of Health Sciences)-Savings"), location/contractor/end-date correct,
+    budget 5049.29 (tail of 6,495,049.29), duration 1 (should be 90). The 4 prior
+    contract files stay accurate — this step must not regress them.
+    User decisions: (a) Revised Contract Amount wins over Original when present;
+    (b) keep Best-guess + correction (fill + let user fix); (c) bundle PDFs should
+    try ALL pages (recall over precision) with voting to keep accuracy up.
+
+    1e-1. New label synonyms (document-parser-core.js, Tier 1):
+        - Duration += `original contract time` (+ `contract time` alone).
+          Reason: bundle uses "Original Contract Time:" — current list
+          (duration|contract period|contract duration|no. of days|calendar days|
+          working days) never matches, so fallback picks stray "1".
+        - Start date += `date of effectivity of contract` (+ `effectivity`).
+          Reason: bundle uses "Date of Effectivity of Contract:" — current list
+          (start date|commencement|NTP|contract start) misses it.
+        - Budget += `original contract amount` as Contract Price candidate AND
+          `revised contract amount` as preferred override. Rule: if revised found
+          use revised, else use original, else existing fallbacks. ABC stays
+          separate (ABC ceiling vs price). End date `date of completion` already
+          exists — no change (it worked).
+    1e-2. Price glue (fix 5049.29 tail):
+        - Cause verified 2026-09-04: "Original/Revised Contract Amount" labels do
+          NOT exist in code, so the correct one-line value was never read. Parser
+          fell through to third fallback "any large Php/P amount" which scans the
+          WHOLE bundle top-to-bottom and returns the FIRST large amount — that was
+          a different section's split/truncated number (tail 049.29), not the
+          contract summary line the user sees.
+        - Fix: (i) add the two labels above so the correct line is read first;
+          (ii) before asMoney, glue split money tokens across 1-2 lines
+          ("6,495,0" + "49.29" with space/comma break → "6,495,049.29") and strip
+          gaps from column/cell breaks; (iii) keep Php-prefer + >100k guard so
+          44/100 fractions still lose.
+    1e-3. ALL-CAPS two-line title join (fix short title):
+        - "Project name:" IS already a label (extractTitle:374 + :453) — not a
+          missing keyword and NOT a cross-file vote effect (single-file test has
+          no vote). Cause is greedy join stopping early on ALL-CAPS split
+          ("CONSTRUCTION OF FOUR-STOREY" / "ACADEMIC BUILDING (...) - Savings").
+          Fix: allow greedy continuation for ALL-CAPS lines with hyphen break
+          (Four- + Storey) until "(...)-Savings" tail, same as Title-Case path.
+    1e-4. Intra-file voting (user request: use repeats INSIDE one file):
+        - Today: per file = FIRST match wins (findLabeledValue returns first;
+          parseProjectInfo has one value per field). voteParsedFields counts ONE
+          vote per FILE, and single-file returns as-is with no vote. So a correct
+          value repeated 3x in one bundle loses to a wrong first hit.
+        - Fix: collect ALL candidates per field per file (all labeled hits + all
+          fallback Php amounts + all duration/date hits with page/section tag),
+          then intra-file vote: frequency first, tie-break prefer (1) labeled over
+          fallback, (2) contract-summary section over inspection/accomplishment
+          section (section weight via keywords: contract/summary/amount/time vs
+          inspection/accomplishment/report), (3) full-length money over tail
+          (digit-count). Then existing cross-file vote runs on the per-file
+          winners unchanged. Single-file case goes from 1/1 passthrough to N/1
+          voted (e.g., 3x 6,495,049.29 beats 1x 5049.29).
+    1e-5. Bundle section weighting (supports "try all pages"):
+        - Keep reading ALL pages (user choice), but tag each candidate with its
+          section (scan nearby lines for `contract amount|contract time|
+          effectivity` = contract weight 1.0 vs `inspection|accomplishment|
+          acceptance|time elapsed` = supporting weight 0.6). Prevents supporting
+          pages from outvoting the summary while keeping recall.
+    - Tests: (i) Original/Revised label fixtures (revised wins; original-only
+      falls back); (ii) split-money glue fixture ("6,495,0"+"49.29" → full);
+      (iii) ALL-CAPS two-line title fixture; (iv) intra-file vote fixture
+      (3x correct vs 1x wrong first → correct wins); (v) re-run 39/39 + 4 contract
+      files unchanged.
+    - No new deps, no vite, S-curve still deferred.
+
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
     File: app/Services/SCurveImportService.php
     (also mirrors to public/js/admin/projects/scurve-pdf-parser-core.js for PDF)
@@ -836,6 +906,27 @@ Related plan
     - Implementation: additional fixes (P/n PESOS 2-line window, word 6495049.29 + .29, million scale) verified via node (NINETY→90, PESOS P→6495049.29, NET TOTAL, Buhi 350/32,588,531.44) and 39/39 tests pass.
     - Plan updated, AGENTS.md 9-line Document Parser Libraries committed as 95fdbac (first of two commits for last adjustment per user). Core + word strict + P/n fixes remain uncommitted until final push as requested.
 
+  2026-09-04 — CHS-Savings single-file test + Step 1e plan (plan only, committed, no code).
+    - User tested ONLY CHS - Savings.pdf (different paper type, bundle of inspection/
+      acceptance/accomplishment/time-elapsed for same CHS 4-storey project). Result:
+      title short but close (missing "(College of Health Sciences)-Savings" tail),
+      location/contractor/end-date correct, budget 5049.29 tail (want 6,495,049.29),
+      duration 1 (want 90, label is "Original Contract Time"), start empty (label is
+      "Date of Effectivity of Contract"). End label "Date of Completion" already works.
+      4 contract files remain the reference set.
+    - User Q1 (price splice): answered — correct one-line "Original/Revised Contract
+      Amount" was NEVER read (labels missing), so fallback "any large amount" grabbed
+      a different section's split number first. Fix is labels first + money glue second.
+    - User Q2 (accuracy/voting): confirmed — today FIRST match per file wins, vote is
+      ONE per FILE (single-file = passthrough, no vote). User wants intra-file repeats
+      to vote too. Planned as Step 1e-4 (all candidates per file → frequency +
+      labeled-prefer + section-weight + full-length tie-break), then existing cross-file
+      vote unchanged.
+    - User decisions logged: Revised wins over Original (Decision 11); bundle reads ALL
+      pages with section-weighted voting (Decision 12); Best-guess + correction stays.
+    - Action: plan file updated with Step 1e (NOT STARTED) and committed per user
+      "update plan then commit, no implementation". No JS/PHP touched in this commit.
+
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
@@ -987,6 +1078,30 @@ Related plan
     Consequences: Step 1c reuses existing showParseIndicator + dropdown
       fuzzy match; no new BudgetSourcePolicy change; staff stays
       role:staff read-only (web.php:254).
+
+  Decision 11 — Revised Contract Amount wins over Original (Step 1e)
+    Context: CHS-Savings bundle has both "Original Contract Amount" and "Revised
+      Contract Amount" (equal here, may differ when change orders exist). System
+      today has only Contract Price + ABC, no revised field.
+    Options: (A) Original always, (B) Revised if present else Original, (C) manual edit.
+    Decision: (B) Prefer revised when found, else original (user 2026-09-04).
+    Rationale: Completed projects with adjustments should auto-fill the current
+      amount; user still reviews in preview before Apply (Best-guess + correction).
+    Consequences: Step 1e-1 adds both labels with revised-override rule; no schema
+      change (still fills approved_budget).
+
+  Decision 12 — Bundle PDFs read ALL pages with section-weighted intra-file vote
+    Context: CHS-Savings.pdf bundles inspection/acceptance/accomplishment/time-elapsed.
+      User asked: try all pages — won't keywords + cross-check raise accuracy?
+    Options: (A) contract-pages only, (B) all pages merged first-match, (C) all pages
+      with per-candidate intra-file vote + section weights.
+    Decision: (C) All pages, but candidates vote inside the file (frequency +
+      labeled-prefer + contract-section weight 1.0 vs supporting 0.6 + full-length
+      money tie-break), then existing cross-file vote (user 2026-09-04).
+    Rationale: Keeps recall (title p1, price p5, dates p8 all found) while stopping
+      supporting pages from outvoting the summary; answers "single data repeated
+      many times should count" — today first-match wins, single-file = passthrough.
+    Consequences: Step 1e-4/1e-5; single-file goes 1/1 passthrough → N/1 voted.
 
 ===============================================================================
   10. FILES TO TOUCH (when implementation starts)
