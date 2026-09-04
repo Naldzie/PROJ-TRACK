@@ -176,8 +176,12 @@ const DocumentParserCore = (function () {
     //   1. If the same line carries a value after the label, use it (if it passes
     //      the normalizer).
     //   2. Otherwise, take the NEXT non-empty line as the value.
+    //   3. NEW: also try the next-two-lines (BOQs put value 2 lines below label).
     // normalize(value) returns the cleaned string or null to reject. labelPatterns
     // are regexes whose first capture group is the optional inline value.
+    // Called by: extractTitle(), extractLocation(), extractBudget(), extractABC(),
+    //            extractBudgetSource(), extractCategory(), extractContractor(),
+    //            extractStartDate(), extractEndDate(), extractDuration()
     function findLabeledValue(lines, labelPatterns, normalize) {
         const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
 
@@ -200,6 +204,13 @@ const DocumentParserCore = (function () {
                     const candidate = normalize ? normalize(cleanValue(next)) : cleanValue(next);
                     if (candidate !== null && candidate !== '') return candidate;
                 }
+
+                // Next-two-lines value (some BOQs/tables put label, blank line, value)
+                const next2 = nonEmpty[i + 2];
+                if (next2) {
+                    const candidate2 = normalize ? normalize(cleanValue(next2)) : cleanValue(next2);
+                    if (candidate2 !== null && candidate2 !== '') return candidate2;
+                }
             }
         }
 
@@ -210,20 +221,42 @@ const DocumentParserCore = (function () {
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
+    // Parse a money value. Prefers Php-prefixed amounts to avoid bare 44/100 fractions.
+    // Enhanced 2026-09-04: for lines like "PESOS & 44/100 (Php 32,588,531.44)" the first
+    // number is 44 — we must prefer the Php amount, not the fraction.
     const asMoney = (v) => {
-        const m = String(v).match(/(?:php|₱)?\s*([\d,]+(?:\.\d{1,2})?)/);
+        const s = String(v);
+        // Prefer Php/₱-prefixed amount first
+        const phpM = s.match(/(?:php|₱)\s*([\d,]+(?:\.\d{1,2})?)/i);
+        if (phpM) {
+            const num = parseFloat(phpM[1].replace(/,/g, ''));
+            if (isFinite(num) && num > 1000) return num.toFixed(2);
+        }
+        const m = s.match(/([\d,]+(?:\.\d{1,2})?)/);
         if (!m) return null;
         const num = parseFloat(m[1].replace(/,/g, ''));
-        return (isFinite(num) && num > 0) ? num.toFixed(2) : null;
+        // Ignore tiny fractions like 44 from 44/100 unless no better amount exists and value >100
+        if (!isFinite(num) || num <= 0) return null;
+        if (num < 1000 && phpM === null) {
+            // Check if there's a larger number later in the string
+            const allNums = [...s.matchAll(/([\d,]+(?:\.\d{1,2})?)/g)].map(x => parseFloat(x[1].replace(/,/g, ''))).filter(n => isFinite(n) && n > 1000);
+            if (allNums.length > 0) return Math.max(...allNums).toFixed(2);
+        }
+        return num.toFixed(2);
     };
 
     // ─── FIELD EXTRACTORS ───────────────────────────────────────────────────
 
     // Project Title: label line (or next line) or an ALL-CAPS line that looks like a title.
+    // Enhanced in Phase 5 S-curve exclusion + scanned contract 2026-09-04:
+    // - Added standalone "Project:" (italic Project: Completion of … in WHEREAS clause).
+    // - Demoted ALL-CAPS fallback when a Title-Case "Project:" line exists — contractor bold
+    //   ALL-CAPS (CHRISTINA JOY…) should not steal the title.
     function extractTitle(lines, text) {
         const labeled = findLabeledValue(lines, [
             /(?:project\s*title|name\s*of\s*project|project\s*name)\s*[:\-]\s*(.*)/i,
             /(?:title\s*of\s*project)\s*[:\-]\s*(.*)/i,
+            /(?:project)\s*[:\-]\s*(.*)/i,
         ], lenRange(5, 200));
         if (labeled) return labeled;
 
@@ -237,17 +270,23 @@ const DocumentParserCore = (function () {
         return candidate ? toTitleCase(candidate) : null;
     }
 
-    // Location / Project Site.
+    // Location / Project Site — project location only, NOT contractor address.
+    // Phase 5 fix 2026-09-04: removed generic "address" to avoid Contractor Address false-positive.
+    // Keep only project-specific: location, project site/site address, project location, barangay/brgy.
+    // CSPC campus value is often just "CSPC" or "CSPC - Buhi Campus" (geotag deferred).
     function extractLocation(lines) {
         return findLabeledValue(lines, [
-            /(?:location|project\s*site|site\s*address|project\s*location|barangay|address)\s*[:\-]\s*(.*)/i,
+            /(?:location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address)\s*[:\-]\s*(.*)/i,
         ], lenRange(3, 200));
     }
 
     // Labels that start another field — used to terminate a prose description
     // block so it doesn't swallow the rest of the document (single newlines
     // between lines must NOT be treated as a description boundary).
-    const DESCRIPTION_NEXT_FIELD = /^\s*(?:approved\s*budget\s*(?:for\s*the\s*contract)?|contract\s*amount|project\s*cost|total\s*cost|budget|contract\s*price|contractor|awarded\s*to|proponent|company\s*name|firm\s*name|start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|date\s*started|end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion|duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|calendar\s*days?|working\s*days?|location|project\s*site|site\s*address|project\s*location|barangay|address|project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|workers?|manpower|headcount)\s*[:\-]/i;
+    // NOTE: Expanded in Phase 5 to include ABC standalone, budget source,
+    //       category, winning bidder, and NTP variations so description
+    //       stops before those fields. Location generic "address" removed.
+    const DESCRIPTION_NEXT_FIELD = /^\s*(?:approved\s*budget\s*(?:for\s*the\s*contract)?(?:\s*\(abc\))?|abc|contract\s*amount|project\s*cost|total\s*cost|budget|contract\s*price|source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing|category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification|contractor|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name|contractor\s*name|start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|date\s*started|contract\s*start|end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion|duration|contract\s*period|contract\s*duration|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?|location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address|project\s*title|name\s*of\s*project|project\s*name|title\s*of\s*project|workers?|manpower|headcount)\s*[:\-]/i;
 
     // Description / Scope of Work — prose, so collect the label line plus every
     // following line until another known field label starts (or the text ends).
@@ -276,17 +315,57 @@ const DocumentParserCore = (function () {
         return null;
     }
 
-    // Approved Budget / Contract Amount (₱ or PHP, optionally with "(ABC)").
+    // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
+    // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.
+    // Enhanced 2026-09-04: prioritize "final Contract Amount is … (Php X)" over generic budget,
+    // and handle "WHEREAS, after applying 3% discount, the final Contract Amount is …".
     function extractBudget(lines) {
+        // First try: final/after-discount contract amount context anchor (scanned contract Image 3)
+        const finalAmount = findLabeledValue(lines, [
+            /(?:final\s*contract\s*amount\s*is)\s*(.*)/i,
+            /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i,
+            /(?:contract\s*amount\s*is)\s*(.*)/i,
+        ], asMoney);
+        if (finalAmount) return finalAmount;
+
         return findLabeledValue(lines, [
-            /(?:approved\s*budget\s*for\s*the\s*contract|contract\s*amount|approved\s*budget|project\s*cost|total\s*cost|budget|contract\s*price)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+            /(?:contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+            /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ], asMoney);
     }
 
+    // Approved Budget for the Contract (ABC) — standalone ABC label.
+    // Phase 5 NEW: distinguishes ABC ceiling from Contract Price (savings = ABC - price).
+    // Called by: parseProjectInfo() → returns abc field; budget uses extractBudget().
+    // Labels: "ABC:" , "Approved Budget for the Contract (ABC):" , "ABC (PHP)"
+    function extractABC(lines) {
+        return findLabeledValue(lines, [
+            /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|abc)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+        ], asMoney);
+    }
+
+    // Budget Source / Funding Source — new in Phase 5.
+    // Maps to budget_sources table (9 seeded: GAA, CHED, DPWH, LGU, GAD...).
+    // Table lookup is done in document-parser.js (Option A: admin-only warning).
+    function extractBudgetSource(lines) {
+        return findLabeledValue(lines, [
+            /(?:source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing)\s*[:\-]\s*(.*)/i,
+        ], lenRange(2, 100));
+    }
+
+    // Category / Project Type — new in Phase 5.
+    // Maps to categories table (4 seeded: New Construction, Renovation, Repair, Maintenance).
+    function extractCategory(lines) {
+        return findLabeledValue(lines, [
+            /(?:category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification)\s*[:\-]\s*(.*)/i,
+        ], lenRange(3, 50));
+    }
+
     // Contract / Project Start Date.
+    // Enhanced in Phase 5: added NTP variations + next-two-lines.
     function extractStartDate(lines) {
         return findLabeledValue(lines, [
-            /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|date\s*started|contract\s*start)\s*[:\-]?\s*(.*)/i,
+            /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start)\s*[:\-]?\s*(.*)/i,
         ], asDate);
     }
 
@@ -305,34 +384,124 @@ const DocumentParserCore = (function () {
     }
 
     // Contractor Name (used for fuzzy-matching the dropdown).
+    // Enhanced in Phase 5: added winning bidder + contractor name synonyms.
     function extractContractor(lines) {
         return findLabeledValue(lines, [
-            /(?:contractor|awarded\s*to|proponent|company\s*name|firm\s*name)\s*[:\-]\s*(.*)/i,
+            /(?:contractor|contractor\s*name|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name)\s*[:\-]\s*(.*)/i,
         ], lenRange(3, 150));
+    }
+
+    // ─── VALUE-SIDE KEYWORD DICTIONARIES (HARDCODED Phase 5) ───────────────────
+    // Used ONLY as fallback when NO label matched — never replaces label search.
+    // Hardcoded per user 2026-09-03; flagged for future DB-driven parser_keywords.
+
+    // Title value phrases — 15 hardcoded per user list.
+    const TITLE_VALUE_KEYWORDS = [
+        'provision of', 'completion and provision of',
+        'upgrading/renovation of', 'upgrading', 'renovation',
+        'embankment works', 'rehabilitation of', 'refurbishment of',
+        'rehabilitation/refurbishment of', 'rehabilitation/rectification of',
+        'enhancement of', 'analysis, design, and retrofitting',
+        'analysis', 'retrofitting', 'restructuring/rehabilitation',
+        'restructuring', 'repair', 'design and build of', 'construction of',
+        'completion of'
+    ];
+
+    // Contractor suffixes inside the name itself — 6+ per user list.
+    const CONTRACTOR_VALUE_KEYWORDS = [
+        'engineering enterprises', 'construction and supply',
+        'construction & supply', 'construction and development corporation',
+        'construction and engineering services', 'construction',
+        'builders and construction supplies', 'builders', 'general contractor',
+        'trading and construction', 'development corporation'
+    ];
+
+    // Check if a line looks like a title based purely on value keywords.
+    // Called by: parseProjectInfo() fallback when extractTitle labeled returns null.
+    // Returns the cleaned line or null. Confidence lower than label (60 vs 95).
+    function isTitleValueCandidate(line) {
+        const s = String(line || '').toLowerCase().trim();
+        if (s.length < 15 || s.length > 200) return null;
+        const hasKeyword = TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw));
+        if (!hasKeyword) return null;
+        // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
+        if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
+        return cleanValue(line);
+    }
+
+    // Check if a line looks like a contractor name based on suffix keywords.
+    // Returns cleaned line or null.
+    function isContractorValueCandidate(line) {
+        const s = String(line || '').toLowerCase().trim();
+        if (s.length < 5 || s.length > 150) return null;
+        const hasSuffix = CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw));
+        if (!hasSuffix) return null;
+        if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
+        return cleanValue(line);
     }
 
     // ─── PUBLIC API ─────────────────────────────────────────────────────────
 
     // Parse a document into structured field values. Accepts { text, lines }.
-    // Returns { title, location, description, budget, startDate, endDate, duration, contractor }.
+    // Returns { title, location, description, budget, abc, budgetSource, category,
+    //           startDate, endDate, duration, contractor, _confidence, _valueKeywordHits }.
+    // Phase 5: includes ABC standalone, budgetSource, category, value-side fallbacks, confidence.
+    // Called by: document-parser.js runDocumentAutofill() → getCore().parseProjectInfo()
     function parseProjectInfo(doc) {
         const text = doc.text || '';
         const lines = doc.lines || buildLinesFromText(text);
-        return {
-            title: extractTitle(lines, text),
+        // Label-based extraction
+        let title = extractTitle(lines, text);
+        let contractor = extractContractor(lines);
+        let valueKeywordHits = 0;
+
+        // Value-side fallback: if no label found, try keyword inside the value itself
+        // Low confidence (60) vs label (95) — preview modal shows "guessed — please verify".
+        if (!title) {
+            for (const line of lines) {
+                const v = isTitleValueCandidate(line);
+                if (v) { title = v; valueKeywordHits++; break; }
+            }
+        }
+        if (!contractor) {
+            for (const line of lines) {
+                const v = isContractorValueCandidate(line);
+                if (v) { contractor = v; valueKeywordHits++; break; }
+            }
+        }
+
+        const parsed = {
+            title: title,
             location: extractLocation(lines),
             description: extractDescription(text),
             budget: extractBudget(lines),
+            abc: extractABC(lines),
+            budgetSource: extractBudgetSource(lines),
+            category: extractCategory(lines),
             startDate: extractStartDate(lines),
             endDate: extractEndDate(lines),
             duration: extractDuration(lines),
-            contractor: extractContractor(lines),
+            contractor: contractor,
         };
+
+        // Confidence scoring: (label hits * 1.0 + valueKeyword hits * 0.6) / total fields
+        // Total 11 fields now (was 8). Used by document-parser.js to decide Tier 2/3.
+        const labelHits = countFilled(parsed);
+        const totalFields = 11;
+        const confidence = Math.round(((labelHits + valueKeywordHits * 0.6) / totalFields) * 100);
+        parsed._confidence = Math.min(100, confidence);
+        parsed._valueKeywordHits = valueKeywordHits;
+        parsed._labelHits = labelHits;
+
+        return parsed;
     }
 
     // Count how many parsed fields actually have a value.
+    // Includes new fields abc, budgetSource, category.
     function countFilled(parsed) {
-        return Object.values(parsed).filter(v => v !== null && v !== '').length;
+        // Exclude internal _confidence etc. from count
+        const keys = ['title', 'location', 'description', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration', 'contractor'];
+        return keys.filter(k => parsed[k] !== null && parsed[k] !== '' && parsed[k] !== undefined).length;
     }
 
     return {
@@ -349,10 +518,18 @@ const DocumentParserCore = (function () {
         extractLocation,
         extractDescription,
         extractBudget,
+        extractABC,
+        extractBudgetSource,
+        extractCategory,
         extractStartDate,
         extractEndDate,
         extractDuration,
         extractContractor,
+        isTitleValueCandidate,
+        isContractorValueCandidate,
+        TITLE_VALUE_KEYWORDS,
+        CONTRACTOR_VALUE_KEYWORDS,
+        DESCRIPTION_NEXT_FIELD,
         parseProjectInfo,
         countFilled,
     };

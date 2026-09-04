@@ -1,8 +1,8 @@
 # DOCUMENT PARSER ACCURACY IMPROVEMENT PLAN
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
-# Date: September 3, 2026
-# Branch: TBD — branch FROM `phase-3-pdf-scurve-import` (latest parser work)
-# Status: ⬜ NOT STARTED — plan for potential implementation
+# Date: September 4, 2026 — Updated: Normal-doc-first priority per user
+# Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
+# Status: 🔄 IN PROGRESS — Step 1 (normal PDF: location/ABC/category/budgetSource + hardcoded value keywords) implemented and tested (39/39); S-curve Steps 2-4 deferred until normal accuracy re-tested on scanned contract
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -74,16 +74,31 @@ Related plan
   -----------------------------
     "How are we doing the parsing?" — answer: keyword labels + layout geometry.
 
-  3.2 Normal PDF issues (supporting docs / contracts)
-  ---------------------------------------------------
-    - Mostly same layout, but title/budget/date labels vary: "Approved Budget
-      for the Contract (ABC)" vs "Contract Amount" vs "Project Cost" vs
-      bare "ABC: ₱ 1,234,567". Some values are on the NEXT line under the
-      label, not the same line.
-    - Multi-column / table PDFs scramble lines if only Y position is used.
-    - False positives: an ambient "₱ 12,000" in a page footer was matched as
-      the budget.
-    - Scanned PDFs = no text at all → needs a photo-to-text step.
+  3.2 Normal PDF issues (supporting docs / contracts) — NOW PRIORITY FIRST
+  ---------------------------------------------------------------------------
+    Priority: per user 2026-09-04, fix normal contract accuracy BEFORE S-curve.
+    Evidence: scanned Contract Three-Storey Acad Bldg, Buhi Campus.pdf (18 pages,
+    4.5MB, all paintImageXObject, 0 words) — the only softcopy the client has is
+    scanned. Normal parser must handle it first, S-curve Steps 2-4 are deferred.
+
+    Observed problems on that scan (Images 1-3):
+    - Title: OCR returned bold "CHRISTINA JOY CONSTRUCTION AND DEVELOPMENT
+      CORPORATION" as Project Title, not the italic "Project: Completion of
+      Three-Storey Academic Building, Buhi Campus". Cause: findLabeledValue only
+      knew "Project Title|Name of Project" not standalone "Project:" and the
+      ALL-CAPS fallback picked the bold contractor over the Title-Case italic.
+    - Contract price: preview showed 44.00 (from "PESOS & 44/100 (Php 32,588,531.44)")
+      not 32,588,531.44. Cause: asMoney grabbed "44.00" from 44/100; the page
+      also has original bid Php 33,596,424.16 before 3% discount, final
+      Php 32,588,531.44 after — parser needs context anchor "final Contract
+      Amount is …" vs "Original bid amount …".
+    - S-curve numbers polluting normal scan: runDocumentAutofill scanned ALL PDFs
+      including S-curves (no Document Type filter), so 600k S-curve pesos could
+      bleed into normal budget extraction.
+    - Other general labels still vary: "Approved Budget for the Contract (ABC)"
+      vs "Contract Amount" vs "Project Cost" vs bare "ABC: ₱" — some values on
+      NEXT line or NEXT-two-lines. Multi-column scrambling, false footer ₱,
+      and 30 sec OCR (18 pages × 10 OCR_PAGE_LIMIT) remain.
 
   3.3 S-curve issues (the hard one)
   ---------------------------------
@@ -326,35 +341,50 @@ Related plan
       + scurve-pdf-parser.test.mjs (11) + SCurveImportTest (12) on real
       sampledocs/ files. Log current pass/wrong-parse cases.
 
-  STEP 1 — Expand normal PDF keyword robustness (Tier 1)    ⬜ NOT STARTED
-    File: public/js/admin/projects/document-parser-core.js
+   STEP 1 — Expand normal PDF keyword robustness (Tier 1)    🔄 IN PROGRESS → CORE DONE, S-CURVE FILTER + TITLE/CONTRACT-PRICE ANCHOR PENDING BEFORE COMMIT
+    File: public/js/admin/projects/document-parser-core.js + document-parser.js
+    NOTE: This is the normal-doc parser only, NOT S-curve (S-curve is Step 2).
+          Implemented 2026-09-04: location restricted to project address,
+          budget split ABC vs price, budgetSource/category new, next-two-lines,
+          15+6 hardcoded value keywords (hardcoded now, DB later), Option A
+          table-lookup. Pending before commit: add standalone "Project:" label
+          + contract-price context anchor "final Contract Amount is" vs
+          "Original bid amount", and exclude S-curve PDFs from normal scan.
 
     1a. Label dictionaries (what the parser looks for BEFORE the colon)
         Current labels are in findLabeledValue patterns — expand them:
-        - TITLE: keep project title|name of project|project name|title of project
-          (no change — title value keywords handle the rest).
-        - LOCATION: add Project Site|Site Address|Barangay|Brgy. to
-          existing location|project site|site address|project location|barangay|address.
-        - BUDGET: expand to cover ABC as a standalone label:
-            /(?:approved\s*budget\s*for\s*the\s*contract(?:\s*\(abc\))?|abc|contract\s*amount|approved\s*budget|project\s*cost|total\s*cost|budget|contract\s*price)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i
-          Before split: extractBudget writes to approved_budget. After Step 1b
-          it must distinguish ABC vs Contract Price (two fields). Add new
-          extractABC() vs extractBudget() or return both {budget, abc}.
-        - BUDGET SOURCE (NEW): new extractor extractBudgetSource()
-            labels: source of fund|funding source|source of funds|budget source|
-                    fund source|funding agency|source of financing
-            value normalizer: lenRange(3,100), then table-lookup (see Step 1c).
-        - CATEGORY (NEW): new extractor extractCategory()
-            labels: category|project category|project type|type of project|
-                    nature of project|classification
-            value normalizer: lenRange(3,50), then table-lookup (see Step 1c).
-        - CONTRACTOR: keep contractor|awarded to|proponent|company name|firm name
-          (add winning bidder|contractor name as synonym).
+        - TITLE: add standalone "Project:" (italic "Project: Completion of
+          Three-Storey …" in WHEREAS clause, Image 2) plus keep
+          project title|name of project|project name|title of project
+          (value keywords handle the rest). Demote ALL-CAPS fallback when a
+          Title-Case "Project:" line exists.
+        - LOCATION: now project-specific only — location|project site|
+          site address|project location|barangay|brgy.|project address
+          (generic "address" removed 2026-09-04 to avoid Contractor Address).
+        - BUDGET: split — extractBudget: contract amount|contract price|
+          project cost|total cost|budget ; extractABC: standalone abc|
+          approved budget for the contract (with (ABC)). Contract Price is the
+          final amount AFTER 3% discount (Image 3 WHEREAS after applying 3%:
+          Php 32,588,531.44); Original bid Php 33,596,424.16 maps to ABC or
+          ignored — parser must prefer "final Contract Amount is … (Php …)" over
+          generic "Php 44.00" from 44/100. Add context anchor
+          "final Contract Amount is|WHEREAS.*Contract Amount" first.
+          AsMoney must ignore bare "44.00" from "44/100".
+        - BUDGET SOURCE (NEW): source of fund|funding source|source of funds|
+          budget source|fund source|funding agency|source of financing
+        - CATEGORY (NEW): category|project category|project type|type of project|
+          nature of project|classification
+        - CONTRACTOR: keep contractor|awarded to|winning bidder|proponent|
+          company name|firm name|contractor name (already expanded).
         - DATES: add NTP Date|Notice to Proceed|Commencement to startDate;
           keep endDate labels as-is. Make findLabeledValue try same-line,
           next-line, AND next-two-lines (BOQs put value 2 lines below label).
         - Add fuzzy label match (Levenshtein ≤2) for OCR typos
           ("Aproved Bdget", "Contarct Amount") — optional, low priority.
+        - S-CURVE EXCLUSION (NEW 2026-09-04): normal runDocumentAutofill must
+          filter out S-curve PDFs (!isSCurveCandidate from scurve-import-core.js)
+          or skip when Document Type === Schedule — S-curve numbers currently
+          bleed into budget/title. Keeps the two parsers from mixing.
 
     1b. Value-side keyword dictionaries (HARDCODED for now, DB-driven later)
         Used ONLY as Tier 2 fallback when NO label matched — never replaces
@@ -685,6 +715,22 @@ Related plan
       §5.2 Tier split, §6 Steps 3a (OCR auto) / 3b (AI Tier3) / 4 (Auto vs Opt-in),
       §5.5 Python flagged future, §8 + §9 Decisions 9/10 (OCR + ##/% handling),
       §3.5 new scanned issue. Plan stays implementation-ready, no code touched.
+
+  2026-09-04 — Normal-doc-first pivot + scanned contract failure (code + plan updated, not yet committed).
+    - User confirmed: Step 1 is normal-doc parser only, NOT S-curve — normalize
+      S-curve Steps 2-4 deferred until normal accuracy re-tested.
+    - Location is project site (CSPC), not contractor address — restricted
+      extractLocation to project-specific labels (removed generic "address").
+    - Tested scanned Contract Three-Storey Acad Bldg 18-page 4.5MB: OCR auto
+      switched but took ~30 sec (18 pages, 10 OCR_PAGE_LIMIT, scale 2, eng),
+      preview showed Project Title = CHRISTINA JOY CONSTRUCTION… (bold) not
+      "Completion of …" (italic Project: …). Contract Price 44.00 from
+      "44/100 (Php 32,588,531.44)" and ABC confusion (original bid 33,596,424.16
+      before 3% vs final 32,588,531.44 after). Added to §3.2 and queued for
+      Step 1: standalone "Project:" label, contract-price anchor "final Contract
+      Amount is …", S-curve exclusion from normal scan, normal-first priority.
+    - Plan status updated to IN PROGRESS (Step 1 core implemented on branch
+      phase-5-parser-accuracy); S-curve deferred per user.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE

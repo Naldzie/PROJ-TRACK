@@ -50,9 +50,21 @@ async function runDocumentAutofill() {
     const myRunId = ++_autofillRunId;
 
     // Get only PDF files from the pending documents list
-    const pdfDocs = (getPendingDocuments() || []).filter(doc =>
-        doc.fileName.toLowerCase().endsWith('.pdf')
-    );
+    // Phase 5 2026-09-04: exclude S-curve PDFs from normal doc scan — they have separate parser
+    // and their numbers (e.g., 600k) previously bled into budget/title (normal-first priority).
+    const pdfDocs = (getPendingDocuments() || []).filter(doc => {
+        if (!doc.fileName.toLowerCase().endsWith('.pdf')) return false;
+        // Skip S-curve / Schedule-typed PDFs (use scurveImportCore if loaded, else filename heuristic)
+        try {
+            const core = window.scurveImportCore;
+            if (core && typeof core.isSCurveCandidate === 'function') {
+                if (core.isSCurveCandidate(doc)) return false;
+            } else if (/s[-_\s]?curve|schedule/i.test(doc.fileName)) {
+                return false;
+            }
+        } catch (e) { /* ignore */ }
+        return true;
+    });
 
     if (pdfDocs.length === 0) {
         hideAutofillBanner();
@@ -217,8 +229,8 @@ async function extractTextFromPDF(file, runId) {
 
         fullText += pageText + '\n\n';
 
-        // Early exit once every field has been found
-        if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 8) break;
+        // Early exit once every field has been found (Phase 5: now 11 fields incl. abc/category/budgetSource)
+        if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 11) break;
     }
 
     return { text: fullText, ocr: ocrUsed };
@@ -248,11 +260,16 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         return;
     }
 
+    // Phase 5: expanded fields — ABC standalone, Budget Source, Category.
+    // Hardcoded value-keyword fallback (TITLE/CONTRACTOR) already merged into parsed.
     const fields = [
         { id: 'projectTitle', label: 'Project Title', value: parsed.title },
         { id: 'projectLocation', label: 'Location', value: parsed.location },
         { id: 'projectDescription', label: 'Description', value: parsed.description },
-        { id: 'projectBudget', label: 'Approved Budget', value: parsed.budget },
+        { id: 'projectCategory', label: 'Category', value: parsed.category },
+        { id: 'projectBudget', label: 'Contract Price', value: parsed.budget },
+        { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc },
+        { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource },
         { id: 'plannedStartDate', label: 'Start Date', value: parsed.startDate },
         { id: 'plannedEndDate', label: 'End Date', value: parsed.endDate },
         { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration },
@@ -301,6 +318,7 @@ function closeAutofillPreview() {
 
 // Apply the previewed data to the form (Apply button in the preview modal).
 // Reads the (possibly edited) input values from the preview rows.
+// Phase 5: includes abc, budgetSource, category.
 function applyAutofillFromPreview() {
     const read = (id) => {
         const el = document.getElementById('previewInput-' + id);
@@ -316,6 +334,9 @@ function applyAutofillFromPreview() {
         location: read('projectLocation'),
         description: read('projectDescription'),
         budget: read('projectBudget'),
+        abc: read('projectAbc'),
+        budgetSource: read('projectBudgetSource'),
+        category: read('projectCategory'),
         startDate: normDate(read('plannedStartDate')),
         endDate: normDate(read('plannedEndDate')),
         duration: read('plannedDuration'),
@@ -396,6 +417,7 @@ function autofillFormFields(parsed) {
     let filledCount = 0;
 
     // Helper: set a text/number/date input only if it's empty
+    // Tracks which fields autofill wrote for selective clear later.
     function setIfEmpty(elementId, value) {
         const el = document.getElementById(elementId);
         if (!el) return;
@@ -420,14 +442,28 @@ function autofillFormFields(parsed) {
 
     // --- Page 3 fields ---
     setIfEmpty('projectDescription', parsed.description);
-    setIfEmpty('projectBudget', parsed.budget);
+    // Category is a select — fuzzy table lookup (Option A: admin-only warning)
+    if (parsed.category) {
+        tryMatchCategoryDropdown(parsed.category);
+    } else {
+        showParseIndicator('projectCategory', false);
+    }
 
-    // --- Page 4 fields ---
+    // --- Page 4 fields (Budget & Contractor) ---
+    setIfEmpty('projectBudget', parsed.budget);
+    setIfEmpty('projectAbc', parsed.abc);
+    // Budget Source select — fuzzy table lookup (Option A)
+    if (parsed.budgetSource) {
+        tryMatchBudgetSourceDropdown(parsed.budgetSource);
+    } else {
+        showParseIndicator('projectBudgetSource', false);
+    }
+
     setIfEmpty('plannedStartDate', parsed.startDate);
     setIfEmpty('plannedEndDate', parsed.endDate);
     setIfEmpty('plannedDuration', parsed.duration);
 
-    // --- Contractor: fuzzy match the dropdown ---
+    // --- Contractor: fuzzy match the dropdown (existing) ---
     if (parsed.contractor) {
         tryMatchContractorDropdown(parsed.contractor);
     } else {
@@ -481,6 +517,103 @@ function tryMatchContractorDropdown(extractedName) {
         showParseIndicator('contractorSelect', true);
     } else {
         showParseIndicator('contractorSelect', false);
+    }
+}
+
+/**
+ * Try to match Budget Source dropdown (Option A: strict admin-only).
+ * If no ≥0.5 match, keep raw text in preview but warn inline:
+ * "Budget source \"X\" not found — ask admin via (+) (admin only)".
+ */
+function tryMatchBudgetSourceDropdown(extractedName) {
+    const select = document.getElementById('projectBudgetSource');
+    if (!select || !extractedName) return;
+
+    const normalised = extractedName.toLowerCase().trim();
+    let bestOption = null;
+    let bestScore = 0;
+
+    for (const option of select.options) {
+        if (!option.value) continue;
+        const optionText = option.textContent.toLowerCase().trim();
+        const words = normalised.split(/\s+/).filter(w => w.length > 2);
+        let matches = 0;
+        for (const word of words) {
+            if (optionText.includes(word)) matches++;
+        }
+        const score = words.length > 0 ? matches / words.length : (optionText === normalised ? 1 : 0);
+        if (score > bestScore) { bestScore = score; bestOption = option; }
+    }
+
+    if (bestOption && bestScore >= 0.5 && !select.value) {
+        select.value = bestOption.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        _markAutofilled('projectBudgetSource');
+        showParseIndicator('projectBudgetSource', true);
+    } else {
+        // Option A: do not auto-create, show warning with admin-only hint
+        const indicatorId = _parseIndicatorId('projectBudgetSource');
+        let indicator = document.getElementById(indicatorId);
+        if (!indicator) {
+            const field = document.getElementById('projectBudgetSource');
+            const insertAfter = field ? (field.closest('.input-group') || field) : null;
+            if (insertAfter) {
+                indicator = document.createElement('small');
+                indicator.id = indicatorId;
+                insertAfter.insertAdjacentElement('afterend', indicator);
+            }
+        }
+        if (indicator) {
+            indicator.className = 'text-warning d-block mt-1';
+            indicator.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Budget source "' + escapeHtml(extractedName) + '" not found in database — select existing or ask admin via (+) Budget Sources (admin only).';
+        }
+    }
+}
+
+/**
+ * Try to match Category dropdown (Option A: strict admin-only).
+ */
+function tryMatchCategoryDropdown(extractedName) {
+    const select = document.getElementById('projectCategory');
+    if (!select || !extractedName) return;
+
+    const normalised = extractedName.toLowerCase().trim();
+    let bestOption = null;
+    let bestScore = 0;
+
+    for (const option of select.options) {
+        if (!option.value) continue;
+        const optionText = option.textContent.toLowerCase().trim();
+        const words = normalised.split(/\s+/).filter(w => w.length > 2);
+        let matches = 0;
+        for (const word of words) {
+            if (optionText.includes(word)) matches++;
+        }
+        const score = words.length > 0 ? matches / words.length : (optionText === normalised ? 1 : 0);
+        if (score > bestScore) { bestScore = score; bestOption = option; }
+    }
+
+    if (bestOption && bestScore >= 0.5 && !select.value) {
+        select.value = bestOption.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        _markAutofilled('projectCategory');
+        showParseIndicator('projectCategory', true);
+    } else {
+        const indicatorId = _parseIndicatorId('projectCategory');
+        let indicator = document.getElementById(indicatorId);
+        if (!indicator) {
+            const field = document.getElementById('projectCategory');
+            const insertAfter = field ? (field.closest('.input-group') || field) : null;
+            if (insertAfter) {
+                indicator = document.createElement('small');
+                indicator.id = indicatorId;
+                insertAfter.insertAdjacentElement('afterend', indicator);
+            }
+        }
+        if (indicator) {
+            indicator.className = 'text-warning d-block mt-1';
+            indicator.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Category "' + escapeHtml(extractedName) + '" not found — select existing or ask admin via (+) Category.';
+        }
     }
 }
 
