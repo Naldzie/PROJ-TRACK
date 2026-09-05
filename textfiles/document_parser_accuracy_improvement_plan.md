@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Checks A/B/C PASS (order-independent, re-run stable, note+button work) + NEXT BATCH planned (shared dot-strip, normalize hardening, note reword + real counts, page selector); committing + pushing all per user. Branch: phase-5-parser-accuracy.
+# Status: 🔄 N-batch + S-batch PLANNED (no code); stale-banner bug logged with verified roots, user reproducing. NEXT = build N1-N4 + S1-S3 on go-ahead. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1409,6 +1409,15 @@ Related plan
     - Mismatch trivia STILL firing (')-Savings' vs ') -Savings', '&' vs 'AND') — normalize
       hardening was queued, never built; folded into this batch.
 
+  2026-09-04 — Stale-banner bug logged (plan only, no code, no implementation).
+    - User: bundle-alone WITHOUT page refresh shows previous run's red "2/3 files" banner
+      (values correct); after full refresh the banner is gone and the end state is fully
+      correct (truth filled, pool truth-only, no amber, no banner). User re-trying to see
+      if it recurs before any fix is built.
+    - Logged as STALE-STATE BUG section above (verified roots: uncleared window.* state +
+      dynamic nodes; persisting scan depth; pending-docs cleared OK). S-batch S1-S3 planned.
+    - Committing plan only per user (commit, no push ordered).
+
   NEXT BATCH (approved, no code yet).
     - N1. Shared dot-strip: move the narrow thousand-dot strip into asMoney itself (both
       paths inherit it). Same narrow pattern (dot + exactly-3-digits + digit/comma behind);
@@ -1425,6 +1434,26 @@ Related plan
     - Tests: (i) shared strip: unmarked '6.495,049.29' via single-match reads full;
       (ii) '&' vs 'AND' + space/punct variants vote equal (no banner); truly different
       titles still mismatch; (iii) full suite green + 5-file + multi-file browser re-check.
+
+  STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code (no fix yet).
+    Symptom (user, bundle-alone run WITHOUT page refresh): preview values correct
+      (truth filled, pool holds truth only) BUT the red "mismatch 2/3 files" banner from
+      the PREVIOUS 3-file run still shows. After full page refresh: banner gone, end state
+      fully correct. User will re-try to see if it recurs.
+    Verified (read-only): (a) cancelDocumentAutofill (document-parser.js:34) resets run id
+      + scanning banner + closes preview, but NEVER clears window._autofillMismatch /
+      _autofillDisagree / _autofillVoteDebug / _ocrPageLimit and NEVER removes the dynamic
+      #autofillPreviewMismatch / #autofillPreviewTruncated nodes; (b) window._ocrPageLimit
+      persists across runs/sessions until full refresh (user's "40-page budget" screenshot
+      on a fresh preview proves it); (c) pending documents ARE cleared on modal open
+      (_create_project_modal.js:193) — old files are NOT reprocessed, leftovers are state-only.
+    S-BATCH plan (approved pattern TBD — user reproducing first):
+      - S1. Fresh-popup-fresh-state: modal open resets all saved vote/disagree/scan-depth
+        state + removes dynamic banner/note nodes (extend cancelDocumentAutofill).
+      - S2. Render guard: preview verifies it is still the latest run before appearing, so
+        a slow older run can never paint over a newer one.
+      - S3. Scan-depth default resets per modal session (fresh popup = default 10); the
+        re-scan bump applies within-session only.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
