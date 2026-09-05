@@ -1190,6 +1190,17 @@ const DocumentParserCore = (function () {
         };
     }
 
+    // Mismatch grouping for the P1 banner verdict (which files look connected vs odd).
+    // Input: getMismatchInfo-style variants [{ value, files, count }] sorted desc.
+    // Output: { connected: [fileNames of the top variant], outliers: [{ value, files }] }.
+    // A single variant (or none) means no split — outliers is empty, no buttons render.
+    // Called by: document-parser.js mismatch banner. Pure (no DOM) so tests assert it.
+    function splitMismatchGroups(variants) {
+        if (!variants || variants.length < 2) return { connected: [], outliers: [] };
+        const [top, ...rest] = variants;
+        return { connected: [...(top.files || [])], outliers: rest.map(v => ({ value: v.value, files: [...(v.files || [])] })) };
+    }
+
     // Pooled parse across files (Step 1e-4 VALUE track).
     // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
     // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
@@ -1337,6 +1348,7 @@ const DocumentParserCore = (function () {
         voteCandidatePool,
         voteCandidatePoolDebug,
         pooledDisagree,
+        splitMismatchGroups,
         parseProjectInfoPooled,
     };
 })();

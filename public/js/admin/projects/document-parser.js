@@ -203,6 +203,9 @@ async function runDocumentAutofill() {
         // file list, and banner decision — the next stale render self-identifies.
         try {
             console.log('[Parser] preview run ' + myRunId + ': files=[' + perFileData.map(e => e.fileName).join(', ') + '] mismatch=' + (!!mismatchInfo.hasMismatch));
+            // P2: the vote tables are stashed on EVERY preview (flag or not) — this hint line
+            // means nobody has to memorize the recovery command or re-upload for tables.
+            console.log('[Parser] tip: type window._autofillVoteDebug in the console to inspect all finds (values, patterns, excerpts, files).');
         } catch (e) { /* logging is best-effort */ }
         showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles, scanReports, runId: myRunId });
 
@@ -469,6 +472,26 @@ window._rescanWithSelection = function () {
     runDocumentAutofill();
 };
 
+// P1: remove an outlier file set from the red mismatch banner, then re-scan the rest.
+// Index refers to window._mismatchOutliers stashed at render (quote-safe indirection).
+// Ejects matching pending documents by fileName, closes the preview, re-runs autofill.
+// Called by: inline onclick on the banner's "Remove & re-scan" buttons.
+window._removeMismatchFiles = function (idx) {
+    try {
+        // window._mismatchOutliers[idx] is the outlier group's file-name array.
+        const groups = window._mismatchOutliers || [];
+        const names = Array.isArray(groups[idx]) ? groups[idx] : [];
+        if (names.length > 0 && typeof getPendingDocuments === 'function' && typeof removeDocument === 'function') {
+            const pending = getPendingDocuments() || [];
+            pending.filter(d => d && names.indexOf(d.fileName) !== -1).forEach(d => {
+                try { removeDocument(d.id); } catch (e) { /* per-file best-effort */ }
+            });
+        }
+    } catch (e) { /* removal is best-effort */ }
+    closeAutofillPreview();
+    runDocumentAutofill();
+};
+
 // One-click pick for Step 1g-2 Choice B disagree notes in the preview modal.
 // Writes the chosen value into the field's preview input (user can still edit).
 // Called by: inline onclick on the amber note buttons built by showAutofillPreview().
@@ -611,7 +634,31 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             const variants = d.variants.map(v => escapeHtml(v.value) + ' — ' + v.files.map(f => escapeHtml(f)).join(', ') + ' (' + v.count + ' file' + (v.count>1?'s':'') + ')').join('<br>');
             return '<div><strong>' + escapeHtml(label) + ' mismatch — files disagree:</strong><br><span style="font-size:0.9em;">' + variants + '</span></div>';
         }).join('');
-        mismatchEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> <strong>Possible mis-upload detected — files appear to be from different projects.</strong> Please verify which file to keep. The preview shows the majority vote (' + (mismatch.details[0].variants[0].count) + '/' + (mismatch.details[0].variants.reduce((s,v)=>s+v.count,0)) + ' files). You can still edit and Apply.' + '<div class="mt-2">' + rows + '</div>';
+        // P1: grouped verdict + outlier remove buttons ("3 files look like one project…
+        // 1 file looks different [Remove & re-scan]"). Title variants identify the split;
+        // outlier file lists are stashed by index (quote-safe) for the remove handler.
+        // Nothing renders on agreement (single variant) — clean runs stay quiet.
+        let verdictHtml = '';
+        try {
+            const core = (typeof getCore === 'function') ? getCore() : null;
+            const idDetail = ((mismatch.details || []).find(d => d.field === 'title')) || mismatch.details[0];
+            const groups = (core && typeof core.splitMismatchGroups === 'function')
+                ? core.splitMismatchGroups(idDetail.variants || [])
+                : { connected: [], outliers: [] };
+            if (groups.outliers.length > 0) {
+                window._mismatchOutliers = groups.outliers.map(o => o.files || []);
+                const outRows = groups.outliers.map((o, i) => {
+                    const names = (o.files || []).map(f => escapeHtml(f)).join(', ');
+                    return '<div class="d-flex align-items-center gap-2 flex-wrap mt-1"><span style="font-size:0.9em;">Looks different: <strong>' + names + '</strong></span>' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger" onclick="window._removeMismatchFiles(' + i + ')">Remove &amp; re-scan</button></div>';
+                }).join('');
+                verdictHtml = '<div class="mt-2 pt-2 border-top"><strong>Grouped files:</strong> ' +
+                    '<span style="font-size:0.9em;">' + groups.connected.map(f => escapeHtml(f)).join(', ') + ' look like one project.</span>' + outRows + '</div>';
+            } else {
+                window._mismatchOutliers = null;
+            }
+        } catch (e) { verdictHtml = ''; /* verdict is best-effort — banner still shows */ }
+        mismatchEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> <strong>Possible mis-upload detected — files appear to be from different projects.</strong> Please verify which file to keep. The preview shows the majority vote (' + (mismatch.details[0].variants[0].count) + '/' + (mismatch.details[0].variants.reduce((s,v)=>s+v.count,0)) + ' files). You can still edit and Apply.' + '<div class="mt-2">' + rows + '</div>' + verdictHtml;
         mismatchEl.style.display = '';
     }
     // S0: log the banner decision with the run id (stale-render diagnosis).

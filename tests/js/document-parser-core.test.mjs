@@ -488,3 +488,18 @@ test('N2: trivial same-project variants vote equal (&, spacing, punctuation)', (
     ]);
     assert.equal(dbg2.rows.length, 2);
 });
+// --- P1: mismatch grouping (connected vs outliers) ---------------------------------
+
+test('P1: splitMismatchGroups separates majority files from outliers', () => {
+    const g = core.splitMismatchGroups([
+        { value: 'Project X', norm: 'project x', files: ['a.pdf', 'b.pdf', 'c.pdf'], count: 3 },
+        { value: 'Project Y', norm: 'project y', files: ['d.pdf'], count: 1 },
+    ]);
+    assert.deepEqual(g.connected, ['a.pdf', 'b.pdf', 'c.pdf']);
+    assert.equal(g.outliers.length, 1);
+    assert.deepEqual(g.outliers[0].files, ['d.pdf']);
+    // Agreement (single variant) yields no outliers - clean runs stay quiet.
+    assert.deepEqual(core.splitMismatchGroups([{ value: 'Project X', files: ['a.pdf'] }]), { connected: [], outliers: [] });
+    assert.deepEqual(core.splitMismatchGroups([]), { connected: [], outliers: [] });
+});
+

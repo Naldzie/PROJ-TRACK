@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: ✅ N-batch + S-batch VERIFIED in production (user browser runs with log-line evidence); committing + pushing all per user. NEXT = post-1i roadmap (learning loop, then AI fallback) or S-curve Steps 2-4 on user call. Branch: phase-5-parser-accuracy.
+# Status: ✅ P1+P2 COMMITTED (JS 62/62) + two DB-driven items disambiguated (parser_keywords = learning-loop destination; parser_templates = deferred S-curve tier). NEXT = user browser proof of verdict buttons, then learning loop on call. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1480,6 +1480,27 @@ Related plan
       starts annoying the user.
     - STALE-STATE bug: CLOSED by the Test B evidence above.
 
+  2026-09-04 — P1+P2 IMPLEMENTED (code + tests, NOT committed per user).
+    - P1: core splitMismatchGroups(variants) → {connected, outliers} + export (pure, tested);
+      banner renders a grouped verdict ("X, Y look like one project / Looks different: Z
+      [Remove & re-scan]") driven by the title variants, outlier file lists stashed by index
+      (quote-safe) in window._mismatchOutliers; window._removeMismatchFiles(idx) ejects matching
+      pending docs via removeDocument(docId) (document-manager.js:198), closes preview, re-runs.
+      Silent on agreement (single variant → no verdict, no buttons).
+    - P2: unconditional one-line console hint per preview pointing at window._autofillVoteDebug
+      (tables recoverable without the debug flag and without re-uploading; the stash itself
+      was already unconditional — only the printing was gated).
+    - Learning-loop question (user): YES next after this batch proves itself — and YES, the
+      "DB-driven" §11 flagged item is the same destination (parser_keywords table + admin CRUD);
+      the loop adds the journey (silent collect from corrections → live after 2–3 confirmations
+      or admin one-click → deletable; never from unresolved files). Sequence stands:
+      bundle accuracy → learning loop (tested on the bundle) → AI fallback last.
+    - Tests (+1 P1 fixture, core 42/42): 3-vs-1 grouping + empty/agreement shapes. Full JS 62/62
+      (core 42 + scurve 20). Banner buttons + remove-and-rerun flow are DOM-timing — browser
+      proof covers them. No PHP touched. No commit.
+    - Next: user browser proof on the mixed 3+1 set — verdict line + Remove & re-scan button
+      visible; clicking it ejects the outlier and recomputes from the remaining three.
+
   STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code, S-batch IMPLEMENTED (2026-09-04), NOT COMMITTED per user.
     Symptom (user, bundle-alone run WITHOUT page refresh): preview values correct
       (truth filled, pool holds truth only) BUT the red "mismatch 2/3 files" banner from
@@ -1737,6 +1758,12 @@ Related plan
     `SELECT title FROM projects` and `SELECT company_name FROM contractors`,
     extract top word bigrams, store in a new `parser_keywords` table +
     admin CRUD modal (same pattern as categories). Threshold: ≥3 occurrences.
+    NOTE (user Q 2026-09-04 — two DB-driven items, do not confuse):
+    (a) THIS parser_keywords item = NORMAL-doc vocabulary = the learning loop's
+    destination (loop adds the journey: silent collect → live after repeats/admin
+    approval; see POST-1i ROADMAP). (b) The OTHER item, parser_templates
+    (per-contractor S-curve column_map JSON + _template_mapper_modal, Decision 8),
+    belongs to the S-CURVE Opt-in matcher tier — untouched, deferred with Steps 2-4.
 
   - If Option A proves too friction-heavy for PMU staff, revisit Option B:
     `budget_sources.status = pending` + admin notification + approve/reject.
