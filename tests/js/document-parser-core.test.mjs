@@ -432,3 +432,35 @@ test('Step 1i-3: total-row yields only its first figure (Item Cost column)', () 
     assert.ok(!vals.includes('6495040.32'));
     assert.ok(cands.some(c => c.pattern === 'total-row'));
 });
+
+// ─── 1i follow-up: labeled dot-strip + bare-Php coverage + file counts ───────
+
+test('Follow-up F1: labeled value with OCR thousand-dots reads full (no marker needed)', () => {
+    // Matched label is money context by itself: "Total Cost 6.495,049.29".
+    const cands = core.collectBudgetCandidates(
+        core.buildLinesFromText('Total Cost 6.495,049.29'), 'table.pdf'
+    );
+    assert.ok(cands.some(c => c.value === '6495049.29'));
+    // Ordinary dotted text is untouched (narrow pattern needs digit-dot-3digits-digit).
+    assert.equal(core.glueMoneyFragments('See Section 1.495 for details'), 'See Section 1.495 for details');
+});
+
+test('Follow-up F2: bare Php figure joins the pool (crop coverage gap)', () => {
+    // "Php 6,495,049.29" with no parens/NET-TOTAL/P-prefix (recreated crops).
+    const cands = core.collectBudgetCandidates(
+        core.buildLinesFromText('Contract Amount: Php 6,495,049.29'), 'crop.pdf'
+    );
+    assert.ok(cands.some(c => c.pattern === 'bare-php' && c.value === '6495049.29'));
+    // Ambient bare figures without Php still ignored (old guard holds).
+    assert.equal(core.extractBudget(core.buildLinesFromText('General Conditions 12%\nTOTAL BID 8,750,000.00')), null);
+});
+
+test('Follow-up O3: pooled return reports finds per file per field', () => {
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Original Contract Amount: Php 6,495,049.29', fileName: 'a.pdf' },
+        { text: 'Nothing relevant here', fileName: 'b.pdf' },
+    ]);
+    assert.ok(pooled._fileCounts && pooled._fileCounts.budget);
+    assert.ok((pooled._fileCounts.budget['a.pdf'] || 0) >= 1);
+    assert.equal(pooled._fileCounts.budget['b.pdf'] || 0, 0);
+});

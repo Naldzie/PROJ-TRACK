@@ -78,13 +78,17 @@ async function runDocumentAutofill() {
         // This gives cross-file validation: 3 files agreeing raises confidence, 2 different titles flags mismatch.
         const perFileData = []; // [{ fileName, text, parsed }]
         let ocrUsed = false;
+        // O2: files whose scanned pages exceeded the photo-read budget (partial read).
+        const truncatedFiles = [];
 
         for (const doc of pdfDocs) {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
+                // O2: remember files whose scan was cut short by the page budget.
+                if (truncated) truncatedFiles.push(doc.fileName);
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text });
                     perFileData.push({ fileName: doc.fileName, text, parsed: parsedSingle });
@@ -136,6 +140,9 @@ async function runDocumentAutofill() {
                             console.log('[Parser] field:', f, '| winner:', pooled[f], '| finds:', rows.length);
                             if (rows.length && console.table) console.table(rows.slice(0, 10));
                         }
+                        // O3: finds per file per field — "bundle: 0" means that file went
+                        // silent (unread/truncated), not outvoted.
+                        if (pooled._fileCounts) console.log('[Parser] finds per file:', pooled._fileCounts);
                         console.groupEnd();
                     }
                 } catch (e) { /* inspector is best-effort only */ }
@@ -167,7 +174,7 @@ async function runDocumentAutofill() {
         window._autofillDisagree = pooledDisagreeInfo;
 
         // Show the preview modal — nothing is written to the form until Apply.
-        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree });
+        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles });
 
     } catch (err) {
         console.error('[DocumentParser] Autofill failed:', err);
@@ -222,10 +229,18 @@ function loadTesseract() {
 }
 
 // OCR a textless PDF page by rendering it to a canvas and running tesseract.
+// O1: the scanned-page budget is PER FILE (reset by extractTextFromPDF for each file)
+// and adjustable per run via window._ocrPageLimit (default OCR_PAGE_LIMIT = 10).
+// Each photo-read page costs ~2s on slow connections — see the re-scan control.
 let _ocrPagesDone = 0;
 const OCR_PAGE_LIMIT = 10;
+function ocrPageLimit() {
+    const custom = (typeof window !== 'undefined') ? Number(window._ocrPageLimit) : NaN;
+    if (isFinite(custom) && custom >= 1 && custom <= 50) return Math.floor(custom);
+    return OCR_PAGE_LIMIT;
+}
 async function ocrPage(page, runId) {
-    if (_ocrPagesDone >= OCR_PAGE_LIMIT) return '';
+    if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
 
     const tesseract = await loadTesseract();
@@ -257,8 +272,14 @@ async function extractTextFromPDF(file, runId) {
 
     const core = getCore();
     const maxPages = Math.min(pdf.numPages, 50);
+    // O1: fair per-file budget — every file gets its own scanned pages regardless of
+    // upload order (previously the 10-page cap was shared first-come-first-served).
+    _ocrPagesDone = 0;
     let fullText = '';
     let ocrUsed = false;
+    // O2: truncation tracking — a file with more scanned pages than budget must say so
+    // instead of posing a partial read as confident.
+    let ocrTruncated = false;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         // Abort if the run was cancelled/superseded while we were awaiting
@@ -271,6 +292,7 @@ async function extractTextFromPDF(file, runId) {
 
         // OCR fallback for textless (scanned) pages
         if ((pageText || '').trim().length < 10) {
+            if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
             const ocrText = await ocrPage(page, runId);
             if (ocrText && ocrText.trim().length >= 10) {
                 pageText = ocrText;
@@ -284,7 +306,7 @@ async function extractTextFromPDF(file, runId) {
         if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 11) break;
     }
 
-    return { text: fullText, ocr: ocrUsed };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, pagesRead: maxPages };
 }
 
 // ===================================================
@@ -394,6 +416,17 @@ function _markAutofilled(elementId) {
 // Shows the parsed fields for review; nothing is written
 // to the form until the user clicks Apply.
 // ===================================================
+// Adjustable OCR budget (opt-in re-scan from the preview modal's truncation note).
+// Bumps the per-file scanned-page budget and re-runs autofill. Default stays 10;
+// each extra page costs ~2s (warned on the button, not here).
+// Called by: inline onclick on the "Read more pages & re-scan" button.
+window._rescanMorePages = function () {
+    const cur = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
+    window._ocrPageLimit = Math.min(50, cur + 15);
+    closeAutofillPreview();
+    runDocumentAutofill();
+};
+
 // One-click pick for Step 1g-2 Choice B disagree notes in the preview modal.
 // Writes the chosen value into the field's preview input (user can still edit).
 // Called by: inline onclick on the amber note buttons built by showAutofillPreview().
@@ -471,6 +504,32 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
 
     const ocrNote = document.getElementById('autofillPreviewOcrNote');
     if (ocrNote) ocrNote.style.display = ocrUsed ? '' : 'none';
+
+    // O2: truncation note — a file with more scanned pages than the photo-read budget
+    // must say so instead of posing a partial read as confident.
+    // Adjustable budget: opt-in "read more pages" re-scan with an explicit time warning
+    // (~2s/page). Default stays 10/file; routine uploads stay fast.
+    const truncated = (arguments[1] && arguments[1].truncatedFiles) ? arguments[1].truncatedFiles : [];
+    let truncEl = document.getElementById('autofillPreviewTruncated');
+    if (ocrUsed || (truncated && truncated.length > 0)) {
+        if (!truncEl) {
+            truncEl = document.createElement('div');
+            truncEl.id = 'autofillPreviewTruncated';
+            truncEl.className = 'alert alert-secondary d-flex flex-column gap-2 mt-3';
+            const container = modalEl.querySelector('.modal-body') || modalEl;
+            container.appendChild(truncEl);
+        }
+        const limit = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
+        const truncMsg = (truncated && truncated.length > 0)
+            ? 'Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.'
+            : 'Scanned pages were read within the ' + limit + '-page budget.';
+        const canMore = limit < 50;
+        truncEl.innerHTML = '<i class="bi bi-info-circle"></i> <span>' + truncMsg + '</span>' +
+            (canMore ? '<div><button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rescanMorePages()" title="Each extra page takes about 2 seconds">Read more pages &amp; re-scan (≈2s per page)</button></div>' : '');
+        truncEl.style.display = '';
+    } else if (truncEl) {
+        truncEl.style.display = 'none';
+    }
 
     // Mismatch (mis-upload 2 different projects) — red banner, let user pick, do NOT block Apply
     const mismatch = arguments[1] && arguments[1].mismatch ? arguments[1].mismatch : window._autofillMismatch;

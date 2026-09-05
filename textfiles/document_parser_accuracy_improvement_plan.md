@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Step 1i COMMITTED (JS 56/56) + tests 5-7 + OCR starvation root-caused; NEXT = build 1i follow-up (dot-strip, coverage) + OCR fixes (per-file budget, truncation note, adjustable budget) on user go-ahead. Branch: phase-5-parser-accuracy.
+# Status: 🔄 Checks A/B/C PASS (order-independent, re-run stable, note+button work) + NEXT BATCH planned (shared dot-strip, normalize hardening, note reword + real counts, page selector); committing + pushing all per user. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1337,8 +1337,7 @@ Related plan
     - Tests: (i) unmarked '6.495,049.29' labeled line reads full; (ii) crop fixture yields
       at-least-1 budget candidate; (iii) full suite green + 5-file browser set unchanged.
 
-  OCR BUDGET STARVATION — root-caused 2026-09-04 (user re-tests; findings + fixes APPROVED, no code yet).
-    Finding (user's order-matters challenge → verified in code, document-parser.js):
+  OCR BUDGET STARVATION — root-caused 2026-09-04 (user re-tests; findings + fixes APPROVED, no code yet).    Finding (user's order-matters challenge → verified in code, document-parser.js):
       the photo-reader cap (OCR_PAGE_LIMIT = 10, :226) is SHARED across all files
       first-come-first-served in upload order, reset ONLY on popup close
       (cancelDocumentAutofill :36), never at preview start (:50). Rendering quality is
@@ -1366,6 +1365,66 @@ Related plan
     - Tests: (i) 3-file bundle-second run extracts bundle dates/price (order swapped both
       ways, same result); (ii) back-to-back previews without closing popup read identically;
       (iii) over-budget file shows the truncation note; (iv) full suite green.
+
+  1i FOLLOW-UP + OCR FIXES — IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user.
+    - F1: labeled-loop thousand-dot strip regardless of Php marker (matched label = money
+      context; narrow digit-dot-3digits-digit pattern — "Section 1.495" untouched).
+    - F2: 'bare-php' fallback pattern (bare "Php X" with no parens/NET-TOTAL/P-prefix) —
+      closes the test-2 crop gap where first-match saw the price but the pool sat out.
+      Unlabeled + low weight; ambient marker-less figures still ignored (old guard holds).
+    - O1: per-file OCR budget — _ocrPagesDone resets in extractTextFromPDF per file;
+      ocrPageLimit() reads window._ocrPageLimit (1–50, default 10). Order independence +
+      re-run starvation both fixed at the source.
+    - O2: truncation note — extractTextFromPDF returns {truncated}; preview renders a gray
+      note naming cut files ("first N scanned pages read") — partial never poses again.
+    - O3: _fileCounts per field per file in pooled return + inspector log line
+      ("bundle: 0" = silent, not outvoted).
+    - Adjustable: "Read more pages & re-scan (≈2s per page)" button in the preview
+      (window._rescanMorePages: +15 pages up to 50, closes preview, re-runs). Opt-in per
+      run, default untouched, no Blade change (dynamic DOM like the banners).
+    - Tests (+3 follow-up fixtures, core 39/39): labeled unmarked thousand-dots + narrow
+      safety; bare-Php pool join + ambient guard; _fileCounts shape (a≥1, silent file 0).
+      Full JS 59/59 (core 39 + scurve 20). O1/O2/button are DOM-timing paths — covered by
+      browser re-test, not unit tests. No PHP touched. No commit.
+    - Next: user browser re-test — (a) bundle-second 3-file run extracts bundle fields
+      (order swapped, same result); (b) truncation note appears on over-budget files;
+      (c) re-scan button bumps budget and re-reads with the time warning visible.
+
+  2026-09-04 — Checks A/B/C PASS + NEXT BATCH planned (user approved, no code yet).
+    - A (order swapped both ways): identical previews; duration piles across all 3 files
+      (4 finds, patterns within-clause + labeled); dates/location fill bundle-second.
+      Order independence + re-run stability CONFIRMED in production. Starvation closed.
+    - B (back-to-back previews): identical. O1 verified by hand.
+    - C (truncation + re-scan): gray note names cut files; button bumps 10→25→40 with the
+      time warning visible. User wording verdicts (all accepted): note is PER FILE (say so
+      explicitly); drop the word "budget"; report REAL counts ("read X of Y scanned pages
+      in <file>") instead of the blind +15 stepping (user: "how 40 for 7+12 pages?");
+      replace fixed stepping with a page-count SELECTOR (10/25/40/50 per file, default 10,
+      warning beside it); 50-page ceiling stays the hard cap.
+    - Tail verdict: bundle still reads 5049.29 while contract files read full — mismatch
+      banner lists both (working as designed). Root cause of the REMAINDER: the dot-strip
+      lives in the voting path only; the single-match path (mismatch banner + single-file
+      preview) never got it. Fix = move the narrow strip into the shared money reader so
+      both paths behave identically.
+    - Mismatch trivia STILL firing (')-Savings' vs ') -Savings', '&' vs 'AND') — normalize
+      hardening was queued, never built; folded into this batch.
+
+  NEXT BATCH (approved, no code yet).
+    - N1. Shared dot-strip: move the narrow thousand-dot strip into asMoney itself (both
+      paths inherit it). Same narrow pattern (dot + exactly-3-digits + digit/comma behind);
+      version text stays untouched. Expected: tail-vs-truth ties vanish from preview fill
+      AND mismatch banner on solved files.
+    - N2. Normalize hardening: '&'→'and', punctuation/spacing-blind compare in
+      normalizeForVote (+ wrapper twin). Same-project pairs stop flagging; true project
+      differences still flag. Red banner keeps per-file remove-button design (picked earlier).
+    - N3. Truncation note reword + real counts: no "budget" word; per-file phrasing; carry
+      {scannedTotal, scannedRead} per file from extractTextFromPDF to the preview
+      ("read X of Y scanned pages in <file>").
+    - N4. Page-count selector + re-scan: dropdown (10/25/40/50 per file, default 10) with
+      ≈2s/page warning beside it; button re-runs at the chosen depth (replaces +15 stepping).
+    - Tests: (i) shared strip: unmarked '6.495,049.29' via single-match reads full;
+      (ii) '&' vs 'AND' + space/punct variants vote equal (no banner); truly different
+      titles still mismatch; (iii) full suite green + 5-file + multi-file browser re-check.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE

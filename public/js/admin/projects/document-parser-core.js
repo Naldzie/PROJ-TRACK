@@ -993,7 +993,7 @@ const DocumentParserCore = (function () {
                 if (!m) continue;
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
                 for (let ti = 0; ti < tryStrs.length; ti++) {
-                    const t = tryStrs[ti];
+                    let t = tryStrs[ti];
                     if (!t) continue;
                     // Step 1i-1: placeholder slot → EMPTY for this occurrence. Stop here:
                     // sliding further would steal the next section's date/figure.
@@ -1003,6 +1003,11 @@ const DocumentParserCore = (function () {
                     // if a budget label matched nearby (e.g., Revised Contract Amount
                     // followed by an effectivity/expiry date line in a bundle).
                     if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
+                    // 1i follow-up F1: a MATCHED budget label is itself money context, so
+                    // strip OCR thousand-dots here too even with no Php marker ("Total Cost
+                    // 6.495,049.29" reads full). Narrow pattern only (dot + exactly 3 digits
+                    // + digit/comma behind) — version numbers like "Section 1.495" never match.
+                    if (/\d\.\d{3}(?=[\d,])/.test(t)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
                     const val = asMoney(t);
                     // Step 1f-3: a money label inside a breakdown table without any
                     // contract word nearby ("Total Cost P 92,025" per line item) is a
@@ -1024,10 +1029,14 @@ const DocumentParserCore = (function () {
             }
         }
         // All fallback Php amounts (glued, >100k guard kept).
+        // 1i follow-up F2: 'bare-php' closes the coverage gap where first-match sees a
+        // "Php 6,495,049.29" with no parens/NET-TOTAL/P-prefix (e.g., recreated crops) but
+        // the pool sat out. Unlabeled + low weight so labeled contract hits still win.
         const fbRes = [
             { name: 'paren-php', re: /\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i },
             { name: 'net-total', re: /NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i },
             { name: 'p-prefix', re: /\bP\s*([\d,]+\.\d{2})/i },
+            { name: 'bare-php', re: /(?:php|₱)\s*([\d,]+\.\d{2})/i },
         ];
         for (let i = 0; i < norm.length; i++) {
             let combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
@@ -1184,16 +1193,26 @@ const DocumentParserCore = (function () {
         }
         // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
         // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
+        // _fileCounts powers the OCR-starvation check (O3): finds per file per field —
+        // "bundle: 0" means that file went silent (unread), not outvoted.
         const bDbg = voteCandidatePoolDebug(pile.budget);
         const dDbg = voteCandidatePoolDebug(pile.duration);
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
+        const fileCounts = {};
+        for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+            fileCounts[f] = {};
+            for (const r of (f === 'budget' ? bDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg).rows) {
+                for (const fn of r.files) fileCounts[f][fn] = (fileCounts[f][fn] || 0) + r.count;
+            }
+        }
         return {
             budget: bDbg.winner,
             duration: dDbg.winner,
             startDate: sDbg.winner,
             endDate: eDbg.winner,
             _debug: { budget: bDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
+            _fileCounts: fileCounts,
             _disagree: {
                 budget: pooledDisagree(bDbg.rows),
                 duration: pooledDisagree(dDbg.rows),
