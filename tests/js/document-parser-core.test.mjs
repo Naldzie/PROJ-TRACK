@@ -503,3 +503,23 @@ test('P1: splitMismatchGroups separates majority files from outliers', () => {
     assert.deepEqual(core.splitMismatchGroups([]), { connected: [], outliers: [] });
 });
 
+// --- L1: correction label mining --------------------------------------------------
+
+test('L1: mineCorrectionLabel anchors money across separator variants', () => {
+    // User-typed commas anchor OCR periods and vice versa.
+    const m1 = core.mineCorrectionLabel('Contract Sum: Php 6.495,049.29', '6,495,049.29');
+    assert.ok(m1 && /contract sum/i.test(m1.label));
+    const m2 = core.mineCorrectionLabel('Contract Sum: Php 6,495,049.29', '6.495,049.29');
+    assert.ok(m2 && /contract sum/i.test(m2.label));
+});
+
+test('L1: mineCorrectionLabel anchors text case-insensitively, null when absent', () => {
+    const m = core.mineCorrectionLabel('Project Name: Completion of Library\nLocation: Nabua', 'Completion of Library');
+    assert.ok(m && /project name/i.test(m.label));
+    // Typed-from-knowledge value with no document anchor yields null (still recorded).
+    assert.equal(core.mineCorrectionLabel('Location: Nabua', 'Something Entirely New Here'), null);
+    // Tiny fragments never anchor (no "90"-in-"2024-12-09" false hits).
+    assert.equal(core.mineCorrectionLabel('Date: December 9, 2024', '90'), null);
+    assert.equal(core.mineCorrectionLabel('', 'Whatever value here'), null);
+});
+

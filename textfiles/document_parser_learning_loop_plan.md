@@ -1,7 +1,7 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: ⬜ NOT STARTED (planned, no code)
-# Branch (when approved): phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
+# Date: September 4, 2026 — Status: 🔄 PHASE L1 IMPLEMENTED + tested, browser proof POSTPONED by user (all 5 test files extract accurately — no competing values left to correct). Committing + pushing per user. L2/L3 NOT STARTED.
+# Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -93,14 +93,33 @@ Frontend convention (IMPORTANT)
   5. IMPLEMENTATION STEPS
 ===============================================================================
 
-  PHASE L1 — Silent collection only (zero behavior change)  ⬜ NOT STARTED
-    - Snapshot extracted values at preview render; diff at Apply; insert rows into
-      parser_keywords as status=proposed (occurrences=1, bump on repeats).
-    - Skip files with unresolved disagree/mismatch at Apply time (per L0c).
-    - Tests: unit (snapshot/diff pure helpers) + feature (Apply with an edited box
-      creates exactly one proposal row; untouched boxes create none).
-    - Proof: correct one box on the CHS bundle → one proposal row appears; extraction
-      output byte-identical to before.
+  PHASE L1 — Silent collection only (zero behavior change)  🔄 IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user (Option 2: harvest candidate pairs immediately)
+    - Backend: migration 2026_09_04_000001 parser_keyword_proposals (field indexed, label_phrase
+      nullable, excerpt nullable, occurrences default 1, status default proposed, softDeletes);
+      ParserKeywordProposal model (live/proposed scopes); Admin\ParserKeywordProposalController::collect
+      (roles admin+staff per L0a, 11-field allowlist, upsert by field+label with occurrences++,
+      auto-promote at ≥3, batch cap 11, no activity-log spam by design); routes admin+staff POST
+      .../parser-keyword-proposals/collect (contractors excluded by middleware).
+    - Core: mineCorrectionLabel(docText, finalValue) pure helper + export — digit-signature
+      anchoring across separator variants (4+ digits both sides, so "90" never anchors a date),
+      case-insensitive text anchoring, {label ≤80ch, excerpt ≤200ch} or {label null} or null.
+    - Wrapper: AUTOFILL_CORE_FIELDS map; snapshot at preview render (date-normalized like inputs);
+      window._autofillDocTexts stashed per run (never sent); harvestCorrections(applied) diffs +
+      mines + fire-and-forget POST with CSRF (role-aware URL, contractor guard, keepalive,
+      all failures swallowed). Corrected ⟹ resolved: amber picks and typed fixes both learn;
+      had_disagree recorded as context. Untouched/cleared/<3ch boxes teach nothing.
+    - Deviation from plan noted honestly: L0c said "skip unresolved-disagree files" — implemented
+      as "corrected implies resolved" (Apply IS the user's decision; winner-kept boxes are not
+      corrections). No silent learning from ambiguity remains possible.
+    - Tests: 2 core mining fixtures (separator-crossing money, text + null/tiny guards);
+      4 PHP feature tests (store, repeat-promote, contractor 403-via-redirect on both routes,
+      unknown-field 422). JS 64/64. Full PHP suite: 985 passed + the SAME 6 pre-existing
+      failures as the clean tree (2 EmailDraft known + 2 ContractorDashboard + 2 baseline;
+      all reproduced with changes stashed — zero regressions from L1).
+    - Incident: stale route cache (bootstrap/cache/routes-v7.php) hid the new routes (405s);
+      cleared once; consider `route:clear` note in testing runbook. No PHP touched beyond L1.
+    - Proof for user browser: correct one box on the CHS bundle → one proposed row in
+      parser_keyword_proposals; extraction output byte-identical (reader untouched).
 
   PHASE L2 — Review list (staff + admin)  ⬜ NOT STARTED
     - Manage modal (BudgetSource clone): list proposals with counts, approve → live,
@@ -129,6 +148,33 @@ Frontend convention (IMPORTANT)
       approval (extension-workflow lesson), labels-only learning (structural fixes stay
       rule-tested), hybrid trust, sequence L1→L2→L3→AI-last.
     - No code, no commit instruction — NEXT = build L1 on go-ahead.
+
+  2026-09-04 — L1 IMPLEMENTED (code + tests, NOT committed per user; Option 2).
+    - Branch phase-6-parser-learning cut FROM phase-5-parser-accuracy (Rule 12, clean tree).
+      User chose Option 2 (harvest candidate pairs immediately) + no commit.
+    - See PHASE L1 section above for the full build record. Open question from §7 answered
+      in code: proposals capture the firing context via excerpt + had_disagree flag.
+    - Next: user browser proof (one corrected box → one proposed row), then L2 on go-ahead.
+
+  2026-09-04 — Browser proof POSTPONED by user (nothing to correct).
+    - All 5 test files now extract accurately — no competing values anywhere, so no
+      correction exists to trigger a proposal. This is itself the success signal for the
+      whole Steps 1–1i + N/S/P1/P2 arc: the loop idles precisely because the rules won.
+    - L1 stands proven by unit + feature tests (mining, gates, promotion); the browser half
+      (corrected box → proposed row) awaits the first genuinely new/weird file, which is
+      exactly the file the loop was built for. No code change from this entry.
+    - Amber-note coverage note (user Q, answered): the amber pick-one note covers the FOUR
+      pooled fields (budget/duration/startDate/endDate) — trigger per field: top-2 pooled
+      finds both labeled + different values + winner score < 2× runner-up. It appeared only
+      on Contract Price in tests because only budget ever produced a close labeled
+      disagreement; duration/dates always had single winners. Title/contractor/location/etc.
+      have NO amber (red mis-upload banner covers cross-file disagreement by design).
+    - L1 harvest coverage is WIDER than amber: ANY corrected box among all 11 preview fields
+      (typed fix or amber pick) becomes a proposal — amber is merely one way a correction
+      happens. Trigger detail: snapshot at preview render → diff at Apply → mine the final
+      value's source line for the words before it (≤80ch label, ±1-line excerpt) → POST.
+      Values never leave the browser; had_disagree recorded as context.
+    - Committing + pushing all per user.
 
 ===============================================================================
   7. OPEN QUESTIONS

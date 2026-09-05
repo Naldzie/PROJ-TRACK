@@ -117,6 +117,11 @@ async function runDocumentAutofill() {
                     const parsedSingle = getCore().parseProjectInfo({ text });
                     perFileData.push({ fileName: doc.fileName, text, parsed: parsedSingle });
                 }
+                // L1 learning loop: keep the raw document texts so Apply-time mining can
+                // anchor a corrected value back to its source line (never sent to server).
+                try {
+                    window._autofillDocTexts = perFileData.map(e => e.text);
+                } catch (e) { /* stash is best-effort */ }
             } catch (err) {
                 // One file failing shouldn't stop the rest
                 console.warn('[DocumentParser] Could not read PDF:', doc.fileName, err);
@@ -453,6 +458,23 @@ function _markAutofilled(elementId) {
     _autofilledFields.add(elementId);
 }
 
+// L1 learning loop: preview input id → core field name (shared by the snapshot,
+// the harvest diff, and the disagree-note map below).
+// Called by: showAutofillPreview() snapshot, harvestCorrections() diff.
+const AUTOFILL_CORE_FIELDS = {
+    projectTitle: 'title',
+    projectLocation: 'location',
+    projectDescription: 'description',
+    projectCategory: 'category',
+    projectBudget: 'budget',
+    projectAbc: 'abc',
+    projectBudgetSource: 'budgetSource',
+    plannedStartDate: 'startDate',
+    plannedEndDate: 'endDate',
+    plannedDuration: 'duration',
+    contractorSelect: 'contractor',
+};
+
 // ===================================================
 // PREVIEW MODAL
 // Shows the parsed fields for review; nothing is written
@@ -574,6 +596,16 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 </tr>
             `;
         }).join('');
+        // L1 learning loop: snapshot what extraction guessed per CORE field, so Apply can
+        // diff guesses vs user-kept values. Date-normalized exactly like the inputs above.
+        try {
+            const snap = {};
+            for (const f of fields) {
+                const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
+                snap[AUTOFILL_CORE_FIELDS[f.id] || f.id] = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
+            }
+            window._autofillOriginal = snap;
+        } catch (e) { window._autofillOriginal = null; /* snapshot is best-effort */ }
     }
 
     const ocrNote = document.getElementById('autofillPreviewOcrNote');
@@ -712,10 +744,62 @@ function applyAutofillFromPreview() {
     clearAutofillFields();
     autofillFormFields(parsed);
 
+    // L1 learning loop: harvest (label → field) proposals from corrected boxes.
+    // Fire-and-forget — extraction output is already final; this only teaches future runs.
+    harvestCorrections(parsed);
+
     // Remember the user applied this run so the Next hook doesn't re-prompt.
     window._autofillApplied = true;
 
     closeAutofillPreview();
+}
+
+// ===================================================
+// L1 LEARNING LOOP — HARVEST CORRECTIONS (Option 2)
+// Diffs the preview snapshot (what extraction guessed) against the applied values
+// (what the user kept). Every corrected box becomes one proposal: the mined label
+// phrase + excerpt, or a label-less count when the value cannot be anchored back to
+// the documents. Values themselves are NEVER sent — labels only (Decision L0b).
+// A corrected box implies the user resolved any ambiguity (including amber picks),
+// so disagree state is recorded as context, never as a veto.
+// Called by: applyAutofillFromPreview(). Best-effort — failures never break Apply.
+function harvestCorrections(applied) {
+    try {
+        const orig = window._autofillOriginal || null;
+        const texts = window._autofillDocTexts || [];
+        if (!orig || !texts.length) return;
+        const core = getCore();
+        if (!core || typeof core.mineCorrectionLabel !== 'function') return;
+        const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return;
+        const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+        const docText = texts.join('\n\n');
+        const disagree = window._autofillDisagree || null;
+        const proposals = [];
+        for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+            const field = AUTOFILL_CORE_FIELDS[inputId];
+            const before = String((orig[field] ?? ''));
+            const after = String(((applied || {})[field] ?? '')).trim();
+            // Untouched, cleared, or too-short boxes teach nothing.
+            if (!after || after === before || after.length < 3) continue;
+            const mined = core.mineCorrectionLabel(docText, after);
+            proposals.push({
+                field,
+                label: mined ? mined.label : null,
+                excerpt: mined ? mined.excerpt : null,
+                had_disagree: !!(disagree && disagree[field]),
+            });
+        }
+        if (!proposals.length) return;
+        const token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
+            (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
+        fetch(base + '/parser-keyword-proposals/collect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
+            body: JSON.stringify({ proposals }),
+            keepalive: true,
+        }).catch(() => { /* collection is best-effort */ });
+    } catch (e) { /* collection is best-effort — never break Apply */ }
 }
 
 // ===================================================

@@ -1201,6 +1201,53 @@ const DocumentParserCore = (function () {
         return { connected: [...(top.files || [])], outliers: rest.map(v => ({ value: v.value, files: [...(v.files || [])] })) };
     }
 
+    // Mine a candidate label for a user-corrected value (L1 learning loop, Option 2).
+    // Finds the user's final value in the document text and returns the words sitting
+    // right before it on that line as a candidate label, plus a ±1-line excerpt.
+    // Matching is forgiving: money ignores separators ("6,495,049.29" matches OCR
+    // "6.495,049.29"), text matches case-insensitively. Returns null when the value
+    // cannot be anchored (e.g., typed from knowledge, or a reformatted date) — the
+    // correction is still recorded, just without a label candidate.
+    // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
+    function mineCorrectionLabel(docText, finalValue) {
+        const raw = String(finalValue || '').trim();
+        if (raw.length < 3) return null;
+        const lines = buildLinesFromText(docText || '');
+        const hasDigit = /\d/.test(raw);
+        const digitSig = raw.replace(/\D/g, '');
+        const lowerVal = raw.toLowerCase();
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            let at = -1;
+            if (hasDigit && digitSig.length >= 4) {
+                // Numeric: compare digit runs ignoring separators, so user-typed
+                // "6,495,049.29" anchors OCR "6.495,049.29" and vice versa.
+                const runs = line.match(/[\d][\d,.\s]*\d|\d/g) || [];
+                let cursor = 0;
+                for (const run of runs) {
+                    const pos = line.indexOf(run, cursor);
+                    cursor = pos + run.length;
+                    const runSig = run.replace(/\D/g, '');
+                    // Both sides need 4+ digits: a tiny run like "90" must never anchor
+                    // a longer value like "2024-12-09" (its digits contain "90").
+                    if (runSig.length >= 4 && (runSig.includes(digitSig) || digitSig.includes(runSig))) { at = pos; break; }
+                }
+            } else if (!hasDigit) {
+                const idx = line.toLowerCase().indexOf(lowerVal);
+                if (idx !== -1) at = idx;
+            } else {
+                continue;
+            }
+            if (at === -1) continue;
+            let label = cleanValue(line.slice(0, at)).slice(0, 80);
+            if (!label) label = cleanValue(lines[i - 1] || '').slice(0, 80);
+            const excerpt = [lines[i - 1] || '', line, lines[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 200);
+            if (!label) return { label: null, excerpt };
+            return { label, excerpt };
+        }
+        return null;
+    }
+
     // Pooled parse across files (Step 1e-4 VALUE track).
     // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
     // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
@@ -1349,6 +1396,7 @@ const DocumentParserCore = (function () {
         voteCandidatePoolDebug,
         pooledDisagree,
         splitMismatchGroups,
+        mineCorrectionLabel,
         parseProjectInfoPooled,
     };
 })();

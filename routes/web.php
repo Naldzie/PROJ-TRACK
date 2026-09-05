@@ -27,6 +27,7 @@ use App\Http\Controllers\Contractor\ContractorWarrantyController;
 use App\Http\Controllers\staff\StaffWarrantyController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\BudgetSourceController;
+use App\Http\Controllers\Admin\ParserKeywordProposalController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AttachmentController;
@@ -253,6 +254,11 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     // only admin can MANAGE (add/edit/delete) sources. This mirrors categories pattern.
     Route::get('/budget-sources', [BudgetSourceController::class, 'getBudgetSources'])
         ->name('staff.budget-sources.list');
+
+    // === PARSER LEARNING LOOP (L1 silent collection) ===
+    // Staff AND admin corrections feed the loop (Decision L0a); contractors excluded.
+    Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
+        ->name('staff.parser-keywords.collect');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
@@ -694,6 +700,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::delete('/budget-sources/{budgetSource}', [BudgetSourceController::class, 'destroy'])
         ->name('admin.budget-sources.destroy');
+
+    // === PARSER LEARNING LOOP (L1 silent collection; L2 review UI lands here later) ===
+    Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
+        ->name('admin.parser-keywords.collect');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
