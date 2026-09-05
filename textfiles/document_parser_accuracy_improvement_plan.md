@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: ✅ P1+P2 COMMITTED (JS 62/62) + two DB-driven items disambiguated (parser_keywords = learning-loop destination; parser_templates = deferred S-curve tier). NEXT = user browser proof of verdict buttons, then learning loop on call. Branch: phase-5-parser-accuracy.
+# Status: ✅ Reader accuracy COMPLETE through P1/P2 (JS 62/62, browser-proven incl. verdict buttons). Learning loop CONTINUES in textfiles/document_parser_learning_loop_plan.md (L1-L3, NOT STARTED). S-curve Steps 2-4 still deferred. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1480,8 +1480,7 @@ Related plan
       starts annoying the user.
     - STALE-STATE bug: CLOSED by the Test B evidence above.
 
-  2026-09-04 — P1+P2 IMPLEMENTED (code + tests, NOT committed per user).
-    - P1: core splitMismatchGroups(variants) → {connected, outliers} + export (pure, tested);
+  2026-09-04 — P1+P2 IMPLEMENTED (code + tests, NOT committed per user).    - P1: core splitMismatchGroups(variants) → {connected, outliers} + export (pure, tested);
       banner renders a grouped verdict ("X, Y look like one project / Looks different: Z
       [Remove & re-scan]") driven by the title variants, outlier file lists stashed by index
       (quote-safe) in window._mismatchOutliers; window._removeMismatchFiles(idx) ejects matching
@@ -1500,6 +1499,13 @@ Related plan
       proof covers them. No PHP touched. No commit.
     - Next: user browser proof on the mixed 3+1 set — verdict line + Remove & re-scan button
       visible; clicking it ejects the outlier and recomputes from the remaining three.
+
+  2026-09-04 — P1/P2 BROWSER-PROVEN by user (verdict + remove buttons working "as far as
+  I can see"); reader accuracy work declared COMPLETE through P1/P2.
+    - Learning loop CONTINUES in textfiles/document_parser_learning_loop_plan.md (L1 silent
+      collection → L2 review list → L3 reader consults table; staff+admin approval,
+      labels-only, hybrid trust; AI fallback last). This file keeps history only — new
+      learning work logs THERE, not here. Plan split per user (file too long).
 
   STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code, S-batch IMPLEMENTED (2026-09-04), NOT COMMITTED per user.
     Symptom (user, bundle-alone run WITHOUT page refresh): preview values correct
