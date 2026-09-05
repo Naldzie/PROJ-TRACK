@@ -295,7 +295,7 @@ const DocumentParserCore = (function () {
     function findLabeledValue(lines, labelPatterns, normalize) {
         const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
 
-        for (let i = 0; i < nonEmpty.length; i++) {
+        lineLoop: for (let i = 0; i < nonEmpty.length; i++) {
             const line = nonEmpty[i];
 
             for (const pattern of labelPatterns) {
@@ -304,6 +304,10 @@ const DocumentParserCore = (function () {
 
                 // Same-line value
                 if (match[1] !== undefined && String(match[1]).trim().length > 0) {
+                    // Step 1i-1: an explicit placeholder ("xxx", "n/a", "–") means this
+                    // occurrence is intentionally empty — skip the whole line instead of
+                    // sliding into the next section's date/figure.
+                    if (isPlaceholderValue(match[1])) continue lineLoop;
                     const inline = normalize ? normalize(cleanValue(match[1])) : cleanValue(match[1]);
                     if (inline !== null && inline !== '') return inline;
                 }
@@ -311,6 +315,8 @@ const DocumentParserCore = (function () {
                 // Next-line value (tables/contracts put the value below the label)
                 const next = nonEmpty[i + 1];
                 if (next) {
+                    // Step 1i-1: placeholder on the next line also closes this occurrence.
+                    if (isPlaceholderValue(next)) continue lineLoop;
                     const candidate = normalize ? normalize(cleanValue(next)) : cleanValue(next);
                     if (candidate !== null && candidate !== '') return candidate;
                 }
@@ -331,6 +337,13 @@ const DocumentParserCore = (function () {
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
+    // Placeholder tokens mean "intentionally empty" (bundle "xxx" for no revision,
+    // "none", "n/a", bare dashes). Shared by the single-match lookup (Step 1i-1: stop,
+    // never slide) and the pooled collector below.
+    // Called by: findLabeledValue(), collectBudgetCandidates().
+    function isPlaceholderValue(t) {
+        return /^(?:x{2,}|none|n\/?a+|nil|null|[-–—.]+|#+)$/i.test(cleanValue(t || ''));
+    }
     // Glue split money tokens back together before parsing (Step 1e-2).
     // Scanned bundle PDFs often break "6,495,049.29" across a line/cell gap as
     // "6,495,0 49.29" or "6,495,049 .29" or "6, 495,049.29". Without gluing,
@@ -379,6 +392,16 @@ const DocumentParserCore = (function () {
             if (allNums.length > 0) return Math.max(...allNums).toFixed(2);
         }
         return num.toFixed(2);
+    };
+
+    // Budget normalizer for label lookups (Step 1h-2 mirrored into the single-match path).
+    // Same rule as the pooled collector: a date-like value without any money marker is
+    // rejected, so "Revised Contract Amount" sliding into "March 9, 2025" yields null
+    // (and the placeholder stop in findLabeledValue handles the "xxx" shape).
+    // Called by: extractBudget() for its revised/final/generic label lookups.
+    const asBudget = (t) => {
+        if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t || '') && asDate(t)) return null;
+        return asMoney(t);
     };
 
     // ─── FIELD EXTRACTORS ───────────────────────────────────────────────────
@@ -615,7 +638,7 @@ const DocumentParserCore = (function () {
         // auto-fill the current amount, not the original bid.
         const revised = findLabeledValue(lines, [
             /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
-        ], asMoney);
+        ], asBudget);
         if (revised) return revised;
 
         // First try: final/after-discount contract amount context anchor (scanned contract Image 3)
@@ -623,13 +646,13 @@ const DocumentParserCore = (function () {
             /(?:final\s*contract\s*amount\s*is)\s*(.*)/i,
             /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i,
             /(?:contract\s*amount\s*is)\s*(.*)/i,
-        ], asMoney);
+        ], asBudget);
         if (finalAmount) return finalAmount;
 
         const generic = findLabeledValue(lines, [
             /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
             /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
-        ], asMoney);
+        ], asBudget);
         if (generic) return generic;
 
         // Fallback: PESOS + Php/P/n pattern without clear label (e.g., "SIX MILLION ... PESOS & 29/100 (Php 6,495,049.29)" or "PESOS & 29/100 (P 6,495,049.29)" or "(n 6,495,049.29)" box)
@@ -946,20 +969,35 @@ const DocumentParserCore = (function () {
         // Step 1g-1: short source excerpt for the inspector (same ±2 window).
         const excerptOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].filter(Boolean).join(' | ').slice(0, 180);
         // All labeled hits (revised + final-anchor + generic incl. original).
+        // Step 1i-3: 'total-row' leads — table bottom-row totals ("TOTAL CONTRACT AMOUNT
+        // 6,495,049.29 ...") get their own named pattern with summary trust instead of
+        // riding the generic substring accident.
         const labelRes = [
+            { name: 'total-row', re: /(?:total\s*contract\s*amount)\s*[:\-]?\s*(.*)/i, labeled: true },
             { name: 'revised', re: /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
             { name: 'final-anchor', re: /(?:final\s*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
             { name: 'discount-anchor', re: /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
             { name: 'amount-is', re: /(?:contract\s*amount\s*is)\s*(.*)/i, labeled: true },
             { name: 'generic', re: /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
         ];
+        // Step 1i-1: placeholder tokens mean "intentionally empty" — shared helper
+        // isPlaceholderValue() (defined above near cleanValue); a placeholder slot
+        // stops this occurrence (see the tryStrs loop below).
+        // Step 1i-3: lines already claimed by 'total-row' (below) skip the generic
+        // substring re-match so one bottom-row total votes once, not twice.
+        const totalRowHit = new Set();
         for (let i = 0; i < norm.length; i++) {
             for (const { name, re, labeled } of labelRes) {
+                if (name === 'generic' && totalRowHit.has(i)) continue;
                 const m = norm[i].match(re);
                 if (!m) continue;
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
-                for (const t of tryStrs) {
+                for (let ti = 0; ti < tryStrs.length; ti++) {
+                    const t = tryStrs[ti];
                     if (!t) continue;
+                    // Step 1i-1: placeholder slot → EMPTY for this occurrence. Stop here:
+                    // sliding further would steal the next section's date/figure.
+                    if (isPlaceholderValue(t)) break;
                     // Step 1h-2: never mint money from a date ("December 9, 2025" is not
                     // 92025). A date-like value without any money marker is skipped even
                     // if a budget label matched nearby (e.g., Revised Contract Amount
@@ -974,7 +1012,12 @@ const DocumentParserCore = (function () {
                         const ctx = ctxOf(i);
                         let w = getSectionWeight(ctx);
                         if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price/i.test(ctx)) w *= 0.5;
+                        // Step 1i-2: same-line values outrank slid ones (ti 0 = label's own
+                        // line, ti 1-2 = borrowed from below). A slid date/figure can no
+                        // longer tie a same-line price before frequency even counts.
+                        if (ti > 0) w *= 0.8;
                         out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        if (name === 'total-row') totalRowHit.add(i);
                         break;
                     }
                 }

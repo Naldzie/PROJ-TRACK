@@ -401,3 +401,34 @@ test('Step 1h-3: OCR period-thousands reads full in money-marked strings', () =>
     // Bare fallback shape also covered.
     assert.equal(core.extractBudget(core.buildLinesFromText('Total (Php 6.495,049.29)')), '6495049.29');
 });
+
+// ─── Step 1i: placeholders + same-line priority + total-row ──────────────────
+
+test('Step 1i-1: placeholder value stops the slide (xxx never borrows a date)', () => {
+    // The real bundle shape: Revised = xxx, expiry date two lines below.
+    const lines = core.buildLinesFromText(
+        '4. Revised Contract Amount xxx\n5. Original Expiry date March 9, 2025'
+    );
+    // Single-match path: revised yields nothing (no slide into the date).
+    assert.equal(core.extractBudget(lines), null);
+    // Pooled path: no revised candidate at all.
+    const cands = core.collectBudgetCandidates(lines, 'bundle.pdf');
+    assert.ok(!cands.some(c => c.pattern === 'revised'));
+});
+
+test('Step 1i-2: same-line price beats slid lookalike at equal counts', () => {
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Original Contract Amount: Php 6,495,049.29', fileName: 'summary.pdf' },
+        { text: 'Total Cost\nP 92,025.00', fileName: 'table.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+});
+
+test('Step 1i-3: total-row yields only its first figure (Item Cost column)', () => {
+    const line = 'TOTAL CONTRACT AMOUNT 6,495,049.29 100.00 52.18 47.82 100.00 3,389,350.95 3,105,689.37 6,495,040.32';
+    const cands = core.collectBudgetCandidates(core.buildLinesFromText(line), 'table.pdf');
+    const vals = cands.map(c => c.value);
+    assert.ok(vals.includes('6495049.29'));
+    assert.ok(!vals.includes('6495040.32'));
+    assert.ok(cands.some(c => c.pattern === 'total-row'));
+});

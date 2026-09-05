@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Step 1h IMPLEMENTED + tested (JS 53/53: core 33/33 incl. 3 new 1h fixtures), NOT COMMITTED per user; awaiting user browser re-test on real CHS-Savings.pdf (price should read 6,495,049.29, no amber note). NEXT after confirm = S-curve Steps 2-4 (still deferred). Branch: phase-5-parser-accuracy.
+# Status: 🔄 Step 1i COMMITTED (JS 56/56) + browser re-test logged (4/4 files accurate); NEXT = 1i follow-up (labeled dot-strip extension + collector coverage audit) then user multi-file runs. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -724,6 +724,39 @@ Related plan
           labeled fixture + one learning-loop seed. Miss rate ratchets down per file.
     - No new deps decided yet; S-curve Steps 2-4 remain deferred behind bundle accuracy.
 
+  STEP 1i — Positive targeting: placeholders + same-line priority + TOTAL CONTRACT AMOUNT  🔄 IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user
+    Context: user's two table photos of the CHS bundle — (1) numbered summary list (1. Original
+      Contract Time 90 days … 3. Original Contract Amount Php 6,495,049.29 / 4. Revised
+      Contract Amount xxx / 5. Original Expiry date March 9, 2025 … 12. Date of Completion
+      March 9, 2025); (2) accomplishment-table bottom row TOTAL CONTRACT AMOUNT 6,495,049.29
+      (Item Cost column) with header 'Contract Amount: Php 6,495,049.29' printed above the
+      table. Table columns: Item Cost | % of Total | % Accomplished (Prev/This/ToDate) |
+      Amount of Accomplishment (Prev/This/ToDate); the 6,495,040.32 lookalike is the
+      Amount-to-Date progress figure (8.97 less — rounding residue or OCR noise), NOT a
+      competing price. Year-block + period-thousands already built as 1h (not repeated here).
+
+    1i-1. Placeholder rule (ghost side; collectBudgetCandidates labeled loop).
+        - A value slot reading xxx / none / n-a / – / blank (case-insensitive, punctuation-
+          tolerant) resolves to EMPTY for that label occurrence — do NOT slide to next /
+          next+2 lines. Item 4 (Revised: xxx) then yields nothing and can never reach item 5's
+          date. Encodes the business rule: xxx on Revised = "no change, use Original".
+    1i-2. Same-line beats slid (positive targeting; candidate weights).
+        - A value found on its label's OWN line outranks one borrowed 1–2 lines below:
+          same-line labeled hit keeps weight 1.0 (× section), slid hit ×0.8. Item 3's
+          Php 6,495,049.29 then beats any slid date/figure outright, before frequency counts.
+    1i-3. TOTAL CONTRACT AMOUNT first-class (table bottom rows; collector + weights).
+        - Own named pattern ('total-row') for /total\s*contract\s*amount/i lines: only the
+          row's FIRST money figure (Item Cost column) becomes a candidate — later figures
+          (percentages, Previous/this-Period, to-Date …040.32) never do. Summary-level trust
+          (contract weight 1.0, exempt from the table halving since the label itself carries
+          the contract word). The printed header 'Contract Amount: Php …' above such tables
+          is already caught by the generic label and corroborates for free.
+    - Tests: (i) 'Revised Contract Amount: xxx' + date below → NO candidate (no slide);
+      (ii) same-line 6.4M beats slid lookalike even at equal counts; (iii) total-row line
+      yields exactly its first figure; (iv) …040.32-style to-Date figure never outranks Item
+      Cost total; (v) full JS suite green + 4 contract files + bundle browser re-check.
+    - No new deps, no vite, S-curve still deferred.
+
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
     File: app/Services/SCurveImportService.php
     (also mirrors to public/js/admin/projects/scurve-pdf-parser-core.js for PDF)
@@ -1235,6 +1268,64 @@ Related plan
       + bare shapes. Full JS 53/53 (core 33 + scurve 20). No PHP touched. No commit.
     - Next: user browser re-test on real CHS bundle — price should fill 6,495,049.29
       with NO amber note; if any figure still off, paste the inspector table again.
+
+  2026-09-04 — Step 1i LOGGED FRESH (plan only, no code).
+    - User confirmed: 1h tested; 1i plan from the pre-AI/learning-loop table-photo
+      discussion was never written into this file. Logged now as fresh STEP 1i above
+      (placeholder rule + same-line priority + TOTAL CONTRACT AMOUNT first-class;
+      year-block/period-thousands already in 1h, not repeated). No code, no commit
+      instruction — NEXT = build 1i on go-ahead.
+
+  2026-09-04 — Step 1i IMPLEMENTED (code + tests, NOT committed per user).
+    - 1i-1: shared isPlaceholderValue() (xxx/none/n-a/nil/dashes, punctuation-tolerant);
+      findLabeledValue stops the whole LINE on placeholder same-line or next-line values
+      (labeled lineLoop) — item 4 (Revised: xxx) can never slide into item 5's date, for
+      EVERY field not just budget; collector tryStrs loop breaks on placeholder likewise.
+    - 1i-2: same-line labeled hits keep full weight, slid (next/next+2) hits ×0.8 — item 3's
+      same-line Php beats borrowed figures before frequency counts.
+    - 1i-3: 'total-row' named pattern leads labelRes; only the row's FIRST figure becomes a
+      candidate (asMoney already takes first); lines it claims skip the generic re-match
+      (totalRowHit set — one bottom-row total votes once). 'Total Cost P 92,025'-style rows
+      still work (generic path unchanged). asBudget() normalizer mirrors the 1h-2 date
+      guard into extractBudget's single-match revised/final/generic lookups.
+    - Tests (+3 Step 1i fixtures, core 36/36): xxx+date below → null single-match AND no
+      revised pooled candidate; same-line 6.4M beats slid lookalike at equal counts;
+      total-row line yields exactly first figure (…040.32 never a candidate) with total-row
+      pattern present. Full JS 56/56 (core 36 + scurve 20). No PHP touched. No commit.
+    - Next: user browser re-test on real CHS bundle — price should fill 6,495,049.29
+      (item 3 same-line + table header + total-row corroborate; Revised xxx silent).
+
+  2026-09-04 — Browser re-test: 4/4 files accurate (user) + 1i follow-up planned.
+    - Test 1 Contract-CHS Savings (scanned): title/price/duration/contractor accurate.
+      Pool: budget 6495049.29 wins via word-amount fallback (paren-php, excerpt proves
+      'SIX MILLION…' path works on scans); duration 90 via within-clause (unlabeled,
+      unopposed). Inspector Q answered: tables cover ONLY the 4 pooled fields
+      (budget/duration/startDate/endDate) — title/contractor/location/category/source/ABC/
+      description are first-match + mismatch-banner by design, so no tables exist for them.
+    - Test 2 contract_test_sample_2 (crop): accurate preview BUT budget pool EMPTY
+      (null, finds 0) — single-match extractBudget carried it. Coverage gap: crop wording
+      sits where first-match sees it but collector patterns don't; pool silently sits out.
+      Dates pool likewise empty (no date labels in crop). No harm today (fallback chain),
+      but a vote that doesn't count is logged for the audit below.
+    - Test 3 Buhi original (scanned): all accurate. Pool at its best — truth 6 finds /
+      score 4+ across 5 patterns (final-anchor/discount-anchor/amount-is/generic/paren-php)
+      beats 33.5M original bid + 1M discount figure; duration 350 clean.
+    - Test 4 contract_test_sample (crop of test 3): same, truth 6 finds / 4.13.
+    - User next: multi-file runs — (a) original + recreation (expect agreement, no banners),
+      (b) +1 intentionally different file (expect red banner with both values, majority fill).
+
+  1i FOLLOW-UP (approved by user 2026-09-04, no code yet).
+    - F1. Labeled dot-strip extension: thousand-dot strip applies to LABELED budget values
+      even without a Php marker (matched label = money context). Narrow pattern only
+      (dot + exactly-3-digits + digit/comma behind) so version numbers stay untouched.
+      Expected: item-3-style lines read full; tail-vs-truth ties disappear → amber note
+      silent on solved files.
+    - F2. Collector coverage audit: find why test-2-style crops yield zero budget/date
+      candidates while first-match succeeds; close the pattern gap so the pool
+      participates (per-field fallback: when pool is empty AND single-match hit exists,
+      optionally surface a low-confidence note — TBD in build).
+    - Tests: (i) unmarked '6.495,049.29' labeled line reads full; (ii) crop fixture yields
+      ≥1 budget candidate; (iii) full suite green + 5-file browser set unchanged.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
