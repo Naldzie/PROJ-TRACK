@@ -34,6 +34,23 @@ let _autofillRunId = 0;
 function cancelDocumentAutofill() {
     _autofillRunId++;
     _ocrPagesDone = 0;
+    // S3: fresh-popup-fresh-state — clear saved vote/disagreement/scan state AND remove
+    // the dynamically built banner/note boxes, so no previous run can linger on screen
+    // (stale-banner bug: old red banner survived modal close/reopen into single-file runs).
+    // Runs on every modal open (via resetModalToCreateMode), NOT per preview run, so the
+    // re-scan depth chosen inside a session is preserved for that session's re-runs.
+    if (typeof window !== 'undefined') {
+        window._autofillMismatch = null;
+        window._autofillDisagree = null;
+        window._autofillVoteDebug = null;
+        delete window._ocrPageLimit;
+    }
+    for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated']) {
+        try {
+            const el = document.getElementById(id);
+            if (el && el.remove) el.remove();
+        } catch (e) { /* best-effort cleanup */ }
+    }
     removeAutofillBanner();
     closeAutofillPreview();
 }
@@ -78,6 +95,9 @@ async function runDocumentAutofill() {
         // This gives cross-file validation: 3 files agreeing raises confidence, 2 different titles flags mismatch.
         const perFileData = []; // [{ fileName, text, parsed }]
         let ocrUsed = false;
+        // O2/N3: per-file scan report — { fileName, scannedTotal, scannedRead, truncated }.
+        // Rendered in the preview note ("read X of Y scanned pages"); proves partial reads.
+        const scanReports = [];
         // O2: files whose scanned pages exceeded the photo-read budget (partial read).
         const truncatedFiles = [];
 
@@ -85,10 +105,14 @@ async function runDocumentAutofill() {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr, truncated } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
+                // N3: remember real counts for every scanned file (even uncut ones).
+                if (ocr || (scannedTotal || 0) > 0) {
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated });
+                }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text });
                     perFileData.push({ fileName: doc.fileName, text, parsed: parsedSingle });
@@ -174,7 +198,13 @@ async function runDocumentAutofill() {
         window._autofillDisagree = pooledDisagreeInfo;
 
         // Show the preview modal — nothing is written to the form until Apply.
-        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles });
+        // S2: the run id travels with the call so a slow older run can never paint over
+        // a newer preview (stale-banner class of bug). S0: every render logs its run id,
+        // file list, and banner decision — the next stale render self-identifies.
+        try {
+            console.log('[Parser] preview run ' + myRunId + ': files=[' + perFileData.map(e => e.fileName).join(', ') + '] mismatch=' + (!!mismatchInfo.hasMismatch));
+        } catch (e) { /* logging is best-effort */ }
+        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles, scanReports, runId: myRunId });
 
     } catch (err) {
         console.error('[DocumentParser] Autofill failed:', err);
@@ -277,9 +307,12 @@ async function extractTextFromPDF(file, runId) {
     _ocrPagesDone = 0;
     let fullText = '';
     let ocrUsed = false;
-    // O2: truncation tracking — a file with more scanned pages than budget must say so
-    // instead of posing a partial read as confident.
+    // O2/N3: truncation + real-count tracking — a file with more scanned pages than the
+    // photo-read budget must say so instead of posing a partial read as confident.
+    // scannedTotal = textless pages met; scannedRead = pages actually photo-read.
     let ocrTruncated = false;
+    let scannedTotal = 0;
+    let scannedRead = 0;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         // Abort if the run was cancelled/superseded while we were awaiting
@@ -292,11 +325,13 @@ async function extractTextFromPDF(file, runId) {
 
         // OCR fallback for textless (scanned) pages
         if ((pageText || '').trim().length < 10) {
+            scannedTotal++;
             if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
             const ocrText = await ocrPage(page, runId);
             if (ocrText && ocrText.trim().length >= 10) {
                 pageText = ocrText;
                 ocrUsed = true;
+                scannedRead++;
             }
         }
 
@@ -306,7 +341,7 @@ async function extractTextFromPDF(file, runId) {
         if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 11) break;
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, pagesRead: maxPages };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages };
 }
 
 // ===================================================
@@ -315,11 +350,15 @@ async function extractTextFromPDF(file, runId) {
 // ===================================================
 
 // Normalize a value for voting: lowercase, trim, strip hereinafter tail, collapse spaces.
+// N2: hardened (mirrors core normalizeForPool) — '&' reads as 'and', ALL punctuation and
+// spacing collapses, so trivial same-project variants vote equal while real differences
+// ("Building A" vs "Building B") still mismatch.
 function normalizeForVote(v) {
     if (!v) return '';
     let s = String(v).trim().toLowerCase();
     s = s.replace(/\s*\(hereinafter.*/i, '').trim();
-    s = s.replace(/\s+/g, ' ');
+    s = s.replace(/&/g, ' and ');
+    s = s.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
     return s;
 }
 
@@ -416,13 +455,16 @@ function _markAutofilled(elementId) {
 // Shows the parsed fields for review; nothing is written
 // to the form until the user clicks Apply.
 // ===================================================
-// Adjustable OCR budget (opt-in re-scan from the preview modal's truncation note).
-// Bumps the per-file scanned-page budget and re-runs autofill. Default stays 10;
-// each extra page costs ~2s (warned on the button, not here).
-// Called by: inline onclick on the "Read more pages & re-scan" button.
-window._rescanMorePages = function () {
-    const cur = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
-    window._ocrPageLimit = Math.min(50, cur + 15);
+// Adjustable scan depth, N4: re-scan at the selector's chosen pages-per-file.
+// Reads #ocrPageSelect (10/25/40/50, default 10), stores it for this session, closes the
+// preview, and re-runs autofill. Opt-in per preview; routine uploads stay fast.
+// Called by: inline onclick on the "Re-scan" button in the gray scan note.
+window._rescanWithSelection = function () {
+    try {
+        const sel = document.getElementById('ocrPageSelect');
+        const picked = sel ? Number(sel.value) : NaN;
+        if (isFinite(picked) && picked >= 1 && picked <= 50) window._ocrPageLimit = Math.floor(picked);
+    } catch (e) { /* keep previous depth on any failure */ }
     closeAutofillPreview();
     runDocumentAutofill();
 };
@@ -442,6 +484,15 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         applyAutofillFromPreview();
         return;
     }
+    // S2 render guard: ignore renders from superseded runs (a slow older run must never
+    // paint over a newer preview — stale-banner class of bug). Logged when it triggers.
+    try {
+        const optsRunId = (arguments[1] && arguments[1].runId !== undefined) ? arguments[1].runId : null;
+        if (optsRunId !== null && typeof _autofillRunId !== 'undefined' && optsRunId !== _autofillRunId) {
+            console.warn('[Parser] ignoring stale preview render from run ' + optsRunId);
+            return;
+        }
+    } catch (e) { /* guard is best-effort — render normally on any failure */ }
 
     // Phase 5: expanded fields — ABC standalone, Budget Source, Category.
     // Hardcoded value-keyword fallback (TITLE/CONTRACTOR) already merged into parsed.
@@ -505,43 +556,56 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     const ocrNote = document.getElementById('autofillPreviewOcrNote');
     if (ocrNote) ocrNote.style.display = ocrUsed ? '' : 'none';
 
-    // O2: truncation note — a file with more scanned pages than the photo-read budget
-    // must say so instead of posing a partial read as confident.
-    // Adjustable budget: opt-in "read more pages" re-scan with an explicit time warning
-    // (~2s/page). Default stays 10/file; routine uploads stay fast.
+    // O2/N3/N4 gray scan note + page-count selector (replaces the fixed +15 stepping).
+    // S1: rebuild-instead-of-reuse — the old box (if any) is REMOVED first, so no previous
+    // run's note can linger into this preview (stale-banner class of bug).
+    // Wording has no "budget" word; reports REAL per-file counts ("read X of Y scanned
+    // pages in <file>"); the selector (10/25/40/50 per file, default 10) carries the
+    // ≈2s/page warning beside it. Opt-in per preview; routine uploads stay fast.
+    try {
+        const oldTrunc = document.getElementById('autofillPreviewTruncated');
+        if (oldTrunc && oldTrunc.remove) oldTrunc.remove();
+    } catch (e) { /* best-effort */ }
+    const reports = (arguments[1] && arguments[1].scanReports) ? arguments[1].scanReports : [];
     const truncated = (arguments[1] && arguments[1].truncatedFiles) ? arguments[1].truncatedFiles : [];
-    let truncEl = document.getElementById('autofillPreviewTruncated');
-    if (ocrUsed || (truncated && truncated.length > 0)) {
-        if (!truncEl) {
-            truncEl = document.createElement('div');
-            truncEl.id = 'autofillPreviewTruncated';
-            truncEl.className = 'alert alert-secondary d-flex flex-column gap-2 mt-3';
-            const container = modalEl.querySelector('.modal-body') || modalEl;
-            container.appendChild(truncEl);
-        }
+    if (ocrUsed || (reports && reports.length > 0)) {
+        const truncEl = document.createElement('div');
+        truncEl.id = 'autofillPreviewTruncated';
+        truncEl.className = 'alert alert-secondary d-flex flex-column gap-2 mt-3';
+        const container = modalEl.querySelector('.modal-body') || modalEl;
+        container.appendChild(truncEl);
         const limit = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
-        const truncMsg = (truncated && truncated.length > 0)
-            ? 'Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.'
-            : 'Scanned pages were read within the ' + limit + '-page budget.';
-        const canMore = limit < 50;
-        truncEl.innerHTML = '<i class="bi bi-info-circle"></i> <span>' + truncMsg + '</span>' +
-            (canMore ? '<div><button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rescanMorePages()" title="Each extra page takes about 2 seconds">Read more pages &amp; re-scan (≈2s per page)</button></div>' : '');
+        const lines = reports.map(r => {
+            const base = 'In ' + escapeHtml(r.fileName) + ': read ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages (' + limit + ' per file selected)';
+            return r.truncated ? base + ' — later pages were not scanned.' : base + '.';
+        });
+        if (lines.length === 0 && (truncated && truncated.length > 0)) {
+            lines.push('Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.');
+        }
+        const opts = [10, 25, 40, 50].map(n => '<option value="' + n + '"' + (n === limit ? ' selected' : '') + '>' + n + ' pages per file</option>').join('');
+        truncEl.innerHTML = '<i class="bi bi-info-circle"></i> <span>' + (lines.join('<br>') || 'Scanned pages were read.') + '</span>' +
+            '<div class="d-flex align-items-center gap-2 flex-wrap"><label class="mb-0" style="font-size:0.85em;" for="ocrPageSelect">Read depth (≈2s per page):</label>' +
+            '<select id="ocrPageSelect" class="form-select form-select-sm" style="width:auto;">' + opts + '</select>' +
+            '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rescanWithSelection()">Re-scan</button></div>';
         truncEl.style.display = '';
-    } else if (truncEl) {
-        truncEl.style.display = 'none';
     }
 
     // Mismatch (mis-upload 2 different projects) — red banner, let user pick, do NOT block Apply
+    // S1: rebuild-instead-of-reuse — any previous run's banner node is REMOVED first, so a
+    // stale "2/3 files" banner can never survive into a single-file preview.
+    // S0: the render decision is logged (run id + show/hide) for future diagnosis.
     const mismatch = arguments[1] && arguments[1].mismatch ? arguments[1].mismatch : window._autofillMismatch;
-    let mismatchEl = document.getElementById('autofillPreviewMismatch');
+    try {
+        const oldMis = document.getElementById('autofillPreviewMismatch');
+        if (oldMis && oldMis.remove) oldMis.remove();
+    } catch (e) { /* best-effort */ }
+    let mismatchEl = null;
     if (mismatch && mismatch.hasMismatch && mismatch.details && mismatch.details.length > 0) {
-        if (!mismatchEl) {
-            mismatchEl = document.createElement('div');
-            mismatchEl.id = 'autofillPreviewMismatch';
-            mismatchEl.className = 'alert alert-danger d-flex flex-column gap-2 mt-3';
-            const container = modalEl.querySelector('.modal-body') || modalEl;
-            container.appendChild(mismatchEl);
-        }
+        mismatchEl = document.createElement('div');
+        mismatchEl.id = 'autofillPreviewMismatch';
+        mismatchEl.className = 'alert alert-danger d-flex flex-column gap-2 mt-3';
+        const container = modalEl.querySelector('.modal-body') || modalEl;
+        container.appendChild(mismatchEl);
         const rows = mismatch.details.map(d => {
             const label = d.field === 'title' ? 'Project Title' : d.field === 'contractor' ? 'Contractor' : d.field;
             const variants = d.variants.map(v => escapeHtml(v.value) + ' — ' + v.files.map(f => escapeHtml(f)).join(', ') + ' (' + v.count + ' file' + (v.count>1?'s':'') + ')').join('<br>');
@@ -549,9 +613,12 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         }).join('');
         mismatchEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> <strong>Possible mis-upload detected — files appear to be from different projects.</strong> Please verify which file to keep. The preview shows the majority vote (' + (mismatch.details[0].variants[0].count) + '/' + (mismatch.details[0].variants.reduce((s,v)=>s+v.count,0)) + ' files). You can still edit and Apply.' + '<div class="mt-2">' + rows + '</div>';
         mismatchEl.style.display = '';
-    } else if (mismatchEl) {
-        mismatchEl.style.display = 'none';
     }
+    // S0: log the banner decision with the run id (stale-render diagnosis).
+    try {
+        const rid = (arguments[1] && arguments[1].runId !== undefined) ? arguments[1].runId : '?';
+        console.log('[Parser] preview render run ' + rid + ': mismatch banner ' + (mismatchEl ? 'SHOWN' : 'hidden'));
+    } catch (e) { /* logging is best-effort */ }
 
     hideAutofillBanner();
 

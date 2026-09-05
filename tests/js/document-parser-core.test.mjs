@@ -464,3 +464,27 @@ test('Follow-up O3: pooled return reports finds per file per field', () => {
     assert.ok((pooled._fileCounts.budget['a.pdf'] || 0) >= 1);
     assert.equal(pooled._fileCounts.budget['b.pdf'] || 0, 0);
 });
+
+// ─── N-batch: shared strip + hardened compare ────────────────────────────────
+
+test('N1: single-match path reads unmarked period-thousands in full', () => {
+    // The banner track uses extractBudget (first-match), which previously kept the tail.
+    assert.equal(core.extractBudget(core.buildLinesFromText('Total Cost 6.495,049.29')), '6495049.29');
+    // Narrow safety holds on the shared path too.
+    assert.equal(core.extractBudget(core.buildLinesFromText('See Section 1.495 for details')), null);
+});
+
+test('N2: trivial same-project variants vote equal (&, spacing, punctuation)', () => {
+    const dbg = core.voteCandidatePoolDebug([
+        { value: 'JURASSIC CONSTRUCTION & SUPPLIES', labeled: true, weight: 1.0, fileName: 'a.pdf' },
+        { value: 'JURASSIC CONSTRUCTION AND SUPPLIES', labeled: true, weight: 1.0, fileName: 'b.pdf' },
+    ]);
+    assert.equal(dbg.rows.length, 1);
+    assert.equal(core.normalizeForPool('Construction of X (College) -Savings'), core.normalizeForPool('Construction of X (College)-Savings'));
+    // Real differences still separate.
+    const dbg2 = core.voteCandidatePoolDebug([
+        { value: 'Construction of Building A', labeled: true, weight: 1.0, fileName: 'a.pdf' },
+        { value: 'Construction of Building B', labeled: true, weight: 1.0, fileName: 'b.pdf' },
+    ]);
+    assert.equal(dbg2.rows.length, 2);
+});

@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 N-batch + S-batch PLANNED (no code); stale-banner bug logged with verified roots, user reproducing. NEXT = build N1-N4 + S1-S3 on go-ahead. Branch: phase-5-parser-accuracy.
+# Status: ✅ N-batch + S-batch VERIFIED in production (user browser runs with log-line evidence); committing + pushing all per user. NEXT = post-1i roadmap (learning loop, then AI fallback) or S-curve Steps 2-4 on user call. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1435,7 +1435,52 @@ Related plan
       (ii) '&' vs 'AND' + space/punct variants vote equal (no banner); truly different
       titles still mismatch; (iii) full suite green + 5-file + multi-file browser re-check.
 
-  STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code (no fix yet).
+  2026-09-04 — N-batch + S-batch IMPLEMENTED (code + tests, NOT committed per user).
+    - N1: strip moved into asMoney (both paths) + single-decimal guard (found by the suite:
+      the total-row's fused '049.29100.00' would otherwise lose a real decimal dot; guard
+      counts /\.\d{2}\b/ groups and strips only when exactly one). Same guard mirrored to
+      the labeled-loop F1 strip + both fallback pre-normalizations (4 strip sites, one rule).
+    - N2: core normalizeForPool + wrapper normalizeForVote hardened identically (&→and,
+      non-alphanumeric collapse); normalizeForPool exported for tests.
+    - S0: run-files + banner-decision log lines (preview call + render); S1: banner/note nodes
+      rebuilt per render (remove-then-create; hide-branch deleted as a stale-state class);
+      S2: runId travels to showAutofillPreview, stale renders return early with a warning;
+      S3: cancelDocumentAutofill resets window vote/disagree/debug/depth state + removes
+      dynamic nodes (runs on modal open; in-session re-scan depth preserved).
+    - N3: extractTextFromPDF returns {scannedTotal, scannedRead}; per-file scanReports flow
+      to the preview; note reworded with real counts, no "budget" word.
+    - N4: selector (10/25/40/50, default 10) + Re-scan button via window._rescanWithSelection
+      (replaces +15 _rescanMorePages); warning beside the selector; no Blade change.
+    - Tests (+2 N fixtures, core 41/41): unmarked single-match strip + narrow safety;
+      '&'/spacing/punct equality + real-difference separation. Full JS 61/61
+      (core 41 + scurve 20). Wrapper S/O paths are DOM-timing — browser re-test covers them.
+      No PHP touched. No commit.
+    - Next: user browser re-test — (a) bundle price fills full with no banner on
+      same-project sets; (b) single-file re-runs never show a stale banner; (c) gray note
+      shows real "read X of Y" counts + selector works with the warning visible.
+
+  2026-09-04 — N-batch + S-batch VERIFIED in production (user browser runs + log lines).
+    - Test 1 (3-file same project): NO mismatch banner (N2 works); duration piles across
+      files with labeled + within-clause patterns; hardened norms visible ('2024 12 09').
+      Per-file counts line renders.
+    - Test B (single-file re-run): 'preview run 3: files=[CHS - Savings.pdf] mismatch=false'
+      + 'preview render run 3: mismatch banner hidden' — S0/S1/S2 proven; stale-banner class
+      closed. The earlier stale sighting does not recur.
+    - Test C (real counts + re-scan at 25): gray note reads per-file truth — 'CHS: read 9 of
+      12 (10 per file selected)' / 'Contract: 7 of 7'; post-rescan '12 of 12' / '7 of 7'.
+      Deeper pile grew (budget 8→9, duration gained a labeled contract-file hit) while ALL
+      winners held — weighting proven at depth. One stray misread surfaced, harmless
+      (single find, nothing agrees). N3/N4 proven.
+    - Re-scan semantics (user Q, answered + logged): every re-scan is a FULL fresh run at
+      the new ceiling (pages 1–10 re-read + 11–25 new) — honest cost is up to ~2s × depth,
+      not "+15s". Nothing cached between runs today.
+    - FUTURE (parked, not approved for build): incremental re-scan cache — keep per-file OCR
+      text keyed by file + depth, read only newly uncovered pages on bump. Faster re-scans,
+      but needs cache + invalidation rules for an occasional button. Build only if the wait
+      starts annoying the user.
+    - STALE-STATE bug: CLOSED by the Test B evidence above.
+
+  STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code, S-batch IMPLEMENTED (2026-09-04), NOT COMMITTED per user.
     Symptom (user, bundle-alone run WITHOUT page refresh): preview values correct
       (truth filled, pool holds truth only) BUT the red "mismatch 2/3 files" banner from
       the PREVIOUS 3-file run still shows. After full page refresh: banner gone, end state
@@ -1447,13 +1492,14 @@ Related plan
       persists across runs/sessions until full refresh (user's "40-page budget" screenshot
       on a fresh preview proves it); (c) pending documents ARE cleared on modal open
       (_create_project_modal.js:193) — old files are NOT reprocessed, leftovers are state-only.
-    S-BATCH plan (approved pattern TBD — user reproducing first):
-      - S1. Fresh-popup-fresh-state: modal open resets all saved vote/disagree/scan-depth
-        state + removes dynamic banner/note nodes (extend cancelDocumentAutofill).
-      - S2. Render guard: preview verifies it is still the latest run before appearing, so
-        a slow older run can never paint over a newer one.
-      - S3. Scan-depth default resets per modal session (fresh popup = default 10); the
-        re-scan bump applies within-session only.
+    S-BATCH as built:
+      - S0. Run-files + banner-decision log lines (preview call site + render site).
+      - S1. Fresh nodes per render (remove-then-create for banner + gray note; the
+        hide-branch is deleted as a stale-state class) + cancelDocumentAutofill resets all
+        window vote/disagree/debug/depth state and removes dynamic nodes.
+      - S2. runId travels into showAutofillPreview; stale renders return early + warn.
+      - S3. Depth default resets per modal session (cancel path); in-session re-scan bumps
+        preserved (cancel is NOT called on re-scan re-runs).
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE

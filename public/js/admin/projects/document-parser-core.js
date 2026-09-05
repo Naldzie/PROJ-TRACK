@@ -368,11 +368,17 @@ const DocumentParserCore = (function () {
     // Additional adjustment 2026-09-04: handle "(P 6,495,049.29)" single-P as Php alias (NET TOTAL P6,495,049.29) and (P 6,495,049.29).
     const asMoney = (v) => {
         let s = glueMoneyFragments(String(v));
-        // Step 1h-3: period-as-thousands from OCR ("Php 6.495,049.29" → 6495049.29).
-        // Only inside money-marked strings: a digit-dot-3digits run followed by another
-        // digit/comma cannot be a decimal point, so drop the dot. Plain sentences
-        // without Php/₱ are left untouched.
-        if (/(?:php|₱)/i.test(s) && /\d\.\d{3}(?=[\d,])/i.test(s)) {
+        // N1 (was Step 1h-3, marker-scoped): thousand-dot strip now applies to EVERY
+        // money parse, because both the pooled vote AND the single-match/banner path use
+        // this one reader — the tail-vs-truth tie previously survived on the banner path.
+        // Still narrow (digit-dot-exactly-3-digits + digit/comma behind), so version text
+        // like "Section 1.495" never matches (no trailing digit/comma).
+        // Guard: only when the string holds a SINGLE decimal group (".29" once). On
+        // multi-figure lines ("6,495,049.29 100.00 ...") the glue may fuse neighbours
+        // ("049.29100.00") and stripping would eat a real decimal dot — skip instead and
+        // let the first-figure rule below take the head value.
+        const decimalGroups = s.match(/\.\d{2}\b/g) || [];
+        if (decimalGroups.length === 1 && /\d\.\d{3}(?=[\d,])/.test(s)) {
             s = s.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
         }
         // Prefer Php/P/₱-prefixed amount first (Php or single P in "(P 6,495,049.29)" context)
@@ -690,7 +696,8 @@ const DocumentParserCore = (function () {
             const line = norm[i];
             let combined = [line, norm[i+1] || ''].join(' ');
             // Step 1h-3: same period-thousands fix as the collector (OCR "6.495,049.29").
-            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+            // Single-decimal guard (see asMoney): multi-figure windows keep their dots.
+            if (/(?:php|₱)/i.test(combined) && ((combined.match(/\.\d{2}\b/g) || []).length === 1)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             // Look for "(Php X)" or "(P X)" or "NET TOTAL P X" pattern even without PESOS
             const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
             if (phpOnly) {
@@ -946,12 +953,16 @@ const DocumentParserCore = (function () {
     }
 
     // Normalize a value for voting (same rule as document-parser.js).
-    // Called by: voteCandidatePool().
+    // N2: hardened — '&' reads as 'and', and ALL punctuation/spacing collapses, so
+    // same-project trivial variants (")-Savings" vs ") -Savings", "&" vs "AND") vote
+    // equal while truly different values ("Building A" vs "Building B") still differ.
+    // Called by: voteCandidatePool(), voteCandidatePoolDebug().
     function normalizeForPool(v) {
         if (!v) return '';
         let s = String(v).trim().toLowerCase();
         s = s.replace(/\s*\(hereinafter.*/i, '').trim();
-        s = s.replace(/\s+/g, ' ');
+        s = s.replace(/&/g, ' and ');
+        s = s.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
         return s;
     }
 
@@ -1007,7 +1018,9 @@ const DocumentParserCore = (function () {
                     // strip OCR thousand-dots here too even with no Php marker ("Total Cost
                     // 6.495,049.29" reads full). Narrow pattern only (dot + exactly 3 digits
                     // + digit/comma behind) — version numbers like "Section 1.495" never match.
-                    if (/\d\.\d{3}(?=[\d,])/.test(t)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+                    // Same single-decimal guard as asMoney: multi-figure rows keep every dot
+                    // so the first-figure rule below takes the head value.
+                    if (/\d\.\d{3}(?=[\d,])/.test(t) && ((t.match(/\.\d{2}\b/g) || []).length === 1)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
                     const val = asMoney(t);
                     // Step 1f-3: a money label inside a breakdown table without any
                     // contract word nearby ("Total Cost P 92,025" per line item) is a
@@ -1042,7 +1055,8 @@ const DocumentParserCore = (function () {
             let combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
             // Step 1h-3: same period-thousands fix for the fallback scan (OCR
             // "6.495,049.29" blinds the \(Php ...\) / P-prefix patterns otherwise).
-            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+            // Single-decimal guard (see asMoney): multi-figure windows keep their dots.
+            if (/(?:php|₱)/i.test(combined) && ((combined.match(/\.\d{2}\b/g) || []).length === 1)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             let fbName = null;
             for (const fb of fbRes) { if (fb.re.test(combined)) { fbName = fb.name; break; } }
             if (fbName) {
@@ -1316,6 +1330,7 @@ const DocumentParserCore = (function () {
         countFilled,
         glueMoneyFragments,
         getSectionWeight,
+        normalizeForPool,
         collectBudgetCandidates,
         collectDurationCandidates,
         collectDateCandidates,
