@@ -369,3 +369,35 @@ test('Step 1g-2: clear winner raises no flag (clean files see no note)', () => {
         { value: '92025.00', norm: '92025.00', count: 3, score: 0.6, labeledCount: 0 },
     ]), null);
 });
+
+// ─── Step 1h: date-ghost money fix ───────────────────────────────────────────
+
+test('Step 1h-1: comma glue only for thousands groups, never years', () => {
+    // Real table split still glues.
+    assert.equal(core.glueMoneyFragments('P 6, 495,049.29'), 'P 6,495,049.29');
+    // Date commas are left alone (was glued to 9,2025 = 92025).
+    assert.equal(core.glueMoneyFragments('December 9, 2025'), 'December 9, 2025');
+    assert.equal(core.glueMoneyFragments('Date of Effectivity of Contract December 9, 2025'), 'Date of Effectivity of Contract December 9, 2025');
+});
+
+test('Step 1h-2: dates never become budget candidates', () => {
+    // Revised label followed by a date line (the real bundle shape) yields nothing.
+    const cands = core.collectBudgetCandidates(
+        core.buildLinesFromText('6. Revised Contract Amount\nDecember 9, 2025'), 'bundle.pdf'
+    );
+    assert.ok(!cands.some(c => c.value === '92025.00'));
+    // Pooled: 1x summary vs date-ghost lines → summary wins with NO disagree flag.
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Original Contract Amount: Php 6,495,049.29', fileName: 'summary.pdf' },
+        { text: '2. Date of Effectivity of Contract December 9, 2025\n6. Revised Contract Amount', fileName: 'bundle.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+    assert.equal(pooled._disagree.budget, null);
+});
+
+test('Step 1h-3: OCR period-thousands reads full in money-marked strings', () => {
+    // Labeled shape (the real bundle: Revised line + period-thousands figure).
+    assert.equal(core.extractBudget(core.buildLinesFromText('Revised Contract Amount: (Php 6.495,049.29)')), '6495049.29');
+    // Bare fallback shape also covered.
+    assert.equal(core.extractBudget(core.buildLinesFromText('Total (Php 6.495,049.29)')), '6495049.29');
+});

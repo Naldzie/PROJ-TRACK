@@ -339,8 +339,10 @@ const DocumentParserCore = (function () {
     function glueMoneyFragments(s) {
         if (!s) return s;
         let out = String(s);
-        // "6, 495" → "6,495" (space after comma from column gap)
-        out = out.replace(/,\s+(\d)/g, ',$1');
+        // Step 1h-1: glue comma-space ONLY for thousands groups (exactly 3 digits).
+        // "P 6, 495,049.29" → "P 6,495,049.29" still glues, but "December 9, 2025"
+        // (4-digit year) is left alone — previously it glued to "9,2025" = 92025.
+        out = out.replace(/,\s+(\d{3}(?!\d))/g, ',$1');
         // "6,495,0 49.29" → "6,495,049.29" (space between head and decimal tail)
         out = out.replace(/(\d)\s+(\d{2,3}\.\d{2}\b)/g, '$1$2');
         // "6,495,049 .29" → "6,495,049.29" (space before decimal)
@@ -352,7 +354,14 @@ const DocumentParserCore = (function () {
     // number is 44 — we must prefer the Php amount, not the fraction.
     // Additional adjustment 2026-09-04: handle "(P 6,495,049.29)" single-P as Php alias (NET TOTAL P6,495,049.29) and (P 6,495,049.29).
     const asMoney = (v) => {
-        const s = glueMoneyFragments(String(v));
+        let s = glueMoneyFragments(String(v));
+        // Step 1h-3: period-as-thousands from OCR ("Php 6.495,049.29" → 6495049.29).
+        // Only inside money-marked strings: a digit-dot-3digits run followed by another
+        // digit/comma cannot be a decimal point, so drop the dot. Plain sentences
+        // without Php/₱ are left untouched.
+        if (/(?:php|₱)/i.test(s) && /\d\.\d{3}(?=[\d,])/i.test(s)) {
+            s = s.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+        }
         // Prefer Php/P/₱-prefixed amount first (Php or single P in "(P 6,495,049.29)" context)
         const phpM = s.match(/(?:php|₱)\s*([\d,]+(?:\.\d{1,2})?)/i) || s.match(/\(\s*P\s*([\d,]+\.\d{2})\s*\)/i) || s.match(/\bP\s*([\d,]+\.\d{2})/i);
         if (phpM) {
@@ -656,7 +665,9 @@ const DocumentParserCore = (function () {
         // Handles NET TOTAL P6,495,049.29 (single P, no Php) and NET TOTAL ... (Php X)
         for (let i = 0; i < norm.length; i++) {
             const line = norm[i];
-            const combined = [line, norm[i+1] || ''].join(' ');
+            let combined = [line, norm[i+1] || ''].join(' ');
+            // Step 1h-3: same period-thousands fix as the collector (OCR "6.495,049.29").
+            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             // Look for "(Php X)" or "(P X)" or "NET TOTAL P X" pattern even without PESOS
             const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
             if (phpOnly) {
@@ -949,6 +960,11 @@ const DocumentParserCore = (function () {
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
                 for (const t of tryStrs) {
                     if (!t) continue;
+                    // Step 1h-2: never mint money from a date ("December 9, 2025" is not
+                    // 92025). A date-like value without any money marker is skipped even
+                    // if a budget label matched nearby (e.g., Revised Contract Amount
+                    // followed by an effectivity/expiry date line in a bundle).
+                    if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
                     const val = asMoney(t);
                     // Step 1f-3: a money label inside a breakdown table without any
                     // contract word nearby ("Total Cost P 92,025" per line item) is a
@@ -971,7 +987,10 @@ const DocumentParserCore = (function () {
             { name: 'p-prefix', re: /\bP\s*([\d,]+\.\d{2})/i },
         ];
         for (let i = 0; i < norm.length; i++) {
-            const combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
+            let combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
+            // Step 1h-3: same period-thousands fix for the fallback scan (OCR
+            // "6.495,049.29" blinds the \(Php ...\) / P-prefix patterns otherwise).
+            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             let fbName = null;
             for (const fb of fbRes) { if (fb.re.test(combined)) { fbName = fb.name; break; } }
             if (fbName) {

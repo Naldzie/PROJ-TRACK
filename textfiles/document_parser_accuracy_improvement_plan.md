@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Step 1g IMPLEMENTED + tested (JS 50/50), Step 1h DIAGNOSED + planned (no code); committing + pushing all per user. NEXT = build Step 1h when user says go. Branch: phase-5-parser-accuracy.
+# Status: 🔄 Step 1h IMPLEMENTED + tested (JS 53/53: core 33/33 incl. 3 new 1h fixtures), NOT COMMITTED per user; awaiting user browser re-test on real CHS-Savings.pdf (price should read 6,495,049.29, no amber note). NEXT after confirm = S-curve Steps 2-4 (still deferred). Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -661,7 +661,7 @@ Related plan
       (47/47 baseline) + 4 contract files + bundle browser check unchanged.
     - No new deps, no vite, S-curve still deferred.
 
-  STEP 1h — Date-ghost money fix (92025 diagnosis PROVEN by excerpts)  ⬜ NOT STARTED (diagnosed + planned 2026-09-04, no code yet)
+  STEP 1h — Date-ghost money fix (92025 diagnosis PROVEN by excerpts)  🔄 IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user
     Diagnosis (user pasted expanded inspector 2026-09-04 — excerpts WORKED first try):
       budget rows: 92025.00 patterns ['revised','generic'] excerpt '2. Date of Effectivity
       of Contract December 9, 202… | 5. Original Expiry date March 9, 2025 | 6. App' (ONE
@@ -695,6 +695,34 @@ Related plan
       2x-date-ghosts → 6495049.29 winner AND _disagree.budget null (no amber note on a
       solved case); (v) full JS suite green + 4 contract files + bundle browser re-check.
     - No new deps, no vite, S-curve still deferred.
+
+  POST-1i ROADMAP — Learning loop, then AI fallback (agreed with user 2026-09-04, NOT STARTED)
+    Sequence: finish 1h/1i bundle accuracy → learning loop (tested on the bundle) → AI
+    fallback LAST. Rationale banked: the loop feeds on the stable preview-correct flow;
+    the AI trigger list is drawn from whatever the rules provably cannot solve after 1i +
+    learning; cost/risk ascend free/offline/reversible → quota/latency/data-leaving.
+
+    A. AI fallback for NORMAL documents too (user approved, scope note).
+        - Sensitivity finding (user confirmed): contract/supporting papers are public-
+          bidding records — contractor names, business addresses, working emails exist to
+          be visible (postings, awards, signboards). Real sensitivities (personal IDs, bank
+          numbers, private signatures) do not live in these papers. Design stays slice-only
+          (1–2 confusing pages as a small image, never the whole file) and unsure-only
+          (local reader admits defeat first). Same gates as the S-curve Tier 3 slice.
+    B. Learning loop — HYBRID (user approved; neither pure-auto nor pure-manual).
+        - System silently COLLECTS label→field pairs from every preview correction; a pair
+          goes LIVE only after 2–3 independent confirmations across files OR admin one-click
+          in a small review list; any live entry deletable in one click. Auto gathers,
+          humans/repetition trust. Never learns from unresolved-disagree files until the
+          user picks (else ambiguity becomes "knowledge").
+        - Replaces the hardcoded TITLE/CONTRACTOR arrays' frozen fate (§11 DB-driven item):
+          first weird file costs one correction, every later file is free.
+    C. Evaluation without future files (user's "can't pre-test" concern — answered).
+        - Synthetic variants: paraphrase the 5 known contracts' labels automatically and
+          require the rules to still hit (stress-test without waiting for real files).
+        - Every new real file either passes (rules generalize — most will) or becomes one
+          labeled fixture + one learning-loop seed. Miss rate ratchets down per file.
+    - No new deps decided yet; S-curve Steps 2-4 remain deferred behind bundle accuracy.
 
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
     File: app/Services/SCurveImportService.php
@@ -1184,6 +1212,29 @@ Related plan
       thousands). True 6,495,049.29 sits alone in the accomplishment-table bottom row.
     - Logged as STEP 1h above (glue thousands-only + date-exclusion + period-thousands).
       User: log + commit + push everything, no new fix yet. NEXT = build 1h on go-ahead.
+
+  2026-09-04 — Post-1i roadmap AGREED (plan only, no code).
+    - User: AI fallback for normal docs too (sensitivity reviewed — public-bidding data,
+      slice-only + unsure-only gates stay); learning loop HYBRID (silent collect, live
+      after 2–3 confirmations or admin one-click, deletable, never from unresolved files);
+      sequence 1h/1i → learning loop (tested on bundle) → AI last.
+    - Logged as POST-1i ROADMAP above. Committing + pushing all per user.
+
+  2026-09-04 — Step 1h IMPLEMENTED (code + tests, NOT committed per user).
+    - 1h-1: glueMoneyFragments comma rule /,\\s+(\\d)/ → /,\\s+(\\d{3}(?!\\d))/ — 'P 6,
+      495,049.29' still glues, 'December 9, 2025' untouched (year = 4 digits).
+    - 1h-2: collectBudgetCandidates labeled loop skips date-like values without money
+      markers (Php/₱/P/pesos/amount + asDate check). Ghost path closed at the source.
+    - 1h-3: period-thousands strip /(\\d)\\.(\\d{3})(?=[\\d,])/ in asMoney (money-marked
+      only) + same strip in extractBudget's own third fallback AND the collector
+      fallback scan (three sites had the same blindness; verified via failing-then-
+      passing test on the bare '(Php …)' shape).
+    - Tests (+3 Step 1h fixtures, core 33/33): glue years-vs-thousands; dates-never-
+      candidates + pooled 1x-summary-vs-date-ghosts → 6495049.29 winner AND disagree
+      null (amber note correctly stays silent on a solved case); period-thousands labeled
+      + bare shapes. Full JS 53/53 (core 33 + scurve 20). No PHP touched. No commit.
+    - Next: user browser re-test on real CHS bundle — price should fill 6,495,049.29
+      with NO amber note; if any figure still off, paste the inspector table again.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
