@@ -922,7 +922,9 @@ const DocumentParserCore = (function () {
     }
 
     // Collect every budget candidate in one file (labeled + fallbacks).
-    // Each entry: { value, labeled, weight, fileName }.
+    // Each entry: { value, labeled, weight, fileName, pattern, excerpt }.
+    // Step 1g-1: pattern = which label/fallback matched; excerpt = ±2-line source
+    // snippet so the vote inspector shows WHERE each find came from.
     // Called by: parseProjectInfoPooled() per file.
     function collectBudgetCandidates(lines, fileName) {
         const out = [];
@@ -930,16 +932,18 @@ const DocumentParserCore = (function () {
         // Step 1f-3: ±2-line window so a table row sees the table header above it
         // (a ±1 window misses it for the 2nd+ row, letting repeats outvote summary).
         const ctxOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].join(' ');
+        // Step 1g-1: short source excerpt for the inspector (same ±2 window).
+        const excerptOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].filter(Boolean).join(' | ').slice(0, 180);
         // All labeled hits (revised + final-anchor + generic incl. original).
         const labelRes = [
-            { re: /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
-            { re: /(?:final\s*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
-            { re: /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
-            { re: /(?:contract\s*amount\s*is)\s*(.*)/i, labeled: true },
-            { re: /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
+            { name: 'revised', re: /(?:revised\s*contract\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
+            { name: 'final-anchor', re: /(?:final\s*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { name: 'discount-anchor', re: /(?:after\s+applying.*3%\s*discount.*contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { name: 'amount-is', re: /(?:contract\s*amount\s*is)\s*(.*)/i, labeled: true },
+            { name: 'generic', re: /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
         ];
         for (let i = 0; i < norm.length; i++) {
-            for (const { re, labeled } of labelRes) {
+            for (const { name, re, labeled } of labelRes) {
                 const m = norm[i].match(re);
                 if (!m) continue;
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
@@ -954,31 +958,40 @@ const DocumentParserCore = (function () {
                         const ctx = ctxOf(i);
                         let w = getSectionWeight(ctx);
                         if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price/i.test(ctx)) w *= 0.5;
-                        out.push({ value: val, labeled, weight: w, fileName });
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
                         break;
                     }
                 }
             }
         }
         // All fallback Php amounts (glued, >100k guard kept).
+        const fbRes = [
+            { name: 'paren-php', re: /\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i },
+            { name: 'net-total', re: /NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i },
+            { name: 'p-prefix', re: /\bP\s*([\d,]+\.\d{2})/i },
+        ];
         for (let i = 0; i < norm.length; i++) {
             const combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
-            const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
-            if (phpOnly) {
+            let fbName = null;
+            for (const fb of fbRes) { if (fb.re.test(combined)) { fbName = fb.name; break; } }
+            if (fbName) {
                 const val = asMoney(combined);
                 // Step 1f-3: unlabeled guesses count less (0.5, was 0.8) — a contract
                 // label (1.0) beats several table guesses even when they repeat.
-                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName });
+                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName, pattern: fbName, excerpt: excerptOf(i) });
             }
         }
         return out;
     }
 
     // Collect every duration candidate in one file.
+    // Each entry: { value, labeled, weight, fileName, pattern, excerpt } (Step 1g-1).
     // Called by: parseProjectInfoPooled() per file.
     function collectDurationCandidates(lines, fileName) {
         const out = [];
         const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // Step 1g-1: excerpt for the inspector.
+        const excerptOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].filter(Boolean).join(' | ').slice(0, 180);
         const labelRe = /(?:duration|contract\s*period|contract\s*duration|original\s*contract\s*time|contract\s*time|no\.?\s*of\s*(?:calendar\s*)?days|number\s*of\s*days|calendar\s*days?|working\s*days?)\s*[:\-]?\s*(.*)/i;
         for (let i = 0; i < norm.length; i++) {
             const m = norm[i].match(labelRe);
@@ -986,7 +999,7 @@ const DocumentParserCore = (function () {
                 for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                     if (!t) continue;
                     const val = asDays(t);
-                    if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName }); break; }
+                    if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
                 }
             }
             // "within N days calendar days" clause on this line or paired with next.
@@ -995,7 +1008,7 @@ const DocumentParserCore = (function () {
                 // Step 1f-3: unlabeled duration guesses count less (0.5, was 0.8).
                 if (wm) {
                     const val = asDays(wm[1]) || asDays(wm[0]);
-                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName }); break; }
+                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName, pattern: 'within-clause', excerpt: excerptOf(i) }); break; }
                 }
             }
         }
@@ -1003,10 +1016,13 @@ const DocumentParserCore = (function () {
     }
 
     // Collect every start/end date candidate in one file.
+    // Each entry: { value, labeled, weight, fileName, pattern, excerpt } (Step 1g-1).
     // Called by: parseProjectInfoPooled() per file.
     function collectDateCandidates(lines, fileName, which) {
         const out = [];
         const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // Step 1g-1: excerpt for the inspector.
+        const excerptOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].filter(Boolean).join(' | ').slice(0, 180);
         const re = which === 'start'
             ? /(?:start\s*date|commencement\s*date|notice\s*to\s*proceed|ntp\s*date|ntp|date\s*started|contract\s*start|date\s*of\s*effectivity(?:\s*of\s*(?:the\s*)?contract)?|effectivity)\s*[:\-]?\s*(.*)/i
             : /(?:end\s*date|completion\s*date|target\s*completion|contract\s*end|date\s*of\s*completion|expected\s*completion)\s*[:\-]?\s*(.*)/i;
@@ -1016,7 +1032,7 @@ const DocumentParserCore = (function () {
             for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                 if (!t) continue;
                 const val = asDate(t);
-                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName }); break; }
+                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
             }
         }
         return out;
@@ -1045,28 +1061,48 @@ const DocumentParserCore = (function () {
 
     // Vote inspector: same scoring as voteCandidatePool but returns the full table
     // so the browser console can show every find, its votes, and the winner.
-    // Row: { value, norm, count, score, labeledCount }. Sorted by score desc.
+    // Row: { value, norm, count, score, labeledCount, files, patterns, excerpts }.
+    // Sorted by score desc. Step 1g-1: patterns = distinct matched label/fallback
+    // names; excerpts = up to 2 distinct source snippets (WHERE each find came from).
     // Called by: parseProjectInfoPooled() for _debug; document-parser.js logs it
     // when window._parserDebug is true. Pure (no DOM) so tests can assert it.
     function voteCandidatePoolDebug(cands) {
         const rows = [];
         if (!cands || cands.length === 0) return { winner: null, rows };
-        const groups = new Map(); // norm -> { original, score, count, labeledCount, files:Set }
+        const groups = new Map(); // norm -> { original, score, count, labeledCount, files:Set, patterns:Set, excerpts:[] }
         for (const c of cands) {
             const norm = normalizeForPool(c.value);
             if (!norm) continue;
-            if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, count: 0, labeledCount: 0, files: new Set() });
+            if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, count: 0, labeledCount: 0, files: new Set(), patterns: new Set(), excerpts: [] });
             const g = groups.get(norm);
             g.score += (c.weight || 0.85);
             g.count += 1;
             if (c.labeled) g.labeledCount += 1;
             if (c.fileName) g.files.add(c.fileName);
+            if (c.pattern) g.patterns.add(c.pattern);
+            if (c.excerpt && g.excerpts.length < 2 && g.excerpts.indexOf(c.excerpt) === -1) g.excerpts.push(c.excerpt);
         }
         for (const [norm, g] of groups.entries()) {
-            rows.push({ value: g.original, norm, count: g.count, score: Math.round(g.score * 100) / 100, labeledCount: g.labeledCount, files: [...g.files] });
+            rows.push({ value: g.original, norm, count: g.count, score: Math.round(g.score * 100) / 100, labeledCount: g.labeledCount, files: [...g.files], patterns: [...g.patterns], excerpts: g.excerpts });
         }
         rows.sort((a, b) => b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
         return { winner: rows.length ? rows[0].value : null, rows };
+    }
+
+    // Choice B disagree check (Step 1g-2): do the top-2 finds both look trusted but
+    // disagree? Trigger: ≥2 rows, both labeled, different values (guaranteed by
+    // grouping), winner score < 2× runner-up. Returns { winner, runnerUp } or null.
+    // Silent on a clear winner so clean files see no extra note (automation goal).
+    // Called by: parseProjectInfoPooled() per pooled field. Pure (no DOM).
+    function pooledDisagree(debugRows) {
+        if (!debugRows || debugRows.length < 2) return null;
+        const [first, second] = debugRows;
+        if (!first.labeledCount || !second.labeledCount) return null;
+        if (first.score >= 2 * second.score) return null;
+        return {
+            winner: { value: first.value, count: first.count, files: first.files },
+            runnerUp: { value: second.value, count: second.count, files: second.files },
+        };
     }
 
     // Pooled parse across files (Step 1e-4 VALUE track).
@@ -1085,6 +1121,7 @@ const DocumentParserCore = (function () {
             pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
         }
         // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
+        // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
         const bDbg = voteCandidatePoolDebug(pile.budget);
         const dDbg = voteCandidatePoolDebug(pile.duration);
         const sDbg = voteCandidatePoolDebug(pile.startDate);
@@ -1095,6 +1132,12 @@ const DocumentParserCore = (function () {
             startDate: sDbg.winner,
             endDate: eDbg.winner,
             _debug: { budget: bDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
+            _disagree: {
+                budget: pooledDisagree(bDbg.rows),
+                duration: pooledDisagree(dDbg.rows),
+                startDate: pooledDisagree(sDbg.rows),
+                endDate: pooledDisagree(eDbg.rows),
+            },
         };
     }
 
@@ -1197,6 +1240,7 @@ const DocumentParserCore = (function () {
         collectDateCandidates,
         voteCandidatePool,
         voteCandidatePoolDebug,
+        pooledDisagree,
         parseProjectInfoPooled,
     };
 })();

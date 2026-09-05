@@ -315,3 +315,57 @@ test('Step 1f-2/1f-3: inspector debug + contract label beats repeated table gues
     assert.equal(core.getSectionWeight('Original Contract Amount summary'), 1.0);
     assert.ok(core.getSectionWeight('Accomplishment Report breakdown table') < 0.6);
 });
+
+// ─── Step 1g: excerpts + Choice B disagree ───────────────────────────────────
+
+test('Step 1g-1: debug rows carry pattern name + source excerpt', () => {
+    const text = [
+        'Accomplishment Report breakdown table',
+        'Line item Total Cost P 92,025.00',
+        'Original Contract Amount: Php 6,495,049.29',
+    ].join('\n');
+    const pooled = core.parseProjectInfoPooled([{ text, fileName: 'bundle.pdf' }]);
+    const rows = pooled._debug.budget;
+    assert.ok(rows.length >= 2);
+    for (const r of rows) {
+        assert.ok(typeof r.patterns !== 'undefined' && r.patterns.length > 0);
+        assert.ok(typeof r.excerpts !== 'undefined' && r.excerpts.length > 0);
+    }
+    // The summary row matched a contract label pattern; the table row did not.
+    const summary = rows.find(r => r.value === '6495049.29');
+    assert.ok(summary.patterns.some(p => /revised|generic|amount-is|final-anchor|discount-anchor/.test(p)));
+    assert.ok(summary.excerpts.some(e => /Original Contract Amount/i.test(e)));
+});
+
+test('Step 1g-2: close labeled disagreement raises a Choice B flag', () => {
+    // 1x summary vs 2x table repeats (the real CHS-bundle shape): winner filled,
+    // but disagree flag carries both options for the amber pick-one note.
+    const summary = 'Original Contract Amount: Php 6,495,049.29';
+    const table = [
+        'Accomplishment Report breakdown table',
+        'Line item Total Cost P 92,025.00',
+        'Line item Total Cost P 92,025.00',
+        'Line item Total Cost P 92,025.00',
+    ].join('\n');
+    const pooled = core.parseProjectInfoPooled([
+        { text: summary, fileName: 'summary.pdf' },
+        { text: table, fileName: 'accomplishment.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+    assert.ok(pooled._disagree && pooled._disagree.budget);
+    const vals = [pooled._disagree.budget.winner.value, pooled._disagree.budget.runnerUp.value].sort();
+    assert.deepEqual(vals, ['6495049.29', '92025.00'].sort());
+});
+
+test('Step 1g-2: clear winner raises no flag (clean files see no note)', () => {
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Original Contract Amount: Php 6,495,049.29', fileName: 'a.pdf' },
+    ]);
+    assert.equal(pooled.budget, '6495049.29');
+    assert.equal(pooled._disagree.budget, null);
+    // Unlabeled runner-up alone never triggers (both sides must look trusted).
+    assert.equal(core.pooledDisagree([
+        { value: '6495049.29', norm: '6495049.29', count: 1, score: 1.0, labeledCount: 1 },
+        { value: '92025.00', norm: '92025.00', count: 3, score: 0.6, labeledCount: 0 },
+    ]), null);
+});

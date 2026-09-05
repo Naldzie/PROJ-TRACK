@@ -110,6 +110,9 @@ async function runDocumentAutofill() {
         // core.parseProjectInfoPooled exists; WARNING track (red banner) still uses
         // per-file winners via getMismatchInfo so file accountability is kept.
         let parsed = voteParsedFields(perFileData);
+        // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote
+        // (null when one clear winner). Set inside the pooled block below.
+        let pooledDisagreeInfo = null;
         try {
             const core = getCore();
             if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
@@ -125,6 +128,7 @@ async function runDocumentAutofill() {
                 // then upload the PDF(s) again. Copy the tables and paste them here.
                 try {
                     window._autofillVoteDebug = pooled._debug || null;
+                    pooledDisagreeInfo = pooled._disagree || null;
                     if (typeof window !== 'undefined' && window._parserDebug && pooled._debug) {
                         console.groupCollapsed('[Parser] pooled vote inspector (all finds → winner)');
                         for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
@@ -158,8 +162,12 @@ async function runDocumentAutofill() {
             window._autofillMismatch = null;
         }
 
+        // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote.
+        // Stored for the preview modal to render amber pick-one notes. Silent when clear.
+        window._autofillDisagree = pooledDisagreeInfo;
+
         // Show the preview modal — nothing is written to the form until Apply.
-        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo });
+        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree });
 
     } catch (err) {
         console.error('[DocumentParser] Autofill failed:', err);
@@ -386,6 +394,14 @@ function _markAutofilled(elementId) {
 // Shows the parsed fields for review; nothing is written
 // to the form until the user clicks Apply.
 // ===================================================
+// One-click pick for Step 1g-2 Choice B disagree notes in the preview modal.
+// Writes the chosen value into the field's preview input (user can still edit).
+// Called by: inline onclick on the amber note buttons built by showAutofillPreview().
+window._pickDisagreeValue = function (inputId, val) {
+    const el = document.getElementById(inputId);
+    if (el) { el.value = val; el.focus(); }
+};
+
 function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     const modalEl = document.getElementById('autofillPreviewModal');
     if (!modalEl) {
@@ -417,6 +433,25 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         // the calendar shows the extracted date correctly.
         const core = getCore();
         const DATE_FIELDS = ['plannedStartDate', 'plannedEndDate'];
+        // Step 1g-2 Choice B: amber pick-one notes for pooled fields whose top-2
+        // finds both look trusted but disagree. Keyed by CORE field name; silent
+        // when the vote has one clear winner (automation goal: clean files see nothing).
+        const disagree = (arguments[1] && arguments[1].disagree) ? arguments[1].disagree : (window._autofillDisagree || null);
+        const DISAGREE_INPUT = { budget: 'projectBudget', duration: 'plannedDuration', startDate: 'plannedStartDate', endDate: 'plannedEndDate' };
+        const disagreeNoteFor = (inputId) => {
+            if (!disagree) return '';
+            for (const coreField of Object.keys(DISAGREE_INPUT)) {
+                if (DISAGREE_INPUT[coreField] !== inputId) continue;
+                const d = disagree[coreField];
+                if (!d || !d.winner || !d.runnerUp) continue;
+                // Parser outputs are numeric/date strings (no quotes) — safe for onclick.
+                const wBtn = '<button type="button" class="btn btn-sm btn-outline-warning me-1" onclick="window._pickDisagreeValue(\'previewInput-' + inputId + '\',\'' + escapeHtml(d.winner.value) + '\')">' + escapeHtml(d.winner.value) + '</button>';
+                const rBtn = '<button type="button" class="btn btn-sm btn-outline-warning" onclick="window._pickDisagreeValue(\'previewInput-' + inputId + '\',\'' + escapeHtml(d.runnerUp.value) + '\')">' + escapeHtml(d.runnerUp.value) + '</button>';
+                return '<div class="alert alert-warning py-1 px-2 mt-1 mb-0" style="font-size:0.85em;">' +
+                    '<i class="bi bi-question-circle"></i> I found two different values — please pick the right one:<br>' + wBtn + rBtn + '</div>';
+            }
+            return '';
+        };
         tbody.innerHTML = fields.map(f => {
             const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
             const value = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
@@ -427,6 +462,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                         <input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
                             value="${value ? escapeHtml(value) : ''}"
                             placeholder="${f.value ? '' : 'Not found — fill manually'}" />
+                        ${disagreeNoteFor(f.id)}
                     </td>
                 </tr>
             `;

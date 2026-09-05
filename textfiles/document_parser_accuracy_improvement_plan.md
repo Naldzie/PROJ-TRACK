@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: ✅ Step 1f COMMITTED (JS 47/47) — ⏸️ PAUSED per user. NEXT = Step 1g (Choice B: ask-user on disagreeing labeled amounts + inspector source snippets). S-curve Steps 2-4 still deferred. Branch: phase-5-parser-accuracy.
+# Status: 🔄 Step 1g IMPLEMENTED + tested (JS 50/50), Step 1h DIAGNOSED + planned (no code); committing + pushing all per user. NEXT = build Step 1h when user says go. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -603,7 +603,7 @@ Related plan
       the budget table here if 92025 (or another figure) persists — the log will show
       the exact source line/section instead of guessing. Short title acceptable fallback.
 
-  STEP 1g — Choice B (ask-user, ANY field) + inspector excerpts FIRST  ⬜ NOT STARTED (scope finalized with user 2026-09-04, no code yet)
+  STEP 1g — Choice B (ask-user, ANY field) + inspector excerpts FIRST  🔄 IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user
     Context: real-bundle inspector output (user pasted 2026-09-04):
       budget winner 92025.00 (count 2, score 2, labeled 2) beats 6495049.29
       (count 1, score 1, labeled 1) and 5049.29 (1/1/1). Duration 90, start
@@ -659,6 +659,41 @@ Related plan
       (1x 6.4M labeled vs 2x 92k labeled → winner filled + disagree flag true);
       (iii) agree fixture (single clear winner → flag false); (iv) full JS suite green
       (47/47 baseline) + 4 contract files + bundle browser check unchanged.
+    - No new deps, no vite, S-curve still deferred.
+
+  STEP 1h — Date-ghost money fix (92025 diagnosis PROVEN by excerpts)  ⬜ NOT STARTED (diagnosed + planned 2026-09-04, no code yet)
+    Diagnosis (user pasted expanded inspector 2026-09-04 — excerpts WORKED first try):
+      budget rows: 92025.00 patterns ['revised','generic'] excerpt '2. Date of Effectivity
+      of Contract December 9, 202… | 5. Original Expiry date March 9, 2025 | 6. App' (ONE
+      distinct excerpt, count 2 = Case A duplicate-ish: same neighborhood matched by two
+      label patterns); 5049.29 pattern ['generic'] excerpt '…6.495,049.29 | 4. Revised
+      Contract Amount XXX …'; 6495049.29 pattern ['generic'] excerpt 'Mode of
+      Implementation : By Contract | Contractor … tem Gost % of Amount of
+      Accomplishment | No Tota' (true total, accomplishment-table bottom row, alone).
+      User's call CONFIRMED: 92025 is the start date (December 9, 2025) misread as money.
+      Precise mechanism — Step 1e-2 glueMoneyFragments /,\\s+(\\d)/ turns the DATE comma
+      in '9, 2025' into '9,2025' → asMoney 92025.00; 'revised'+'generic' both match around
+      it → full-weight labeled ×2 → beats the lone true 6,495,049.29 (2-vs-1).
+      Companion find: 5049.29 comes from OCR period-thousands '6.495,049.29' (excerpt
+      verbatim) which asMoney cannot parse, keeping only the tail.
+      Page numbers NOT needed — excerpts pinpointed everything (deferred stays deferred).
+
+    1h-1. Tame the comma glue (the actual bug; core glueMoneyFragments).
+        - Glue comma-space ONLY for thousands groups: /,\\s+(\\d{3}(?!\\d))/ — '6, 495'
+          still glues, '9, 2025' (4-digit year) never does. Other glue rules already
+          require a decimal point, so dates were never at risk from them.
+    1h-2. Never take money from a date (belt-and-suspenders; collectBudgetCandidates).
+        - Skip a budget candidate when its value text parses as a calendar date AND carries
+          no money marker (Php/₱/P-prefix/pesos/amount). A future glue misfire can never
+          mint a price from a date again.
+    1h-3. Period-thousands shape (asMoney, money-marked strings only).
+        - In Php/₱-marked figures with mixed separators ('Php 6.495,049.29'), treat the LAST
+          dot as the decimal, strip other dots/commas appropriately → full 6495049.29.
+          Ordinary sentences untouched (requires the money marker).
+    - Tests: (i) 'December 9, 2025' yields NO budget candidate; (ii) 'P 6, 495,049.29'
+      still glues full; (iii) '(Php 6.495,049.29)' reads full; (iv) pooled 1x-summary vs
+      2x-date-ghosts → 6495049.29 winner AND _disagree.budget null (no amber note on a
+      solved case); (v) full JS suite green + 4 contract files + bundle browser re-check.
     - No new deps, no vite, S-curve still deferred.
 
   STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
@@ -1118,6 +1153,37 @@ Related plan
       Page numbers confirmed LOST at :273 merge — deferred by design.
     - Action: Step 1g section rewritten with final scope + file:line map; committing and
       pushing per user, no implementation yet. NEXT = build 1g-1 when user says go.
+
+  2026-09-04 — Step 1g IMPLEMENTED (code + tests, NOT committed per user).
+    - 1g-1 excerpts: candidates gain {pattern, excerpt} — budget labelRes named
+      (revised/final-anchor/discount-anchor/amount-is/generic) + fallbacks named
+      (paren-php/net-total/p-prefix) + ±2-line excerptOf; duration/date collectors gain
+      {pattern: labeled/within-clause, excerpt}. Debug rows gain {patterns[], excerpts[]
+      (≤2 distinct)}. Codebase fact confirmed during build: page numbers are LOST at
+      extractTextFromPDF merge (document-parser.js:273) — deferred by design, excerpts
+      alone identify the source.
+    - 1g-2 Choice B: core pooledDisagree(rows) → {winner, runnerUp} or null (both labeled,
+      winner < 2× runner-up; silent otherwise); pooled return gains _disagree per field;
+      wrapper stashes window._autofillDisagree, passes to showAutofillPreview, renders
+      amber pick-one note with two one-click buttons (window._pickDisagreeValue) under
+      budget/duration/startDate/endDate rows; input stays editable, Apply never blocked.
+      Applies to ANY pooled field; title/contractor/location unchanged (red banner covers).
+    - Tests (+3 Step 1g fixtures, core 30/30): pattern+excerpt presence + summary-pattern
+      check; 1x-summary-vs-3x-table → winner filled AND disagree flag carries both values;
+      clear-winner → null flag + unlabeled runner-up → null. Full JS 50/50
+      (core 30 + scurve 20). No PHP touched. No commit per user.
+    - Next: user browser re-test on real CHS bundle — (a) paste budget table with new
+      patterns/excerpts columns to confirm the two 92025s' source, (b) confirm the amber
+      note appears under Contract Price with both values clickable.
+
+  2026-09-04 — Step 1h DIAGNOSED + planned; committing + pushing all (no 1h code).
+    - User pasted expanded excerpts: 92025 patterns ['revised','generic'], ONE distinct
+      excerpt around 'Date of Effectivity of Contract December 9, 202…' → user's
+      date-ghost call CONFIRMED; mechanism = Step 1e-2 comma glue on '9, 2025' + double
+      pattern match → 2-vs-1. Companion: 5049.29 from OCR '6.495,049.29' (period
+      thousands). True 6,495,049.29 sits alone in the accomplishment-table bottom row.
+    - Logged as STEP 1h above (glue thousands-only + date-exclusion + period-thousands).
+      User: log + commit + push everything, no new fix yet. NEXT = build 1h on go-ahead.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
