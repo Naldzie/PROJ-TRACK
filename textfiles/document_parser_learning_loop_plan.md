@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 PHASE L1 IMPLEMENTED + tested, browser proof POSTPONED by user (all 5 test files extract accurately — no competing values left to correct). Committing + pushing per user. L2/L3 NOT STARTED.
+# Date: September 4, 2026 — Status: 🔄 L2/L3 PLANNED in detail (codebase-studied, no code). L1 committed on phase-6-parser-learning. NEXT = build L2 on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -121,22 +121,41 @@ Frontend convention (IMPORTANT)
     - Proof for user browser: correct one box on the CHS bundle → one proposed row in
       parser_keyword_proposals; extraction output byte-identical (reader untouched).
 
-  PHASE L2 — Review list (staff + admin)  ⬜ NOT STARTED
-    - Manage modal (BudgetSource clone): list proposals with counts, approve → live,
-      reject → delete, live list editable/deletable. Gates per L0a.
-    - Tests: policy (contractor 403, staff 200), approve flips status, threshold
-      auto-promotion at ≥3 occurrences.
-    - Proof: approve one proposal in the browser; audit log shows who/when.
+  PHASE L2 — Review list (staff + admin)  ⬜ NOT STARTED (fully studied 2026-09-04, no code)
+    - Clone: _manage_budget_sources_modal.blade.php shell (modal-lg, header/body/footer),
+      helpers (bsHeaders/bsExtractErrorMessage/bsEscapeHtml pattern → pkp* names), CRUD fetch
+      shapes, show/hidden modal wiring, shared showToast + showDeleteConfirmation (do NOT
+      re-implement). Drop the add-form (rows arrive from harvesting); list-group → table
+      (label | field | occurrences | status badge | excerpt w/ title=full); add status-filter
+      tabs (All/Proposed/Live), ORDER BY occurrences DESC. Approve→PATCH live, Reject→DELETE,
+      live rows deletable; NO edit-prompt copy; NO projects_count/422 guard; show the ≥3
+      auto-live hint instead. Dropdown-refresh half of hidden.bs.modal does NOT apply
+      (standalone screen, not stacked on addProjectModal).
+    - Placement (user: BOTH): (a) standalone menu entry for periodic review + (b) launcher
+      behind the create-project popup (same stacking opener pattern as budget sources).
+    - Backend: ParserKeywordProposalController += getAllForManagement (?status= filter;
+      id/field/label_phrase/excerpt/occurrences/status/created_at) + approve + destroy
+      (soft-delete suffices — no unique index to release); LogsActivity on each; staff+admin
+      gates (mirror collect); new ParserKeywordProposalPolicy (viewAny/view open,
+      write ops admin||staff) AND register it in AppServiceProvider (BudgetSource missed
+      this — do not repeat); routes mirrored in admin + staff groups (contractors: nothing).
+    - Tests: staff 200 / contractor redirect / approve flips proposed→live / auto-promote
+      via review path. Proof: approve one row in browser; audit shows who/when.
 
-  PHASE L3 — Reader consults the table  ⬜ NOT STARTED
-    - Endpoint exposes live pairs (read-only for staff/contractor roles, same pattern as
-      budget-sources list); core loads them as LOWEST-priority label fallback (below all
-      hardcoded labels — nothing working today can regress); cache 24h keyed by table
-      updated_at.
-    - Tests: synthetic paraphrase fixture (rules miss → approved pair → hit); hardcoded
-      labels still win ties; empty table = today's behavior exactly.
-    - Proof: paraphrased-label file fails before approval, passes after, with no other
-      fixture changing.
+  PHASE L3 — Reader consults the table  ⬜ NOT STARTED (seam verified 2026-09-04, no code)
+    - Seam: optional-parameter injection (NOT globals/setters — preserves pure/node --test).
+      isTitleValueCandidate(line, keywords=TITLE_VALUE_KEYWORDS),
+      isContractorValueCandidate(line, keywords=CONTRACTOR_VALUE_KEYWORDS),
+      parseProjectInfo(doc, opts)/parseProjectInfoPooled(docs, opts) forward to both loops
+      AND the 3 greedy-join sites in extractTitle (core :461/:508/:553). Old calls unchanged.
+    - Loader (classic script): fetch live pairs ONCE at top of runDocumentAutofill (same
+      role-base + CSRF pattern as harvestCorrections); browser cache 24h keyed by table
+      updated_at (user approved 24h; NO storage-TTL precedent in public/js — new
+      sessionStorage fetchedAt wrapper). Lowest-priority fallback only (below hardcoded).
+    - Tests: synthetic paraphrase fixture (miss → approve → hit); hardcoded wins ties;
+      empty table = today's behavior exactly. Paraphrase corpus generated at L3 kickoff
+      (open question resolved: generate, not hand-write).
+    - Proof: paraphrased-label file fails before approval, passes after, nothing else moving.
 
 ===============================================================================
   6. SESSION LOGS
@@ -154,7 +173,21 @@ Frontend convention (IMPORTANT)
       User chose Option 2 (harvest candidate pairs immediately) + no commit.
     - See PHASE L1 section above for the full build record. Open question from §7 answered
       in code: proposals capture the firing context via excerpt + had_disagree flag.
-    - Next: user browser proof (one corrected box → one proposed row), then L2 on go-ahead.
+    - Backend: migration + model + collect endpoint (admin+staff) + routes; core
+      mineCorrectionLabel + export; wrapper snapshot/diff/harvest + fire-and-forget POST.
+      Tests: 2 core mining fixtures + 4 PHP feature tests. JS 64/64; full PHP suite zero
+      regressions (6 pre-existing failures reproduced on clean tree).
+    - Committed + pushed as 69cf1a4 on phase-6-parser-learning per user (upstream tracking set).
+
+  2026-09-04 — L2/L3 fully studied (read-only) + decisions logged, NO CODE per user.
+    - User: placement BOTH (standalone menu + popup launcher); cache 24h; log + commit +
+      push now, implementation later. Study via two explore agents: manage-modal clone map
+      (shell/helpers/CRUD shapes/event wiring + shared toast/delete-confirm deps) and L3 seam
+      (optional-param injection; greedy-join sites core :461/:508/:553 must also thread;
+      no keyword channel exists today; no storage-TTL precedent — new wrapper needed).
+    - Open questions §7 resolved: paraphrases GENERATED at L3; pattern-capture folded into
+      excerpt + had_disagree (already shipped in L1).
+    - Committing + pushing per user.
 
   2026-09-04 — Browser proof POSTPONED by user (nothing to correct).
     - All 5 test files now extract accurately — no competing values anywhere, so no
