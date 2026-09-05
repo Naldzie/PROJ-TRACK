@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Step 1i COMMITTED (JS 56/56) + browser re-test logged (4/4 files accurate); NEXT = 1i follow-up (labeled dot-strip extension + collector coverage audit) then user multi-file runs. Branch: phase-5-parser-accuracy.
+# Status: 🔄 Step 1i COMMITTED (JS 56/56) + tests 5-7 + OCR starvation root-caused; NEXT = build 1i follow-up (dot-strip, coverage) + OCR fixes (per-file budget, truncation note, adjustable budget) on user go-ahead. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1295,6 +1295,16 @@ Related plan
     - Next: user browser re-test on real CHS bundle — price should fill 6,495,049.29
       (item 3 same-line + table header + total-row corroborate; Revised xxx silent).
 
+  2026-09-04 — OCR starvation root-caused + adjustable budget designed (plan only, no code).
+    - User's order-matters challenge (test 7 twice contract-first = bundle fields missing;
+      bundle-first = everything extracts) → verified shared 10-page cap (document-parser.js
+      :226 shared, reset only :36 never :50); clarity hypothesis ruled out (same 2x canvas).
+      "Scan luck" corrected to deterministic starvation. Fixes approved: O1 per-file budget
+      + reset per run, O2 truncation note, O3 per-file inspector counts. Adjustable budget
+      approved as designed: opt-in "read more pages" control, default 10/file, explicit time
+      warning (~2s/page), 50-page hard cap stays; recall up, accuracy not guaranteed.
+    - Logged as OCR BUDGET STARVATION section above. NEXT = build 1i follow-up + O1-O3 on go-ahead.
+
   2026-09-04 — Browser re-test: 4/4 files accurate (user) + 1i follow-up planned.
     - Test 1 Contract-CHS Savings (scanned): title/price/duration/contractor accurate.
       Pool: budget 6495049.29 wins via word-amount fallback (paren-php, excerpt proves
@@ -1325,7 +1335,37 @@ Related plan
       participates (per-field fallback: when pool is empty AND single-match hit exists,
       optionally surface a low-confidence note — TBD in build).
     - Tests: (i) unmarked '6.495,049.29' labeled line reads full; (ii) crop fixture yields
-      ≥1 budget candidate; (iii) full suite green + 5-file browser set unchanged.
+      at-least-1 budget candidate; (iii) full suite green + 5-file browser set unchanged.
+
+  OCR BUDGET STARVATION — root-caused 2026-09-04 (user re-tests; findings + fixes APPROVED, no code yet).
+    Finding (user's order-matters challenge → verified in code, document-parser.js):
+      the photo-reader cap (OCR_PAGE_LIMIT = 10, :226) is SHARED across all files
+      first-come-first-served in upload order, reset ONLY on popup close
+      (cancelDocumentAutofill :36), never at preview start (:50). Rendering quality is
+      order-independent (same 2x canvas always) — user's "clearer first image" hypothesis
+      ruled out. Replay: test 7 contract-first (7 scanned pages eat ~7, recreation needs
+      none, bundle gets ~3 then cut) → bundle dates/location/price missing TWICE the same
+      way; bundle-first → bundle gets full 10 → everything extracts. The forgotten-debug
+      re-run was most starved (counter never reset between previews). Earlier "scan luck"
+      verdict CORRECTED to deterministic starvation. Multi-file runs inherit it: any
+      scanned file after the budget is spent reads partial-but-silent.
+    Fixes (user: yes/yes/yes):
+      - O1. Fair per-file budget, reset every run: each file gets its own 10 scanned pages;
+        counter resets at preview start. Order stops mattering; re-running stops starving.
+      - O2. Truncation note: file with more scanned pages than budget shows a small note
+        ("first 10 scanned pages read") — partial never poses as confident again.
+      - O3. Per-file contribution counts in the inspector ("bundle: 0 photo-pages read")
+        — turns silent-vs-fair questions into one glance (queued earlier, re-affirmed).
+    Adjustable budget (user proposal — logged as designed, not yet built):
+      - Preview shows a small "read more pages" control (default 10/file) for unsatisfied
+        runs, with an explicit time warning (each page ~2s: 20 pages ~40s, 50 ~2min).
+        Yes: more pages = higher recall on big bundles (later pages actually get read).
+        Limits: NOT accuracy-guaranteed (later pages may hold no new fields; OCR text stays
+        rough), and the 50-page/PDF ceiling (extractTextFromPDF maxPages) stays as the hard
+        cap. Opt-in per run, never the default — keeps routine uploads fast.
+    - Tests: (i) 3-file bundle-second run extracts bundle dates/price (order swapped both
+      ways, same result); (ii) back-to-back previews without closing popup read identically;
+      (iii) over-budget file shows the truncation note; (iv) full suite green.
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
