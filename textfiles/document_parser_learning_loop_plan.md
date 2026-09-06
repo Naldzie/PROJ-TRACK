@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 C1+C2 LOGGED (per-page shape ledger, 3-state note); full batch committing + pushing per user. NEXT = build C1+C2 + ABC verdict on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 F1b+D1+T2 LOGGED (suffix dup root-caused to wrapper lines 931+949; period-date mechanism found; two-file empty needs run-files line). NEXT = build F1b+D1 on go-ahead; T2 evidence-gated.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -449,6 +449,58 @@ Frontend convention (IMPORTANT)
       — not the system — is the tilt detector). No change.
     - ABC: still no new evidence either way; tiebreaker remains the user's copy-text.
 
+  2026-09-04 — C1+C2 IMPLEMENTED (code, NOT committed per user).
+    - C1: landscapePages[] ledger per file (extract→reports→rescan); straighten-all turns ONLY
+      ledgered sideways pages, with graceful fallback to scannedPageNums/ocrPages for old
+      stashes predating the ledger. Uniform test4 behaves identically; mixed bundles no longer
+      vandalized. Cancel path unchanged (rotations already reset per session).
+    - C2: note renders "visited all N pages; M of K scanned pages yielded text (…per file
+      selected) — scan complete." vs "visited N of T pages; … — later pages were not scanned."
+      using the carried pagesVisited/numPages (no new plumbing — fields already flowed).
+    - Tests: node --check clean + JS 70/70 green (no core changes this round; C-paths are
+      DOM-timing — browser proof covers them). No PHP touched. No commit.
+    - Next: user browser proof — (a) mixed-bundle straighten-all leaves straight pages alone
+      (degrees labels); (b) both note states render with real numbers.
+
+  2026-09-04 — P-ROT + F1/F2 LOGGED + ABC REACHABILITY VERDICT (no code yet).
+    - Auto-vs-rotation (user Q, answered): auto orientation = reader DETECTS the angle (dead in
+      this CDN build — fails loud/silent, pinned to plain); rotation buttons = user DECLARES the
+      angle per page (deterministic, always works). Same photo-reader underneath, opposite trust
+      models; buttons never needed auto to function.
+    - P-ROT (approved pattern): ⟳ buttons for ALL scanned pages (scannedPageNums ledger), failed
+      pages badged "no text yet — straighten?". Fixes the flaw the user caught: buttons currently
+      list only photo-read successes, so tilted-but-unread pages (the ones needing it most) are
+      unactionable — and the 2-vs-3 button flicker is marginal pages crossing the 10-char bar
+      between runs (photo-reading is slightly non-deterministic; NOT a regression).
+    - F1/F2 (still unbuilt): note-suffix de-duplication ("scan complete. — all pages read, scan
+      complete." stutter) + one-line ⟳ legend in the gray note.
+    - ABC verdict (user's 6 page photos as evidence): read pages 4/6/10 (scope list, statement,
+      accomplishment table) contain NO ABC figure; ABC lives on unread pages (abstract "Approved
+      Budget for the Contract: P …" — already labeled; funds cert "approved budget for the
+      contract of … PESOS" — already matched; cost estimate "TOTAL ESTIMATED PROJECT COST" —
+      banked for loop-first). Miss = reachability, proven by inventories both sides. NO label
+      changes. Small-skew pages (abstract ~2-3°) stay within reader tolerance; arbitrary-angle
+      rotation DEFERRED as over-engineering unless a skewed page returns soup post-straighten.
+    - Thresholds FROZEN (re-affirmed): no loosening for fragments — the 23.00 lesson stands
+      with test4's soup as second witness.
+
+  2026-09-04 — F1b+D1+T2 LOGGED (mechanisms verified read-only, no code yet).
+    - Test4 straighten-all PROVEN in production (soup → full statement page: 19 items, both
+      amounts, contractor, word-amount clause). R-reach closed as a bug class.
+    - F1b (was F1): note stutter root-caused — wrapper line 931 builds the sentence WITH its
+      ending, line 949 appends the ending AGAIN (both states affected). Fix = delete the
+      line-949 duplicate append (one line).
+    - D1: test5 end-date miss MECHANISM FOUND — file writes "Date of Completion March 13. 2026"
+      (period = OCR-misread comma); wordy-date regex (core :98) accepts `,?` only → null. Start
+      survived via the comma-style duplicate elsewhere. Fix = accept `[,.]?` (one char-class);
+      comma behavior byte-identical; "July 14. 2025"-style variants come free.
+    - T2: two-file empty is genuinely anomalous (pooled voting only ADDS finds; banner track can't
+      blank filled boxes). Suspects ranked: (a) stale code — check the `v=` build number after
+      Ctrl+F5; (b) superseded run winning the race — S2 guard LOGS when it blocks, so its
+      absence/presence decides; (c) worker-level failure (least likely — engine failure has its
+      own message, not seen). Needs the `[Parser] preview run N: files=[...]` line + refresh
+      status. NO code until evidence names it.
+
   2026-09-04 — L1 FIRST REAL FIRING analyzed + M1-M3 logged (no code yet).
     - User test (test5, hard refresh): corrected ABC + picked duration 205 → DB rows id 8 (abc)
       + id 9 (duration), BOTH label_phrase NULL + excerpt NULL. Pipeline proven (harvest ran,
@@ -493,6 +545,45 @@ Frontend convention (IMPORTANT)
       from typed '4834297.59' AND '4,834,297.59' → label 'I budget Amount Php'): separators are
       stripped pre-compare both sides, so missing commas NEVER block anchoring. The NULL/NULL
       rows are therefore page-limit/garbling, not formatting — full-scan default stays the remedy.
+
+  2026-09-04 — OCR BATCH APPROVED (research done: web sources + full code audit, no code yet).
+    - Audit finding (agents): pipeline runs tesseract STOCK — zero preprocessing (render→recognize
+      untouched), default segmentation, English-only, fixed 2× render scale, no deskew, no snapshot
+      export, S-curve path has no OCR at all. All additive from here — nothing working can regress.
+    - User approved: group 1 (render-sharper 2→3 + PSM retry ladder + light canvas cleanup) first,
+      then headline item 4 (OpenCV.js deskew + adaptive threshold + denoise), with item 5 (page
+      snapshots so the assistant truly sees pixels) bundled alongside either.
+    - Vendoring answer (user Q: re-download on deploy/copy?): NO — OpenCV.js ships INSIDE
+      public/js/vendor/ like the PDF reader (committed to git, travels with the project directory).
+      One ~8MB download PER BROWSER on first tilted-page use, then cached. Residential wifi is
+      fine; campus deployment inherits it with zero extra steps. No server install, no PHP dep.
+    - Tilt-ABC hypothesis (user: unread ABC pages 1/3/7 may be tilt victims): PLAUSIBLE and
+      consistent (abstract + funds-cert photos both lean; statement/accomplishment pages that DID
+      read are the upright ones). Decisive test stays the same: straighten-button re-read of those
+      pages — fills ABC proves tilt, still-empty proves content/garbling. Workaround live today
+      (per-page ⟳); systematic fix is item 4 above.
+    - Sequence reaffirmed: OCR batch → L3 when the desk holds real rows → AI fallback last. L3 desk
+      still empty; no fuel to consult however built. S-curve OCR stays out of scope (deferred tier).
+
+  2026-09-04 — OCR GROUP 1 IMPLEMENTED (code, NOT committed per user).
+    - Sharper render: ocrPage scale 2→3 (~300 DPI, tesseract's documented sweet spot; ~2.25× pixels
+      per page — per-file page budget still caps total time). No other render change.
+    - Canvas cleanup: new preprocessOcrCanvas() (grayscale via luminosity + contrast stretch to full
+      range, sampled min/max, flat-image early-out, all best-effort in place) runs once per scanned
+      page after render, before every recognize attempt. Plain 2D APIs — no new library.
+    - PSM ladder: new recognizeEnglish() helper — default segmentation first, then a single retry as
+      uniform block (PSM 6: tables/forms) and one as sparse text (PSM 11: fragments); first result
+      with 10+ chars wins. Retries fire ONLY on failure (clean pages pay nothing); page budget counts
+      pages, not attempts (worst case 3 reads per failing page — bounded). Wired into all three
+      plain-eng call sites (OSD-empty retry, OSD-throw fallback, steady path); OSD branch itself
+      unchanged. Engine-failure marking preserved (all-attempts-threw → flag).
+    - Tests: node --check clean + JS 70/70 green (core untouched; OCR paths are canvas/network
+      timing — browser proof covers them). PSM option shape ({tessedit_pageseg_mode}) follows the
+      tesseract.js-recognize options pass-through; if the build rejects unknown options the helper's
+      per-attempt try/catch degrades each retry to a logged skip — verify in browser console that
+      retries actually attempt (no silent no-op). No PHP touched. No commit.
+    - Next: user browser proof on faint/fragment pages (test4-class retest: more yielded text per
+      page, same-or-better boxes); then item 4 (OpenCV.js) on go-ahead.
 
 ===============================================================================
   7. OPEN QUESTIONS

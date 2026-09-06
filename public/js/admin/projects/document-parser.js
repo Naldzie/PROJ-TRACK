@@ -117,7 +117,7 @@ async function runDocumentAutofill() {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
@@ -125,7 +125,7 @@ async function runDocumentAutofill() {
                 // and the per-page rotate control (even uncut ones). allLandscape flags fully-
                 // sideways scans for the pre-preview straighten-all rescue.
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [] });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text });
@@ -328,12 +328,70 @@ function warmTesseract() {
     } catch (e) { /* best-effort */ }
 }
 
+// OCR group 1: light canvas cleanup (no new library) — grayscale + contrast stretch via
+// plain 2D canvas APIs, so washed-out photocopies reach the reader with fuller blacks.
+// Runs on the already-rendered canvas, in place, best-effort (any failure keeps the original).
+// Called by: ocrPage() once per scanned page, before any recognize() attempt.
+function preprocessOcrCanvas(canvas) {
+    try {
+        const ctx = canvas.getContext('2d');
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = img.data;
+        let lo = 255, hi = 0;
+        for (let i = 0; i < d.length; i += 16) {
+            const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+            if (g < lo) lo = g;
+            if (g > hi) hi = g;
+        }
+        if (hi - lo < 8) return;
+        const range = (hi - lo) || 1;
+        for (let i = 0; i < d.length; i += 4) {
+            const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+            const v = Math.max(0, Math.min(255, Math.round(((g - lo) / range) * 255)));
+            d[i] = v; d[i + 1] = v; d[i + 2] = v;
+        }
+        ctx.putImageData(img, 0, 0);
+    } catch (e) { /* preprocessing is best-effort — original canvas still works */ }
+}
+
+// OCR group 1: plain-English recognize with a PSM retry ladder (no new library).
+// Default segmentation first; pages that come back garbage-or-empty (<10 chars) get one
+// retry as a uniform text block (PSM 6: tables, forms) and one as sparse text (PSM 11:
+// scattered fragments) — first usable result wins. Retries only fire on failure, so clean
+// pages pay nothing extra. Returns '' only when every attempt throws (engine failure).
+// Called by: ocrPage() for every plain-'eng' read (OSD retry, OSD-throw fallback, steady path).
+async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
+    const attempts = [{}, { tessedit_pageseg_mode: '6' }, { tessedit_pageseg_mode: '11' }];
+    let threw = false;
+    for (const options of attempts) {
+        let text = '';
+        try {
+            const hasOptions = options && Object.keys(options).length > 0;
+            const ret = hasOptions
+                ? await tesseract.recognize(canvas, 'eng', options)
+                : await tesseract.recognize(canvas, 'eng');
+            text = (ret && ret.data && ret.data.text) || '';
+        } catch (err) {
+            threw = true;
+            continue;
+        }
+        if (text.trim().length >= 10) return text;
+    }
+    if (threw) {
+        try { markEngineFailed(); } catch (e) {}
+    }
+    return '';
+}
+
 async function ocrPage(page, runId, rotationDeg = 0) {
     if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
 
     const tesseract = await loadTesseract();
-    const scale = 2;
+    // OCR group 1: render sharper — tesseract's documented sweet spot is ~300 DPI, we rendered
+    // ~150-200 at scale 2. Scale 3 costs ~2.25x pixels per page but directly helps small/faint
+    // text like table cells. The per-file page budget still caps total time.
+    const scale = 3;
     const viewport = page.getViewport({ scale, rotation: rotationDeg || 0 });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
@@ -343,6 +401,7 @@ async function ocrPage(page, runId, rotationDeg = 0) {
 
     if (runId !== _autofillRunId) return '';
     showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
+    preprocessOcrCanvas(canvas);
     // R1 auto orientation, stabilized: probe orientation mode ONCE per session, then commit.
     // 'eng+osd' straightens tilted/sideways phone-photo pages, but on this CDN build the OSD
     // data can fail with "LSTM requested, but not present" — retrying per page spams red errors
@@ -375,9 +434,9 @@ async function ocrPage(page, runId, rotationDeg = 0) {
                     console.warn('[Parser] orientation read empty twice running, using plain OCR for this session.');
                 }
             } catch (e) {}
-            const retry = await tesseract.recognize(canvas, 'eng');
+            const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
             _ocrPagesDone++;
-            return retry.data.text || '';
+            return retry;
         } catch (err) {
             // Pin plain English for the rest of the session — one red line, not one per page.
             try {
@@ -385,9 +444,9 @@ async function ocrPage(page, runId, rotationDeg = 0) {
                 console.warn('[Parser] orientation read unavailable, using plain OCR for this session.');
             } catch (e) {}
             try {
-                const retry = await tesseract.recognize(canvas, 'eng');
+                const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
                 _ocrPagesDone++;
-                return retry.data.text || '';
+                return retry;
             } catch (err2) {
                 markEngineFailed();
                 return '';
@@ -395,9 +454,9 @@ async function ocrPage(page, runId, rotationDeg = 0) {
         }
     }
     try {
-        const { data } = await tesseract.recognize(canvas, 'eng');
+        const text = await recognizeEnglish(tesseract, canvas, markEngineFailed);
         _ocrPagesDone++;
-        return data.text || '';
+        return text;
     } catch (err) {
         markEngineFailed();
         return '';
@@ -434,12 +493,17 @@ async function extractTextFromPDF(file, runId) {
     // R-reach: landscape tracking — a fully-sideways scan (every scanned page wider than
     // tall) is the test4 shape. Recorded per file so the empty-run warning can offer a
     // straighten-all rescue even though no preview ever opens.
+    // C1: per-PAGE shape ledger (not file-level only) — straighten-all must turn ONLY
+    // sideways pages, never straight ones in mixed bundles.
     let landscapeCount = 0;
     const scannedPageNums = [];
+    const landscapePages = [];
+    let pagesVisited = 0;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         // Abort if the run was cancelled/superseded while we were awaiting
         if (runId !== _autofillRunId) break;
+        pagesVisited = pageNum;
 
         const page = await pdf.getPage(pageNum);
         const textContent = await page.getTextContent();
@@ -450,9 +514,15 @@ async function extractTextFromPDF(file, runId) {
         if ((pageText || '').trim().length < 10) {
             scannedTotal++;
             scannedPageNums.push(pageNum);
+            let isLandscape = false;
             try {
                 const dim = page.getViewport({ scale: 1 });
-                if (dim.width > dim.height * 1.1) landscapeCount++;
+                isLandscape = dim.width > dim.height * 1.1;
+                if (isLandscape) {
+                    landscapeCount++;
+                    // C1: ledger the sideways pages individually.
+                    landscapePages.push(pageNum);
+                }
             } catch (e) { /* aspect is best-effort */ }
             if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
             // R2: per-page manual rotation (degrees stashed by the rotate control).
@@ -475,7 +545,7 @@ async function extractTextFromPDF(file, runId) {
         // text. Text pages cost ~nothing; scanned pages stay capped by the per-file budget.
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited };
 }
 
 // ===================================================
@@ -641,10 +711,10 @@ window._copyExtractedText = function () {
     }
 };
 
-// R-reach straighten-all rescue: rotate EVERY scanned page of every sideways-flagged file
-// 90° and re-run the whole preview. For fully-sideways scans (the test4 class) a single
-// 90° turn is the overwhelmingly likely fix; per-page ⟳ buttons in the preview handle any
-// stragglers afterwards. Session rotations persist for the re-run (cancel is NOT called).
+// R-reach straighten-all rescue, C1-targeted: rotate ONLY the sideways-flagged pages
+// (per-page shape ledger), never straight ones in mixed bundles. Uniformly sideways files
+// (the test4 class) behave exactly as before — every scanned page turns. Session rotations
+// persist for the re-run (cancel is NOT called).
 // Called by: inline onclick on the empty-warning rescue button (no preview exists here).
 window._straightenAllAndRescan = function () {
     try {
@@ -652,7 +722,12 @@ window._straightenAllAndRescan = function () {
         window._ocrRotations = window._ocrRotations || {};
         for (const r of reports) {
             if (!r || !r.allLandscape) continue;
-            for (const pn of (r.scannedPageNums && r.scannedPageNums.length ? r.scannedPageNums : (r.ocrPages || []))) {
+            // C1: prefer the per-page ledger; fall back to all scanned pages only when the
+            // ledger is absent (old stashes predate it).
+            const targets = (r.landscapePages && r.landscapePages.length)
+                ? r.landscapePages
+                : (r.scannedPageNums && r.scannedPageNums.length ? r.scannedPageNums : (r.ocrPages || []));
+            for (const pn of targets) {
                 const key = r.fileName + '#' + pn;
                 window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
             }
@@ -847,9 +922,14 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const container = modalEl.querySelector('.modal-body') || modalEl;
         container.appendChild(truncEl);
         const limit = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
-        // N-note: complete-vs-cut wording — a finished read must never sound truncated.
+        // N-note + C2: three honest states — complete (visited everything; how many yielded
+        // text) vs cut (stopped at the budget). Never one sentence meaning both.
         const lines = reports.map((r, ri) => {
-            const base = 'In ' + escapeHtml(r.fileName) + ': read ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages (' + limit + ' per file selected)';
+            const visited = r.pagesVisited || r.numPages || '?';
+            const total = r.numPages || '?';
+            const base = r.truncated
+                ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + limit + ' per file selected) — later pages were not scanned.'
+                : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + limit + ' per file selected) — scan complete.';
             // R2: per-page rotate buttons for exactly the photo-read pages (mixed bundles
             // tilt page-by-page). Index-indirected (quote-safe); label shows live degrees.
             let rotBtns = '';
