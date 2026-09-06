@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 ABC-label POSTPONED for loop-first test (banked phrasing); M1+M2 built + tested uncommitted. NEXT = remaining batch + F-TEST on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 C1+C2 LOGGED (per-page shape ledger, 3-state note); full batch committing + pushing per user. NEXT = build C1+C2 + ABC verdict on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -410,6 +410,44 @@ Frontend convention (IMPORTANT)
       heuristic) + D-total (Total Contract Time outranks Original; amber otherwise unchanged) +
       N-note (complete-vs-cut wording) + full-scan default (remove early break) + ABC label only
       IF copy-text evidence requires it. Then F-TEST on fixed crops.
+
+  2026-09-04 — BATCH BUILT (R-reach + D-total + N-note + full-scan; ABC label still evidence-gated).
+  Code, NOT committed per user.
+    - Full-scan default: countFilled≥11 early break DELETED from extractTextFromPDF — every file
+      now reads all pages up to its per-file budget. Rationale (banked): false-complete risk.
+    - D-total: extractDuration tries /(?:total\s*contract\s*time)/ FIRST (binding duration wins;
+      Original fallback unchanged); pooled collector tags pattern 'total-contract-time' with ×1.25
+      weight. Amber behavior preserved by design: 1.25-vs-1.0 still trips the <2× disagree rule,
+      so the box fills Total while the note keeps offering Original.
+    - N-note: truncated files keep "— later pages were not scanned."; finished files now read
+      "— all pages read, scan complete." (was a bare period — previously indistinguishable).
+    - R-reach: extractTextFromPDF records landscapeCount/scannedPageNums/allLandscape per file;
+      scanReports carry them; BOTH empty-warning branches stash reports + pass {straighten:true};
+      showAutofillWarning renders "Straighten sideways pages & re-read (files)" for all-landscape
+      scanned files; window._straightenAllAndRescan sets 90° on those pages and full re-runs
+      (no cancel → rotations preserved). Preview-locked rescue is gone as a bug class.
+    - Tests (+2 D-total fixtures, core 50/50): Total-beats-Original single-match + Original-only
+      unchanged + pooled pattern/weight/winner. Full JS 70/70 (core 50 + scurve 20). R-reach/N-note
+      are DOM-timing — browser proof covers them. No PHP touched. No commit.
+    - Next: user browser proof — (a) test4 straighten-all path (empty warning → button → fields);
+      (b) duration fills 205 with amber offering 185; (c) finished files read "all pages read".
+
+  2026-09-04 — SCAN-COUNT SEMANTICS CLARIFIED + C1+C2 LOGGED (no code yet).
+    - User Q ("still exits early?"): NO — full-scan removal verified live in working tree AND
+      proven by the counters: scannedTotal counts textless pages VISITED (reads 10 on test5;
+      old early-break code could never exceed ~3 there). scannedRead counts pages yielding 10+
+      usable chars (3 on test5 — 7 fragment pages OCR to sub-threshold soup). Different counters,
+      different meanings; the note mashed them together.
+    - C1. Per-page shape ledger: record landscape bool per scanned page (not file-level only)
+      through extract→reports→rescan; straighten-all turns ONLY sideways pages (mixed bundles
+      stop getting vandalized; uniform test4 behaves identically). Fixes the over-rotation flaw
+      the user caught: current code rotates ALL scanned pages of flagged files.
+    - C2. Three-state note: "visited all N pages; M yielded text" (complete) vs "stopped at the
+      page budget — later pages unscanned" (cut). Never one sentence meaning both. Selector +
+      counts plumbing already exists; wording + ledger only.
+    - Per-page ⟳ buttons: CONFIRMED correct as-is (offered for every photo-read page; the user
+      — not the system — is the tilt detector). No change.
+    - ABC: still no new evidence either way; tiebreaker remains the user's copy-text.
 
   2026-09-04 — L1 FIRST REAL FIRING analyzed + M1-M3 logged (no code yet).
     - User test (test5, hard refresh): corrected ABC + picked duration 205 → DB rows id 8 (abc)

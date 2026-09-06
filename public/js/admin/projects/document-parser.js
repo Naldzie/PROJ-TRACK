@@ -117,14 +117,15 @@ async function runDocumentAutofill() {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
-                // N3/R2: remember real counts + WHICH pages were photo-read for the note
-                // and the per-page rotate control (even uncut ones).
+                // N3/R2/R-reach: remember real counts + WHICH pages were photo-read for the note
+                // and the per-page rotate control (even uncut ones). allLandscape flags fully-
+                // sideways scans for the pre-preview straighten-all rescue.
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [] });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [] });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text });
@@ -158,12 +159,16 @@ async function runDocumentAutofill() {
             // Engine failure (reader itself never loaded) is NOT an empty document —
             // say so explicitly instead of blaming the files.
             const engineFailed = (typeof window !== 'undefined') && window._ocrEngineFailed;
+            // R-reach: stash reports even on empty runs so the straighten-all rescue below
+            // can name the sideways files (no preview ever opens for them).
+            try { window._autofillScanReports = scanReports.slice(); } catch (e) {}
             showAutofillWarning(
                 engineFailed
                     ? 'The scanned-page reader could not load (network needed on first use). ' +
                       'Check your connection, reopen this popup to retry, then preview again.'
                     : 'Could not extract text from the uploaded PDF(s). ' +
-                      'The files may be scanned images with no readable text.'
+                      'The files may be scanned images with no readable text.',
+                { straighten: true }
             );
             return;
         }
@@ -212,9 +217,12 @@ async function runDocumentAutofill() {
         if (myRunId !== _autofillRunId) return;
 
         if (getCore().countFilled(parsed) === 0) {
+            // R-reach: same stash so the straighten-all rescue can name sideways files here too.
+            try { window._autofillScanReports = scanReports.slice(); } catch (e) {}
             showAutofillWarning(
                 'Text was extracted from the documents, but no recognisable project ' +
-                'fields were found. Please fill in the fields manually.'
+                'fields were found. Please fill in the fields manually.',
+                { straighten: true }
             );
             return;
         }
@@ -241,6 +249,9 @@ async function runDocumentAutofill() {
             // P2: the vote tables are stashed on EVERY preview (flag or not) — this hint line
             // means nobody has to memorize the recovery command or re-upload for tables.
             console.log('[Parser] tip: type window._autofillVoteDebug in the console to inspect all finds (values, patterns, excerpts, files).');
+            // R-reach: scan reports stashed per run so the straighten-all rescue can name
+            // sideways files even from the preview path.
+            window._autofillScanReports = scanReports.slice();
         } catch (e) { /* logging is best-effort */ }
         showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles, scanReports, runId: myRunId });
 
@@ -420,6 +431,11 @@ async function extractTextFromPDF(file, runId) {
     let scannedTotal = 0;
     let scannedRead = 0;
     const ocrPages = [];
+    // R-reach: landscape tracking — a fully-sideways scan (every scanned page wider than
+    // tall) is the test4 shape. Recorded per file so the empty-run warning can offer a
+    // straighten-all rescue even though no preview ever opens.
+    let landscapeCount = 0;
+    const scannedPageNums = [];
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         // Abort if the run was cancelled/superseded while we were awaiting
@@ -433,6 +449,11 @@ async function extractTextFromPDF(file, runId) {
         // OCR fallback for textless (scanned) pages
         if ((pageText || '').trim().length < 10) {
             scannedTotal++;
+            scannedPageNums.push(pageNum);
+            try {
+                const dim = page.getViewport({ scale: 1 });
+                if (dim.width > dim.height * 1.1) landscapeCount++;
+            } catch (e) { /* aspect is best-effort */ }
             if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
             // R2: per-page manual rotation (degrees stashed by the rotate control).
             const rotKey = file.name + '#' + pageNum;
@@ -448,11 +469,13 @@ async function extractTextFromPDF(file, runId) {
 
         fullText += pageText + '\n\n';
 
-        // Early exit once every field has been found (Phase 5: now 11 fields incl. abc/category/budgetSource)
-        if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 11) break;
+        // Full-scan default (no early break): EVERY page reads up to the per-file budget,
+        // even after all boxes fill — an early exit can false-complete on WEAK finds (a ghost
+        // price filling the boxes while truth pages never read), and the miner/vote need full
+        // text. Text pages cost ~nothing; scanned pages stay capped by the per-file budget.
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums };
 }
 
 // ===================================================
@@ -616,6 +639,27 @@ window._copyExtractedText = function () {
             done();
         } catch (e2) { /* best-effort */ }
     }
+};
+
+// R-reach straighten-all rescue: rotate EVERY scanned page of every sideways-flagged file
+// 90° and re-run the whole preview. For fully-sideways scans (the test4 class) a single
+// 90° turn is the overwhelmingly likely fix; per-page ⟳ buttons in the preview handle any
+// stragglers afterwards. Session rotations persist for the re-run (cancel is NOT called).
+// Called by: inline onclick on the empty-warning rescue button (no preview exists here).
+window._straightenAllAndRescan = function () {
+    try {
+        const reports = window._autofillScanReports || [];
+        window._ocrRotations = window._ocrRotations || {};
+        for (const r of reports) {
+            if (!r || !r.allLandscape) continue;
+            for (const pn of (r.scannedPageNums && r.scannedPageNums.length ? r.scannedPageNums : (r.ocrPages || []))) {
+                const key = r.fileName + '#' + pn;
+                window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
+            }
+        }
+    } catch (e) { /* rotation bookkeeping is best-effort */ }
+    hideAutofillBanner();
+    runDocumentAutofill();
 };
 
 // R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page, then
@@ -803,6 +847,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const container = modalEl.querySelector('.modal-body') || modalEl;
         container.appendChild(truncEl);
         const limit = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
+        // N-note: complete-vs-cut wording — a finished read must never sound truncated.
         const lines = reports.map((r, ri) => {
             const base = 'In ' + escapeHtml(r.fileName) + ': read ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages (' + limit + ' per file selected)';
             // R2: per-page rotate buttons for exactly the photo-read pages (mixed bundles
@@ -821,7 +866,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 window._ocrRotateTargets = window._ocrRotateTargets || [];
                 window._ocrRotateTargets[ri] = r.fileName;
             } catch (e) { /* best-effort */ }
-            return base + (r.truncated ? ' — later pages were not scanned.' : '.') + rotBtns;
+            return base + (r.truncated ? ' — later pages were not scanned.' : ' — all pages read, scan complete.') + rotBtns;
         });
         if (lines.length === 0 && (truncated && truncated.length > 0)) {
             lines.push('Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.');
@@ -1282,12 +1327,26 @@ function showAutofillWarning(message, opts) {
             copyBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._copyExtractedText()">Copy what was read</button>';
         }
     } catch (e) { /* copy affordance is best-effort */ }
+    // R-reach: when every scanned page of a file is wider-than-tall (the sideways-scan
+    // shape), offer a one-click straighten-all rescue — these files never reach the preview,
+    // so without this button they have NO manual path at all (test4 class).
+    let straightenBtn = '';
+    try {
+        const wantStraighten = !opts || opts.straighten !== false;
+        const reports = window._autofillScanReports || [];
+        const sideways = reports.filter(r => r && r.allLandscape && (r.scannedRead || 0) > 0);
+        if (wantStraighten && sideways.length > 0 && typeof window._straightenAllAndRescan === 'function') {
+            const names = sideways.map(r => escapeHtml(r.fileName)).join(', ');
+            straightenBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._straightenAllAndRescan()" title="Rotate every scanned page 90° and re-read">Straighten sideways pages &amp; re-read (' + names + ')</button>';
+        }
+    } catch (e) { /* rescue affordance is best-effort */ }
     banner.innerHTML = `
         <i class="bi bi-exclamation-triangle flex-shrink-0 fs-5"></i>
         <div>
             <strong>Auto-fill notice:</strong>
             <span class="d-block" style="font-size: 0.875em;">${message}</span>
             ${copyBtn}
+            ${straightenBtn}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
     `;

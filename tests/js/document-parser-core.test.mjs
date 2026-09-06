@@ -574,3 +574,30 @@ test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised
     assert.ok(cands.some(c => c.value === '4204128.84'));
 });
 
+// --- D-total: Total Contract Time outranks Original ----------------------------------
+
+test('D-total: Total Contract Time wins outright when present (single-match)', () => {
+    // The real extension shape: Original 185 vs Total 205 — binding duration wins.
+    const lines = core.buildLinesFromText(
+        '1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days'
+    );
+    assert.equal(core.extractDuration(lines), '205');
+    // Original-only files unchanged.
+    assert.equal(core.extractDuration(core.buildLinesFromText('Original Contract Time: 90 calendar days')), '90');
+});
+
+test('D-total: pooled tags total-contract-time and prefers it', () => {
+    const cands = core.collectDurationCandidates(
+        core.buildLinesFromText('1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days'),
+        'bundle.pdf'
+    );
+    const total = cands.find(c => c.value === '205');
+    const orig = cands.find(c => c.value === '185');
+    assert.ok(total && total.pattern === 'total-contract-time');
+    assert.ok(orig && total.weight > orig.weight);
+    const pooled = core.parseProjectInfoPooled([
+        { text: '1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days', fileName: 'bundle.pdf' },
+    ]);
+    assert.equal(pooled.duration, '205');
+});
+

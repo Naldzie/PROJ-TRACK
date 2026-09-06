@@ -802,6 +802,13 @@ const DocumentParserCore = (function () {
     // and fuzzy OCR "NlNETY" (I→l) with Levenshtein ≤1.
     function extractDuration(lines) {
         const normLines = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // D-total: "Total Contract Time" (extensions included — the binding duration) outranks
+        // "Original Contract Time" when present; Original stays the fallback. Amber note still
+        // offers both on genuine close calls (handled by the pooled disagree check).
+        const totalFirst = findLabeledValue(normLines, [
+            /(?:total\s*contract\s*time)\s*[:\-]?\s*(.*)/i,
+        ], asDays);
+        if (totalFirst) return totalFirst;
         // First try labeled patterns (Duration: etc.)
         // Step 1e: also accept "Original Contract Time" / "Contract Time" (CHS bundle).
         let labeled = findLabeledValue(normLines, [
@@ -1103,10 +1110,18 @@ const DocumentParserCore = (function () {
         for (let i = 0; i < norm.length; i++) {
             const m = norm[i].match(labelRe);
             if (m) {
+                // D-total: "Total Contract Time" (extensions included) outranks Original in the
+                // pool too — same rule as the single-match path. Amber still offers close calls.
+                const isTotal = /total\s*contract\s*time/i.test(norm[i]);
                 for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                     if (!t) continue;
                     const val = asDays(t);
-                    if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
+                    if (val) {
+                        let w = getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' '));
+                        if (isTotal) w *= 1.25;
+                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i) });
+                        break;
+                    }
                 }
             }
             // "within N days calendar days" clause on this line or paired with next.
