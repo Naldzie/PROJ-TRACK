@@ -44,8 +44,20 @@ function cancelDocumentAutofill() {
         window._autofillDisagree = null;
         window._autofillVoteDebug = null;
         delete window._ocrPageLimit;
+        // R2 rotations are per-session manual fixes — a fresh popup starts upright.
+        window._ocrRotations = {};
+        window._ocrRotateTargets = [];
+        // OSD probe + engine-failure flag are per-session: a fresh popup re-probes once
+        // (network conditions may have changed), never inheriting a pinned fallback.
+        window._ocrLangMode = null;
+        window._ocrOsdMisses = 0;
+        window._ocrEngineFailed = false;
+        // F-COPY/L1 stashes belong to the run that made them — never reuse across sessions.
+        window._autofillDocTexts = [];
+        window._autofillDocNames = [];
+        window._autofillOriginal = null;
     }
-    for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated']) {
+    for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated', 'autofillPreviewCopyWrap']) {
         try {
             const el = document.getElementById(id);
             if (el && el.remove) el.remove();
@@ -105,13 +117,14 @@ async function runDocumentAutofill() {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
-                // N3: remember real counts for every scanned file (even uncut ones).
+                // N3/R2: remember real counts + WHICH pages were photo-read for the note
+                // and the per-page rotate control (even uncut ones).
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [] });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text });
@@ -119,8 +132,19 @@ async function runDocumentAutofill() {
                 }
                 // L1 learning loop: keep the raw document texts so Apply-time mining can
                 // anchor a corrected value back to its source line (never sent to server).
+                // F-COPY reuses the same stash (plus file names) for the copy-text button —
+                // recorded for EVERY processed file, even empty/unparsed ones, so failed
+                // runs stay diagnosable (copy button included on the empty-run warning).
                 try {
-                    window._autofillDocTexts = perFileData.map(e => e.text);
+                    const texts = [];
+                    const names = [];
+                    for (const doc of pdfDocs) {
+                        const entry = perFileData.find(e => e.fileName === doc.fileName);
+                        texts.push(entry ? entry.text : '');
+                        names.push(doc.fileName);
+                    }
+                    window._autofillDocTexts = texts;
+                    window._autofillDocNames = names;
                 } catch (e) { /* stash is best-effort */ }
             } catch (err) {
                 // One file failing shouldn't stop the rest
@@ -131,9 +155,15 @@ async function runDocumentAutofill() {
         if (myRunId !== _autofillRunId) return;
 
         if (perFileData.length === 0) {
+            // Engine failure (reader itself never loaded) is NOT an empty document —
+            // say so explicitly instead of blaming the files.
+            const engineFailed = (typeof window !== 'undefined') && window._ocrEngineFailed;
             showAutofillWarning(
-                'Could not extract text from the uploaded PDF(s). ' +
-                'The files may be scanned images with no readable text.'
+                engineFailed
+                    ? 'The scanned-page reader could not load (network needed on first use). ' +
+                      'Check your connection, reopen this popup to retry, then preview again.'
+                    : 'Could not extract text from the uploaded PDF(s). ' +
+                      'The files may be scanned images with no readable text.'
             );
             return;
         }
@@ -277,13 +307,23 @@ function ocrPageLimit() {
     if (isFinite(custom) && custom >= 1 && custom <= 50) return Math.floor(custom);
     return OCR_PAGE_LIMIT;
 }
-async function ocrPage(page, runId) {
+// Warm the photo-reader script when the create-project popup opens (called from
+// resetModalToCreateMode). Downloads the reader code early so the first preview does not
+// pay the full load cost mid-scan. Language data still fetches on first recognize —
+// that part is covered by the probe below, not here. Best-effort, never throws.
+function warmTesseract() {
+    try {
+        loadTesseract().catch(() => { /* offline/CDN hiccup — lazy load retries later */ });
+    } catch (e) { /* best-effort */ }
+}
+
+async function ocrPage(page, runId, rotationDeg = 0) {
     if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
 
     const tesseract = await loadTesseract();
     const scale = 2;
-    const viewport = page.getViewport({ scale });
+    const viewport = page.getViewport({ scale, rotation: rotationDeg || 0 });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -292,9 +332,65 @@ async function ocrPage(page, runId) {
 
     if (runId !== _autofillRunId) return '';
     showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
-    const { data } = await tesseract.recognize(canvas, 'eng');
-    _ocrPagesDone++;
-    return data.text || '';
+    // R1 auto orientation, stabilized: probe orientation mode ONCE per session, then commit.
+    // 'eng+osd' straightens tilted/sideways phone-photo pages, but on this CDN build the OSD
+    // data can fail with "LSTM requested, but not present" — retrying per page spams red errors
+    // and doubles time. So: first page tries osd; any failure pins plain 'eng' for the session.
+    // window._ocrLangMode: null = untried, 'osd' = working, 'eng' = pinned fallback.
+    const useOsd = (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
+    const markEngineFailed = () => { try { window._ocrEngineFailed = true; } catch (e) {} };
+    if (useOsd) {
+        try {
+            const { data } = await tesseract.recognize(canvas, 'eng+osd');
+            const osdText = (data && data.text) || '';
+            // Empty-aware pinning (corrected model 2026-09-04): orientation failure does not
+            // always throw — it may resolve EMPTY (red wall, no text). Empty counts as failure
+            // for THIS page (retry plain immediately), but only CONSECUTIVE empties pin the
+            // session — a single blank page must not rob later tilted pages of orientation.
+            if (osdText.trim().length >= 10) {
+                try { window._ocrLangMode = 'osd'; window._ocrOsdMisses = 0; } catch (e) {}
+                if (typeof window !== 'undefined' && window._parserDebug && data && data.orientation) {
+                    console.log('[Parser] OCR orientation:', data.orientation);
+                }
+                _ocrPagesDone++;
+                return osdText;
+            }
+            let misses = 0;
+            try {
+                misses = (window._ocrOsdMisses || 0) + 1;
+                window._ocrOsdMisses = misses;
+                if (misses >= 2) {
+                    window._ocrLangMode = 'eng';
+                    console.warn('[Parser] orientation read empty twice running, using plain OCR for this session.');
+                }
+            } catch (e) {}
+            const retry = await tesseract.recognize(canvas, 'eng');
+            _ocrPagesDone++;
+            return retry.data.text || '';
+        } catch (err) {
+            // Pin plain English for the rest of the session — one red line, not one per page.
+            try {
+                window._ocrLangMode = 'eng';
+                console.warn('[Parser] orientation read unavailable, using plain OCR for this session.');
+            } catch (e) {}
+            try {
+                const retry = await tesseract.recognize(canvas, 'eng');
+                _ocrPagesDone++;
+                return retry.data.text || '';
+            } catch (err2) {
+                markEngineFailed();
+                return '';
+            }
+        }
+    }
+    try {
+        const { data } = await tesseract.recognize(canvas, 'eng');
+        _ocrPagesDone++;
+        return data.text || '';
+    } catch (err) {
+        markEngineFailed();
+        return '';
+    }
 }
 
 // ===================================================
@@ -318,9 +414,12 @@ async function extractTextFromPDF(file, runId) {
     // O2/N3: truncation + real-count tracking — a file with more scanned pages than the
     // photo-read budget must say so instead of posing a partial read as confident.
     // scannedTotal = textless pages met; scannedRead = pages actually photo-read.
+    // R2: ocrPages records WHICH pages were photo-read so the per-page rotate control
+    // can offer exactly those pages (mixed tilted/straight bundles).
     let ocrTruncated = false;
     let scannedTotal = 0;
     let scannedRead = 0;
+    const ocrPages = [];
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
         // Abort if the run was cancelled/superseded while we were awaiting
@@ -335,11 +434,15 @@ async function extractTextFromPDF(file, runId) {
         if ((pageText || '').trim().length < 10) {
             scannedTotal++;
             if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
-            const ocrText = await ocrPage(page, runId);
+            // R2: per-page manual rotation (degrees stashed by the rotate control).
+            const rotKey = file.name + '#' + pageNum;
+            const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
+            const ocrText = await ocrPage(page, runId, rotDeg);
             if (ocrText && ocrText.trim().length >= 10) {
                 pageText = ocrText;
                 ocrUsed = true;
                 scannedRead++;
+                ocrPages.push(pageNum);
             }
         }
 
@@ -349,7 +452,7 @@ async function extractTextFromPDF(file, runId) {
         if (core.countFilled(core.parseProjectInfo({ text: fullText })) >= 11) break;
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages };
 }
 
 // ===================================================
@@ -480,6 +583,60 @@ const AUTOFILL_CORE_FIELDS = {
 // Shows the parsed fields for review; nothing is written
 // to the form until the user clicks Apply.
 // ===================================================
+// F-COPY: copy exactly what the system read (all files, with file headers) to the
+// clipboard, so a miss diagnoses to the character without screenshots. Uses the L1
+// stash (never the server). Falls back to a temp textarea where clipboard API is blocked.
+// Called by: inline onclick on the "Copy read text" button in the preview modal.
+window._copyExtractedText = function () {
+    try {
+        const texts = window._autofillDocTexts || [];
+        const names = window._autofillDocNames || [];
+        if (!texts.length) {
+            if (typeof showToast === 'function') showToast('Nothing to copy yet — run the preview first', 'error');
+            return;
+        }
+        const out = texts.map((t, i) => '=== ' + (names[i] || ('file ' + (i + 1))) + ' ===\n' + t).join('\n\n');
+        const done = () => { if (typeof showToast === 'function') showToast('Extracted text copied — paste it in chat', 'success'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(out).then(done, () => fallbackCopy(out, done));
+        } else {
+            fallbackCopy(out, done);
+        }
+    } catch (e) { /* copy is best-effort */ }
+    function fallbackCopy(text, done) {
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+            done();
+        } catch (e2) { /* best-effort */ }
+    }
+};
+
+// R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page, then
+// re-run the whole preview (rotation persists in window._ocrRotations and applies at
+// render time inside extractTextFromPDF). Full re-read cost (~2s/page) — the button is
+// per tilted page, so routine pages are never re-read needlessly... (whole-run re-read
+// is accepted: rotation is a rare manual rescue, correctness first).
+// Called by: inline onclick on the per-page ⟳ buttons (index-indirected, quote-safe).
+window._rotateOcrPage = function (reportIdx, pageNum) {
+    try {
+        const targets = window._ocrRotateTargets || [];
+        const fileName = targets[reportIdx];
+        if (!fileName || !pageNum) return;
+        window._ocrRotations = window._ocrRotations || {};
+        const key = fileName + '#' + pageNum;
+        window._ocrRotations[key] = ((window._ocrRotations[key] || 0) + 90) % 360;
+    } catch (e) { /* rotation bookkeeping is best-effort */ }
+    closeAutofillPreview();
+    runDocumentAutofill();
+};
+
 // Adjustable scan depth, N4: re-scan at the selector's chosen pages-per-file.
 // Reads #ocrPageSelect (10/25/40/50, default 10), stores it for this session, closes the
 // preview, and re-runs autofill. Opt-in per preview; routine uploads stay fast.
@@ -611,6 +768,22 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     const ocrNote = document.getElementById('autofillPreviewOcrNote');
     if (ocrNote) ocrNote.style.display = ocrUsed ? '' : 'none';
 
+    // F-COPY button: always available while a preview has document text behind it
+    // (S1 rebuild pattern — remove any previous node first so re-renders stay clean).
+    try {
+        const oldCopy = document.getElementById('autofillPreviewCopyWrap');
+        if (oldCopy && oldCopy.remove) oldCopy.remove();
+        const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
+        if (hasTexts) {
+            const copyWrap = document.createElement('div');
+            copyWrap.id = 'autofillPreviewCopyWrap';
+            copyWrap.className = 'd-flex justify-content-end mt-2';
+            copyWrap.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._copyExtractedText()" title="Copy exactly what the system read, to paste in chat for diagnosis">Copy read text</button>';
+            const container = modalEl.querySelector('.modal-body') || modalEl;
+            container.appendChild(copyWrap);
+        }
+    } catch (e) { /* copy button is best-effort */ }
+
     // O2/N3/N4 gray scan note + page-count selector (replaces the fixed +15 stepping).
     // S1: rebuild-instead-of-reuse — the old box (if any) is REMOVED first, so no previous
     // run's note can linger into this preview (stale-banner class of bug).
@@ -630,9 +803,25 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const container = modalEl.querySelector('.modal-body') || modalEl;
         container.appendChild(truncEl);
         const limit = (typeof ocrPageLimit === 'function') ? ocrPageLimit() : 10;
-        const lines = reports.map(r => {
+        const lines = reports.map((r, ri) => {
             const base = 'In ' + escapeHtml(r.fileName) + ': read ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages (' + limit + ' per file selected)';
-            return r.truncated ? base + ' — later pages were not scanned.' : base + '.';
+            // R2: per-page rotate buttons for exactly the photo-read pages (mixed bundles
+            // tilt page-by-page). Index-indirected (quote-safe); label shows live degrees.
+            let rotBtns = '';
+            try {
+                const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
+                rotBtns = ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : []).slice(0, 12).map((pn) => {
+                    const deg = rots[r.fileName + '#' + pn] || 0;
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + pn + '" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' 90° and re-read (auto orientation applies too)">⟳ p.' + pn + (deg ? ' @' + deg + '°' : '') + '</button>';
+                }).join(' ');
+                if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page:</span>' + rotBtns + '</div>';
+            } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
+            // Stash this report's identity for the rotate handler (quote-safe indirection).
+            try {
+                window._ocrRotateTargets = window._ocrRotateTargets || [];
+                window._ocrRotateTargets[ri] = r.fileName;
+            } catch (e) { /* best-effort */ }
+            return base + (r.truncated ? ' — later pages were not scanned.' : '.') + rotBtns;
         });
         if (lines.length === 0 && (truncated && truncated.length > 0)) {
             lines.push('Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.');
@@ -1080,14 +1269,25 @@ function showAutofillScanning(message) {
     banner.style.display = 'flex';
 }
 
-function showAutofillWarning(message) {
+function showAutofillWarning(message, opts) {
     const banner = getOrCreateAutofillBanner();
     banner.className = 'alert alert-warning autofill-banner d-flex align-items-start gap-2 mb-3';
+    // F-COPY on empty runs: failures must stay diagnosable — offer the read text for chat
+    // when any file yielded text (even unparsable). Engine-failure runs pass copy:false.
+    let copyBtn = '';
+    try {
+        const wantCopy = !opts || opts.copy !== false;
+        const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
+        if (wantCopy && hasTexts && typeof window._copyExtractedText === 'function') {
+            copyBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._copyExtractedText()">Copy what was read</button>';
+        }
+    } catch (e) { /* copy affordance is best-effort */ }
     banner.innerHTML = `
         <i class="bi bi-exclamation-triangle flex-shrink-0 fs-5"></i>
         <div>
             <strong>Auto-fill notice:</strong>
             <span class="d-block" style="font-size: 0.875em;">${message}</span>
+            ${copyBtn}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
     `;

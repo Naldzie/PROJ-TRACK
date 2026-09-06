@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 NEXT BUILD BATCH approved (R1+R2 orientation per-page + F-COPY + F-GATE + F-B1, no code); F-TEST retest pending user crops. NEXT = build batch on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 TEST5 verdict logged + full-scan default + ABC hypotheses + NEXT BUILD BATCH planned (R-reach, D-total, N-note, full-scan, conditional ABC label). NO CODE this round — build on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -296,6 +296,120 @@ Frontend convention (IMPORTANT)
       exactly one page; (iii) straight pages byte-identical (auto is a no-op upright);
       (iv) full suite green + bundle re-check.
   NEXT BUILD BATCH (all approved, no code): R1 + R2 + F-COPY + F-GATE + F-B1, then F-TEST.
+
+  2026-09-04 — BATCH IMPLEMENTED (code + tests, NOT committed per user).
+    - R1: ocrPage recognize 'eng' → 'eng+osd' (orientation auto-straighten pre-read) with
+      plain-'eng' retry on OSD load failure; orientation logged when _parserDebug is on.
+      Shared helper → deferred S-curve Tier 2 inherits free. No test possible headless
+      (needs canvas+tesseract); browser proof covers it.
+    - R2: per-page rotation map (window._ocrRotations file#page → 0/90/180/270) applied at
+      render (getViewport rotation); extractTextFromPDF records ocrPages[]; gray note renders
+      one ⟳-button per photo-read page (index-indirected, live degrees in label, max 12 shown);
+      window._rotateOcrPage cycles +90 and full re-runs; cancel path resets map + targets.
+    - F-COPY: window._copyExtractedText (stashed texts+names → clipboard, textarea fallback,
+      toast confirm) + "Copy read text" button node in preview (S1 rebuild pattern); cancel
+      path clears all L1/copy stashes (docTexts/docNames/original).
+    - F-GATE: miner accepts label only with label-ish words (incl. bare ABC — added after my
+      own test caught the gate rejecting it) or :/- terminator on the raw slice; else null.
+    - F-B1: extractABC gains budget-Amount alternative gated on same-file Original/Revised;
+      extractBudget generic drops bare-'budget' ONLY under the same condition (lone lines keep
+      today's price); collector mirrors both (generic skip + total-row unaffected since its
+      label carries the contract word); asBudget() single-match path already date-guarded.
+    - Tests (+2 fixtures, core 46/46): junk-fragment→null + genuine labels (incl. ABC) pass;
+      conditional split (corroborated → price=orig/abc=budget-figure; lone → price fills,
+      abc null; pooled generic skipped, orig kept). Full JS 66/66 (core 46 + scurve 20).
+      R1/R2/F-COPY are DOM/canvas paths — browser proof covers them. No PHP touched. No commit.
+    - Next: user browser proof — (a) tilted pages read upright via auto (R1) or one ⟳ click
+      (R2); (b) copy button pastes full read text; (c) CAN file: ABC box fills 4,834,297.59,
+      price fills Original/Revised once its pages are processed.
+
+  2026-09-04 — OSD-STABILITY batch IMPLEMENTED (code, NOT committed per user).
+    - Trigger: user's fixed-crop Buhi re-test showed a red "LSTM requested, but not present"
+      storm (new with R1's 'eng+osd'; never seen under plain 'eng') + an empty "no fields"
+      first run followed by a full preview — same root cause (orientation-data load failure).
+      F-COPY simultaneously proven (pasted dump carried final-amount/duration/title lines).
+    - Fix: probe-once OSD (window._ocrLangMode null→'osd'→'eng'; first page tries osd, ANY
+      failure pins plain English for the session — one red line max, later pages full speed);
+      warmTesseract() script preload called from resetModalToCreateMode (language data still
+      lazy on first recognize); distinct engine-failure warning when the reader itself never
+      loads (no longer mislabeled "no fields found"); probe/flag reset per modal session in
+      cancel path (re-probes when network may have changed).
+    - Tests: node --check on both touched files + JS 66/66 suite green (core untouched by this
+      batch). OCR paths are canvas/network timing — browser proof covers them (tilted page
+      upright without red storm; offline-first-run shows the honest engine message). No PHP
+      touched. No commit.
+    - Next: user browser proof on tilted/retry runs, then order a commit or the next batch.
+
+    2026-09-04 — OSD CORRECTION (user) + revised plan (no code yet).    - Correction accepted: the Buhi fills that "proved" breakage came from the ORIGINAL
+      scanned image WITH the storm — not the text recreation. So the orientation attempt
+      fails loudly but the plain-English retry DOES fill upright pages. The "broken all
+      along" verdict is withdrawn; the implemented throw-only probe is INSUFFICIENT (not wrong).
+    - Corrected model: orientation fails loudly every run; sometimes by throwing (retry fills
+      upright pages — the Buhi run), sometimes by resolving empty with no throw (no retry runs —
+      plus tilted content defeats even plain retry: the pdfdocstest4 run). Empty-result pinning
+      is therefore REQUIRED, not optional.
+    - Revised plan: (a) pin on EMPTY results too (first decisive outcome — throw or empty —
+      picks the session mode); (b) warm preload + honest engine message stand as built;
+      (c) R2 manual per-page rotate PROMOTED from backstop to primary tilt remedy (automatic
+      orientation effectively dead in this CDN build — never succeeds, only fails loud/silent);
+      (d) pdfdocstest4 remains unjudged until retried post-fix, ideally with one manual
+      straightening click on visibly tilted pages.
+
+  2026-09-04 — EMPTY-AWARE PINNING IMPLEMENTED (code, NOT committed per user).
+    - ocrPage: osd-branch success now requires ≥10 chars of text; empty resolves count as
+      failure with immediate plain-English retry for that page. Session pinning needs TWO
+      CONSECUTIVE empties (window._ocrOsdMisses) — a single blank page must not rob later
+      tilted pages (a blank genuinely yields nothing under either mode). Throw path unchanged
+      (immediate pin + retry). _ocrOsdMisses resets per modal session in the cancel path.
+    - Caught during build (self-review): my first draft pinned on ANY single empty, which
+      would strand later tilted pages after one blank page — fixed before testing.
+    - Tests: node --check clean + JS 66/66 green (core untouched; OCR paths are canvas/network
+      timing — browser proof covers them). No PHP touched. No commit.
+    - Next: user retries pdfdocstest4 — expect at most ~2 red lines then silence, boxes filled
+      from plain retry on upright pages; tilted pages via one ⟳ click each.
+
+  2026-09-04 — COPY-ON-EMPTY IMPLEMENTED (code, NOT committed per user).
+    - Trigger: user's pdfdocstest4 empty run left nothing to diagnose (no preview → no stash
+      button path); verified the file is 10 pages / zero text items (pure image, node pdfjs
+      read-only inspection), so the honest-empty verdict stands pending content evidence.
+    - Fix: doc text/name stash rebuilt for EVERY processed file (even empty/unparsed — moved
+      out of the non-empty guard); showAutofillWarning(message, opts) gains an opt-out
+      "Copy what was read" button shown whenever any file yielded text (engine-failure runs
+      correctly show none — nothing was read). Both empty branches inherit it by default.
+    - Tests: node --check clean + JS 66/66 green (wrapper-only change; DOM-timing path needs
+      browser). No PHP touched. No commit.
+    - Next: user retests pdfdocstest4 → pastes copy-text (or 1–2 page screenshots) → fork:
+      fragments-everywhere = correct behavior stands (cropping-side fix); intact missed
+      phrases = real gap with evidence → next build with failing-then-passing check.
+
+  2026-09-04 — TEST5 VERDICT + AUTO-ROTATE/SCAN/ABC DECISIONS (plan only, no code yet).
+    - Test5 (same 10 images, portrait assembly) vs test4 (landscape-baked 1008×612, verified
+      via node pdfjs): file itself was the problem — sideways pixels + dead deskewer + preview-
+      locked manual control = no path at all. Test5 extracts: price = Revised wins (6 finds /
+      score 5 vs Original 3/2 + stray 4204128.00), dates accurate across 3 extensions (end =
+      March 13 completion, not expiry), duration amber correctly offers 185 vs 205.
+    - Q1 auto-rotate status (user: "I thought it was implemented"): YES built (R1 eng+osd +
+      probe/pin + warm preload), but EFFECTIVELY DEAD in this CDN build — orientation never
+      succeeds, only fails loud (throw → retry fills upright, the Buhi run) or silent (empty
+      resolve → nothing fills, the test4 run). Manual R2 rotate is therefore THE working tilt
+      remedy, not the backstop. No code change from this verdict; R-reach plan (pre-preview
+      straighten-all + landscape heuristic) stands.
+    - Q2 early-stop (user: default to full 10 regardless): AGREED — remove the countFilled≥11
+      early break so every file scans all pages up to its per-file budget. Rationale banked:
+      early exit can false-complete on WEAK finds (ghost price fills 11 boxes → truth pages
+      never read); fuller piles vote better; text pages cost ~nothing, scanned pages already
+      capped at 10/file. Cost accepted: slower worst case (~20s per 10-page scan), mitigated
+      by the per-file budget + selector. Becomes default; no opt-out needed (budget IS the cap).
+    - Q3 ABC missing on test5 (user: stopped-before-page vs label-miss?): BOTH as hypotheses —
+      (a) early-exit stopped at page 3 before ABC pages (fixed by the full-scan default above);
+      (b) ABC label coverage: current ABC labels are "ABC:" / "Approved Budget for the Contract
+      (ABC)" / F-B1 budget-Amount (conditional). Test5's copy-text will show the exact ABC line
+      shape → if unmatched, add its label with a fixture (failing-then-passing). No code until
+      that evidence lands.
+    - NEXT BUILD BATCH (all approved, no code): R-reach (pre-preview straighten-all + landscape
+      heuristic) + D-total (Total Contract Time outranks Original; amber otherwise unchanged) +
+      N-note (complete-vs-cut wording) + full-scan default (remove early break) + ABC label only
+      IF copy-text evidence requires it. Then F-TEST on fixed crops.
 
 ===============================================================================
   7. OPEN QUESTIONS

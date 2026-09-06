@@ -655,8 +655,15 @@ const DocumentParserCore = (function () {
         ], asBudget);
         if (finalAmount) return finalAmount;
 
+        // F-B1 conditional: a bare "budget [Amount]" line means the ABC ceiling — but ONLY
+        // when the file also carries an Original/Revised figure (corroborated reassignment,
+        // extractABC claims it). Alone, such lines keep today's price behavior.
+        const linesNorm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const hasOrigRevisedBudget = linesNorm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
         const generic = findLabeledValue(lines, [
-            /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+            hasOrigRevisedBudget
+                ? /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget(?!\s*amount))\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i
+                : /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
             /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ], asBudget);
         if (generic) return generic;
@@ -740,11 +747,20 @@ const DocumentParserCore = (function () {
     // Approved Budget for the Contract (ABC) — standalone ABC label.
     // Phase 5 NEW: distinguishes ABC ceiling from Contract Price (savings = ABC - price).
     // Called by: parseProjectInfo() → returns abc field; budget uses extractBudget().
-    // Labels: "ABC:" , "Approved Budget for the Contract (ABC):" , "ABC (PHP)"
+    // Labels: "ABC:" , "Approved Budget for the Contract (ABC):" , "ABC (PHP)".
+    // F-B1: "Total/Approved Budget Amount" lines ALSO feed ABC — but ONLY when the same
+    // file carries an Original/Revised Contract Amount (corroborated reassignment). Alone,
+    // such lines keep today's price behavior so boxes never empty on files that mean price.
     function extractABC(lines) {
-        return findLabeledValue(lines, [
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const hasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
+        const patterns = [
             /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|abc)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
-        ], asMoney);
+        ];
+        if (hasOrigRevised) {
+            patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
+        }
+        return findLabeledValue(lines, patterns, asMoney);
     }
 
     // Budget Source / Funding Source — new in Phase 5.
@@ -997,9 +1013,15 @@ const DocumentParserCore = (function () {
         // Step 1i-3: lines already claimed by 'total-row' (below) skip the generic
         // substring re-match so one bottom-row total votes once, not twice.
         const totalRowHit = new Set();
+        // F-B1 conditional mirror of extractBudget: bare-"budget" lines are ABC, not price,
+        // but ONLY in files carrying an Original/Revised figure (extractABC claims them there).
+        const fileHasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
         for (let i = 0; i < norm.length; i++) {
             for (const { name, re, labeled } of labelRes) {
                 if (name === 'generic' && totalRowHit.has(i)) continue;
+                if (name === 'generic' && fileHasOrigRevised &&
+                    /budget/i.test(norm[i]) &&
+                    !/contract\s*amount|contract\s*price|project\s*cost|total\s*cost|original|approved\s*budget\s*for/i.test(norm[i])) continue;
                 const m = norm[i].match(re);
                 if (!m) continue;
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
@@ -1242,6 +1264,14 @@ const DocumentParserCore = (function () {
             let label = cleanValue(line.slice(0, at)).slice(0, 80);
             if (!label) label = cleanValue(lines[i - 1] || '').slice(0, 80);
             const excerpt = [lines[i - 1] || '', line, lines[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 200);
+            // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
+            // figure) must not become dictionary labels. Accept only label-ish wording or
+            // a label terminator on the raw slice; otherwise count the correction unlabeled.
+            if (label) {
+                const rawBefore = line.slice(0, at);
+                const looksLabeled = /(amount|budget|price|cost|total|contract|\babc\b|fee|\bsum\b|bill|charge|payment)/i.test(label) || /[:\-–—]\s*$/.test(rawBefore);
+                if (!looksLabeled) return { label: null, excerpt };
+            }
             if (!label) return { label: null, excerpt };
             return { label, excerpt };
         }

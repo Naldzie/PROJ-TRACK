@@ -523,3 +523,33 @@ test('L1: mineCorrectionLabel anchors text case-insensitively, null when absent'
     assert.equal(core.mineCorrectionLabel('', 'Whatever value here'), null);
 });
 
+// --- Follow-ups: F-GATE + conditional F-B1 ----------------------------------------
+
+test('F-GATE: junk-adjacent fragments are counted unlabeled, never as labels', () => {
+    // Title fragment before a figure carries no label wording — counted, not labeled.
+    const junk = core.mineCorrectionLabel('OF CANTEEN AT Public\n7,483,4297.50', '7,483,4297.50');
+    assert.ok(junk && junk.label === null && junk.excerpt.length > 0);
+    // Genuine label words pass the gate — including bare ABC.
+    const abc = core.mineCorrectionLabel('ABC 7,483,4297.50', '7,483,4297.50');
+    assert.ok(abc && /abc/i.test(abc.label));
+    const m2 = core.mineCorrectionLabel('Contract Sum: Php 6,495,049.29', '6,495,049.29');
+    assert.ok(m2 && /contract sum/i.test(m2.label));
+});
+
+test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised present', () => {
+    // Corroborated file: price from Original, ABC from the budget-Amount line.
+    const both = core.buildLinesFromText(
+        'Original Contract Amount: Php 4,204,128.84\nTotal budget Amount Php 4,834,297.59'
+    );
+    assert.equal(core.extractBudget(both), '4204128.84');
+    assert.equal(core.extractABC(both), '4834297.59');
+    // Lone budget-Amount line: today's price behavior preserved (no emptying).
+    const lone = core.buildLinesFromText('Total budget Amount Php 4,834,297.59');
+    assert.equal(core.extractBudget(lone), '4834297.59');
+    assert.equal(core.extractABC(lone), null);
+    // Pooled mirror: no budget-Amount candidate when Original exists.
+    const cands = core.collectBudgetCandidates(both, 'bundle.pdf');
+    assert.ok(!cands.some(c => c.value === '4834297.59' && c.pattern === 'generic'));
+    assert.ok(cands.some(c => c.value === '4204128.84'));
+});
+
