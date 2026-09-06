@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 G-SOUP IMPLEMENTED + tested (JS 71/71: core 51/51 incl. scorer fixture), NOT COMMITTED per user. NEXT = user browser proof with per-page yield lines (test4-class improve-or-hold; any yield repeat pastes lines).
+# Date: September 4, 2026 — Status: HANDOFF (user changing session). NEXT BUILD QUEUE approved and ordered below; working tree has uncommitted plan edits only. NEXT = build item 1 on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -511,8 +511,7 @@ Frontend convention (IMPORTANT)
     - Next: user browser proof — single suffix per state; test5 end date fills 2026-03-13 with no
       manual fix. T2 still evidence-gated (no code).
 
-  2026-09-04 — G-SOUP IMPLEMENTED (code + tests, NOT committed per user).
-    - Trigger: group-1 ladder only fired on SHORT text — test4's LONG garbage never retried.
+  2026-09-04 — G-SOUP IMPLEMENTED (code + tests, NOT committed per user).    - Trigger: group-1 ladder only fired on SHORT text — test4's LONG garbage never retried.
     - Core scoreOcrSoup() + export: symRatio + weirdFrac, rule symRatio≥0.02 AND sum≥0.32.
       Calibrated live on pasted samples (SOUP 0.37 / TABLE 0.29 / CLEAN 0.00); single-signal
       rules rejected (symbols-alone hits currency lines, weird-alone hits legit tables).
@@ -533,6 +532,24 @@ Frontend convention (IMPORTANT)
       No PHP touched. No commit.
     - Next: user browser proof with per-page yield lines on — test4-class pages improve or hold;
       any 3→1 repeat pastes its yield lines for verdict.
+
+  2026-09-04 — A/B VERDICT: GROUP 1 REGRESSED TEST4 YIELD (keep-and-fix, no revert).
+    - Method (user-approved, pre-written rules): working tree committed → temp worktree of f39e39a
+      (verified pre-group-1: scale 2, no ladder/cleanup/soup) served on :8001 with junctioned vendor
+      + shared session store (single-window sequential testing after the OAuth-pinning diagnosis).
+    - Result: baseline (B) reads test4's statement page + contract clause (2 pages, near-test5
+      extraction incl. start/end dates); current (A) reads contract clause only (1 page). Direction
+      held across the runs taken (user: pre-group-1 "always" 2 pages; post-group-1 "always" 1) —
+      accepted as consistent, matrix closed early per user.
+    - User decision: NO revert — keep group-1 code, fix forward. Suspect ranking for the fix:
+      (1) contrast stretch crushing faint pages that barely passed at scale 2 (prime suspect —
+      global stretch re-maps washed text into clipping); (2) scale-3 canvas changing tesseract
+      line segmentation on marginal pages; (3) PSM ladder last (adds attempts only; cannot remove
+      a passing read — but CAN change WHICH text wins via keep-cleaner on mis-scored pages).
+    - Fix direction banked: make cleanup CONDITIONAL (apply stretch only when the page looks
+      washed-out/low-contrast by sample metrics; skip on already-clean pages), keep scale + ladder.
+      Failing-then-passing proof: test4 statement page yields again with cleanup gated.
+    - Temp worktree + :8001 server removed after verdict (zero residue).
 
   2026-09-04 — L1 FIRST REAL FIRING analyzed + M1-M3 logged (no code yet).
     - User test (test5, hard refresh): corrected ABC + picked duration 205 → DB rows id 8 (abc)
@@ -618,6 +635,56 @@ Frontend convention (IMPORTANT)
     - Next: user browser proof on faint/fragment pages (test4-class retest: more yielded text per
       page, same-or-better boxes); then item 4 (OpenCV.js) on go-ahead.
 
+  2026-09-06 — INCIDENT: vendor/ wiped by worktree removal, recovered via reinstall.
+    - Cause: temp A/B worktree linked its vendor/ to the main tree (junction, to avoid a slow
+      re-download); `git worktree remove --force` followed the link and emptied the TARGET —
+      main vendor/ reduced to an empty shell (autoload.php gone → `php artisan serve` fatal).
+      Same failure class as the earlier sessions-dir wipe (placeholder restored then), worse:
+      sessions were ephemeral, vendor/ is reinstallable-only. Rule hardened: NEVER link live
+      framework directories into throwaway trees — copy (slow, safe) or fully isolate; any
+      future A/B rig uses copies, and removal is verified with `git status` BEFORE reporting done.
+    - Recovery (user-approved, build mode): `composer install --no-interaction --prefer-dist`
+      from intact composer.lock → byte-identical dependency versions, no drift. Verified:
+      vendor/autoload.php present, `php artisan --version` = Laravel 12.51.0, all 7
+      parser-keyword routes registered, ParserKeywordProposalTest 8/8, JS 71/71.
+      (`composer` found at C:\composer\composer.bat; an early direct call hung — transient,
+      subsequent calls fine. First artisan boot after reinstall was slow — cache rebuild.)
+    - No product code changed by this incident; working tree otherwise exactly as left.
+
+===============================================================================
+  6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
+===============================================================================
+
+  Order rationale (user Q: snapshots before or after the guard fix?): GUARD FIX FIRST.
+  The guard fix restores known-good behavior, is tiny, and is fully provable headless
+  (failing-then-passing fixture). Snapshots are diagnostic infrastructure: most valuable
+  on a stable pipeline, and they touch the same gray-note UI the guard fix does not.
+  Building diagnostics first would photograph the regression instead of fixing it.
+
+  1. KEEP-CLEANER MINIMUM-LENGTH GUARD (the yield fix). A PSM retry may dethrone the
+     current best ONLY if it also yields 10+ usable chars: long-soupy incumbent vs short
+     clean challenger keeps the incumbent (test4 statement page survives); clean-short-first
+     still upgrades normally. One condition in recognizeEnglish() + 2 fixtures (long-soupy
+     incumbent holds vs short-clean challenger; short-soupy still upgrades) + suite green.
+     Proof: test4 re-run back to 2 yielding pages with both amounts + dates (user browser).
+  2. PAGE-PIXEL SNAPSHOTS (diagnostic). Per scanned page "save image" button (gray note +
+     empty warning; downscaled ~1.5 offscreen re-render, PNG download, no server involvement).
+     Lets the assistant truly see pixels via pasted images. Proof: one saved page opens
+     readable in chat.
+  3. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
+     fallback last. S-curve OCR stays out of scope (deferred tier).
+
+  Resume state for next session (2026-09-06 handoff):
+    - Branch: phase-6-parser-learning. HEAD d82085a (+ uncommitted: THIS plan file only).
+    - JS suite 71/71 green at HEAD; PHP ParserKeywordProposalTest 8/8; full PHP suite has 6
+      pre-existing failures also present on the clean tree (2 EmailDraft known + 2
+      ContractorDashboard + 2 baseline — zero regressions from parser work).
+    - vendor/ was wiped by a worktree-removal junction accident and reinstalled via
+      `composer install` from intact composer.lock (see incident entry above); artisan +
+      routes + tests re-verified after reinstall.
+    - First command next session: `git status --short` (expect: plan file only),
+      then implement item 1 above. No merge without explicit user confirmation (Rule 12).
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================
@@ -632,9 +699,12 @@ Frontend convention (IMPORTANT)
 ===============================================================================
 
   For the next session:
-    1. Parent reader work is stable on phase-5-parser-accuracy (62 JS green + browser proofs).
-    2. Branch L1 work as phase-6-parser-learning FROM phase-5-parser-accuracy (Rule 12).
-    3. Before coding L1, re-read §4 hooks above + parent §7 last entries.
+    1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
+       they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
+    2. Resume state: branch phase-6-parser-learning, HEAD d82085a, `git status` should show
+       only this plan file modified. JS 71/71 green; PHP proposal tests 8/8.
+    3. Implement queue item 1 (keep-cleaner minimum-length guard) first, with the 2 fixtures
+       listed in 6B. Then item 2 (snapshots).
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
