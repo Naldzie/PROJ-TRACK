@@ -87,4 +87,78 @@ class ParserKeywordProposalController extends Controller
             'stored' => $stored,
         ], 201);
     }
+
+    // L2 review gate shared by every management endpoint (Decision L0a).
+    // Collection stays open to admin+staff via collect(); review/add-ons match it.
+    protected function ensureReviewer()
+    {
+        if (!in_array(auth()->user()->role, ['admin', 'staff'], true)) {
+            abort(response()->json(['message' => 'Unauthorized'], 403));
+        }
+    }
+
+    /**
+     * List proposals for the review screen (?status=proposed|live, default all).
+     * Most-seen first so the highest-value vocabulary is reviewed first.
+     */
+    public function getAllForManagement(Request $request)
+    {
+        $this->ensureReviewer();
+
+        $query = ParserKeywordProposal::orderByDesc('occurrences')->orderBy('field');
+        if (in_array($request->query('status'), ['proposed', 'live'], true)) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $rows = $query->get()->map(function ($row) {
+            return [
+                'id' => $row->id,
+                'field' => $row->field,
+                'label_phrase' => $row->label_phrase ?? '',
+                'excerpt' => $row->excerpt ?? '',
+                'occurrences' => $row->occurrences,
+                'status' => $row->status,
+                'created_at' => $row->created_at,
+                'updated_at' => $row->updated_at,
+            ];
+        });
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Approve a proposal: flip it live so L3 (reader) may consult it.
+     */
+    public function approve(ParserKeywordProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        $proposal->update(['status' => 'live']);
+
+        $this->logActivity('Approve Parser Keyword', "Approved parser keyword '{$proposal->label_phrase}' for field {$proposal->field}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Keyword approved successfully',
+            'proposal' => $proposal->fresh(),
+        ]);
+    }
+
+    /**
+     * Reject a proposal: soft-delete it (recoverable via restore, keeps history).
+     */
+    public function destroy(ParserKeywordProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        $label = $proposal->label_phrase;
+        $proposal->delete();
+
+        $this->logActivity('Reject Parser Keyword', "Rejected parser keyword '{$label}' for field {$proposal->field}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Keyword rejected successfully',
+        ]);
+    }
 }

@@ -101,4 +101,76 @@ class ParserKeywordProposalTest extends TestCase
         ])->assertUnprocessable();
         $this->assertDatabaseCount('parser_keyword_proposals', 0);
     }
+
+    // Staff can review: list shows proposals most-seen first, with ?status= filter.
+    // Called by: GET .../parser-keyword-proposals/all from the review modal.
+    public function test_staff_can_list_proposals_with_status_filter(): void
+    {
+        $staff = User::create([
+            'name' => 'Loop Reviewer',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+        ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Contract Sum', 'occurrences' => 5, 'status' => 'proposed']);
+        ParserKeywordProposal::create(['field' => 'title', 'label_phrase' => 'Project Title', 'occurrences' => 1, 'status' => 'live']);
+
+        $this->actingAs($staff)->getJson('/staff/parser-keyword-proposals/all')
+            ->assertOk()->assertJsonCount(2);
+        $this->actingAs($staff)->getJson('/staff/parser-keyword-proposals/all?status=live')
+            ->assertOk()->assertJsonCount(1)->assertJsonPath('0.field', 'title');
+    }
+
+    // Approve flips proposed → live (staff may approve per Decision L0a, via staff route).
+    // Called by: PATCH .../approve from the review modal Approve button.
+    public function test_staff_can_approve_proposal(): void
+    {
+        $staff = User::create([
+            'name' => 'Loop Approver',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Contract Sum', 'status' => 'proposed']);
+
+        $this->actingAs($staff)->patchJson("/staff/parser-keyword-proposals/{$row->id}/approve")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSame('live', $row->fresh()->status);
+    }
+
+    // Reject soft-deletes (history preserved, recoverable).
+    // Called by: DELETE from the review modal Reject button.
+    public function test_admin_can_reject_proposal(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop Rejecter',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Bad Label', 'status' => 'proposed']);
+
+        $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$row->id}")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+    }
+
+    // Contractors get nothing on review routes either (redirect by role middleware).
+    // Called by: any contractor request to the review endpoints.
+    public function test_contractor_blocked_from_review_endpoints(): void
+    {
+        $contractor = User::create([
+            'name' => 'Loop Contractor 2',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'contractor',
+            'is_active' => true,
+        ]);
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Contract Sum', 'status' => 'proposed']);
+
+        $this->actingAs($contractor)->getJson('/staff/parser-keyword-proposals/all')->assertRedirect(route('unauthorized'));
+        $this->actingAs($contractor)->patchJson("/admin/parser-keyword-proposals/{$row->id}/approve")->assertRedirect(route('unauthorized'));
+        $this->assertSame('proposed', $row->fresh()->status);
+    }
 }

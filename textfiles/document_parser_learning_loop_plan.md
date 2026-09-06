@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 L2/L3 PLANNED in detail (codebase-studied, no code). L1 committed on phase-6-parser-learning. NEXT = build L2 on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 L2 IMPLEMENTED + tested (uncommitted); first REAL L1 firing logged (CAN Food Lab file, 5 proposals); 4 follow-ups PLANNED (no code). NEXT = build follow-ups on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -121,7 +121,7 @@ Frontend convention (IMPORTANT)
     - Proof for user browser: correct one box on the CHS bundle → one proposed row in
       parser_keyword_proposals; extraction output byte-identical (reader untouched).
 
-  PHASE L2 — Review list (staff + admin)  ⬜ NOT STARTED (fully studied 2026-09-04, no code)
+  PHASE L2 — Review list (staff + admin)  🔄 IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user
     - Clone: _manage_budget_sources_modal.blade.php shell (modal-lg, header/body/footer),
       helpers (bsHeaders/bsExtractErrorMessage/bsEscapeHtml pattern → pkp* names), CRUD fetch
       shapes, show/hidden modal wiring, shared showToast + showDeleteConfirmation (do NOT
@@ -141,6 +141,24 @@ Frontend convention (IMPORTANT)
       this — do not repeat); routes mirrored in admin + staff groups (contractors: nothing).
     - Tests: staff 200 / contractor redirect / approve flips proposed→live / auto-promote
       via review path. Proof: approve one row in browser; audit shows who/when.
+
+  2026-09-04 — L2 IMPLEMENTED (code + tests, NOT committed per user).
+    - Backend: ParserKeywordProposalPolicy (write ops admin||staff, view open) + explicit
+      Gate registration (BudgetSource gap NOT repeated); controller += getAllForManagement
+      (?status=, occurrences DESC), approve (→live + activity log), destroy (soft-delete +
+      activity log); routes mirrored admin + staff (PATCH approve, DELETE, GET all).
+    - Frontend: _manage_parser_keywords_modal.blade.php (table + Proposed/Live/All tabs,
+      data-* delegated approve/reject, excerpt tooltips, auto-live hint; no add-form, no
+      edit-prompt); included in app + stafflayouts (contractor layout excluded); sidebar
+      "Learned Keywords" menu entries in both layouts (modal launcher, no dedicated page);
+      launcher button behind the create-project popup (staff+admin role check).
+    - Tests: 8/8 ParserKeywordProposalTest (L1 4 + L2 4: list+filter, staff approve, admin
+      reject-soft-delete, contractor blocked everywhere). JS 64/64 untouched. Blade compiles
+      (view:cache clean). Incidents: stale route cache hid new endpoints (cleared; same as L1);
+      my own test wrongly used an admin URL as staff (302 by design — fixed to staff URL).
+    - Proof for user browser: open Learned Keywords (menu or popup button) → empty-table
+      message (no proposals exist yet — correct for L1-postponed state); approve/reject flow
+      awaits first real proposal. No PHP/JS regressions. No commit.
 
   PHASE L3 — Reader consults the table  ⬜ NOT STARTED (seam verified 2026-09-04, no code)
     - Seam: optional-parameter injection (NOT globals/setters — preserves pure/node --test).
@@ -209,14 +227,64 @@ Frontend convention (IMPORTANT)
       Values never leave the browser; had_disagree recorded as context.
     - Committing + pushing all per user.
 
+  2026-09-04 — Style-capture finding + case-shape enrichment PLANNED (no code).
+    - User Q: does the loop capture bold/ALL-CAPS/underline? Verified in core: ALL-CAPS is
+      PRESERVED (label/excerpt keep original casing); bold/underline are NEVER captured —
+      the pipeline is characters-only (pdf.js font info discarded pre-parse; OCR text has no
+      style). So no proposal can ever carry bold/underline signal; case shape it can.
+    - Companion finding (user's non-bold ALL-CAPS price-words file): SAFE, no fix needed.
+      The "strict ALL-CAPS" word-fallback rule (core :723) tests CASE only
+      (pesosLine === pesosLine.toUpperCase()); "bold" lives in the comment alone because both
+      original test files happened to be bold. ALL-CAPS non-bold passes identically.
+    - Enrichment (user approved, NOT STARTED): case_shape tag per proposal (UPPER / Title Case /
+      lower / mixed), computed at harvest from the label text — scan-safe (characters only),
+      shown as a review-table column, consumable by L3 same-shape preference later. Bold/
+      underline detection explicitly REJECTED (text-PDF-only via font names, never on scans —
+      half a signal is worse than none).
+    - Awaiting user scan test (5-page cropped photocopy PDF in progress): if its price fills,
+      the finding is browser-proven; any miss becomes L1's first real proposal.
+
+  2026-09-04 — First REAL L1 firing (CAN Food Lab cropped photocopy, sampledocs/pdfdocstest3.pdf).
+    - User test (5 of N images): title found via value keywords (CANTEEN AT lost to crop/OCR,
+      joiner can't join absent words); location truncated by crop (parser read it exactly);
+      price picked ABC 4,834,297.59 from cropped "…budget Amount Php …" while true Original
+      4,204,128.84 + Revised 4,323,196.77 (page 1) show ZERO pool finds — absent, not outvoted;
+      contractor missed (no label survived + OCR "CONTRUCTION" defeats exact suffix match);
+      duration/dates empty (summary pages unprocessed). Runner-up 23.00 harmless (0.43).
+    - Environment fact (verified read-only via node pdfjs): pdfdocstest3.pdf = 6 pages, ZERO
+      text items — pure image, everything via OCR. Assistant CANNOT re-run OCR here (needs
+      browser canvas); pixels/OCR stay user-side, structure/text-layer inspectable any time.
+    - L1 fired end-to-end: 5 proposals, desk renders. 4× "(field count only)" = correct
+      (unanchorable values counted, not labeled). Row 4 label ")F CANTEEN AT Public" =
+      junk-adjacent title fragment → LABEL-QUALITY GATE planned below.
+    - Title/location have NO vote tables BY DESIGN (pooled = budget/duration/dates only;
+      title = greedy join, location = single label, contractor = label/suffix; red banner
+      covers cross-file). No extension planned — no proven gain.
+    - B1 revised per user hesitation → CONDITIONAL (see follow-up B1 below).
+
+  FOLLOW-UPS (approved, no code yet).
+    - F-COPY. Copy-extracted-text debug button in preview (stashed fullText → clipboard):
+      lets the user paste exactly what the system read (e.g., the page-1 Original/Revised
+      lines) so misses diagnose to the character without screenshots. ~20 lines, no Blade
+      change (dynamic DOM like the banners).
+    - F-GATE. Label-quality gate in miner: accept candidate only with label-ish words
+      (amount/budget/price/cost/total/contract/…) or :/- terminator, else null. Existing
+      junk row stays (user rejects it in review — proves the desk works).
+    - F-B1. CONDITIONAL budget-amount→ABC reroute: only when an Original/Revised-labeled
+      figure ALSO exists in the same file (corroborated reassignment, this file's shape);
+      lone budget-Amount figures keep today's price behavior (boxes never emptied on files
+      that mean price by it).
+    - F-TEST. Re-test verdict on fixed-crop FULL pdfdocstest3.pdf: Original/Revised in pool,
+      ABC in ABC, contractor hit (needs B2 fuzzy suffix — still queued, NOT in this batch).
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================
 
   - Synthetic paraphrase fixtures: hand-write 3–5 now, or generate from the 5 known
     contracts at L3 kickoff? Recommendation: generate at L3 (needs the corpus anyway).
-  - Should proposals also capture WHICH pattern fired (for the inspector)? Cheap now,
-    useful later — decide at L1 kickoff.
+  - Should proposals also capture WHICH pattern fired (for the inspector)? RESOLVED 2026-09-04:
+    folded into excerpt + had_disagree flag (shipped in L1) — no separate column.
 
 ===============================================================================
   8. CONVERSATION CONTINUATION GUIDE

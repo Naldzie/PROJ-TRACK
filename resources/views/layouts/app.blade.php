@@ -288,6 +288,11 @@
         <i class="bi bi-clock-history"></i> Activity Logs
     </a>
 
+    {{-- L2 learned-keywords review desk (modal launcher — no dedicated page) --}}
+    <a href="javascript:void(0)" onclick="openManageParserKeywords(); return false;" title="Review wording the document reader learned from corrections">
+        <i class="bi bi-magic"></i> Learned Keywords
+    </a>
+
     <a href="{{ route('admin.profile') }}"
        class="{{ request()->routeIs('admin.profile') ? 'active' : '' }}">
         <i class="bi bi-gear"></i> Admin Profile
@@ -374,6 +379,9 @@
 
 {{-- GLOBAL TOAST NOTIFICATION --}}
 @include('components.toast')
+
+{{-- LEARNED KEYWORDS REVIEW MODAL (L2 — admin role layout; staff has its own include) --}}
+@include('admin._manage_parser_keywords_modal')
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')

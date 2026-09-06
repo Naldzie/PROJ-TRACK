@@ -260,6 +260,16 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
         ->name('staff.parser-keywords.collect');
 
+    // === PARSER LEARNING LOOP (L2 review: staff + admin per Decision L0a) ===
+    Route::get('/parser-keyword-proposals/all', [ParserKeywordProposalController::class, 'getAllForManagement'])
+        ->name('staff.parser-keywords.all');
+
+    Route::patch('/parser-keyword-proposals/{proposal}/approve', [ParserKeywordProposalController::class, 'approve'])
+        ->name('staff.parser-keywords.approve');
+
+    Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
+        ->name('staff.parser-keywords.destroy');
+
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
         ->name('staff.documents.upload');
@@ -704,6 +714,16 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     // === PARSER LEARNING LOOP (L1 silent collection; L2 review UI lands here later) ===
     Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
         ->name('admin.parser-keywords.collect');
+
+    // === PARSER LEARNING LOOP (L2 review: staff + admin per Decision L0a) ===
+    Route::get('/parser-keyword-proposals/all', [ParserKeywordProposalController::class, 'getAllForManagement'])
+        ->name('admin.parser-keywords.all');
+
+    Route::patch('/parser-keyword-proposals/{proposal}/approve', [ParserKeywordProposalController::class, 'approve'])
+        ->name('admin.parser-keywords.approve');
+
+    Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
+        ->name('admin.parser-keywords.destroy');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
