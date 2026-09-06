@@ -1224,12 +1224,13 @@ const DocumentParserCore = (function () {
     }
 
     // Mine a candidate label for a user-corrected value (L1 learning loop, Option 2).
-    // Finds the user's final value in the document text and returns the words sitting
-    // right before it on that line as a candidate label, plus a ±1-line excerpt.
-    // Matching is forgiving: money ignores separators ("6,495,049.29" matches OCR
-    // "6.495,049.29"), text matches case-insensitively. Returns null when the value
-    // cannot be anchored (e.g., typed from knowledge, or a reformatted date) — the
-    // correction is still recorded, just without a label candidate.
+    // Surveys EVERY matching line (M2) and returns the best-anchored one: a match whose
+    // neighborhood already looks label-ish outranks a bare occurrence; ties keep document
+    // order. Matching is forgiving: money ignores separators ("6,495,049.29" matches OCR
+    // "6.495,049.29"), text matches case-insensitively, short numerics match whole tokens
+    // only (M1: "205" anchors "Total Contract Time 205" but can never hit inside "2025").
+    // Returns null when the value cannot be anchored (typed from knowledge, reformatted
+    // date) — the correction is still recorded, just without a label candidate.
     // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
     function mineCorrectionLabel(docText, finalValue) {
         const raw = String(finalValue || '').trim();
@@ -1238,6 +1239,14 @@ const DocumentParserCore = (function () {
         const hasDigit = /\d/.test(raw);
         const digitSig = raw.replace(/\D/g, '');
         const lowerVal = raw.toLowerCase();
+        // M1: short digit strings anchor whole tokens only — bounded by non-digit AND
+        // non-separator so "205" skips "1,205,000" as well as "2025".
+        let shortTokenRe = null;
+        if (hasDigit && digitSig.length > 0 && digitSig.length < 4) {
+            const esc = digitSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            try { shortTokenRe = new RegExp('(?<![\\d,.])' + esc + '(?![\\d,.])'); } catch (e) { shortTokenRe = null; }
+        }
+        const hits = [];
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             let at = -1;
@@ -1254,6 +1263,9 @@ const DocumentParserCore = (function () {
                     // a longer value like "2024-12-09" (its digits contain "90").
                     if (runSig.length >= 4 && (runSig.includes(digitSig) || digitSig.includes(runSig))) { at = pos; break; }
                 }
+            } else if (shortTokenRe) {
+                const m = line.match(shortTokenRe);
+                if (m && m.index !== undefined) at = m.index;
             } else if (!hasDigit) {
                 const idx = line.toLowerCase().indexOf(lowerVal);
                 if (idx !== -1) at = idx;
@@ -1264,18 +1276,20 @@ const DocumentParserCore = (function () {
             let label = cleanValue(line.slice(0, at)).slice(0, 80);
             if (!label) label = cleanValue(lines[i - 1] || '').slice(0, 80);
             const excerpt = [lines[i - 1] || '', line, lines[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 200);
-            // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
-            // figure) must not become dictionary labels. Accept only label-ish wording or
-            // a label terminator on the raw slice; otherwise count the correction unlabeled.
-            if (label) {
-                const rawBefore = line.slice(0, at);
-                const looksLabeled = /(amount|budget|price|cost|total|contract|\babc\b|fee|\bsum\b|bill|charge|payment)/i.test(label) || /[:\-–—]\s*$/.test(rawBefore);
-                if (!looksLabeled) return { label: null, excerpt };
-            }
-            if (!label) return { label: null, excerpt };
-            return { label, excerpt };
+            // F-GATE score for M2 ranking (same rule that filters junk fragments).
+            const rawBefore = line.slice(0, at);
+            const gated = !label || /(amount|budget|price|cost|total|contract|\babc\b|fee|\bsum\b|bill|charge|payment)/i.test(label) || /[:\-–—]\s*$/.test(rawBefore);
+            hits.push({ label: label || null, excerpt, gated, i });
         }
-        return null;
+        if (!hits.length) return null;
+        // M2: best-anchored first (gated beats ungated), document order breaks ties.
+        hits.sort((a, b) => ((b.gated ? 1 : 0) - (a.gated ? 1 : 0)) || (a.i - b.i));
+        const best = hits[0];
+        // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
+        // figure) must not become dictionary labels — counted, never labeled.
+        if (!best.gated) return { label: null, excerpt: best.excerpt };
+        if (!best.label) return { label: null, excerpt: best.excerpt };
+        return { label: best.label, excerpt: best.excerpt };
     }
 
     // Pooled parse across files (Step 1e-4 VALUE track).

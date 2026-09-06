@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 M1-M3 mining upgrades LOGGED (no code); L1 first real firing stands (5 proposals, 2 NULL/NULL diagnosed). NEXT = build M1-M3 + pending batch on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 ABC-label POSTPONED for loop-first test (banked phrasing); M1+M2 built + tested uncommitted. NEXT = remaining batch + F-TEST on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -430,6 +430,31 @@ Frontend convention (IMPORTANT)
       recorded as dependency, not separate work.
     - Tests: 205-anchors-labeled-line; 90-in-2024-12-09 still refuses; multi-occurrence prefers
       labeled line; suite green + browser proof on next real correction.
+
+  2026-09-04 — M1+M2 IMPLEMENTED (code + tests, NOT committed per user).
+    - M1: short digit strings (<4) anchor whole tokens only via (?<![\d,.])sig(?![\d,.]) —
+      stronger than the planned \b (which still hits inside "1,205,000"). Verified by the new
+      refusal fixtures (2025 / grouped-thousands / date-embedded).
+    - M2: miner collects ALL hits [{label, excerpt, gated, i}] and returns best-gated first,
+      document order breaking ties (stable sort + explicit index). F-GATE rule reused for
+      ranking instead of duplicated. First-hit-wins is gone as a behavior.
+    - Tests (+2 M fixtures, core 48/48): whole-token hits + 3 refusal shapes; survey prefers
+      the labeled neighborhood over an earlier bare occurrence. Full JS 68/68
+      (core 48 + scurve 20). No PHP touched. No commit.
+    - Next: remaining batch (R-reach, D-total, N-note, full-scan, ABC label) + F-TEST on go-ahead.
+
+  2026-09-04 — ABC-LABEL POSTPONED FOR LOOP-FIRST TEST (plan only, no code).
+    - User decision: item 1 (hand-adding "TOTAL ESTIMATED PROJECT COST") waits — the next ABC
+      correction should let the LOOP discover that exact phrasing as a mined label instead.
+      Banked label text (must not be lost): "TOTAL ESTIMATED PROJECT COST" (+ optional
+      "ESTIMATED … EXPENSES/COST" context). If the harvested proposal carries this phrasing,
+      the loop independently rediscovers the hand-written rule — strongest possible L1→L2 proof.
+    - Caveat banked: discovery ≠ auto-extraction until L3 is built; approval is the finish line
+      for now. Title-page ABC shape (Photo 3) + bare-total prohibition + conditional F-B1 all stand.
+    - Comma finding (verified live via node: 'I budget Amount Php 4,834,297.59' mined identically
+      from typed '4834297.59' AND '4,834,297.59' → label 'I budget Amount Php'): separators are
+      stripped pre-compare both sides, so missing commas NEVER block anchoring. The NULL/NULL
+      rows are therefore page-limit/garbling, not formatting — full-scan default stays the remedy.
 
 ===============================================================================
   7. OPEN QUESTIONS

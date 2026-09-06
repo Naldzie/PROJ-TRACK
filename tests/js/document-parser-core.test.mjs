@@ -523,6 +523,27 @@ test('L1: mineCorrectionLabel anchors text case-insensitively, null when absent'
     assert.equal(core.mineCorrectionLabel('', 'Whatever value here'), null);
 });
 
+// --- M1/M2: whole-token short numerics + multi-occurrence survey ------------------
+
+test('M1: short numerics anchor whole tokens only (205, never inside 2025)', () => {
+    const m = core.mineCorrectionLabel('8. Total Contract Time 205 Calendar Days', '205');
+    assert.ok(m && /total contract time/i.test(m.label));
+    // Refusals that protect dates and grouped thousands alike.
+    assert.equal(core.mineCorrectionLabel('Original Expiry date March 9, 2025', '205'), null);
+    assert.equal(core.mineCorrectionLabel('Amount Php 1,205,000.00', '205'), null);
+    assert.equal(core.mineCorrectionLabel('Date: December 9, 2024', '90'), null);
+});
+
+test('M2: multi-occurrence survey prefers the labeled neighborhood', () => {
+    const text = [
+        'Random 6,495,049.29 scribbled here',
+        'Other stuff around',
+        'Contract Sum: Php 6,495,049.29 end',
+    ].join('\n');
+    const m = core.mineCorrectionLabel(text, '6,495,049.29');
+    assert.ok(m && /contract sum/i.test(m.label));
+});
+
 // --- Follow-ups: F-GATE + conditional F-B1 ----------------------------------------
 
 test('F-GATE: junk-adjacent fragments are counted unlabeled, never as labels', () => {
