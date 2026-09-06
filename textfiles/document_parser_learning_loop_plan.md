@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 TEST5 verdict logged + full-scan default + ABC hypotheses + NEXT BUILD BATCH planned (R-reach, D-total, N-note, full-scan, conditional ABC label). NO CODE this round — build on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 M1-M3 mining upgrades LOGGED (no code); L1 first real firing stands (5 proposals, 2 NULL/NULL diagnosed). NEXT = build M1-M3 + pending batch on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -410,6 +410,26 @@ Frontend convention (IMPORTANT)
       heuristic) + D-total (Total Contract Time outranks Original; amber otherwise unchanged) +
       N-note (complete-vs-cut wording) + full-scan default (remove early break) + ABC label only
       IF copy-text evidence requires it. Then F-TEST on fixed crops.
+
+  2026-09-04 — L1 FIRST REAL FIRING analyzed + M1-M3 logged (no code yet).
+    - User test (test5, hard refresh): corrected ABC + picked duration 205 → DB rows id 8 (abc)
+      + id 9 (duration), BOTH label_phrase NULL + excerpt NULL. Pipeline proven (harvest ran,
+      fields right, statuses right); miner found no anchor in either case.
+    - Diagnosis banked: (a) page-limit starvation — miner searches only read text; the run
+      stopped at 3/10 pages, so values past page 3 are unfindable (second independent reason
+      for the full-scan default); (b) first-match-only — miner returns the first anchored line,
+      never surveys; (c) duration "205" refused BY DESIGN (numeric anchoring needs 4+ digits
+      so "90" can't anchor inside "2024-12-09"); (d) ABC figure genuinely unanchored (digits
+      absent in matching form — garbled line or past page 3; needs the typed digits to tell).
+    - M1. Whole-token anchoring for short numerics (<4 digits): \b-bounded match only —
+      "205" anchors "Total Contract Time 205" but can never hit inside "2025". Same safety,
+      durations included.
+    - M2. Multi-occurrence survey: gather ALL anchor lines, rank by label-ish neighborhood
+      (serves the F-GATE quality rule directly), store best + count in excerpt.
+    - M3. Falls out of the full-scan default already queued (miner inherits full text) —
+      recorded as dependency, not separate work.
+    - Tests: 205-anchors-labeled-line; 90-in-2024-12-09 still refuses; multi-occurrence prefers
+      labeled line; suite green + browser proof on next real correction.
 
 ===============================================================================
   7. OPEN QUESTIONS
