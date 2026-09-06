@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 L2 IMPLEMENTED + tested (uncommitted); first REAL L1 firing logged (CAN Food Lab file, 5 proposals); 4 follow-ups PLANNED (no code). NEXT = build follow-ups on go-ahead.
+# Date: September 4, 2026 — Status: 🔄 NEXT BUILD BATCH approved (R1+R2 orientation per-page + F-COPY + F-GATE + F-B1, no code); F-TEST retest pending user crops. NEXT = build batch on go-ahead.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -276,6 +276,26 @@ Frontend convention (IMPORTANT)
       that mean price by it).
     - F-TEST. Re-test verdict on fixed-crop FULL pdfdocstest3.pdf: Original/Revised in pool,
       ABC in ABC, contractor hit (needs B2 fuzzy suffix — still queued, NOT in this batch).
+
+  ORIENTATION BATCH (approved 2026-09-04, no code yet — user: tilted pages differ per page).
+    - Context: orientation detection exists NOWHERE in code (verified: no osd/orientation/
+      deskew/rotate hits in public/js; ocrPage uses tesseract 'eng' only). The eng+osd design
+      lives only in the deferred S-curve Tier 3 plan. User reports some bundle pages tilted
+      differently from others — matches cropped-photocopy handling. Tier-2 note: the fix lands
+      in the SHARED ocrPage helper every OCR path funnels through, so deferred S-curve Tier 2
+      inherits it free when built (nothing taken from Tier 2, nothing owed to it).
+    - R1. Auto orientation (eng+osd): photo-reader call gains orientation detection + small
+      OSD data file beside the cached reader; tilted/sideways/upside-down pages straighten
+      silently pre-read. Same offline-after-first-load; ~1–2s extra first load only.
+    - R2. Manual rotate, PER-PAGE (user confirmed — bundles mix tilted + straight pages):
+      per-page rotate control (90° steps) re-rendering + re-reading that page only. Honestly
+      the costliest item (render + OCR plumbing per page, not just spinning pixels); the only
+      rescue when auto misdetects.
+    - B2 left OUT (user to call separately): fuzzy contractor-suffix for OCR typos.
+    - Tests: (i) tilted-figure fixture reads post-orientation; (ii) manual rotate re-reads
+      exactly one page; (iii) straight pages byte-identical (auto is a no-op upright);
+      (iv) full suite green + bundle re-check.
+  NEXT BUILD BATCH (all approved, no code): R1 + R2 + F-COPY + F-GATE + F-B1, then F-TEST.
 
 ===============================================================================
   7. OPEN QUESTIONS
