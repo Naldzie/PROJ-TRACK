@@ -94,8 +94,9 @@ const DocumentParserCore = (function () {
             jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
         };
 
-        // "Month DD, YYYY" or "Month DD YYYY"
-        const wordy = raw.match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+        // "Month DD, YYYY" or "Month DD YYYY" — or OCR-misread "Month DD. YYYY" (period for
+        // comma, e.g. "March 13. 2026"). The [,.] class keeps comma behavior byte-identical.
+        const wordy = raw.match(/^([A-Za-z]+)\.?\s+(\d{1,2})[,.]?\s+(\d{4})$/);
         if (wordy) {
             const month = monthNames[wordy[1].toLowerCase()];
             if (month) {
@@ -1238,6 +1239,33 @@ const DocumentParserCore = (function () {
         return { connected: [...(top.files || [])], outliers: rest.map(v => ({ value: v.value, files: [...(v.files || [])] })) };
     }
 
+    // Soup scorer for photo-read text (G-soup): is this page worth a second opinion?
+    // Signals (calibrated 2026-09-04 on pasted production samples):
+    //   symRatio   = share of chars outside [alnum + space + .,;:()%-]
+    //   weirdFrac  = share of tokens <40% alphanumeric, or longer than 20 chars
+    //   SOUP ≈ 0.37–0.72 combined | TABLE (legit pipes) ≈ 0.29 | CLEAN/FRAG/NUMS/DATES = 0.
+    //   TABLE2 (legit but noisy, ~~ and pipes) ≈ 0.58 — trips the bar (accepted cost: the
+    //     retry KEEPS THE BETTER text, so worst case is one wasted attempt).
+    // Rule: symRatio >= 0.02 (real symbols present, not just odd words) AND
+    //   (weirdFrac + symRatio) >= 0.32. Single-signal rules misfire: symbols alone hit
+    //   currency-heavy lines, weird-tokens alone hit legit tables.
+    // Called by: document-parser.js recognizeEnglish() gate + tests. Pure (no DOM).
+    function scoreOcrSoup(text) {
+        const s = String(text || '');
+        if (!s.trim()) return { score: 1, weirdFrac: 1, symRatio: 1, soupy: true };
+        const syms = (s.match(/[^A-Za-z0-9\s.,:;()%/\-]/g) || []).length;
+        const toks = s.split(/\s+/).filter(Boolean);
+        let weird = 0;
+        for (const t of toks) {
+            const al = (t.match(/[A-Za-z0-9]/g) || []).length;
+            if (al / t.length < 0.4 || t.length > 20) weird++;
+        }
+        const symRatio = syms / Math.max(1, s.length);
+        const weirdFrac = weird / Math.max(1, toks.length);
+        const soupy = symRatio >= 0.02 && (weirdFrac + symRatio) >= 0.32;
+        return { score: Math.round((weirdFrac + symRatio) * 100) / 100, weirdFrac: Math.round(weirdFrac * 1000) / 1000, symRatio: Math.round(symRatio * 1000) / 1000, soupy };
+    }
+
     // Mine a candidate label for a user-corrected value (L1 learning loop, Option 2).
     // Surveys EVERY matching line (M2) and returns the best-anchored one: a match whose
     // neighborhood already looks label-ish outranks a bare occurrence; ties keep document
@@ -1455,6 +1483,7 @@ const DocumentParserCore = (function () {
         voteCandidatePoolDebug,
         pooledDisagree,
         splitMismatchGroups,
+        scoreOcrSoup,
         mineCorrectionLabel,
         parseProjectInfoPooled,
     };

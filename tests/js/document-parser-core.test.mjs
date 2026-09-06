@@ -122,6 +122,9 @@ test('parseToInputDate handles common formats', () => {
     assert.equal(core.parseToInputDate('15/01/2026'), '2026-01-15');
     assert.equal(core.parseToInputDate('01-15-2026'), '2026-01-15');
     assert.equal(core.parseToInputDate('2026-01-15'), '2026-01-15');
+    // D1: OCR-misread period for comma ("Date of Completion March 13. 2026", test5).
+    assert.equal(core.parseToInputDate('March 13. 2026'), '2026-03-13');
+    assert.equal(core.parseToInputDate('July 14. 2025'), '2025-07-14');
     assert.equal(core.parseToInputDate('not a date'), null);
 });
 
@@ -542,6 +545,21 @@ test('M2: multi-occurrence survey prefers the labeled neighborhood', () => {
     ].join('\n');
     const m = core.mineCorrectionLabel(text, '6,495,049.29');
     assert.ok(m && /contract sum/i.test(m.label));
+});
+
+// --- G-soup: OCR soup scoring (calibrated on production pastes) ---------------------
+
+test('G-soup: symbol salad scores soupy, clean/table text does not', () => {
+    const soup = core.scoreOcrSoup('5 5 939529 393 952555 ~ 3 : 5 SERENE SEEERRIEER ~ << ~ s & LEER EE EEE 2 1');
+    assert.equal(soupy(soup), true);
+    const clean = core.scoreOcrSoup('3. Original Contract Amount Php4,204,128.84 4 Revised Contract Amount Php4,323,196.77');
+    assert.equal(soupy(clean), false);
+    // Legit table row with pipes stays below the bar (no wasted retry).
+    const table = core.scoreOcrSoup('A.1.4 Provision of Progress Photographs | each | 50.00 | 1,443.75 1,443.75');
+    assert.equal(soupy(table), false);
+    // Empty text is trivially "soupy" (retry-worthy) without crashing.
+    assert.equal(soupy(core.scoreOcrSoup('   ')), true);
+    function soupy(r) { return !!(r && r.soupy); }
 });
 
 // --- Follow-ups: F-GATE + conditional F-B1 ----------------------------------------

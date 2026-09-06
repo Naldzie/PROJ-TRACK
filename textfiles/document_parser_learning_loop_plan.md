@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: 🔄 F1b+D1+T2 LOGGED (suffix dup root-caused to wrapper lines 931+949; period-date mechanism found; two-file empty needs run-files line). NEXT = build F1b+D1 on go-ahead; T2 evidence-gated.
+# Date: September 4, 2026 — Status: 🔄 G-SOUP IMPLEMENTED + tested (JS 71/71: core 51/51 incl. scorer fixture), NOT COMMITTED per user. NEXT = user browser proof with per-page yield lines (test4-class improve-or-hold; any yield repeat pastes lines).
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -500,6 +500,39 @@ Frontend convention (IMPORTANT)
       absence/presence decides; (c) worker-level failure (least likely — engine failure has its
       own message, not seen). Needs the `[Parser] preview run N: files=[...]` line + refresh
       status. NO code until evidence names it.
+
+  2026-09-04 — F1b+D1 IMPLEMENTED (code + tests, NOT committed per user).
+    - F1b: line-949 duplicate suffix append deleted; base strings (lines 931-932) keep their single
+      endings. Both note states now render exactly once — verified by reading, browser to confirm.
+    - D1: wordy-date `,?` → `[,.]?` (core :98) + comment noting the OCR-comma origin; comma-form
+      behavior unchanged by construction (same class, comma still first alternative in effect).
+    - Tests: +2 asserts inside the existing parseToInputDate fixture ('March 13. 2026' → 2026-03-13,
+      'July 14. 2025' → 2025-07-14). Full JS 70/70 (core 50 + scurve 20). No PHP touched. No commit.
+    - Next: user browser proof — single suffix per state; test5 end date fills 2026-03-13 with no
+      manual fix. T2 still evidence-gated (no code).
+
+  2026-09-04 — G-SOUP IMPLEMENTED (code + tests, NOT committed per user).
+    - Trigger: group-1 ladder only fired on SHORT text — test4's LONG garbage never retried.
+    - Core scoreOcrSoup() + export: symRatio + weirdFrac, rule symRatio≥0.02 AND sum≥0.32.
+      Calibrated live on pasted samples (SOUP 0.37 / TABLE 0.29 / CLEAN 0.00); single-signal
+      rules rejected (symbols-alone hits currency lines, weird-alone hits legit tables).
+      Noisy-but-legit rows (TABLE2 ≈0.58) knowingly trip the bar — the retry KEEPS THE BETTER
+      text, so worst case is one wasted attempt, never a replacement.
+    - Wrapper recognizeEnglish(): best-of ladder (default → 6 → 11) gated per attempt — later
+      attempts run only while best is short or soupy; keep-cleaner (non-soupy wins, ties keep
+      first, no churn); per-attempt debug line under _parserDebug; engine-failure marking only
+      when best is empty AND something threw. Page budget still counts pages, not attempts.
+    - Yield investigation (user: 3 pages → 1 after group 1): NOT explained by group 1 mechanics
+      (retries only ADD attempts; budget counts pages) — prime suspects remain run-to-run OCR
+      wobble (documented 2-vs-3 flicker) or a stale-code run. New per-page yield log
+      ("OCR page N: yielded=M rot=D") under _parserDebug makes the next occurrence self-reporting:
+      compare yielded counts across two runs to separate wobble from regression.
+    - Tests (+1 G-soup fixture, core 51/51): soupy soup / clean-table-table / empty-trivial.
+      Full JS 71/71 (core 51 + scurve 20). OCR retry paths are canvas/network timing — browser
+      proof covers them (failing pages improve or hold; clean pages byte-identical path).
+      No PHP touched. No commit.
+    - Next: user browser proof with per-page yield lines on — test4-class pages improve or hold;
+      any 3→1 repeat pastes its yield lines for verdict.
 
   2026-09-04 — L1 FIRST REAL FIRING analyzed + M1-M3 logged (no code yet).
     - User test (test5, hard refresh): corrected ABC + picked duration 205 → DB rows id 8 (abc)

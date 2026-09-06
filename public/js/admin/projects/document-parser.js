@@ -355,15 +355,33 @@ function preprocessOcrCanvas(canvas) {
 }
 
 // OCR group 1: plain-English recognize with a PSM retry ladder (no new library).
-// Default segmentation first; pages that come back garbage-or-empty (<10 chars) get one
-// retry as a uniform text block (PSM 6: tables, forms) and one as sparse text (PSM 11:
-// scattered fragments) — first usable result wins. Retries only fire on failure, so clean
-// pages pay nothing extra. Returns '' only when every attempt throws (engine failure).
+// Default segmentation first; pages that come back short (<10 chars) retry as a uniform
+// text block (PSM 6: tables/forms) then sparse text (PSM 11: fragments).
+// G-soup: pages that come back LONG but soupy (symbol salad per core.scoreOcrSoup) get one
+// PSM 6 retry, keeping whichever reads cleaner — never a blind replace (a noisy-but-legit
+// table row must survive its own retry). Retries fire ONLY on failure; clean pages pay nothing.
+// Page budget counts pages, not attempts (worst case 3 reads per failing page — bounded).
+// Returns '' only when every attempt throws (engine failure).
 // Called by: ocrPage() for every plain-'eng' read (OSD retry, OSD-throw fallback, steady path).
 async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
+    const core = getCore();
+    const soupOf = (t) => {
+        try {
+            if (core && typeof core.scoreOcrSoup === 'function') return core.scoreOcrSoup(t);
+        } catch (e) {}
+        return { soupy: (t || '').trim().length < 10 };
+    };
     const attempts = [{}, { tessedit_pageseg_mode: '6' }, { tessedit_pageseg_mode: '11' }];
+    let best = '';
+    let bestSoupy = true;
     let threw = false;
-    for (const options of attempts) {
+    for (let ai = 0; ai < attempts.length; ai++) {
+        const options = attempts[ai];
+        // Attempt 0 always runs. Later attempts run only while the best so far is unusable:
+        // too short, or long-but-soupy (G-soup gate).
+        if (ai > 0) {
+            if (best.trim().length >= 10 && !bestSoupy) break;
+        }
         let text = '';
         try {
             const hasOptions = options && Object.keys(options).length > 0;
@@ -375,12 +393,22 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
             threw = true;
             continue;
         }
-        if (text.trim().length >= 10) return text;
+        if (!text.trim()) continue;
+        const s = soupOf(text);
+        // Keep the cleaner read: non-soupy beats soupy outright; two soupy (or two clean)
+        // results keep the first (document order) — no churn between equals.
+        if (!best || (!s.soupy && bestSoupy)) {
+            best = text;
+            bestSoupy = !!s.soupy;
+        }
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try { console.log('[Parser] OCR attempt ' + ai + ': chars=' + text.trim().length + ' soupy=' + (!!s.soupy)); } catch (e) {}
+        }
     }
-    if (threw) {
+    if (!best && threw) {
         try { markEngineFailed(); } catch (e) {}
     }
-    return '';
+    return best;
 }
 
 async function ocrPage(page, runId, rotationDeg = 0) {
@@ -534,6 +562,11 @@ async function extractTextFromPDF(file, runId) {
                 ocrUsed = true;
                 scannedRead++;
                 ocrPages.push(pageNum);
+            }
+            // Yield instrumentation for the 3→1 investigation: per-page chars + rotation,
+            // debug-gated so normal runs stay quiet.
+            if (typeof window !== 'undefined' && window._parserDebug) {
+                try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
             }
         }
 
@@ -946,7 +979,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 window._ocrRotateTargets = window._ocrRotateTargets || [];
                 window._ocrRotateTargets[ri] = r.fileName;
             } catch (e) { /* best-effort */ }
-            return base + (r.truncated ? ' — later pages were not scanned.' : ' — all pages read, scan complete.') + rotBtns;
+            return base + rotBtns;
         });
         if (lines.length === 0 && (truncated && truncated.length > 0)) {
             lines.push('Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.');
