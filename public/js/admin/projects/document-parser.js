@@ -340,19 +340,34 @@ function warmTesseract() {
 // OCR group 1: light canvas cleanup (no new library) — grayscale + contrast stretch via
 // plain 2D canvas APIs, so washed-out photocopies reach the reader with fuller blacks.
 // Runs on the already-rendered canvas, in place, best-effort (any failure keeps the original).
+// F2 conditional gate (2026-09-07): the global stretch is applied ONLY to washed-out pages
+// (no deep blacks to anchor on + compressed tonal range) and SKIPPED on already-clean pages,
+// restoring pre-group1 behavior exactly where pixels look healthy. An unconditional remap
+// calibrated to outlier specks (stamps, glare) can crush faint cell text into the background —
+// the prime suspect for test4 p1 @0° + p2 @90° yielding 0 on upright, human-crisp pixels.
+// Decision is logged under window._parserDebug (applied/skipped + sampled range).
 // Called by: ocrPage() once per scanned page, before any recognize() attempt.
 function preprocessOcrCanvas(canvas) {
     try {
         const ctx = canvas.getContext('2d');
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = img.data;
-        let lo = 255, hi = 0;
+        let lo = 255, hi = 0, sum = 0, n = 0;
         for (let i = 0; i < d.length; i += 16) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
             if (g < lo) lo = g;
             if (g > hi) hi = g;
+            sum += g; n++;
         }
         if (hi - lo < 8) return;
+        // F2 gate: stretch only washed-out pages (faded gray text, no true blacks, narrow
+        // range). Clean pages (real black text, healthy range) skip untouched — the stretch
+        // is near-identity for them at best and outlier-calibrated damage at worst.
+        const washed = (lo >= 100) && ((hi - lo) <= 140);
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try { console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped') + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))); } catch (e) {}
+        }
+        if (!washed) return;
         const range = (hi - lo) || 1;
         for (let i = 0; i < d.length; i += 4) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;

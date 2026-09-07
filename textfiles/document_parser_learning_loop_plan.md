@@ -725,6 +725,29 @@ Frontend convention (IMPORTANT)
     - User decisions 2026-09-07: F2 ALONE next; KEEP F1 in place (0.7% no-op, harmless safety
       rail for true giants — cannot confound F2). No implementation yet — plan + push only.
 
+  2026-09-07 — F2 CONDITIONAL CLEANUP IMPLEMENTED (code, committed with this push).
+    - Wrapper only (preprocessOcrCanvas): sampling loop now also accumulates mean; stretch
+      applies ONLY when washed (lo>=100, no true blacks + range<=140 compressed), else skip
+      (pre-group1 behavior on clean pages). Flat-image early-out (<8) kept. Per-decision
+      debug log (applied/skipped + lo/hi/mean) under _parserDebug. Best-effort throughout.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas timing needs
+      browser). No PHP touched.
+
+  2026-09-07 — F2 BROWSER VERDICT: PASS, PRE-GROUP1 YIELD RESTORED (no code).
+    - Gate logs: EVERY page on both files Skipped (lo=0..2 everywhere — signatures/stamps give
+      true blacks), so the stretch now survives only as a washed-page rescue, its proper role.
+    - Test4 after straighten: p2 @90° 1643 clean (attempt 0, soupy=false, ladder idle) + p8 @90°
+      2544 clean in ONE run; copy text carries full 19-item statement + clause. Preview fills
+      price (2 competing values → amber Choice B as designed), start + end dates.
+    - Causality is a true A/B on the stretch (same angle/scale): pre-F2 p2 @90° +stretch → 0;
+      post-F2 p2 @90° −stretch → 1643 clean. Unconditional remap convicted (forced
+      grayscale+remap on noisy phone-photo pixels, not the math endpoint).
+    - Test5 unharmed: same 3 pages, same first-attempt clean reads (wobble-only diffs), all
+      skipped — gate threshold (lo>=100, range<=140) vindicated, stands as-is.
+    - Residue: p1 ABC page still 0 at both angles (upright, clean, stretch skipped) — stretch was
+      never its problem; fits sparse-table PSM-3 failure. Queued F3. (Price/dates don't need p1;
+      p1 matters for ABC auto-fill only.)
+
   2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
     - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
     - p1 @0° upright clean ABC table → 0 chars. p2 @90° upright crystal-clear statement (all 19
@@ -765,17 +788,22 @@ Frontend convention (IMPORTANT)
       Cap longest side ~3000px (aspect preserved, debug-gated log). Fired on all pages but
       3024→2.98 (0.7%) — canvases were never giant; yields identical modulo wobble.
       KEPT IN PLACE per user as a harmless safety rail (cannot confound F2). See §6 verdict.
-   4. F2 CONDITIONAL CLEANUP (approved 2026-09-07, NEXT BUILD, ALONE — no code yet).
-      Gate the global stretch on sampled page metrics: stretch only washed-out pages, skip
-      clean ones (restores pre-group1 no-stretch behavior exactly where pixels look clean).
-      Design: extend the existing min/max sampling in preprocessOcrCanvas with a wash test
-      (narrow used-range + high mean brightness = washed → stretch; healthy range → skip),
-      debug log per decision (applied/skipped + range). Targets prime suspect (unconditional
-      stretch clipping faint cell text on raw phone photos; test5's normalized pages unaffected).
-      Proof: test4 p1 @0° + p2 @90° yield-or-hold, p8 holds, test5 byte-identical (any test5
-      regression = gate threshold wrong, not concept). Alone first; F3/scale-2 gated on outcome.
-   5. F3 PSM-6-FIRST TRIAL FOR SPARSE TABLES (no code yet, last resort before OpenCV).
-      Targets suspect #3. Proof: table pages yield.
+   4. F2 CONDITIONAL CLEANUP. ✅ IMPLEMENTED + BROWSER-TESTED 2026-09-07, VERDICT: PASS.
+      Wash-gate (lo>=100 + range<=140, else skip; flat <8 kept; per-decision debug log).
+      All pages logged Skipped (true blacks everywhere) — stretch now a washed-page rescue only.
+      Test4: p2 @90° 0 → 1643 clean + p8 @90° 2544 clean in ONE run (true stretch A/B, same
+      angle/scale); preview fills price (amber Choice B as designed) + dates. Test5 unharmed
+      (same 3 pages, wobble-only diffs) — threshold stands. Residue: p1 ABC still 0 (never a
+      stretch problem) → F3. See §6 verdict.
+   5. F3 PSM-6-FIRST TRIAL FOR SPARSE TABLES (approved 2026-09-07, NEXT BUILD, ALONE).
+      For pages yielding empty under default PSM, one forced uniform-block (PSM 6) retry before
+      declaring the page dead. Targets p1-class sparse tables (wide whites, few text blocks —
+      auto-segmentation finds no lines where dense p8 succeeds). Design: inside ocrPage's
+      empty path (plain-eng branch), re-run recognizeEnglish with attempts starting at PSM 6
+      (new opts param, default ladder unchanged for all other paths); keep-cleaner guard +
+      10-char rule still govern; budget still counts pages. Proof: test4 p1 @0° yields its table
+      (ABC 4,834,297.59 enters pool), p2/p8/test5 hold. Gated after: scale-2 fallback experiment
+      (only if F3 fails — re-render empty pages at scale 2, the last pre-group1 delta).
    6. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
       failing/low-yield pages, score soup+chars+field-hits, best wins and is ledgered.
       O1 LEGACY-DETECT WORKER DEMOTED 2026-09-07 (pixels prove orientation was never the
@@ -783,15 +811,14 @@ Frontend convention (IMPORTANT)
    7. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
       fallback last. S-curve OCR stays out of scope (deferred tier).
 
-  Resume state (2026-09-07, F1 falsified, F2 queued alone):
-    - Branch: phase-6-parser-learning. F1 code + this plan edit uncommitted.
+  Resume state (2026-09-07, F2 passed, F3 queued alone):
+    - Branch: phase-6-parser-learning. F2 code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build F2 conditional cleanup ALONE on go-ahead (F1 kept as safety rail;
-      F3/scale-2 gated on F2 outcome; O1 demoted). No merge without explicit user
-      confirmation (Rule 12).
+    - NEXT = build F3 PSM-6-first trial ALONE on go-ahead (scale-2 experiment gated on F3;
+      O1 demoted). No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -809,9 +836,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard + snapshots + F1 implemented
-       (F1 falsified by browser 2026-09-07; pixel verdict acquits angle). JS 73/73 green.
-    3. Implement F2 conditional cleanup ALONE (F1 kept as rail); F3/scale-2 gated on F2.
+    2. Resume state: branch phase-6-parser-learning, guard + snapshots + F1 + F2 implemented
+       (F1 falsified, F2 passed by browser 2026-09-07; test4 back to 2 pages). JS 73/73 green.
+    3. Implement F3 PSM-6-first trial ALONE (p1 ABC target); scale-2 experiment gated on F3.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
