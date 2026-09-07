@@ -866,6 +866,52 @@ Frontend convention (IMPORTANT)
       cut rule tightened (strip must be ≥85% DARK to count as surround; gradients no longer
       qualify). Yielding pages return to byte-identical F2-verdict behavior; only dead pages pay
       extra reads.
+
+  2026-09-07 — CROP-FALLBACK FIX BUILT (code, committed with this push).
+    - Pre-step autocropOcrCanvas(canvas) call REMOVED (harm neutralized at the source; helper kept
+      vendored). Cut rule tightened to strict-surround (walk while light < 0.15); helper now
+      RETURNS the kept fraction (0 = skipped/failed) instead of void.
+    - New ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFailed, scale): re-renders at
+      main scale, crops (skips the read entirely when crop skips — default already ran on identical
+      pixels), then one default shot WITHOUT preprocess (isolates the geometry variable).
+    - New tryDeadPageFallbacks(current) closure in ocrPage replaces the 3 scale-2 blocks: ladder
+      result → scale-2 → crop, first ≥10 wins, later rungs never fire, run-alive guarded throughout.
+      OSD-success (≥10) and engine-dead paths excluded. Budget still counts pages.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas timing needs
+      browser). No PHP touched.
+
+  2026-09-07 — CROP-FALLBACK BROWSER VERDICT: FIX VERIFIED + FIRST RESCUE (no code).
+    - Chop gone: zero crop lines on yielding pages; p2 @90° full 1643 clean, p8 2544 clean.
+    - p10 crop fallback FIRED correctly once (x=335 left dark band — the poison profile) →
+      3177 chars BOM content yielded (was dark through ladder + scale-2). Strict rule behaves:
+      degenerate/full-bleed skips correct; p5 vertical crop still empty = geometry not its problem.
+    - Minor note: p6 scale-2 (chars=8) shows NO crop line after it — helper catch path is silent.
+      Speck page, correctly 0 either way; polish item = debug log inside the helper catch.
+    - ABC still open (no ABC text in new yields; abstract/funds/estimate sheets dark).
+
+  2026-09-07 — ROTATION MATRIX VERDICT, TEST4 FULL 360° (user browser runs, no code).
+    - @0°: p2 1512 (OSD-branch) + p8 ~2800 soup, partial. @90°: p2 1643 clean + p8 2544 clean +
+      p10 3177 via crop = ONLY working angle (full preview: price/dates/duration). @180°: all
+      upside-down soup, zero fields (honest empty notice — correct behavior). @270°: MIRRORED
+      content (letterwise backwards, e.g. funds-cert lines reversed) scored soupy=false.
+    - FINDING (plan-logged): soup scorer is blind to mirroring — mirrored English has normal
+      symbol stats, so "clean" ≠ "correct". No code action: the pooled vote backstopped it (zero
+      label hits → no fields → honest notice). P-ROT bulk button earned its keep (4-angle matrix
+      in clicks, no re-uploads). ABC sheets dark at every angle tried (0/90/180).
+    - Pre-step autocropOcrCanvas(canvas) call REMOVED (harm neutralized at the source; helper kept
+      vendored). Cut rule tightened to strict-surround (walk while light < 0.15); helper now
+      RETURNS the kept fraction (0 = skipped/failed) instead of void.
+    - New ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFailed, scale): re-renders at
+      main scale, crops (skips the read entirely when crop skips — default already ran on identical
+      pixels), then one default shot WITHOUT preprocess (isolates the geometry variable).
+    - New tryDeadPageFallbacks(current) closure in ocrPage replaces the 3 scale-2 blocks: ladder
+      result → scale-2 → crop, first ≥10 wins, later rungs never fire, run-alive guarded throughout.
+      OSD-success (≥10) and engine-dead paths excluded. Budget still counts pages.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas timing needs
+      browser). No PHP touched. No commit per standing instruction.
+    - Next: user browser proof — (a) NO crop lines on yielding pages (pre-step gone); statement
+      back to ~1643 clean, dates/duration/price restored; (b) dead pages show scale-2 then crop
+      fallback lines; (c) ABC in pool = pass. Still dark → tile/strip stay cut; warp decision.
     - NOTED, NOT BUILT (user 2026-09-07 — focus is normal-doc → AI without worsening accuracy):
       tile/strip rung (same-resolution partition; fixes scrambled-not-empty tables, never our empty
       pages) and region-zoom rung (sub-rect upscale for tiny type; scale 2-vs-3 already acquitted DPI
@@ -952,17 +998,22 @@ Frontend convention (IMPORTANT)
    6. SCALE-2 FALLBACK. ✅ BUILT + BROWSER-TESTED 2026-09-07, VERDICT: ALL-ZERO.
       Fired on every dead page (chars=0 everywhere; p6 5→8 sub-threshold, correctly discarded).
       Render inputs now FULLY acquitted (angle/size/stretch/4 modes/2 scales). See §6.
-   7. P-ROT + AUTO-CROP. ✅ BUILT 2026-09-07; CROP VERDICT: HARMFUL AS PRE-STEP.
-      P-ROT browser-proven by user (buttons present on unread pages). Crop chopped yielding p2
-      (left ~15 chars/line; dates lost; pool losers "18"/"20.00") — ≥50%-light stop walks through
-      curl-shadow gradients. APPROVED FIX (alone): crop-as-fallback + strict-surround (≥85% dark
-      to cut) — uncropped ladder → scale-2 → crop + one default shot. Tile/strip + region-zoom
-      CUT from normal-doc queue 2026-09-07 (mechanisms never matched empty-pages failure; logged
-      §6, revivable in one build each) — tile/strip FLAGGED FOR S-CURVE TABLE PDFs (column-strip
-      OCR for monthly/weekly schedule grids). Engine verdicts: Tesseract stays; Python
-      (Paddle/EasyOCR) + cloud REJECTED (see PYTHON-RUNTIME NOTE); Scanic before OpenCV, gated.
+   7. P-ROT + AUTO-CROP. ✅ BUILT 2026-09-07; CROP VERDICT: HARMFUL AS PRE-STEP, FIX VERIFIED.
+      P-ROT browser-proven by user (buttons present on unread pages; full 360° matrix run in
+      clicks). Crop chopped yielding p2 (left ~15 chars/line) — ≥50%-light stop walks through
+      curl-shadow gradients. FIX BUILT (this push): pre-step call removed, strict-surround
+      (light < 0.15), kept-fraction return, ocrPageCropFallback + tryDeadPageFallbacks closure
+      (ladder → scale-2 → crop). Browser proof: chop gone (p2/p8 full), p10 rescued 0 → 3177 via
+      strict crop (x=335 left band), skips taxonomy correct (degenerate/full-bleed), p6 silent-catch
+      noted as polish item. Tile/strip + region-zoom CUT from normal-doc queue 2026-09-07
+      (mechanisms never matched empty-pages failure; logged §6, revivable in one build each) —
+      tile/strip FLAGGED FOR S-CURVE TABLE PDFs (column-strip OCR for monthly/weekly grids).
+      Engine verdicts: Tesseract stays; Python (Paddle/EasyOCR) + cloud REJECTED (see
+      PYTHON-RUNTIME NOTE); Scanic before OpenCV, gated. ROTATION MATRIX 2026-09-07: @90° sole
+      working angle (2–3 pages + fields); @180° upside-down soup; @270° MIRRORED content scored
+      "clean" (scorer blind spot logged, vote backstopped it); ABC sheets dark at all angles.
       S-curve Steps 2–4 + Tier-2/3 MOVED BACK to backlog 2026-09-07 (finish normal-doc → AI first).
-      See §6 crop-harm entry.
+      See §6 entries.
    8. ABC LAYER-2 (with/after item 7 fix-build): (A) PESOS-words fallback extended to extractABC
       (rule fix, same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST
       loop-first ONLY (no hand-code; reservation stands — the loop must discover it from a real
@@ -971,15 +1022,15 @@ Frontend convention (IMPORTANT)
       (loop-first order banked 2026-09-07) -> S-curve Steps 2–4 + Tier-2/3 (backlog; inherits the
       hardened OCR path + tile/strip column technique free). Shared-pipeline note (§6).
 
-  Resume state (2026-09-07, crop-harm proven, fallback fix queued):
-    - Branch: phase-6-parser-learning. P-ROT+crop code + this plan edit uncommitted.
+  Resume state (2026-09-07, fallback fix verified, ABC still open):
+    - Branch: phase-6-parser-learning. Crop-fallback fix + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build crop-as-fallback + strict-surround ALONE on go-ahead (P-ROT stands as built;
-      tiles/zoom cut from normal-doc, tile/strip flagged for S-curve backlog; loop-first L3→AI
-      order banked; ABC-or-bust holds). No merge without explicit user confirmation (Rule 12).
+    - NEXT = ABC layer-2 (A) words-rule on go-ahead (ABC-or-bust; loop-first (B) reserved;
+      warp gated on matrix demand). Then L3 → AI → S-curve backlog. No merge without
+      explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -997,11 +1048,10 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard→P-ROT+crop all built
-       (F1 falsified, F2 passed, F3′/scale-2 acquitted, crop harmful-as-prestep 2026-09-07;
-       ABC-or-bust active, 2 label gaps banked). JS 73/73 green.
-    3. Build crop-as-fallback + strict-surround ALONE (tiles/zoom cut, tile/strip flagged
-       for S-curve backlog; loop-first L3→AI order banked).
+    2. Resume state: branch phase-6-parser-learning, guard→crop-fallback all built+tested
+       (F1 falsified, F2 passed, F3′/scale-2 acquitted, fallback verified + p10 rescue,
+       360° matrix done 2026-09-07; ABC-or-bust active). JS 73/73 green.
+    3. Build ABC layer-2 (A) words-rule ALONE; loop-first (B) reserved for synthetic seeds.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 

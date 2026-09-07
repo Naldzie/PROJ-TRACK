@@ -379,14 +379,16 @@ function preprocessOcrCanvas(canvas) {
 }
 
 // Auto-crop dark margins (2026-09-07, ABC-or-bust): phone photos carry dark surround,
-// binder holes and curl shadows that poison segmentation into "empty page" — the ABC sheets
-// are upright AND human-legible yet yield 0 across all modes/scales. Scans border luminance
-// inward for the largest near-white box (a row/col counts as paper at ≥50% light pixels, so
-// holes and specks inside never stop the scan), then draws the sub-rect back in place with a
-// small light-only margin outward. Skips when already full-bleed (>95% kept) or degenerate
-// (<50% kept — likely a misread, never gamble the page). Best-effort: any failure keeps the
-// original canvas. Debug-logged (cropped box or skip reason).
-// Called by: ocrPage() after render, before preprocessOcrCanvas().
+// binder holes and curl shadows that poison segmentation into "empty page".
+// STRICT-SURROUND RULE (crop-harm fix): a strip counts as surround ONLY at ≥85% dark
+// (light fraction < 0.15) — the old ≥50%-light stop walked inward through curl-shadow
+// gradients and amputated yielding text (test4 p2 lost ~15 chars/line). Gradients no longer
+// qualify. FALLBACK ROLE ONLY: never a pre-step — called solely by ocrPageCropFallback on
+// dead pages, so yielding pages stay byte-identical to the F2-verdict path.
+// Returns the kept fraction (0 = skipped/failed) so the caller can skip a pointless re-read.
+// Skips when already full-bleed (>95% kept), degenerate (<50% kept or <50px side), or tiny.
+// Best-effort: any failure keeps the original canvas. Debug-logged.
+// Called by: ocrPageCropFallback() only.
 function autocropOcrCanvas(canvas) {
     const dbg = (msg) => {
         try {
@@ -395,7 +397,7 @@ function autocropOcrCanvas(canvas) {
     };
     try {
         const W = canvas.width, H = canvas.height;
-        if (!W || !H || W < 100 || H < 100) { dbg('skipped (tiny canvas)'); return; }
+        if (!W || !H || W < 100 || H < 100) { dbg('skipped (tiny canvas)'); return 0; }
         const ctx = canvas.getContext('2d');
         const img = ctx.getImageData(0, 0, W, H);
         const d = img.data;
@@ -404,6 +406,8 @@ function autocropOcrCanvas(canvas) {
             return (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
         };
         // Light = paper (≥180). Stride keeps the scan cheap on 3000px canvases.
+        // Strict surround: edge strips must be ≥85% DARK (light < 0.15) to cut — hole specks
+        // and gradient shadows inside never qualify, so text is never amputated.
         const stride = Math.max(1, Math.floor(Math.min(W, H) / 400));
         const lightFracRow = (y) => {
             let light = 0, n = 0;
@@ -416,10 +420,10 @@ function autocropOcrCanvas(canvas) {
             return n ? light / n : 0;
         };
         let top = 0, bottom = H - 1, left = 0, right = W - 1;
-        while (top < bottom && lightFracRow(top) < 0.5) top++;
-        while (bottom > top && lightFracRow(bottom) < 0.5) bottom--;
-        while (left < right && lightFracCol(left) < 0.5) left++;
-        while (right > left && lightFracCol(right) < 0.5) right--;
+        while (top < bottom && lightFracRow(top) < 0.15) top++;
+        while (bottom > top && lightFracRow(bottom) < 0.15) bottom--;
+        while (left < right && lightFracCol(left) < 0.15) left++;
+        while (right > left && lightFracCol(right) < 0.15) right--;
         // Small margin outward, but only through light pixels (never re-add surround).
         const m = 10;
         for (let k = 1; k <= m; k++) {
@@ -436,15 +440,17 @@ function autocropOcrCanvas(canvas) {
         }
         const cw = right - left + 1, ch = bottom - top + 1;
         const kept = (cw * ch) / (W * H);
-        if (kept > 0.95) { dbg('skipped (full-bleed)'); return; }
-        if (kept < 0.5 || cw < 50 || ch < 50) { dbg('skipped (degenerate kept=' + kept.toFixed(2) + ')'); return; }
+        if (kept > 0.95) { dbg('skipped (full-bleed)'); return 0; }
+        if (kept < 0.5 || cw < 50 || ch < 50) { dbg('skipped (degenerate kept=' + kept.toFixed(2) + ')'); return 0; }
         const tmp = document.createElement('canvas');
         tmp.width = cw; tmp.height = ch;
         tmp.getContext('2d').drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
         canvas.width = cw; canvas.height = ch;
         canvas.getContext('2d').drawImage(tmp, 0, 0);
         dbg('cropped x=' + left + ' y=' + top + ' w=' + cw + ' h=' + ch);
+        return kept;
     } catch (e) { /* crop is best-effort — original canvas still works */ }
+    return 0;
 }
 
 // OCR group 1: plain-English recognize with a PSM retry ladder (no new library).
@@ -549,6 +555,35 @@ async function ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFai
     }
 }
 
+// Crop fallback (2026-09-07, ABC-or-bust): last rung for dead pages — re-renders at the main
+// scale, applies the strict-surround auto-crop, then one default-PSM shot. Runs ONLY when the
+// crop actually removed something (kept < 1); a skipped crop means the default shot already ran
+// on identical pixels. Keeps whichever yields (10-char rule). Debug-logged, best-effort,
+// budget counts pages (the caller already incremented for this page — no double count).
+// Called by: ocrPage() dead-page fallback chain only (never the pre-step path).
+async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFailed, scale) {
+    try {
+        const canvas = document.createElement('canvas');
+        const viewport = page.getViewport({ scale: scale || 3, rotation: rotationDeg || 0 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const kept = autocropOcrCanvas(canvas) || 0;
+        if (!(kept > 0) || kept > 0.95) return '';
+        // NOTE: no preprocessOcrCanvas here — the crop rung isolates the geometry variable;
+        // the wash-gate already had its say on the uncropped canvas.
+        const ret = await tesseract.recognize(canvas, 'eng');
+        const text = (ret && ret.data && ret.data.text) || '';
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try { console.log('[Parser] OCR crop fallback: chars=' + text.trim().length); } catch (e) {}
+        }
+        return (text.trim().length >= 10) ? text : '';
+    } catch (err) {
+        try { markEngineFailed(); } catch (e) {}
+        return '';
+    }
+}
+
 async function ocrPage(page, runId, rotationDeg = 0) {
     if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
@@ -583,7 +618,8 @@ async function ocrPage(page, runId, rotationDeg = 0) {
 
     if (runId !== _autofillRunId) return '';
     showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
-    autocropOcrCanvas(canvas);
+    // NOTE (2026-09-07 crop-harm fix): NO pre-step auto-crop here — it amputated yielding text
+    // (test4 p2 lost ~15 chars/line). Crop runs solely as the last dead-page fallback rung below.
     preprocessOcrCanvas(canvas);
     // R1 auto orientation, stabilized: probe orientation mode ONCE per session, then commit.
     // 'eng+osd' straightens tilted/sideways phone-photo pages, but on this CDN build the OSD
@@ -592,6 +628,19 @@ async function ocrPage(page, runId, rotationDeg = 0) {
     // window._ocrLangMode: null = untried, 'osd' = working, 'eng' = pinned fallback.
     const useOsd = (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
     const markEngineFailed = () => { try { window._ocrEngineFailed = true; } catch (e) {} };
+    // Dead-page fallback chain (2026-09-07): proven path first, experiments as rungs —
+    // uncropped ladder result → scale-2 re-render → cropped re-render. Each rung runs only while
+    // the page is still short (<10 chars) and the run is alive; the first yielding rung wins and
+    // later rungs never fire. Budget still counts pages, never attempts.
+    const tryDeadPageFallbacks = async (current) => {
+        if (current.trim().length >= 10 || runId !== _autofillRunId) return current;
+        const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
+        if (fb.trim().length >= 10) return fb;
+        if (runId !== _autofillRunId) return current;
+        const cf = await ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFailed, scale);
+        if (cf.trim().length >= 10) return cf;
+        return current;
+    };
     if (useOsd) {
         try {
             const { data } = await tesseract.recognize(canvas, 'eng+osd');
@@ -619,12 +668,7 @@ async function ocrPage(page, runId, rotationDeg = 0) {
             } catch (e) {}
             const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
             _ocrPagesDone++;
-            // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
-            if (retry.trim().length < 10 && runId === _autofillRunId) {
-                const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
-                if (fb.trim().length >= 10) return fb;
-            }
-            return retry;
+            return await tryDeadPageFallbacks(retry);
         } catch (err) {
             // Pin plain English for the rest of the session — one red line, not one per page.
             try {
@@ -634,12 +678,7 @@ async function ocrPage(page, runId, rotationDeg = 0) {
             try {
                 const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
                 _ocrPagesDone++;
-                // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
-                if (retry.trim().length < 10 && runId === _autofillRunId) {
-                    const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
-                    if (fb.trim().length >= 10) return fb;
-                }
-                return retry;
+                return await tryDeadPageFallbacks(retry);
             } catch (err2) {
                 markEngineFailed();
                 return '';
@@ -649,12 +688,7 @@ async function ocrPage(page, runId, rotationDeg = 0) {
     try {
         const text = await recognizeEnglish(tesseract, canvas, markEngineFailed);
         _ocrPagesDone++;
-        // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
-        if (text.trim().length < 10 && runId === _autofillRunId) {
-            const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
-            if (fb.trim().length >= 10) return fb;
-        }
-        return text;
+        return await tryDeadPageFallbacks(text);
     } catch (err) {
         markEngineFailed();
         return '';
