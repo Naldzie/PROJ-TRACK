@@ -705,6 +705,26 @@ Frontend convention (IMPORTANT)
     - Next: user browser proof — open test4 preview/empty note → save p.1 (expect upright ABC) +
       p.2 (expect sideways statement) → paste both images here; then O1/O2 on go-ahead.
 
+  2026-09-07 — F1 RENDER CAP IMPLEMENTED (code, committed with this push).
+    - Wrapper only (ocrPage): scale stays 3, but viewport longest side capped at ~3000px
+      (aspect preserved, scale recomputed, debug-gated cap log). Small pages byte-identical
+      path; giant 12MB-photo pages render capped. Best-effort try/catch (uncapped fallback).
+    - Tests: node --check clean; full JS 73/73 green (no core changes; OCR render is
+      canvas timing — browser proof covers it). No PHP touched.
+
+  2026-09-07 — F1 BROWSER VERDICT: FALSIFIED, SUSPECT #1 DEAD (no code).
+    - Cap log fired on all 10 pages both runs — but longest=3024 → scale=2.98, a 0.7% shrink.
+      Canvases were never giant: 3024px @scale 3 = ordinary landscape Letter, normal for
+      tesseract. The 12MB lives in JPEG stream quality, not rendered dimensions.
+    - Yields identical modulo wobble (p8 soup 2917 vs 2942; p8 clean 2480 vs 2513; p1/p2 0 at
+      both angles). Bonus: p6 @90° now shows chars=1 ×3 (a stamp speck segments, but no text
+      lines — engine alive, segmentation starved). F1 isolation worked; it acquitted its suspect.
+    - Remaining, in order: (1) unconditional contrast stretch [now prime]; (2) PSM-3 on sparse
+      tables. Scale 3-vs-2 held constant throughout (test5 reads at scale 3 — scale acquitted
+      as a single cause; kept as a later isolated experiment only if F2 fails).
+    - User decisions 2026-09-07: F2 ALONE next; KEEP F1 in place (0.7% no-op, harmless safety
+      rail for true giants — cannot confound F2). No implementation yet — plan + push only.
+
   2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
     - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
     - p1 @0° upright clean ABC table → 0 chars. p2 @90° upright crystal-clear statement (all 19
@@ -741,14 +761,19 @@ Frontend convention (IMPORTANT)
       download, no server). Rationale: rotated-but-yielding soup pages must stay visible.
       Proof: one saved page opens readable in chat. ✅ IMPLEMENTED 2026-09-07 (wrapper only,
       browser proof open — see §6 snapshots entry). No commit per user.
-   3. F1 RENDER CAP (approved 2026-09-07, NEXT BUILD, ALONE — no code yet).
-      Cap OCR canvas longest side (~3000px, aspect preserved) before preprocessOcrCanvas +
-      recognize in ocrPage(); log capped size under _parserDebug. Targets suspect #1 (12MB
-      landscape photos → giant scale-3 canvases → silent empty). Failing-then-passing proof:
-      test4 p1 @0° + p2 @90° yield (both 0 today with upright pixels), p8 holds. Alone first
-      per user (isolate canvas variable); F2/F3 follow only if F1 leaves pages dark.
-   4. F2 CONDITIONAL CLEANUP (no code yet). Apply stretch only when sampled page metrics look
-      washed-out; skip on clean pages. Targets suspect #2. Proof: same pages yield-or-hold.
+   3. F1 RENDER CAP. ✅ IMPLEMENTED + BROWSER-TESTED 2026-09-07, VERDICT: FALSIFIED.
+      Cap longest side ~3000px (aspect preserved, debug-gated log). Fired on all pages but
+      3024→2.98 (0.7%) — canvases were never giant; yields identical modulo wobble.
+      KEPT IN PLACE per user as a harmless safety rail (cannot confound F2). See §6 verdict.
+   4. F2 CONDITIONAL CLEANUP (approved 2026-09-07, NEXT BUILD, ALONE — no code yet).
+      Gate the global stretch on sampled page metrics: stretch only washed-out pages, skip
+      clean ones (restores pre-group1 no-stretch behavior exactly where pixels look clean).
+      Design: extend the existing min/max sampling in preprocessOcrCanvas with a wash test
+      (narrow used-range + high mean brightness = washed → stretch; healthy range → skip),
+      debug log per decision (applied/skipped + range). Targets prime suspect (unconditional
+      stretch clipping faint cell text on raw phone photos; test5's normalized pages unaffected).
+      Proof: test4 p1 @0° + p2 @90° yield-or-hold, p8 holds, test5 byte-identical (any test5
+      regression = gate threshold wrong, not concept). Alone first; F3/scale-2 gated on outcome.
    5. F3 PSM-6-FIRST TRIAL FOR SPARSE TABLES (no code yet, last resort before OpenCV).
       Targets suspect #3. Proof: table pages yield.
    6. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
@@ -758,14 +783,15 @@ Frontend convention (IMPORTANT)
    7. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
       fallback last. S-curve OCR stays out of scope (deferred tier).
 
-  Resume state (2026-09-07, snapshots built, F1 queued alone):
-    - Branch: phase-6-parser-learning. Snapshots code + this plan edit uncommitted.
+  Resume state (2026-09-07, F1 falsified, F2 queued alone):
+    - Branch: phase-6-parser-learning. F1 code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build F1 render cap ALONE on go-ahead (F2/F3 gated on F1 outcome; O1 demoted).
-      No merge without explicit user confirmation (Rule 12).
+    - NEXT = build F2 conditional cleanup ALONE on go-ahead (F1 kept as safety rail;
+      F3/scale-2 gated on F2 outcome; O1 demoted). No merge without explicit user
+      confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -783,9 +809,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard + snapshots implemented
-       (see §6 2026-09-07; pixel verdict acquits angle). JS 73/73 green; PHP proposal tests 8/8.
-    3. Implement F1 render cap ALONE; F2/F3 gated on its outcome; O1 demoted, O2 insurance.
+    2. Resume state: branch phase-6-parser-learning, guard + snapshots + F1 implemented
+       (F1 falsified by browser 2026-09-07; pixel verdict acquits angle). JS 73/73 green.
+    3. Implement F2 conditional cleanup ALONE (F1 kept as rail); F3/scale-2 gated on F2.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 

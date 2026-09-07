@@ -437,8 +437,24 @@ async function ocrPage(page, runId, rotationDeg = 0) {
     // OCR group 1: render sharper — tesseract's documented sweet spot is ~300 DPI, we rendered
     // ~150-200 at scale 2. Scale 3 costs ~2.25x pixels per page but directly helps small/faint
     // text like table cells. The per-file page budget still caps total time.
-    const scale = 3;
-    const viewport = page.getViewport({ scale, rotation: rotationDeg || 0 });
+    // F1 render cap (2026-09-07): giant canvases from 12MB phone-photo PDFs (test4 class)
+    // choke tesseract to silent empty — even on perfectly upright, human-crisp pages (proven
+    // by pixels: test4 p1 @0° + p2 @90° yield 0). Cap the longest side (~3000px), aspect
+    // preserved; small pages keep full scale 3. Best-effort: any failure uses uncapped.
+    // Called by: ocrPage() for every scanned page before render.
+    let scale = 3;
+    let viewport = page.getViewport({ scale, rotation: rotationDeg || 0 });
+    try {
+        const OCR_MAX_SIDE = 3000;
+        const longest = Math.max(viewport.width, viewport.height);
+        if (longest > OCR_MAX_SIDE) {
+            scale = scale * (OCR_MAX_SIDE / longest);
+            viewport = page.getViewport({ scale, rotation: rotationDeg || 0 });
+            if (typeof window !== 'undefined' && window._parserDebug) {
+                try { console.log('[Parser] OCR render capped: longest=' + Math.round(longest) + ' → scale=' + scale.toFixed(2)); } catch (e) {}
+            }
+        }
+    } catch (e) { /* cap is best-effort — uncapped viewport still works */ }
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
