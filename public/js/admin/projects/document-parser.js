@@ -56,6 +56,8 @@ function cancelDocumentAutofill() {
         window._autofillDocTexts = [];
         window._autofillDocNames = [];
         window._autofillOriginal = null;
+        // Snapshots: original Files are per-session too (object URLs / buffers must not leak).
+        window._autofillPdfFiles = [];
     }
     for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated', 'autofillPreviewCopyWrap']) {
         try {
@@ -101,6 +103,13 @@ async function runDocumentAutofill() {
     }
 
     showAutofillScanning('Scanning documents…');
+
+    // Snapshots (2026-09-07): keep the original File per PDF so the per-page "save image"
+    // diagnostic can re-render any scanned page later without a server round-trip.
+    // Stashed per run; cleared in cancelDocumentAutofill with the other run state.
+    try {
+        window._autofillPdfFiles = (pdfDocs || []).map(d => ({ fileName: d.fileName, file: d.file }));
+    } catch (e) { /* stash is best-effort */ }
 
     try {
         // Phase 5 Step 1d: per-file extraction + voting (greedy title / cut contractor already handled in core).
@@ -753,6 +762,59 @@ window._copyExtractedText = function () {
     }
 };
 
+// Snapshots (2026-09-07 diagnostic, queue item 2): re-render one scanned page as a
+// downscaled PNG and download it, so pixels can be pasted in chat instead of inferred
+// from soup dumps. Reads the stashed original File (no server), applies the page's live
+// manual rotation, renders offscreen at ~1.5 scale. Index-indirect (quote-safe) like the
+// rotate buttons; all failures swallowed with a toast (never blocks preview).
+// Called by: inline onclick on the per-page snapshot buttons (gray note + empty warning).
+window._saveOcrPageImage = async function (reportIdx, pageNum) {
+    try {
+        const reports = window._autofillScanReports || [];
+        const files = window._autofillPdfFiles || [];
+        const r = reports[reportIdx];
+        const fileName = r ? r.fileName : ((window._ocrRotateTargets || [])[reportIdx]);
+        if (!fileName || !pageNum) return;
+        const entry = (files || []).find(f => f && f.fileName === fileName);
+        const file = entry ? entry.file : null;
+        if (!file) {
+            if (typeof showToast === 'function') showToast('Original file no longer available — re-upload to snapshot', 'error');
+            return;
+        }
+        const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
+        const rotDeg = rots[fileName + '#' + pageNum] || 0;
+        const pdfjs = await getPdfJs();
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: buf }).promise;
+        if (!pdf || pageNum < 1 || pageNum > pdf.numPages) return;
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5, rotation: rotDeg || 0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const blob = await new Promise((resolve) => {
+            try {
+                if (canvas.toBlob) canvas.toBlob(b => resolve(b), 'image/png');
+                else resolve(null);
+            } catch (e) { resolve(null); }
+        });
+        if (!blob) {
+            if (typeof showToast === 'function') showToast('Could not render that page', 'error');
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const safe = String(fileName).replace(/[^\w.\-]+/g, '_').slice(0, 60);
+        a.href = url;
+        a.download = 'snapshot-' + safe + '-p' + pageNum + '-rot' + (rotDeg || 0) + '.png';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { a.remove(); URL.revokeObjectURL(url); } catch (e) {} }, 4000);
+        if (typeof showToast === 'function') showToast('Page image saved — paste it in chat', 'success');
+    } catch (e) { /* snapshot is best-effort */ }
+};
+
 // R-reach straighten-all rescue, C1-targeted: rotate ONLY the sideways-flagged pages
 // (per-page shape ledger), never straight ones in mixed bundles. Uniformly sideways files
 // (the test4 class) behave exactly as before — every scanned page turns. Session rotations
@@ -988,7 +1050,18 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 window._ocrRotateTargets = window._ocrRotateTargets || [];
                 window._ocrRotateTargets[ri] = r.fileName;
             } catch (e) { /* best-effort */ }
-            return base + rotBtns;
+            // Snapshots (2026-09-07): per-page save-image buttons for ALL scanned pages
+            // (scannedPageNums ledger — approved scope; rotated-but-yielding soup must stay
+            // visible). Index-indirect like rotate; handler re-renders at ~1.5 scale PNG.
+            let snapBtns = '';
+            try {
+                const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
+                snapBtns = pages.map((pn) => {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' as a PNG image to paste in chat">⤓ p.' + pn + '</button>';
+                }).join(' ');
+                if (snapBtns) snapBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Save page image:</span>' + snapBtns + '</div>';
+            } catch (e) { snapBtns = ''; /* buttons are best-effort */ }
+            return base + rotBtns + snapBtns;
         });
         if (lines.length === 0 && (truncated && truncated.length > 0)) {
             lines.push('Only the first ' + limit + ' scanned pages were read in: ' + truncated.map(f => escapeHtml(f)).join(', ') + '. Later pages were not scanned.');
@@ -1453,6 +1526,26 @@ function showAutofillWarning(message, opts) {
     // shape), offer a one-click straighten-all rescue — these files never reach the preview,
     // so without this button they have NO manual path at all (test4 class).
     let straightenBtn = '';
+    // Snapshots (2026-09-07): same per-page save-image buttons on empty runs — a fully
+    // unread file is exactly when pixels are needed most. ALL scanned pages per report.
+    let snapBtns = '';
+    try {
+        const reports = window._autofillScanReports || [];
+        // Stash identities so the index-indirect snapshot handler resolves file names here too.
+        try {
+            window._ocrRotateTargets = window._ocrRotateTargets || [];
+            reports.forEach((r, ri) => { if (r && r.fileName) window._ocrRotateTargets[ri] = r.fileName; });
+        } catch (e) { /* best-effort */ }
+        const btns = [];
+        reports.forEach((r, ri) => {
+            if (!r) return;
+            const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
+            pages.forEach((pn) => {
+                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' of ' + escapeHtml(r.fileName) + ' as PNG to paste in chat">⤓ ' + escapeHtml(r.fileName) + ' p.' + pn + '</button>');
+            });
+        });
+        if (btns.length) snapBtns = '<div>' + btns.join('') + '</div>';
+    } catch (e) { snapBtns = ''; /* snapshot affordance is best-effort */ }
     try {
         const wantStraighten = !opts || opts.straighten !== false;
         const reports = window._autofillScanReports || [];
@@ -1469,6 +1562,7 @@ function showAutofillWarning(message, opts) {
             <span class="d-block" style="font-size: 0.875em;">${message}</span>
             ${copyBtn}
             ${straightenBtn}
+            ${snapBtns}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
     `;

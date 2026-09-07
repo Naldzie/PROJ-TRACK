@@ -681,7 +681,7 @@ Frontend convention (IMPORTANT)
       scoring safety net); snapshots = ALL scanned pages (not failed-only — rotated-but-yielding
       soup must stay visible). No implementation yet — plan updated, then commit+push all.
 
-  2026-09-07 — KEEP-CLEANER GUARD IMPLEMENTED (code + tests, NOT committed per user).
+  2026-09-07 — KEEP-CLEANER GUARD IMPLEMENTED (code + tests, committed 1cc779a).
     - Core: new pure shouldReplaceOcrBest(best, bestSoupy, challenger, challengerSoupy) +
       export — first fill always true; clean challenger dethrones soupy incumbent only
       at 10+ chars; soupy challengers never dethrone; clean-vs-clean keeps first.
@@ -690,8 +690,37 @@ Frontend convention (IMPORTANT)
     - Tests (+2 guard fixtures, core 53/53): long-soupy incumbent holds vs short-clean
       fragment; short-soupy upgrades to clean 10+ / first-fill / no-churn cases. Full JS
       73/73 (core 53 + scurve 20). node --check clean on both touched files. No PHP touched.
-    - Next: user browser proof — test4 re-run back to 2 yielding pages with both amounts +
-      dates; then queue item 2 (page-pixel snapshots) on go-ahead. No commit per user.
+
+  2026-09-07 — SNAPSHOTS IMPLEMENTED (code, NOT committed per user).
+    - Wrapper only (document-parser.js): window._autofillPdfFiles stash per run (original Files,
+      cleared per session in cancelDocumentAutofill); window._saveOcrPageImage(ri, pn) helper —
+      index-indirect lookup via _autofillScanReports, live _ocrRotations angle, getPdfJs re-render
+      offscreen @1.5 scale → canvas.toBlob PNG download (snapshot-<file>-p<page>-rot<deg>.png),
+      toast confirm, all failures swallowed.
+    - Buttons: gray preview note per report (ALL scannedPageNums ledger, fallback ocrPages, max 12
+      shown) + empty-warning path (all reports × all scanned pages; identities stashed for handler).
+      Approved scope honored: every scanned page gets a button, not failed-only.
+    - Tests: node --check clean on wrapper (+ core untouched); full JS 73/73 green (snapshot paths
+      are canvas/DOM timing — browser proof covers them). No PHP touched. No commit.
+    - Next: user browser proof — open test4 preview/empty note → save p.1 (expect upright ABC) +
+      p.2 (expect sideways statement) → paste both images here; then O1/O2 on go-ahead.
+
+  2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
+    - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
+    - p1 @0° upright clean ABC table → 0 chars. p2 @90° upright crystal-clear statement (all 19
+      items legible: 185 days, July 14 2025, both amounts, Total 205, March 13 2026) → 0 chars.
+      p1 @90° sideways (straighten-all broke it — over-rotation harm confirmed on upright pages).
+      p8 @90° upright dense clause → 2513 clean. test5 p6 @0° (same statement as test4 p2,
+      portrait sheet) → 1625 clean first-try.
+    - Same words, different outcome: test4-p2 @90° vs test5-p6 @0° differ only in sheet geometry
+      + source resolution (test4 12MB phone photos ≈1.2MB/page; test5 1.4MB compressed).
+      Fault is render/scale/preprocess, never rotation or parser logic (test5 proves all logic).
+    - Suspects re-ranked: (1) oversized canvas — scale-3 on 12MB photos chokes tesseract to silent
+      empty (pre-group1 scale-2 read this very page); (2) unconditional contrast stretch clipping
+      faint cell text; (3) PSM-3 segmentation failing on sparse tables (dense p8 reads).
+    - User decision: F1 render cap FIRST AND ALONE (isolate the canvas variable), then F2/F3.
+      O1 legacy-detect DEMOTED (orientation was never the blocker — try-angles stays as cheap
+      insurance only).
 
 ===============================================================================
   6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
@@ -710,28 +739,32 @@ Frontend convention (IMPORTANT)
    2. PAGE-PIXEL SNAPSHOTS (diagnostic). SCOPE APPROVED 2026-09-07: ALL scanned pages
       (scannedPageNums, gray note + empty warning; downscaled ~1.5 offscreen re-render, PNG
       download, no server). Rationale: rotated-but-yielding soup pages must stay visible.
-      Proof: one saved page opens readable in chat. NEXT BUILD (no code yet).
-   3. AUTO-ORIENTATION A+B COMBINED (approved 2026-09-07, no code yet).
-      O1 — legacy detect worker: cached createWorker('eng', 2, {legacyCore:true, legacyLang:true})
-      per session (lazy, beside _tesseractPromise); worker.detect(canvas) → 0/90/180/270 with
-      confidence; confident angles set window._ocrRotations[file#page] then plain-eng recognize;
-      low-confidence falls to O2; load failure keeps today's plain-retry + manual ⟳.
-      O2 — try-angles scoring net: re-render 0°/90°/270° (180° only if cheap) on failing/low-yield
-      pages, run recognizeEnglish per angle, score with scoreOcrSoup + 10+ chars + field-hit count
-      (core, no new lib); best angle wins and is ledgered. Budget counts pages, not attempts;
-      clean pages pay nothing. Straighten-all becomes "apply detected angles", not blind +90°.
-      Proof: test4 p.1 @0° + p.2 @90°/270° yield in ONE run (ABC 4,834,297.59 + clause 4,204,128.84
-      both pooled, duration 185, statement dates); no 1-page swap.
-   4. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
+      Proof: one saved page opens readable in chat. ✅ IMPLEMENTED 2026-09-07 (wrapper only,
+      browser proof open — see §6 snapshots entry). No commit per user.
+   3. F1 RENDER CAP (approved 2026-09-07, NEXT BUILD, ALONE — no code yet).
+      Cap OCR canvas longest side (~3000px, aspect preserved) before preprocessOcrCanvas +
+      recognize in ocrPage(); log capped size under _parserDebug. Targets suspect #1 (12MB
+      landscape photos → giant scale-3 canvases → silent empty). Failing-then-passing proof:
+      test4 p1 @0° + p2 @90° yield (both 0 today with upright pixels), p8 holds. Alone first
+      per user (isolate canvas variable); F2/F3 follow only if F1 leaves pages dark.
+   4. F2 CONDITIONAL CLEANUP (no code yet). Apply stretch only when sampled page metrics look
+      washed-out; skip on clean pages. Targets suspect #2. Proof: same pages yield-or-hold.
+   5. F3 PSM-6-FIRST TRIAL FOR SPARSE TABLES (no code yet, last resort before OpenCV).
+      Targets suspect #3. Proof: table pages yield.
+   6. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
+      failing/low-yield pages, score soup+chars+field-hits, best wins and is ledgered.
+      O1 LEGACY-DETECT WORKER DEMOTED 2026-09-07 (pixels prove orientation was never the
+      blocker on test4; revisit only if a future file shows genuine content-angle misses).
+   7. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
       fallback last. S-curve OCR stays out of scope (deferred tier).
 
-  Resume state (2026-09-07, post-guard pre-snapshot):
-    - Branch: phase-6-parser-learning. Guard code + tests + this plan edit uncommitted.
+  Resume state (2026-09-07, snapshots built, F1 queued alone):
+    - Branch: phase-6-parser-learning. Snapshots code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build queue item 2 (snapshots, all scanned pages) on go-ahead, then O1/O2.
+    - NEXT = build F1 render cap ALONE on go-ahead (F2/F3 gated on F1 outcome; O1 demoted).
       No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
@@ -750,9 +783,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard implemented (see §6 2026-09-07).
-       JS 73/73 green; PHP proposal tests 8/8.
-    3. Implement queue item 2 (snapshots, ALL scanned pages), then O1/O2 auto-orientation.
+    2. Resume state: branch phase-6-parser-learning, guard + snapshots implemented
+       (see §6 2026-09-07; pixel verdict acquits angle). JS 73/73 green; PHP proposal tests 8/8.
+    3. Implement F1 render cap ALONE; F2/F3 gated on its outcome; O1 demoted, O2 insurance.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
