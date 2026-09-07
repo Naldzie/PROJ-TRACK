@@ -381,10 +381,15 @@ function preprocessOcrCanvas(canvas) {
 // OCR group 1: plain-English recognize with a PSM retry ladder (no new library).
 // Default segmentation first; pages that come back short (<10 chars) retry as a uniform
 // text block (PSM 6: tables/forms) then sparse text (PSM 11: fragments).
+// F3' (2026-09-07): a final single-column rung (PSM 4) fires ONLY while the page is still
+// EMPTY (no text at all yet) — the one layout prior that fits a sparse table page and appears
+// nowhere else in the ladder. Soupy-but-yielding pages already paid 3 reads and must not be
+// taxed a 4th. (Literal PSM-6-first was verified redundant: the ladder already runs PSM 6 on
+// every empty page, and each recognize() is an independent worker, so order is meaningless.)
 // G-soup: pages that come back LONG but soupy (symbol salad per core.scoreOcrSoup) get one
 // PSM 6 retry, keeping whichever reads cleaner — never a blind replace (a noisy-but-legit
 // table row must survive its own retry). Retries fire ONLY on failure; clean pages pay nothing.
-// Page budget counts pages, not attempts (worst case 3 reads per failing page — bounded).
+// Page budget counts pages, not attempts (worst case 4 reads per dead-empty page — bounded).
 // Returns '' only when every attempt throws (engine failure).
 // Called by: ocrPage() for every plain-'eng' read (OSD retry, OSD-throw fallback, steady path).
 async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
@@ -395,17 +400,22 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
         } catch (e) {}
         return { soupy: (t || '').trim().length < 10 };
     };
-    const attempts = [{}, { tessedit_pageseg_mode: '6' }, { tessedit_pageseg_mode: '11' }];
+    const attempts = [{}, { tessedit_pageseg_mode: '6' }, { tessedit_pageseg_mode: '11' }, { tessedit_pageseg_mode: '4', emptyOnly: true }];
     let best = '';
     let bestSoupy = true;
     let threw = false;
     for (let ai = 0; ai < attempts.length; ai++) {
-        const options = attempts[ai];
+        const raw = attempts[ai];
         // Attempt 0 always runs. Later attempts run only while the best so far is unusable:
         // too short, or long-but-soupy (G-soup gate).
         if (ai > 0) {
             if (best.trim().length >= 10 && !bestSoupy) break;
+            // F3': the PSM 4 rung is empty-pages-only — any text at all (even soupy) skips it.
+            if (raw.emptyOnly && best.trim().length > 0) break;
         }
+        // Strip the control flag before handing options to tesseract (it is ours, not its).
+        const options = {};
+        for (const k of Object.keys(raw)) { if (k !== 'emptyOnly') options[k] = raw[k]; }
         let text = '';
         try {
             const hasOptions = options && Object.keys(options).length > 0;

@@ -748,6 +748,38 @@ Frontend convention (IMPORTANT)
       never its problem; fits sparse-table PSM-3 failure. Queued F3. (Price/dates don't need p1;
       p1 matters for ABC auto-fill only.)
 
+  2026-09-07 — F3′ BUILT (code, committed with this push; replaces literal F3).
+    - Pre-build verification stopped literal F3: the ladder already runs PSM 6 on EVERY empty
+      page (gate only breaks on usable best), and each recognize() is an independent throwaway
+      worker — so a "PSM-6-first retry" would re-run an already-failed mode on identical pixels.
+    - Built instead: PSM 4 (single column of variable sizes) appended as an empty-pages-only
+      rung (control flag emptyOnly stripped before the tesseract call; any text — even soupy —
+      skips it, so yielding pages pay nothing extra). Worst case now 4 reads per dead page.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas timing needs
+      browser). No PHP touched.
+
+  2026-09-07 — F3′ BROWSER VERDICT: MODES ACQUITTED, P1 STILL DARK (no code).
+    - p1 @0°: cap + cleanup-skip + 0, zero attempt lines → all 4 modes (default/6/11/4) empty.
+      Attempt-3 gate verified live elsewhere: p6 @90° (chars=5 ×3, attempts 0–2) correctly
+      SKIPPED attempt 3 (has text, below yield bar) — emptyOnly works on both branches.
+    - Unchanged holdings: run-1 p2 @0° 1512 (OSD-branch) + p8 soup 2783; run-2 p2 @90° 1643 clean
+      + p8 @90° 2544 clean (statement + clause, price/dates/amber-note all working).
+    - Segmentation modes exhausted as a class on p1. Next: scale-2 fallback experiment (last
+      pre-group1 delta), already queued.
+
+  ARCHITECTURE NOTE (user Q 2026-09-07 — banked): text-layer PDFs and OCR PDFs share EVERYTHING
+  downstream of text acquisition. pdf.js items (≥10 chars/page) vs ocrPage canvas→tesseract are
+  just two front doors into one pipeline: parseProjectInfo + pooled vote + disagree/Choice-B +
+  mismatch banner + copy-text + mining/harvest + L1 proposals serve both identically. OCR-only
+  work (scale, F1 cap, wash-gate, ladder + PSM 4, soup/guard, OSD probe/pin, rotation, snapshots,
+  truncation notes) never executes for text PDFs — and text-PDF accuracy never depended on it
+  (73/73 + test5 proofs held through the whole arc).
+
+  USER DIRECTIVE 2026-09-07 — ABC-OR-BUST: keep pushing until the ABC (4,834,297.59) extracts on
+  test4 (p1) or test5 (its ABC page among currently-dark pages) before closing the OCR batch.
+  Sequence reaffirmed: OCR batch (through scale-2 at least) → L3 → AI fallback last → S-curve
+  Steps 2–4. Original 2-page issue stands fixed; p1 ABC is the last residue.
+
   2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
     - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
     - p1 @0° upright clean ABC table → 0 chars. p2 @90° upright crystal-clear statement (all 19
@@ -795,30 +827,32 @@ Frontend convention (IMPORTANT)
       angle/scale); preview fills price (amber Choice B as designed) + dates. Test5 unharmed
       (same 3 pages, wobble-only diffs) — threshold stands. Residue: p1 ABC still 0 (never a
       stretch problem) → F3. See §6 verdict.
-   5. F3 PSM-6-FIRST TRIAL FOR SPARSE TABLES (approved 2026-09-07, NEXT BUILD, ALONE).
-      For pages yielding empty under default PSM, one forced uniform-block (PSM 6) retry before
-      declaring the page dead. Targets p1-class sparse tables (wide whites, few text blocks —
-      auto-segmentation finds no lines where dense p8 succeeds). Design: inside ocrPage's
-      empty path (plain-eng branch), re-run recognizeEnglish with attempts starting at PSM 6
-      (new opts param, default ladder unchanged for all other paths); keep-cleaner guard +
-      10-char rule still govern; budget still counts pages. Proof: test4 p1 @0° yields its table
-      (ABC 4,834,297.59 enters pool), p2/p8/test5 hold. Gated after: scale-2 fallback experiment
-      (only if F3 fails — re-render empty pages at scale 2, the last pre-group1 delta).
-   6. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
+   5. F3′ PSM-4 EMPTY-ONLY RUNG. ✅ BUILT + BROWSER-TESTED 2026-09-07, VERDICT: MODES
+      ACQUITTED (p1 still 0; all 4 modes empty; emptyOnly gate verified both branches live).
+      ABC-OR-BUST directive (user 2026-09-07): keep pushing until ABC 4,834,297.59 extracts on
+      test4 p1 or test5's ABC page before closing the OCR batch. See §6 F3′ entries.
+   6. SCALE-2 FALLBACK EXPERIMENT (approved NEXT BUILD, ALONE — no code yet).
+      For pages still empty after the scale-3 ladder: one re-render at scale 2, cleanup bypassed,
+      single default-PSM shot (verbatim pre-group1 recipe); keep whichever yields (10-char rule).
+      Last pre-group1 delta. Proof: p1 yields ABC into pool = scale convicted → decide durable
+      form (per-page fallback vs scale policy); still 0 = render inputs acquitted → park p1
+      (manual ABC residual) and close batch → L3.
+   7. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
       failing/low-yield pages, score soup+chars+field-hits, best wins and is ledgered.
       O1 LEGACY-DETECT WORKER DEMOTED 2026-09-07 (pixels prove orientation was never the
       blocker on test4; revisit only if a future file shows genuine content-angle misses).
-   7. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
-      fallback last. S-curve OCR stays out of scope (deferred tier).
+   8. THEN, in standing order: L3 (needs live desk rows; synthetic paraphrases bridge it) ->
+      AI fallback last -> S-curve Steps 2–4. Shared-pipeline note (§6 ARCHITECTURE NOTE):
+      S-curve Tier-2 OCR inherits this whole hardened path free.
 
-  Resume state (2026-09-07, F2 passed, F3 queued alone):
-    - Branch: phase-6-parser-learning. F2 code + this plan edit uncommitted.
+  Resume state (2026-09-07, F3′ tested, ABC-or-bust active):
+    - Branch: phase-6-parser-learning. F3′ code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build F3 PSM-6-first trial ALONE on go-ahead (scale-2 experiment gated on F3;
-      O1 demoted). No merge without explicit user confirmation (Rule 12).
+    - NEXT = build scale-2 fallback experiment ALONE on go-ahead (ABC-or-bust directive);
+      then L3 → AI → S-curve. No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -836,9 +870,10 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard + snapshots + F1 + F2 implemented
-       (F1 falsified, F2 passed by browser 2026-09-07; test4 back to 2 pages). JS 73/73 green.
-    3. Implement F3 PSM-6-first trial ALONE (p1 ABC target); scale-2 experiment gated on F3.
+    2. Resume state: branch phase-6-parser-learning, guard→F3′ all built+tested
+       (F1 falsified, F2 passed, F3′ modes-acquitted 2026-09-07; ABC-or-bust active).
+       JS 73/73 green.
+    3. Build scale-2 fallback experiment ALONE (p1 ABC target); then L3 → AI → S-curve.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
