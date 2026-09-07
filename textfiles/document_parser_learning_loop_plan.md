@@ -767,6 +767,19 @@ Frontend convention (IMPORTANT)
     - Segmentation modes exhausted as a class on p1. Next: scale-2 fallback experiment (last
       pre-group1 delta), already queued.
 
+  2026-09-07 — SCALE-2 FALLBACK BUILT (code, NOT committed).
+    - New ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed): re-renders the
+      still-empty page at scale 2, bypasses cleanup, single default-PSM shot (verbatim pre-group1
+      recipe). Wired into all three short-text return points (OSD-empty retry, OSD-throw retry,
+      steady path; run-alive guarded); OSD-success (≥10 by construction) and engine-dead paths
+      excluded. Keeps whichever yields (10-char rule); budget still counts pages (no double
+      increment). Debug log per firing. Best-effort throughout.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas timing needs
+      browser). No PHP touched. No commit per standing instruction.
+    - Next: user browser proof — (a) `OCR scale-2 fallback: chars=` lines on dead pages;
+      (b) p1 @0° yields ABC table into pool = scale convicted → decide durable form; still 0 =
+      render inputs acquitted → park p1 (manual ABC residual), close batch → L3.
+
   ARCHITECTURE NOTE (user Q 2026-09-07 — banked): text-layer PDFs and OCR PDFs share EVERYTHING
   downstream of text acquisition. pdf.js items (≥10 chars/page) vs ocrPage canvas→tesseract are
   just two front doors into one pipeline: parseProjectInfo + pooled vote + disagree/Choice-B +
@@ -779,6 +792,45 @@ Frontend convention (IMPORTANT)
   test4 (p1) or test5 (its ABC page among currently-dark pages) before closing the OCR batch.
   Sequence reaffirmed: OCR batch (through scale-2 at least) → L3 → AI fallback last → S-curve
   Steps 2–4. Original 2-page issue stands fixed; p1 ABC is the last residue.
+
+  2026-09-07 — ABC LABEL-GAP FINDINGS: 2 NEW PHRASINGS, DOUBLE MISS (screenshots, no code).
+    - (A) Certificate of Availability of Funds (test5 p3 = test4 p9): "with an approved budget for
+      the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN
+      PESOS & 59/100 (Php 4,834,297.59)". Misses TWICE today: page yields 0 (dark), AND even with
+      perfect OCR the label fails — extractABC's pattern stops at "contract" then asMoney reads
+      words → null (PESOS-words fallback exists only in extractBudget, never extractABC).
+    - (B) Cost estimate bottom row (test4 p3 = test5 p7): "TOTAL ESTIMATED PROJECT COST P
+      4,834,297.59" (+ "TOTAL OF II ... 4,834,297.59"). Page dark (both files) AND label absent
+      from extractABC patterns. This is the banked loop-first rediscovery target — DO NOT hand-add;
+      the loop must discover this exact phrasing from a real correction (strongest L1→L2 proof).
+    - Consequence for ABC-or-bust: TWO layers per page — (1) OCR must yield (P-ROT/crop path),
+      (2) extraction must cover words-shape ABC + loop-discovered TOTAL ESTIMATED label. Layer 2
+      for (A): extend PESOS-words fallback to extractABC (rule fix, NOT loop — same wordsToNumber
+      machinery as budget). Layer 2 for (B): loop-first only (no hand-code, reservation stands).
+    - At least 3 ABC-bearing sheets per bundle now known: abstract/bidders table (test4 p7 class),
+      funds certificate (A), cost estimate (B). All dark today; all upright human-legible pixels.
+
+  2026-09-07 — P-ROT + AUTO-CROP APPROVED (research done: codebase map + web sources, no code yet).
+    - User: build BOTH together; ABC-or-bust stays (loop-first label test needs a yielding ABC page
+      first — proposals are born from corrections, and dark pages can't be corrected).
+    - P-ROT completion + rotate-all variant (document-parser.js): per-page ⟳ feed widens from
+      ocrPages-only (:1124) to scannedPageNums ?? ocrPages (snapshot pattern :1140); failed pages
+      badged "no text yet". New window._rotateAllScanned = _straightenAllAndRescan shape minus the
+      allLandscape gate (:910), targeting scannedPageNums per file. Buttons: gray note (beside
+      per-page row) + empty warning (beside straighten slot :1637, whose allLandscape+read gate
+      goes too — fully-unread files have no rescue today). No loop changes (:656 honors any key).
+    - Auto-crop dark margins (no new dep): inside ocrPage between render (:513) and
+      preprocessOcrCanvas (:517) — canvas already rotation-aware there. Border-luminance inward
+      scan → largest near-white box → drawImage sub-rect back → fall through existing chain.
+      Backed by tessdoc guidance (dark borders → "empty page"; crop + ~10px white border) and the
+      ABC-sheet pixels (dark surround, holes, curl, banding). Best-effort + uncropped fallback +
+      debug log. Scale-2 fallback canvas (:463) gets parity only if crop proves out.
+    - Ranked alternatives (researched, deferred): perspective warp — OpenCV.js (~8–30MB, item 4)
+      vs Scanic (~100KB Rust/WASM edge-detect + GPU warp) — only if crop leaves test5-p1's
+      trapezoid unreadable; adaptive threshold for banding/curl (either engine); column-split +
+      upscale explicitly REJECTED for this target (failure is zero text, normal-size type).
+    - Proof: ABC 4,834,297.59 in pool on either file (any of the 3 sheets); p2/p8/test5 hold.
+      No PHP touched. NEXT BUILD on go-ahead.
 
   2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
     - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
@@ -831,28 +883,32 @@ Frontend convention (IMPORTANT)
       ACQUITTED (p1 still 0; all 4 modes empty; emptyOnly gate verified both branches live).
       ABC-OR-BUST directive (user 2026-09-07): keep pushing until ABC 4,834,297.59 extracts on
       test4 p1 or test5's ABC page before closing the OCR batch. See §6 F3′ entries.
-   6. SCALE-2 FALLBACK EXPERIMENT (approved NEXT BUILD, ALONE — no code yet).
-      For pages still empty after the scale-3 ladder: one re-render at scale 2, cleanup bypassed,
-      single default-PSM shot (verbatim pre-group1 recipe); keep whichever yields (10-char rule).
-      Last pre-group1 delta. Proof: p1 yields ABC into pool = scale convicted → decide durable
-      form (per-page fallback vs scale policy); still 0 = render inputs acquitted → park p1
-      (manual ABC residual) and close batch → L3.
-   7. O2 TRY-ANGLES SCORING NET (cheap insurance, no code yet). Re-render 0°/90°/270° on
-      failing/low-yield pages, score soup+chars+field-hits, best wins and is ledgered.
-      O1 LEGACY-DETECT WORKER DEMOTED 2026-09-07 (pixels prove orientation was never the
-      blocker on test4; revisit only if a future file shows genuine content-angle misses).
-   8. THEN, in standing order: L3 (needs live desk rows; synthetic paraphrases bridge it) ->
-      AI fallback last -> S-curve Steps 2–4. Shared-pipeline note (§6 ARCHITECTURE NOTE):
-      S-curve Tier-2 OCR inherits this whole hardened path free.
+   6. SCALE-2 FALLBACK. ✅ BUILT + BROWSER-TESTED 2026-09-07, VERDICT: ALL-ZERO.
+      Fired on every dead page (chars=0 everywhere; p6 5→8 sub-threshold, correctly discarded).
+      Render inputs now FULLY acquitted (angle/size/stretch/4 modes/2 scales). See §6.
+   7. P-ROT + AUTO-CROP (approved NEXT BUILD, TOGETHER — no code yet).
+      P-ROT: ⟳ feed ocrPages→scannedPageNums ?? ocrPages + "no text yet" badges; new
+      _rotateAllScanned minus allLandscape gate (targets scannedPageNums); buttons in gray note
+      + empty warning (straighten gate goes). Unblocks manual ABC matrix. Auto-crop: ocrPage
+      render→preprocess insertion, border-luminance box + drawImage + ~10px border, fallback +
+      debug log (scale-2 parity only if crop proves). Proof: ABC 4,834,297.59 in pool either file;
+      holdings intact. See §6 research entry.
+   8. ABC LAYER-2 (with/after item 7): (A) PESOS-words fallback extended to extractABC (rule fix,
+      same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST loop-first ONLY
+      (no hand-code; reservation stands — the loop must discover it from a real correction).
+      O2 try-angles stays cheap insurance; O1 demoted stands.
+   9. THEN, in standing order: L3 (synthetic paraphrases bridge empty desk) -> AI fallback last
+      -> S-curve Steps 2–4. Shared-pipeline note (§6 ARCHITECTURE NOTE): S-curve Tier-2 OCR
+      inherits this whole hardened path free.
 
-  Resume state (2026-09-07, F3′ tested, ABC-or-bust active):
-    - Branch: phase-6-parser-learning. F3′ code + this plan edit uncommitted.
+  Resume state (2026-09-07, scale-2 acquitted, P-ROT+crop queued):
+    - Branch: phase-6-parser-learning. Scale-2 code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build scale-2 fallback experiment ALONE on go-ahead (ABC-or-bust directive);
-      then L3 → AI → S-curve. No merge without explicit user confirmation (Rule 12).
+    - NEXT = build P-ROT + auto-crop TOGETHER on go-ahead (ABC-or-bust; loop-first (B) reserved).
+      Then L3 → AI → S-curve. No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -870,10 +926,10 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard→F3′ all built+tested
-       (F1 falsified, F2 passed, F3′ modes-acquitted 2026-09-07; ABC-or-bust active).
-       JS 73/73 green.
-    3. Build scale-2 fallback experiment ALONE (p1 ABC target); then L3 → AI → S-curve.
+    2. Resume state: branch phase-6-parser-learning, guard→scale-2 all built+tested
+       (F1 falsified, F2 passed, F3′/scale-2 acquitted 2026-09-07; ABC-or-bust active,
+       2 label gaps banked). JS 73/73 green.
+    3. Build P-ROT + auto-crop TOGETHER (ABC target); layer-2: words→ABC rule, loop-first (B).
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 

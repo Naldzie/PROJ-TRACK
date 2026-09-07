@@ -454,6 +454,32 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
     return best;
 }
 
+// Scale-2 fallback experiment (2026-09-07, ABC-or-bust): last pre-group1 delta.
+// Re-renders a still-empty page at scale 2, bypasses cleanup, and takes a single default-PSM
+// shot — the verbatim pre-group1 recipe (which read test4's statement page). Keeps whichever
+// yields under the 10-char rule; yielding pages never reach here. Debug-logged, best-effort,
+// budget counts pages (the caller already incremented for this page — no double count).
+// Called by: ocrPage() before returning short text (OSD-dead path excluded: engine broken).
+async function ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed) {
+    try {
+        const canvas = document.createElement('canvas');
+        const viewport = page.getViewport({ scale: 2, rotation: rotationDeg || 0 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        // NOTE: no preprocessOcrCanvas and no ladder — one default shot, like pre-group1.
+        const ret = await tesseract.recognize(canvas, 'eng');
+        const text = (ret && ret.data && ret.data.text) || '';
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try { console.log('[Parser] OCR scale-2 fallback: chars=' + text.trim().length); } catch (e) {}
+        }
+        return (text.trim().length >= 10) ? text : '';
+    } catch (err) {
+        try { markEngineFailed(); } catch (e) {}
+        return '';
+    }
+}
+
 async function ocrPage(page, runId, rotationDeg = 0) {
     if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
@@ -523,6 +549,11 @@ async function ocrPage(page, runId, rotationDeg = 0) {
             } catch (e) {}
             const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
             _ocrPagesDone++;
+            // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
+            if (retry.trim().length < 10 && runId === _autofillRunId) {
+                const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
+                if (fb.trim().length >= 10) return fb;
+            }
             return retry;
         } catch (err) {
             // Pin plain English for the rest of the session — one red line, not one per page.
@@ -533,6 +564,11 @@ async function ocrPage(page, runId, rotationDeg = 0) {
             try {
                 const retry = await recognizeEnglish(tesseract, canvas, markEngineFailed);
                 _ocrPagesDone++;
+                // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
+                if (retry.trim().length < 10 && runId === _autofillRunId) {
+                    const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
+                    if (fb.trim().length >= 10) return fb;
+                }
                 return retry;
             } catch (err2) {
                 markEngineFailed();
@@ -543,6 +579,11 @@ async function ocrPage(page, runId, rotationDeg = 0) {
     try {
         const text = await recognizeEnglish(tesseract, canvas, markEngineFailed);
         _ocrPagesDone++;
+        // Scale-2 fallback: same empty page, pre-group1 recipe (run alive only).
+        if (text.trim().length < 10 && runId === _autofillRunId) {
+            const fb = await ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFailed);
+            if (fb.trim().length >= 10) return fb;
+        }
         return text;
     } catch (err) {
         markEngineFailed();
