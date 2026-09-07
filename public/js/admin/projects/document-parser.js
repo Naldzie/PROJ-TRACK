@@ -378,6 +378,75 @@ function preprocessOcrCanvas(canvas) {
     } catch (e) { /* preprocessing is best-effort — original canvas still works */ }
 }
 
+// Auto-crop dark margins (2026-09-07, ABC-or-bust): phone photos carry dark surround,
+// binder holes and curl shadows that poison segmentation into "empty page" — the ABC sheets
+// are upright AND human-legible yet yield 0 across all modes/scales. Scans border luminance
+// inward for the largest near-white box (a row/col counts as paper at ≥50% light pixels, so
+// holes and specks inside never stop the scan), then draws the sub-rect back in place with a
+// small light-only margin outward. Skips when already full-bleed (>95% kept) or degenerate
+// (<50% kept — likely a misread, never gamble the page). Best-effort: any failure keeps the
+// original canvas. Debug-logged (cropped box or skip reason).
+// Called by: ocrPage() after render, before preprocessOcrCanvas().
+function autocropOcrCanvas(canvas) {
+    const dbg = (msg) => {
+        try {
+            if (typeof window !== 'undefined' && window._parserDebug) console.log('[Parser] OCR crop ' + msg);
+        } catch (e) {}
+    };
+    try {
+        const W = canvas.width, H = canvas.height;
+        if (!W || !H || W < 100 || H < 100) { dbg('skipped (tiny canvas)'); return; }
+        const ctx = canvas.getContext('2d');
+        const img = ctx.getImageData(0, 0, W, H);
+        const d = img.data;
+        const grayAt = (x, y) => {
+            const i = ((y * W) + x) * 4;
+            return (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+        };
+        // Light = paper (≥180). Stride keeps the scan cheap on 3000px canvases.
+        const stride = Math.max(1, Math.floor(Math.min(W, H) / 400));
+        const lightFracRow = (y) => {
+            let light = 0, n = 0;
+            for (let x = 0; x < W; x += stride) { n++; if (grayAt(x, y) >= 180) light++; }
+            return n ? light / n : 0;
+        };
+        const lightFracCol = (x) => {
+            let light = 0, n = 0;
+            for (let y = 0; y < H; y += stride) { n++; if (grayAt(x, y) >= 180) light++; }
+            return n ? light / n : 0;
+        };
+        let top = 0, bottom = H - 1, left = 0, right = W - 1;
+        while (top < bottom && lightFracRow(top) < 0.5) top++;
+        while (bottom > top && lightFracRow(bottom) < 0.5) bottom--;
+        while (left < right && lightFracCol(left) < 0.5) left++;
+        while (right > left && lightFracCol(right) < 0.5) right--;
+        // Small margin outward, but only through light pixels (never re-add surround).
+        const m = 10;
+        for (let k = 1; k <= m; k++) {
+            if (top - k >= 0 && lightFracRow(top - k) >= 0.7) top = top - k; else break;
+        }
+        for (let k = 1; k <= m; k++) {
+            if (bottom + k < H && lightFracRow(bottom + k) >= 0.7) bottom = bottom + k; else break;
+        }
+        for (let k = 1; k <= m; k++) {
+            if (left - k >= 0 && lightFracCol(left - k) >= 0.7) left = left - k; else break;
+        }
+        for (let k = 1; k <= m; k++) {
+            if (right + k < W && lightFracCol(right + k) >= 0.7) right = right + k; else break;
+        }
+        const cw = right - left + 1, ch = bottom - top + 1;
+        const kept = (cw * ch) / (W * H);
+        if (kept > 0.95) { dbg('skipped (full-bleed)'); return; }
+        if (kept < 0.5 || cw < 50 || ch < 50) { dbg('skipped (degenerate kept=' + kept.toFixed(2) + ')'); return; }
+        const tmp = document.createElement('canvas');
+        tmp.width = cw; tmp.height = ch;
+        tmp.getContext('2d').drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext('2d').drawImage(tmp, 0, 0);
+        dbg('cropped x=' + left + ' y=' + top + ' w=' + cw + ' h=' + ch);
+    } catch (e) { /* crop is best-effort — original canvas still works */ }
+}
+
 // OCR group 1: plain-English recognize with a PSM retry ladder (no new library).
 // Default segmentation first; pages that come back short (<10 chars) retry as a uniform
 // text block (PSM 6: tables/forms) then sparse text (PSM 11: fragments).
@@ -514,6 +583,7 @@ async function ocrPage(page, runId, rotationDeg = 0) {
 
     if (runId !== _autofillRunId) return '';
     showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
+    autocropOcrCanvas(canvas);
     preprocessOcrCanvas(canvas);
     // R1 auto orientation, stabilized: probe orientation mode ONCE per session, then commit.
     // 'eng+osd' straightens tilted/sideways phone-photo pages, but on this CDN build the OSD
@@ -923,6 +993,29 @@ window._straightenAllAndRescan = function () {
     runDocumentAutofill();
 };
 
+// P-ROT bulk rotate-all (2026-09-07, testing aid): rotate EVERY scanned page of one file
+// +90° and re-run, regardless of landscape flags or yield. Index-indirect (quote-safe) like
+// the per-page handler; session rotations persist for the re-run (cancel is NOT called).
+// Called by: inline onclick on the "rotate all" buttons (gray note + empty warning).
+window._rotateAllScanned = function (reportIdx) {
+    try {
+        const reports = window._autofillScanReports || [];
+        const r = reports[reportIdx];
+        if (!r) return;
+        window._ocrRotations = window._ocrRotations || {};
+        const targets = (r.scannedPageNums && r.scannedPageNums.length)
+            ? r.scannedPageNums
+            : (r.ocrPages || []);
+        for (const pn of targets) {
+            const key = r.fileName + '#' + pn;
+            window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
+        }
+    } catch (e) { /* rotation bookkeeping is best-effort */ }
+    try { closeAutofillPreview(); } catch (e) { /* no preview on empty-warning path */ }
+    hideAutofillBanner();
+    runDocumentAutofill();
+};
+
 // R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page, then
 // re-run the whole preview (rotation persists in window._ocrRotations and applies at
 // render time inside extractTextFromPDF). Full re-read cost (~2s/page) — the button is
@@ -1116,16 +1209,21 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             const base = r.truncated
                 ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + limit + ' per file selected) — later pages were not scanned.'
                 : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + limit + ' per file selected) — scan complete.';
-            // R2: per-page rotate buttons for exactly the photo-read pages (mixed bundles
-            // tilt page-by-page). Index-indirected (quote-safe); label shows live degrees.
+            // R2 + P-ROT (2026-09-07): per-page rotate buttons for ALL scanned pages
+            // (scannedPageNums ledger, ocrPages fallback) — unread pages were previously
+            // unactionable. Failed pages carry a "no text yet" badge. Index-indirected
+            // (quote-safe); label shows live degrees. Plus a bulk rotate-all for the file.
             let rotBtns = '';
             try {
                 const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
-                rotBtns = ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : []).slice(0, 12).map((pn) => {
+                const read = (r.ocrPages && r.ocrPages.length) ? r.ocrPages : [];
+                rotBtns = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : read).slice(0, 12).map((pn) => {
                     const deg = rots[r.fileName + '#' + pn] || 0;
-                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + pn + '" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' 90° and re-read (auto orientation applies too)">⟳ p.' + pn + (deg ? ' @' + deg + '°' : '') + '</button>';
+                    const unread = read.indexOf(pn) === -1;
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + pn + '" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' 90° and re-read' + (unread ? ' (no text yet)' : '') + '">⟳ p.' + pn + (deg ? ' @' + deg + '°' : '') + (unread ? '*' : '') + '</button>';
                 }).join(' ');
-                if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page:</span>' + rotBtns + '</div>';
+                if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page (* = no text yet):</span>' + rotBtns +
+                    '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of this file 90° and re-read">⟳ all</button></div>';
             } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
             // Stash this report's identity for the rotate handler (quote-safe indirection).
             try {
@@ -1637,6 +1735,26 @@ function showAutofillWarning(message, opts) {
             straightenBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._straightenAllAndRescan()" title="Rotate every scanned page 90° and re-read">Straighten sideways pages &amp; re-read (' + names + ')</button>';
         }
     } catch (e) { /* rescue affordance is best-effort */ }
+    // P-ROT on empty runs (2026-09-07): per-page ⟳ for ALL scanned pages + bulk rotate-all
+    // per file — unread pages previously had NO manual path (ABC sheets are dark AND upright,
+    // so rotation is diagnostic here, not rescue). Index-indirect; identities already stashed
+    // above for the snapshot handler.
+    let rotBtns = '';
+    try {
+        const reports = window._autofillScanReports || [];
+        const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
+        const btns = [];
+        reports.forEach((r, ri) => {
+            if (!r) return;
+            const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
+            pages.forEach((pn) => {
+                const deg = rots[r.fileName + '#' + pn] || 0;
+                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ ' + escapeHtml(r.fileName) + ' p.' + pn + (deg ? ' @' + deg + '°' : '') + '</button>');
+            });
+            if (pages.length) btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
+        });
+        if (btns.length) rotBtns = '<div>' + btns.join('') + '</div>';
+    } catch (e) { rotBtns = ''; /* rotate affordance is best-effort */ }
     banner.innerHTML = `
         <i class="bi bi-exclamation-triangle flex-shrink-0 fs-5"></i>
         <div>
@@ -1644,6 +1762,7 @@ function showAutofillWarning(message, opts) {
             <span class="d-block" style="font-size: 0.875em;">${message}</span>
             ${copyBtn}
             ${straightenBtn}
+            ${rotBtns}
             ${snapBtns}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>

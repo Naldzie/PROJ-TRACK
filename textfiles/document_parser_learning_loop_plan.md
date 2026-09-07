@@ -832,6 +832,65 @@ Frontend convention (IMPORTANT)
     - Proof: ABC 4,834,297.59 in pool on either file (any of the 3 sheets); p2/p8/test5 hold.
       No PHP touched. NEXT BUILD on go-ahead.
 
+  2026-09-07 — P-ROT + AUTO-CROP BUILT (code, committed with this push).
+    - P-ROT: new window._rotateAllScanned(ri) (per-file bulk +90°, no landscape gate; closes
+      preview where present, works from empty warning too). Gray note: per-page feed widened to
+      scannedPageNums ?? ocrPages with "*" + "(no text yet)" badges + per-file "⟳ all" button.
+      Empty warning: per-page ⟳ for all scanned pages + per-file "⟳ all of <file>" (straighten-all
+      kept as-is). User note honored: bulk rotates ALL pages of the file, not one.
+      Browser proof: user CONFIRMED buttons present on unread pages (test5 run).
+    - Auto-crop: new autocropOcrCanvas(canvas) between render and preprocess — border-luminance
+      inward scan (paper at ≥50% light pixels ≥180, stride-capped sampling), light-only ≤10px
+      margin back out, drawImage sub-rect in place. Skips when full-bleed (>95% kept),
+      degenerate (<50% kept or <50px side), or tiny canvas. Debug log per decision.
+      Scale-2 fallback canvas: parity deferred (only if crop proves out).
+    - Miner answer banked (user Q): mineCorrectionLabel is source-agnostic — _autofillDocTexts is
+      stashed for EVERY file per run; text-layer and OCR PDFs share the full downstream (vote,
+      Choice-B, harvest, L1). Loop-first ABC test needs a yielding ABC page first (corrections
+      are born from readable text); (A) words-shape → rule fix, (B) TOTAL ESTIMATED → loop only.
+    - Tests: node --check clean; full JS 73/73 green (no core changes; canvas/DOM timing needs
+      browser). No PHP touched.
+
+  2026-09-07 — CROP-HARM VERDICT: PRE-STEP CROP CHOPPED P2, RESTRUCTURE APPROVED (no code yet).
+    - Browser proof (test4 straighten run): statement page came back with left ~15 chars/line gone
+      ("Ori"→"ginal", "185"→"18", amounts→bare "Ph", dates→"Ju/Ja/Fe/Me") vs 1643 clean pre-crop.
+      Downstream: start/end null, duration "18" outscoring truth, budget runner-up "20.00"
+      (duration line misread as money). The end-date failure is a crop failure, not a date failure.
+    - Mechanism: ≥50%-light stop rule walks inward through the binder curl-shadow gradient
+      (~50–70% dark) deep into text. Corroborated by aggressive crop logs (p7: y=606 h=1215 —
+      half the page removed). Folds/dark sides CONFIRMED interacting (user Q) — with the nuance
+      that uncropped tesseract reads through them (p2 1643 pre-crop): poison degrades, cure
+      amputated.
+    - Approved fix (alone): crop-as-fallback + strict-surround — uncropped ladder → scale-2 →
+      THEN crop + one default shot (verbatim order: proven path first, experiments as rungs);
+      cut rule tightened (strip must be ≥85% DARK to count as surround; gradients no longer
+      qualify). Yielding pages return to byte-identical F2-verdict behavior; only dead pages pay
+      extra reads. Queued behind: tile/strip rung (split canvas into overlapping strips, join in
+      order — attacks long-table segmentation, NOT empty pages; no new dep).
+    - Engine verdicts banked (user Q 2026-09-07): STAY on Tesseract.js (free, in-browser, no doc
+      leaves server; all failures to date pipeline-side, never engine-side). PaddleOCR/EasyOCR
+      REJECTED (Python runtime the deploy stack lacks; browser ONNX 12–40MB for unproven gain —
+      see PYTHON-RUNTIME NOTE below). Cloud (Google/AWS/Azure) REJECTED (paid + data leaves).
+      OCRmyPDF noted as server-binaries-only alternative (same wall as poppler Tier-4).
+      Perspective warp ordered Scanic (~100KB) before OpenCV.js (~8–30MB), only if trapezoid/
+      banding persists after fixed crop.
+
+  PYTHON-RUNTIME NOTE (user Q 2026-09-07 — banked, no action).
+    - Possible? YES, technically. Dev: install Python 3.11+ + venv on the XAMPP Windows box,
+      requirements.txt (paddleocr/easyocr pull torch/CUDA-optional wheels ≈ 0.5–2GB!), first-run
+      model downloads (12–40MB+ per model, cached). App: new python/ scripts returning JSON over
+      stdio, called from Laravel via Symfony Process or queued jobs (QUEUE_CONNECTION=database
+      worker already required); timeouts/retries, concurrency caps (OCR is CPU-heavy, no GPU on
+      VPS), temp-file hygiene, shell-escaping discipline.
+    - Deployment meaning: shared hosting = BLOCKED (no Python, no binaries, no long processes).
+      VPS/dedicated required: provision + pin Python version, system packages, model cache warming,
+      process supervision, request timeouts (Paddle CPU ≈ seconds/page — preview UX becomes
+      queued/async, not instant), security surface (shell-outs, uploads to disk), and a second
+      dependency universe to maintain beside composer/npm. Roughly: a new service to own for a
+      problem the browser path hasn't finished failing at yet.
+    - Standing recommendation: exhaust browser path first (fixed crop → tiles → Scanic warp);
+      revisit Python only if ABC-class pages survive ALL of it. See final answer for full detail.
+
   2026-09-07 — PIXEL VERDICT: ANGLE ACQUITTED, RENDER PATH CONVICTED (9 snapshots, no code).
     - User supplied 9 PNGs (sampledocs/snapshots/): test4 p1/p2/p8 @0°+@90°, test5 p4/p6/p10 @0°.
     - p1 @0° upright clean ABC table → 0 chars. p2 @90° upright crystal-clear statement (all 19
@@ -886,29 +945,31 @@ Frontend convention (IMPORTANT)
    6. SCALE-2 FALLBACK. ✅ BUILT + BROWSER-TESTED 2026-09-07, VERDICT: ALL-ZERO.
       Fired on every dead page (chars=0 everywhere; p6 5→8 sub-threshold, correctly discarded).
       Render inputs now FULLY acquitted (angle/size/stretch/4 modes/2 scales). See §6.
-   7. P-ROT + AUTO-CROP (approved NEXT BUILD, TOGETHER — no code yet).
-      P-ROT: ⟳ feed ocrPages→scannedPageNums ?? ocrPages + "no text yet" badges; new
-      _rotateAllScanned minus allLandscape gate (targets scannedPageNums); buttons in gray note
-      + empty warning (straighten gate goes). Unblocks manual ABC matrix. Auto-crop: ocrPage
-      render→preprocess insertion, border-luminance box + drawImage + ~10px border, fallback +
-      debug log (scale-2 parity only if crop proves). Proof: ABC 4,834,297.59 in pool either file;
-      holdings intact. See §6 research entry.
-   8. ABC LAYER-2 (with/after item 7): (A) PESOS-words fallback extended to extractABC (rule fix,
-      same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST loop-first ONLY
-      (no hand-code; reservation stands — the loop must discover it from a real correction).
-      O2 try-angles stays cheap insurance; O1 demoted stands.
+   7. P-ROT + AUTO-CROP. ✅ BUILT 2026-09-07; CROP VERDICT: HARMFUL AS PRE-STEP.
+      P-ROT browser-proven by user (buttons present on unread pages). Crop chopped yielding p2
+      (left ~15 chars/line; dates lost; pool losers "18"/"20.00") — ≥50%-light stop walks through
+      curl-shadow gradients. APPROVED FIX (alone): crop-as-fallback + strict-surround (≥85% dark
+      to cut) — uncropped ladder → scale-2 → crop + one default shot. Tile/strip rung queued
+      behind (long-table segmentation, no new dep). Engine verdicts: Tesseract stays; Python
+      (Paddle/EasyOCR) + cloud REJECTED (see PYTHON-RUNTIME NOTE); Scanic before OpenCV, gated.
+      See §6 crop-harm entry.
+   8. ABC LAYER-2 (with/after item 7 fix-build): (A) PESOS-words fallback extended to extractABC
+      (rule fix, same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST
+      loop-first ONLY (no hand-code; reservation stands — the loop must discover it from a real
+      correction). O2 try-angles stays cheap insurance; O1 demoted stands.
    9. THEN, in standing order: L3 (synthetic paraphrases bridge empty desk) -> AI fallback last
       -> S-curve Steps 2–4. Shared-pipeline note (§6 ARCHITECTURE NOTE): S-curve Tier-2 OCR
       inherits this whole hardened path free.
 
-  Resume state (2026-09-07, scale-2 acquitted, P-ROT+crop queued):
-    - Branch: phase-6-parser-learning. Scale-2 code + this plan edit uncommitted.
+  Resume state (2026-09-07, crop-harm proven, fallback fix queued):
+    - Branch: phase-6-parser-learning. P-ROT+crop code + this plan edit uncommitted.
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build P-ROT + auto-crop TOGETHER on go-ahead (ABC-or-bust; loop-first (B) reserved).
-      Then L3 → AI → S-curve. No merge without explicit user confirmation (Rule 12).
+    - NEXT = build crop-as-fallback + strict-surround ALONE on go-ahead (P-ROT stands as built;
+      tile/strip gated behind; ABC-or-bust holds). Then L3 → AI → S-curve. No merge without
+      explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -926,10 +987,10 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard→scale-2 all built+tested
-       (F1 falsified, F2 passed, F3′/scale-2 acquitted 2026-09-07; ABC-or-bust active,
-       2 label gaps banked). JS 73/73 green.
-    3. Build P-ROT + auto-crop TOGETHER (ABC target); layer-2: words→ABC rule, loop-first (B).
+    2. Resume state: branch phase-6-parser-learning, guard→P-ROT+crop all built
+       (F1 falsified, F2 passed, F3′/scale-2 acquitted, crop harmful-as-prestep 2026-09-07;
+       ABC-or-bust active, 2 label gaps banked). JS 73/73 green.
+    3. Build crop-as-fallback + strict-surround ALONE; tile/strip gated behind it.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
