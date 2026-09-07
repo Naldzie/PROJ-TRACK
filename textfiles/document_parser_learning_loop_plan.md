@@ -979,6 +979,25 @@ Frontend convention (IMPORTANT)
     - NEXT BUILD = L3 (seam already studied: optional-param injection, 24h loader cache, lowest
       priority). No code yet.
 
+  2026-09-07 — CLEAN-TEXT PROOF: OCR WAS THE ENTIRE BOTTLENECK (user browser, no code).
+    - Redone selectable pdfdocstest5_selectable_text.pdf (clean spacing + Unicode): instant, no OCR,
+      budget 31 finds / duration 11, start 2025-07-14 (count 2, labeled 2) + end 2026-03-13 (count 2,
+      labeled 2) both clean, Revised wins deep (12 finds/score 9.5), ABC 4834297.59 IN-POOL (count 2,
+      labeled 3). Rules win outright on readable text — scan pixels were the whole war. Pivot to AI
+      fallback for the unreadable remainder stands vindicated.
+    - TEST GUIDANCE banked (user Q): temp-removing ABC keywords is a legitimate harness BUT
+      novel-label file preferred (no tree risk, honest miss; removal blinds every file + restore risk
+      — local-only, checklist-guarded, never committed if used). Either path still needs L3 first:
+      mined proposals sit unread until the reader consults the table.
+    - INSPECTOR SCOPE banked (user Q): pooled tables cover budget/duration/dates only; title
+      (greedy join), location/contractor/category/source (single-label), description (prose) have no
+      candidate lists — full pooling for all seven = second system, NOT approved. Scoped YES:
+      promote ABC into the pooled track (collector + vote + debug + disagree, mirroring budget) —
+      highest-value field under ABC-or-bust; rest keep per-file vote + red banner (already
+      cross-file accountable). Console stays one extra 10-row table.
+    - NEXT BUILD = L3 (decreed before ABC-pooling: L3's loader serves the same pooled machinery
+      the ABC table will ride). No code yet.
+
 ===============================================================================
   6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
 ===============================================================================
@@ -1042,22 +1061,23 @@ Frontend convention (IMPORTANT)
       browser cache keyed by updated_at), lowest-priority fallback below hardcoded labels.
       Synthetic paraphrase fixtures at kickoff; proof = paraphrased-label file fails before
       approval, passes after, nothing else moving. UNBLOCKS the loop-first test (§6 spec).
-      SELECTABLE-RECREATION verdict 2026-09-07: first recreation corrupt (broken spacing +
-      ToUnicode — parser innocent); Ctrl+A validity rule banked; clean regen pending (user).
-   10. THEN, in standing order: ABC words-rule (A) alongside/after L3 -> AI fallback
-      (trigger list finalized from all verdicts) -> S-curve Steps 2–4 + Tier-2/3 (backlog;
-      inherits the hardened OCR path + tile/strip column technique free). Shared-pipeline
-      note (§6).
+      CLEAN REGEN LANDED 2026-09-07 (pdfdocstest5_selectable_text.pdf): budget 31 / duration 11,
+      both dates labeled-clean, Revised deep win, ABC in-pool — OCR proven the whole bottleneck;
+      removal-vs-novel-label + ABC-pooling-scope guidance banked (§6 clean-text entry).
+   10. ABC-POOLING (after L3): promote ABC into pooled track (collector + vote + debug +
+      disagree, mirroring budget). THEN, in standing order: ABC words-rule (A) alongside/after
+      L3 -> AI fallback (trigger list finalized from all verdicts) -> S-curve Steps 2–4 +
+      Tier-2/3 (backlog; inherits the hardened OCR path + tile/strip column technique free).
 
-  Resume state (2026-09-07, L3 queued next, clean regen pending):
+  Resume state (2026-09-07, L3 next, clean regen landed):
     - Branch: phase-6-parser-learning. This plan edit uncommitted (tree otherwise clean).
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build L3 on go-ahead (user regenerates clean selectable test5 in parallel).
-      Then ABC words-rule (A) → AI → S-curve backlog. No merge without explicit user
-      confirmation (Rule 12).
+    - NEXT = build L3 on go-ahead (clean selectable test5 ready for the round-trip).
+      Then ABC-pooling → ABC words-rule (A) → AI → S-curve backlog. No merge without
+      explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -1075,10 +1095,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, OCR batch done (guard→fallback verified,
-       p10 rescue, 360° matrix; selectable-recreation faulted 2026-09-07; ABC-or-bust active).
-       JS 73/73 green.
-    3. Build L3 (user regens clean selectable test5 in parallel for the loop-first round-trip).
+    2. Resume state: branch phase-6-parser-learning, OCR batch done, clean regen landed
+       (budget 31/duration 11, ABC in-pool 2026-09-07; ABC-or-bust active). JS 73/73 green.
+    3. Build L3; loop-first round-trip on the clean file; then ABC-pooling.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
