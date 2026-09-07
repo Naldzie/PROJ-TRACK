@@ -961,6 +961,24 @@ Frontend convention (IMPORTANT)
       O1 legacy-detect DEMOTED (orientation was never the blocker — try-angles stays as cheap
       insurance only).
 
+  2026-09-07 — SELECTABLE-RECREATION VERDICT: RECREATION AT FAULT, NOT PARSER (no code).
+    - User had another model recreate test5 as selectable-text pdfdocstest5_selectable.pdf: instant
+      (no OCR) but garbage preview (title/location swapped, contractor "CONSTRUCTION", ABC "59.00",
+      dates null, ghosts 12884.00/4204.12). Cause is the FILE, not the reader: broken word breaks
+      (AbstractofBidsasRead, "4 834-297 69") + broken char mapping (July 14→"duly", 2026→2028) =
+      defective spacing operators + bad font ToUnicode. Parser behaved correctly on corrupt input
+      (duration 185 labeled-clean, Revised wins 6-find deep, ABC paren-php finds present).
+    - Rule going forward (banked): Ctrl+A-paste validity check before any recreation test; regenerate
+      via ReportLab (proven: contract_test_sample.pdf) / Office export / Chrome print-to-PDF.
+    - LOOP-FIRST TEST SPEC (user-approved prongs): (a) paraphrase set — verbatim controls
+      (Original Contract Amount, Date of Completion: must hit), paraphrased must-miss
+      (Effectivity Date, Contract Sum), loop-first target verbatim (TOTAL ESTIMATED PROJECT COST);
+      all values NUMERIC (words-shape is rule-A territory, not loop-testable). (b) L3 BEFORE loop
+      testing: L1 collects + L2 displays, but nothing reads the table until L3 consults it — the
+      end-to-end proof (second file fills free) requires L3 built first (synthetic fixtures per plan).
+    - NEXT BUILD = L3 (seam already studied: optional-param injection, 24h loader cache, lowest
+      priority). No code yet.
+
 ===============================================================================
   6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
 ===============================================================================
@@ -1018,19 +1036,28 @@ Frontend convention (IMPORTANT)
       (rule fix, same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST
       loop-first ONLY (no hand-code; reservation stands — the loop must discover it from a real
       correction). O2 try-angles stays cheap insurance; O1 demoted stands.
-   9. THEN, in standing order: L3 (synthetic paraphrases bridge empty desk) -> AI fallback
-      (loop-first order banked 2026-09-07) -> S-curve Steps 2–4 + Tier-2/3 (backlog; inherits the
-      hardened OCR path + tile/strip column technique free). Shared-pipeline note (§6).
+   9. L3 READER-CONSULTS-TABLE (NEXT BUILD — no code yet). Seam studied: optional-param
+      injection (isTitleValueCandidate/isContractorValueCandidate/greedy-join sites +
+      parseProjectInfo(Pooled) forwarding), loader fetches live pairs once per run (24h
+      browser cache keyed by updated_at), lowest-priority fallback below hardcoded labels.
+      Synthetic paraphrase fixtures at kickoff; proof = paraphrased-label file fails before
+      approval, passes after, nothing else moving. UNBLOCKS the loop-first test (§6 spec).
+      SELECTABLE-RECREATION verdict 2026-09-07: first recreation corrupt (broken spacing +
+      ToUnicode — parser innocent); Ctrl+A validity rule banked; clean regen pending (user).
+   10. THEN, in standing order: ABC words-rule (A) alongside/after L3 -> AI fallback
+      (trigger list finalized from all verdicts) -> S-curve Steps 2–4 + Tier-2/3 (backlog;
+      inherits the hardened OCR path + tile/strip column technique free). Shared-pipeline
+      note (§6).
 
-  Resume state (2026-09-07, fallback fix verified, ABC still open):
-    - Branch: phase-6-parser-learning. Crop-fallback fix + this plan edit uncommitted.
+  Resume state (2026-09-07, L3 queued next, clean regen pending):
+    - Branch: phase-6-parser-learning. This plan edit uncommitted (tree otherwise clean).
     - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
     - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = ABC layer-2 (A) words-rule on go-ahead (ABC-or-bust; loop-first (B) reserved;
-      warp gated on matrix demand). Then L3 → AI → S-curve backlog. No merge without
-      explicit user confirmation (Rule 12).
+    - NEXT = build L3 on go-ahead (user regenerates clean selectable test5 in parallel).
+      Then ABC words-rule (A) → AI → S-curve backlog. No merge without explicit user
+      confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -1048,10 +1075,10 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, guard→crop-fallback all built+tested
-       (F1 falsified, F2 passed, F3′/scale-2 acquitted, fallback verified + p10 rescue,
-       360° matrix done 2026-09-07; ABC-or-bust active). JS 73/73 green.
-    3. Build ABC layer-2 (A) words-rule ALONE; loop-first (B) reserved for synthetic seeds.
+    2. Resume state: branch phase-6-parser-learning, OCR batch done (guard→fallback verified,
+       p10 rescue, 360° matrix; selectable-recreation faulted 2026-09-07; ABC-or-bust active).
+       JS 73/73 green.
+    3. Build L3 (user regens clean selectable test5 in parallel for the loop-first round-trip).
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
