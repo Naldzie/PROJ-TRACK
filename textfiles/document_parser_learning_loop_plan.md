@@ -865,8 +865,15 @@ Frontend convention (IMPORTANT)
       THEN crop + one default shot (verbatim order: proven path first, experiments as rungs);
       cut rule tightened (strip must be ≥85% DARK to count as surround; gradients no longer
       qualify). Yielding pages return to byte-identical F2-verdict behavior; only dead pages pay
-      extra reads. Queued behind: tile/strip rung (split canvas into overlapping strips, join in
-      order — attacks long-table segmentation, NOT empty pages; no new dep).
+      extra reads.
+    - NOTED, NOT BUILT (user 2026-09-07 — focus is normal-doc → AI without worsening accuracy):
+      tile/strip rung (same-resolution partition; fixes scrambled-not-empty tables, never our empty
+      pages) and region-zoom rung (sub-rect upscale for tiny type; scale 2-vs-3 already acquitted DPI
+      on our sheets) are CUT from the normal-doc queue. Tile/strip is FLAGGED FOR S-CURVE TABLE
+      PDFs (user Q: yes — monthly-column/weekly-grid schedule tables are exactly the long-table
+      segmentation case tiling serves; column-strip OCR joins the S-curve Tier-2 toolbox on resume).
+      Zoom stays a one-line future note (legible-but-tiny type failing all whole-page scales).
+      Both revivable in one build each; neither is owed anything by current evidence.
     - Engine verdicts banked (user Q 2026-09-07): STAY on Tesseract.js (free, in-browser, no doc
       leaves server; all failures to date pipeline-side, never engine-side). PaddleOCR/EasyOCR
       REJECTED (Python runtime the deploy stack lacks; browser ONNX 12–40MB for unproven gain —
@@ -949,17 +956,20 @@ Frontend convention (IMPORTANT)
       P-ROT browser-proven by user (buttons present on unread pages). Crop chopped yielding p2
       (left ~15 chars/line; dates lost; pool losers "18"/"20.00") — ≥50%-light stop walks through
       curl-shadow gradients. APPROVED FIX (alone): crop-as-fallback + strict-surround (≥85% dark
-      to cut) — uncropped ladder → scale-2 → crop + one default shot. Tile/strip rung queued
-      behind (long-table segmentation, no new dep). Engine verdicts: Tesseract stays; Python
+      to cut) — uncropped ladder → scale-2 → crop + one default shot. Tile/strip + region-zoom
+      CUT from normal-doc queue 2026-09-07 (mechanisms never matched empty-pages failure; logged
+      §6, revivable in one build each) — tile/strip FLAGGED FOR S-CURVE TABLE PDFs (column-strip
+      OCR for monthly/weekly schedule grids). Engine verdicts: Tesseract stays; Python
       (Paddle/EasyOCR) + cloud REJECTED (see PYTHON-RUNTIME NOTE); Scanic before OpenCV, gated.
+      S-curve Steps 2–4 + Tier-2/3 MOVED BACK to backlog 2026-09-07 (finish normal-doc → AI first).
       See §6 crop-harm entry.
    8. ABC LAYER-2 (with/after item 7 fix-build): (A) PESOS-words fallback extended to extractABC
       (rule fix, same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST
       loop-first ONLY (no hand-code; reservation stands — the loop must discover it from a real
       correction). O2 try-angles stays cheap insurance; O1 demoted stands.
-   9. THEN, in standing order: L3 (synthetic paraphrases bridge empty desk) -> AI fallback last
-      -> S-curve Steps 2–4. Shared-pipeline note (§6 ARCHITECTURE NOTE): S-curve Tier-2 OCR
-      inherits this whole hardened path free.
+   9. THEN, in standing order: L3 (synthetic paraphrases bridge empty desk) -> AI fallback
+      (loop-first order banked 2026-09-07) -> S-curve Steps 2–4 + Tier-2/3 (backlog; inherits the
+      hardened OCR path + tile/strip column technique free). Shared-pipeline note (§6).
 
   Resume state (2026-09-07, crop-harm proven, fallback fix queued):
     - Branch: phase-6-parser-learning. P-ROT+crop code + this plan edit uncommitted.
@@ -968,8 +978,8 @@ Frontend convention (IMPORTANT)
       on clean tree (zero regressions from parser work).
     - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
     - NEXT = build crop-as-fallback + strict-surround ALONE on go-ahead (P-ROT stands as built;
-      tile/strip gated behind; ABC-or-bust holds). Then L3 → AI → S-curve. No merge without
-      explicit user confirmation (Rule 12).
+      tiles/zoom cut from normal-doc, tile/strip flagged for S-curve backlog; loop-first L3→AI
+      order banked; ABC-or-bust holds). No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -990,7 +1000,8 @@ Frontend convention (IMPORTANT)
     2. Resume state: branch phase-6-parser-learning, guard→P-ROT+crop all built
        (F1 falsified, F2 passed, F3′/scale-2 acquitted, crop harmful-as-prestep 2026-09-07;
        ABC-or-bust active, 2 label gaps banked). JS 73/73 green.
-    3. Build crop-as-fallback + strict-surround ALONE; tile/strip gated behind it.
+    3. Build crop-as-fallback + strict-surround ALONE (tiles/zoom cut, tile/strip flagged
+       for S-curve backlog; loop-first L3→AI order banked).
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
