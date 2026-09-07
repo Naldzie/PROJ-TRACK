@@ -998,6 +998,67 @@ Frontend convention (IMPORTANT)
     - NEXT BUILD = L3 (decreed before ABC-pooling: L3's loader serves the same pooled machinery
       the ABC table will ride). No code yet.
 
+  2026-09-07 — L3 BUILT (code, NOT committed).
+    - Core (document-parser-core.js, pure intact): normalizeKeywordList + optional threading —
+      extractTitle(lines, text, extra) with titleJoinHit OR-widening at all 3 greedy-join sites;
+      isTitle/ContractorValueCandidate(line, extra) with learned fallback AFTER hardcoded
+      (length bounds stay, heuristic shape gates skipped for learned hits — reviewed vocabulary
+      outranks heuristics); parseProjectInfo(doc, opts) with order hardcoded-labels →
+      learned-labels → hardcoded-value → learned-value per field. Learned-label pass is generic
+      (all fields except prose description, each with its own normalizer); description skipped.
+      Omitted opts = today's behavior exactly (all 53 pre-existing tests green untouched).
+    - Label-side strictness (caught by new fixture, fixed before green): learned patterns anchored
+      at line start with explicit separator-or-EOL — unanchored first draft matched mid-line and
+      captured tails ("Apex Infrastructures Incorporated" → "Incorporated"). Mid-line labels
+      knowingly unsupported (labels introduce lines; F-GATE shapes agree).
+    - Wrapper (document-parser.js): loadLearnedKeywords() once per run (role-base like harvest,
+      contractors skip; GET .../all?status=live; 24h sessionStorage TTL — TTL-only deviation noted:
+      no updated_at-max endpoint exists, so staleness is time-bounded not version-keyed); wired
+      into per-file parseProjectInfo({text},{learned}). No PHP touched (endpoint reused).
+    - Tests (+5 L3 fixtures, synthetic phrases ONLY — never the real banked loop-first wording):
+      learned-ABC miss→hit, hardcoded-wins-ties (learned line first), title learned-value,
+      contractor learned-value, empty-table identity (deepEqual). Full JS 78/78
+      (core 58 + scurve 20). Loader is fetch/DOM timing — browser proof covers it.
+    - Next: user browser proof — (a) approve one real proposal in L2 desk → re-run file fills with
+      zero corrections (loop closes); (b) empty desk = byte-identical behavior. Then ABC-pooling.
+
+  2026-09-07 — L3 ROUND-TRIP, FIRST BLOOD + PATTERN BUG (user browser, no code).
+    - Pipeline proven end to end: blinded miss → typed 4834297.59 → 1 proposed row (label "Approved
+      Budget for the Contract: Php" + p1 excerpt) → approved → Live. Collection, review, going-live
+      all work; L1/L2/L3 wiring (loader, endpoint, desk) correct.
+    - BUG (mine, not user's): re-run still missed — learned builder appends "then a separator" but the
+      mined label already swallowed separator + money marker, leaving a bare value no pattern accepts.
+      Fixtures passed only because synthetic labels end cleanly. APPROVED FIX (user 2026-09-07):
+      anchored phrase + lookahead (next char separator/space/digit/end — also blocks ABC-vs-ABCs
+      prefix collisions) + optional separator + capture. Clean "Label: value" shapes unaffected.
+    - MINER-CROWNING NOTE: M2 crowned the p1 abstract line (paraphrase of an existing hardcoded
+      label), not the novel TOTAL ESTIMATED phrasing — this round proves machinery, not discovery.
+      Genuine loop-first proof needs a file where the novel label is the sole anchor (estimate page
+      alone), else the loop learns what the rules already knew post-blinding.
+    - DESCRIPTION-NOISE ITEM (open): untouched description box harvested a null-label row — applied
+      ≠ snapshot somewhere in render/Apply (likely long-text round-trip). Harmless (counts only)
+      but harvest infidelity; next step is a before/after JSON diff on long boxes, not guessing.
+    - MULTI-LABEL DESK (user Q, DECISION: YES with cap — design, not yet built): show every gated
+      candidate per correction (top ~3 distinct labels, F-GATE filtered), not just M2's winner, so
+      approvers can pick novel phrasings (TOTAL ESTIMATED would have surfaced as its own row).
+      Touchpoints: expose M2's ranked survey list (already collected internally), harvest posts N
+      rows (batch caps respected), reader ORs all live rows (already does — lists, not singletons).
+      Junk risk carried by existing F-GATE + one-click reject. Scheduled after pattern fix.
+
+  2026-09-07 — L3-TEST SETUP: BLINDING + NO-EMPTY-CACHE (code, NOT committed).
+    - Temp ABC blinding (core extractABC, L3_TEST_BLIND_ABC flag, RESTORE BEFORE ANY COMMIT):
+      patterns=[] + F-B1 push gated off; original regexes preserved verbatim in dead branch.
+      Suite impact is exactly 2 intended failures (F-B1 reroute + hardcoded-wins priority fixtures);
+      all other 76 green, including L3 miss→hit (proves the blinded tree misses honestly).
+    - Loader fix (document-parser.js): never cache an empty live-set — the first approval must be
+      visible on the next run, not after the TTL. (Without this, the round-trip below would
+      false-negative on a stale empty cache; sessionStorage also survives hard refresh.)
+    - Round-trip script (browser, user runs): (1) hard refresh (new ?v= serves working tree);
+      (2) upload clean selectable test5 → ABC box MUST be empty (blinding check); (3) type
+      4834297.59 → Apply → (4) Learned Keywords desk shows 1 proposed row (label+excerpt mined
+      from the best-anchored occurrence) → Approve → (5) re-upload same file → ABC fills, zero
+      corrections = LOOP PROVEN. Restore blinding immediately after, suite must return 78/78.
+
 ===============================================================================
   6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
 ===============================================================================
@@ -1055,29 +1116,32 @@ Frontend convention (IMPORTANT)
       (rule fix, same wordsToNumber machinery — NOT loop); (B) TOTAL ESTIMATED PROJECT COST
       loop-first ONLY (no hand-code; reservation stands — the loop must discover it from a real
       correction). O2 try-angles stays cheap insurance; O1 demoted stands.
-   9. L3 READER-CONSULTS-TABLE (NEXT BUILD — no code yet). Seam studied: optional-param
-      injection (isTitleValueCandidate/isContractorValueCandidate/greedy-join sites +
-      parseProjectInfo(Pooled) forwarding), loader fetches live pairs once per run (24h
-      browser cache keyed by updated_at), lowest-priority fallback below hardcoded labels.
-      Synthetic paraphrase fixtures at kickoff; proof = paraphrased-label file fails before
-      approval, passes after, nothing else moving. UNBLOCKS the loop-first test (§6 spec).
-      CLEAN REGEN LANDED 2026-09-07 (pdfdocstest5_selectable_text.pdf): budget 31 / duration 11,
-      both dates labeled-clean, Revised deep win, ABC in-pool — OCR proven the whole bottleneck;
-      removal-vs-novel-label + ABC-pooling-scope guidance banked (§6 clean-text entry).
-   10. ABC-POOLING (after L3): promote ABC into pooled track (collector + vote + debug +
+   9. L3 READER-CONSULTS-TABLE. ✅ BUILT 2026-09-07 (NOT committed; fixtures 78/78 green).
+      Optional-param threading (join sites + candidate fns + per-field order), generic learned-label
+      pass (all fields but description, own normalizers), loader once/run (role-base, contractors
+      skip, 24h TTL, never caches empty). Line-start-anchored patterns (mid-line capture bug caught
+      by fixture pre-green). ROUND-TRIP 2026-09-07: pipeline proven (blind miss → correct → propose
+      → Live) BUT re-run still missed — pattern bug: mined label swallowed separator+marker, builder
+      demanded a second separator. APPROVED FIX (user): anchored phrase + lookahead + optional
+      separator + capture. MINER-CROWNING NOTE: M2 crowned p1 abstract (existing-rule paraphrase),
+      not novel TOTAL ESTIMATED — genuine discovery needs sole-anchor file (estimate page alone).
+      DESCRIPTION-NOISE ITEM (open): untouched long box harvested null-label row — needs before/
+      after JSON diff, not guessing. MULTI-LABEL DESK (user Q, DECISION YES with cap ~3, F-GATE
+      filtered): expose M2's ranked survey list as separate rows so approvers pick novel phrasings;
+      reader ORs all live rows already. See §6 entries.
+   10. ABC-POOLING (after pattern fix): promote ABC into pooled track (collector + vote + debug +
       disagree, mirroring budget). THEN, in standing order: ABC words-rule (A) alongside/after
       L3 -> AI fallback (trigger list finalized from all verdicts) -> S-curve Steps 2–4 +
       Tier-2/3 (backlog; inherits the hardened OCR path + tile/strip column technique free).
 
-  Resume state (2026-09-07, L3 next, clean regen landed):
-    - Branch: phase-6-parser-learning. This plan edit uncommitted (tree otherwise clean).
-    - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
-    - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
-      on clean tree (zero regressions from parser work).
-    - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
-    - NEXT = build L3 on go-ahead (clean selectable test5 ready for the round-trip).
-      Then ABC-pooling → ABC words-rule (A) → AI → S-curve backlog. No merge without
-      explicit user confirmation (Rule 12).
+  Resume state (2026-09-07, L3 built+round-tripped, pattern fix approved):
+    - Branch: phase-6-parser-learning. L3 code + blinding + this plan edit uncommitted.
+    - JS suite 76 green + 2 intended blinding failures (F-B1, hardcoded-wins); restores 78/78 on
+      blinding restore. PHP proposal tests 8/8.
+    - vendor/ healthy (artisan 12.51.0).
+    - NEXT = pattern fix alone on go-ahead (re-run must fill from Live row); then blinding
+      RESTORE + suite green → multi-label desk design → ABC-pooling → words-rule → AI →
+      S-curve backlog. No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -1095,9 +1159,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, OCR batch done, clean regen landed
-       (budget 31/duration 11, ABC in-pool 2026-09-07; ABC-or-bust active). JS 73/73 green.
-    3. Build L3; loop-first round-trip on the clean file; then ABC-pooling.
+    2. Resume state: branch phase-6-parser-learning, L3 built + round-tripped (pattern bug found,
+       fix approved 2026-09-07; blinding active, restore pending). JS 76+2-intended.
+    3. Build pattern fix ALONE; re-run must fill from Live row; then RESTORE blinding.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 

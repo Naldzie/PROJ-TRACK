@@ -642,3 +642,43 @@ test('Keep-cleaner guard: short-soupy still upgrades to clean 10+; first fill al
     assert.equal(core.shouldReplaceOcrBest('Original Contract Amount Php 4,204,128.84', false, 'Another clean line here', false), false);
 });
 
+// --- L3: reader consults learned vocabulary (synthetic phrases only) -----------------
+// NOTE: fixtures use invented labels ('Estimated Project Outlay', 'Erection of') — never the
+// real banked loop-first phrasing — so tests prove the MECHANISM without hand-coding the
+// discovery target into the suite.
+
+test('L3: learned ABC label fills when hardcoded labels miss', () => {
+    const text = 'Estimated Project Outlay: Php 4,834,297.59';
+    assert.equal(core.parseProjectInfo({ text }).abc, null);
+    const learned = { labels: { abc: ['Estimated Project Outlay'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+});
+
+test('L3: hardcoded ABC beats learned label regardless of line order', () => {
+    // Learned-labeled line FIRST proves priority is structural, not positional.
+    const text = 'Estimated Project Outlay: Php 9,999,999.99\nABC: Php 4,834,297.59';
+    const learned = { labels: { abc: ['Estimated Project Outlay'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+});
+
+test('L3: learned title value-keyword fills when hardcoded phrases miss', () => {
+    const text = 'Erection of Barangay Hall';
+    assert.equal(core.parseProjectInfo({ text }).title, null);
+    const learned = { labels: { title: ['erection of'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).title, 'Erection of Barangay Hall');
+});
+
+test('L3: learned contractor suffix fills when hardcoded suffixes miss', () => {
+    const text = 'Apex Infrastructures Incorporated';
+    assert.equal(core.parseProjectInfo({ text }).contractor, null);
+    const learned = { labels: { contractor: ['infrastructures'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).contractor, 'Apex Infrastructures Incorporated');
+});
+
+test('L3: empty learned table reproduces default behavior exactly', () => {
+    const text = 'Project: Completion of Health Center\nABC: Php 4,834,297.59';
+    assert.deepEqual(
+        core.parseProjectInfo({ text }, { learned: { labels: {} } }),
+        core.parseProjectInfo({ text }));
+});
+

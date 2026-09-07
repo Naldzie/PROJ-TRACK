@@ -421,9 +421,17 @@ const DocumentParserCore = (function () {
     // - Greedy continuation 2026-09-04: if "Project: Completion of Three-Storey" is split
     //   across 2-3 lines (Academic Building, Buhi Campus on next line), join until
     //   "," or "hereinafter" or DESCRIPTION_NEXT_FIELD.
-    function extractTitle(lines, text) {
+    function extractTitle(lines, text, extraTitleKeywords) {
         // Try greedy: find "Project:" line and join continuation lines
         const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // L3: learned title phrases widen continuation acceptance at the 3 join sites below
+        // (hardcoded phrases still match first; learned is an OR fallback, never a replacement).
+        const learnedTitleJoin = normalizeKeywordList(extraTitleKeywords);
+        const titleJoinHit = (next) => {
+            const s = String(next || '').toLowerCase();
+            return TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw)) ||
+                (learnedTitleJoin.length > 0 && learnedTitleJoin.some(kw => s.includes(kw)));
+        };
         // Cut a title where the location begins inline ("... - Savings located at ...").
         // The acceptance certificate writes title + location on one reflowed line.
         // Called by: contract-label scan + greedy joins below.
@@ -459,7 +467,7 @@ const DocumentParserCore = (function () {
                         if (DESCRIPTION_NEXT_FIELD.test(next)) break;
                         if (/hereinafter|to\s+be\s+completed\s+within|WITNESSETH|WHEREAS/i.test(next)) break;
                         const isAllCapsPart = next === next.toUpperCase() && /[A-Z]/.test(next) && next.length >= 5 && next.length <= 150;
-                        if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsPart) {
+                        if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || titleJoinHit(next) || isAllCapsPart) {
                             parts.push(cutAtLocatedAt(next));
                             if (parts.join(' ').length >= 40) break;
                         } else if (parts.length > 0) break;
@@ -506,7 +514,7 @@ const DocumentParserCore = (function () {
                     // Step 1e-3: also accept ALL-CAPS continuation ("ACADEMIC BUILDING (COLLEGE ...)-SAVINGS")
                     // which fails the Title-Case test and has no value-keyword phrase.
                     const isAllCapsTitlePart = (t) => t === t.toUpperCase() && /[A-Z]/.test(t) && t.length >= 5 && t.length <= 150 && /BUILDING|CAMPUS|SAVINGS|COLLEGE|SCIENCES|ACADEMIC|CONSTRUCTION|COMPLETION/i.test(t);
-                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsTitlePart(next)) {
+                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || titleJoinHit(next) || isAllCapsTitlePart(next)) {
                         // Step 1f-1: stop the title where the location starts inline.
                         if (/located\s+at\b/i.test(next)) {
                             const before = cutAtLocatedAt(next);
@@ -551,7 +559,7 @@ const DocumentParserCore = (function () {
                         if (next.length >= 5 && next.length <= 150) {
                             greedyParts.push(next);
                             const peek = nonEmpty[j + 1] || '';
-                            if (/WHEREAS/i.test(peek) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) === false && greedyParts.length >= 2) break;
+                            if (/WHEREAS/i.test(peek) || !titleJoinHit(next) && greedyParts.length >= 2) break;
                             if (greedyParts.join(' ').length >= 40) break;
                         }
                     }
@@ -755,10 +763,13 @@ const DocumentParserCore = (function () {
     function extractABC(lines) {
         const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
         const hasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
-        const patterns = [
+        // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC patterns disabled
+        // so the clean selectable file misses and the loop-first round-trip can run. See plan §6.
+        const L3_TEST_BLIND_ABC = true;
+        const patterns = L3_TEST_BLIND_ABC ? [] : [
             /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|abc)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ];
-        if (hasOrigRevised) {
+        if (hasOrigRevised && !L3_TEST_BLIND_ABC) {
             patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
         }
         return findLabeledValue(lines, patterns, asMoney);
@@ -900,6 +911,28 @@ const DocumentParserCore = (function () {
     // Used ONLY as fallback when NO label matched — never replaces label search.
     // Hardcoded per user 2026-09-03; flagged for future DB-driven parser_keywords.
 
+    // ─── L3: LEARNED VOCABULARY (parser_keywords, live rows) ─────────────────────
+    // The learning loop harvests (label-phrase → field) pairs from user corrections; staff/admin
+    // approve them live. The reader consults them as LOWEST-priority fallback only — every
+    // hardcoded rule runs first, so an empty table reproduces today's behavior exactly.
+    // Two consultation shapes (both substring, case-insensitive):
+    //   value-side: title/contractor phrases widen isTitle/ContractorValueCandidate + the 3
+    //     greedy-join sites in extractTitle. Learned-value matches keep LENGTH bounds only —
+    //     the heuristic shape gates are skipped because a reviewed vocabulary outranks heuristics.
+    //   label-side: per-field phrases become extra findLabeledValue patterns with the field's own
+    //     normalizer (this is what lets a loop-discovered "Estimated Project Outlay" fill ABC).
+    // Called by: parseProjectInfo() fallback passes; wrapper loads pairs via /all?status=live.
+    // Pure (no DOM/fetch) — lists arrive via opts.learned = { labels: { field: [phrase] } }.
+    function normalizeKeywordList(list) {
+        const out = [];
+        for (const k of (list || [])) {
+            const s = String(k || '').toLowerCase().trim();
+            if (s && out.indexOf(s) === -1) out.push(s);
+            if (out.length >= 200) break;
+        }
+        return out;
+    }
+
     // Title value phrases — 15 hardcoded per user list.
     const TITLE_VALUE_KEYWORDS = [
         'provision of', 'completion and provision of',
@@ -925,31 +958,41 @@ const DocumentParserCore = (function () {
     // Called by: parseProjectInfo() fallback when extractTitle labeled returns null.
     // Returns the cleaned line or null. Confidence lower than label (60 vs 95).
     // Also strips OCR "oe " artifact where "the" misread as "oe" at line start.
-    function isTitleValueCandidate(line) {
+    // L3: extraKeywords (learned phrases) are tried only when no hardcoded phrase hits,
+    // and learned hits skip the construction-word gate (length bounds stay) — reviewed
+    // vocabulary outranks heuristics.
+    function isTitleValueCandidate(line, extraKeywords) {
         let raw = String(line || '').trim();
         // OCR artifact: "oe Completion..." → strip leading "oe "
         if (/^oe\s+/i.test(raw)) raw = raw.replace(/^oe\s+/i, '').trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 15 || s.length > 200) return null;
-        const hasKeyword = TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw));
-        if (!hasKeyword) return null;
-        // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
-        if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
-        return cleanValue(raw);
+        if (TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
+            if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
+            return cleanValue(raw);
+        }
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
+        return null;
     }
 
     // Check if a line looks like a contractor name based on suffix keywords.
     // Returns cleaned line or null. Strips parenthetical tail like " (hereinafter..."
-    function isContractorValueCandidate(line) {
+    // L3: same learned-fallback shape as titles (length bounds stay, suffix gate skipped).
+    function isContractorValueCandidate(line, extraKeywords) {
         let raw = String(line || '').trim();
         // Strip parenthetical tail for clean name
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
-        const hasSuffix = CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw));
-        if (!hasSuffix) return null;
-        if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
-        return cleanValue(raw);
+        if (CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
+            return cleanValue(raw);
+        }
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
+        return null;
     }
 
     // ─── STEP 1e-4/1e-5: POOLED VOTE HELPERS ───────────────────────────────────
@@ -1403,27 +1446,89 @@ const DocumentParserCore = (function () {
     // Returns { title, location, description, budget, abc, budgetSource, category,
     //           startDate, endDate, duration, contractor, _confidence, _valueKeywordHits }.
     // Phase 5: includes ABC standalone, budgetSource, category, value-side fallbacks, confidence.
+    // L3: opts.learned = { labels: { field: [phrase] } } from parser_keywords live rows.
+    //   Order per field (hardcoded always wins ties): hardcoded labels → learned labels →
+    //   hardcoded value keywords (title/contractor) → learned value keywords. Description has
+    //   no learned-label pass (prose blocks don't fit single-line lookup). Learned-label fills
+    //   count at label weight in confidence (human-approved vocabulary); learned-value fills count
+    //   at value weight like their hardcoded counterparts.
+    //   Omitted opts = today's behavior exactly.
     // Called by: document-parser.js runDocumentAutofill() → getCore().parseProjectInfo()
-    function parseProjectInfo(doc) {
+    function parseProjectInfo(doc, opts) {
         const text = doc.text || '';
         const lines = doc.lines || buildLinesFromText(text);
+        const learnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
+        const learnedFor = (field) => normalizeKeywordList(learnedLabels[field]);
+        // Build a literal label pattern from a learned phrase (escaped; trailing :/- tolerated
+        // since mined slices may include the terminator — F-GATE already guarantees label-ish
+        // shape or :/- ending at harvest). Anchored at line start with an explicit separator OR
+        // end-of-line (value on next line(s)): an unanchored pattern would match MID-line and
+        // capture the tail as the value ("Apex Infrastructures Incorporated" → "Incorporated").
+        const learnedPatterns = (field) => learnedFor(field).map(ph =>
+            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\s*(?:[:\\-]\\s*(.*)|$)', 'i'));
+        // Per-field normalizers for the learned-label pass (mirrors each hardcoded extractor).
+        const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
+        const learnedNormalizers = {
+            title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
+            location: lenRange(3, 200),
+            budget: asBudget,
+            abc: asMoney,
+            budgetSource: lenRange(2, 100),
+            category: lenRange(3, 50),
+            startDate: asDate,
+            endDate: asDate,
+            duration: asDays,
+            contractor: lenRange(3, 150),
+        };
+        const tryLearnedLabel = (field) => {
+            const patterns = learnedPatterns(field);
+            if (!patterns.length) return null;
+            const norm = learnedNormalizers[field];
+            if (!norm) return null;
+            return findLabeledValue(lines, patterns, norm);
+        };
         // Label-based extraction
-        let title = extractTitle(lines, text);
+        let title = extractTitle(lines, text, learnedFor('title'));
         let contractor = extractContractor(lines);
         let valueKeywordHits = 0;
 
+        // L3 learned-label pass: every still-null field gets its approved phrases.
+        // Title keeps its greedy extractTitle result when present; contractor likewise.
+        if (!title) title = tryLearnedLabel('title');
+        if (!contractor) contractor = tryLearnedLabel('contractor');
+        const learnedRestFields = ['location', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration'];
+
         // Value-side fallback: if no label found, try keyword inside the value itself
         // Low confidence (60) vs label (95) — preview modal shows "guessed — please verify".
+        // L3: two passes so hardcoded phrases win ties regardless of line order.
         if (!title) {
             for (const line of lines) {
                 const v = isTitleValueCandidate(line);
                 if (v) { title = v; valueKeywordHits++; break; }
+            }
+            if (!title) {
+                const extra = learnedFor('title');
+                if (extra.length) {
+                    for (const line of lines) {
+                        const v = isTitleValueCandidate(line, extra);
+                        if (v) { title = v; valueKeywordHits++; break; }
+                    }
+                }
             }
         }
         if (!contractor) {
             for (const line of lines) {
                 const v = isContractorValueCandidate(line);
                 if (v) { contractor = v; valueKeywordHits++; break; }
+            }
+            if (!contractor) {
+                const extra = learnedFor('contractor');
+                if (extra.length) {
+                    for (const line of lines) {
+                        const v = isContractorValueCandidate(line, extra);
+                        if (v) { contractor = v; valueKeywordHits++; break; }
+                    }
+                }
             }
         }
 
@@ -1440,6 +1545,14 @@ const DocumentParserCore = (function () {
             duration: extractDuration(lines),
             contractor: contractor,
         };
+        // L3 learned-label pass for the remaining fields (null-only; hardcoded already ran).
+        // Fills count at label weight via countFilled below (no valueKeywordHits increment).
+        for (const f of learnedRestFields) {
+            if (!parsed[f] && learnedFor(f).length) {
+                const v = tryLearnedLabel(f);
+                if (v) parsed[f] = v;
+            }
+        }
 
         // Confidence scoring: (label hits * 1.0 + valueKeyword hits * 0.6) / total fields
         // Total 11 fields now (was 8). Used by document-parser.js to decide Tier 2/3.

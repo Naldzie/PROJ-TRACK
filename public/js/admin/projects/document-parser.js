@@ -74,6 +74,52 @@ function removeAutofillBanner() {
     if (banner && banner.remove) banner.remove();
 }
 
+// L3 — live learned vocabulary (parser_keywords rows with status=live).
+// Fetched ONCE per preview run (not per file/page) from the staff/admin review endpoint
+// (same role-base pattern as harvestCorrections; contractors have no route and skip).
+// Cached 24h in sessionStorage (TTL-only: no updated_at-max endpoint exists, so staleness
+// is bounded by time, not table version — approvals appear within a day, instantly on
+// hard refresh via the bypass below). Shape: { labels: { field: [phrase] } }.
+// Consulted by core.parseProjectInfo as lowest-priority fallback; empty table (or any
+// failure) reproduces today's behavior exactly. Best-effort — never blocks preview.
+// Called by: runDocumentAutofill() before the per-file loop.
+async function loadLearnedKeywords() {
+    const EMPTY = { labels: {} };
+    try {
+        const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return EMPTY;
+        const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+        const KEY = 'parserLiveKeywordsV1';
+        const TTL = 24 * 3600 * 1000;
+        try {
+            const raw = sessionStorage.getItem(KEY);
+            if (raw) {
+                const cached = JSON.parse(raw);
+                if (cached && cached.pairs && (Date.now() - (cached.fetchedAt || 0)) < TTL) return cached.pairs;
+            }
+        } catch (e) { /* cache is best-effort */ }
+        const res = await fetch(base + '/parser-keyword-proposals/all?status=live', {
+            headers: { 'Accept': 'application/json' },
+        });
+        if (!res || !res.ok) return EMPTY;
+        const rows = await res.json();
+        const pairs = { labels: {} };
+        for (const r of (rows || [])) {
+            const phrase = String((r && r.label_phrase) || '').trim();
+            const field = String((r && r.field) || '').trim();
+            if (!phrase || !field) continue;
+            (pairs.labels[field] = pairs.labels[field] || []).push(phrase);
+        }
+        // Never cache an empty desk: the first approval must be visible on the next run,
+        // not after the TTL. Only non-empty sets are worth reusing.
+        const total = Object.keys(pairs.labels).reduce((n, f) => n + pairs.labels[f].length, 0);
+        if (total > 0) {
+            try { sessionStorage.setItem(KEY, JSON.stringify({ fetchedAt: Date.now(), pairs })); } catch (e) {}
+        }
+        return pairs;
+    } catch (e) { return EMPTY; }
+}
+
 async function runDocumentAutofill() {
     // Only run in create mode — never overwrite data when editing
     if (window._projectModalMode === 'edit') return;
@@ -121,6 +167,9 @@ async function runDocumentAutofill() {
         const scanReports = [];
         // O2: files whose scanned pages exceeded the photo-read budget (partial read).
         const truncatedFiles = [];
+        // L3: live learned vocabulary, once per run (sessionStorage-cached, best-effort).
+        let learnedKeywords = { labels: {} };
+        try { learnedKeywords = await loadLearnedKeywords(); } catch (e) { /* reader falls back to hardcoded */ }
 
         for (const doc of pdfDocs) {
             if (myRunId !== _autofillRunId) return;
@@ -137,7 +186,7 @@ async function runDocumentAutofill() {
                     scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages });
                 }
                 if (text && text.trim().length > 0) {
-                    const parsedSingle = getCore().parseProjectInfo({ text });
+                    const parsedSingle = getCore().parseProjectInfo({ text }, { learned: learnedKeywords });
                     perFileData.push({ fileName: doc.fileName, text, parsed: parsedSingle });
                 }
                 // L1 learning loop: keep the raw document texts so Apply-time mining can
