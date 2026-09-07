@@ -1266,6 +1266,22 @@ const DocumentParserCore = (function () {
         return { score: Math.round((weirdFrac + symRatio) * 100) / 100, weirdFrac: Math.round(weirdFrac * 1000) / 1000, symRatio: Math.round(symRatio * 1000) / 1000, soupy };
     }
 
+    // Keep-cleaner minimum-length guard for the OCR PSM retry ladder (2026-09-06).
+    // A PSM retry may dethrone the current best ONLY when the challenger is both
+    // cleaner (non-soupy) AND substantive (10+ usable chars). A long-soupy incumbent
+    // (e.g. test4 statement page with real amounts) survives a short-clean fragment
+    // challenger; a short-soupy incumbent still upgrades to a clean 10+ read.
+    // Soupy challengers never dethrone; clean-vs-clean and soupy-vs-soupy keep the
+    // first (document order, no churn). Empty best always fills on first usable read.
+    // Called by: document-parser.js recognizeEnglish(). Pure (no DOM).
+    function shouldReplaceOcrBest(bestText, bestSoupy, challengerText, challengerSoupy) {
+        if (!bestText) return true;
+        if (!challengerSoupy && bestSoupy) {
+            return String(challengerText || '').trim().length >= 10;
+        }
+        return false;
+    }
+
     // Mine a candidate label for a user-corrected value (L1 learning loop, Option 2).
     // Surveys EVERY matching line (M2) and returns the best-anchored one: a match whose
     // neighborhood already looks label-ish outranks a bare occurrence; ties keep document
@@ -1484,6 +1500,7 @@ const DocumentParserCore = (function () {
         pooledDisagree,
         splitMismatchGroups,
         scoreOcrSoup,
+        shouldReplaceOcrBest,
         mineCorrectionLabel,
         parseProjectInfoPooled,
     };

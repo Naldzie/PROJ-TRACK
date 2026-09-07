@@ -395,9 +395,18 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
         }
         if (!text.trim()) continue;
         const s = soupOf(text);
+        // Keep-cleaner + minimum-length guard (2026-09-06): a PSM retry dethrones only
+        // when cleaner AND 10+ chars (core.shouldReplaceOcrBest). Long-soupy incumbents
+        // survive short-clean fragments (test4 yield fix); short-soupy still upgrades.
         // Keep the cleaner read: non-soupy beats soupy outright; two soupy (or two clean)
         // results keep the first (document order) — no churn between equals.
-        if (!best || (!s.soupy && bestSoupy)) {
+        let replace = (!best || (!s.soupy && bestSoupy));
+        try {
+            if (core && typeof core.shouldReplaceOcrBest === 'function') {
+                replace = core.shouldReplaceOcrBest(best, bestSoupy, text, !!s.soupy);
+            }
+        } catch (e) { /* helper is best-effort — fall back to legacy rule above */ }
+        if (replace) {
             best = text;
             bestSoupy = !!s.soupy;
         }

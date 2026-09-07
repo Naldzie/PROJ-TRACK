@@ -619,3 +619,26 @@ test('D-total: pooled tags total-contract-time and prefers it', () => {
     assert.equal(pooled.duration, '205');
 });
 
+// --- Keep-cleaner minimum-length guard (2026-09-06 yield fix) ---------------------
+
+test('Keep-cleaner guard: long-soupy incumbent survives short-clean challenger', () => {
+    // test4 statement page shape: long incumbent the scorer calls soupy holds real
+    // amounts; a short clean fragment (header only) must NOT dethrone it. The guard
+    // takes the soup flags as inputs (scoring itself is covered by the G-soup test).
+    const longIncumbent = 'Original Contract Amount Php 4,204,128.84 Revised Contract Amount Php 4,323,196.77 ' +
+        'Date of Effectivity December 9, 2024 Date of Completion March 13, 2026 ' +
+        'with additional statement table lines following across the page';
+    assert.ok(longIncumbent.trim().length >= 10);
+    assert.equal(core.shouldReplaceOcrBest(longIncumbent, true, 'Page 2', false), false);
+});
+
+test('Keep-cleaner guard: short-soupy still upgrades to clean 10+; first fill always', () => {
+    // Failing page: short soupy retry candidate upgrades normally once substantive.
+    assert.equal(core.shouldReplaceOcrBest('~ << ~', true, 'Original Contract Amount Php 4,204,128.84', false), true);
+    // Empty best always fills on the first usable read (even short).
+    assert.equal(core.shouldReplaceOcrBest('', true, 'Page 2', false), true);
+    // Soupy challengers never dethrone; clean-vs-clean keeps first (no churn).
+    assert.equal(core.shouldReplaceOcrBest('Original Contract Amount Php 4,204,128.84', false, '~ << ~ soup', true), false);
+    assert.equal(core.shouldReplaceOcrBest('Original Contract Amount Php 4,204,128.84', false, 'Another clean line here', false), false);
+});
+

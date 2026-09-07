@@ -1,6 +1,6 @@
 # DOCUMENT PARSER LEARNING LOOP PLAN (CONTINUATION)
 # Parent: textfiles/document_parser_accuracy_improvement_plan.md (Steps 1–1i, N-batch, S-batch, P1/P2)
-# Date: September 4, 2026 — Status: HANDOFF (user changing session). NEXT BUILD QUEUE approved and ordered below; working tree has uncommitted plan edits only. NEXT = build item 1 on go-ahead.
+# Date: September 4, 2026 — Status: HANDOFF (user changing session). Guard item 1 BUILT (JS 73/73, uncommitted); NEXT = item 2 snapshots (all pages) then O1/O2 auto-orientation. No implementation beyond guard.
 # Branch: phase-6-parser-learning (FROM phase-5-parser-accuracy, Rule 12)
 
 ===============================================================================
@@ -651,6 +651,48 @@ Frontend convention (IMPORTANT)
       subsequent calls fine. First artisan boot after reinstall was slow — cache rebuild.)
     - No product code changed by this incident; working tree otherwise exactly as left.
 
+  2026-09-07 — TEST4 TWO-RUN EVIDENCE: 1-PAGE SWAP, NOT 1-PAGE YIELD (no code).
+    - Run 1 (all 0°): pages 1-7,9,10 yielded=0; page 8 yielded=2942 soup (3 PSM attempts
+      byte-identical 2942 soupy=true — guard correctly kept first, no churn; identical counts
+      suggest the CDN ignores tessedit_pageseg_mode, logged as suspect, not verdict).
+      OSD pinning behaved as designed (2× LSTM red → plain-ENG session pin).
+    - Run 2 (straighten-all +90°): one clean clause page reads (Rehabilitation/Refurbishment
+      of Canteen, 185 days, P 4,204,128.84; pool budget count 2 labeledCount 0 = word-amount
+      fallback; start/end null = correct, no explicit dates on that page). DIFFERENT page won
+      than run 1 — rotation fixed one page, broke another; net still 1 page.
+    - User screenshots prove the mechanism: p.1 ABC upright-on-landscape (must NOT rotate),
+      p.2 statement sideways-on-landscape (must rotate once). Paper aspect (1008×612
+      landscape-baked, MS Print-to-PDF; test5 is portrait via website tool) cannot separate
+      them — straighten-all's allLandscape + landscapePages ledger turns BOTH. Paper-landscape
+      ≠ content-upright; aspect trigger is the wrong signal for mixed-content files.
+
+  2026-09-07 — OSD RESEARCH VERDICT: DEAD BY DESIGN IN THIS BUILD (no code).
+    - Codebase audit (explore agent): ocrPage calls Tesseract.recognize(canvas,'eng+osd') with
+      no worker/langPath/cached osd.traineddata (document-parser.js:451); data.orientation is
+      debug-log-only (never routed to viewport.rotation); rotation comes solely from manual
+      window._ocrRotations (default 0); vendor/ holds pdfjs-loader only, zero tesseract/OSD files.
+    - Web research (tesseract.js v5): Legacy model removed by default for size (~54% EN smaller);
+      OSD = Legacy-only. recognize() convenience creates a throwaway LSTM-only worker per call,
+      so OSD can never succeed — loud throw (LSTM requested) or silent empty, then session pins
+      plain eng. Fix requires createWorker('eng', 2, {legacyCore:true, legacyLang:true}) +
+      worker.detect (or oem 2 + OSD PSM + osd:true + rotateAuto accounting), per naptha docs
+      and issues #820/#859. iOS ≤17.1 Legacy-crash caveat noted (campus desktops unaffected).
+    - User decisions (2026-09-07): auto-orientation = A+B COMBINED (legacy detect + try-angles
+      scoring safety net); snapshots = ALL scanned pages (not failed-only — rotated-but-yielding
+      soup must stay visible). No implementation yet — plan updated, then commit+push all.
+
+  2026-09-07 — KEEP-CLEANER GUARD IMPLEMENTED (code + tests, NOT committed per user).
+    - Core: new pure shouldReplaceOcrBest(best, bestSoupy, challenger, challengerSoupy) +
+      export — first fill always true; clean challenger dethrones soupy incumbent only
+      at 10+ chars; soupy challengers never dethrone; clean-vs-clean keeps first.
+    - Wrapper: recognizeEnglish() delegates to the helper with legacy-rule fallback
+      (best-effort try/catch when core lacks it). Comment updated; no other OCR path touched.
+    - Tests (+2 guard fixtures, core 53/53): long-soupy incumbent holds vs short-clean
+      fragment; short-soupy upgrades to clean 10+ / first-fill / no-churn cases. Full JS
+      73/73 (core 53 + scurve 20). node --check clean on both touched files. No PHP touched.
+    - Next: user browser proof — test4 re-run back to 2 yielding pages with both amounts +
+      dates; then queue item 2 (page-pixel snapshots) on go-ahead. No commit per user.
+
 ===============================================================================
   6B. NEXT BUILD QUEUE (ordered, approved 2026-09-06 — user changing session)
 ===============================================================================
@@ -661,29 +703,36 @@ Frontend convention (IMPORTANT)
   on a stable pipeline, and they touch the same gray-note UI the guard fix does not.
   Building diagnostics first would photograph the regression instead of fixing it.
 
-  1. KEEP-CLEANER MINIMUM-LENGTH GUARD (the yield fix). A PSM retry may dethrone the
-     current best ONLY if it also yields 10+ usable chars: long-soupy incumbent vs short
-     clean challenger keeps the incumbent (test4 statement page survives); clean-short-first
-     still upgrades normally. One condition in recognizeEnglish() + 2 fixtures (long-soupy
-     incumbent holds vs short-clean challenger; short-soupy still upgrades) + suite green.
-     Proof: test4 re-run back to 2 yielding pages with both amounts + dates (user browser).
-  2. PAGE-PIXEL SNAPSHOTS (diagnostic). Per scanned page "save image" button (gray note +
-     empty warning; downscaled ~1.5 offscreen re-render, PNG download, no server involvement).
-     Lets the assistant truly see pixels via pasted images. Proof: one saved page opens
-     readable in chat.
-  3. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
-     fallback last. S-curve OCR stays out of scope (deferred tier).
+   1. KEEP-CLEANER MINIMUM-LENGTH GUARD (the yield fix). ✅ IMPLEMENTED 2026-09-07
+      (core shouldReplaceOcrBest + export; wrapper delegates with legacy fallback; +2 fixtures;
+      full JS 73/73). Browser proof still open: test4 back to 2 yielding pages (now blocked by
+      the paper-vs-content rotation issue below, not the guard — guard held correctly on run 1).
+   2. PAGE-PIXEL SNAPSHOTS (diagnostic). SCOPE APPROVED 2026-09-07: ALL scanned pages
+      (scannedPageNums, gray note + empty warning; downscaled ~1.5 offscreen re-render, PNG
+      download, no server). Rationale: rotated-but-yielding soup pages must stay visible.
+      Proof: one saved page opens readable in chat. NEXT BUILD (no code yet).
+   3. AUTO-ORIENTATION A+B COMBINED (approved 2026-09-07, no code yet).
+      O1 — legacy detect worker: cached createWorker('eng', 2, {legacyCore:true, legacyLang:true})
+      per session (lazy, beside _tesseractPromise); worker.detect(canvas) → 0/90/180/270 with
+      confidence; confident angles set window._ocrRotations[file#page] then plain-eng recognize;
+      low-confidence falls to O2; load failure keeps today's plain-retry + manual ⟳.
+      O2 — try-angles scoring net: re-render 0°/90°/270° (180° only if cheap) on failing/low-yield
+      pages, run recognizeEnglish per angle, score with scoreOcrSoup + 10+ chars + field-hit count
+      (core, no new lib); best angle wins and is ledgered. Budget counts pages, not attempts;
+      clean pages pay nothing. Straighten-all becomes "apply detected angles", not blind +90°.
+      Proof: test4 p.1 @0° + p.2 @90°/270° yield in ONE run (ABC 4,834,297.59 + clause 4,204,128.84
+      both pooled, duration 185, statement dates); no 1-page swap.
+   4. THEN, in standing order: OpenCV.js deskew (item 4) -> L3 (needs live desk rows) -> AI
+      fallback last. S-curve OCR stays out of scope (deferred tier).
 
-  Resume state for next session (2026-09-06 handoff):
-    - Branch: phase-6-parser-learning. HEAD d82085a (+ uncommitted: THIS plan file only).
-    - JS suite 71/71 green at HEAD; PHP ParserKeywordProposalTest 8/8; full PHP suite has 6
-      pre-existing failures also present on the clean tree (2 EmailDraft known + 2
-      ContractorDashboard + 2 baseline — zero regressions from parser work).
-    - vendor/ was wiped by a worktree-removal junction accident and reinstalled via
-      `composer install` from intact composer.lock (see incident entry above); artisan +
-      routes + tests re-verified after reinstall.
-    - First command next session: `git status --short` (expect: plan file only),
-      then implement item 1 above. No merge without explicit user confirmation (Rule 12).
+  Resume state (2026-09-07, post-guard pre-snapshot):
+    - Branch: phase-6-parser-learning. Guard code + tests + this plan edit uncommitted.
+    - JS suite 73/73 green (core 53 incl. 2 guard fixtures + scurve 20); node --check clean.
+    - PHP ParserKeywordProposalTest 8/8 (unchanged); full PHP suite 6 pre-existing failures
+      on clean tree (zero regressions from parser work).
+    - vendor/ healthy (autoload OK, artisan 12.51.0) after 09-06 reinstall.
+    - NEXT = build queue item 2 (snapshots, all scanned pages) on go-ahead, then O1/O2.
+      No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   7. OPEN QUESTIONS
@@ -701,10 +750,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, HEAD d82085a, `git status` should show
-       only this plan file modified. JS 71/71 green; PHP proposal tests 8/8.
-    3. Implement queue item 1 (keep-cleaner minimum-length guard) first, with the 2 fixtures
-       listed in 6B. Then item 2 (snapshots).
+    2. Resume state: branch phase-6-parser-learning, guard implemented (see §6 2026-09-07).
+       JS 73/73 green; PHP proposal tests 8/8.
+    3. Implement queue item 2 (snapshots, ALL scanned pages), then O1/O2 auto-orientation.
     4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
     5. No merge without explicit user confirmation (Rule 12).
 
