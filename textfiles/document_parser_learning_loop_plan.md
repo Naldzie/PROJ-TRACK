@@ -1275,6 +1275,9 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
+       Parked non-priority ideas live in textfiles/document_parser_future_improvements_plan.md
+       (P1 passive mining, P2 lifetime counting + collision warning) — do NOT build unless
+       the user explicitly unparks them.
     2. Resume state: merge15-baseline, pattern fix BUILT + BROWSER-PROVEN (575db42, blinding ON
        for demo). JS 77/79 (2 intended blinding fails); PHP proposal tests 8/8.
     3. NEXT = combined build: MULTI-LABEL DESK + ABC-POOLING per the 2026-09-08 plan entry above
