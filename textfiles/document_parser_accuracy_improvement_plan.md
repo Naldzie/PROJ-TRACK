@@ -811,6 +811,65 @@ Related plan
         byte-identical (1.12/6.74/21.09/49.73/100, contract 32,588,531.43, 59 activities,
         warnings []); composer suite zero-regressions (7 pre-existing merge-15 failures stand).
 
+    R0. KNOWN LAYOUT FAMILIES (recorded 2026-09-08 — formats must be KNOWN and distinguished,
+        user decision; BUHI vs Roof share one importer but are different families)
+        - FAMILY-B (BUHI, working): 12 months as fortnight triplets (15/15/5-day cols I:AF →
+          12 paired spans); `Month 1..12` labels; DESCRIPTION / CONTRACT AMOUNT / % WEIGHT;
+          59 detailed activity rows; quarterly %/cost summary block. Reference:
+          sampledocs/Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi.xlsx (git-ignored, manual QA only).
+        - FAMILY-R (Roof, 422 today): 7 whole-month groups (4 display cols each; `30 days`×6 +
+          `7 days` = 187 days, merged group headers row 19); months as ORDINALS `1st.`–`7th`
+          (AM19:AS19, single-column spans); `DESCRITPION` typo header (B18, merged B18:C19);
+          `Unit Cost/Contract Amount` (F); NO weight column (fractions G:AG, pesos AM:AS);
+          ~10 group-level LOT activities (rows 21-30); 6-row summary block (31 TOTAL, 32 %,
+          33 Commulative [%], 34 Cash Flow [pesos], 35 Project Duration, 36 Commulative [days]).
+          Table proper ~A-AU; A10:IR82 width is title-block artifact. Reference:
+          sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE.xlsx
+          (git-ignored, manual QA only). Same contractor ⇒ same format assumed (user, evidenced
+          by matching hard copy) — supports contractor-keyed parser_templates later.
+        - Rule going forward: patterns from other paths (PDF cumulative rows, weekly spans) may
+          INFORM Excel design but never SUBSTITUTE Excel bytes — only same-path bytes prove.
+
+    R1. RESEARCH: HOW OTHER SYSTEMS HANDLE INCONSISTENT EXCEL FORMATS (2026-09-08, web sources)
+        Finding: nobody standardizes contractor S-curve FILE INGESTION (all S-curve literature
+        is EVM methodology + templates). Inconsistent-Excel ingestion is a solved-shape problem
+        elsewhere, converging on one pattern — Power Query's mapping-table flow is the cleanest
+        documented instance (TrumpExcel combine-CSVs guide):
+        1. Canonical schema FIRST (ours: {months, meta}, Option A no-migration — already this).
+        2. Mapping table, human-mapped ONCE (extract all headers → person maps variants to
+           canonical names → rename + combine with MissingField.Ignore). == parked
+           parser_templates / unknown-header-capture direction (accuracy plan §11); contractor
+           stability (FAMILY-R same-format evidence) makes per-source mappings durable.
+        3. Fuzzy match WITH a threshold for typos (Power Query fuzzy merge, Fuzzy Lookup Add-In,
+           Levenshtein) — plus explicit guidance that BRIDGE TABLES cover what algorithms can't
+           guess. == our ≤2-distance choice + learned mappings as complements. Validates both.
+        4. Tolerant combine (missing fields ignored per file, batch never fails) — == our
+           per-file vote + warnings behavior.
+        Rejected for PMU: platform answers (Mastt/monday "stop using spreadsheets" — PMU cannot
+        mandate contractor tooling); heavy cleaners (OpenRefine/Talend — overkill for 2 families).
+
+    R2a. ROOF-FAMILY SUPPORT (FAMILY-R) — PLAN ONLY, NO CODE YET (user: detection + curve
+        together; fuzzy match; approved 2026-09-08; build on go-ahead)
+        - Detection: fuzzy header match (≤2 Levenshtein, anchored full-cell, header matchers
+          only) so DESCRITPION → description; ordinal-month branch /^(\d{1,2})(st|nd|rd|th)\.?$/i
+          → month index (cap 1..12); existing two-row merge pass covers the 18–19 block.
+          Fixes the exact 422: hard gate failed BOTH disjuncts (descCol null via typo +
+          0 monthCols via ordinals). Far words (NO. OF DAYS) stay rejected by distance.
+        - Curve: monthly reads from the AM:AS peso series (gap-1 ordinals ⇒ single-column
+          spans, no double-count, no 2c dependency); contract total from F Σ (weight optional
+          path already exists); G:AG fraction cells NEVER summed as pesos.
+        - Skip expansion (diagnosis-proven necessity): `%`, `Cash Flow` (real pesos!),
+          `Project Duration`, `Commulative` rows excluded as summary vocabulary — otherwise the
+          cash-flow row absorbs as an activity and distorts the curve. isCumulativeLabel covers
+          the typo'd rows (fuzzy) for 2b later.
+        - Proof: synthetic workbook transcribed from roof shapes (typo header, 18–19 block,
+          ordinals, AM:AS pesos, full 6-row summary block) asserting the correct 7-month curve +
+          all summary exclusions + fuzzy near/far cases; BUHI byte-identical; full suite green
+          (7 pre-existing stand). Roof file stays the manual QA reference.
+        - Forward links: roof becomes layout family #2 in the future parser_templates design
+          (contractor-keyed — same-format assumption now evidenced); PDF cumulative patterns
+          inform 2b thinking but never substitute Excel bytes (R0 rule).
+
     2b. Summary-Row Validated logic (user choice: Validated, not Authoritative) — ⏸ DEFERRED until a second real contractor Excel exists (user decision 2026-09-08)
         Order in buildMonths():
           1) Detect monthSpans via findHeader (already anchor-based).
