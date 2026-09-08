@@ -817,12 +817,16 @@ Related plan
           12 paired spans); `Month 1..12` labels; DESCRIPTION / CONTRACT AMOUNT / % WEIGHT;
           59 detailed activity rows; quarterly %/cost summary block. Reference:
           sampledocs/Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi.xlsx (git-ignored, manual QA only).
-        - FAMILY-R (Roof, 422 today): 7 whole-month groups (4 display cols each; `30 days`×6 +
+        - FAMILY-R (Roof, PARSING since R2a 2026-09-08 — was a 422): 7 whole-month groups (4 display cols each; `30 days`×6 +
           `7 days` = 187 days, merged group headers row 19); months as ORDINALS `1st.`–`7th`
           (AM19:AS19, single-column spans); `DESCRITPION` typo header (B18, merged B18:C19);
           `Unit Cost/Contract Amount` (F); NO weight column (fractions G:AG, pesos AM:AS);
           ~10 group-level LOT activities (rows 21-30); 6-row summary block (31 TOTAL, 32 %,
           33 Commulative [%], 34 Cash Flow [pesos], 35 Project Duration, 36 Commulative [days]).
+          Verified curve: 7mo 6.32/24.31/42.3/59.71/77.03/99.14/100, contract 2239599.72,
+          browser-proven accurate end-to-end. For an ONGOING project per client — still a
+          PLANNED curve (all values formula-chained to plan data; PMU records actuals
+          separately via monthly inspections).
           Table proper ~A-AU; A10:IR82 width is title-block artifact. Reference:
           sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE.xlsx
           (git-ignored, manual QA only). Same contractor ⇒ same format assumed (user, evidenced
@@ -899,7 +903,43 @@ Related plan
           (contractor-keyed — same-format assumption now evidenced); PDF cumulative patterns
           inform 2b thinking but never substitute Excel bytes (R0 rule).
 
-    2b. Summary-Row Validated logic (user choice: Validated, not Authoritative) — ⏸ DEFERRED until a second real contractor Excel exists (user decision 2026-09-08)
+    R3. BUHI SUMMARY-BLOCK FORENSIC + 2b REDESIGN (recorded 2026-09-08 — read-only cell
+        inspection via PhpSpreadsheet getValue/getCalculatedValue/getDataType, no files touched)
+        - Verdict CORRECTED: the old "author-entered static values" claim is WITHDRAWN. The R89-92
+          quarterly block is FORMULA-computed from the same activity table (R88 column SUMs via
+          R91 six-column group sums and R92 running totals). Nothing is separately entered.
+        - The 6.5-vs-6.74 mechanism (fully traced): summary fractions divide by D88 =
+          ₱33,596,424.16 (the ORIGINAL pre-discount bid); the importer divides by the FINAL
+          ₱32,588,531.43. 6.74 × 0.97 = 6.54 ≈ 6.5 — the ENTIRE gap is the 3% discount, plus
+          coarser 6-column groupings (I..N) vs paired spans. The "97% endpoint" is the same
+          artifact (32.58M ÷ 33.6M = 0.97 — can never reach 100 by construction, not shortfall).
+          User's recalled "0.07/7%" is the cell display rounding; "6.5" the true value — both right.
+        - Q1 anatomy: R89 % row and R90 cumulative row coincide at 0.0653 (cumulative of the first
+          group equals the group); they diverge after (period 6.5/13.9/27.8/48.8 vs running
+          6.5/20.5/48.2/97). Ours (6.74 month-3 cumulative) is a third recipe — paired sums over
+          the final contract.
+        - User hypotheses banked: (1) actuals hypothesis — REJECTED for this file by the formula
+          chains (real actuals would be static like accomplishment reports); the labels say
+          ACCOMPLISHED but the numbers are plan-derived. (2) Series insight — ACCEPTED as the
+          decisive design principle: planned (activity table) vs accomplished (author block) are
+          different series, and baseline setup must build from PLANNED only.
+        - PLANNED-SERIES VERDICTS (user-confirmed context): BUHI = planned (whole workbook chains
+          to plan data); Roof = planned (time-phased formula distributions; ongoing-project status
+          doesn't make it actuals — PMU records actuals via monthly inspections). Taxonomy: TWO
+          PLANNED-S-curve families, zero actuals files in hand. Importer stays a planned-only
+          reader. (Future idea, unplanned: importing genuine actuals blocks as progress records —
+          progress entry, NOT baseline import.)
+        - 2b REDESIGNED (user decision 2026-09-08: reference + warn — TRIPLE-GROUNDED: wrong
+          denominator [math] + coarser groupings [precision] + accomplished≠planned [workflow]):
+          emit the activity-derived plan UNCHANGED; attach the summary series as reference data
+          in meta + warn past 1.0% with wording naming the cause ("author block tracks
+          accomplished %, baseline kept from planned activities"). The threshold now flags
+          worth-a-look gaps instead of arbitrating a winner. The old "summary wins" design is
+          abandoned — it would bake a denominator error (and possibly actuals) into the baseline.
+        - Deferred tag on 2b stands, reason updated: awaits build go-ahead, NOT a missing file
+          (BUHI is its own mismatch evidence).
+
+    2b. Summary-Row Reference + Warn (REDESIGNED 2026-09-08 — was "Validated adopts summary"; see R3. Reference-only per triple-grounded workflow reason) — ⏸ awaits build go-ahead (BUHI is its own evidence; no missing file)
         Order in buildMonths():
           1) Detect monthSpans via findHeader (already anchor-based).
           2) Try to read summary row: scan rows after header for isCumulativeLabel
