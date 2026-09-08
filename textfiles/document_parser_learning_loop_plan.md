@@ -1373,7 +1373,8 @@ Frontend convention (IMPORTANT)
        (unlabeled money winner + score<~1.0 → null; labeled singles still fill; duration/dates
        untouched); then (b) blinding RESTORE (pre-merge prerequisite — flips blinded fixtures to
        full-collection asserts, suite back to full green); then (c) AI fallback normal-doc-first
-       (test4 browser proof, blinded-ABC excluded from triggers); then (d) S-curve backlog.
+       — DEDICATED PLAN textfiles/document_parser_ai_fallback_plan.md (test4 browser proof,
+       blinded-ABC excluded from triggers); then (d) S-curve backlog.
     4. Run JS suite + ParserKeywordProposalTest before/after; browser proof per step.
     5. Blinding RESTORE stays a tracked pre-merge-to-main prerequisite (not now — demo).
     6. No merge without explicit user confirmation (Rule 12).

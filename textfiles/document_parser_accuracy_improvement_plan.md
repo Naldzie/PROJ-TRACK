@@ -834,6 +834,9 @@ Related plan
     if OCR still <2 months / low confidence.
 
   STEP 3b — Gemini slice service (new Tier 3, very last)        ⬜ NOT STARTED
+    → SUPERSEDED as the build reference by textfiles/document_parser_ai_fallback_plan.md
+      (restudied 2026-09-08: normal-doc first, blinded-ABC excluded, learn-everything + source
+      badge, auto weakest pages). This section below stays as history; build from the AI file.
     New file: app/Services/AI/GeminiDocumentParserService.php
       - method parseProjectSlice(array $pageImagesBase64): ?array
         Prompt: "Extract JSON {title, location, description, budget,
