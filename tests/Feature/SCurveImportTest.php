@@ -495,6 +495,146 @@ class SCurveImportTest extends TestCase
         unlink($path);
     }
 
+    /**
+     * R2a: orphan subtotal rows — a labeled formula row (months, no contract) followed
+     * by a desc-less subtotal row (contract, no months) attributes to the running total.
+     */
+    public function test_orphan_subtotal_attributes_to_preceding_activity(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('D10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Section Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('D12', 60000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(60000.0, $result['meta']['contractAmount']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+
+        unlink($path);
+    }
+
+    /**
+     * R2a: TOTAL label outside the description column still feeds the contract
+     * fallback (roof row 31 shape) — and only when the row carries a contract amount.
+     */
+    public function test_total_label_outside_description_column_feeds_fallback(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('D10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('D12', 60000);
+        $sheet->setCellValue('E12', 'TOTAL');
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(60000.0, $result['meta']['contractAmount']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+
+        unlink($path);
+    }
+    public function test_parses_roof_family_layout_with_ordinal_months(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        // Row 10: group labels + typo description header + contract header.
+        $sheet->setCellValue('A10', 'ITEM NO.');
+        $sheet->setCellValue('B10', 'DESCRITPION');
+        $sheet->setCellValue('F10', 'Unit Cost/Contract Amount');
+        $sheet->setCellValue('G10', '60 days');
+        $sheet->setCellValue('I10', '7 days');
+        // Row 11: ordinal month identities where row 10 is empty.
+        $sheet->setCellValue('K11', '1st.');
+        $sheet->setCellValue('L11', '2nd.');
+        $sheet->setCellValue('M11', '3rd.');
+        // One group-level activity (LOT quantity, peso series, contract in F).
+        $sheet->setCellValue('A12', '1');
+        $sheet->setCellValue('B12', 'Roofing Works');
+        $sheet->setCellValue('F12', 187000);
+        $sheet->setCellValue('K12', 80000);
+        $sheet->setCellValue('L12', 80000);
+        $sheet->setCellValue('M12', 27000);
+        // TOTAL row.
+        $sheet->setCellValue('B13', 'TOTAL');
+        $sheet->setCellValue('F13', 187000);
+        // Summary block: percentages, cash flow pesos, typo cumulative, durations.
+        $sheet->setCellValue('B14', '%');
+        $sheet->setCellValue('K14', 42.78);
+        $sheet->setCellValue('B15', 'Cash Flow');
+        $sheet->setCellValue('K15', 80000);
+        $sheet->setCellValue('L15', 80000);
+        $sheet->setCellValue('M15', 27000);
+        $sheet->setCellValue('B16', 'Commulative %');
+        $sheet->setCellValue('B17', 'Project Duration');
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        // Activity-derived curve only: 80000/187000, 160000/187000, 100 forced.
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(42.78, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(85.56, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][2]['planned_progress_percent']);
+        $this->assertSame(187000.0, $result['meta']['contractAmount']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+        $this->assertSame('Roofing Works', $result['months'][0]['activities'][0]['activity_name']);
+
+        unlink($path);
+    }
+
+    /**
+     * R2a: fuzzy matching stays tight — an unknown header layout still 422s instead
+     * of hallucinating columns (NO. OF DAYS is not an item/description/month label).
+     */
+    public function test_unknown_headers_still_reject_instead_of_hallucinating(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'NO. OF DAYS');
+        $sheet->setCellValue('B10', 'RANDOM WORDS HERE');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 100);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        try {
+            app(SCurveImportService::class)->parse($path);
+            $this->fail('Expected a RuntimeException for the unknown header layout.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        unlink($path);
+    }
+
     protected function createAdminUser()
     {
         // User::create (not the factory) — the users table has no

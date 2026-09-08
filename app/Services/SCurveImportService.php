@@ -284,7 +284,41 @@ class SCurveImportService
         // Step 2a note: "PARTICULARS" and "WORK ITEMS" are already covered below (locked by
         // test). "ITEM NO." is intentionally NOT added here — isItemLabel() claims it first
         // (elseif order in detectHeaderRow) and it is semantically an item-code column.
-        return (bool) preg_match('/^(description|particulars|work\s*items?|activity|activities|scope|scope\s*of\s*work)$/i', $label);
+        if (preg_match('/^(description|particulars|work\s*items?|activity|activities|scope|scope\s*of\s*work)$/i', $label)) {
+            return true;
+        }
+
+        // R2a: typo tolerance for contractor misspellings ("DESCRITPION" on the roof file).
+        // Long words only — fuzzy on short words ("scope", "item") would hallucinate.
+        return $this->headerFuzzyMatch($label, ['description', 'particulars', 'scope of work']);
+    }
+
+    /**
+     * R2a: typo-tolerant header match (Levenshtein ≤ 2, anchored full-cell by the caller).
+     *
+     * Catches contractor misspellings like DESCRITPION→description or Commulative→cumulative
+     * while far words ("NO. OF DAYS") stay rejected by distance. Words under 6 chars are
+     * never fuzzed (exact regexes own them). ASCII labels only in practice; guarded length.
+     */
+    private function headerFuzzyMatch(string $label, array $words, int $maxDist = 2): bool
+    {
+        $label = strtolower(trim($label));
+
+        if ($label === '' || strlen($label) > 100) {
+            return false;
+        }
+
+        foreach ($words as $word) {
+            if (strlen($word) < 6) {
+                continue;
+            }
+
+            if (levenshtein($label, $word) <= $maxDist) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isWeightLabel(string $label): bool
@@ -306,20 +340,85 @@ class SCurveImportService
      * Detection ONLY in 2a — the row index is recorded in meta['cumulativeRow']
      * for the Step 2b Validated reader; emitted months are untouched. Never
      * required: label-less files (e.g. the weekly outlier) simply report null.
+     *
+     * R2a: also matches the roof family's "Commulative" typo (fuzzy).
      */
     private function isCumulativeLabel(string $label): bool
     {
-        return (bool) preg_match('/cumulative.*%|planned.*cumulative|%\s*accomplished/i', $label);
+        if (preg_match('/cumulative.*%|planned.*cumulative|%\s*accomplished/i', $label)) {
+            return true;
+        }
+
+        return $this->headerFuzzyMatch($label, ['cumulative']);
+    }
+
+    /**
+     * R2a: is this data-row a cumulative summary row? Exact patterns run on the
+     * whole row text (labels may sit outside descCol, e.g. BUHI column A); the
+     * typo-tolerant match runs per cell, since whole-row Levenshtein can never
+     * match by distance. Numeric cells are skipped before fuzzing.
+     *
+     * Called by: buildMonths() meta detection (Step 2a; curve untouched).
+     */
+    private function isCumulativeRow(mixed $row): bool
+    {
+        $cells = $this->rowTexts($row);
+
+        if (count($cells) === 0) {
+            return false;
+        }
+
+        if (preg_match('/cumulative.*%|planned.*cumulative|%\s*accomplished/i', implode(' ', $cells))) {
+            return true;
+        }
+
+        foreach ($cells as $t) {
+            if (!is_numeric($t) && $this->headerFuzzyMatch($t, ['cumulative'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * R2a: non-empty trimmed cell texts of a row (shared by full-row label checks —
+     * cumulative detection, off-column TOTAL). One place, one trimming rule.
+     *
+     * Called by: isCumulativeRow(), buildMonths() TOTAL fallback.
+     */
+    private function rowTexts(mixed $row): array
+    {
+        if (!is_array($row)) {
+            return [];
+        }
+
+        $out = [];
+        foreach (array_values($row) as $c) {
+            $t = trim((string) $c);
+            if ($t !== '') {
+                $out[] = $t;
+            }
+        }
+
+        return $out;
     }
 
     /**
      * Map a header cell to a month index (1..12), or null when it is not a
      * month label. Accepts "Month N", "M N", full month names and 3-letter
-     * abbreviations. Bare numbers are handled separately by longestNumberRun.
+     * abbreviations, plus ordinals ("1st."–"12th", roof family). Bare numbers
+     * are handled separately by longestNumberRun.
      */
     private function matchMonthLabel(string $label): ?int
     {
         if (preg_match('/^(?:month|m)\s*(\d{1,2})$/i', $label, $m)) {
+            $n = (int) $m[1];
+            return ($n >= 1 && $n <= 12) ? $n : null;
+        }
+
+        // R2a: ordinal month labels ("1st.", "2nd.", "3rd." … — roof family AM:AS).
+        if (preg_match('/^(\d{1,2})(st|nd|rd|th)\.?$/i', $label, $m)) {
             $n = (int) $m[1];
             return ($n >= 1 && $n <= 12) ? $n : null;
         }
@@ -457,24 +556,25 @@ class SCurveImportService
 
         $totalRowContract = null;
 
+        // R2a: roof-family contract placement — a labeled section row carries the month
+        // formulas while its subtotal sits on the FOLLOWING desc-less row. Track whether the
+        // previous data row counted as an activity so orphans attribute tightly (never pool).
+        $prevWasActivity = false;
+
         // Step 2a: first data-row naming a cumulative summary row anywhere in its cells
         // (BUHI keeps "% ACCOMPLISHED" labels in column A, outside descCol C).
         // 1-based sheet row for the Step 2b reader; null when the file has none.
         // Detection ONLY — the emitted curve is untouched.
+        // R2a: exact patterns run on the whole row text; fuzzy ("Commulative") runs
+        // per-cell, because Levenshtein on a whole row can never match by distance.
         $cumulativeRow = null;
 
         foreach ($rows as $rowIndex => $row) {
             if ($rowIndex < $dataStart) continue;
 
             $description = trim((string) ($row[$this->letter($descCol)] ?? ''));
-            if ($cumulativeRow === null) {
-                $rowText = implode(' ', array_filter(array_map(
-                    fn ($c) => trim((string) $c),
-                    array_values(is_array($row) ? $row : [])
-                )));
-                if ($rowText !== '' && $this->isCumulativeLabel($rowText)) {
-                    $cumulativeRow = $rowIndex;
-                }
+            if ($cumulativeRow === null && $this->isCumulativeRow($row)) {
+                $cumulativeRow = $rowIndex;
             }
             $weightRaw = $weightCol !== null ? ($row[$this->letter($weightCol)] ?? null) : null;
             $weight = is_numeric($weightRaw) ? (float) $weightRaw : null;
@@ -506,15 +606,28 @@ class SCurveImportService
             // "COST") — they carry their own month values, so the label match is
             // enough. A row is spared only if it also has a % weight or contract
             // amount, i.e. a real activity whose name happens to contain "cost".
-            if (preg_match('/%?\s*(accomplished|complete)|cumulative|cost\b/i', $description)
+            // R2a: roof-family summary vocabulary — bare "%", "Cash Flow" (real pesos!),
+            // "Project Duration", and the "Commulative" typo. Without these the cash-flow
+            // row absorbs as an activity and distorts the curve (diagnosis-proven).
+            if (preg_match('/%?\s*(accomplished|complete)|cumulat\w*|commulat\w*|cost\b|cash\s*flow|project\s*duration|^%\s*$/i', $description)
                 && $weight === null && $contractAmt === null) {
+                $prevWasActivity = false;
                 continue;
             }
 
             // TOTAL row — keep its contract amount for validation. Accepts
             // "TOTAL", "TOTALS", "GRAND TOTAL", etc.
-            if (preg_match('/^(grand\s*)?total/i', $description)) {
+            // R2a: the label may sit outside descCol (roof TOTAL lives in another column),
+            // so fall back to the full row text — but ONLY when the row carries a contract
+            // amount (prevents absorbing a "Total ..." activity into the fallback bucket).
+            // Hyphen-guarded so "Sub-Total" rows never match.
+            $isTotalRow = (bool) preg_match('/^(grand\s*)?total/i', $description);
+            if (!$isTotalRow && $contractAmt !== null) {
+                $isTotalRow = (bool) preg_match('/(?<![\w-])(grand\s*)?totals?(?![\w-])/i', implode(' ', $this->rowTexts($row)));
+            }
+            if ($isTotalRow) {
                 $totalRowContract = $contractAmt;
+                $prevWasActivity = false;
                 continue;
             }
 
@@ -526,6 +639,14 @@ class SCurveImportService
                 || ($contractAmt !== null && $description !== '');
 
             if (!$isActivity) {
+                // R2a orphan subtotal: a desc-less row carrying ONLY a contract amount,
+                // immediately after a counted activity row (roof even rows: F subtotal under
+                // the labeled formula row). Attributed to the running total so the curve has
+                // a denominator; rows with month values never take this path (ambiguous).
+                if ($contractAmt !== null && !$hasMonthValue && $prevWasActivity) {
+                    $contractTotal += $contractAmt;
+                }
+                $prevWasActivity = false;
                 continue;
             }
 
@@ -549,6 +670,9 @@ class SCurveImportService
                     ];
                 }
             }
+
+            // R2a: this counted row qualifies a following orphan subtotal row.
+            $prevWasActivity = true;
         }
 
         if ($activities === 0) {

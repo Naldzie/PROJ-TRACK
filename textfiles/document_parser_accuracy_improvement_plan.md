@@ -848,8 +848,37 @@ Related plan
         Rejected for PMU: platform answers (Mastt/monday "stop using spreadsheets" — PMU cannot
         mandate contractor tooling); heavy cleaners (OpenRefine/Talend — overkill for 2 families).
 
-    R2a. ROOF-FAMILY SUPPORT (FAMILY-R) — PLAN ONLY, NO CODE YET (user: detection + curve
-        together; fuzzy match; approved 2026-09-08; build on go-ahead)
+    R2a. ROOF-FAMILY SUPPORT (FAMILY-R) — ✅ BUILT + BROWSER-PROVEN on merge15-baseline 2026-09-08 (committed; blinding untouched — S-curve track has no parser overlap).
+        - Detection: headerFuzzyMatch() (Levenshtein ≤2, words ≥6 chars, anchored full-cell)
+          wired into isDescriptionLabel (DESCRITPION ✓) + isCumulativeLabel (Commulative ✓);
+          ordinal-month branch 1st.–12th in matchMonthLabel (AM:AS ordinals ⇒ single-column
+          spans, no double-count, no 2c dependency). Far words (NO. OF DAYS) stay rejected —
+          locked by the unknown-headers-still-422 fixture.
+        - Curve: monthly reads from the AM:AS peso series (formulas resolve via the existing
+          engine); contract from F Σ via TWO new orphan rules proven necessary by the cell dump:
+          (a) desc-less contract-only rows immediately after a counted activity attribute to the
+          running total (roof even-row subtotals; tight: month-less only, chain broken by any
+          skip/TOTAL/non-activity); (b) TOTAL label outside descCol falls back through full-row
+          text (hyphen-guarded so Sub-Total never matches; requires contractAmt present).
+        - Skip expansion: %, Cash Flow (real pesos), Project Duration, Commulative — otherwise
+          the cash-flow row absorbs as an activity (diagnosis-proven distortion).
+        - Cell-dump findings (banked): odd rows = labeled formula rows (=fraction × subtotal),
+          even rows = desc-less F subtotals, R30 AU = section total, R31 F = =SUM total
+          (2239599.72), R32 = month indices, R34-36 labels in F. Shared rowTexts() helper for
+          full-row checks (cumulative + TOTAL use one trimming rule).
+        - Proof: roof file parses to a REAL curve (7mo 6.32/24.31/42.3/59.71/77.03/99.14/100,
+          contract 2239599.72, 5 acts, warnings [], cumRow=33 — was a 422 before).
+          BUHI byte-identical incl. full 12-value curve + cumRow=89. SCurveImportTest 19/19
+          (+2 orphan fixtures). Full suite 1033 passed / 7 failed = same 7 pre-existing
+          merge-15 failures — zero regressions. Scratch verification scripts removed.
+        - BROWSER PROOF 2026-09-08 (user, detail-tab Import — button/controller/UI unchanged):
+          roof 7 months Jan–Jul 2026 with exact service-verified values + per-month counts
+          (4,4,4,4,3,4,3), user verdict "accurate"; BUHI 12 months Jan–Dec 2026 with full
+          activity distributions (8,11,12,14,19,20,32,34,38,43,41,41) and banked curve values,
+          user verdict "still accurate". R2a CLOSED end-to-end (code → fixtures → real files →
+          browser, both families).
+        - No commit without user OK. Browser proof (detail-tab Import on the roof file) is the
+          user's step — button/controller/UI needed zero changes.
         - Detection: fuzzy header match (≤2 Levenshtein, anchored full-cell, header matchers
           only) so DESCRITPION → description; ordinal-month branch /^(\d{1,2})(st|nd|rd|th)\.?$/i
           → month index (cap 1..12); existing two-row merge pass covers the 18–19 block.
