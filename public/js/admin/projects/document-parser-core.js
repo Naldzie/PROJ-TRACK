@@ -643,6 +643,13 @@ const DocumentParserCore = (function () {
         return null;
     }
 
+    // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC hardcoded
+    // patterns disabled so the clean selectable file misses and the loop-first round-trip
+    // can run. Single switch shared by extractABC() AND collectAbcCandidates() (ABC-pooling)
+    // so the demo stays intact while blinding is ON: the collector sleeps, and the
+    // single-match learned path (pattern-fixed) still carries approved rows. See plan §6.
+    const L3_TEST_BLIND_ABC = true;
+
     // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
     // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.
     // Enhanced 2026-09-04: prioritize "final Contract Amount is … (Php X)" over generic budget,
@@ -763,9 +770,6 @@ const DocumentParserCore = (function () {
     function extractABC(lines) {
         const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
         const hasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
-        // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC patterns disabled
-        // so the clean selectable file misses and the loop-first round-trip can run. See plan §6.
-        const L3_TEST_BLIND_ABC = true;
         const patterns = L3_TEST_BLIND_ABC ? [] : [
             /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|abc)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ];
@@ -1142,6 +1146,61 @@ const DocumentParserCore = (function () {
         return out;
     }
 
+    // Collect every ABC (Approved Budget for the Contract) candidate in one file.
+    // Mirrors collectBudgetCandidates() shape { value, labeled, weight, fileName, pattern,
+    // excerpt } so ABC rides the same pooled vote + debug + disagree machinery.
+    // LABELED-ONLY by design: a random peso figure is never ABC, so budget's unlabeled
+    // Php fallbacks stay budget-exclusive and the two tracks never double-count one figure.
+    // Blinding-gated (L3_TEST_BLIND_ABC): while true the collector sleeps (returns []) so
+    // the clean-file demo still misses honestly; the single-match learned path carries
+    // approved rows meanwhile. Post-restore it collects with zero further code changes.
+    // Called by: parseProjectInfoPooled() per file.
+    function collectAbcCandidates(lines, fileName) {
+        if (L3_TEST_BLIND_ABC) return [];
+        const out = [];
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const ctxOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].join(' ');
+        const excerptOf = (i) => [norm[i - 2] || '', norm[i - 1] || '', norm[i] || '', norm[i + 1] || '', norm[i + 2] || ''].filter(Boolean).join(' | ').slice(0, 180);
+        const labelRes = [
+            { name: 'abc-line', re: /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|\babc\b)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true },
+        ];
+        // F-B1 conditional mirror of extractABC: bare "budget [Amount]" / "approved budget"
+        // lines are ABC — but ONLY in files carrying an Original/Revised figure (the budget
+        // collector skips those same lines there, so no double-vote across tracks).
+        const fileHasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
+        if (fileHasOrigRevised) {
+            labelRes.push({ name: 'f-b1-budget', re: /(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i, labeled: true });
+        }
+        for (let i = 0; i < norm.length; i++) {
+            for (const { name, re, labeled } of labelRes) {
+                const m = norm[i].match(re);
+                if (!m) continue;
+                const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
+                for (let ti = 0; ti < tryStrs.length; ti++) {
+                    let t = tryStrs[ti];
+                    if (!t) continue;
+                    // Placeholder slot → EMPTY for this occurrence (never slide into dates).
+                    if (isPlaceholderValue(t)) break;
+                    // Never mint money from a date (same 1h-2 guard as budget).
+                    if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
+                    // Thousand-dot strip for matched ABC labels (same narrow F1 rule).
+                    if (/\d\.\d{3}(?=[\d,])/.test(t) && ((t.match(/\.\d{2}\b/g) || []).length === 1)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+                    const val = asMoney(t);
+                    if (val) {
+                        const ctx = ctxOf(i);
+                        let w = getSectionWeight(ctx);
+                        if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price|approved\s*budget|\babc\b/i.test(ctx)) w *= 0.5;
+                        // Same-line values outrank slid ones (1i-2).
+                        if (ti > 0) w *= 0.8;
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        break;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
     // Collect every duration candidate in one file.
     // Each entry: { value, labeled, weight, fileName, pattern, excerpt } (Step 1g-1).
     // Called by: parseProjectInfoPooled() per file.
@@ -1334,9 +1393,16 @@ const DocumentParserCore = (function () {
     // Returns null when the value cannot be anchored (typed from knowledge, reformatted
     // date) — the correction is still recorded, just without a label candidate.
     // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
-    function mineCorrectionLabel(docText, finalValue) {
+    // Multi-label survey: up to `cap` DISTINCT gated {label, excerpt} rows, ranked
+    // gated-first with document order breaking ties (the M2 order). Near-twin labels
+    // ('...)-Savings' vs '... ) -Savings') collapse to one via a normalized key so one
+    // correction yields distinct phrasings, not punctuation variants. Ungated hits never
+    // label — when nothing gated exists, a single count-only {label: null} row is returned
+    // (preserves today's harvest behavior for unanchorable values).
+    // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
+    function mineCorrectionLabels(docText, finalValue, cap) {
         const raw = String(finalValue || '').trim();
-        if (raw.length < 3) return null;
+        if (raw.length < 3) return [];
         const lines = buildLinesFromText(docText || '');
         const hasDigit = /\d/.test(raw);
         const digitSig = raw.replace(/\D/g, '');
@@ -1383,28 +1449,47 @@ const DocumentParserCore = (function () {
             const gated = !label || /(amount|budget|price|cost|total|contract|\babc\b|fee|\bsum\b|bill|charge|payment)/i.test(label) || /[:\-–—]\s*$/.test(rawBefore);
             hits.push({ label: label || null, excerpt, gated, i });
         }
-        if (!hits.length) return null;
+        if (!hits.length) return [];
         // M2: best-anchored first (gated beats ungated), document order breaks ties.
         hits.sort((a, b) => ((b.gated ? 1 : 0) - (a.gated ? 1 : 0)) || (a.i - b.i));
+        const limit = Math.min(Math.max(cap || 3, 1), 3);
+        const out = [];
+        const seen = new Set();
+        for (const h of hits) {
+            // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
+            // figure) must not become dictionary labels — counted, never labeled.
+            if (!h.gated || !h.label) continue;
+            const key = h.label.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            out.push({ label: h.label, excerpt: h.excerpt });
+            if (out.length >= limit) break;
+        }
+        if (out.length) return out;
         const best = hits[0];
-        // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
-        // figure) must not become dictionary labels — counted, never labeled.
-        if (!best.gated) return { label: null, excerpt: best.excerpt };
-        if (!best.label) return { label: null, excerpt: best.excerpt };
-        return { label: best.label, excerpt: best.excerpt };
+        return [{ label: null, excerpt: best.excerpt }];
     }
 
-    // Pooled parse across files (Step 1e-4 VALUE track).
+    function mineCorrectionLabel(docText, finalValue) {
+        // Legacy single-label wrapper: returns the survey winner (or null when unanchored).
+        // Kept so existing callers and fixtures behave exactly as before multi-label.
+        // Called by: document-parser.js harvestCorrections() fallback; tests.
+        const rows = mineCorrectionLabels(docText, finalValue, 1);
+        return rows.length ? rows[0] : null;
+    }
+
+    // Pooled parse across files (Step 1e-4 VALUE track + ABC-pooling).
     // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
-    // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
+    // ONE pile per field and votes. Returns { budget, abc, duration, startDate, endDate }.
     // Per-file single values (parseProjectInfo) are still used for the WARNING track.
     // Called by: document-parser.js runDocumentAutofill() when available.
     function parseProjectInfoPooled(docs) {
-        const pile = { budget: [], duration: [], startDate: [], endDate: [] };
+        const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [] };
         for (const d of (docs || [])) {
             const lines = d.lines || buildLinesFromText(d.text || '');
             const fn = d.fileName || d.name || '';
             pile.budget.push(...collectBudgetCandidates(lines, fn));
+            pile.abc.push(...collectAbcCandidates(lines, fn));
             pile.duration.push(...collectDurationCandidates(lines, fn));
             pile.startDate.push(...collectDateCandidates(lines, fn, 'start'));
             pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
@@ -1414,25 +1499,29 @@ const DocumentParserCore = (function () {
         // _fileCounts powers the OCR-starvation check (O3): finds per file per field —
         // "bundle: 0" means that file went silent (unread), not outvoted.
         const bDbg = voteCandidatePoolDebug(pile.budget);
+        const aDbg = voteCandidatePoolDebug(pile.abc);
         const dDbg = voteCandidatePoolDebug(pile.duration);
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
+        const dbgFor = (f) => f === 'budget' ? bDbg : f === 'abc' ? aDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg;
         const fileCounts = {};
-        for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
             fileCounts[f] = {};
-            for (const r of (f === 'budget' ? bDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg).rows) {
+            for (const r of dbgFor(f).rows) {
                 for (const fn of r.files) fileCounts[f][fn] = (fileCounts[f][fn] || 0) + r.count;
             }
         }
         return {
             budget: bDbg.winner,
+            abc: aDbg.winner,
             duration: dDbg.winner,
             startDate: sDbg.winner,
             endDate: eDbg.winner,
-            _debug: { budget: bDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
+            _debug: { budget: bDbg.rows, abc: aDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
             _fileCounts: fileCounts,
             _disagree: {
                 budget: pooledDisagree(bDbg.rows),
+                abc: pooledDisagree(aDbg.rows),
                 duration: pooledDisagree(dDbg.rows),
                 startDate: pooledDisagree(sDbg.rows),
                 endDate: pooledDisagree(eDbg.rows),
@@ -1611,6 +1700,7 @@ const DocumentParserCore = (function () {
         getSectionWeight,
         normalizeForPool,
         collectBudgetCandidates,
+        collectAbcCandidates,
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,
@@ -1620,6 +1710,7 @@ const DocumentParserCore = (function () {
         scoreOcrSoup,
         shouldReplaceOcrBest,
         mineCorrectionLabel,
+        mineCorrectionLabels,
         parseProjectInfoPooled,
     };
 })();

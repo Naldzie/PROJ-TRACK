@@ -244,9 +244,9 @@ async function runDocumentAutofill() {
             if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
                 const pooledDocs = perFileData.map(e => ({ text: e.text, fileName: e.fileName }));
                 const pooled = core.parseProjectInfoPooled(pooledDocs) || {};
-                // Override only fields the pool resolved (budget/duration/dates);
+                // Override only fields the pool resolved (budget/abc/duration/dates);
                 // keep voted title/contractor/location/etc. from per-file vote.
-                for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+                for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
                     if (pooled[f]) parsed[f] = pooled[f];
                 }
                 // Step 1f-2 vote inspector: stash + log every find and the winner.
@@ -257,7 +257,7 @@ async function runDocumentAutofill() {
                     pooledDisagreeInfo = pooled._disagree || null;
                     if (typeof window !== 'undefined' && window._parserDebug && pooled._debug) {
                         console.groupCollapsed('[Parser] pooled vote inspector (all finds → winner)');
-                        for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+                        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
                             const rows = (pooled._debug && pooled._debug[f]) || [];
                             console.log('[Parser] field:', f, '| winner:', pooled[f], '| finds:', rows.length);
                             if (rows.length && console.table) console.table(rows.slice(0, 10));
@@ -1204,7 +1204,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         // finds both look trusted but disagree. Keyed by CORE field name; silent
         // when the vote has one clear winner (automation goal: clean files see nothing).
         const disagree = (arguments[1] && arguments[1].disagree) ? arguments[1].disagree : (window._autofillDisagree || null);
-        const DISAGREE_INPUT = { budget: 'projectBudget', duration: 'plannedDuration', startDate: 'plannedStartDate', endDate: 'plannedEndDate' };
+        const DISAGREE_INPUT = { budget: 'projectBudget', abc: 'projectAbc', duration: 'plannedDuration', startDate: 'plannedStartDate', endDate: 'plannedEndDate' };
         const disagreeNoteFor = (inputId) => {
             if (!disagree) return '';
             for (const coreField of Object.keys(DISAGREE_INPUT)) {
@@ -1447,11 +1447,11 @@ function applyAutofillFromPreview() {
 }
 
 // ===================================================
-// L1 LEARNING LOOP — HARVEST CORRECTIONS (Option 2)
+// L1 LEARNING LOOP — HARVEST CORRECTIONS (Option 2 + multi-label desk)
 // Diffs the preview snapshot (what extraction guessed) against the applied values
-// (what the user kept). Every corrected box becomes one proposal: the mined label
-// phrase + excerpt, or a label-less count when the value cannot be anchored back to
-// the documents. Values themselves are NEVER sent — labels only (Decision L0b).
+// (what the user kept). Every corrected box becomes up to 3 proposals: the ranked
+// mined labels + excerpts (or one label-less count when the value cannot be anchored
+// back to the documents). Values themselves are NEVER sent — labels only (Decision L0b).
 // A corrected box implies the user resolved any ambiguity (including amber picks),
 // so disagree state is recorded as context, never as a veto.
 // Called by: applyAutofillFromPreview(). Best-effort — failures never break Apply.
@@ -1462,6 +1462,12 @@ function harvestCorrections(applied) {
         if (!orig || !texts.length) return;
         const core = getCore();
         if (!core || typeof core.mineCorrectionLabel !== 'function') return;
+        // Multi-label desk: prefer the ranked survey list (up to 3 distinct gated labels
+        // per correction) so approvers can pick novel phrasings; legacy single-label miner
+        // is the fallback when the list helper is unavailable.
+        const mineAll = (typeof core.mineCorrectionLabels === 'function')
+            ? (t, v) => (core.mineCorrectionLabels(t, v, 3) || [])
+            : (t, v) => { const m = core.mineCorrectionLabel(t, v); return m ? [m] : []; };
         const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
         if (path.indexOf('/contractor/') !== -1) return;
         const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
@@ -1474,13 +1480,17 @@ function harvestCorrections(applied) {
             const after = String(((applied || {})[field] ?? '')).trim();
             // Untouched, cleared, or too-short boxes teach nothing.
             if (!after || after === before || after.length < 3) continue;
-            const mined = core.mineCorrectionLabel(docText, after);
-            proposals.push({
-                field,
-                label: mined ? mined.label : null,
-                excerpt: mined ? mined.excerpt : null,
-                had_disagree: !!(disagree && disagree[field]),
-            });
+            for (const mined of mineAll(docText, after)) {
+                proposals.push({
+                    field,
+                    label: mined ? mined.label : null,
+                    excerpt: mined ? mined.excerpt : null,
+                    had_disagree: !!(disagree && disagree[field]),
+                });
+                // Server batch cap is 33 (11 fields × 3 labels) — never overflow it.
+                if (proposals.length >= 33) break;
+            }
+            if (proposals.length >= 33) break;
         }
         if (!proposals.length) return;
         const token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||

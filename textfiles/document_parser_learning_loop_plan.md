@@ -1157,6 +1157,99 @@ Frontend convention (IMPORTANT)
       L3 -> AI fallback (trigger list finalized from all verdicts) -> S-curve Steps 2–4 +
       Tier-2/3 (backlog; inherits the hardened OCR path + tile/strip column technique free).
 
+  2026-09-08 — MULTI-LABEL DESK + ABC-POOLING BUILT on merge15-baseline (code, NOT committed).
+    - Part A (multi-label): core mineCorrectionLabels(docText, value, cap=3) — up to 3 distinct
+      gated labels in M2 order, near-twin dedupe, single count-only row when nothing gated;
+      mineCorrectionLabel kept as legacy winner-wrapper (6 old fixtures untouched). Wrapper
+      harvestCorrections posts up to 3 rows per corrected box (33-row batch guard); backend
+      collect max:11 → max:33 (11 fields × 3); desk Blade unchanged (renders generically).
+    - Part B (ABC-pooling): hoisted L3_TEST_BLIND_ABC to shared core scope (same marker, single
+      switch); new collectAbcCandidates (ABC labelRes + F-B1 conditional, labeled-only, full
+      guard mirror: date-exclusion/placeholder/same-line/table-halving/weights/excerpts);
+      pooled pile/_debug/_fileCounts/_disagree gain abc; wrapper override + inspector + amber
+      note (abc: 'projectAbc') mirror budget. While blinded the collector sleeps ([]) so the
+      demo misses honestly; learned single-match path carries approved rows (unit-proven).
+    - Tests: +3 multi-label +3 ABC-pooling fixtures. JS 83/85 — only the 2 intended blinding
+      fails. PHP proposal tests 10/10 (+2 cap tests). Full PHP suite: 1011 passed / 7 failed,
+      ALL 7 reproduced on the clean tree with changes stashed (2 ContractorDashboard + 1
+      OverdueInspection badge + 2 EmailDraft + 2 baseline) → zero regressions from this build.
+    - Next: user browser proof (a) ≤3 rows per correction, novel phrasing pickable; (b) abc vote
+      table in console; (c) demo intact (blinding ON). No commit without user OK.
+    - 2026-09-08 BROWSER PROOF (incognito, user — ALL THREE PASS):
+      (a) Multi-label proven: ABC correction → 2 proposed rows, duration correction (via amber
+      pick) → 2 proposed rows. Counts are per DISTINCT label (deduped) — 2 rows because 2 unique
+      wordings existed, not because of a cap. Amber-pick corrections harvest as designed
+      (corrected implies resolved).
+      (b) abc vote table present in console AND honestly empty (winner null, finds 0 — collector
+      asleep while blinded); budget/duration/dates tables unchanged. Preview ABC box STILL FILLED
+      4834297.59 post-approval via the learned single-match path — behavior correct, log line
+      confusing (prints the pool winner). POLISH (next build): skip or tag the asleep abc line
+      (e.g. "asleep (blinded)") instead of "winner: null".
+      (c) Demo intact: table wiped → ABC empty pre-approval → fills post-approval (blinding ON).
+      LOOP-FIRST REDISCOVERY (organic): the loop mined "TOTAL ESTIMATED PROJECT COST"
+      (+ estimate-page excerpt) as its own ABC row — the exact banked novel phrasing, discovered
+      from a real correction with zero hand-coding. Winner-only harvest would have buried it under
+      the abstract line; multi-label surfaced it. Blinding KEPT ON per user for demo.
+
+  2026-09-08 — MULTI-LABEL DESK + ABC-POOLING COMBINED BUILD PLAN (plan only, no code yet).
+    User: build step 1 (multi-label desk) WITH step 2 (ABC-pooling) in one implementation.
+    Blinding STAYS ON through this build (demo-safe by construction — see gates below).
+
+    PART A — MULTI-LABEL DESK (cap 3, F-GATE filtered; approved design §6 2026-09-07).
+    - Core mineCorrectionLabel (core:1337-1395): add mineCorrectionLabels(docText, finalValue,
+      cap=3) returning up to 3 DISTINCT gated {label, excerpt} (ranked gated-first, doc-order
+      ties — the existing M2 order; dedupe case-insensitively so ') -Savings' vs ')-Savings'
+      near-twins collapse to one). Keep mineCorrectionLabel as a wrapper returning [0] so the
+      6 existing L1/M1/M2/F-GATE fixtures and harvest fallback keep passing unchanged.
+    - Wrapper harvestCorrections (document-parser.js:1458-1495): per corrected field post up to 3
+      rows (same {field, label, excerpt, had_disagree} shape — values never leave the browser);
+      null-label count-only rows stay max 1 per field (counts don't need triplicates).
+    - Backend collect (ParserKeywordProposalController:46): 'proposals' max:11 → max:33
+      (11 fields × 3). Upsert / auto-promote ≥3 / soft-delete desk all unchanged; no test asserts
+      the old cap (verified — no cap test in ParserKeywordProposalTest). Desk Blade renders rows
+      generically: no Blade change. Junk risk carried by F-GATE + one-click reject (unchanged).
+    - Tests: (i) 3 distinct gated labels surface in M2 order; (ii) near-twin labels dedupe;
+      (iii) 5 distinct → capped at 3; (iv) legacy single-label wrapper still returns the winner;
+      (v) PHP: over-33-cap posts 422. Full JS suite green (blinding pair still the only 2 fails).
+
+    PART B — ABC-POOLING (collector + vote + debug + disagree, mirroring budget; scoped YES §6).
+    - Core: new collectAbcCandidates(lines, fileName) mirroring collectBudgetCandidates
+      (:1041-1143) shape {value, labeled, weight, fileName, pattern, excerpt}: ABC labelRes
+      (standalone abc + (ABC) variant, approved-budget-for-the-contract, F-B1 budget-Amount
+      conditional gated on fileHasOrigRevised, total/approved-budget conditional) with the same
+      guards both tracks share — date-exclusion (1h-2), placeholder break (1i-1), same-line ×1.0
+      / slid ×0.8 (1i-2), table halving without contract word nearby (1f-3), ctxOf ±2 + excerptOf,
+      getSectionWeight. LABELED-ONLY: no unlabeled Php fallbacks (any amount isn't ABC — budget's
+      paren-php/net-total/p-prefix/bare-php stay budget-exclusive so the two tracks never
+      double-count the same figure).
+    - Core parseProjectInfoPooled (:1402-1441): pile.abc + aDbg + _debug.abc + _fileCounts.abc +
+      _disagree.abc (existing voteCandidatePoolDebug/pooledDisagree reused untouched); export the
+      new collector; update the return-shape comment (still {budget, duration, startDate, endDate}
+      → now + abc).
+    - BLINDING GATE (demo-safe): hoist L3_TEST_BLIND_ABC (now const inside extractABC :768) to a
+      shared core-scope const with the same RESTORE-BEFORE-COMMIT marker; BOTH extractABC and
+      collectAbcCandidates consult it. While true: collector returns [] → pooled.abc null,
+      _debug.abc [], _disagree.abc null → single-match learned path (pattern-fixed) still carries
+      the demo; inspector shows an empty abc table honestly. Post-restore: full pooling, no code
+      change needed — the gate is the only switch.
+    - Wrapper (document-parser.js): override list :249 + inspector loop :260 gain 'abc';
+      DISAGREE_INPUT :1207 gains abc: 'projectAbc' (verified AUTOFILL_CORE_FIELDS :952) so the
+      amber pick-one note mirrors budget (user-approved); _pickDisagreeValue + had_disagree harvest
+      already generic — no changes. Pooled-override order keeps hardcoded-wins-ties (pooled vote
+      replaces learned single-match, same as today).
+    - Tests: (i) standalone-ABC + approved-budget label fixtures; (ii) F-B1 conditional
+      (corroborated → ABC claims budget-Amount; lone → price behavior kept); (iii) date-ghost
+      exclusion for ABC; (iv) pooled abc winner + _debug shape + disagree flag (true on close
+      labeled pair, null when solved); (v) blinded-collector-empty plumbing (abc keys present,
+      rows [] — documents demo state; flipped to full collection post-restore). No PHP changes
+      beyond the Part-A cap (PHP proposal tests stay 8/8 + 1 new cap test).
+    - Proof (user browser, post-build): (a) correction surfaces ≤3 proposed rows, approver picks
+      the novel phrasing; (b) console shows the abc vote table alongside budget/duration/dates;
+      (c) demo intact — test5_selectable ABC empty pre-approval, fills post-approval (blinding ON).
+    - Out of scope (stays): TOTAL ESTIMATED PROJECT COST hand-adding (loop-first only); ABC
+      words-rule (Part A of layer-2, next step); red-banner WARNING track for abc (getMismatchInfo
+      covers per-file singles — extend only if trivial, else follow-up).
+
   Resume state (2026-09-07, L3 built+round-tripped, pattern fix approved):
     - Branch: phase-6-parser-learning. L3 code + blinding + this plan edit uncommitted.
     - JS suite 76 green + 2 intended blinding failures (F-B1, hardcoded-wins); restores 78/78 on
@@ -1182,11 +1275,14 @@ Frontend convention (IMPORTANT)
   For the next session:
     1. Read this file's sections 6B (build queue) and 6 (latest session entries) first —
        they supersede older "NEXT =" lines elsewhere in this file and the parent plan.
-    2. Resume state: branch phase-6-parser-learning, L3 built + round-tripped (pattern bug found,
-       fix approved 2026-09-07; blinding active, restore pending). JS 76+2-intended.
-    3. Build pattern fix ALONE; re-run must fill from Live row; then RESTORE blinding.
-    4. Run `composer test` + `node --test tests/js/document-parser-core.test.mjs` before/after.
-    5. No merge without explicit user confirmation (Rule 12).
+    2. Resume state: merge15-baseline, pattern fix BUILT + BROWSER-PROVEN (575db42, blinding ON
+       for demo). JS 77/79 (2 intended blinding fails); PHP proposal tests 8/8.
+    3. NEXT = combined build: MULTI-LABEL DESK + ABC-POOLING per the 2026-09-08 plan entry above
+       (blinding gate hoisted, demo-safe). Then: ABC words-rule → loop-first novel-label round on
+       the estimate-page-only file → AI fallback → S-curve backlog.
+    4. Run JS suite + ParserKeywordProposalTest before/after; browser proof (a)(b)(c) above.
+    5. Blinding RESTORE stays a tracked pre-merge-to-main prerequisite (not now — demo).
+    6. No merge without explicit user confirmation (Rule 12).
 
 ===============================================================================
   END OF PLAN

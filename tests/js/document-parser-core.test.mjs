@@ -547,6 +547,54 @@ test('M2: multi-occurrence survey prefers the labeled neighborhood', () => {
     assert.ok(m && /contract sum/i.test(m.label));
 });
 
+// --- Multi-label desk: ranked survey list per correction (cap 3, F-GATE filtered) ---
+
+test('Multi-label: one correction surfaces up to 3 distinct gated labels in M2 order', () => {
+    const text = [
+        'Random 6,495,049.29 scribbled here',
+        'Contract Sum: Php 6,495,049.29 noted',
+        'Total Contract Cost: Php 6,495,049.29 confirmed',
+        'Approved Project Price: Php 6,495,049.29 final',
+    ].join('\n');
+    const rows = core.mineCorrectionLabels(text, '6,495,049.29', 3);
+    assert.equal(rows.length, 3);
+    assert.ok(/contract sum/i.test(rows[0].label));
+    assert.ok(/total contract cost/i.test(rows[1].label));
+    assert.ok(/approved project price/i.test(rows[2].label));
+    for (const r of rows) assert.ok(r.excerpt.length > 0);
+});
+
+test('Multi-label: near-twin labels dedupe, junk never labels, cap holds at 3', () => {
+    // Punctuation twins collapse to one row.
+    const twins = core.mineCorrectionLabels(
+        'Contract Sum: Php 6,495,049.29 x\nContract Sum - Php 6,495,049.29 y',
+        '6,495,049.29', 3);
+    assert.equal(twins.length, 1);
+    // Junk-adjacent fragments yield the single count-only row, never labels.
+    const junk = core.mineCorrectionLabels('OF CANTEEN AT Public\n7,483,4297.50', '7,483,4297.50', 3);
+    assert.equal(junk.length, 1);
+    assert.equal(junk[0].label, null);
+    // Five distinct gated labels still cap at 3.
+    const many = [
+        'Alpha Contract Cost: Php 6,495,049.29 a',
+        'Beta Contract Cost: Php 6,495,049.29 b',
+        'Gamma Contract Cost: Php 6,495,049.29 c',
+        'Delta Contract Cost: Php 6,495,049.29 d',
+        'Epsilon Contract Cost: Php 6,495,049.29 e',
+    ].join('\n');
+    assert.equal(core.mineCorrectionLabels(many, '6,495,049.29', 3).length, 3);
+});
+
+test('Multi-label: legacy single-label wrapper still returns the survey winner', () => {
+    const text = 'Random 6,495,049.29 scribbled here\nContract Sum: Php 6,495,049.29 end';
+    const single = core.mineCorrectionLabel(text, '6,495,049.29');
+    const multi = core.mineCorrectionLabels(text, '6,495,049.29', 3);
+    assert.ok(single && multi.length >= 1);
+    assert.equal(single.label, multi[0].label);
+    assert.equal(single.excerpt, multi[0].excerpt);
+    assert.equal(core.mineCorrectionLabel('Nowhere to be found here', '6,495,049.29'), null);
+});
+
 // --- G-soup: OCR soup scoring (calibrated on production pastes) ---------------------
 
 test('G-soup: symbol salad scores soupy, clean/table text does not', () => {
@@ -590,6 +638,40 @@ test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised
     const cands = core.collectBudgetCandidates(both, 'bundle.pdf');
     assert.ok(!cands.some(c => c.value === '4834297.59' && c.pattern === 'generic'));
     assert.ok(cands.some(c => c.value === '4204128.84'));
+});
+
+// --- ABC-pooling: collector + vote + debug + disagree (blinding-gated) ---------------
+// NOTE: L3_TEST_BLIND_ABC is ON (demo), so the hardcoded collector sleeps and these
+// fixtures assert the asleep plumbing. RESTORE step flips them to full-collection
+// asserts (standalone-ABC / approved-budget / F-B1-conditional / date-ghost fixtures).
+
+test('ABC-pooling: blinded collector sleeps so the clean-file demo misses honestly', () => {
+    const lines = core.buildLinesFromText('Approved Budget for the Contract: Php 4,834,297.59');
+    assert.deepEqual(core.collectAbcCandidates(lines, 'demo.pdf'), []);
+});
+
+test('ABC-pooling: pooled return carries abc vote/debug/disagree/fileCounts keys', () => {
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Approved Budget for the Contract: Php 4,834,297.59', fileName: 'demo.pdf' },
+    ]);
+    assert.equal(pooled.abc, null);
+    assert.ok(pooled._debug && Array.isArray(pooled._debug.abc));
+    assert.equal(pooled._disagree.abc, null);
+    assert.ok(pooled._fileCounts && typeof pooled._fileCounts.abc === 'object');
+    // Budget track untouched by the new keys.
+    assert.ok(pooled._debug.budget && pooled._fileCounts.budget);
+});
+
+test('ABC-pooling: empty pooled abc never clobbers the learned single-match fill', () => {
+    // Synthetic wording only — proves the demo path, not the banked phrasing.
+    const text = 'Estimated Project Outlay: Php 4,834,297.59';
+    const learned = { labels: { abc: ['Estimated Project Outlay: Php'] } };
+    const single = core.parseProjectInfo({ text }, { learned }).abc;
+    assert.equal(single, '4834297.59');
+    const pooled = core.parseProjectInfoPooled([{ text, fileName: 'demo.pdf' }]);
+    assert.equal(pooled.abc, null);
+    const kept = pooled.abc ? pooled.abc : single; // mirrors the wrapper override
+    assert.equal(kept, '4834297.59');
 });
 
 // --- D-total: Total Contract Time outranks Original ----------------------------------

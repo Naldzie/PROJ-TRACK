@@ -173,4 +173,49 @@ class ParserKeywordProposalTest extends TestCase
         $this->actingAs($contractor)->patchJson("/admin/parser-keyword-proposals/{$row->id}/approve")->assertRedirect(route('unauthorized'));
         $this->assertSame('proposed', $row->fresh()->status);
     }
+
+    // Multi-label desk: one correction may post up to 3 distinct rows for one field.
+    // Called by: harvestCorrections() posting the ranked survey list (cap 3 per box).
+    public function test_multi_label_batch_for_one_field_is_accepted(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop Multi',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [
+                ['field' => 'abc', 'label' => 'Approved Budget for the Contract', 'excerpt' => 'line one'],
+                ['field' => 'abc', 'label' => 'Total Estimated Project Cost', 'excerpt' => 'line two'],
+                ['field' => 'abc', 'label' => 'Budget Reserve', 'excerpt' => 'line three'],
+            ],
+        ]);
+
+        $response->assertCreated()->assertJson(['success' => true, 'stored' => 3]);
+        $this->assertDatabaseCount('parser_keyword_proposals', 3);
+    }
+
+    // Batches beyond 11 fields × 3 labels are rejected (multi-label cap is 33).
+    // Called by: abusive collect payloads.
+    public function test_batch_over_multi_label_cap_is_rejected(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop Cap',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $proposals = [];
+        for ($i = 0; $i < 34; $i++) {
+            $proposals[] = ['field' => 'budget', 'label' => 'Label ' . $i];
+        }
+
+        $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => $proposals,
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('parser_keyword_proposals', 0);
+    }
 }

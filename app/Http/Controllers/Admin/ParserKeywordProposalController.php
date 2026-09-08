@@ -43,7 +43,8 @@ class ParserKeywordProposalController extends Controller
         }
 
         $validated = $request->validate([
-            'proposals' => 'required|array|max:11',
+            // Multi-label desk: up to 3 distinct labels per corrected box (11 fields × 3).
+            'proposals' => 'required|array|max:33',
             'proposals.*.field' => 'required|string|in:' . implode(',', self::LEARNABLE_FIELDS),
             'proposals.*.label' => 'nullable|string|max:255',
             'proposals.*.excerpt' => 'nullable|string|max:1000',
