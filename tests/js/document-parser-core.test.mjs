@@ -674,7 +674,43 @@ test('ABC-pooling: empty pooled abc never clobbers the learned single-match fill
     assert.equal(kept, '4834297.59');
 });
 
-// --- D-total: Total Contract Time outranks Original ----------------------------------
+// --- ABC words-rule (A): PESOS-words fallback for funds-cert lines ------------------
+// The shared helper is tested directly (strict shape), so the rule logic is covered while
+// blinding sleeps the wired paths. RESTORE step flips the two sleep asserts below to full
+// single-match + collector asserts (words-only file fills; words-shape candidate votes).
+
+test('ABC words-shape: strict funds-cert wording reads full without Php numeric', () => {
+    // Real shape (test5 funds cert p3) minus the Php figure — garbled-numeric case.
+    const line = 'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100';
+    assert.equal(core.abcWordsAtWindow(line, ''), '4834297.59');
+    // Split across two lines also reads (2-line window).
+    assert.equal(core.abcWordsAtWindow('with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED', 'THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100'), '4834297.59');
+});
+
+test('ABC words-shape: strictness guards reject lookalikes', () => {
+    const good = 'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100';
+    // Lowercase (not ALL CAPS) → null.
+    assert.equal(core.abcWordsAtWindow(good.toLowerCase(), ''), null);
+    // Missing & cents → null.
+    assert.equal(core.abcWordsAtWindow('with an approved budget for the contract of FOUR MILLION PESOS', ''), null);
+    // No ABC context (price words line) → null.
+    assert.equal(core.abcWordsAtWindow('THE CONTRACTOR EXECUTES THE WORKS FOR FOUR MILLION PESOS & 59/100', ''), null);
+    // No number magnitude → null.
+    assert.equal(core.abcWordsAtWindow('with an approved budget for the contract of SUPPLIES PESOS & 59/100', ''), null);
+});
+
+test('ABC words-shape: wired paths sleep while blinded (flip at restore)', () => {
+    const lines = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
+    assert.equal(core.extractABC(lines), null);
+    assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf'), []);
+});
+
+test('ABC words-shape: end-to-end via the shared helper on the real funds-cert wording', () => {
+    // funds-cert p3 shape with the Php figure stripped (garbled-numeric case).
+    const norm = core.buildLinesFromText(
+        'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100 (contract funds certified)');
+    assert.equal(core.readAbcWordsAmount(norm), '4834297.59');
+});// --- D-total: Total Contract Time outranks Original ----------------------------------
 
 test('D-total: Total Contract Time wins outright when present (single-match)', () => {
     // The real extension shape: Original 185 vs Total 205 — binding duration wins.

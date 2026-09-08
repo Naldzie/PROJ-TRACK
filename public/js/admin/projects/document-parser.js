@@ -259,8 +259,15 @@ async function runDocumentAutofill() {
                         console.groupCollapsed('[Parser] pooled vote inspector (all finds → winner)');
                         for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
                             const rows = (pooled._debug && pooled._debug[f]) || [];
+                            if (!rows.length) {
+                                // Empty pool is honest, not a miss: the wrapper keeps the
+                                // single-match/learned value (e.g. abc while its collector
+                                // sleeps under test-blinding). Say so instead of "winner: null".
+                                console.log('[Parser] field:', f, '| no pooled finds — single-match/learned value kept');
+                                continue;
+                            }
                             console.log('[Parser] field:', f, '| winner:', pooled[f], '| finds:', rows.length);
-                            if (rows.length && console.table) console.table(rows.slice(0, 10));
+                            if (console.table) console.table(rows.slice(0, 10));
                         }
                         // O3: finds per file per field — "bundle: 0" means that file went
                         // silent (unread/truncated), not outvoted.

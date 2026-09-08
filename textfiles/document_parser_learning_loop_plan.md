@@ -1157,6 +1157,25 @@ Frontend convention (IMPORTANT)
       L3 -> AI fallback (trigger list finalized from all verdicts) -> S-curve Steps 2–4 +
       Tier-2/3 (backlog; inherits the hardened OCR path + tile/strip column technique free).
 
+  2026-09-08 — ABC WORDS-RULE (A) + INSPECTOR POLISH BUILT on merge15-baseline (committed; blinding ON).
+    - Rule A: shared readAbcWordsAmount/abcWordsAtWindow (single-match fallback + pooled
+      'words-shape' candidate use ONE rule): strict ABC context (approved-budget/funds-
+      availability) + ALL-CAPS amount run (MILLION/THOUSAND … PESOS) + & cents/100 on a 2-line
+      window. Only the amount run must be caps (funds-cert lines are prose around it).
+      Blinded-gated everywhere (collector sleeps wholesale; single-match words path gated too).
+    - CAUGHT PRE-GREEN (2, both fixed before green): (1) wordsToNumber minted 400,000,834,297
+      for "[X million] Y hundred…" compounds (million never flushed its group — empirically
+      proven via scratch script; same latent flaw lived in budget's fourth fallback, never fired
+      in production because numerics always won first). Fixed with thousand+million flush
+      (>= 1000); all previously-correct outputs byte-identical (90/350/120/495049 re-verified).
+      (2) First ALL-CAPS gate demanded the WHOLE line be caps — real funds-cert lines are prose
+      with only the amount in caps. Gate now checks the amount run itself.
+    - Polish: pooled inspector logs "no pooled finds — single-match/learned value kept" for
+      empty tracks instead of "winner: null" (generic, permanent — no blinding mention).
+    - Tests: +4 words fixtures (strict read incl. split lines, 4 guard rejections, blinded-sleep
+      asserts marked for restore flip, e2e on real funds-cert wording). JS 87/89 — only the 2
+      intended blinding fails. PHP proposal tests 10/10 (no PHP touched this round). No commit.
+
   2026-09-08 — MULTI-LABEL DESK + ABC-POOLING BUILT on merge15-baseline (code, NOT committed).
     - Part A (multi-label): core mineCorrectionLabels(docText, value, cap=3) — up to 3 distinct
       gated labels in M2 order, near-twin dedupe, single count-only row when nothing gated;

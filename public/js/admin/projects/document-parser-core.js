@@ -68,7 +68,10 @@ const DocumentParserCore = (function () {
                 else if (SCALES.hasOwnProperty(tok)) {
                     if (current === 0) current = 1;
                     current *= SCALES[tok];
-                    if (SCALES[tok] === 1000) { total += current; current = 0; }
+                    // Thousand AND million both flush the running group into the total —
+                    // otherwise a later hundred/thousand compounds onto the millions
+                    // ("four million eight hundred…" minted 400,000,834,297).
+                    if (SCALES[tok] >= 1000) { total += current; current = 0; }
                     matched++;
                 } else break;
             }
@@ -776,7 +779,56 @@ const DocumentParserCore = (function () {
         if (hasOrigRevised && !L3_TEST_BLIND_ABC) {
             patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
         }
-        return findLabeledValue(lines, patterns, asMoney);
+        const direct = findLabeledValue(lines, patterns, asMoney);
+        if (direct) return direct;
+        // Layer-2 rule A (ABC words-shape): PESOS-words fallback for funds-cert lines when the
+        // Php numeric is absent (garbled) — same wordsToNumber machinery as extractBudget's fourth
+        // fallback, but keyed to ABC context (approved-budget / funds-availability neighborhood).
+        // Same strict shape (ALL CAPS + PESOS + million/thousand + & /100 on a 2-line window).
+        // Blinded-gated with everything else here so the clean-file demo still misses honestly.
+        // Called by: parseProjectInfo() → abc field (single-match track).
+        if (!L3_TEST_BLIND_ABC) {
+            const wordsVal = readAbcWordsAmount(norm);
+            if (wordsVal) return wordsVal;
+        }
+        return null;
+    }
+
+    // Shared ABC words-shape reader (single-match + pooled collector use one rule, so both
+    // tracks behave identically — the 92025 saga taught us divergent tracks confuse everyone).
+    // Strict: ABC context + ALL CAPS + PESOS last word + million/thousand + & cents/100.
+    // Returns the "DDDDDDD.CC" string or null. Pure (no DOM).
+    // Called by: extractABC() fallback; collectAbcCandidates() 'words-shape' pattern.
+    function readAbcWordsAmount(norm) {
+        for (let i = 0; i < norm.length; i++) {
+            const v = abcWordsAtWindow(norm[i], norm[i + 1] || '');
+            if (v) return v;
+        }
+        return null;
+    }
+
+    // One 2-line window of the ABC words-shape rule. Returns the amount string or null.
+    // Strict: ABC context + an ALL-CAPS amount run (MILLION/THOUSAND … PESOS) + & cents/100.
+    // Only the amount run itself must be caps — surrounding prose may be any case (funds-cert
+    // lines read "with an approved budget … of FOUR MILLION … PESOS & 59/100").
+    // Pure (no DOM). Called by: readAbcWordsAmount(); collectAbcCandidates().
+    function abcWordsAtWindow(line, nextLine) {
+        const combined = [line, nextLine || ''].join(' ');
+        // ABC context required: approved-budget phrasing or funds-availability phrasing.
+        if (!/approved\s*budget\s*for\s*the\s*contract|availability\s*of\s*funds/i.test(combined)) return null;
+        // & 59/100 must be on the same 2-line window.
+        if (!/&\s*\d+\s*\/\s*100/i.test(combined)) return null;
+        // ALL-CAPS amount run ending in PESOS (hyphens tolerated: "NINETY-SEVEN PESOS").
+        const mCaps = combined.match(/([A-Z][A-Z\s\-]*\b(?:MILLION|THOUSAND)\b[A-Z\s\-]*PESOS)/);
+        if (!mCaps) return null;
+        const wordVal = wordsToNumber(mCaps[1]);
+        if (wordVal && wordVal > 1000) {
+            const frac = combined.match(/&\s*(\d+)\s*\/\s*100/i);
+            const cents = frac ? parseInt(frac[1], 10) / 100 : 0;
+            const total = wordVal + cents;
+            if (total > 1000) return total.toFixed(2);
+        }
+        return null;
     }
 
     // Budget Source / Funding Source — new in Phase 5.
@@ -1197,6 +1249,14 @@ const DocumentParserCore = (function () {
                     }
                 }
             }
+        }
+        // Words-shape (layer-2 rule A): funds-cert PESOS-words figure when the Php numeric is
+        // absent — same shared rule as the single-match fallback, so both tracks agree.
+        // Exempt from table-halving: the ABC context itself is the contract word (same
+        // rationale as the 'total-row' exemption in the budget collector).
+        for (let i = 0; i < norm.length; i++) {
+            const wv = abcWordsAtWindow(norm[i], norm[i + 1] || '');
+            if (wv) out.push({ value: wv, labeled: true, weight: getSectionWeight(ctxOf(i)), fileName, pattern: 'words-shape', excerpt: excerptOf(i) });
         }
         return out;
     }
@@ -1701,6 +1761,8 @@ const DocumentParserCore = (function () {
         normalizeForPool,
         collectBudgetCandidates,
         collectAbcCandidates,
+        abcWordsAtWindow,
+        readAbcWordsAmount,
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,
