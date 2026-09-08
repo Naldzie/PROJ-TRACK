@@ -61,7 +61,7 @@ Sensitivity basis (user-approved)
 
   Server Gemini precedent (reusable as-is)        ✅ EXISTS (AIRecommendationService:787-905)
   Tier-3 design (accuracy plan Steps 3b/4)         ✅ PLANNED (this file makes it build-ready)
-  Normal-doc AI (service/endpoint/banner/tests)    ⬜ NOT STARTED
+  Normal-doc AI (service/endpoint/banner/tests)    🔄 IN PROGRESS (AI-1 done, AI-2 next)
   S-curve AI (parseSCurveSlice)                    🔜 PARKED (after normal-doc proof)
   Browser proof file                               ✅ READY (test_page_6.pdf class + test4 scans)
 
@@ -145,6 +145,19 @@ Sensitivity basis (user-approved)
     - Restudied via two explore agents (preview/apply/harvest seams; server/route/test seams).
       Key catch banked as Decision A3 context: kept AI values would otherwise harvest as
       "corrections" with no origin flag — answered by source tagging, not by skipping.
+
+  2026-09-08 — AI-1 BUILT on merge15-baseline (code, NOT committed; no UI yet).
+    - Service app/Services/AI/GeminiDocumentParserService.php: parseProjectSlice(images) with
+      strict-JSON prompt, 3-image cap, fence-strip + per-field validation (11-key shape, dates
+      to YYYY-MM-DD, money to DDDDDD.CC, duration 1-3650, unknown keys dropped, all-null → null,
+      fail-closed on empty key / non-2xx / exception — same shape as AIRecommendationService).
+    - Caught pre-green: mixed-separator branch mangled normal US figures ("4,323,196.77" →
+      "4,323,19677"); replaced with last-separator-wins decimal (both US + OCR period-thousands
+      resolve; verified by the failing-then-passing success test).
+    - Tests tests/Feature/Services/AI/GeminiDocumentParserServiceTest.php: 7/7 green
+      (success-shape + normalization, fences, malformed/list/500 decline, empty-key sends
+      nothing, all-null + empty-images decline, 3-image cap asserted on the wire, invalid
+      values → null). First Http::fake() use in the suite. No commit without OK.
     - Awaiting build go-ahead (phase branch per Rule 12).
 
 ===============================================================================
