@@ -1459,13 +1459,18 @@ const DocumentParserCore = (function () {
         const lines = doc.lines || buildLinesFromText(text);
         const learnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
         const learnedFor = (field) => normalizeKeywordList(learnedLabels[field]);
-        // Build a literal label pattern from a learned phrase (escaped; trailing :/- tolerated
-        // since mined slices may include the terminator — F-GATE already guarantees label-ish
-        // shape or :/- ending at harvest). Anchored at line start with an explicit separator OR
-        // end-of-line (value on next line(s)): an unanchored pattern would match MID-line and
-        // capture the tail as the value ("Apex Infrastructures Incorporated" → "Incorporated").
+        // Build a literal label pattern from a learned phrase (escaped; mined slices may
+        // include the separator and money marker, e.g. "Approved Budget ...: Php" — F-GATE
+        // already guarantees label-ish shape or :/- ending at harvest). Anchored at line
+        // start; the phrase must be followed by a separator, a digit, end-of-line, or
+        // whitespace-then-digit (the swallowed-marker case "...: Php 4,834,297.59").
+        // Bare space-then-letters does NOT match, so learned VALUE phrases (title
+        // "erection of", contractor suffixes) still fall through to the value path with
+        // the full line intact. The lookahead also blocks prefix collisions (ABC vs ABCs).
+        // An empty capture means label-alone → next-line fallback in findLabeledValue.
+        // Mid-line labels stay unsupported by design.
         const learnedPatterns = (field) => learnedFor(field).map(ph =>
-            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\s*(?:[:\\-]\\s*(.*)|$)', 'i'));
+            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=[:\\-\\d]|$|\\s+\\d)\\s*[:\\-]?\\s*(.*)', 'i'));
         // Per-field normalizers for the learned-label pass (mirrors each hardcoded extractor).
         const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
         const learnedNormalizers = {

@@ -1045,6 +1045,29 @@ Frontend convention (IMPORTANT)
       rows (batch caps respected), reader ORs all live rows (already does — lists, not singletons).
       Junk risk carried by existing F-GATE + one-click reject. Scheduled after pattern fix.
 
+  2026-09-08 — PATTERN FIX BUILT + BROWSER-PROVEN on merge15-baseline (committed; blinding KEPT ON for demo).
+    - Fix (core learnedPatterns only): anchored phrase + lookahead (?=[:\-\d]|$|\s+\d) +
+      optional separator + capture. Swallowed-marker labels ("...: Php" + " 4,834,297.59")
+      now fill; bare space-then-letters still rejected so learned VALUE phrases (title
+      "erection of", contractor suffixes) fall through with the full line intact (first
+      draft was too loose and clipped them — caught by the title fixture, tightened pre-green).
+      Prefix collisions (ABC vs ABCs) blocked; mid-line labels stay unsupported; clean
+      "Label: value" + label-alone next-line behavior unchanged.
+    - Tests: +1 swallowed-marker fixture (synthetic "Estimated Project Outlay: Php" wording —
+      proves mechanism without leaking the real banked phrasing). Suite 77/79: the only 2
+      failures are the intended blinding pair (F-B1 reroute + hardcoded-wins). PHP proposal
+      tests 8/8. No PHP touched. Blinding flag untouched (still true).
+    - User round-trip record (2026-09-07, confirmed 2026-09-08): typed 4834297.59 → label
+      "Approved Budget for the Contract: Php" + p1 excerpt → approved Live → re-upload missed
+      (the bug above). Next: user browser proof on test5_selectable_text (empty → teach →
+      approve → re-upload fills). Blinding restore stays a tracked pre-merge-to-main step.
+    - 2026-09-08 BROWSER PROOF (incognito, user): table wiped → re-upload test5_selectable_text
+      → ABC EMPTY (blinding check passes; budget pool 31 finds, Revised 4323196.77 winner 12/9.5
+      over Original 11/6.85 + 4834297.59 7/2.89; duration 185, dates clean) → typed ABC → 2 DB rows
+      (id 19 abc + label/excerpt; id 18 description NULL/NULL = known DESCRIPTION-NOISE item, open,
+      harmless count-only) → re-upload pre-approval still empty → APPROVED → re-upload FILLS ABC.
+      LOOP PROVEN end-to-end (miss → teach once → live → free). Blinding KEPT ON per user for demo.
+
   2026-09-07 — L3-TEST SETUP: BLINDING + NO-EMPTY-CACHE (code, NOT committed).
     - Temp ABC blinding (core extractABC, L3_TEST_BLIND_ABC flag, RESTORE BEFORE ANY COMMIT):
       patterns=[] + F-B1 push gated off; original regexes preserved verbatim in dead branch.

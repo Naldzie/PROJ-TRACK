@@ -675,6 +675,14 @@ test('L3: learned contractor suffix fills when hardcoded suffixes miss', () => {
     assert.equal(core.parseProjectInfo({ text }, { learned }).contractor, 'Apex Infrastructures Incorporated');
 });
 
+test('L3: learned label with swallowed separator+marker still fills', () => {
+    // Mined slices may include the terminator and money marker (e.g. "...: Php").
+    // Synthetic wording only — proves the mechanism, not the real banked phrasing.
+    const text = 'Estimated Project Outlay: Php 4,834,297.59';
+    const learned = { labels: { abc: ['Estimated Project Outlay: Php'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+});
+
 test('L3: empty learned table reproduces default behavior exactly', () => {
     const text = 'Project: Completion of Health Center\nABC: Php 4,834,297.59';
     assert.deepEqual(
