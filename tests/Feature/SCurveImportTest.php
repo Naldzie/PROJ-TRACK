@@ -386,6 +386,115 @@ class SCurveImportTest extends TestCase
             ->assertJson(['success' => false]);
     }
 
+    /**
+     * Step 2a: contractor weight-header synonyms ("WEIGHTED %", "ALLOCATION",
+     * plus the pre-existing "WEIGHTAGE") all map the weight column — same curve.
+     */
+    public function test_accepts_weight_synonym_headers(): void
+    {
+        foreach (['WEIGHTED %', 'ALLOCATION', 'WEIGHTAGE'] as $weightHeader) {
+            $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setCellValue('A10', 'DESCRIPTION');
+            $sheet->setCellValue('B10', 'Month 1');
+            $sheet->setCellValue('C10', 'Month 2');
+            $sheet->setCellValue('D10', $weightHeader);
+            $sheet->setCellValue('E10', 'CONTRACT');
+            $sheet->setCellValue('A11', 'Excavation Works');
+            $sheet->setCellValue('B11', 30000);
+            $sheet->setCellValue('C11', 30000);
+            $sheet->setCellValue('D11', 100);
+            $sheet->setCellValue('E11', 60000);
+            $sheet->setCellValue('A12', 'GRAND TOTAL');
+            $sheet->setCellValue('E12', 60000);
+
+            (new Xlsx($spreadsheet))->save($path);
+
+            $result = app(SCurveImportService::class)->parse($path);
+
+            $this->assertSame(100.0, $result['meta']['weightSum'], "weight header: {$weightHeader}");
+            $this->assertSame(50.0, $result['months'][0]['planned_progress_percent'], "weight header: {$weightHeader}");
+            $this->assertSame(100.0, $result['months'][1]['planned_progress_percent'], "weight header: {$weightHeader}");
+            $this->assertSame([], $result['meta']['warnings'], "weight header: {$weightHeader}");
+
+            unlink($path);
+        }
+    }
+
+    /**
+     * Step 2a: "PARTICULARS" description header (already supported — locked against
+     * regression) parses with per-month activities intact.
+     */
+    public function test_accepts_particulars_description_header(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', 'PARTICULARS');
+        $sheet->setCellValue('F10', 'CONTRACT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('B11', '1');
+        $sheet->setCellValue('C11', 'Embankment Works');
+        $sheet->setCellValue('F11', 60000);
+        $sheet->setCellValue('I11', 30000);
+        $sheet->setCellValue('K11', 30000);
+        $sheet->setCellValue('C12', 'GRAND TOTAL');
+        $sheet->setCellValue('F12', 60000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+        $this->assertSame('Embankment Works', $result['months'][0]['activities'][0]['activity_name']);
+        $this->assertSame('1', $result['months'][0]['activities'][0]['description']);
+
+        unlink($path);
+    }
+
+    /**
+     * Step 2a: a "PLANNED CUMULATIVE %" summary row is detected (meta cumulativeRow)
+     * without moving the emitted curve — the Step 2b reader consumes the flag later.
+     */
+    public function test_detects_cumulative_summary_row_without_moving_curve(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'GRAND TOTAL');
+        $sheet->setCellValue('E12', 60000);
+        $sheet->setCellValue('A13', 'PLANNED CUMULATIVE %');
+        $sheet->setCellValue('B13', 50);
+        $sheet->setCellValue('C13', 100);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame(13, $result['meta']['cumulativeRow']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame(1, $result['meta']['activityCount']);
+
+        unlink($path);
+    }
+
     protected function createAdminUser()
     {
         // User::create (not the factory) — the users table has no

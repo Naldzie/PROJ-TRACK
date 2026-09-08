@@ -281,17 +281,35 @@ class SCurveImportService
 
     private function isDescriptionLabel(string $label): bool
     {
+        // Step 2a note: "PARTICULARS" and "WORK ITEMS" are already covered below (locked by
+        // test). "ITEM NO." is intentionally NOT added here — isItemLabel() claims it first
+        // (elseif order in detectHeaderRow) and it is semantically an item-code column.
         return (bool) preg_match('/^(description|particulars|work\s*items?|activity|activities|scope|scope\s*of\s*work)$/i', $label);
     }
 
     private function isWeightLabel(string $label): bool
     {
-        return (bool) preg_match('/\b(weight|weightage|share|gravity|distribution|percent(?:age)?)\b/i', $label);
+        // Step 2a: contractor synonyms — "WEIGHTED %", "ALLOCATION" alongside the
+        // original weight/weightage/share/gravity/distribution/percent vocabulary.
+        return (bool) preg_match('/\b(weight|weighted|weightage|allocation|share|gravity|distribution|percent(?:age)?)\b/i', $label);
     }
 
     private function isContractLabel(string $label): bool
     {
         return (bool) preg_match('/\b(contract|amount|price|cost)\b/i', $label);
+    }
+
+    /**
+     * Step 2a: detect author-entered cumulative summary rows ("CUMULATIVE %
+     * ACCOMPLISHED", "PLANNED CUMULATIVE %") by label.
+     *
+     * Detection ONLY in 2a — the row index is recorded in meta['cumulativeRow']
+     * for the Step 2b Validated reader; emitted months are untouched. Never
+     * required: label-less files (e.g. the weekly outlier) simply report null.
+     */
+    private function isCumulativeLabel(string $label): bool
+    {
+        return (bool) preg_match('/cumulative.*%|planned.*cumulative|%\s*accomplished/i', $label);
     }
 
     /**
@@ -439,10 +457,25 @@ class SCurveImportService
 
         $totalRowContract = null;
 
+        // Step 2a: first data-row naming a cumulative summary row anywhere in its cells
+        // (BUHI keeps "% ACCOMPLISHED" labels in column A, outside descCol C).
+        // 1-based sheet row for the Step 2b reader; null when the file has none.
+        // Detection ONLY — the emitted curve is untouched.
+        $cumulativeRow = null;
+
         foreach ($rows as $rowIndex => $row) {
             if ($rowIndex < $dataStart) continue;
 
             $description = trim((string) ($row[$this->letter($descCol)] ?? ''));
+            if ($cumulativeRow === null) {
+                $rowText = implode(' ', array_filter(array_map(
+                    fn ($c) => trim((string) $c),
+                    array_values(is_array($row) ? $row : [])
+                )));
+                if ($rowText !== '' && $this->isCumulativeLabel($rowText)) {
+                    $cumulativeRow = $rowIndex;
+                }
+            }
             $weightRaw = $weightCol !== null ? ($row[$this->letter($weightCol)] ?? null) : null;
             $weight = is_numeric($weightRaw) ? (float) $weightRaw : null;
             $contractRaw = $contractCol !== null ? ($row[$this->letter($contractCol)] ?? null) : null;
@@ -588,6 +621,8 @@ class SCurveImportService
             'monthCount' => $maxMonth,
             'activityCount' => $activities,
             'warnings' => $warnings,
+            // Step 2a: cumulative summary-row detection for the Step 2b reader.
+            'cumulativeRow' => $cumulativeRow,
         ];
 
         return [

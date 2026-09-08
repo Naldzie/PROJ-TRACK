@@ -761,7 +761,25 @@ Related plan
     File: app/Services/SCurveImportService.php
     (also mirrors to public/js/admin/projects/scurve-pdf-parser-core.js for PDF)
 
-    2a. Expanded anchor synonyms (rule-based, not positional) — PLAN ONLY, NO CODE YET
+    2a. Expanded anchor synonyms (rule-based, not positional) — ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed; blinding untouched — parser track, no JS/PHP-parser overlap).
+        - isWeightLabel: added "weighted" + "allocation" ("weightage" was already present —
+          verified, not duplicated). Fixture locks all three variant headers to the same curve.
+        - isDescriptionLabel: UNCHANGED — "PARTICULARS" and "WORK ITEMS" were already present
+          (fixture locks them against regression instead of duplicating). "ITEM NO."
+          deliberately NOT added: isItemLabel() claims it first (elseif order) and it is
+          semantically an item-code column; the "NO. OF DAYS" false-positive stays impossible
+          via the ^$ anchors (re-verified by suite).
+        - NEW isCumulativeLabel() + meta['cumulativeRow'] (first matching data-row, 1-based
+          sheet row; null when absent). Detection matches the FULL row text, not descCol only
+          — caught pre-green: BUHI keeps "% ACCOMPLISHED" labels in column A (outside descCol
+          C), so descCol-only detection reported null on the real file. Widened before green;
+          BUHI now reports cumRow=89. Curve untouched by construction (flag read only by 2b).
+        - Tests: +3 fixtures (weight synonyms ×3 headers, PARTICULARS + activity/code intact,
+          PLANNED CUMULATIVE % detected at row 13 with identical curve). SCurveImportTest 15/15.
+          BUHI re-run byte-identical (12mo/59act/32,588,531.43/w100/M1 1.12/M4 10.59/M7 28.64/
+          M10 68/M12 100/warnings []) + cumRow=89. Full composer suite: 1029 passed / 7 failed =
+          the same 7 pre-existing merge-15 failures (clean-tree verified) — zero regressions.
+        - No commit without user OK. 2b/2c stay deferred pending a second real contractor Excel.
         Rationale (user-approved 2026-09-08): detection-only, near-zero behavior risk — turns
         future "No S-curve table found" 422s into parsed curves. BUHI baseline stays
         byte-identical (its labels already match; wider alternatives never fire on it).
