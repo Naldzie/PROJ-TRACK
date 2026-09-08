@@ -640,6 +640,24 @@ test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised
     assert.ok(cands.some(c => c.value === '4204128.84'));
 });
 
+test('Weak-find guard: bare label sliding to a list marker fills nothing (the 2.00 case)', () => {
+    // Reproduced byte-identical from production (generic, labeled, weight 0.34): a bare
+    // "Project Cost" line borrowing "2. Fringe Benefits" below it minted 2.00 in BOTH tracks.
+    // The shared-reader floor stops it in both at once.
+    const lines = core.buildLinesFromText('Project Cost\n2. Fringe Benefits');
+    assert.equal(core.extractBudget(lines), null);
+    assert.deepEqual(core.collectBudgetCandidates(lines, 'r.pdf'), []);
+    const pooled = core.parseProjectInfoPooled([{ text: 'Project Cost\n2. Fringe Benefits', fileName: 'r.pdf' }]);
+    assert.equal(pooled.budget, null);
+});
+
+test('Weak-find guard: marked small figures and labeled large singles still fill', () => {
+    // Php-marked small figure carries its own context — trusted.
+    assert.equal(core.extractBudget(core.buildLinesFromText('Contract Price: (Php 50.00)')), '50.00');
+    // Labeled large single (p6 estimate-total shape) is unaffected by the floor.
+    assert.equal(core.extractBudget(core.buildLinesFromText('TOTAL ESTIMATED PROJECT COST 4,834,297.59')), '4834297.59');
+});
+
 // --- ABC-pooling: collector + vote + debug + disagree (blinding-gated) ---------------
 // NOTE: L3_TEST_BLIND_ABC is ON (demo), so the hardcoded collector sleeps and these
 // fixtures assert the asleep plumbing. RESTORE step flips them to full-collection

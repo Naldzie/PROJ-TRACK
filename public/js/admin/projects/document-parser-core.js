@@ -401,6 +401,13 @@ const DocumentParserCore = (function () {
             const allNums = [...s.matchAll(/([\d,]+(?:\.\d{1,2})?)/g)].map(x => parseFloat(x[1].replace(/,/g, ''))).filter(n => isFinite(n) && n > 1000);
             if (allNums.length > 0) return Math.max(...allNums).toFixed(2);
         }
+        // Weak-find guard (list markers): a marker-less tiny value ("2. Fringe Benefits" → 2.00,
+        // stray percents/page fragments) is never project-level money. Php/₱/pesos/amount-marked
+        // figures carry their own context and are trusted (marked "(Php 50.00)" still fills; bare
+        // P is deliberately NOT an exemption — P-adjacent fractions lie, per the 44/100 saga).
+        // Lives here so BOTH tracks inherit it (single-match extractors + pooled collectors share
+        // this one reader — same lesson as the N1 shared strip).
+        if (num < 100 && !/(?:php|₱|pesos|amount)/i.test(s)) return null;
         return num.toFixed(2);
     };
 

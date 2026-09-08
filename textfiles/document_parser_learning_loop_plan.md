@@ -1157,6 +1157,75 @@ Frontend convention (IMPORTANT)
       L3 -> AI fallback (trigger list finalized from all verdicts) -> S-curve Steps 2–4 +
       Tier-2/3 (backlog; inherits the hardened OCR path + tile/strip column technique free).
 
+  2026-09-08 — ISSUE (future fix): OCR FIGURE DROPOUT CORRELATES WITH DEVTOOLS-ATTACHED SESSIONS.
+    File: test_page_6.pdf (screenshot-raster p6). 3/3 consistent, mechanism unresolved — NOTED, not fixed.
+    - Console-OPEN runs (+_parserDebug): TOTAL figure lost ("prea ert", no digits) → budget/ABC
+      honestly empty ("no pooled finds" — the weak-find guard is PROVEN innocent here: zero
+      candidates existed, so reverting it would change nothing; it only stops tiny strays).
+    - Console-CLOSED re-scan, NO RELOAD: figure present → both boxes fill (learned ABC + budget
+      generic, 4.8M untouched by the floor). Guard behavior re-confirmed on both sides.
+    - Exonerated by evidence: (1) cache/fetch timing — no reload between runs, nothing refetched,
+      yet results flipped; (2) the _parserDebug flag — stayed TRUE through both runs (no reload),
+      same flag with different outcomes; code audit found all 15 uses log-only, zero branches.
+    - Remaining suspects, ranked: (a) DevTools-attached perturbation of worker/recognition timing;
+      (b) first-run (cold worker + OSD-throw side effects) vs rerun (warm pinned worker) order
+      confound. Decisive experiment pending (user-side, no code): REVERSE the order — fresh load
+      → console-OPEN run first, then closed. Open-first fills ⇒ run-order state; open still
+      empties ⇒ DevTools-attached perturbation.
+    - Cure direction (queued, not built): deterministic engine choice (preset/persist eng, drop
+      the probe race) so no network/timing race picks the reader. Ordering vs AI batch: user to
+      decide — parked behind blinding lift until ordered otherwise.
+    - Forensic record: zero text/image XObjects in vector-print p6 (curves-not-letters); OSD probe
+      map document-parser.js:685-747; preprocessing exonerated (identical cleanup-skipped both runs).
+
+  2026-09-08 — WEAK-FIND GUARD BUILT on merge15-baseline (code, NOT committed; blinding ON).
+    Trigger: screenshot-raster p6 run filled budget 2.00 (labeled, count 1, score 0.34).
+    - Recipe reproduced byte-identical (generic/labeled/0.34): bare label line ("Project Cost")
+      sliding to a list-marker line ("2. Fringe Benefits"); asMoney mints 2.00 from any digit-led
+      string, and BOTH tracks fired — so the planned vote-level support rule alone would NOT have
+      stopped it (single-match fills identically). Pivot (honest): minimum-PLAUSIBILITY at the
+      shared money reader instead of minimum-support at the vote.
+    - Fix (asMoney, one rule): marker-less value under 100 → null. Php/₱/pesos/amount-marked
+      figures trusted ("(Php 50.00)" still fills); bare P deliberately NOT an exemption
+      (P-adjacent fractions lie, 44/100 saga). Both tracks inherit at once (N1 shared-reader
+      lesson). Duration/dates untouched (not asMoney callers); corroborated/labeled-large fills
+      unchanged — including the p6 4.8M labeled single, verified still filling.
+    - Blast-radius check pre-build: no fixture pins tiny money values (92025.00 unlabeled
+      runner-up is ≥100, unaffected). Tests: +2 guard fixtures (recipe → null in single +
+      collector + pooled; marked-small + labeled-large still fill). JS 89/91 — only the 2
+      intended blinding fails. PHP proposal tests 10/10 (no PHP touched). No commit without OK.
+
+  2026-09-08 — LOOP-FIRST FORMALLY CLOSED via p6-only selectable file (user browser, no code).
+    File: pdfdocstest5_selectable_text-6.pdf (page 6 extracted as SELECTABLE text — verified by
+    copy-paste: "TOTAL ESTIMATED PROJECT COST 4,834,297.59" present as real text).
+    - Test 1 (abstract + TOTAL ESTIMATED rows live): ABC fills 4834297.59 AND budget fills the
+      same figure (budget generic via "project cost" substring — estimate total in Price box is
+      harmless on a sole-figure page; multi-file vote sorts real bundles). The file holds ONLY
+      the TOTAL ESTIMATED line, so the ABC fill proves the novel row works standalone.
+    - Test 2 (table wiped): budget fills alone, ABC honestly empty → corrected ABC → mined TOTAL
+      ESTIMATED again → approved → re-upload fills ABC. Full round-trip on the sole-anchor file:
+      miss → teach → approve → free. Genuine discovery confirmed (not abstract-line contamination).
+    - Guard-compatibility note: budget winner here is LABELED count-1 score-0.43 — the planned
+      money-only weak-find guard (unlabeled + score<~1.0 → null) would NOT empty it. Labeled
+      singles still fill by design; only unlabeled strays (the 2.00 case) are stopped.
+    - Blinding still ON (demo); ABC pool honestly empty in both runs (new "no pooled finds"
+      inspector line renders as designed).
+  2026-09-08 — ESTIMATE_ONLY IMAGE-PAGE FAILURE ROOT-CAUSED (user browser + forensic, no code).
+    File: sampledocs/estimate_only page.pdf (70KB, 1pp Letter, Microsoft Print To PDF).
+    - Forensic (raw-byte inspection, no pdfjs in node): ZERO text items, ZERO image XObjects,
+      ZERO fonts — Print-to-PDF outlined all text to vector curves. Pretty on screen at any zoom,
+      but curves-not-letters to tesseract. Effective-DPI question is N/A (nothing raster to scale).
+    - OCR yielded 489 chars of soup (figures absent, "Il/Ill", "we eww : :") — sparse estimate
+      table + thin gridlines defeat PSM-3 segmentation (digit columns fragment), and 489 ≥ the
+      10-char yield bar so EVERY rescue rung (PSM-4 empty-only, scale-2, crop) never fired.
+      Soup locked in as "success". Confirm fingerprint under _parserDebug: attempt-0 ~489 soupy,
+      PSM-6 soupy, no scale-2/crop lines, final yielded=489.
+    - Learned TOTAL ESTIMATED row DID match its label line — but no figure survived in OCR text,
+      so nothing to fill and nothing to mine (miner correctly returned [] instead of junk).
+      Lesson banked: learning needs the figure present in machine text — formal checks require
+      selectable extraction (Ctrl+A-paste validity check, same rule as the recreation verdict).
+    - Correction path closed by the selectable re-test above; no code change from this entry.
+
   2026-09-08 — ABC WORDS-RULE (A) + INSPECTOR POLISH BUILT on merge15-baseline (committed; blinding ON).
     - Rule A: shared readAbcWordsAmount/abcWordsAtWindow (single-match fallback + pooled
       'words-shape' candidate use ONE rule): strict ABC context (approved-budget/funds-
@@ -1297,12 +1366,15 @@ Frontend convention (IMPORTANT)
        Parked non-priority ideas live in textfiles/document_parser_future_improvements_plan.md
        (P1 passive mining, P2 lifetime counting + collision warning) — do NOT build unless
        the user explicitly unparks them.
-    2. Resume state: merge15-baseline, pattern fix BUILT + BROWSER-PROVEN (575db42, blinding ON
-       for demo). JS 77/79 (2 intended blinding fails); PHP proposal tests 8/8.
-    3. NEXT = combined build: MULTI-LABEL DESK + ABC-POOLING per the 2026-09-08 plan entry above
-       (blinding gate hoisted, demo-safe). Then: ABC words-rule → loop-first novel-label round on
-       the estimate-page-only file → AI fallback → S-curve backlog.
-    4. Run JS suite + ParserKeywordProposalTest before/after; browser proof (a)(b)(c) above.
+    2. Resume state: merge15-baseline at 9f56346 (words-rule + polish, blinding ON for demo).
+       JS 87/89 (2 intended blinding fails); PHP proposal tests 10/10.
+       LOOP-FIRST CLOSED 2026-09-08 (p6-only selectable: novel-row-only fill + full round-trip).
+    3. NEXT (user-approved, all planned, none built): (a) money-only weak-find guard
+       (unlabeled money winner + score<~1.0 → null; labeled singles still fill; duration/dates
+       untouched); then (b) blinding RESTORE (pre-merge prerequisite — flips blinded fixtures to
+       full-collection asserts, suite back to full green); then (c) AI fallback normal-doc-first
+       (test4 browser proof, blinded-ABC excluded from triggers); then (d) S-curve backlog.
+    4. Run JS suite + ParserKeywordProposalTest before/after; browser proof per step.
     5. Blinding RESTORE stays a tracked pre-merge-to-main prerequisite (not now — demo).
     6. No merge without explicit user confirmation (Rule 12).
 
