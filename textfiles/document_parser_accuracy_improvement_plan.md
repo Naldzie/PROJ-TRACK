@@ -757,20 +757,43 @@ Related plan
       Cost total; (v) full JS suite green + 4 contract files + bundle browser re-check.
     - No new deps, no vite, S-curve still deferred.
 
-  STEP 2 — Excel hardening + Summary-Row Validated read  ⬜ NOT STARTED
+  STEP 2 — Excel hardening + Summary-Row Validated read  🔄 IN PROGRESS (2a planned 2026-09-08, build on go-ahead; 2b/2c DEFERRED until a second real contractor Excel exists — user decision 2026-09-08: no evidence-driven behavior changes without evidence)
     File: app/Services/SCurveImportService.php
     (also mirrors to public/js/admin/projects/scurve-pdf-parser-core.js for PDF)
 
-    2a. Expanded anchor synonyms (rule-based, not positional)
-        - isWeightLabel: add "weighted", "allocation", "weightage"
-        - isDescriptionLabel: add "Item No.", "Particulars", "Work Items"
-        - NEW isCumulativeLabel: /cumulative.*%|planned.*cumulative|%.*accomplished/i
-          to find summary rows like "CUMULATIVE % ACCOMPLISHED" or
-          "PLANNED CUMULATIVE %" (most contractor S-curves have them per client,
-          but CONSCHEDSAVINGS.pdf has NO label — so label is optional,
-          pattern %-row fallback handles that file).
+    2a. Expanded anchor synonyms (rule-based, not positional) — PLAN ONLY, NO CODE YET
+        Rationale (user-approved 2026-09-08): detection-only, near-zero behavior risk — turns
+        future "No S-curve table found" 422s into parsed curves. BUHI baseline stays
+        byte-identical (its labels already match; wider alternatives never fire on it).
+        2b (Validated numbers) + 2c (SUM-vs-MAX) change emitted values and wait for a real
+        second file — synthetic-only number branches risk solving layouts nobody sends.
 
-    2b. Summary-Row Validated logic (user choice: Validated, not Authoritative)
+        Touchpoints (all in app/Services/SCurveImportService.php; restudy 2026-09-08):
+        - isWeightLabel (:287-290): add "weighted", "allocation", "weightage" to the
+          \b(weight|weightage|share|gravity|distribution|percent(age)?)\b alternation.
+        - isDescriptionLabel (:282-285): add "Item No.", "Particulars", "Work Items" to the
+          description alternation. Guard: "Item No." must not reintroduce the "NO. OF DAYS"
+          false-positive codeCol (anchored item regex already guards — re-verify by suite).
+        - NEW isCumulativeLabel(): /cumulative.*%|planned.*cumulative|%.*accomplished/i for
+          summary rows ("CUMULATIVE % ACCOMPLISHED", "PLANNED CUMULATIVE %"). Detection-only
+          in 2a (feeds the 2b reader later); never required (CONSCHEDSAVINGS.pdf has no label —
+          pattern %-row fallback stays the fallback).
+        - Scoring (betterHeader :198-201, hard gate :183 descCol + ≥2 monthCols): new synonyms
+          ride the existing score (hasItem/hasWeight/hasContract/monthCount) — no gate change.
+        - Explicit NON-goals for 2a: no buildMonths() number changes, no finalizeHeader span
+          changes, no new warnings, no UI/controller/route/migration changes, no PDF changes.
+
+        Tests (tests/Feature/SCurveImportTest.php, in-test workbooks like the existing 12):
+        - (i) weight-synonym workbook ("WEIGHTED %"/"ALLOCATION" header) parses the same curve;
+        - (ii) description-synonym workbook ("PARTICULARS"/"ITEM NO." + code col) parses with
+          activities intact;
+        - (iii) cumulative-label row detected (assert via meta or a debug accessor — NOT via
+          emitted curve, which must not move in 2a).
+        Verification: full 12-test baseline green + 3 new green; real BUHI sample re-run
+        byte-identical (1.12/6.74/21.09/49.73/100, contract 32,588,531.43, 59 activities,
+        warnings []); composer suite zero-regressions (7 pre-existing merge-15 failures stand).
+
+    2b. Summary-Row Validated logic (user choice: Validated, not Authoritative) — ⏸ DEFERRED until a second real contractor Excel exists (user decision 2026-09-08)
         Order in buildMonths():
           1) Detect monthSpans via findHeader (already anchor-based).
           2) Try to read summary row: scan rows after header for isCumulativeLabel
@@ -791,7 +814,7 @@ Related plan
         transparency warning you wanted, and still works for the label-less
         CONSCHEDSAVINGS.pdf (no summary row → activity path).
 
-    2c. Single-column month fallback
+    2c. Single-column month fallback — ⏸ DEFERRED until a second real contractor Excel exists (user decision 2026-09-08)
         - Some contractors do NOT duplicate the value in two columns — currently
           SUM(pair) would double-count; detect by checking if col+1 is mostly
           empty (>70% null/0) then use MAX not SUM for that month.
