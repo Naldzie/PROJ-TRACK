@@ -61,7 +61,7 @@ Sensitivity basis (user-approved)
 
   Server Gemini precedent (reusable as-is)        ✅ EXISTS (AIRecommendationService:787-905)
   Tier-3 design (accuracy plan Steps 3b/4)         ✅ PLANNED (this file makes it build-ready)
-  Normal-doc AI (service/endpoint/banner/tests)    🔄 IN PROGRESS (AI-1 done, AI-2 next)
+  Normal-doc AI (service/endpoint/banner/tests)    🔄 IN PROGRESS (AI-1 + AI-2 done, AI-3 next)
   S-curve AI (parseSCurveSlice)                    🔜 PARKED (after normal-doc proof)
   Browser proof file                               ✅ READY (test_page_6.pdf class + test4 scans)
 
@@ -154,10 +154,26 @@ Sensitivity basis (user-approved)
     - Caught pre-green: mixed-separator branch mangled normal US figures ("4,323,196.77" →
       "4,323,19677"); replaced with last-separator-wins decimal (both US + OCR period-thousands
       resolve; verified by the failing-then-passing success test).
-    - Tests tests/Feature/Services/AI/GeminiDocumentParserServiceTest.php: 7/7 green
+    -     Tests tests/Feature/Services/AI/GeminiDocumentParserServiceTest.php: 7/7 green
       (success-shape + normalization, fences, malformed/list/500 decline, empty-key sends
       nothing, all-null + empty-images decline, 3-image cap asserted on the wire, invalid
       values → null). First Http::fake() use in the suite. No commit without OK.
+
+  2026-09-08 — AI-2 BUILT on merge15-baseline (code, NOT committed; no UI yet).
+    - Endpoint app/Http/Controllers/DocumentParserController.php::parseWithGemini(): exactly
+      one source (images[] client slices | image file upload | image document_id), 201/422
+      shapes mirroring SCurveImportController, per-slice + total byte budgets, PDFs declined
+      with the slice instruction (no server renderer by design). Stored bytes read via the
+      Storage disk (not full_path) so Storage::fake tests run the real code.
+    - Routes POST /{staff,admin}/document/parse-gemini (role middleware blocks contractors);
+      .env.example gains AI_API_KEY=/AI_MODEL= placeholders.
+    - Incident (repeat of L1): stale bootstrap/cache/routes-v7.php hid the new routes (all 7
+      endpoint tests failed pre-clear); `route:clear` fixed, 7/7 green after. Standing lesson:
+      clear the route cache whenever routes are added (testing runbook note).
+    - Tests tests/Feature/DocumentParserGeminiTest.php: 7/7 green (admin+staff success,
+      source discipline, AI-miss 422, contractor redirect, image-upload/PDF-decline, stored
+      image/PDF/ghost document_id). Combined AI suites 24/24 with keyword proposals (10/10).
+      No commit without OK.
     - Awaiting build go-ahead (phase branch per Rule 12).
 
 ===============================================================================

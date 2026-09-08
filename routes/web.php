@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProjectController;  // Consolidated: handles all roles with authorization
 use App\Http\Controllers\BaselineScheduleController;
 use App\Http\Controllers\SCurveImportController;
+use App\Http\Controllers\DocumentParserController;
 use App\Http\Controllers\ProjectActivityController;
 use App\Http\Controllers\IssueController;
 use App\Http\Controllers\RiskController;
@@ -199,6 +200,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     // S-Curve Excel baseline import (Phase 2)
     Route::post('/s-curve/parse', [SCurveImportController::class, 'parseExcel'])
         ->name('staff.projects.s-curve.parse');
+
+    // AI fallback for normal-document parsing (Tier 3, opt-in — see AI plan)
+    Route::post('/document/parse-gemini', [DocumentParserController::class, 'parseWithGemini'])
+        ->name('staff.projects.document.parse-gemini');
 
     // === ACTIVITIES: CRUD ROUTES ===
     Route::post('/projects/{project}/activities', [ProjectActivityController::class, 'storeActivity'])
@@ -590,6 +595,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     // S-Curve Excel baseline import (Phase 2)
     Route::post('/s-curve/parse', [SCurveImportController::class, 'parseExcel'])
         ->name('admin.projects.s-curve.parse');
+
+    // AI fallback for normal-document parsing (Tier 3, opt-in — see AI plan)
+    Route::post('/document/parse-gemini', [DocumentParserController::class, 'parseWithGemini'])
+        ->name('admin.projects.document.parse-gemini');
 
     // === ACTIVITIES: CRUD ROUTES ===
     Route::post('/projects/{project}/activities', [ProjectActivityController::class, 'storeActivity'])
