@@ -71,15 +71,36 @@ class AiReportParser
             return '<p>' . nl2br(e($text)) . '</p>';
         }
 
+        // Heading/content styling is INLINE (not just classes) so the blue
+        // highlight survives email clients that strip <style> blocks. It
+        // matches the project AI-analysis tab (.report-section-title).
         $html = '';
         foreach ($sections as $section) {
             $html .= '<div class="report-section">';
-            $html .= '<div class="report-section-title">' . e($section['title']) . '</div>';
-            $html .= '<div class="report-section-content">' . $section['content'] . '</div>';
+            $html .= '<div class="report-section-title" style="font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#2563eb;border-bottom:2px solid #2563eb;padding-bottom:4px;margin-bottom:8px;">' . e($section['title']) . '</div>';
+            $html .= '<div class="report-section-content" style="font-size:13px;color:#475569;line-height:1.7;">' . $section['content'] . '</div>';
             $html .= '</div>';
         }
 
         return $html;
+    }
+
+    /**
+     * Render stored message text for on-screen display (view overlay).
+     *
+     * AI text carrying [SECTION:] markers becomes blue-highlighted sections;
+     * hand-written draft text (no markers) stays plain escaped paragraphs so
+     * manual messages never gain a bogus "Analysis" heading.
+     */
+    public function renderForDisplay(?string $text): string
+    {
+        $text = $text ?? '';
+
+        if (str_contains($text, '[SECTION:')) {
+            return $this->parseToHtml($text);
+        }
+
+        return '<p>' . nl2br(e($text)) . '</p>';
     }
 
     private function formatContent(string $content): string

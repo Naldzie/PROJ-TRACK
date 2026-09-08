@@ -8,8 +8,10 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Auth\Events\Login;
 use App\Models\ActivityLog;
 use App\Models\Category;
+use App\Models\ParserKeywordProposal;
 use App\Models\Project;
 use App\Policies\CategoryPolicy;
+use App\Policies\ParserKeywordProposalPolicy;
 use App\Policies\ProjectPolicy;
 use App\Services\AI\AIRecommendationService;
 use App\Services\AI\RecommendationEngine;
@@ -20,6 +22,7 @@ class AppServiceProvider extends ServiceProvider
     protected $policies = [
         Category::class => CategoryPolicy::class,
         Project::class => ProjectPolicy::class,
+        ParserKeywordProposal::class => ParserKeywordProposalPolicy::class,
     ];
 
     public function register(): void

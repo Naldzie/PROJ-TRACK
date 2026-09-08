@@ -74,4 +74,13 @@ class WarrantyController extends Controller
 
         return view('warranty.preview', compact('warranties'));
     }
+
+    // Public warranty overview — no login required. Renders the same
+    // read-only overview table (no file downloads, no write actions).
+    public function publicPreview()
+    {
+        $warranties = Warranty::with(['project', 'contractor'])->latest()->get();
+
+        return view('warranty.preview', compact('warranties'));
+    }
 }

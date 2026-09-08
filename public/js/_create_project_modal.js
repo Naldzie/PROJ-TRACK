@@ -207,6 +207,12 @@ function resetModalToCreateMode() {
     if (typeof cancelDocumentAutofill === 'function') {
         cancelDocumentAutofill();
     }
+
+    // Warm the scanned-page reader script early so the first preview does not pay the
+    // full download cost mid-scan (language data still loads on first recognize).
+    if (typeof warmTesseract === 'function') {
+        try { warmTesseract(); } catch (e) { /* best-effort warm only */ }
+    }
     
     // Update code field help text for create mode
     document.getElementById('projectCodeHelp').textContent = 'Format: PRJ-YYYY-NNNNN (auto-filled on open)';

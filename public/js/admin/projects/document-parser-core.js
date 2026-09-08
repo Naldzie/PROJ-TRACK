@@ -94,8 +94,9 @@ const DocumentParserCore = (function () {
             jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
         };
 
-        // "Month DD, YYYY" or "Month DD YYYY"
-        const wordy = raw.match(/^([A-Za-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$/);
+        // "Month DD, YYYY" or "Month DD YYYY" — or OCR-misread "Month DD. YYYY" (period for
+        // comma, e.g. "March 13. 2026"). The [,.] class keeps comma behavior byte-identical.
+        const wordy = raw.match(/^([A-Za-z]+)\.?\s+(\d{1,2})[,.]?\s+(\d{4})$/);
         if (wordy) {
             const month = monthNames[wordy[1].toLowerCase()];
             if (month) {
@@ -368,11 +369,17 @@ const DocumentParserCore = (function () {
     // Additional adjustment 2026-09-04: handle "(P 6,495,049.29)" single-P as Php alias (NET TOTAL P6,495,049.29) and (P 6,495,049.29).
     const asMoney = (v) => {
         let s = glueMoneyFragments(String(v));
-        // Step 1h-3: period-as-thousands from OCR ("Php 6.495,049.29" → 6495049.29).
-        // Only inside money-marked strings: a digit-dot-3digits run followed by another
-        // digit/comma cannot be a decimal point, so drop the dot. Plain sentences
-        // without Php/₱ are left untouched.
-        if (/(?:php|₱)/i.test(s) && /\d\.\d{3}(?=[\d,])/i.test(s)) {
+        // N1 (was Step 1h-3, marker-scoped): thousand-dot strip now applies to EVERY
+        // money parse, because both the pooled vote AND the single-match/banner path use
+        // this one reader — the tail-vs-truth tie previously survived on the banner path.
+        // Still narrow (digit-dot-exactly-3-digits + digit/comma behind), so version text
+        // like "Section 1.495" never matches (no trailing digit/comma).
+        // Guard: only when the string holds a SINGLE decimal group (".29" once). On
+        // multi-figure lines ("6,495,049.29 100.00 ...") the glue may fuse neighbours
+        // ("049.29100.00") and stripping would eat a real decimal dot — skip instead and
+        // let the first-figure rule below take the head value.
+        const decimalGroups = s.match(/\.\d{2}\b/g) || [];
+        if (decimalGroups.length === 1 && /\d\.\d{3}(?=[\d,])/.test(s)) {
             s = s.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
         }
         // Prefer Php/P/₱-prefixed amount first (Php or single P in "(P 6,495,049.29)" context)
@@ -414,9 +421,17 @@ const DocumentParserCore = (function () {
     // - Greedy continuation 2026-09-04: if "Project: Completion of Three-Storey" is split
     //   across 2-3 lines (Academic Building, Buhi Campus on next line), join until
     //   "," or "hereinafter" or DESCRIPTION_NEXT_FIELD.
-    function extractTitle(lines, text) {
+    function extractTitle(lines, text, extraTitleKeywords) {
         // Try greedy: find "Project:" line and join continuation lines
         const nonEmpty = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // L3: learned title phrases widen continuation acceptance at the 3 join sites below
+        // (hardcoded phrases still match first; learned is an OR fallback, never a replacement).
+        const learnedTitleJoin = normalizeKeywordList(extraTitleKeywords);
+        const titleJoinHit = (next) => {
+            const s = String(next || '').toLowerCase();
+            return TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw)) ||
+                (learnedTitleJoin.length > 0 && learnedTitleJoin.some(kw => s.includes(kw)));
+        };
         // Cut a title where the location begins inline ("... - Savings located at ...").
         // The acceptance certificate writes title + location on one reflowed line.
         // Called by: contract-label scan + greedy joins below.
@@ -452,7 +467,7 @@ const DocumentParserCore = (function () {
                         if (DESCRIPTION_NEXT_FIELD.test(next)) break;
                         if (/hereinafter|to\s+be\s+completed\s+within|WITNESSETH|WHEREAS/i.test(next)) break;
                         const isAllCapsPart = next === next.toUpperCase() && /[A-Z]/.test(next) && next.length >= 5 && next.length <= 150;
-                        if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsPart) {
+                        if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || titleJoinHit(next) || isAllCapsPart) {
                             parts.push(cutAtLocatedAt(next));
                             if (parts.join(' ').length >= 40) break;
                         } else if (parts.length > 0) break;
@@ -499,7 +514,7 @@ const DocumentParserCore = (function () {
                     // Step 1e-3: also accept ALL-CAPS continuation ("ACADEMIC BUILDING (COLLEGE ...)-SAVINGS")
                     // which fails the Title-Case test and has no value-keyword phrase.
                     const isAllCapsTitlePart = (t) => t === t.toUpperCase() && /[A-Z]/.test(t) && t.length >= 5 && t.length <= 150 && /BUILDING|CAMPUS|SAVINGS|COLLEGE|SCIENCES|ACADEMIC|CONSTRUCTION|COMPLETION/i.test(t);
-                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) || isAllCapsTitlePart(next)) {
+                    if (/^(?:[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?)/.test(next) || titleJoinHit(next) || isAllCapsTitlePart(next)) {
                         // Step 1f-1: stop the title where the location starts inline.
                         if (/located\s+at\b/i.test(next)) {
                             const before = cutAtLocatedAt(next);
@@ -544,7 +559,7 @@ const DocumentParserCore = (function () {
                         if (next.length >= 5 && next.length <= 150) {
                             greedyParts.push(next);
                             const peek = nonEmpty[j + 1] || '';
-                            if (/WHEREAS/i.test(peek) || TITLE_VALUE_KEYWORDS.some(kw => next.toLowerCase().includes(kw)) === false && greedyParts.length >= 2) break;
+                            if (/WHEREAS/i.test(peek) || !titleJoinHit(next) && greedyParts.length >= 2) break;
                             if (greedyParts.join(' ').length >= 40) break;
                         }
                     }
@@ -649,8 +664,15 @@ const DocumentParserCore = (function () {
         ], asBudget);
         if (finalAmount) return finalAmount;
 
+        // F-B1 conditional: a bare "budget [Amount]" line means the ABC ceiling — but ONLY
+        // when the file also carries an Original/Revised figure (corroborated reassignment,
+        // extractABC claims it). Alone, such lines keep today's price behavior.
+        const linesNorm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const hasOrigRevisedBudget = linesNorm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
         const generic = findLabeledValue(lines, [
-            /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
+            hasOrigRevisedBudget
+                ? /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget(?!\s*amount))\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i
+                : /(?:original\s*contract\s*amount|contract\s*amount|contract\s*price|project\s*cost|total\s*cost|budget)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
             /(?:approved\s*budget\s*for\s*the\s*contract)\s*(?:\(abc\))?\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
         ], asBudget);
         if (generic) return generic;
@@ -690,7 +712,8 @@ const DocumentParserCore = (function () {
             const line = norm[i];
             let combined = [line, norm[i+1] || ''].join(' ');
             // Step 1h-3: same period-thousands fix as the collector (OCR "6.495,049.29").
-            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+            // Single-decimal guard (see asMoney): multi-figure windows keep their dots.
+            if (/(?:php|₱)/i.test(combined) && ((combined.match(/\.\d{2}\b/g) || []).length === 1)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             // Look for "(Php X)" or "(P X)" or "NET TOTAL P X" pattern even without PESOS
             const phpOnly = combined.match(/\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i) || combined.match(/NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i) || combined.match(/\bP\s*([\d,]+\.\d{2})/i);
             if (phpOnly) {
@@ -733,11 +756,23 @@ const DocumentParserCore = (function () {
     // Approved Budget for the Contract (ABC) — standalone ABC label.
     // Phase 5 NEW: distinguishes ABC ceiling from Contract Price (savings = ABC - price).
     // Called by: parseProjectInfo() → returns abc field; budget uses extractBudget().
-    // Labels: "ABC:" , "Approved Budget for the Contract (ABC):" , "ABC (PHP)"
+    // Labels: "ABC:" , "Approved Budget for the Contract (ABC):" , "ABC (PHP)".
+    // F-B1: "Total/Approved Budget Amount" lines ALSO feed ABC — but ONLY when the same
+    // file carries an Original/Revised Contract Amount (corroborated reassignment). Alone,
+    // such lines keep today's price behavior so boxes never empty on files that mean price.
     function extractABC(lines) {
-        return findLabeledValue(lines, [
+        const norm = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const hasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
+        // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC patterns disabled
+        // so the clean selectable file misses and the loop-first round-trip can run. See plan §6.
+        const L3_TEST_BLIND_ABC = true;
+        const patterns = L3_TEST_BLIND_ABC ? [] : [
             /(?:approved\s*budget\s*for\s*the\s*contract\s*(?:\(abc\))?|abc)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i,
-        ], asMoney);
+        ];
+        if (hasOrigRevised && !L3_TEST_BLIND_ABC) {
+            patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
+        }
+        return findLabeledValue(lines, patterns, asMoney);
     }
 
     // Budget Source / Funding Source — new in Phase 5.
@@ -779,6 +814,13 @@ const DocumentParserCore = (function () {
     // and fuzzy OCR "NlNETY" (I→l) with Levenshtein ≤1.
     function extractDuration(lines) {
         const normLines = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        // D-total: "Total Contract Time" (extensions included — the binding duration) outranks
+        // "Original Contract Time" when present; Original stays the fallback. Amber note still
+        // offers both on genuine close calls (handled by the pooled disagree check).
+        const totalFirst = findLabeledValue(normLines, [
+            /(?:total\s*contract\s*time)\s*[:\-]?\s*(.*)/i,
+        ], asDays);
+        if (totalFirst) return totalFirst;
         // First try labeled patterns (Duration: etc.)
         // Step 1e: also accept "Original Contract Time" / "Contract Time" (CHS bundle).
         let labeled = findLabeledValue(normLines, [
@@ -869,6 +911,28 @@ const DocumentParserCore = (function () {
     // Used ONLY as fallback when NO label matched — never replaces label search.
     // Hardcoded per user 2026-09-03; flagged for future DB-driven parser_keywords.
 
+    // ─── L3: LEARNED VOCABULARY (parser_keywords, live rows) ─────────────────────
+    // The learning loop harvests (label-phrase → field) pairs from user corrections; staff/admin
+    // approve them live. The reader consults them as LOWEST-priority fallback only — every
+    // hardcoded rule runs first, so an empty table reproduces today's behavior exactly.
+    // Two consultation shapes (both substring, case-insensitive):
+    //   value-side: title/contractor phrases widen isTitle/ContractorValueCandidate + the 3
+    //     greedy-join sites in extractTitle. Learned-value matches keep LENGTH bounds only —
+    //     the heuristic shape gates are skipped because a reviewed vocabulary outranks heuristics.
+    //   label-side: per-field phrases become extra findLabeledValue patterns with the field's own
+    //     normalizer (this is what lets a loop-discovered "Estimated Project Outlay" fill ABC).
+    // Called by: parseProjectInfo() fallback passes; wrapper loads pairs via /all?status=live.
+    // Pure (no DOM/fetch) — lists arrive via opts.learned = { labels: { field: [phrase] } }.
+    function normalizeKeywordList(list) {
+        const out = [];
+        for (const k of (list || [])) {
+            const s = String(k || '').toLowerCase().trim();
+            if (s && out.indexOf(s) === -1) out.push(s);
+            if (out.length >= 200) break;
+        }
+        return out;
+    }
+
     // Title value phrases — 15 hardcoded per user list.
     const TITLE_VALUE_KEYWORDS = [
         'provision of', 'completion and provision of',
@@ -894,31 +958,41 @@ const DocumentParserCore = (function () {
     // Called by: parseProjectInfo() fallback when extractTitle labeled returns null.
     // Returns the cleaned line or null. Confidence lower than label (60 vs 95).
     // Also strips OCR "oe " artifact where "the" misread as "oe" at line start.
-    function isTitleValueCandidate(line) {
+    // L3: extraKeywords (learned phrases) are tried only when no hardcoded phrase hits,
+    // and learned hits skip the construction-word gate (length bounds stay) — reviewed
+    // vocabulary outranks heuristics.
+    function isTitleValueCandidate(line, extraKeywords) {
         let raw = String(line || '').trim();
         // OCR artifact: "oe Completion..." → strip leading "oe "
         if (/^oe\s+/i.test(raw)) raw = raw.replace(/^oe\s+/i, '').trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 15 || s.length > 200) return null;
-        const hasKeyword = TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw));
-        if (!hasKeyword) return null;
-        // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
-        if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
-        return cleanValue(raw);
+        if (TITLE_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            // Must be Title Case-ish or ALL-CAPS-ish and contain a construction word
+            if (!/construction|renovation|repair|installation|upgrading|improvement|building|embankment|rehabilitation|refurbishment|retrofitting|restructuring|provision|completion|enhancement|analysis/i.test(s)) return null;
+            return cleanValue(raw);
+        }
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
+        return null;
     }
 
     // Check if a line looks like a contractor name based on suffix keywords.
     // Returns cleaned line or null. Strips parenthetical tail like " (hereinafter..."
-    function isContractorValueCandidate(line) {
+    // L3: same learned-fallback shape as titles (length bounds stay, suffix gate skipped).
+    function isContractorValueCandidate(line, extraKeywords) {
         let raw = String(line || '').trim();
         // Strip parenthetical tail for clean name
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
-        const hasSuffix = CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw));
-        if (!hasSuffix) return null;
-        if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
-        return cleanValue(raw);
+        if (CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
+            return cleanValue(raw);
+        }
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
+        return null;
     }
 
     // ─── STEP 1e-4/1e-5: POOLED VOTE HELPERS ───────────────────────────────────
@@ -946,12 +1020,16 @@ const DocumentParserCore = (function () {
     }
 
     // Normalize a value for voting (same rule as document-parser.js).
-    // Called by: voteCandidatePool().
+    // N2: hardened — '&' reads as 'and', and ALL punctuation/spacing collapses, so
+    // same-project trivial variants (")-Savings" vs ") -Savings", "&" vs "AND") vote
+    // equal while truly different values ("Building A" vs "Building B") still differ.
+    // Called by: voteCandidatePool(), voteCandidatePoolDebug().
     function normalizeForPool(v) {
         if (!v) return '';
         let s = String(v).trim().toLowerCase();
         s = s.replace(/\s*\(hereinafter.*/i, '').trim();
-        s = s.replace(/\s+/g, ' ');
+        s = s.replace(/&/g, ' and ');
+        s = s.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
         return s;
     }
 
@@ -986,14 +1064,20 @@ const DocumentParserCore = (function () {
         // Step 1i-3: lines already claimed by 'total-row' (below) skip the generic
         // substring re-match so one bottom-row total votes once, not twice.
         const totalRowHit = new Set();
+        // F-B1 conditional mirror of extractBudget: bare-"budget" lines are ABC, not price,
+        // but ONLY in files carrying an Original/Revised figure (extractABC claims them there).
+        const fileHasOrigRevised = norm.some(l => /original\s*contract\s*amount|revised\s*contract\s*amount/i.test(l));
         for (let i = 0; i < norm.length; i++) {
             for (const { name, re, labeled } of labelRes) {
                 if (name === 'generic' && totalRowHit.has(i)) continue;
+                if (name === 'generic' && fileHasOrigRevised &&
+                    /budget/i.test(norm[i]) &&
+                    !/contract\s*amount|contract\s*price|project\s*cost|total\s*cost|original|approved\s*budget\s*for/i.test(norm[i])) continue;
                 const m = norm[i].match(re);
                 if (!m) continue;
                 const tryStrs = [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')];
                 for (let ti = 0; ti < tryStrs.length; ti++) {
-                    const t = tryStrs[ti];
+                    let t = tryStrs[ti];
                     if (!t) continue;
                     // Step 1i-1: placeholder slot → EMPTY for this occurrence. Stop here:
                     // sliding further would steal the next section's date/figure.
@@ -1003,6 +1087,13 @@ const DocumentParserCore = (function () {
                     // if a budget label matched nearby (e.g., Revised Contract Amount
                     // followed by an effectivity/expiry date line in a bundle).
                     if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
+                    // 1i follow-up F1: a MATCHED budget label is itself money context, so
+                    // strip OCR thousand-dots here too even with no Php marker ("Total Cost
+                    // 6.495,049.29" reads full). Narrow pattern only (dot + exactly 3 digits
+                    // + digit/comma behind) — version numbers like "Section 1.495" never match.
+                    // Same single-decimal guard as asMoney: multi-figure rows keep every dot
+                    // so the first-figure rule below takes the head value.
+                    if (/\d\.\d{3}(?=[\d,])/.test(t) && ((t.match(/\.\d{2}\b/g) || []).length === 1)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
                     const val = asMoney(t);
                     // Step 1f-3: a money label inside a breakdown table without any
                     // contract word nearby ("Total Cost P 92,025" per line item) is a
@@ -1024,16 +1115,21 @@ const DocumentParserCore = (function () {
             }
         }
         // All fallback Php amounts (glued, >100k guard kept).
+        // 1i follow-up F2: 'bare-php' closes the coverage gap where first-match sees a
+        // "Php 6,495,049.29" with no parens/NET-TOTAL/P-prefix (e.g., recreated crops) but
+        // the pool sat out. Unlabeled + low weight so labeled contract hits still win.
         const fbRes = [
             { name: 'paren-php', re: /\(p(?:hp)?\s*([\d,]+\.\d{2})\)/i },
             { name: 'net-total', re: /NET\s*TOTAL\s*(?:P\s*)?([\d,]+\.\d{2})/i },
             { name: 'p-prefix', re: /\bP\s*([\d,]+\.\d{2})/i },
+            { name: 'bare-php', re: /(?:php|₱)\s*([\d,]+\.\d{2})/i },
         ];
         for (let i = 0; i < norm.length; i++) {
             let combined = glueMoneyFragments([norm[i], norm[i + 1] || ''].join(' '));
             // Step 1h-3: same period-thousands fix for the fallback scan (OCR
             // "6.495,049.29" blinds the \(Php ...\) / P-prefix patterns otherwise).
-            if (/(?:php|₱)/i.test(combined)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+            // Single-decimal guard (see asMoney): multi-figure windows keep their dots.
+            if (/(?:php|₱)/i.test(combined) && ((combined.match(/\.\d{2}\b/g) || []).length === 1)) combined = combined.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
             let fbName = null;
             for (const fb of fbRes) { if (fb.re.test(combined)) { fbName = fb.name; break; } }
             if (fbName) {
@@ -1058,10 +1154,18 @@ const DocumentParserCore = (function () {
         for (let i = 0; i < norm.length; i++) {
             const m = norm[i].match(labelRe);
             if (m) {
+                // D-total: "Total Contract Time" (extensions included) outranks Original in the
+                // pool too — same rule as the single-match path. Amber still offers close calls.
+                const isTotal = /total\s*contract\s*time/i.test(norm[i]);
                 for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                     if (!t) continue;
                     const val = asDays(t);
-                    if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
+                    if (val) {
+                        let w = getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' '));
+                        if (isTotal) w *= 1.25;
+                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i) });
+                        break;
+                    }
                 }
             }
             // "within N days calendar days" clause on this line or paired with next.
@@ -1167,6 +1271,129 @@ const DocumentParserCore = (function () {
         };
     }
 
+    // Mismatch grouping for the P1 banner verdict (which files look connected vs odd).
+    // Input: getMismatchInfo-style variants [{ value, files, count }] sorted desc.
+    // Output: { connected: [fileNames of the top variant], outliers: [{ value, files }] }.
+    // A single variant (or none) means no split — outliers is empty, no buttons render.
+    // Called by: document-parser.js mismatch banner. Pure (no DOM) so tests assert it.
+    function splitMismatchGroups(variants) {
+        if (!variants || variants.length < 2) return { connected: [], outliers: [] };
+        const [top, ...rest] = variants;
+        return { connected: [...(top.files || [])], outliers: rest.map(v => ({ value: v.value, files: [...(v.files || [])] })) };
+    }
+
+    // Soup scorer for photo-read text (G-soup): is this page worth a second opinion?
+    // Signals (calibrated 2026-09-04 on pasted production samples):
+    //   symRatio   = share of chars outside [alnum + space + .,;:()%-]
+    //   weirdFrac  = share of tokens <40% alphanumeric, or longer than 20 chars
+    //   SOUP ≈ 0.37–0.72 combined | TABLE (legit pipes) ≈ 0.29 | CLEAN/FRAG/NUMS/DATES = 0.
+    //   TABLE2 (legit but noisy, ~~ and pipes) ≈ 0.58 — trips the bar (accepted cost: the
+    //     retry KEEPS THE BETTER text, so worst case is one wasted attempt).
+    // Rule: symRatio >= 0.02 (real symbols present, not just odd words) AND
+    //   (weirdFrac + symRatio) >= 0.32. Single-signal rules misfire: symbols alone hit
+    //   currency-heavy lines, weird-tokens alone hit legit tables.
+    // Called by: document-parser.js recognizeEnglish() gate + tests. Pure (no DOM).
+    function scoreOcrSoup(text) {
+        const s = String(text || '');
+        if (!s.trim()) return { score: 1, weirdFrac: 1, symRatio: 1, soupy: true };
+        const syms = (s.match(/[^A-Za-z0-9\s.,:;()%/\-]/g) || []).length;
+        const toks = s.split(/\s+/).filter(Boolean);
+        let weird = 0;
+        for (const t of toks) {
+            const al = (t.match(/[A-Za-z0-9]/g) || []).length;
+            if (al / t.length < 0.4 || t.length > 20) weird++;
+        }
+        const symRatio = syms / Math.max(1, s.length);
+        const weirdFrac = weird / Math.max(1, toks.length);
+        const soupy = symRatio >= 0.02 && (weirdFrac + symRatio) >= 0.32;
+        return { score: Math.round((weirdFrac + symRatio) * 100) / 100, weirdFrac: Math.round(weirdFrac * 1000) / 1000, symRatio: Math.round(symRatio * 1000) / 1000, soupy };
+    }
+
+    // Keep-cleaner minimum-length guard for the OCR PSM retry ladder (2026-09-06).
+    // A PSM retry may dethrone the current best ONLY when the challenger is both
+    // cleaner (non-soupy) AND substantive (10+ usable chars). A long-soupy incumbent
+    // (e.g. test4 statement page with real amounts) survives a short-clean fragment
+    // challenger; a short-soupy incumbent still upgrades to a clean 10+ read.
+    // Soupy challengers never dethrone; clean-vs-clean and soupy-vs-soupy keep the
+    // first (document order, no churn). Empty best always fills on first usable read.
+    // Called by: document-parser.js recognizeEnglish(). Pure (no DOM).
+    function shouldReplaceOcrBest(bestText, bestSoupy, challengerText, challengerSoupy) {
+        if (!bestText) return true;
+        if (!challengerSoupy && bestSoupy) {
+            return String(challengerText || '').trim().length >= 10;
+        }
+        return false;
+    }
+
+    // Mine a candidate label for a user-corrected value (L1 learning loop, Option 2).
+    // Surveys EVERY matching line (M2) and returns the best-anchored one: a match whose
+    // neighborhood already looks label-ish outranks a bare occurrence; ties keep document
+    // order. Matching is forgiving: money ignores separators ("6,495,049.29" matches OCR
+    // "6.495,049.29"), text matches case-insensitively, short numerics match whole tokens
+    // only (M1: "205" anchors "Total Contract Time 205" but can never hit inside "2025").
+    // Returns null when the value cannot be anchored (typed from knowledge, reformatted
+    // date) — the correction is still recorded, just without a label candidate.
+    // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
+    function mineCorrectionLabel(docText, finalValue) {
+        const raw = String(finalValue || '').trim();
+        if (raw.length < 3) return null;
+        const lines = buildLinesFromText(docText || '');
+        const hasDigit = /\d/.test(raw);
+        const digitSig = raw.replace(/\D/g, '');
+        const lowerVal = raw.toLowerCase();
+        // M1: short digit strings anchor whole tokens only — bounded by non-digit AND
+        // non-separator so "205" skips "1,205,000" as well as "2025".
+        let shortTokenRe = null;
+        if (hasDigit && digitSig.length > 0 && digitSig.length < 4) {
+            const esc = digitSig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            try { shortTokenRe = new RegExp('(?<![\\d,.])' + esc + '(?![\\d,.])'); } catch (e) { shortTokenRe = null; }
+        }
+        const hits = [];
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            let at = -1;
+            if (hasDigit && digitSig.length >= 4) {
+                // Numeric: compare digit runs ignoring separators, so user-typed
+                // "6,495,049.29" anchors OCR "6.495,049.29" and vice versa.
+                const runs = line.match(/[\d][\d,.\s]*\d|\d/g) || [];
+                let cursor = 0;
+                for (const run of runs) {
+                    const pos = line.indexOf(run, cursor);
+                    cursor = pos + run.length;
+                    const runSig = run.replace(/\D/g, '');
+                    // Both sides need 4+ digits: a tiny run like "90" must never anchor
+                    // a longer value like "2024-12-09" (its digits contain "90").
+                    if (runSig.length >= 4 && (runSig.includes(digitSig) || digitSig.includes(runSig))) { at = pos; break; }
+                }
+            } else if (shortTokenRe) {
+                const m = line.match(shortTokenRe);
+                if (m && m.index !== undefined) at = m.index;
+            } else if (!hasDigit) {
+                const idx = line.toLowerCase().indexOf(lowerVal);
+                if (idx !== -1) at = idx;
+            } else {
+                continue;
+            }
+            if (at === -1) continue;
+            let label = cleanValue(line.slice(0, at)).slice(0, 80);
+            if (!label) label = cleanValue(lines[i - 1] || '').slice(0, 80);
+            const excerpt = [lines[i - 1] || '', line, lines[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 200);
+            // F-GATE score for M2 ranking (same rule that filters junk fragments).
+            const rawBefore = line.slice(0, at);
+            const gated = !label || /(amount|budget|price|cost|total|contract|\babc\b|fee|\bsum\b|bill|charge|payment)/i.test(label) || /[:\-–—]\s*$/.test(rawBefore);
+            hits.push({ label: label || null, excerpt, gated, i });
+        }
+        if (!hits.length) return null;
+        // M2: best-anchored first (gated beats ungated), document order breaks ties.
+        hits.sort((a, b) => ((b.gated ? 1 : 0) - (a.gated ? 1 : 0)) || (a.i - b.i));
+        const best = hits[0];
+        // F-GATE: junk-adjacent fragments (e.g., ")F CANTEEN AT Public" before an ABC
+        // figure) must not become dictionary labels — counted, never labeled.
+        if (!best.gated) return { label: null, excerpt: best.excerpt };
+        if (!best.label) return { label: null, excerpt: best.excerpt };
+        return { label: best.label, excerpt: best.excerpt };
+    }
+
     // Pooled parse across files (Step 1e-4 VALUE track).
     // Accepts [{ text, lines?, fileName }]; collects ALL candidates per file into
     // ONE pile per field and votes. Returns { budget, duration, startDate, endDate }.
@@ -1184,16 +1411,26 @@ const DocumentParserCore = (function () {
         }
         // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
         // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
+        // _fileCounts powers the OCR-starvation check (O3): finds per file per field —
+        // "bundle: 0" means that file went silent (unread), not outvoted.
         const bDbg = voteCandidatePoolDebug(pile.budget);
         const dDbg = voteCandidatePoolDebug(pile.duration);
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
+        const fileCounts = {};
+        for (const f of ['budget', 'duration', 'startDate', 'endDate']) {
+            fileCounts[f] = {};
+            for (const r of (f === 'budget' ? bDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg).rows) {
+                for (const fn of r.files) fileCounts[f][fn] = (fileCounts[f][fn] || 0) + r.count;
+            }
+        }
         return {
             budget: bDbg.winner,
             duration: dDbg.winner,
             startDate: sDbg.winner,
             endDate: eDbg.winner,
             _debug: { budget: bDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
+            _fileCounts: fileCounts,
             _disagree: {
                 budget: pooledDisagree(bDbg.rows),
                 duration: pooledDisagree(dDbg.rows),
@@ -1209,27 +1446,89 @@ const DocumentParserCore = (function () {
     // Returns { title, location, description, budget, abc, budgetSource, category,
     //           startDate, endDate, duration, contractor, _confidence, _valueKeywordHits }.
     // Phase 5: includes ABC standalone, budgetSource, category, value-side fallbacks, confidence.
+    // L3: opts.learned = { labels: { field: [phrase] } } from parser_keywords live rows.
+    //   Order per field (hardcoded always wins ties): hardcoded labels → learned labels →
+    //   hardcoded value keywords (title/contractor) → learned value keywords. Description has
+    //   no learned-label pass (prose blocks don't fit single-line lookup). Learned-label fills
+    //   count at label weight in confidence (human-approved vocabulary); learned-value fills count
+    //   at value weight like their hardcoded counterparts.
+    //   Omitted opts = today's behavior exactly.
     // Called by: document-parser.js runDocumentAutofill() → getCore().parseProjectInfo()
-    function parseProjectInfo(doc) {
+    function parseProjectInfo(doc, opts) {
         const text = doc.text || '';
         const lines = doc.lines || buildLinesFromText(text);
+        const learnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
+        const learnedFor = (field) => normalizeKeywordList(learnedLabels[field]);
+        // Build a literal label pattern from a learned phrase (escaped; trailing :/- tolerated
+        // since mined slices may include the terminator — F-GATE already guarantees label-ish
+        // shape or :/- ending at harvest). Anchored at line start with an explicit separator OR
+        // end-of-line (value on next line(s)): an unanchored pattern would match MID-line and
+        // capture the tail as the value ("Apex Infrastructures Incorporated" → "Incorporated").
+        const learnedPatterns = (field) => learnedFor(field).map(ph =>
+            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\s*(?:[:\\-]\\s*(.*)|$)', 'i'));
+        // Per-field normalizers for the learned-label pass (mirrors each hardcoded extractor).
+        const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
+        const learnedNormalizers = {
+            title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
+            location: lenRange(3, 200),
+            budget: asBudget,
+            abc: asMoney,
+            budgetSource: lenRange(2, 100),
+            category: lenRange(3, 50),
+            startDate: asDate,
+            endDate: asDate,
+            duration: asDays,
+            contractor: lenRange(3, 150),
+        };
+        const tryLearnedLabel = (field) => {
+            const patterns = learnedPatterns(field);
+            if (!patterns.length) return null;
+            const norm = learnedNormalizers[field];
+            if (!norm) return null;
+            return findLabeledValue(lines, patterns, norm);
+        };
         // Label-based extraction
-        let title = extractTitle(lines, text);
+        let title = extractTitle(lines, text, learnedFor('title'));
         let contractor = extractContractor(lines);
         let valueKeywordHits = 0;
 
+        // L3 learned-label pass: every still-null field gets its approved phrases.
+        // Title keeps its greedy extractTitle result when present; contractor likewise.
+        if (!title) title = tryLearnedLabel('title');
+        if (!contractor) contractor = tryLearnedLabel('contractor');
+        const learnedRestFields = ['location', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration'];
+
         // Value-side fallback: if no label found, try keyword inside the value itself
         // Low confidence (60) vs label (95) — preview modal shows "guessed — please verify".
+        // L3: two passes so hardcoded phrases win ties regardless of line order.
         if (!title) {
             for (const line of lines) {
                 const v = isTitleValueCandidate(line);
                 if (v) { title = v; valueKeywordHits++; break; }
+            }
+            if (!title) {
+                const extra = learnedFor('title');
+                if (extra.length) {
+                    for (const line of lines) {
+                        const v = isTitleValueCandidate(line, extra);
+                        if (v) { title = v; valueKeywordHits++; break; }
+                    }
+                }
             }
         }
         if (!contractor) {
             for (const line of lines) {
                 const v = isContractorValueCandidate(line);
                 if (v) { contractor = v; valueKeywordHits++; break; }
+            }
+            if (!contractor) {
+                const extra = learnedFor('contractor');
+                if (extra.length) {
+                    for (const line of lines) {
+                        const v = isContractorValueCandidate(line, extra);
+                        if (v) { contractor = v; valueKeywordHits++; break; }
+                    }
+                }
             }
         }
 
@@ -1246,6 +1545,14 @@ const DocumentParserCore = (function () {
             duration: extractDuration(lines),
             contractor: contractor,
         };
+        // L3 learned-label pass for the remaining fields (null-only; hardcoded already ran).
+        // Fills count at label weight via countFilled below (no valueKeywordHits increment).
+        for (const f of learnedRestFields) {
+            if (!parsed[f] && learnedFor(f).length) {
+                const v = tryLearnedLabel(f);
+                if (v) parsed[f] = v;
+            }
+        }
 
         // Confidence scoring: (label hits * 1.0 + valueKeyword hits * 0.6) / total fields
         // Total 11 fields now (was 8). Used by document-parser.js to decide Tier 2/3.
@@ -1297,12 +1604,17 @@ const DocumentParserCore = (function () {
         countFilled,
         glueMoneyFragments,
         getSectionWeight,
+        normalizeForPool,
         collectBudgetCandidates,
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,
         voteCandidatePoolDebug,
         pooledDisagree,
+        splitMismatchGroups,
+        scoreOcrSoup,
+        shouldReplaceOcrBest,
+        mineCorrectionLabel,
         parseProjectInfoPooled,
     };
 })();

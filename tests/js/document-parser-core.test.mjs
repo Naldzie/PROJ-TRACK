@@ -122,6 +122,9 @@ test('parseToInputDate handles common formats', () => {
     assert.equal(core.parseToInputDate('15/01/2026'), '2026-01-15');
     assert.equal(core.parseToInputDate('01-15-2026'), '2026-01-15');
     assert.equal(core.parseToInputDate('2026-01-15'), '2026-01-15');
+    // D1: OCR-misread period for comma ("Date of Completion March 13. 2026", test5).
+    assert.equal(core.parseToInputDate('March 13. 2026'), '2026-03-13');
+    assert.equal(core.parseToInputDate('July 14. 2025'), '2025-07-14');
     assert.equal(core.parseToInputDate('not a date'), null);
 });
 
@@ -432,3 +435,250 @@ test('Step 1i-3: total-row yields only its first figure (Item Cost column)', () 
     assert.ok(!vals.includes('6495040.32'));
     assert.ok(cands.some(c => c.pattern === 'total-row'));
 });
+
+// ─── 1i follow-up: labeled dot-strip + bare-Php coverage + file counts ───────
+
+test('Follow-up F1: labeled value with OCR thousand-dots reads full (no marker needed)', () => {
+    // Matched label is money context by itself: "Total Cost 6.495,049.29".
+    const cands = core.collectBudgetCandidates(
+        core.buildLinesFromText('Total Cost 6.495,049.29'), 'table.pdf'
+    );
+    assert.ok(cands.some(c => c.value === '6495049.29'));
+    // Ordinary dotted text is untouched (narrow pattern needs digit-dot-3digits-digit).
+    assert.equal(core.glueMoneyFragments('See Section 1.495 for details'), 'See Section 1.495 for details');
+});
+
+test('Follow-up F2: bare Php figure joins the pool (crop coverage gap)', () => {
+    // "Php 6,495,049.29" with no parens/NET-TOTAL/P-prefix (recreated crops).
+    const cands = core.collectBudgetCandidates(
+        core.buildLinesFromText('Contract Amount: Php 6,495,049.29'), 'crop.pdf'
+    );
+    assert.ok(cands.some(c => c.pattern === 'bare-php' && c.value === '6495049.29'));
+    // Ambient bare figures without Php still ignored (old guard holds).
+    assert.equal(core.extractBudget(core.buildLinesFromText('General Conditions 12%\nTOTAL BID 8,750,000.00')), null);
+});
+
+test('Follow-up O3: pooled return reports finds per file per field', () => {
+    const pooled = core.parseProjectInfoPooled([
+        { text: 'Original Contract Amount: Php 6,495,049.29', fileName: 'a.pdf' },
+        { text: 'Nothing relevant here', fileName: 'b.pdf' },
+    ]);
+    assert.ok(pooled._fileCounts && pooled._fileCounts.budget);
+    assert.ok((pooled._fileCounts.budget['a.pdf'] || 0) >= 1);
+    assert.equal(pooled._fileCounts.budget['b.pdf'] || 0, 0);
+});
+
+// ─── N-batch: shared strip + hardened compare ────────────────────────────────
+
+test('N1: single-match path reads unmarked period-thousands in full', () => {
+    // The banner track uses extractBudget (first-match), which previously kept the tail.
+    assert.equal(core.extractBudget(core.buildLinesFromText('Total Cost 6.495,049.29')), '6495049.29');
+    // Narrow safety holds on the shared path too.
+    assert.equal(core.extractBudget(core.buildLinesFromText('See Section 1.495 for details')), null);
+});
+
+test('N2: trivial same-project variants vote equal (&, spacing, punctuation)', () => {
+    const dbg = core.voteCandidatePoolDebug([
+        { value: 'JURASSIC CONSTRUCTION & SUPPLIES', labeled: true, weight: 1.0, fileName: 'a.pdf' },
+        { value: 'JURASSIC CONSTRUCTION AND SUPPLIES', labeled: true, weight: 1.0, fileName: 'b.pdf' },
+    ]);
+    assert.equal(dbg.rows.length, 1);
+    assert.equal(core.normalizeForPool('Construction of X (College) -Savings'), core.normalizeForPool('Construction of X (College)-Savings'));
+    // Real differences still separate.
+    const dbg2 = core.voteCandidatePoolDebug([
+        { value: 'Construction of Building A', labeled: true, weight: 1.0, fileName: 'a.pdf' },
+        { value: 'Construction of Building B', labeled: true, weight: 1.0, fileName: 'b.pdf' },
+    ]);
+    assert.equal(dbg2.rows.length, 2);
+});
+// --- P1: mismatch grouping (connected vs outliers) ---------------------------------
+
+test('P1: splitMismatchGroups separates majority files from outliers', () => {
+    const g = core.splitMismatchGroups([
+        { value: 'Project X', norm: 'project x', files: ['a.pdf', 'b.pdf', 'c.pdf'], count: 3 },
+        { value: 'Project Y', norm: 'project y', files: ['d.pdf'], count: 1 },
+    ]);
+    assert.deepEqual(g.connected, ['a.pdf', 'b.pdf', 'c.pdf']);
+    assert.equal(g.outliers.length, 1);
+    assert.deepEqual(g.outliers[0].files, ['d.pdf']);
+    // Agreement (single variant) yields no outliers - clean runs stay quiet.
+    assert.deepEqual(core.splitMismatchGroups([{ value: 'Project X', files: ['a.pdf'] }]), { connected: [], outliers: [] });
+    assert.deepEqual(core.splitMismatchGroups([]), { connected: [], outliers: [] });
+});
+
+// --- L1: correction label mining --------------------------------------------------
+
+test('L1: mineCorrectionLabel anchors money across separator variants', () => {
+    // User-typed commas anchor OCR periods and vice versa.
+    const m1 = core.mineCorrectionLabel('Contract Sum: Php 6.495,049.29', '6,495,049.29');
+    assert.ok(m1 && /contract sum/i.test(m1.label));
+    const m2 = core.mineCorrectionLabel('Contract Sum: Php 6,495,049.29', '6.495,049.29');
+    assert.ok(m2 && /contract sum/i.test(m2.label));
+});
+
+test('L1: mineCorrectionLabel anchors text case-insensitively, null when absent', () => {
+    const m = core.mineCorrectionLabel('Project Name: Completion of Library\nLocation: Nabua', 'Completion of Library');
+    assert.ok(m && /project name/i.test(m.label));
+    // Typed-from-knowledge value with no document anchor yields null (still recorded).
+    assert.equal(core.mineCorrectionLabel('Location: Nabua', 'Something Entirely New Here'), null);
+    // Tiny fragments never anchor (no "90"-in-"2024-12-09" false hits).
+    assert.equal(core.mineCorrectionLabel('Date: December 9, 2024', '90'), null);
+    assert.equal(core.mineCorrectionLabel('', 'Whatever value here'), null);
+});
+
+// --- M1/M2: whole-token short numerics + multi-occurrence survey ------------------
+
+test('M1: short numerics anchor whole tokens only (205, never inside 2025)', () => {
+    const m = core.mineCorrectionLabel('8. Total Contract Time 205 Calendar Days', '205');
+    assert.ok(m && /total contract time/i.test(m.label));
+    // Refusals that protect dates and grouped thousands alike.
+    assert.equal(core.mineCorrectionLabel('Original Expiry date March 9, 2025', '205'), null);
+    assert.equal(core.mineCorrectionLabel('Amount Php 1,205,000.00', '205'), null);
+    assert.equal(core.mineCorrectionLabel('Date: December 9, 2024', '90'), null);
+});
+
+test('M2: multi-occurrence survey prefers the labeled neighborhood', () => {
+    const text = [
+        'Random 6,495,049.29 scribbled here',
+        'Other stuff around',
+        'Contract Sum: Php 6,495,049.29 end',
+    ].join('\n');
+    const m = core.mineCorrectionLabel(text, '6,495,049.29');
+    assert.ok(m && /contract sum/i.test(m.label));
+});
+
+// --- G-soup: OCR soup scoring (calibrated on production pastes) ---------------------
+
+test('G-soup: symbol salad scores soupy, clean/table text does not', () => {
+    const soup = core.scoreOcrSoup('5 5 939529 393 952555 ~ 3 : 5 SERENE SEEERRIEER ~ << ~ s & LEER EE EEE 2 1');
+    assert.equal(soupy(soup), true);
+    const clean = core.scoreOcrSoup('3. Original Contract Amount Php4,204,128.84 4 Revised Contract Amount Php4,323,196.77');
+    assert.equal(soupy(clean), false);
+    // Legit table row with pipes stays below the bar (no wasted retry).
+    const table = core.scoreOcrSoup('A.1.4 Provision of Progress Photographs | each | 50.00 | 1,443.75 1,443.75');
+    assert.equal(soupy(table), false);
+    // Empty text is trivially "soupy" (retry-worthy) without crashing.
+    assert.equal(soupy(core.scoreOcrSoup('   ')), true);
+    function soupy(r) { return !!(r && r.soupy); }
+});
+
+// --- Follow-ups: F-GATE + conditional F-B1 ----------------------------------------
+
+test('F-GATE: junk-adjacent fragments are counted unlabeled, never as labels', () => {
+    // Title fragment before a figure carries no label wording — counted, not labeled.
+    const junk = core.mineCorrectionLabel('OF CANTEEN AT Public\n7,483,4297.50', '7,483,4297.50');
+    assert.ok(junk && junk.label === null && junk.excerpt.length > 0);
+    // Genuine label words pass the gate — including bare ABC.
+    const abc = core.mineCorrectionLabel('ABC 7,483,4297.50', '7,483,4297.50');
+    assert.ok(abc && /abc/i.test(abc.label));
+    const m2 = core.mineCorrectionLabel('Contract Sum: Php 6,495,049.29', '6,495,049.29');
+    assert.ok(m2 && /contract sum/i.test(m2.label));
+});
+
+test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised present', () => {
+    // Corroborated file: price from Original, ABC from the budget-Amount line.
+    const both = core.buildLinesFromText(
+        'Original Contract Amount: Php 4,204,128.84\nTotal budget Amount Php 4,834,297.59'
+    );
+    assert.equal(core.extractBudget(both), '4204128.84');
+    assert.equal(core.extractABC(both), '4834297.59');
+    // Lone budget-Amount line: today's price behavior preserved (no emptying).
+    const lone = core.buildLinesFromText('Total budget Amount Php 4,834,297.59');
+    assert.equal(core.extractBudget(lone), '4834297.59');
+    assert.equal(core.extractABC(lone), null);
+    // Pooled mirror: no budget-Amount candidate when Original exists.
+    const cands = core.collectBudgetCandidates(both, 'bundle.pdf');
+    assert.ok(!cands.some(c => c.value === '4834297.59' && c.pattern === 'generic'));
+    assert.ok(cands.some(c => c.value === '4204128.84'));
+});
+
+// --- D-total: Total Contract Time outranks Original ----------------------------------
+
+test('D-total: Total Contract Time wins outright when present (single-match)', () => {
+    // The real extension shape: Original 185 vs Total 205 — binding duration wins.
+    const lines = core.buildLinesFromText(
+        '1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days'
+    );
+    assert.equal(core.extractDuration(lines), '205');
+    // Original-only files unchanged.
+    assert.equal(core.extractDuration(core.buildLinesFromText('Original Contract Time: 90 calendar days')), '90');
+});
+
+test('D-total: pooled tags total-contract-time and prefers it', () => {
+    const cands = core.collectDurationCandidates(
+        core.buildLinesFromText('1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days'),
+        'bundle.pdf'
+    );
+    const total = cands.find(c => c.value === '205');
+    const orig = cands.find(c => c.value === '185');
+    assert.ok(total && total.pattern === 'total-contract-time');
+    assert.ok(orig && total.weight > orig.weight);
+    const pooled = core.parseProjectInfoPooled([
+        { text: '1. Original Contract Time 185 Calendar days\n8. Total Contract Time 205 Calendar Days', fileName: 'bundle.pdf' },
+    ]);
+    assert.equal(pooled.duration, '205');
+});
+
+// --- Keep-cleaner minimum-length guard (2026-09-06 yield fix) ---------------------
+
+test('Keep-cleaner guard: long-soupy incumbent survives short-clean challenger', () => {
+    // test4 statement page shape: long incumbent the scorer calls soupy holds real
+    // amounts; a short clean fragment (header only) must NOT dethrone it. The guard
+    // takes the soup flags as inputs (scoring itself is covered by the G-soup test).
+    const longIncumbent = 'Original Contract Amount Php 4,204,128.84 Revised Contract Amount Php 4,323,196.77 ' +
+        'Date of Effectivity December 9, 2024 Date of Completion March 13, 2026 ' +
+        'with additional statement table lines following across the page';
+    assert.ok(longIncumbent.trim().length >= 10);
+    assert.equal(core.shouldReplaceOcrBest(longIncumbent, true, 'Page 2', false), false);
+});
+
+test('Keep-cleaner guard: short-soupy still upgrades to clean 10+; first fill always', () => {
+    // Failing page: short soupy retry candidate upgrades normally once substantive.
+    assert.equal(core.shouldReplaceOcrBest('~ << ~', true, 'Original Contract Amount Php 4,204,128.84', false), true);
+    // Empty best always fills on the first usable read (even short).
+    assert.equal(core.shouldReplaceOcrBest('', true, 'Page 2', false), true);
+    // Soupy challengers never dethrone; clean-vs-clean keeps first (no churn).
+    assert.equal(core.shouldReplaceOcrBest('Original Contract Amount Php 4,204,128.84', false, '~ << ~ soup', true), false);
+    assert.equal(core.shouldReplaceOcrBest('Original Contract Amount Php 4,204,128.84', false, 'Another clean line here', false), false);
+});
+
+// --- L3: reader consults learned vocabulary (synthetic phrases only) -----------------
+// NOTE: fixtures use invented labels ('Estimated Project Outlay', 'Erection of') — never the
+// real banked loop-first phrasing — so tests prove the MECHANISM without hand-coding the
+// discovery target into the suite.
+
+test('L3: learned ABC label fills when hardcoded labels miss', () => {
+    const text = 'Estimated Project Outlay: Php 4,834,297.59';
+    assert.equal(core.parseProjectInfo({ text }).abc, null);
+    const learned = { labels: { abc: ['Estimated Project Outlay'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+});
+
+test('L3: hardcoded ABC beats learned label regardless of line order', () => {
+    // Learned-labeled line FIRST proves priority is structural, not positional.
+    const text = 'Estimated Project Outlay: Php 9,999,999.99\nABC: Php 4,834,297.59';
+    const learned = { labels: { abc: ['Estimated Project Outlay'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+});
+
+test('L3: learned title value-keyword fills when hardcoded phrases miss', () => {
+    const text = 'Erection of Barangay Hall';
+    assert.equal(core.parseProjectInfo({ text }).title, null);
+    const learned = { labels: { title: ['erection of'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).title, 'Erection of Barangay Hall');
+});
+
+test('L3: learned contractor suffix fills when hardcoded suffixes miss', () => {
+    const text = 'Apex Infrastructures Incorporated';
+    assert.equal(core.parseProjectInfo({ text }).contractor, null);
+    const learned = { labels: { contractor: ['infrastructures'] } };
+    assert.equal(core.parseProjectInfo({ text }, { learned }).contractor, 'Apex Infrastructures Incorporated');
+});
+
+test('L3: empty learned table reproduces default behavior exactly', () => {
+    const text = 'Project: Completion of Health Center\nABC: Php 4,834,297.59';
+    assert.deepEqual(
+        core.parseProjectInfo({ text }, { learned: { labels: {} } }),
+        core.parseProjectInfo({ text }));
+});
+

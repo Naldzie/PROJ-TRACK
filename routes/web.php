@@ -27,6 +27,7 @@ use App\Http\Controllers\Contractor\ContractorWarrantyController;
 use App\Http\Controllers\staff\StaffWarrantyController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\BudgetSourceController;
+use App\Http\Controllers\Admin\ParserKeywordProposalController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AttachmentController;
@@ -56,6 +57,9 @@ Route::get('/auth/google', [AuthController::class, 'redirectToGoogle'])->name('g
 
 // Google callback
 Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('google.callback');
+
+// Public warranty overview — viewable without login (read-only table, no files/actions)
+Route::get('/warranty/preview', [WarrantyController::class, 'publicPreview'])->name('warranty.preview.public');
 /*
 |--------------------------------------------------------------------------
 | Staff Routes
@@ -253,6 +257,21 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     // only admin can MANAGE (add/edit/delete) sources. This mirrors categories pattern.
     Route::get('/budget-sources', [BudgetSourceController::class, 'getBudgetSources'])
         ->name('staff.budget-sources.list');
+
+    // === PARSER LEARNING LOOP (L1 silent collection) ===
+    // Staff AND admin corrections feed the loop (Decision L0a); contractors excluded.
+    Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
+        ->name('staff.parser-keywords.collect');
+
+    // === PARSER LEARNING LOOP (L2 review: staff + admin per Decision L0a) ===
+    Route::get('/parser-keyword-proposals/all', [ParserKeywordProposalController::class, 'getAllForManagement'])
+        ->name('staff.parser-keywords.all');
+
+    Route::patch('/parser-keyword-proposals/{proposal}/approve', [ParserKeywordProposalController::class, 'approve'])
+        ->name('staff.parser-keywords.approve');
+
+    Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
+        ->name('staff.parser-keywords.destroy');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
@@ -695,6 +714,20 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::delete('/budget-sources/{budgetSource}', [BudgetSourceController::class, 'destroy'])
         ->name('admin.budget-sources.destroy');
 
+    // === PARSER LEARNING LOOP (L1 silent collection; L2 review UI lands here later) ===
+    Route::post('/parser-keyword-proposals/collect', [ParserKeywordProposalController::class, 'collect'])
+        ->name('admin.parser-keywords.collect');
+
+    // === PARSER LEARNING LOOP (L2 review: staff + admin per Decision L0a) ===
+    Route::get('/parser-keyword-proposals/all', [ParserKeywordProposalController::class, 'getAllForManagement'])
+        ->name('admin.parser-keywords.all');
+
+    Route::patch('/parser-keyword-proposals/{proposal}/approve', [ParserKeywordProposalController::class, 'approve'])
+        ->name('admin.parser-keywords.approve');
+
+    Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
+        ->name('admin.parser-keywords.destroy');
+
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
         ->name('admin.documents.upload');
@@ -815,6 +848,7 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/rating', [RatingController::class, 'index'])->name('admin.rating');
     Route::post('/rating/suggest', [RatingController::class, 'suggest'])->name('admin.rating.suggest');
+    Route::post('/rating/contractor-overview', [RatingController::class, 'contractorOverview'])->name('admin.rating.contractor-overview');
     Route::post('/rating/store', [RatingController::class, 'store'])->name('admin.rating.store');
     Route::post('/rating/auto-rate-all', [RatingController::class, 'autoRateAll'])->name('admin.rating.auto-rate-all');
     Route::post('/rating/{contractor}/recompute-performance', [RatingController::class, 'recomputePerformance'])->name('admin.rating.recompute-performance');

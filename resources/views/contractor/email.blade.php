@@ -520,6 +520,7 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 .overlay.open { display: flex; }
 .modal-box {
@@ -528,8 +529,7 @@
   border: 1px solid var(--line);
   width: 580px;
   max-width: 100%;
-  max-height: 88vh;
-  overflow-y: auto;
+  margin: auto;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-md);
@@ -558,7 +558,7 @@
   flex-shrink: 0;
 }
 .close-btn:hover { color: var(--muted); }
-.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .email-banner {
   background: oklch(25% .045 275);
   border-radius: 10px;
@@ -602,6 +602,15 @@
   color: var(--ink);
 }
 .msg-text { font-size: 13px; color: oklch(36% .06 270); line-height: 1.75; }
+/* Parsed AI sections inside the overlay (same blue headings as the project AI tab) */
+.msg-text .report-section { margin-bottom: 14px; }
+.msg-text .report-section:last-child { margin-bottom: 0; }
+.msg-text .report-section-content p { margin: 0 0 10px; }
+.msg-text .report-section-content p:last-child { margin-bottom: 0; }
+.msg-text .report-section-content ul { margin: 8px 0; padding-left: 20px; }
+.msg-text .report-section-content li { margin: 4px 0; }
+.msg-text .report-section-content ol { margin: 8px 0; padding-left: 20px; }
+.msg-text .report-section-content ol li { margin: 4px 0; }
 .analysis-block {
   background: var(--canvas);
   border: 1px solid var(--line);
@@ -652,44 +661,56 @@
   align-items: flex-start;
 }
 
-/* AI Analysis Sections */
-.analysis-section {
-  margin-bottom: 16px;
-  padding: 14px 16px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-}
-.analysis-section-header {
-  display: inline-flex;
+/* ── View overlay: highlighted report sections (mirrors emails/ai-analysis) ── */
+.v-status-pill {
+  display: none;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 700;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  border-radius: 999px;
   padding: 4px 10px;
-  border-radius: 6px;
-  margin-bottom: 10px;
+  margin-top: 8px;
+  width: fit-content;
 }
-.analysis-section-header i { font-size: 12px; }
-.section-report { background: var(--blue-soft); color: var(--blue); }
-.section-risk { background: oklch(93% .05 25); color: oklch(45% .15 25); }
-.section-mitigation { background: var(--gold-soft); color: oklch(48% .12 78); }
-.section-performance { background: var(--green-soft); color: var(--green); }
-.section-ai-comment { background: var(--purple-soft); color: var(--purple); }
-.analysis-section-content {
-  font-size: 13px;
-  color: oklch(36% .06 270);
-  line-height: 1.75;
+.v-status-pill.show { display: inline-flex; }
+.v-status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.v-status-opened { background: var(--green-soft); color: var(--green); }
+.v-status-delivered { background: oklch(93% .04 220); color: oklch(40% .12 220); }
+.v-status-pending { background: var(--gold-soft); color: oklch(48% .12 78); }
+.v-section { border-radius: 12px; border: 1px solid; overflow: hidden; }
+.v-section-head { padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+.v-section-num {
+  width: 22px; height: 22px; line-height: 22px; text-align: center;
+  border-radius: 7px; font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
 }
-.analysis-section-content ul,
-.analysis-section-content ol {
-  margin: 8px 0 0 0;
-  padding-left: 20px;
-}
-.analysis-section-content li {
-  margin-bottom: 4px;
+.v-section-title { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.v-section-body { padding: 12px 14px 14px; background: var(--surface); }
+.v-blue { border-color: #bfdbfe; background: #eff6ff; }
+.v-blue .v-section-num { background: #2563eb; }
+.v-blue .v-section-title { color: #1d4ed8; }
+.v-violet { border-color: #ddd6fe; background: #f5f3ff; }
+.v-violet .v-section-num { background: #7c3aed; }
+.v-violet .v-section-title { color: #6d28d9; }
+.v-green { border-color: #bbf7d0; background: #f0fdf4; }
+.v-green .v-section-num { background: #059669; }
+.v-green .v-section-title { color: #047857; }
+#v-analysis.analysis-block { background: transparent; border: 0; padding: 0; }
+/* Anti-blowout: long content must wrap, never force tracks wider */
+.detail-item,
+.modal-head-left,
+.v-section-body,
+.msg-text,
+.v-section-head { min-width: 0; }
+.detail-item .value,
+.modal-title,
+.modal-meta,
+.msg-text,
+.v-section-title { overflow-wrap: anywhere; word-break: break-word; }
+@media (max-width: 620px) {
+  .detail-grid { grid-template-columns: 1fr; }
 }
 
 .modal-footer {
@@ -909,6 +930,7 @@
       <div class="modal-head-left">
         <div class="modal-title" id="v-title"></div>
         <div class="modal-meta" id="v-meta"></div>
+        <span class="v-status-pill" id="v-statuspill"></span>
       </div>
       <button class="close-btn" onclick="closeOverlay()">×</button>
     </div>
@@ -920,10 +942,21 @@
           <div class="banner-sub" id="v-subbanner"></div>
         </div>
       </div>
-      <div class="detail-grid" id="v-details"></div>
-      <div class="msg-text" id="v-body"></div>
-      <div class="analysis-block" id="v-analysis">
-        <div class="analysis-label">Project Progress Analysis</div>
+      <div class="v-section v-blue">
+        <div class="v-section-head"><span class="v-section-num">01</span><span class="v-section-title">Project snapshot</span></div>
+        <div class="v-section-body"><div class="detail-grid" id="v-details"></div></div>
+      </div>
+      <div class="v-section v-violet">
+        <div class="v-section-head"><span class="v-section-num">02</span><span class="v-section-title">AI analysis</span></div>
+        <div class="v-section-body"><div class="msg-text" id="v-body"></div></div>
+      </div>
+      <div class="v-section v-green">
+        <div class="v-section-head"><span class="v-section-num">03</span><span class="v-section-title">Progress analysis</span></div>
+        <div class="v-section-body">
+          <div class="analysis-block" id="v-analysis">
+            <div class="analysis-label">Project Progress Analysis</div>
+          </div>
+        </div>
       </div>
       <div class="ai-note">
         <i class="bi bi-info-circle" style="font-size:13px;flex-shrink:0;margin-top:1px;"></i>
@@ -942,70 +975,6 @@
 
 <script>
 let currentEmailId = null;
-
-function parseAiAnalysis(text) {
-  if (!text) return '';
-  
-  const sections = [
-    { key: 'Report', label: 'Report', icon: 'bi-file-text', class: 'section-report' },
-    { key: 'Possible Risk', label: 'Possible Risk', icon: 'bi-exclamation-triangle', class: 'section-risk' },
-    { key: 'Mitigation', label: 'Mitigation', icon: 'bi-shield-check', class: 'section-mitigation' },
-    { key: 'Performance', label: 'Performance', icon: 'bi-graph-up', class: 'section-performance' },
-    { key: 'AI Comment', label: 'AI Comment', icon: 'bi-cpu', class: 'section-ai-comment' }
-  ];
-  
-  let html = '';
-  let remainingText = text;
-  
-  sections.forEach(section => {
-    const startMarker = `[SECTION:${section.key}]`;
-    const endMarker = `[/SECTION]`;
-    const startIdx = remainingText.indexOf(startMarker);
-    
-    if (startIdx === -1) return;
-    
-    const contentStart = startIdx + startMarker.length;
-    const endIdx = remainingText.indexOf(endMarker, contentStart);
-    
-    if (endIdx === -1) return;
-    
-    const content = remainingText.substring(contentStart, endIdx).trim();
-    if (!content) return;
-    
-    // Convert bullet points to HTML list
-    let formattedContent = content
-      .replace(/^\s*[-*]\s+/gm, '<li>')
-      .replace(/<li>/g, '<li>')
-      .replace(/\n<li>/g, '</li><li>')
-      .replace(/<li>$/g, '</li>');
-    
-    // Wrap in ul if it has list items
-    if (formattedContent.includes('<li>')) {
-      formattedContent = '<ul>' + formattedContent + '</ul>';
-    } else {
-      // Convert paragraphs
-      formattedContent = formattedContent
-        .split('\n\n')
-        .filter(p => p.trim())
-        .map(p => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
-        .join('');
-    }
-    
-    html += `
-      <div class="analysis-section">
-        <div class="analysis-section-header ${section.class}">
-          <i class="bi ${section.icon}"></i>
-          <span>${section.label}</span>
-        </div>
-        <div class="analysis-section-content">${formattedContent}</div>
-      </div>
-    `;
-    
-    remainingText = remainingText.substring(endIdx + endMarker.length);
-  });
-  
-  return html || `<div class="analysis-section"><div class="analysis-section-content">${text.replace(/\n/g, '<br>')}</div></div>`;
-}
 
 function applyFilter(filter) {
   const rows = document.querySelectorAll('.message');
@@ -1035,6 +1004,9 @@ function viewMsg(id) {
       document.getElementById('v-title').textContent = m.subject;
       document.getElementById('v-subbanner').textContent = 'Contractor AI Status Report';
       document.getElementById('v-meta').textContent = `From: ${m.from}  ·  Project: ${m.project_title}  ·  ${m.month}`;
+      const statusPill = document.getElementById('v-statuspill');
+      statusPill.className = 'v-status-pill show v-status-' + (m.status || '').toLowerCase();
+      statusPill.textContent = m.status || '';
       document.getElementById('v-details').innerHTML = `
         <div class="detail-item"><span class="label">Project</span><span class="value">${m.project_title}</span></div>
         <div class="detail-item"><span class="label">Location</span><span class="value">${m.project_location}</span></div>
@@ -1042,7 +1014,7 @@ function viewMsg(id) {
         <div class="detail-item"><span class="label">AI Generated</span><span class="value">${m.ai_generated_at}</span></div>
         <div class="detail-item"><span class="label">Email Sent</span><span class="value">${m.generated_at}</span></div>
       `;
-      document.getElementById('v-body').innerHTML = m.body.replace(/\n/g, '<br>');
+      document.getElementById('v-body').innerHTML = m.body_html || m.body.replace(/\n/g, '<br>');
       const plannedPct = parseFloat(m.planned_progress) || 0;
       const actualPct = parseFloat(m.actual_progress) || 0;
       const variance = m.variance;
@@ -1061,8 +1033,6 @@ function viewMsg(id) {
         delayColor = '#10b981';
       }
 
-      // Parse AI analysis sections from m.body (which contains the AI analysis)
-      const analysisHtml = parseAiAnalysis(m.body);
       document.getElementById('v-analysis').innerHTML = `
         <div class="analysis-label">Project Progress Analysis</div>
         <div>
@@ -1075,7 +1045,6 @@ function viewMsg(id) {
         </div>
         <div><div class="metric-row"><span class="metric-label">Delay Percentage</span><span class="metric-val" style="color:${delayColor};">${delayLabel}</span></div></div>
         <div><div class="metric-row"><span class="metric-label">Risk Level</span><span class="metric-val" style="color:${color};">${m.risk_level}</span></div></div>
-        ${analysisHtml}
       `;
       document.getElementById('loadingOverlay').classList.remove('active');
       document.getElementById('viewOverlay').classList.add('open');

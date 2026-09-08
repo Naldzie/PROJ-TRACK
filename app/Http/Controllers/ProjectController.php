@@ -1430,10 +1430,13 @@ class ProjectController extends Controller
      *    (also generates and saves recommendations to ai_solutions)
      * 2. If empty (API failure / insufficient data), fall back to static
      *    template text from AIPredictionPresenter
-     * 3. Return JSON with analysis_text, recommendations, and timestamp
+     * 3. Stage the fresh analysis for the 5-day email review window
+     *    (Email In review tab) instead of sending it immediately. An older
+     *    unsent staged draft for this project is replaced, never stacked.
+     * 4. Return JSON with analysis_text, recommendations, and timestamp
      *
-     * Called by: ai-prediction.blade.php JS (Phase 6.5)
-     * Uses: AIExplanationService, AIPredictionPresenter
+     * Called by: ai-analysis.blade.php JS (Phase 6.5)
+     * Uses: AIExplanationService, AIPredictionPresenter, AIReportSendingService
      */
     public function regenerateAnalysis(
         Request $request,
@@ -1457,7 +1460,8 @@ class ProjectController extends Controller
             $generatedAt = $latest ? $latest->created_at->toDateTimeString() : null;
             $recommendations = $latest->recommendations ?? [];
 
-            $result = $emailService->sendForProject($project);
+            // Hold for the 5-day review window — never auto-send from here.
+            $result = $emailService->stageProjectForReview($project);
             $emailStatus = [
                 'success' => $result['success'],
                 'message' => $result['message'],

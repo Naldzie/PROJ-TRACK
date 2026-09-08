@@ -43,7 +43,7 @@
   font-family: inherit;
   transition: border-color .2s, box-shadow .2s;
 }
-.compose-textarea { min-height: 190px; resize: vertical; line-height: 1.65; }
+.compose-textarea { min-height: 140px; resize: vertical; line-height: 1.65; }
 .compose-input:focus,
 .compose-select:focus,
 .compose-textarea:focus {
@@ -95,6 +95,49 @@
   color: oklch(98% .008 270);
 }
 .btn-accent:hover { background: oklch(45% .18 265); }
+
+/* ── Compose modal: AI-report styling (mirrors emails/ai-analysis) ── */
+#composeOverlay .modal-box { width: 640px; overflow: hidden; }
+.compose-banner {
+  background: linear-gradient(120deg, oklch(25% .045 275) 60%, oklch(35% .09 290));
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.compose-banner-icon {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  display: grid; place-items: center;
+  box-shadow: 0 4px 12px rgb(0 0 0 / .3);
+}
+.compose-banner-icon i { color: #fff; font-size: 19px; }
+.compose-banner .modal-title { color: #fff; font-size: 14px; }
+.compose-banner .modal-meta { color: rgb(255 255 255 / .65); font-size: 11px; }
+.compose-banner .close-btn { color: rgb(255 255 255 / .7); }
+.compose-banner .close-btn:hover { color: #fff; }
+.compose-section { border-radius: 12px; border: 1px solid; overflow: hidden; }
+.compose-section-head { padding: 9px 14px; display: flex; align-items: center; gap: 8px; }
+.compose-section-num {
+  width: 22px; height: 22px; line-height: 22px; text-align: center;
+  border-radius: 7px; font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
+}
+.compose-section-title { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.compose-section-body { padding: 12px 14px 14px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+.compose-section-body .compose-group { margin-bottom: 0; }
+.compose-blue { border-color: #bfdbfe; background: #eff6ff; }
+.compose-blue .compose-section-num { background: #2563eb; }
+.compose-blue .compose-section-title { color: #1d4ed8; }
+.compose-violet { border-color: #ddd6fe; background: #f5f3ff; }
+.compose-violet .compose-section-num { background: #7c3aed; }
+.compose-violet .compose-section-title { color: #6d28d9; }
+#composeOverlay .btn-accent {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  border: none;
+  box-shadow: 0 4px 12px rgb(37 99 235 / .35);
+}
+#composeOverlay .btn-accent:hover { filter: brightness(1.08); }
 #v-actions { display: contents; }
 .v-action-btn {
   display: inline-flex;
@@ -106,7 +149,8 @@
 <!-- COMPOSE / EDIT DRAFT MODAL -->
 <div class="overlay" id="composeOverlay">
   <div class="modal-box" style="width:600px;">
-    <div class="modal-head">
+    <div class="compose-banner">
+      <div class="compose-banner-icon"><i class="bi bi-cpu"></i></div>
       <div class="modal-head-left">
         <div class="modal-title" id="c-title">Compose message</div>
         <div class="modal-meta" id="c-meta">Saved as a draft — editable until you send it</div>
@@ -115,31 +159,41 @@
     </div>
     <div class="modal-body">
       <div class="compose-error" id="cError"></div>
-      <div class="compose-group">
-        <label class="compose-field-label" for="cProject">Project · determines the recipient</label>
-        <select class="compose-select" id="cProject" required>
-          <option value="">— Select project —</option>
-          @foreach($projects as $p)
-          <option value="{{ $p->id }}" data-email="{{ $p->contractor?->user?->email ?? '' }}">
-            {{ $p->code }} — {{ \Illuminate\Support\Str::limit($p->title, 40) }}
-          </option>
-          @endforeach
-        </select>
+      <div class="compose-section compose-blue">
+        <div class="compose-section-head"><span class="compose-section-num">01</span><span class="compose-section-title">Details</span></div>
+        <div class="compose-section-body">
+          <div class="compose-group">
+            <label class="compose-field-label" for="cProject">Project · determines the recipient</label>
+            <select class="compose-select" id="cProject" required>
+              <option value="">— Select project —</option>
+              @foreach($projects as $p)
+              <option value="{{ $p->id }}" data-email="{{ $p->contractor?->user?->email ?? '' }}">
+                {{ $p->code }} — {{ \Illuminate\Support\Str::limit($p->title, 40) }}
+              </option>
+              @endforeach
+            </select>
+          </div>
+          <div class="compose-group">
+            <label class="compose-field-label">Recipient</label>
+            <div class="compose-recipient"><i class="bi bi-envelope-fill"></i><span id="cRecipient">Select a project first</span></div>
+          </div>
+          <div class="compose-group">
+            <label class="compose-field-label" for="cSubject">Subject</label>
+            <input type="text" class="compose-input" id="cSubject" maxlength="255" placeholder="e.g. Project Status Update — August 2026">
+          </div>
+        </div>
       </div>
-      <div class="compose-group">
-        <label class="compose-field-label">Recipient</label>
-        <div class="compose-recipient"><i class="bi bi-envelope-fill"></i><span id="cRecipient">Select a project first</span></div>
-      </div>
-      <div class="compose-group">
-        <label class="compose-field-label" for="cSubject">Subject</label>
-        <input type="text" class="compose-input" id="cSubject" maxlength="255" placeholder="e.g. Project Status Update — August 2026">
-      </div>
-      <div class="compose-group" style="margin-bottom:0;">
-        <label class="compose-field-label" for="cBody">Message</label>
-        <textarea class="compose-textarea" id="cBody" placeholder="Write the message you want to send to the contractor…"></textarea>
+      <div class="compose-section compose-violet">
+        <div class="compose-section-head"><span class="compose-section-num">02</span><span class="compose-section-title">Message</span></div>
+        <div class="compose-section-body">
+          <div class="compose-group" style="margin-bottom:0;">
+            <label class="compose-field-label" for="cBody">Message body · supports the same content as the AI report email</label>
+            <textarea class="compose-textarea" id="cBody" placeholder="Write the message you want to send to the contractor…"></textarea>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="modal-body" style="padding-top:0;">
+    <div class="modal-body" style="padding-top:0;flex:none;">
       <div class="compose-note">
         <i class="bi bi-info-circle" style="font-size:13px;flex-shrink:0;margin-top:1px;"></i>
         <span>You can save this as a draft and come back to edit or delete it anytime. Once sent, the message becomes permanent and read-only.</span>

@@ -452,6 +452,46 @@ body::after {
     cursor: not-allowed;
     opacity: 0.4;
 }
+
+/* ── PUBLIC PREVIEW BUTTON (secondary, below Google sign-in) ── */
+.preview-btn {
+    width: 100%;
+    max-width: 360px;
+    min-height: 46px;
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 10px 20px;
+    background: var(--bg-light);
+    border: 1px dashed rgba(37,99,235,0.35);
+    border-radius: 14px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration: none;
+    transition:
+        transform 0.22s ease,
+        box-shadow 0.22s ease,
+        border-color 0.22s ease,
+        background 0.22s ease;
+}
+.preview-btn:hover {
+    transform: translateY(-2px);
+    background: var(--bg-blue);
+    border-color: rgba(37,99,235,0.6);
+    border-style: solid;
+    color: #1D4ED8;
+    box-shadow: 0 10px 24px -8px rgba(37,99,235,0.25);
+}
+.preview-btn:focus-visible {
+    outline: 3px solid rgba(37,99,235,0.35);
+    outline-offset: 2px;
+}
+.preview-btn i { font-size: 15px; }
+.preview-btn .ext { font-size: 11px; opacity: 0.6; }
 .google-content {
     display: flex;
     align-items: center;
@@ -902,6 +942,13 @@ body::after {
                 <span>Continue with Google account</span>
             </div>
         </button>
+
+        <!-- PUBLIC WARRANTY PREVIEW (no sign-in required, opens in new tab) -->
+        <a href="{{ route('warranty.preview.public') }}" target="_blank" rel="noopener" class="preview-btn anim st7" aria-label="Preview warranty records without signing in">
+            <i class="bi bi-file-earmark-text"></i>
+            <span>Preview Warranty Records</span>
+            <i class="bi bi-box-arrow-up-right ext"></i>
+        </a>
 
         <div class="footer-note anim st7">
             <i class="bi bi-info-circle"></i> Authorized personnel only &mdash; access is logged

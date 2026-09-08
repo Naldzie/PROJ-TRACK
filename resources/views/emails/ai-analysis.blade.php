@@ -14,6 +14,45 @@
         .analysis-text { font-size: 13px; color: #475569; line-height: 1.8; margin: 0 0 20px; }
         .analysis-block { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 20px; }
         .analysis-label { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8; margin-bottom: 12px; }
+
+        /* ── Highlighted report sections (one accent color per section) ── */
+        .section { border-radius: 12px; padding: 0; margin-bottom: 18px; overflow: hidden; border: 1px solid; }
+        .section-head { padding: 12px 16px; display: block; }
+        .section-num {
+            display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center;
+            border-radius: 7px; font-size: 11px; font-weight: 800; color: #ffffff; margin-right: 8px;
+        }
+        .section-title { font-size: 12px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+        .section-body { padding: 14px 16px 16px; background: #ffffff; }
+        .section-blue { border-color: #bfdbfe; background: #eff6ff; }
+        .section-blue .section-num { background: #2563eb; }
+        .section-blue .section-title { color: #1d4ed8; }
+        .section-violet { border-color: #ddd6fe; background: #f5f3ff; }
+        .section-violet .section-num { background: #7c3aed; }
+        .section-violet .section-title { color: #6d28d9; }
+        .section-amber { border-color: #fde68a; background: #fffbeb; }
+        .section-amber .section-num { background: #d97706; }
+        .section-amber .section-title { color: #b45309; }
+        .section-green { border-color: #bbf7d0; background: #f0fdf4; }
+        .section-green .section-num { background: #059669; }
+        .section-green .section-title { color: #047857; }
+        .info-row { font-size: 13px; color: #334155; padding: 7px 0; border-bottom: 1px dashed #e2e8f0; }
+        .info-row:last-child { border-bottom: none; }
+        .info-chip {
+            display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+            text-transform: uppercase; color: #1d4ed8; background: #dbeafe;
+            border-radius: 6px; padding: 3px 8px; margin-right: 8px; min-width: 62px; text-align: center;
+        }
+        .rec-item { padding: 10px 0; border-bottom: 1px dashed #fde68a; }
+        .rec-item:last-child { border-bottom: none; padding-bottom: 0; }
+        .rec-item:first-child { padding-top: 0; }
+        .rec-pill {
+            display: inline-block; font-size: 10px; font-weight: 800; color: #fff;
+            border-radius: 20px; padding: 2px 9px; margin-right: 7px;
+        }
+        .rec-cat { font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #b45309; }
+        .rec-msg { font-size: 13px; color: #44403c; line-height: 1.6; margin: 5px 0 0; }
+        .rec-why { font-size: 12px; color: #78716c; line-height: 1.6; margin: 4px 0 0; }
         .metric-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 4px; }
         .metric-label { color: #64748b; }
         .metric-val { font-weight: 600; color: #1e293b; }
@@ -75,56 +114,95 @@
                 </p>
 
                 @if(!empty($tracking->is_edited))
-                <div class="footer-note" style="background:#fefce8;border-color:#fde68a;color:#854d0e;margin-top:0;">
+                <div class="footer-note" style="background:#fefce8;border-color:#fde68a;color:#854d0e;margin-top:0;margin-bottom:18px;">
                     <strong>&#9998; Revised Message</strong><br>
                     This message was reviewed and edited by the PROJ-TRACK team{{ $tracking->edited_at ? ' on ' . $tracking->edited_at->format('F d, Y') : '' }}.
                     The content below replaces any earlier copy you may have received.
                 </div>
                 @endif
 
-                <p class="analysis-text">
-                    <strong>Project:</strong> {{ $project->title ?? 'N/A' }}<br>
-                    <strong>Location:</strong> {{ $project->location ?? 'N/A' }}<br>
-                    <strong>Status:</strong> {{ $project->status ?? 'N/A' }}
-                </p>
+                {{-- 01 · Project snapshot (blue highlight) --}}
+                <div class="section section-blue">
+                    <div class="section-head"><span class="section-num">01</span><span class="section-title">Project Snapshot</span></div>
+                    <div class="section-body">
+                        <div class="info-row"><span class="info-chip">Project</span><strong>{{ $project->title ?? 'N/A' }}</strong></div>
+                        <div class="info-row"><span class="info-chip">Location</span>{{ $project->location ?? 'N/A' }}</div>
+                        <div class="info-row"><span class="info-chip">Status</span>{{ $project->status ?? 'N/A' }}</div>
+                    </div>
+                </div>
 
                 @php
                     $parser = app(\App\Services\AiReportParser::class);
                     $sourceContent = !empty($tracking->body) ? $tracking->body : ($aiSolution->analysis_text ?? '');
                     $analysisHtml = $parser->parseToHtml($sourceContent);
+                    $emailRecs = collect($aiSolution->recommendations ?? [])
+                        ->filter(fn ($r) => !empty($r['message'] ?? null))
+                        ->sortBy(fn ($r) => (int) ($r['priority'] ?? 5))
+                        ->take(5)
+                        ->values();
                 @endphp
 
-                <div class="analysis-block">
-                    <div class="analysis-label">AI-Generated Analysis</div>
-                    <div class="report-content">
-                        {!! $analysisHtml !!}
+                {{-- 02 · AI-generated analysis (violet highlight) --}}
+                <div class="section section-violet">
+                    <div class="section-head"><span class="section-num">02</span><span class="section-title">AI-Generated Analysis</span></div>
+                    <div class="section-body">
+                        <div class="report-content">
+                            {!! $analysisHtml !!}
+                        </div>
                     </div>
                 </div>
 
-                <div class="analysis-block">
-                    <div class="analysis-label">Project Progress Analysis</div>
-                    <div>
-                        <div class="metric-row">
-                            <span class="metric-label">Planned Progress</span>
-                            <span class="metric-val">{{ $plannedProgress }}</span>
+                {{-- 03 · Recommended actions (amber highlight, only when present) --}}
+                @if($emailRecs->isNotEmpty())
+                <div class="section section-amber">
+                    <div class="section-head"><span class="section-num">03</span><span class="section-title">Recommended Actions</span></div>
+                    <div class="section-body">
+                        @foreach($emailRecs as $rec)
+                        @php
+                            $prio = (int) ($rec['priority'] ?? 5);
+                            $prioColor = $prio <= 1 ? '#ef4444' : ($prio === 2 ? '#f97316' : '#64748b');
+                        @endphp
+                        <div class="rec-item">
+                            <div>
+                                <span class="rec-pill" style="background:{{ $prioColor }};">P{{ $prio }}</span><span class="rec-cat">{{ $rec['category'] ?? 'General' }}</span>
+                            </div>
+                            <p class="rec-msg">{{ $rec['message'] }}</p>
+                            @if(!empty($rec['reason'] ?? null))
+                            <p class="rec-why">Why: {{ $rec['reason'] }}</p>
+                            @endif
                         </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width:{{ $plannedProgress }};background:#3b82f6;"></div>
-                        </div>
+                        @endforeach
                     </div>
-                    <div>
-                        <div class="metric-row">
-                            <span class="metric-label">Actual Progress</span>
-                            <span class="metric-val">{{ $actualProgress }}</span>
+                </div>
+                @endif
+
+                {{-- 04 · Progress analysis (green highlight) --}}
+                <div class="section section-green">
+                    <div class="section-head"><span class="section-num">{{ $emailRecs->isNotEmpty() ? '04' : '03' }}</span><span class="section-title">Project Progress Analysis</span></div>
+                    <div class="section-body">
+                        <div>
+                            <div class="metric-row">
+                                <span class="metric-label">Planned Progress</span>
+                                <span class="metric-val">{{ $plannedProgress }}</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width:{{ $plannedProgress }};background:#3b82f6;"></div>
+                            </div>
                         </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width:{{ $actualProgress }};background:{{ $varianceColor }};"></div>
+                        <div>
+                            <div class="metric-row">
+                                <span class="metric-label">Actual Progress</span>
+                                <span class="metric-val">{{ $actualProgress }}</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width:{{ $actualProgress }};background:{{ $varianceColor }};"></div>
+                            </div>
                         </div>
-                    </div>
-                    <div style="text-align:center;">
-                        <span class="variance-badge" style="background:{{ $varianceColor }};">
-                            {{ $varianceLabel }}
-                        </span>
+                        <div style="text-align:center;">
+                            <span class="variance-badge" style="background:{{ $varianceColor }};">
+                                {{ $varianceLabel }}
+                            </span>
+                        </div>
                     </div>
                 </div>
 

@@ -87,32 +87,139 @@ class RatingController extends Controller
     {
         $request->validate(['project_id' => 'required|integer|exists:projects,id']);
 
-        $project = Project::with('contractor', 'aiSolutions')->findOrFail($request->project_id);
+        $project = Project::with(['contractor', 'aiSolutions'])->findOrFail($request->project_id);
         $aiSolution = $project->aiSolutions()->latest('created_at')->first();
-
-        if (!$aiSolution) {
-            return response()->json(['error' => 'No AI analysis found for this project']);
-        }
-
-        $snapshot = $aiSolution->regression_snapshot;
-        $predictedEnd = $snapshot['predicted_end_progress'] ?? null;
-        $plannedEnd = $snapshot['original_planned_progress'] ?? 100;
-        $variance = $snapshot['variance'] ?? 0;
-        $rSquared = $snapshot['r_squared'] ?? 0;
-        $analysisText = $aiSolution->analysis_text ?? '';
 
         $actual = $project->getProgressPercentage();
         $lastBaseline = $project->baselineSchedules()->latest('planned_date')->first();
         $planned = $lastBaseline ? (float) $lastBaseline->planned_progress_percent : 0;
         $delayPct = $planned > 0 ? round((($planned - $actual) / $planned) * 100, 1) : 0;
 
-        $rating = $this->computeRating($variance, $delayPct, $rSquared);
-        $review = $this->generateReview($project, $rating, $variance, $delayPct, $rSquared, $analysisText);
+        // Extension + issue context for a project-specific comment (works with or without AI data).
+        $extCount = $project->extensions()->where('status', 'approved')->count();
+        $issueCount = method_exists($project, 'issues') ? $project->issues()->count() : 0;
+
+        if ($aiSolution) {
+            $snapshot = $aiSolution->regression_snapshot ?? [];
+            $predictedEnd = $snapshot['predicted_end_progress'] ?? null;
+            $plannedEnd = $snapshot['original_planned_progress'] ?? 100;
+            $variance = $snapshot['variance'] ?? 0;
+            $rSquared = $snapshot['r_squared'] ?? 0;
+            $analysisText = $aiSolution->analysis_text ?? '';
+
+            $rating = $this->computeRating((float) $variance, (float) $delayPct, (float) $rSquared);
+            $review = $this->generateReview($project, $rating, (float) $variance, (float) $delayPct, (float) $rSquared, $analysisText, $extCount, $issueCount);
+
+            return response()->json([
+                'rating' => $rating,
+                'review' => $review,
+                'ai_solution_id' => $aiSolution->id,
+                'project_title' => $project->title,
+                'details' => [
+                    'actual' => $actual,
+                    'planned' => $planned,
+                    'delay_pct' => $delayPct,
+                    'variance' => $variance,
+                    'r_squared' => $rSquared,
+                    'extensions' => $extCount,
+                    'issues' => $issueCount,
+                    'status' => $project->status,
+                    'source' => 'ai',
+                ],
+            ]);
+        }
+
+        // Fallback: no AI solution yet — still analyze this specific project
+        // from progress vs baseline + extensions so AI Review always comments.
+        $variance = $planned > 0 ? round($actual - $planned, 1) : 0;
+        $rSquared = 0;
+        $rating = $this->computeRating((float) $variance, (float) $delayPct, 0);
+        $review = $this->generateReview($project, $rating, (float) $variance, (float) $delayPct, 0, '', $extCount, $issueCount);
 
         return response()->json([
             'rating' => $rating,
             'review' => $review,
-            'ai_solution_id' => $aiSolution->id,
+            'ai_solution_id' => null,
+            'project_title' => $project->title,
+            'details' => [
+                'actual' => $actual,
+                'planned' => $planned,
+                'delay_pct' => $delayPct,
+                'variance' => $variance,
+                'r_squared' => null,
+                'extensions' => $extCount,
+                'issues' => $issueCount,
+                'status' => $project->status,
+                'source' => 'fallback',
+            ],
+        ]);
+    }
+
+    /**
+     * Contractor overview AI comment.
+     *
+     * POST /admin/rating/contractor-overview
+     *
+     * Analyzes ALL projects of one contractor (counts, avg star rating,
+     * on-time %, delays, extensions, trend) and returns a short AI-style
+     * performance comment for the Overview card in rating.blade.php.
+     */
+    public function contractorOverview(Request $request)
+    {
+        $request->validate(['contractor_id' => 'required|integer|exists:contractors,id']);
+
+        $contractor = Contractor::with(['projects' => function ($q) {
+            $q->whereIn('status', ['Ongoing', 'Completed'])->with('aiSolutions');
+        }])->findOrFail($request->contractor_id);
+
+        $name = $contractor->company_name ?? $contractor->contractor_name ?? ($contractor->user->name ?? 'Contractor #' . $contractor->id);
+
+        $total = $contractor->projects->count();
+        $completed = $contractor->projects->where('status', 'Completed')->count();
+        $ongoing = $contractor->projects->where('status', 'Ongoing')->count();
+
+        $avgRating = ContractorRating::where('contractor_id', $contractor->id)->avg('rating');
+        $ratedCount = ContractorRating::where('contractor_id', $contractor->id)->count();
+        $avgRating = $avgRating !== null ? round((float) $avgRating, 1) : null;
+
+        $perfRating = $contractor->performance_rating;
+        $onTimePct = $contractor->on_time_delivery_pct !== null ? (float) $contractor->on_time_delivery_pct : null;
+        $avgDelay = $contractor->avg_delay_days !== null ? (float) $contractor->avg_delay_days : null;
+        $extCount = (int) ($contractor->total_extensions_count ?? 0);
+        $extDays = $contractor->total_extension_days !== null ? (float) $contractor->total_extension_days : null;
+        $avgExtPerProject = $completed > 0 ? round($extCount / $completed, 1) : null;
+
+        $perfService = app(ContractorPerformanceService::class);
+        $trend = $perfService->getPerformanceTrend($contractor);
+        $trendDir = 'stable';
+        $trendDelta = null;
+        if (count($trend) >= 2) {
+            $trendDelta = round($trend[count($trend) - 1]['on_time_pct'] - $trend[0]['on_time_pct'], 1);
+            $trendDir = $trendDelta > 0 ? 'improving' : ($trendDelta < -2 ? 'declining' : 'stable');
+        }
+
+        $comment = $this->generateContractorOverview(
+            $name, $total, $completed, $ongoing, $avgRating, $ratedCount,
+            $perfRating, $onTimePct, $avgDelay, $extCount, $extDays,
+            $avgExtPerProject, $trendDir, $trendDelta, count($trend)
+        );
+
+        return response()->json([
+            'comment' => $comment,
+            'metrics' => [
+                'total' => $total,
+                'completed' => $completed,
+                'ongoing' => $ongoing,
+                'avg_rating' => $avgRating,
+                'rated_count' => $ratedCount,
+                'performance_rating' => $perfRating,
+                'on_time_pct' => $onTimePct,
+                'avg_delay_days' => $avgDelay,
+                'extensions' => $extCount,
+                'extension_days' => $extDays,
+                'trend' => $trendDir,
+                'trend_delta' => $trendDelta,
+            ],
         ]);
     }
 
@@ -136,10 +243,17 @@ class RatingController extends Controller
         return response()->json(['success' => true, 'message' => 'Rating saved']);
     }
 
+    /**
+     * Auto-rate all unrated COMPLETED projects.
+     *
+     * Ongoing projects are never auto-rated — their S-curve is still moving,
+     * so any rating would be premature. This matches the UI, where the manual
+     * Rate button is disabled until a project is Completed.
+     */
     public function autoRateAll()
     {
         $contractors = Contractor::with(['projects' => function ($q) {
-            $q->whereIn('status', ['Ongoing', 'Completed'])->with('aiSolutions');
+            $q->where('status', 'Completed')->with('aiSolutions');
         }])->get();
 
         $rated = 0;
@@ -232,18 +346,113 @@ class RatingController extends Controller
         return 1;
     }
 
-    private function generateReview($project, int $rating, float $variance, float $delayPct, float $rSquared, string $analysisText): string
+    private function generateReview($project, int $rating, float $variance, float $delayPct, float $rSquared, string $analysisText, int $extCount = 0, int $issueCount = 0): string
     {
         $name = $project->contractor->company_name ?? $project->contractor->contractor_name ?? 'Contractor';
+        $title = $project->title ?? 'this project';
+        $status = $project->status ?? 'Ongoing';
+        $actual = $project->getProgressPercentage();
+
+        // Project-specific context clause (extensions / issues).
+        $context = '';
+        if ($extCount > 0 || $issueCount > 0) {
+            $bits = [];
+            if ($extCount > 0) {
+                $bits[] = "{$extCount} approved extension" . ($extCount === 1 ? '' : 's');
+            }
+            if ($issueCount > 0) {
+                $bits[] = "{$issueCount} recorded issue" . ($issueCount === 1 ? '' : 's');
+            }
+            $context = ' Project record shows ' . implode(' and ', $bits) . '.';
+        }
+
+        $confidence = $rSquared > 0
+            ? ' Model confidence is ' . ($rSquared > 0.7 ? 'strong' : ($rSquared > 0.5 ? 'moderate' : 'weak')) . ' (R² = ' . number_format($rSquared, 3) . ').'
+            : ' No regression model is available for this project yet, so this assessment is based on actual vs planned progress.';
 
         $parts = [
-            5 => "Exceptional performance by {$name}. Variance of {$variance}% indicates work ahead of schedule. Model confidence is strong (R² = " . number_format($rSquared, 3) . "). Recommended for future high-priority projects.",
-            4 => "Good performance from {$name}. Minimal variance ({$variance}%) with delay of only {$delayPct}%. Model shows reasonable fit (R² = " . number_format($rSquared, 3) . "). Suitable for continued engagement.",
-            3 => "Acceptable performance by {$name}. Delay of {$delayPct}% (variance {$variance}%) falls within tolerable range. Model fit is moderate (R² = " . number_format($rSquared, 3) . "). Some process improvements recommended.",
-            2 => "Below-average performance. Delay of {$delayPct}% (variance {$variance}%) exceeds acceptable thresholds. Close monitoring and corrective action plan advised before future engagement.",
-            1 => "Critical performance issues identified. Delay of {$delayPct}% with variance of {$variance}% indicates serious schedule risks. Thorough review of project management processes required.",
+            5 => "Exceptional performance by {$name} on \"{$title}\" ({$status}, {$actual}% complete). Variance of {$variance}% indicates work ahead of or on schedule with a delay of {$delayPct}%.{$context}{$confidence} Recommended for future high-priority projects.",
+            4 => "Good performance from {$name} on \"{$title}\" ({$status}, {$actual}% complete). Minimal variance ({$variance}%) with a delay of only {$delayPct}%.{$context}{$confidence} Suitable for continued engagement.",
+            3 => "Acceptable performance by {$name} on \"{$title}\" ({$status}, {$actual}% complete). Delay of {$delayPct}% (variance {$variance}%) falls within a tolerable range.{$context}{$confidence} Some process improvements recommended.",
+            2 => "Below-average performance on \"{$title}\" ({$status}, {$actual}% complete). Delay of {$delayPct}% (variance {$variance}%) exceeds acceptable thresholds.{$context}{$confidence} Close monitoring and a corrective action plan are advised before future engagement.",
+            1 => "Critical performance issues on \"{$title}\" ({$status}, {$actual}% complete). Delay of {$delayPct}% with variance of {$variance}% indicates serious schedule risk.{$context}{$confidence} A thorough review of project management processes is required.",
         ];
 
         return $parts[$rating] ?? $parts[3];
+    }
+
+    /**
+     * Build the contractor-level AI overview comment.
+     *
+     * Rule-based narrative over ALL projects of the contractor so the
+     * Overview card reads as an AI performance summary, not a static label.
+     */
+    private function generateContractorOverview(
+        string $name, int $total, int $completed, int $ongoing,
+        ?float $avgRating, int $ratedCount,
+        $perfRating, ?float $onTimePct, ?float $avgDelay,
+        int $extCount, ?float $extDays, ?float $avgExtPerProject,
+        string $trendDir, ?float $trendDelta, int $trendPoints
+    ): string {
+        if ($total === 0) {
+            return "{$name} has no projects in scope yet, so there is no performance history to assess. Assign a project first, then return here for an AI performance summary.";
+        }
+
+        $sentences = [];
+        $sentences[] = "{$name} handles {$total} project" . ($total === 1 ? '' : 's')
+            . " ({$completed} completed, {$ongoing} ongoing).";
+
+        if ($avgRating !== null && $ratedCount > 0) {
+            $tone = $avgRating >= 4.5 ? 'an exceptional track record'
+                : ($avgRating >= 3.5 ? 'a solid track record'
+                : ($avgRating >= 2.5 ? 'a mixed track record' : 'a concerning track record'));
+            $sentences[] = "Across {$ratedCount} rated project" . ($ratedCount === 1 ? '' : 's')
+                . ", the average rating is {$avgRating}/5 — {$tone}.";
+        } else {
+            $sentences[] = 'None of these projects have a star rating yet, so rate at least one completed project to sharpen this assessment.';
+        }
+
+        if ($onTimePct !== null && $completed > 0) {
+            $delivery = $onTimePct >= 90 ? 'excellent on-time delivery'
+                : ($onTimePct >= 80 ? 'reliable delivery'
+                : ($onTimePct >= 70 ? 'moderate schedule discipline' : 'weak schedule discipline'));
+            $delayTxt = $avgDelay !== null ? " with an average delay of {$avgDelay} days per completed project" : '';
+            $sentences[] = "On-time delivery is {$onTimePct}% ({$delivery}){$delayTxt}.";
+        } elseif ($completed === 0) {
+            $sentences[] = 'All projects are still ongoing, so on-time delivery will be measurable once the first project completes.';
+        }
+
+        if ($completed > 0 && $extCount > 0) {
+            $reliance = ($avgExtPerProject ?? 0) >= 1 ? 'heavy reliance on extensions'
+                : (($avgExtPerProject ?? 0) >= 0.5 ? 'moderate use of extensions' : 'light use of extensions');
+            $daysTxt = $extDays !== null ? ", totalling {$extDays} days" : '';
+            $sentences[] = "Extension history shows {$extCount} approved extension" . ($extCount === 1 ? '' : 's')
+                . " across completed work{$daysTxt} — {$reliance}.";
+        } elseif ($completed > 0) {
+            $sentences[] = 'No approved extensions on completed work, which signals good initial scheduling.';
+        }
+
+        if ($trendPoints >= 2 && $trendDelta !== null) {
+            if ($trendDir === 'improving') {
+                $sentences[] = "Trend is improving (+{$trendDelta}% on-time over {$trendPoints} completions) — recent projects finish more reliably than earlier ones.";
+            } elseif ($trendDir === 'declining') {
+                $sentences[] = "Trend is declining ({$trendDelta}% on-time over {$trendPoints} completions) — recent projects are slipping, so closer monitoring is advised.";
+            } else {
+                $sentences[] = "Trend is stable across {$trendPoints} completions — performance is consistent.";
+            }
+        }
+
+        // Closing recommendation.
+        if (($avgRating ?? 0) >= 4 && ($onTimePct ?? 100) >= 80) {
+            $sentences[] = 'Recommendation: prioritize this contractor for upcoming high-priority work.';
+        } elseif (($avgRating ?? 3) <= 2 || ($onTimePct ?? 100) < 50) {
+            $sentences[] = 'Recommendation: review project management practices before awarding further work.';
+        } elseif ($ongoing > 0) {
+            $sentences[] = 'Recommendation: keep monitoring the ongoing project(s) — they will decide whether this positive standing holds.';
+        } else {
+            $sentences[] = 'Recommendation: suitable for continued engagement with standard oversight.';
+        }
+
+        return implode(' ', $sentences);
     }
 }

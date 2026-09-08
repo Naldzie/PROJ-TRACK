@@ -496,7 +496,8 @@
  .tag-ai { background: var(--purple-soft); color: var(--purple); }
  .tag-date { background: var(--blue-soft); color: oklch(45% .15 265); }
  .tag-opened { background: var(--green-soft); color: var(--green); }
- .tag-pending { background: var(--gold-soft); color: oklch(48% .12 78); }
+  .tag-pending { background: var(--gold-soft); color: oklch(48% .12 78); }
+  .tag-review { background: oklch(92% .06 265); color: oklch(45% .16 265); border: 1px solid oklch(78% .1 265); }
  .tag-project { background: var(--canvas); color: var(--muted); border: 1px solid var(--line); font-weight: 600; }
  .tag-delivered { background: oklch(93% .04 220); color: oklch(40% .12 220); }
  .tag-draft { background: oklch(93% .05 304); color: var(--purple); border: 1px dashed oklch(75% .1 304); }
@@ -571,6 +572,7 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 .overlay.open { display: flex; }
 .modal-box {
@@ -579,8 +581,7 @@
   border: 1px solid var(--line);
   width: 580px;
   max-width: 100%;
-  max-height: 88vh;
-  overflow-y: auto;
+  margin: auto;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-md);
@@ -609,7 +610,7 @@
   flex-shrink: 0;
 }
 .close-btn:hover { color: var(--muted); }
-.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .email-banner {
   background: oklch(25% .045 275);
   border-radius: 10px;
@@ -635,6 +636,20 @@
   grid-template-columns: 1fr 1fr;
   gap: 8px 16px;
 }
+/* Anti-blowout: long emails/subjects/pills must wrap, never force tracks wider */
+.detail-item,
+.modal-head-left,
+.v-section-body,
+.msg-text,
+.v-section-head { min-width: 0; }
+.detail-item .value,
+.modal-title,
+.modal-meta,
+.msg-text,
+.v-section-title { overflow-wrap: anywhere; word-break: break-word; }
+@media (max-width: 620px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
 .detail-item {
   display: flex;
   flex-direction: column;
@@ -653,6 +668,15 @@
   color: var(--ink);
 }
 .msg-text { font-size: 13px; color: oklch(36% .06 270); line-height: 1.75; }
+/* Parsed AI sections inside the overlay (same blue headings as the project AI tab) */
+.msg-text .report-section { margin-bottom: 14px; }
+.msg-text .report-section:last-child { margin-bottom: 0; }
+.msg-text .report-section-content p { margin: 0 0 10px; }
+.msg-text .report-section-content p:last-child { margin-bottom: 0; }
+.msg-text .report-section-content ul { margin: 8px 0; padding-left: 20px; }
+.msg-text .report-section-content li { margin: 4px 0; }
+.msg-text .report-section-content ol { margin: 8px 0; padding-left: 20px; }
+.msg-text .report-section-content ol li { margin: 4px 0; }
 .analysis-block {
   background: var(--canvas);
   border: 1px solid var(--line);
@@ -702,6 +726,50 @@
   gap: 8px;
   align-items: flex-start;
 }
+
+/* ── View overlay: highlighted report sections (mirrors emails/ai-analysis) ── */
+.v-status-pill {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  width: fit-content;
+}
+.v-status-pill.show { display: inline-flex; }
+.v-status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.v-status-draft { background: oklch(93% .05 304); color: var(--purple); border: 1px dashed oklch(75% .1 304); }
+.v-status-review { background: oklch(92% .06 265); color: oklch(45% .16 265); border: 1px solid oklch(78% .1 265); }
+.v-status-opened { background: var(--green-soft); color: var(--green); }
+.v-status-delivered { background: oklch(93% .04 220); color: oklch(40% .12 220); }
+.v-status-pending { background: var(--gold-soft); color: oklch(48% .12 78); }
+.v-section { border-radius: 12px; border: 1px solid; overflow: hidden; }
+.v-section-head { padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+.v-section-num {
+  width: 22px; height: 22px; line-height: 22px; text-align: center;
+  border-radius: 7px; font-size: 11px; font-weight: 800; color: #fff; flex-shrink: 0;
+}
+.v-section-title { font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.v-section-body { padding: 12px 14px 14px; background: var(--surface); }
+.v-blue { border-color: #bfdbfe; background: #eff6ff; }
+.v-blue .v-section-num { background: #2563eb; }
+.v-blue .v-section-title { color: #1d4ed8; }
+.v-violet { border-color: #ddd6fe; background: #f5f3ff; }
+.v-violet .v-section-num { background: #7c3aed; }
+.v-violet .v-section-title { color: #6d28d9; }
+.v-amber { border-color: #fde68a; background: #fffbeb; }
+.v-amber .v-section-num { background: #d97706; }
+.v-amber .v-section-title { color: #b45309; }
+.v-green { border-color: #bbf7d0; background: #f0fdf4; }
+.v-green .v-section-num { background: #059669; }
+.v-green .v-section-title { color: #047857; }
+#v-analysis.analysis-block { background: transparent; border: 0; padding: 0; }
+#v-revised { font-size: 12px; color: #854d0e; line-height: 1.6; }
 .modal-footer {
   padding: 12px 18px;
   border-top: 1px solid var(--line);
@@ -829,7 +897,8 @@
     <div class="toolbar">
       <div class="tabs">
         <button class="tab active" data-filter="all">All <span>({{ $emails->total() }})</span></button>
-        <button class="tab" data-filter="drafts">Drafts</button>
+        <button class="tab" data-filter="drafts">Drafts <span>({{ $draftsCount }})</span></button>
+        <button class="tab" data-filter="review">In review <span>({{ $inReviewCount }})</span></button>
         <button class="tab" data-filter="opened">Opened</button>
         <button class="tab" data-filter="pending">Pending</button>
       </div>
@@ -897,7 +966,7 @@
             <span>Next auto-send</span>
           </div>
           <div class="next-send-date">{{ $nextAutoSend->format('F d, Y') }}</div>
-          <div class="next-send-sub">Monthly · every 1st of the month</div>
+          <div class="next-send-sub">Generate 25th · auto-send after 5-day review</div>
           <div class="next-send-count" id="nextSendCount">–</div>
         </div>
         <form method="POST" action="{{ route('staff.email.send-one') }}" id="sendOneForm">
@@ -967,6 +1036,7 @@
       <div class="modal-head-left">
         <div class="modal-title" id="v-title"></div>
         <div class="modal-meta" id="v-meta"></div>
+        <span class="v-status-pill" id="v-statuspill"></span>
       </div>
       <button class="close-btn" onclick="closeOverlay()">×</button>
     </div>
@@ -978,10 +1048,25 @@
           <div class="banner-sub" id="v-subbanner"></div>
         </div>
       </div>
-      <div class="detail-grid" id="v-details"></div>
-      <div class="msg-text" id="v-body"></div>
-      <div class="analysis-block" id="v-analysis">
-        <div class="analysis-label">Project Progress Analysis</div>
+      <div class="v-section v-amber" id="v-revised-wrap" style="display:none;">
+        <div class="v-section-head"><span class="v-section-num">✎</span><span class="v-section-title">Revised message</span></div>
+        <div class="v-section-body" id="v-revised"></div>
+      </div>
+      <div class="v-section v-blue">
+        <div class="v-section-head"><span class="v-section-num">01</span><span class="v-section-title">Project snapshot</span></div>
+        <div class="v-section-body"><div class="detail-grid" id="v-details"></div></div>
+      </div>
+      <div class="v-section v-violet">
+        <div class="v-section-head"><span class="v-section-num">02</span><span class="v-section-title">AI analysis</span></div>
+        <div class="v-section-body"><div class="msg-text" id="v-body"></div></div>
+      </div>
+      <div class="v-section v-green">
+        <div class="v-section-head"><span class="v-section-num">03</span><span class="v-section-title">Progress analysis</span></div>
+        <div class="v-section-body">
+          <div class="analysis-block" id="v-analysis">
+            <div class="analysis-label">Project Progress Analysis</div>
+          </div>
+        </div>
       </div>
       <div class="ai-note">
         <i class="bi bi-info-circle" style="font-size:13px;flex-shrink:0;margin-top:1px;"></i>
@@ -1065,6 +1150,19 @@ function viewMsg(id) {
       const riskColor = m.risk_level.includes('High') ? 'CRITICAL' : (m.risk_level.includes('Medium') ? 'WARNING' : 'ON TRACK');
       document.getElementById('v-subbanner').textContent = `Contractor AI Status Report — ${riskColor}`;
       document.getElementById('v-meta').textContent = `To: ${m.recipient_email}  ·  Contractor: ${m.contractor_name}  ·  ${m.month}`;
+      const statusPill = document.getElementById('v-statuspill');
+      const statusCls = m.status === 'In review' ? 'review' : (m.status || '').toLowerCase();
+      statusPill.className = 'v-status-pill show v-status-' + statusCls;
+      let pillText = m.status || '';
+      if (m.review_status === 'pending_review' && m.review_until) pillText += ` · auto-sends ${m.review_until}`;
+      statusPill.textContent = pillText;
+      const revisedWrap = document.getElementById('v-revised-wrap');
+      if (m.is_edited) {
+        revisedWrap.style.display = '';
+        document.getElementById('v-revised').textContent = `Edited by ${m.edited_by_name || 'a user'}${m.edited_at ? ' · ' + m.edited_at : ''}. This version replaces any earlier copy.`;
+      } else {
+        revisedWrap.style.display = 'none';
+      }
       document.getElementById('v-details').innerHTML = `
         <div class="detail-item"><span class="label">Contractor</span><span class="value">${m.contractor_name}</span></div>
         <div class="detail-item"><span class="label">Company</span><span class="value">${m.company_name}</span></div>
@@ -1072,9 +1170,8 @@ function viewMsg(id) {
         <div class="detail-item"><span class="label">Location</span><span class="value">${m.project_location}</span></div>
         <div class="detail-item"><span class="label">Delivery Status</span><span class="value">${m.status}</span></div>
         <div class="detail-item"><span class="label">Generated</span><span class="value">${m.generated_at}</span></div>
-        ${m.is_edited ? `<div class="detail-item" style="grid-column:1/-1;"><span class="label">Last edited</span><span class="value">&#9998; Edited by ${m.edited_by_name || 'a user'}${m.edited_at ? ' · ' + m.edited_at : ''}</span></div>` : ''}
       `;
-      document.getElementById('v-body').innerHTML = m.body.replace(/\n/g, '<br>');
+      document.getElementById('v-body').innerHTML = m.body_html || m.body.replace(/\n/g, '<br>');
       const plannedPct = parseFloat(m.planned_progress) || 0;
       const actualPct = parseFloat(m.actual_progress) || 0;
       const variance = m.variance;
@@ -1141,7 +1238,7 @@ document.addEventListener('keydown', function(e) {
   if (sort) document.getElementById('sort').value = sort;
 })();
 
-/* Next auto-send countdown (targets the 1st of next month, 08:00). */
+/* Next auto-send countdown (targets the 25th generation run, 08:00). */
 (function() {
   const box = document.getElementById('nextSendBox');
   const metricCount = document.getElementById('nextAutoSendCountdown');

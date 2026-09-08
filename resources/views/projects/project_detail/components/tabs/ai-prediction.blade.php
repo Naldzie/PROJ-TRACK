@@ -429,30 +429,13 @@
                     </summary>
                     <div style="padding: 20px 0;">
 
-                <!-- Analysis Section -->
-                <div style="background: #fffbeb; border: 1px solid #fbbf24; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <div style="font-size: 13px; font-weight: 600; color: #92400e; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-                        <span><i class="bi bi-lightbulb" style="margin-right: 6px;"></i>Analysis</span>
-                        @if ($prediction['ai_generated_at'] ?? null)
-                            <span style="font-size: 11px; background: #eef2ff; color: #4338ca; padding: 3px 10px; border-radius: 12px; white-space: nowrap;">
-                                <i class="bi bi-robot" style="margin-right: 4px;"></i>AI Generated — {{ \Carbon\Carbon::parse($prediction['ai_generated_at'])->format('M d, Y g:i A') }}
-                            </span>
-                        @endif
-                    </div>
-                    <div id="analysis-text" style="font-size: 14px; color: #78350f; line-height: 1.6;">
-                        {!! nl2br(e($prediction['analysis_text'])) !!}
-                    </div>
-                    @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false))
-                        <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px;">
-                            <button id="regenerate-btn" onclick="regenerateAnalysis({{ $project->id }})" style="font-size: 13px; padding: 6px 14px; background: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer;">
-                                <i class="bi bi-arrow-repeat" style="margin-right: 4px;"></i> Regenerate Analysis
-                            </button>
-                            <span id="regenerate-status" style="display: none; font-size: 12px; color: #6b7280;">
-                                <i class="bi bi-hourglass-split"></i> Generating...
-                            </span>
-                        </div>
-                    @endif
-                </div>
+                <!-- Analysis Section (Email-style highlighted sections) -->
+                @include('projects.project_detail.components.tabs.ai-analysis', [
+                    'analysisText' => $prediction['analysis_text'] ?? '',
+                    'aiGeneratedAt' => $prediction['ai_generated_at'] ?? null,
+                    'projectId' => $project->id,
+                    'showRegenerate' => !$_noData && !($prediction['is_insufficient_data'] ?? false) && !($prediction['is_completed'] ?? false)
+                ])
 
                 @if (!$_noData && !($prediction['is_insufficient_data'] ?? false) && $prediction['regression_info'] !== null)
                 {{-- Regression Summary --}}
@@ -971,64 +954,6 @@
 </div>
 
 <script>
-function regenerateAnalysis(projectId) {
-    const btn = document.getElementById('regenerate-btn');
-    const status = document.getElementById('regenerate-status');
-    const textDiv = document.getElementById('analysis-text');
-    const prefix = window.location.pathname.split('/')[1];
-
-    btn.disabled = true;
-    btn.style.opacity = '0.6';
-    status.style.display = 'inline';
-    status.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating...';
-
-    fetch('/' + prefix + '/projects/' + projectId + '/regenerate-analysis', {
-        method: 'POST',
-        headers: {
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-        }
-    })
-    .then(function (r) {
-        if (!r.ok) throw new Error('Request failed');
-        return r.json();
-    })
-    .then(function (data) {
-        textDiv.innerText = data.analysis_text;
-        status.innerHTML = '<i class="bi bi-check-circle" style="color: #10b981;"></i> Generated: ' + data.generated_at;
-
-        // Update recommendations section with fresh data from the button
-        if (data.recommendations && data.recommendations.length > 0) {
-            var recSection = document.getElementById('recommendations-section');
-            if (recSection) {
-                var recHtml = '<div style="font-size: 13px; font-weight: 600; color: #166534; margin-bottom: 12px;"><i class="bi bi-lightbulb-fill" style="margin-right: 6px;"></i>Recommendations</div>';
-                data.recommendations.forEach(function (rec) {
-                    var catColors = { escalation: '#ef4444', corrective: '#f59e0b', monitoring: '#eab308', administrative: '#3b82f6' };
-                    var bgColor = catColors[rec.category] || '#3b82f6';
-                    recHtml += '<div style="margin-bottom: 10px;">';
-                    recHtml += '<span style="display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; color: white; background: ' + bgColor + ';">' + rec.category.charAt(0).toUpperCase() + rec.category.slice(1) + '</span>';
-                    if (rec.ai_generated) {
-                        recHtml += ' <span style="display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; color: #7c3aed; background: #ede9fe; margin-left: 4px; vertical-align: middle;"><i class="bi bi-stars" style="font-size: 9px;"></i> AI</span>';
-                    }
-                    recHtml += ' <span style="font-size: 14px; color: #166534; margin-left: 6px;">' + rec.message + '</span>';
-                    if (rec.reason) {
-                        recHtml += '<div style="font-size: 12px; color: #6b7280; margin-top: 2px; margin-left: 4px;">' + rec.reason + '</div>';
-                    }
-                    recHtml += '</div>';
-                });
-                recSection.innerHTML = recHtml;
-            }
-        }
-
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    })
-    .catch(function () {
-        status.innerHTML = '<i class="bi bi-exclamation-circle" style="color: #ef4444;"></i> Failed to regenerate. Try again.';
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    });
-}
-
 console.log('[Phase 8] Prediction regression_info:', @json($prediction['regression_info'] ?? null));
 
 // Cross-project debug (C8): when supplemental/fallback data activates, log

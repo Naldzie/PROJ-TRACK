@@ -848,3 +848,345 @@ If a prior extension already moved the deadline forward, the reviewer can select
 **Files:** 5 new, 11 modified
 
 **Date:** 2026-09-02
+
+---
+
+## Enhancement: Rating page AI comments — contractor overview + per-project AI review
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+In rating.blade: when a contractor is selected in Overview, add an AI comment about ALL projects performance of that contractor; when AI Review is clicked, analyze and comment about THAT project.
+
+### Previous behavior
+
+- Overview card showed only the score ring + static hint (Click a project's AI review...). No contractor-wide commentary.
+- AI Review button only rendered when the project had AI solutions; projects without regression data returned No AI analysis found for this project with no comment.
+
+### Fix
+
+**Backend app/Http/Controllers/Admin/RatingController.php:**
+- suggest() now always returns a project-specific review: uses regression snapshot when an AI solution exists, otherwise falls back to actual-vs-planned variance + extensions/issues context. Returns details {actual, planned, delay_pct, variance, r_squared, extensions, issues, status, source} + project_title.
+- New contractorOverview() (POST /admin/rating/contractor-overview): aggregates total/completed/ongoing counts, avg star rating, on-time %, avg delay, extensions, trend direction and builds a rule-based AI overview paragraph with recommendation.
+- generateReview() extended with project title, status, actual %, extension/issue context clause and model-confidence note.
+- New generateContractorOverview() for the contractor-wide narrative.
+
+**Routes routes/web.php:** added POST /admin/rating/contractor-overview (admin.rating.contractor-overview).
+
+**Frontend resources/views/admin/rating.blade.php:**
+- Analysis panel fetches + caches the contractor overview comment on every contractor select (loading skeleton, stale-response guard).
+- Project list always shows AI review button (previously hasAi-gated).
+- suggestAI() renders per-project card: project tag, headline, full review, metric chips (rating/actual/planned/delay/variance/R2/extensions/issues), Apply + Back to overview. Dismiss (which wrongly called closeModal) replaced.
+- Overview cache invalidated on manual and AI-applied rating saves.
+
+### Verification
+
+- php -l RatingController.php clean; route:list shows admin.rating.contractor-overview.
+- php artisan test --filter=UiPolishLayoutTest: 5 passed (includes admin rating page render).
+
+---
+
+## Enhancement: AI orb avatar with live dot on rating page
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+Add a cooler AI image to the rating UI — an AI avatar using a dot (live indicator).
+
+### Fix (resources/views/admin/rating.blade.php only, no new assets)
+
+- New .ai-orb CSS: conic-gradient orb (blue/violet/mint) with white sparkle SVG, floating animation, glow shadow, plus a .dot live indicator (green with ping animation). Sizes: default 30px, .lg 52px, .sm 18px; .ai-orb-row for avatar + label rows.
+- JS orbHtml(size) helper reuses the same markup in dynamically rendered HTML.
+- Analysis panel header icon replaced with the orb; empty state shows the large orb.
+- Contractor overview comment now renders orb + AI OVERVIEW label row.
+- Per-project AI review card header renders orb + AI REVIEW + status/title; loading state shows large orb.
+- AI review buttons prefixed with the small orb.
+
+### Verification
+
+- php artisan test --filter=test_admin_rating_page_uses_shared_toast: 1 passed.
+
+---
+
+## Fix: Auto-rate all only rates Completed projects
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+Auto-rate all loaded Ongoing + Completed projects, so in-progress work (still-moving S-curve) could receive a premature rating. The manual Rate button is already disabled for Ongoing projects.
+
+### Fix (app/Http/Controllers/Admin/RatingController.php)
+
+- autoRateAll() eager-load now filters where('status', 'Completed') instead of whereIn Ongoing/Completed, with a docblock noting ongoing work is never auto-rated.
+
+### Verification
+
+- php -l clean; rating page render test passed (1 passed).
+
+---
+
+## Enhancement: Humanoid robot avatar replaces sparkle in AI orb
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+User asked where the humanoid dot UI is — the orb icon was only a sparkle, not a humanoid figure.
+
+### Fix (resources/views/admin/rating.blade.php only)
+
+- Replaced the sparkle SVG with a humanoid robot bust (antenna + head + ears + eyes with highlights + smile + shoulders) in white on the existing gradient orb; green live dot kept. Updated all 3 occurrences (panel header, empty state, JS ORB_SVG helper) so overview comment, per-project review card, loading states and AI review buttons all show the robot.
+
+### Verification
+
+- php artisan test --filter=test_admin_rating_page_uses_shared_toast: 1 passed.
+
+---
+
+## Enhancement: Full UI polish pass on rating.blade
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED** — visual-only, no behavior changes.
+
+### What changed (resources/views/admin/rating.blade.php, inline per existing file structure)
+
+- Theme: new --violet/--grad-brand/--shadow-lg/--ease-spring tokens; gradient headline text; eyebrow pills with pulsing dot; ambient glow blob behind header; focus-visible rings; prefers-reduced-motion support.
+- Header: AI online pill (robot orb + live dot) beside a gradient Auto-rate button with shine sweep on hover.
+- Summary cards: staggered rise-in, gradient icon tiles, radial glow that scales on hover, count-up numbers (data-count).
+- Panels: staggered entrance, hover lift, per-panel gradient title icons.
+- Contractors: custom slim scrollbars (560px max), staggered rows, selected gradient + glow ring, gradient avatar when selected.
+- Projects: status accent bar (violet = ongoing, green = completed), staggered entrance, pulsing In-progress dot, gradient buttons with lift.
+- Analysis: layered-gradient hero with shimmer sweep, AI comment as chat bubble with gradient spine, shimmer skeleton while loading, animated score ring (0 to score count-up), gradient metric chips with hover lift.
+- Performance: stat tiles with staggered entrance + hover lift, chart wrap restyled.
+- Modal: blurred backdrop, spring pop-in, gradient top bar, star glow + pop animation on tap, gradient Save.
+- Empty states: dashed-card style. JS: countUp/animateScore helpers, stagger delays, star pop, counters on init.
+
+### Verification
+
+- php artisan test --filter=test_admin_rating_page_uses_shared_toast: 1 passed (12 assertions).
+
+---
+
+## Feature: 5-day review window before AI analysis emails send
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+Generate AI analysis on the 25th, hold it in a 5-day review/edit window, auto-send on the 30th. Email views must reflect last-saved edits; scheduler must split generate vs send; status field (draft/pending_review/sent) with no re-send/re-generate mid-review.
+
+### Findings (already existed, reused as-is)
+
+- EmailTracking drafts (sent_at null), body/is_edited/edited_by, effectiveBody() (edited body wins).
+- ai-analysis.blade.php already renders tracking->body first, AI text as fallback — edited content goes out with zero view changes.
+- Admin/staff draft edit UI + sendDraft + drafts filter; staff reuses admin.partials.email_list.
+
+### Changes
+
+**DB:** migration 2026_09_08_000001 adds email_trackings.status (draft|pending_review|sent, default draft) + review_until nullable; backfills from sent_at.
+
+**Model EmailTracking:** status constants, review_until cast/fillable, isPendingReview(), isDueForSending(), scopes pendingReview()/dueForSending().
+
+**AIReportSendingService:** REVIEW_WINDOW_DAYS=5, GENERATION_DAY=25; new stageProjectForReview() (idempotent per ai_solution+contractor pair), sendDueReviews(force=false), sendTrackingRow() shared sender (marks status sent, failed sends stay editable); sendForProject() dedup now counts SENT rows only and reuses a staged row (unique-pair safe); nextAutoSendAt() now returns the next 25th 08:00.
+
+**Commands/scheduler (routes/console.php):** new reports:generate-ai-monthly (monthlyOn 25 08:00, generate-missing + stage, never sends); reports:send-ai-monthly rewritten to send due reviews only; scheduled dailyAt 08:05 with review_until gate (daily, not monthlyOn(30), so February still delivers). --force on either step overrides gates.
+
+**Admin+staff EmailController:** store() tags STATUS_DRAFT; destroy() 403s pending_review; sendDraft() flips status to sent; show() returns In review + review_status/review_until; index() gains filter=review.
+
+**Blades:** shared email_list partial shows In review tag (new .tag-review CSS in admin+staff email.blade), Auto-sends {date} tag, lock icon instead of delete for in-review; new In review tab on both pages; cadence copy 1st -> Generate 25th / send after 5-day review.
+
+**Contractor leak fix (required by staging drafts):** contractor index/recentActivity now sent-only; show() 404s unsent rows; contractor list partial uses effectiveBody() so contractors see the approved edited text.
+
+### Verification
+
+- New tests/Feature/AiReviewWindowTest.php: 10 passed (48 assertions) covering stage-no-send, idempotency, window gating, edited-body delivery + lock, manual-draft immunity (incl. --force), delete-block/edit/send-early, staged-row reuse, no-analysis skip, contractor invisibility, review filter.
+- EmailDraftTest: 13 passed, 2 failed — identical to the pre-existing baseline (mailable subject asserted post-build; unrelated, per AGENTS.md). No new failures.
+- UiPolishLayoutTest: 5 passed (email + rating pages render).
+- schedule:list shows generate-ai-monthly (25th) + send-ai-monthly (daily).
+
+---
+
+## Enhancement: Regenerate stages to In review + tab count badges
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+1. Generating AI analysis from a project must land in Email In review (not auto-send) and sit 5 days before sending.
+2. Filter tabs show counts, e.g. In review (1).
+
+### Fix
+
+- ProjectController::regenerateAnalysis() now calls stageProjectForReview() instead of sendForProject() (docblock updated). Frontend toast/status text now says the analysis is staged in Email In review for 5 days.
+- AIReportSendingService::stageProjectForReview() supersedes older UNsent staged drafts for the same project+contractor (delete + recreate) so a regeneration never stacks two pending emails; message notes the replacement. Generate-command staged counter still matches (both messages start with Staged).
+- Admin+staff EmailController::index() pass workspace-wide draftsCount (status draft, unsent) + inReviewCount (pendingReview scope); admin+staff email.blade tabs render Drafts (N) / In review (N) matching the existing All (N) style.
+
+### Verification
+
+- AiReviewWindowTest: 12 passed (57 assertions) — added supersede-on-regenerate + tab-badge tests.
+- EmailDraftTest: 13 passed / 2 pre-existing fails (unchanged baseline). UiPolishLayoutTest: 5 passed.
+
+---
+
+## Enhancement: Highlighted sections in AI analysis email
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+Style emails/ai-analysis.blade.php so every section is highlighted.
+
+### Fix (resources/views/emails/ai-analysis.blade.php only)
+
+- New .section card system: one accent color per section with numbered badge (01-04) + uppercase heading bar + white body.
+- 01 Project Snapshot (blue): project/location/status as chip-labeled rows instead of plain bold lines.
+- 02 AI-Generated Analysis (violet): same content source (edited body wins), new highlighted shell.
+- 03 Recommended Actions (amber, NEW section): top 5 recommendations from aiSolution->recommendations sorted by priority, each with P1(red)/P2(orange)/P3+(slate) pill, category label, message + optional reason. Previously never shown in email.
+- 04 Project Progress Analysis (green): same metrics/bars/badge in highlighted shell; auto-renumbered to 03 when recommendations are absent.
+- Revised-message note spacing fixed (margin-bottom added). Header/integrity/footer untouched.
+
+### Verification
+
+- AiReviewWindowTest: 14 passed (67 assertions) — added render tests for full-section output (incl. P1/P3 pills) and the empty-recommendations renumbering case.
+
+---
+
+## Enhancement: Message view/edit overlays styled like the AI analysis email
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Request
+
+Opening (view) or editing (compose) a message still looked plain — restyle both like emails/ai-analysis.blade with highlighted sections.
+
+### Fix
+
+**View overlay (admin/email.blade.php + staff/email.blade.php, kept in sync):**
+- New .v-section card system mirroring the email: 01 Project snapshot (blue), 02 AI analysis (violet), 03 Progress analysis (green), plus amber Revised message section shown only when edited.
+- New status pill in the modal header (Draft / In review + auto-send date / Opened / Delivered / Pending) driven by the show() JSON (status, review_status, review_until).
+- viewMsg JS populates pill + revised banner; the old inline Last-edited detail row was removed (replaced by the amber section). Progress metrics block de-chromed to sit inside the green section.
+
+**Compose/edit modal (shared admin/partials/email_compose.blade.php — one edit covers staff+admin):**
+- Gradient PROJ-TRACK banner header with cpu icon (title/meta turn white).
+- Fields grouped into numbered sections: 01 Details (blue: project, recipient, subject), 02 Message (violet: textarea).
+- Gradient Save button. All element IDs unchanged, so existing JS works untouched.
+
+### Verification
+
+- AiReviewWindowTest: 15 passed (85 assertions) — added overlay-markup test for both admin and staff pages.
+- UiPolishLayoutTest: 5 passed. EmailDraftTest: 13 passed / 2 pre-existing fails (unchanged).
+- Blade diff admin vs staff shows only pre-existing prefix/layout differences.
+
+---
+
+## Fix: Blue section highlights (Report/Risk/Mitigation/Performance/AI Comment) in email + overlay
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+The AI text carries [SECTION:Report] / Possible Risk / Mitigation / Performance / AI Comment markers. The project AI tab renders those headings blue, but the email + message overlay did not: the overlay injected the RAW body (markers visible as plain text, zero styling) and the email relied only on its <style> block, which many mail clients strip.
+
+### Fix
+
+- AiReportParser::parseToHtml() now inlines the blue heading style (color #2563eb + 2px blue underline, same as the project tab) on every report-section-title, keeping the classes for stylesheets. Works in clients that strip <style>.
+- New AiReportParser::renderForDisplay(): marked AI text -> parsed blue sections; hand-written drafts (no markers) -> plain escaped paragraphs (never a bogus Analysis heading).
+- Admin+staff EmailController::show() expose body_html; both email.blade viewMsg() render body_html with raw-text fallback; added .report-section list/paragraph spacing CSS to both blades.
+
+### Verification
+
+- New tests/Unit/Services/AiReportParserTest.php: 3 passed (blue inline style, no marker leakage, plain+escaped handwritten path).
+- AiReviewWindowTest: 16 passed — added show()-returns-highlighted-html test. UiPolishLayoutTest 5 passed; EmailDraftTest unchanged (13/2 pre-existing).
+
+---
+
+## Fix: Modal Save button always visible (sticky header/footer)
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+The compose/edit modal scrolled as one unit, pushing the Save/Cancel footer out of view on shorter screens.
+
+### Fix (admin/email.blade.php + staff/email.blade.php + shared email_compose partial)
+
+- .modal-box now overflow:hidden (was overflow-y:auto); .modal-body scrolls internally (overflow-y:auto + min-height:0) so the banner header and footer buttons stay pinned while only the middle content scrolls. Applies to view + compose modals.
+- Compose textarea min-height 190px -> 140px so the edit modal usually fits without scrolling at all.
+
+### Verification
+
+- UiPolishLayoutTest 5 passed; AiReviewWindowTest 16 passed.
+
+---
+
+## Fix: Message view overlay overlap/jumble (grid blowout guards)
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+View-message overlay looked overlapping/jumbled with real content. Root cause: long unbroken strings (contractor emails, subjects, In review pills) forced grid tracks wider than the padded sections (classic grid blowout), and the 2-column details grid cramped on narrow screens.
+
+### Fix (admin/email.blade.php + staff/email.blade.php)
+
+- min-width:0 on detail items, modal head, section bodies/heads, message text.
+- overflow-wrap:anywhere + word-break on values, titles, meta, message text.
+- detail-grid collapses to 1 column under 620px.
+
+### Verification
+
+- AiReviewWindowTest + UiPolishLayoutTest: 21 passed. Markup/JS re-verified balanced and valid.
+
+---
+
+## Fix: Bulletproof modal scrolling (overlay scrolls, margin auto)
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+View-message overlay still broken for the user (content not reachable); the flex-pinned inner-scroll model was fragile. User explicitly wants the whole modal scrollable to display all details.
+
+### Fix (admin/email.blade.php + staff/email.blade.php)
+
+- Replaced the flex-pinned inner scroll with the classic robust pattern: .overlay gets overflow-y:auto, .modal-box gets margin:auto with no height cap or overflow clipping, .modal-body back to natural flow. Short modals center; tall modals scroll from the top in every browser — header, all highlighted sections, notes, and footer buttons are all reachable by scrolling.
+
+### Verification
+
+- AiReviewWindowTest + UiPolishLayoutTest: 21 passed.
+
+---
+
+## Enhancement: Contractor email overlay matches staff/admin UI
+
+**Date:** 2026-09-07
+**Status: IMPLEMENTED**
+
+### Problem
+
+Contractor message view had its own outdated renderer: raw [SECTION:] markers shown in one block PLUS a second parsed copy appended below (duplicated, jumbled), with its own one-off colored header styles.
+
+### Fix (contractor EmailController + contractor/email.blade.php)
+
+- show() now serves body_html via AiReportParser::renderForDisplay (same as staff/admin).
+- Overlay restructured into the same numbered highlighted sections: 01 Project snapshot (blue), 02 AI analysis (violet, blue section headings), 03 Progress analysis (green), plus status pill and the bulletproof overlay-scroll + anti-blowout guards.
+- Deleted the buggy client-side parseAiAnalysis() (malformed list HTML, duplicated content) and the now-unused .analysis-section* CSS.
+
+### Verification
+
+- AiReviewWindowTest: 18 passed — added contractor overlay-markup + highlighted-html tests. Parser/UI suites green; EmailDraftTest unchanged baseline.

@@ -109,7 +109,14 @@
                             </div>
                         </div>
                         <!-- Autofill preview (runs extraction without navigating) -->
-                        <div class="d-flex justify-content-end mt-2">
+                        <div class="d-flex justify-content-end gap-2 mt-2">
+                            {{-- L2 learned-keywords review desk launcher (staff + admin; contractors never open this modal) --}}
+                            @if(auth()->check() && in_array(auth()->user()->role, ['admin', 'staff']))
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="openManageParserKeywords()"
+                                    title="Review wording the document reader learned from corrections">
+                                <i class="bi bi-magic"></i> Learned Keywords
+                            </button>
+                            @endif
                             <button type="button" class="btn btn-outline-primary btn-sm" onclick="runDocumentAutofill()">
                                 <i class="bi bi-magic"></i> Preview Extracted Data
                             </button>

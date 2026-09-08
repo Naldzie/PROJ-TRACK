@@ -651,6 +651,9 @@
                     @foreach($grouped[$statusGroup] as $w)
                         @php
                             $contractorName = $w->contractor ? $w->contractor->company_name : 'N/A';
+                            // Existing project data: budget from approved_budget, location defaults to CSPC
+                            $projectBudget = $w->project->approved_budget !== null ? '₱ ' . number_format((float) $w->project->approved_budget, 2) : 'N/A';
+                            $projectLocation = $w->project->location ?: 'Camarines Sur Polytechnic Colleges';
                             $nextInspection = null;
                             $nextInspectionLabel = '';
                             $nextInspectionClass = '';
@@ -681,6 +684,8 @@
                             data-title="{{ strtolower($w->title ?? '') }}"
                             data-project="{{ strtolower($w->project->title) }}"
                             data-contractor="{{ strtolower($contractorName) }}"
+                            data-budget="{{ strtolower($projectBudget) }}"
+                            data-location="{{ strtolower($projectLocation) }}"
                             data-completion-date="{{ $w->completion_date ?? '' }}"
                             data-start-date="{{ $w->start_date }}"
                             data-end-date="{{ $w->end_date }}"
@@ -694,6 +699,8 @@
                                 '{{ addslashes($w->title ?? 'Warranty') }}',
                                 '{{ addslashes($w->project->title) }}',
                                 '{{ addslashes($contractorName) }}',
+                                '{{ addslashes($projectBudget) }}',
+                                '{{ addslashes($projectLocation) }}',
                                 '{{ $w->completion_date ?? '' }}',
                                 '{{ $w->start_date }}',
                                 '{{ $w->end_date }}',
@@ -800,6 +807,14 @@
                 <div class="detail-card">
                     <div class="detail-card-label">Contractor</div>
                     <div class="detail-card-value" id="dcContractor"></div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-label">Project Budget</div>
+                    <div class="detail-card-value" id="dcBudget"></div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-card-label">Location</div>
+                    <div class="detail-card-value" id="dcLocation"></div>
                 </div>
                 <div class="detail-card">
                     <div class="detail-card-label">Date of Completion</div>
@@ -1091,7 +1106,7 @@ document.getElementById('addModal')?.addEventListener('shown.bs.modal', function
 
 let currentWarrantyData = {};
 
-function viewWarranty(el, file, title, project, contractor, completionDate, start, end, midYear, finalInspection, status, remarks, projectId) {
+function viewWarranty(el, file, title, project, contractor, budget, location, completionDate, start, end, midYear, finalInspection, status, remarks, projectId) {
     document.querySelectorAll('.wm-item').forEach(i => i.classList.remove('active'));
     el.classList.add('active');
 
@@ -1100,6 +1115,8 @@ function viewWarranty(el, file, title, project, contractor, completionDate, star
         title: title,
         project: project,
         contractor: contractor,
+        budget: budget,
+        location: location,
         completionDate: completionDate,
         start: start,
         end: end,
@@ -1127,6 +1144,8 @@ function viewWarranty(el, file, title, project, contractor, completionDate, star
     document.getElementById('detailGrid').style.display = 'grid';
     document.getElementById('dcProject').innerText = project;
     document.getElementById('dcContractor').innerText = contractor || 'N/A';
+    document.getElementById('dcBudget').innerText = budget || 'N/A';
+    document.getElementById('dcLocation').innerText = location || 'Camarines Sur Polytechnic Colleges';
     document.getElementById('dcCompletion').innerText = formatDate(completionDate);
     document.getElementById('dcWarrantyPeriod').innerText = formatDate(start) + ' → ' + formatDate(end);
     document.getElementById('dcStart').innerText = formatDate(start);
@@ -1263,7 +1282,7 @@ function formatDate(str) {
 function filterWarranties(q) {
     q = q.toLowerCase();
     document.querySelectorAll('.wm-item').forEach(el => {
-        const t = (el.dataset.title || '') + (el.dataset.project || '') + (el.dataset.contractor || '');
+        const t = (el.dataset.title || '') + (el.dataset.project || '') + (el.dataset.contractor || '') + (el.dataset.budget || '') + (el.dataset.location || '');
         el.style.display = t.includes(q) ? '' : 'none';
     });
 }
@@ -1277,6 +1296,8 @@ const allWarranties = {!! json_encode($warranties->map(function($w) {
         'project' => $w->project->title,
         'project_id' => $w->project->id,
         'contractor' => $contractorName,
+        'budget' => $w->project->approved_budget !== null ? '₱ ' . number_format((float) $w->project->approved_budget, 2) : 'N/A',
+        'location' => $w->project->location ?: 'Camarines Sur Polytechnic Colleges',
         'completion_date' => $w->completion_date ?? '',
         'start_date' => $w->start_date,
         'end_date' => $w->end_date,

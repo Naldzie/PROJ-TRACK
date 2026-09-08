@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warranties Overview - PMU System</title>
+    <title>Camarines Sur Polytechnic Colleges Projects Ongoing Records - PMU System</title>
     <style>
         :root {
             --header-teal-1: #7fc9b7;
@@ -114,20 +114,21 @@
             background: linear-gradient(90deg, #0b1220, #1e3a72, #1d4ed8, #38d3e8);
         }
 
-        /* ---------- Header ---------- */
+        /* ---------- Header (centered institutional title) ---------- */
         .preview-title {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
+            justify-content: center;
+            text-align: center;
             gap: 10px;
-            padding: 14px 18px;
+            padding: 16px 18px;
             background: #fff;
             color: var(--text-main);
             border-bottom: 1px solid var(--border-color);
         }
 
-        .title-left { display: flex; align-items: center; gap: 12px; }
+        .title-left { display: flex; align-items: center; justify-content: center; gap: 12px; }
 
         .preview-title h1 {
             margin: 0;
@@ -166,6 +167,33 @@
             transition: background 0.25s ease, transform 0.25s ease;
         }
         .page-dot.is-active { background: var(--header-teal-2); transform: scale(1.3); }
+
+        /* ---------- Presentation toggle (fullscreen + auto-scroll) ---------- */
+        #present-toggle {
+            position: fixed;
+            right: 18px;
+            bottom: 18px;
+            z-index: 50;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 14px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--header-navy);
+            background: #fff;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            cursor: pointer;
+            box-shadow: 0 8px 22px -8px rgba(11,18,32,0.35);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        #present-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 26px -8px rgba(11,18,32,0.4);
+        }
+        #present-toggle .glyph { font-size: 11px; }
 
         /* ---------- Table ---------- */
         .table-responsive { overflow-x: auto; }
@@ -234,6 +262,7 @@
             thead th { background: #a7d8cb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             tbody tr.row-hidden { display: table-row !important; }
             .page-indicator { display: none; }
+            #present-toggle { display: none; }
         }
 
         @media (max-width: 900px) {
@@ -270,6 +299,9 @@
                 'project' => $w->project->title,
                 'academic_year' => $academicYear,
                 'contractor' => $contractorName,
+                // Existing project data: budget from approved_budget, location defaults to CSPC
+                'budget' => $w->project->approved_budget !== null ? '₱ ' . number_format((float) $w->project->approved_budget, 2) : 'N/A',
+                'location' => $w->project->location ?: 'Camarines Sur Polytechnic Colleges',
                 'completion_date' => $completionDate ? $completionDate->format('F j, Y') : null,
                 'warranty_period' => $warrantyEnd ? $warrantyEnd->format('F j, Y') : null,
                 'mid_year' => $w->mid_year_inspection ? \Carbon\Carbon::parse($w->mid_year_inspection)->format('F j, Y') : null,
@@ -286,7 +318,7 @@
         <div class="preview-title">
             <div class="title-left">
                 <div>
-                    <h1>Warranties Overview</h1>
+                    <h1>Camarines Sur Polytechnic Colleges Projects Ongoing Records</h1>
                     <span class="meta">{{ $warranties->count() }} records &middot; Generated {{ now()->format('F d, Y g:i A') }}</span>
                 </div>
             </div>
@@ -310,6 +342,8 @@
                         <th rowspan="2"></th>
                         <th rowspan="2">Infrastructure Project</th>
                         <th rowspan="2">Contractor</th>
+                        <th rowspan="2">Project Budget</th>
+                        <th rowspan="2">Location</th>
                         <th rowspan="2">Date of<br>Completion</th>
                         <th rowspan="2">Warranty<br>Period</th>
                         <th colspan="2">Inspection</th>
@@ -331,6 +365,8 @@
                                 @endif
                             </td>
                             <td class="contractor-cell">{{ $r['contractor'] }}</td>
+                            <td class="contractor-cell">{{ $r['budget'] }}</td>
+                            <td class="contractor-cell">{{ $r['location'] }}</td>
                             <td class="date-cell">{{ $r['completion_date'] ?? '—' }}</td>
                             <td class="period-cell">{{ $r['warranty_period'] ?? '—' }}</td>
                             <td class="insp-cell">
@@ -351,7 +387,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8">
+                            <td colspan="10">
                                 <div class="empty-state">No warranty records yet.</div>
                             </td>
                         </tr>
@@ -360,6 +396,10 @@
             </table>
         </div>
     </div>
+
+    <button id="present-toggle" type="button" aria-pressed="true" title="Pause automatic scrolling">
+        <span class="glyph" id="present-glyph">❚❚</span><span id="present-label">Auto-scroll on</span>
+    </button>
 
     <script>
         (function () {
@@ -387,6 +427,8 @@
                         dot.classList.toggle('is-active', parseInt(dot.dataset.dot, 10) === page);
                     });
                     tbody.style.opacity = 1;
+                    // Each rotated page starts at the top for the auto-scroll reader.
+                    if (typeof window.__warrantyAutoScrollReset === 'function') window.__warrantyAutoScrollReset();
                 }, 250);
             }
 
@@ -394,6 +436,201 @@
                 currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
                 showPage(currentPage);
             }, 30000);
+        })();
+
+        /* Hands-free presentation mode: reads down the records, pans right
+           across the columns and back, glides to the top and repeats.
+           Pauses while the viewer scrolls/touches/types and resumes after
+           10s idle. Toggle button pins bottom-right (hidden in print). */
+        (function () {
+            var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var btn = document.getElementById('present-toggle');
+            var glyph = document.getElementById('present-glyph');
+            var label = document.getElementById('present-label');
+            var tableBox = document.querySelector('.table-responsive');
+            var DOWN_SPEED = 30;      // px per second while reading downward (lower = slower)
+            var SIDE_SPEED = 70;      // px per second while panning sideways (lower = slower)
+            var UP_SPEED = 500;       // px per second gliding back to the top
+            var TOP_PAUSE = 2500;     // ms resting at the top before scrolling
+            var FIRST_PAUSE = 300000; // 5-minute wait before the very first scroll (setup time)
+            var BOTTOM_PAUSE = 4500;  // ms resting at the bottom before panning
+            var SIDE_PAUSE = 3000;    // ms resting at the far right before panning back
+            var LEFT_PAUSE = 1500;    // ms resting at the far left before returning up
+            var RESUME_DELAY = 10000; // ms after interaction before resuming
+
+            var autoEnabled = true;
+            var motionBlocked = reduceMotion; // explicit toggle click lifts this
+            var userHold = false;
+            var holdTimer = null;
+            var phase = 'down';
+            var lastTs = null;
+            var pauseUntil = performance.now() + FIRST_PAUSE; // first run waits 5 min; repeats use TOP_PAUSE
+
+            function vMax() {
+                return Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+            }
+            function hMax() {
+                if (!tableBox) return 0;
+                return Math.max(0, tableBox.scrollWidth - tableBox.clientWidth);
+            }
+            function active() {
+                return autoEnabled && !userHold && !motionBlocked && (vMax() > 2 || hMax() > 2);
+            }
+            // Called by the page-rotation timer so each new page restarts at top-left.
+            window.__warrantyAutoScrollReset = function () {
+                phase = 'down';
+                lastTs = null;
+                if (tableBox) tableBox.scrollLeft = 0;
+                if (active()) {
+                    window.scrollTo(0, 0);
+                    pauseUntil = performance.now() + TOP_PAUSE;
+                }
+            };
+
+            function hold() {
+                userHold = true;
+                lastTs = null;
+                if (holdTimer) clearTimeout(holdTimer);
+                holdTimer = setTimeout(function () {
+                    userHold = false;
+                    holdTimer = null;
+                    lastTs = null;
+                    pauseUntil = performance.now() + 1200;
+                }, RESUME_DELAY);
+            }
+            ['wheel', 'touchmove', 'mousedown'].forEach(function (ev) {
+                window.addEventListener(ev, hold, { passive: true });
+            });
+            window.addEventListener('keydown', function (e) {
+                if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'PageDown', 'PageUp', 'Home', 'End', ' '].indexOf(e.key) !== -1) hold();
+            });
+
+            // One-press presentation: fullscreen display + auto-scroll together.
+            function isFull() {
+                return !!(document.fullscreenElement || document.webkitFullscreenElement);
+            }
+            function enterFull() {
+                var el = document.documentElement;
+                try {
+                    if (el.requestFullscreen) {
+                        var p = el.requestFullscreen();
+                        if (p && p.catch) p.catch(function () {}); // denied: scroll-show still runs
+                    } else if (el.webkitRequestFullscreen) {
+                        el.webkitRequestFullscreen();
+                    }
+                } catch (e) { /* kiosk shells without fullscreen: scroll-show still runs */ }
+            }
+            function exitFull() {
+                try {
+                    if (!isFull()) return;
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+                } catch (e) {}
+            }
+            function setPresent(on) {
+                autoEnabled = on;
+                motionBlocked = false; // explicit opt-in overrides reduced-motion
+                userHold = false;
+                if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+                lastTs = null;
+                if (on) {
+                    phase = 'down';
+                    pauseUntil = performance.now() + 1200;
+                    enterFull();
+                } else {
+                    exitFull();
+                }
+                paintToggle();
+            }
+            function paintToggle() {
+                var on = autoEnabled && !motionBlocked;
+                var full = isFull();
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.title = on
+                    ? (full ? 'Exit full-display presentation' : 'Pause automatic scrolling')
+                    : 'Start full-display presentation (fullscreen + auto-scroll)';
+                glyph.textContent = on ? '❚❚' : '⛶';
+                label.textContent = on ? (full ? 'Presenting…' : 'Auto-scroll on') : 'Present';
+            }
+            // Esc / system exit from fullscreen also ends the presentation.
+            function syncFullscreen() {
+                if (!isFull() && autoEnabled && !motionBlocked) {
+                    autoEnabled = false;
+                    lastTs = null;
+                    paintToggle();
+                } else {
+                    paintToggle();
+                }
+            }
+            document.addEventListener('fullscreenchange', syncFullscreen);
+            document.addEventListener('webkitfullscreenchange', syncFullscreen);
+            if (btn) {
+                paintToggle();
+                btn.addEventListener('click', function () {
+                    setPresent(!(autoEnabled && !motionBlocked));
+                });
+            }
+
+            function step(ts) {
+                if (lastTs === null) lastTs = ts;
+                var dt = Math.min((ts - lastTs) / 1000, 0.05); // clamp tab-switch jumps
+                lastTs = ts;
+                if (active() && ts >= pauseUntil) {
+                    if (phase === 'down') {
+                        if (vMax() <= 2) { phase = 'right'; }
+                        else {
+                            var y = window.scrollY + DOWN_SPEED * dt;
+                            if (y >= vMax() - 1) {
+                                window.scrollTo(0, vMax());
+                                phase = 'right';
+                                pauseUntil = ts + BOTTOM_PAUSE;
+                            } else {
+                                window.scrollTo(0, y);
+                            }
+                        }
+                    } else if (phase === 'right') {
+                        if (hMax() <= 2 || !tableBox) { phase = 'left'; }
+                        else {
+                            var x = tableBox.scrollLeft + SIDE_SPEED * dt;
+                            if (x >= hMax() - 1) {
+                                tableBox.scrollLeft = hMax();
+                                phase = 'left';
+                                pauseUntil = ts + SIDE_PAUSE;
+                            } else {
+                                tableBox.scrollLeft = x;
+                            }
+                        }
+                    } else if (phase === 'left') {
+                        if (hMax() <= 2 || !tableBox) { phase = 'up'; }
+                        else {
+                            var x2 = tableBox.scrollLeft - SIDE_SPEED * dt;
+                            if (x2 <= 0) {
+                                tableBox.scrollLeft = 0;
+                                phase = 'up';
+                                pauseUntil = ts + LEFT_PAUSE;
+                            } else {
+                                tableBox.scrollLeft = x2;
+                            }
+                        }
+                    } else {
+                        if (vMax() <= 2) {
+                            phase = 'down';
+                            pauseUntil = ts + TOP_PAUSE;
+                        } else {
+                            var y2 = window.scrollY - UP_SPEED * dt;
+                            if (y2 <= 0) {
+                                window.scrollTo(0, 0);
+                                phase = 'down';
+                                pauseUntil = ts + TOP_PAUSE;
+                            } else {
+                                window.scrollTo(0, y2);
+                            }
+                        }
+                    }
+                }
+                requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
         })();
     </script>
 </body>

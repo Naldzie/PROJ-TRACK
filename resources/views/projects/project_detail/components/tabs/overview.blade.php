@@ -231,7 +231,17 @@
             </div>
         </div>
 
-        <!-- AI ANALYSIS SECTION -->
+        <!-- AI ANALYSIS SECTION (Email-style highlighted sections) -->
+        @if(!empty($data['ai_prediction']['analysis_text'] ?? ''))
+            @include('projects.project_detail.components.tabs.ai-analysis', [
+                'analysisText' => $data['ai_prediction']['analysis_text'],
+                'aiGeneratedAt' => $data['ai_prediction']['ai_generated_at'] ?? null,
+                'projectId' => $project->id,
+                'showRegenerate' => !($data['ai_prediction']['is_insufficient_data'] ?? false) && !($data['ai_prediction']['is_completed'] ?? false)
+            ])
+        @endif
+
+        <!-- AI PREDICTION SECTION (Full prediction with gauge, metrics, etc.) -->
         @if(!empty($data['ai_prediction']) && count($data['ai_prediction']) > 0)
             @include('projects.project_detail.components.tabs.ai-prediction', ['project' => $project, 'prediction' => $data['ai_prediction']])
         @endif

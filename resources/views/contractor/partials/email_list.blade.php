@@ -2,7 +2,8 @@
 @php
     $project = $email->project;
     $ai = $email->aiSolution;
-    $body = $ai ? $ai->analysis_text : 'Report analysis not available.';
+    // Prefer the reviewed/edited body so contractors see exactly what staff approved.
+    $body = $email->effectiveBody() ?? 'Report analysis not available.';
     $preview = strlen($body) > 120 ? substr($body, 0, 120) . '...' : $body;
     $month = $email->sent_at ? $email->sent_at->format('F Y') : '';
     $shortDate = $email->sent_at ? $email->sent_at->format('M d') : '';

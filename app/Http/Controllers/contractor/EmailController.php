@@ -20,7 +20,10 @@ class EmailController extends Controller
             return view('contractor.email', compact('emails', 'nextAutoSend'));
         }
 
+        // Contractors only ever see delivered mail — drafts and in-review
+        // reports stay invisible until the send step (or manual send) runs.
         $query = EmailTracking::where('contractor_id', $contractor->id)
+            ->whereNotNull('sent_at')
             ->with(['project', 'aiSolution'])
             ->orderBy('sent_at', 'desc');
 
@@ -34,6 +37,7 @@ class EmailController extends Controller
         $emails = $query->paginate(15)->withQueryString();
 
         $recentActivity = EmailTracking::where('contractor_id', $contractor->id)
+            ->whereNotNull('sent_at')
             ->with('project')
             ->orderBy('sent_at', 'desc')
             ->take(5)
@@ -56,6 +60,11 @@ class EmailController extends Controller
 
         if (!$contractor || $email->contractor_id !== $contractor->id) {
             abort(403);
+        }
+
+        // Unsent drafts/reviews are staff-only until delivered.
+        if ($email->isDraft()) {
+            abort(404);
         }
 
         $email->load(['project', 'aiSolution']);
@@ -88,6 +97,7 @@ class EmailController extends Controller
             'project_location' => $project->location ?? 'N/A',
             'project_status' => $project->status ?? 'N/A',
             'body' => $email->effectiveBody() ?? 'Report analysis not available.',
+            'body_html' => app(\App\Services\AiReportParser::class)->renderForDisplay($email->effectiveBody() ?? ''),
             'planned_progress' => number_format($planned, 1) . '%',
             'actual_progress' => number_format($actual, 1) . '%',
             'variance' => $variance,

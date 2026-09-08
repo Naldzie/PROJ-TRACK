@@ -7,6 +7,18 @@ use Illuminate\Support\Str;
 
 class EmailTracking extends Model
 {
+    /**
+     * Review-window workflow statuses.
+     *
+     * DRAFT .......... manually composed message, send whenever staff choose.
+     * PENDING_REVIEW . auto-generated on the 25th; editable during the 5-day
+     *                  review window, auto-sent once review_until passes.
+     * SENT ........... delivered; content is locked (edits re-send as revision).
+     */
+    public const STATUS_DRAFT = 'draft';
+    public const STATUS_PENDING_REVIEW = 'pending_review';
+    public const STATUS_SENT = 'sent';
+
     protected $fillable = [
         'contractor_id',
         'project_id',
@@ -14,6 +26,8 @@ class EmailTracking extends Model
         'generated_by',
         'recipient_email',
         'subject',
+        'status',
+        'review_until',
         'body',
         'tracking_token',
         'sent_at',
@@ -27,6 +41,7 @@ class EmailTracking extends Model
     ];
 
     protected $casts = [
+        'review_until' => 'datetime',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'opened_at' => 'datetime',
@@ -69,6 +84,41 @@ class EmailTracking extends Model
     public function isDraft(): bool
     {
         return is_null($this->sent_at);
+    }
+
+    /**
+     * Whether this row is an auto-generated report sitting in its 5-day
+     * review window (unsent, awaiting the auto-send step or manual send).
+     */
+    public function isPendingReview(): bool
+    {
+        return is_null($this->sent_at) && $this->status === self::STATUS_PENDING_REVIEW;
+    }
+
+    /**
+     * Whether the review window has ended and the row is due for auto-send.
+     */
+    public function isDueForSending(): bool
+    {
+        return $this->isPendingReview()
+            && $this->review_until !== null
+            && $this->review_until->lte(now());
+    }
+
+    /**
+     * Auto-staged reports awaiting their send date.
+     */
+    public function scopePendingReview($query)
+    {
+        return $query->whereNull('sent_at')->where('status', self::STATUS_PENDING_REVIEW);
+    }
+
+    /**
+     * Pending-review rows whose window has ended (sendable now).
+     */
+    public function scopeDueForSending($query)
+    {
+        return $query->pendingReview()->where('review_until', '<=', now());
     }
 
     public function effectiveBody(): ?string

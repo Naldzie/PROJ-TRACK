@@ -39,9 +39,17 @@ class EmailController extends Controller
             $query->whereNotNull('sent_at')->whereNull('opened_at');
         } elseif ($filter === 'drafts') {
             $query->whereNull('sent_at');
+        } elseif ($filter === 'review') {
+            $query->pendingReview();
         }
 
         $emails = $query->paginate(15)->withQueryString();
+
+        // Workspace-wide tab badges (independent of the active filter/search).
+        $draftsCount = EmailTracking::whereNull('sent_at')
+            ->where('status', EmailTracking::STATUS_DRAFT)
+            ->count();
+        $inReviewCount = EmailTracking::pendingReview()->count();
 
         $projectsCount = Project::whereIn('status', ['Ongoing', 'Completed'])->count();
 
@@ -69,7 +77,7 @@ class EmailController extends Controller
             ]);
         }
 
-        return view('staff.email', compact('emails', 'recentActivity', 'projectsCount', 'nextAutoSend', 'projects', 'autoSendEnabled', 'lastAutoSend'));
+        return view('staff.email', compact('emails', 'recentActivity', 'projectsCount', 'nextAutoSend', 'projects', 'autoSendEnabled', 'lastAutoSend', 'draftsCount', 'inReviewCount'));
     }
 
     public function show(EmailTracking $email)
@@ -98,6 +106,7 @@ class EmailController extends Controller
             'project_location' => $project->location ?? 'N/A',
             'project_status' => $project->status ?? 'N/A',
             'body' => $email->effectiveBody() ?? 'Report analysis not available.',
+            'body_html' => app(\App\Services\AiReportParser::class)->renderForDisplay($email->effectiveBody() ?? ''),
             'ai_recommendation' => $email->aiSolution?->analysis_text ?? '',
             'planned_progress' => number_format($planned, 1) . '%',
             'actual_progress' => number_format($actual, 1) . '%',
@@ -105,7 +114,9 @@ class EmailController extends Controller
             'delay_percentage' => $delayPct,
             'risk_level' => $riskData['label'],
             'generated_at' => $email->sent_at?->format('F d, Y h:i A') ?? 'N/A',
-            'status' => $email->isDraft() ? 'Draft' : ($email->opened_at ? 'Opened' : ($email->delivered_at ? 'Delivered' : 'Pending')),
+            'status' => $email->isPendingReview() ? 'In review' : ($email->isDraft() ? 'Draft' : ($email->opened_at ? 'Opened' : ($email->delivered_at ? 'Delivered' : 'Pending'))),
+            'review_status' => $email->status,
+            'review_until' => $email->review_until?->format('F d, Y h:i A'),
             'is_draft' => $email->isDraft(),
             'is_read' => $email->is_read,
             'is_edited' => $email->is_edited,
@@ -143,6 +154,7 @@ class EmailController extends Controller
             'generated_by' => auth()->id(),
             'recipient_email' => $project->contractor->user->email,
             'subject' => $data['subject'],
+            'status' => EmailTracking::STATUS_DRAFT,
             'body' => $data['body'],
             'tracking_token' => EmailTracking::generateToken(),
             'sent_at' => null,
@@ -216,6 +228,16 @@ class EmailController extends Controller
             ], 403);
         }
 
+        // System-staged reviews must survive until they are sent — deleting
+        // one would silently drop a project from the monthly batch (and the
+        // next generate run would just stage it again). Edit or send instead.
+        if ($email->isPendingReview()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Reports in review cannot be deleted. Edit it or send it early instead.',
+            ], 403);
+        }
+
         $email->delete();
 
         return response()->json(['success' => true, 'message' => 'Draft deleted.']);
@@ -255,7 +277,7 @@ class EmailController extends Controller
             return response()->json(['success' => false, 'message' => 'Send failed: ' . $e->getMessage()], 422);
         }
 
-        $email->update(['sent_at' => now(), 'delivered_at' => null, 'recipient_email' => $recipient]);
+        $email->update(['sent_at' => now(), 'delivered_at' => null, 'recipient_email' => $recipient, 'status' => EmailTracking::STATUS_SENT]);
 
         return response()->json(['success' => true, "message" => "Message sent to {$recipient}. It is now locked."]);
     }

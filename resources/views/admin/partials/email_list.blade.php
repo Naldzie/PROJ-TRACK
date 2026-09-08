@@ -3,13 +3,14 @@
     $project = $email->project;
     $ai = $email->aiSolution;
     $isDraft = $email->isDraft();
+    $inReview = $email->isPendingReview();
     $body = $email->effectiveBody() ?? 'Report analysis not available.';
     $preview = strlen($body) > 120 ? substr($body, 0, 120) . '...' : $body;
     $displayDate = $isDraft ? $email->created_at : ($email->sent_at ?? $email->created_at);
     $month = $displayDate ? $displayDate->format('F Y') : '';
     $shortDate = $displayDate ? $displayDate->format('M d') : '';
-    $status = $isDraft ? 'Draft' : ($email->opened_at ? 'Opened' : ($email->delivered_at ? 'Delivered' : 'Pending'));
-    $statusClass = $isDraft ? 'tag-draft' : ($status === 'Opened' ? 'tag-opened' : ($status === 'Delivered' ? 'tag-delivered' : 'tag-pending'));
+    $status = $inReview ? 'In review' : ($isDraft ? 'Draft' : ($email->opened_at ? 'Opened' : ($email->delivered_at ? 'Delivered' : 'Pending')));
+    $statusClass = $inReview ? 'tag-review' : ($isDraft ? 'tag-draft' : ($status === 'Opened' ? 'tag-opened' : ($status === 'Delivered' ? 'tag-delivered' : 'tag-pending')));
     $initials = '';
     if ($email->recipient_email) {
         $local = explode('@', $email->recipient_email)[0];
@@ -21,7 +22,7 @@
     $companyName = $email->contractor?->company_name ?? '';
     $unread = !$isDraft && !$email->opened_at && !$email->delivered_at;
 @endphp
-<article class="message {{ $unread ? 'unread' : '' }} {{ $isDraft ? 'draft' : '' }}" data-status="{{ strtolower($status) }}" onclick="viewMsg({{ $email->id }})">
+<article class="message {{ $unread ? 'unread' : '' }} {{ $isDraft ? 'draft' : '' }}" data-status="{{ $inReview ? 'review' : strtolower($status) }}" onclick="viewMsg({{ $email->id }})">
   <div class="message-avatar"><img src="{{ asset('faviconpmu.png') }}" alt="PROJ-TRACK"></div>
   <div class="message-main">
     <div class="message-top">
@@ -36,6 +37,9 @@
       <span class="tag tag-date">{{ $month }}</span>
       @endif
       <span class="tag {{ $statusClass }}">{{ $status }}</span>
+      @if($inReview && $email->review_until)
+      <span class="tag tag-date" title="Automatically sent after the review window ends">Auto-sends {{ $email->review_until->format('M d') }}</span>
+      @endif
       @if($email->is_edited)
       @php
           $editedBy = $email->editedBy?->name ?? 'a user';
@@ -59,9 +63,15 @@
     <button class="row-button" onclick="event.stopPropagation();confirmSendDraft({{ $email->id }})" aria-label="Send message">
       <i class="bi bi-send-fill"></i>
     </button>
+    @if($inReview)
+    <button class="row-button" onclick="event.stopPropagation();showToast('Reports in review auto-send on schedule and cannot be deleted')" aria-label="Locked from deletion">
+      <i class="bi bi-lock"></i>
+    </button>
+    @else
     <button class="row-button" onclick="event.stopPropagation();deleteDraft({{ $email->id }})" aria-label="Delete draft">
       <i class="bi bi-trash3"></i>
     </button>
+    @endif
     @else
     <button class="row-button" onclick="event.stopPropagation();editDraft({{ $email->id }})" aria-label="Edit message (saving re-sends it)">
       <i class="bi bi-pencil"></i>

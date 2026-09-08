@@ -2,7 +2,7 @@
 # CSPC PMU System — Make Project Creation Automated & S-Curve Import Layout-Agnostic
 # Date: September 4, 2026 — Updated: Normal-doc-first priority per user
 # Branch: phase-5-parser-accuracy (FROM phase-3-pdf-scurve-import; docs on phase-5-parser-accuracy-plan)
-# Status: 🔄 Step 1i COMMITTED (JS 56/56) + tests 5-7 + OCR starvation root-caused; NEXT = build 1i follow-up (dot-strip, coverage) + OCR fixes (per-file budget, truncation note, adjustable budget) on user go-ahead. Branch: phase-5-parser-accuracy.
+# Status: ✅ Reader accuracy COMPLETE through P1/P2 (JS 62/62, browser-proven incl. verdict buttons). Learning loop CONTINUES in textfiles/document_parser_learning_loop_plan.md (L1-L3, NOT STARTED). S-curve Steps 2-4 still deferred. Branch: phase-5-parser-accuracy.
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -1337,8 +1337,7 @@ Related plan
     - Tests: (i) unmarked '6.495,049.29' labeled line reads full; (ii) crop fixture yields
       at-least-1 budget candidate; (iii) full suite green + 5-file browser set unchanged.
 
-  OCR BUDGET STARVATION — root-caused 2026-09-04 (user re-tests; findings + fixes APPROVED, no code yet).
-    Finding (user's order-matters challenge → verified in code, document-parser.js):
+  OCR BUDGET STARVATION — root-caused 2026-09-04 (user re-tests; findings + fixes APPROVED, no code yet).    Finding (user's order-matters challenge → verified in code, document-parser.js):
       the photo-reader cap (OCR_PAGE_LIMIT = 10, :226) is SHARED across all files
       first-come-first-served in upload order, reset ONLY on popup close
       (cancelDocumentAutofill :36), never at preview start (:50). Rendering quality is
@@ -1366,6 +1365,168 @@ Related plan
     - Tests: (i) 3-file bundle-second run extracts bundle dates/price (order swapped both
       ways, same result); (ii) back-to-back previews without closing popup read identically;
       (iii) over-budget file shows the truncation note; (iv) full suite green.
+
+  1i FOLLOW-UP + OCR FIXES — IMPLEMENTED + tested (2026-09-04), NOT COMMITTED per user.
+    - F1: labeled-loop thousand-dot strip regardless of Php marker (matched label = money
+      context; narrow digit-dot-3digits-digit pattern — "Section 1.495" untouched).
+    - F2: 'bare-php' fallback pattern (bare "Php X" with no parens/NET-TOTAL/P-prefix) —
+      closes the test-2 crop gap where first-match saw the price but the pool sat out.
+      Unlabeled + low weight; ambient marker-less figures still ignored (old guard holds).
+    - O1: per-file OCR budget — _ocrPagesDone resets in extractTextFromPDF per file;
+      ocrPageLimit() reads window._ocrPageLimit (1–50, default 10). Order independence +
+      re-run starvation both fixed at the source.
+    - O2: truncation note — extractTextFromPDF returns {truncated}; preview renders a gray
+      note naming cut files ("first N scanned pages read") — partial never poses again.
+    - O3: _fileCounts per field per file in pooled return + inspector log line
+      ("bundle: 0" = silent, not outvoted).
+    - Adjustable: "Read more pages & re-scan (≈2s per page)" button in the preview
+      (window._rescanMorePages: +15 pages up to 50, closes preview, re-runs). Opt-in per
+      run, default untouched, no Blade change (dynamic DOM like the banners).
+    - Tests (+3 follow-up fixtures, core 39/39): labeled unmarked thousand-dots + narrow
+      safety; bare-Php pool join + ambient guard; _fileCounts shape (a≥1, silent file 0).
+      Full JS 59/59 (core 39 + scurve 20). O1/O2/button are DOM-timing paths — covered by
+      browser re-test, not unit tests. No PHP touched. No commit.
+    - Next: user browser re-test — (a) bundle-second 3-file run extracts bundle fields
+      (order swapped, same result); (b) truncation note appears on over-budget files;
+      (c) re-scan button bumps budget and re-reads with the time warning visible.
+
+  2026-09-04 — Checks A/B/C PASS + NEXT BATCH planned (user approved, no code yet).
+    - A (order swapped both ways): identical previews; duration piles across all 3 files
+      (4 finds, patterns within-clause + labeled); dates/location fill bundle-second.
+      Order independence + re-run stability CONFIRMED in production. Starvation closed.
+    - B (back-to-back previews): identical. O1 verified by hand.
+    - C (truncation + re-scan): gray note names cut files; button bumps 10→25→40 with the
+      time warning visible. User wording verdicts (all accepted): note is PER FILE (say so
+      explicitly); drop the word "budget"; report REAL counts ("read X of Y scanned pages
+      in <file>") instead of the blind +15 stepping (user: "how 40 for 7+12 pages?");
+      replace fixed stepping with a page-count SELECTOR (10/25/40/50 per file, default 10,
+      warning beside it); 50-page ceiling stays the hard cap.
+    - Tail verdict: bundle still reads 5049.29 while contract files read full — mismatch
+      banner lists both (working as designed). Root cause of the REMAINDER: the dot-strip
+      lives in the voting path only; the single-match path (mismatch banner + single-file
+      preview) never got it. Fix = move the narrow strip into the shared money reader so
+      both paths behave identically.
+    - Mismatch trivia STILL firing (')-Savings' vs ') -Savings', '&' vs 'AND') — normalize
+      hardening was queued, never built; folded into this batch.
+
+  2026-09-04 — Stale-banner bug logged (plan only, no code, no implementation).
+    - User: bundle-alone WITHOUT page refresh shows previous run's red "2/3 files" banner
+      (values correct); after full refresh the banner is gone and the end state is fully
+      correct (truth filled, pool truth-only, no amber, no banner). User re-trying to see
+      if it recurs before any fix is built.
+    - Logged as STALE-STATE BUG section above (verified roots: uncleared window.* state +
+      dynamic nodes; persisting scan depth; pending-docs cleared OK). S-batch S1-S3 planned.
+    - Committing plan only per user (commit, no push ordered).
+
+  NEXT BATCH (approved, no code yet).
+    - N1. Shared dot-strip: move the narrow thousand-dot strip into asMoney itself (both
+      paths inherit it). Same narrow pattern (dot + exactly-3-digits + digit/comma behind);
+      version text stays untouched. Expected: tail-vs-truth ties vanish from preview fill
+      AND mismatch banner on solved files.
+    - N2. Normalize hardening: '&'→'and', punctuation/spacing-blind compare in
+      normalizeForVote (+ wrapper twin). Same-project pairs stop flagging; true project
+      differences still flag. Red banner keeps per-file remove-button design (picked earlier).
+    - N3. Truncation note reword + real counts: no "budget" word; per-file phrasing; carry
+      {scannedTotal, scannedRead} per file from extractTextFromPDF to the preview
+      ("read X of Y scanned pages in <file>").
+    - N4. Page-count selector + re-scan: dropdown (10/25/40/50 per file, default 10) with
+      ≈2s/page warning beside it; button re-runs at the chosen depth (replaces +15 stepping).
+    - Tests: (i) shared strip: unmarked '6.495,049.29' via single-match reads full;
+      (ii) '&' vs 'AND' + space/punct variants vote equal (no banner); truly different
+      titles still mismatch; (iii) full suite green + 5-file + multi-file browser re-check.
+
+  2026-09-04 — N-batch + S-batch IMPLEMENTED (code + tests, NOT committed per user).
+    - N1: strip moved into asMoney (both paths) + single-decimal guard (found by the suite:
+      the total-row's fused '049.29100.00' would otherwise lose a real decimal dot; guard
+      counts /\.\d{2}\b/ groups and strips only when exactly one). Same guard mirrored to
+      the labeled-loop F1 strip + both fallback pre-normalizations (4 strip sites, one rule).
+    - N2: core normalizeForPool + wrapper normalizeForVote hardened identically (&→and,
+      non-alphanumeric collapse); normalizeForPool exported for tests.
+    - S0: run-files + banner-decision log lines (preview call + render); S1: banner/note nodes
+      rebuilt per render (remove-then-create; hide-branch deleted as a stale-state class);
+      S2: runId travels to showAutofillPreview, stale renders return early with a warning;
+      S3: cancelDocumentAutofill resets window vote/disagree/debug/depth state + removes
+      dynamic nodes (runs on modal open; in-session re-scan depth preserved).
+    - N3: extractTextFromPDF returns {scannedTotal, scannedRead}; per-file scanReports flow
+      to the preview; note reworded with real counts, no "budget" word.
+    - N4: selector (10/25/40/50, default 10) + Re-scan button via window._rescanWithSelection
+      (replaces +15 _rescanMorePages); warning beside the selector; no Blade change.
+    - Tests (+2 N fixtures, core 41/41): unmarked single-match strip + narrow safety;
+      '&'/spacing/punct equality + real-difference separation. Full JS 61/61
+      (core 41 + scurve 20). Wrapper S/O paths are DOM-timing — browser re-test covers them.
+      No PHP touched. No commit.
+    - Next: user browser re-test — (a) bundle price fills full with no banner on
+      same-project sets; (b) single-file re-runs never show a stale banner; (c) gray note
+      shows real "read X of Y" counts + selector works with the warning visible.
+
+  2026-09-04 — N-batch + S-batch VERIFIED in production (user browser runs + log lines).
+    - Test 1 (3-file same project): NO mismatch banner (N2 works); duration piles across
+      files with labeled + within-clause patterns; hardened norms visible ('2024 12 09').
+      Per-file counts line renders.
+    - Test B (single-file re-run): 'preview run 3: files=[CHS - Savings.pdf] mismatch=false'
+      + 'preview render run 3: mismatch banner hidden' — S0/S1/S2 proven; stale-banner class
+      closed. The earlier stale sighting does not recur.
+    - Test C (real counts + re-scan at 25): gray note reads per-file truth — 'CHS: read 9 of
+      12 (10 per file selected)' / 'Contract: 7 of 7'; post-rescan '12 of 12' / '7 of 7'.
+      Deeper pile grew (budget 8→9, duration gained a labeled contract-file hit) while ALL
+      winners held — weighting proven at depth. One stray misread surfaced, harmless
+      (single find, nothing agrees). N3/N4 proven.
+    - Re-scan semantics (user Q, answered + logged): every re-scan is a FULL fresh run at
+      the new ceiling (pages 1–10 re-read + 11–25 new) — honest cost is up to ~2s × depth,
+      not "+15s". Nothing cached between runs today.
+    - FUTURE (parked, not approved for build): incremental re-scan cache — keep per-file OCR
+      text keyed by file + depth, read only newly uncovered pages on bump. Faster re-scans,
+      but needs cache + invalidation rules for an occasional button. Build only if the wait
+      starts annoying the user.
+    - STALE-STATE bug: CLOSED by the Test B evidence above.
+
+  2026-09-04 — P1+P2 IMPLEMENTED (code + tests, NOT committed per user).    - P1: core splitMismatchGroups(variants) → {connected, outliers} + export (pure, tested);
+      banner renders a grouped verdict ("X, Y look like one project / Looks different: Z
+      [Remove & re-scan]") driven by the title variants, outlier file lists stashed by index
+      (quote-safe) in window._mismatchOutliers; window._removeMismatchFiles(idx) ejects matching
+      pending docs via removeDocument(docId) (document-manager.js:198), closes preview, re-runs.
+      Silent on agreement (single variant → no verdict, no buttons).
+    - P2: unconditional one-line console hint per preview pointing at window._autofillVoteDebug
+      (tables recoverable without the debug flag and without re-uploading; the stash itself
+      was already unconditional — only the printing was gated).
+    - Learning-loop question (user): YES next after this batch proves itself — and YES, the
+      "DB-driven" §11 flagged item is the same destination (parser_keywords table + admin CRUD);
+      the loop adds the journey (silent collect from corrections → live after 2–3 confirmations
+      or admin one-click → deletable; never from unresolved files). Sequence stands:
+      bundle accuracy → learning loop (tested on the bundle) → AI fallback last.
+    - Tests (+1 P1 fixture, core 42/42): 3-vs-1 grouping + empty/agreement shapes. Full JS 62/62
+      (core 42 + scurve 20). Banner buttons + remove-and-rerun flow are DOM-timing — browser
+      proof covers them. No PHP touched. No commit.
+    - Next: user browser proof on the mixed 3+1 set — verdict line + Remove & re-scan button
+      visible; clicking it ejects the outlier and recomputes from the remaining three.
+
+  2026-09-04 — P1/P2 BROWSER-PROVEN by user (verdict + remove buttons working "as far as
+  I can see"); reader accuracy work declared COMPLETE through P1/P2.
+    - Learning loop CONTINUES in textfiles/document_parser_learning_loop_plan.md (L1 silent
+      collection → L2 review list → L3 reader consults table; staff+admin approval,
+      labels-only, hybrid trust; AI fallback last). This file keeps history only — new
+      learning work logs THERE, not here. Plan split per user (file too long).
+
+  STALE-STATE BUG — reported 2026-09-04, root causes VERIFIED in code, S-batch IMPLEMENTED (2026-09-04), NOT COMMITTED per user.
+    Symptom (user, bundle-alone run WITHOUT page refresh): preview values correct
+      (truth filled, pool holds truth only) BUT the red "mismatch 2/3 files" banner from
+      the PREVIOUS 3-file run still shows. After full page refresh: banner gone, end state
+      fully correct. User will re-try to see if it recurs.
+    Verified (read-only): (a) cancelDocumentAutofill (document-parser.js:34) resets run id
+      + scanning banner + closes preview, but NEVER clears window._autofillMismatch /
+      _autofillDisagree / _autofillVoteDebug / _ocrPageLimit and NEVER removes the dynamic
+      #autofillPreviewMismatch / #autofillPreviewTruncated nodes; (b) window._ocrPageLimit
+      persists across runs/sessions until full refresh (user's "40-page budget" screenshot
+      on a fresh preview proves it); (c) pending documents ARE cleared on modal open
+      (_create_project_modal.js:193) — old files are NOT reprocessed, leftovers are state-only.
+    S-BATCH as built:
+      - S0. Run-files + banner-decision log lines (preview call site + render site).
+      - S1. Fresh nodes per render (remove-then-create for banner + gray note; the
+        hide-branch is deleted as a stale-state class) + cancelDocumentAutofill resets all
+        window vote/disagree/debug/depth state and removes dynamic nodes.
+      - S2. runId travels into showAutofillPreview; stale renders return early + warn.
+      - S3. Depth default resets per modal session (cancel path); in-session re-scan bumps
+        preserved (cancel is NOT called on re-scan re-runs).
 
 ===============================================================================
   8. OPEN QUESTIONS / STILL TO RESOLVE
@@ -1603,6 +1764,12 @@ Related plan
     `SELECT title FROM projects` and `SELECT company_name FROM contractors`,
     extract top word bigrams, store in a new `parser_keywords` table +
     admin CRUD modal (same pattern as categories). Threshold: ≥3 occurrences.
+    NOTE (user Q 2026-09-04 — two DB-driven items, do not confuse):
+    (a) THIS parser_keywords item = NORMAL-doc vocabulary = the learning loop's
+    destination (loop adds the journey: silent collect → live after repeats/admin
+    approval; see POST-1i ROADMAP). (b) The OTHER item, parser_templates
+    (per-contractor S-curve column_map JSON + _template_mapper_modal, Decision 8),
+    belongs to the S-CURVE Opt-in matcher tier — untouched, deferred with Steps 2-4.
 
   - If Option A proves too friction-heavy for PMU staff, revisit Option B:
     `budget_sources.status = pending` + admin notification + approve/reject.
