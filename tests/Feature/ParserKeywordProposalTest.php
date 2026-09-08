@@ -218,4 +218,55 @@ class ParserKeywordProposalTest extends TestCase
         ])->assertUnprocessable();
         $this->assertDatabaseCount('parser_keyword_proposals', 0);
     }
+
+    // AI-4 provenance: AI-kept rows post with source AI-assisted; omitted source
+    // defaults to correction; the review list exposes the badge value.
+    // Called by: harvestCorrections() stamping window._autofillAiAssisted fields.
+    public function test_source_tagging_defaults_and_lists(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop Source',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [
+                ['field' => 'abc', 'label' => 'AI Found Wording', 'source' => 'AI-assisted'],
+                ['field' => 'abc', 'label' => 'Human Fixed Wording'],
+                ['field' => 'abc', 'label' => 'Bogus Origin', 'source' => 'model-guess'],
+            ],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('parser_keyword_proposals', 0);
+
+        $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [
+                ['field' => 'abc', 'label' => 'AI Found Wording', 'source' => 'AI-assisted'],
+                ['field' => 'abc', 'label' => 'Human Fixed Wording'],
+            ],
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('parser_keyword_proposals', [
+            'field' => 'abc',
+            'label_phrase' => 'AI Found Wording',
+            'source' => 'AI-assisted',
+        ]);
+        $this->assertDatabaseHas('parser_keyword_proposals', [
+            'field' => 'abc',
+            'label_phrase' => 'Human Fixed Wording',
+            'source' => 'correction',
+        ]);
+
+        $staff = User::create([
+            'name' => 'Loop Source Reader',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($staff)->getJson('/staff/parser-keyword-proposals/all')
+            ->assertOk()
+            ->assertJsonPath('0.source', 'AI-assisted');
+    }
 }

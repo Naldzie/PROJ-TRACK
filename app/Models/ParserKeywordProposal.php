@@ -9,9 +9,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 // L1 learning-loop store: harvested (label → field) correction proposals.
 // Only label phrases are kept — user values (names, amounts, dates) are NEVER stored.
 // A row goes live only via L2 review (admin/staff approval) or ≥3 occurrences.
+// AI-4: `source` records provenance ('correction' human-taught vs 'AI-assisted') so the
+// review desk can badge rows whose wording was kept from an AI-assisted read.
 class ParserKeywordProposal extends Model
 {
     use HasFactory, SoftDeletes;
+
+    public const SOURCES = ['correction', 'AI-assisted'];
 
     protected $fillable = [
         'field',
@@ -19,6 +23,7 @@ class ParserKeywordProposal extends Model
         'excerpt',
         'occurrences',
         'status',
+        'source',
     ];
 
     protected $casts = [

@@ -56,10 +56,14 @@ function cancelDocumentAutofill() {
         window._autofillDocTexts = [];
         window._autofillDocNames = [];
         window._autofillOriginal = null;
+        // AI-3/AI-4 stashes: provenance stamps + busy/merged flags belong to the preview run.
+        window._autofillAiAssisted = {};
+        window._autofillAiBusy = false;
+        window._autofillAiMerged = false;
         // Snapshots: original Files are per-session too (object URLs / buffers must not leak).
         window._autofillPdfFiles = [];
     }
-    for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated', 'autofillPreviewCopyWrap']) {
+    for (const id of ['autofillPreviewMismatch', 'autofillPreviewTruncated', 'autofillPreviewCopyWrap', 'autofillPreviewAi']) {
         try {
             const el = document.getElementById(id);
             if (el && el.remove) el.remove();
@@ -305,6 +309,21 @@ async function runDocumentAutofill() {
         // Stored for the preview modal to render amber pick-one notes. Silent when clear.
         window._autofillDisagree = pooledDisagreeInfo;
 
+        // AI-3 opt-in trigger (Tier 3, very last): offer only when the local pipeline admits
+        // weakness (few fills, low confidence, unresolved disagree). Silent on clean runs —
+        // including blinded-clean files whose only miss is the blinded ABC (Decision A2:
+        // high fill count + confidence with no disagree never offers). Stamps reset per run.
+        window._autofillAiAssisted = {};
+        window._autofillAiBusy = false;
+        window._autofillAiMerged = false;
+        var aiOffer = false;
+        try {
+            var aiCore = (typeof getCore === 'function') ? getCore() : null;
+            if (aiCore && typeof aiCore.shouldOfferAiAssist === 'function') {
+                aiOffer = !!aiCore.shouldOfferAiAssist(parsed, pooledDisagreeInfo);
+            }
+        } catch (e) { aiOffer = false; /* trigger is best-effort — preview still shows */ }
+
         // Show the preview modal — nothing is written to the form until Apply.
         // S2: the run id travels with the call so a slow older run can never paint over
         // a newer preview (stale-banner class of bug). S0: every render logs its run id,
@@ -318,7 +337,7 @@ async function runDocumentAutofill() {
             // sideways files even from the preview path.
             window._autofillScanReports = scanReports.slice();
         } catch (e) { /* logging is best-effort */ }
-        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles, scanReports, runId: myRunId });
+        showAutofillPreview(parsed, { ocrUsed, mismatch: mismatchInfo, disagree: window._autofillDisagree, truncatedFiles, scanReports, runId: myRunId, aiAssist: aiOffer });
 
     } catch (err) {
         console.error('[DocumentParser] Autofill failed:', err);
@@ -1167,6 +1186,220 @@ window._pickDisagreeValue = function (inputId, val) {
     if (el) { el.value = val; el.focus(); }
 };
 
+// ===================================================
+// AI-3 OPT-IN ASSIST (Tier 3, very last)
+// Renders the weakest pages to 150 DPI slices, POSTs them to parse-gemini once,
+// and merges returned values into EMPTY preview boxes for review (never auto-applies).
+// Slice-only (≤2 pages, never the whole file) + unsure-only (banner gates the call).
+// Called by: inline onclick on the AI banner button (+ empty-warning button).
+// ===================================================
+// Pick up to maxN (fileName, pageNum) candidates: unread scanned pages first, then any
+// scanned pages, then first pages for text files (scanReports know the ledger).
+// Pure selection over stashes (no DOM). Called by: _tryAiAssist*().
+async function buildAiSlices(maxN) {
+    const out = [];
+    try {
+        const reports = window._autofillScanReports || [];
+        const files = window._autofillPdfFiles || [];
+        const cands = [];
+        for (let ri = 0; ri < reports.length && cands.length < maxN; ri++) {
+            const r = reports[ri];
+            if (!r || !r.fileName) continue;
+            const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
+            const read = {};
+            (r.ocrPages || []).forEach(pn => { read[pn] = true; });
+            let ordered = scanned.filter(pn => !read[pn]).concat(scanned.filter(pn => read[pn]));
+            if (!ordered.length && r.numPages) {
+                for (let p = 1; p <= Math.min(r.numPages, 2) && ordered.length < 2; p++) ordered.push(p);
+            }
+            for (let k = 0; k < ordered.length && cands.length < maxN; k++) {
+                cands.push({ fileName: r.fileName, pageNum: ordered[k] });
+            }
+        }
+        const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
+        for (let c = 0; c < cands.length; c++) {
+            try {
+                let entry = null;
+                for (let fi = 0; fi < files.length; fi++) {
+                    if (files[fi] && files[fi].fileName === cands[c].fileName) { entry = files[fi]; break; }
+                }
+                if (!entry || !entry.file || typeof entry.file.arrayBuffer !== 'function') continue;
+                const rotDeg = rots[cands[c].fileName + '#' + cands[c].pageNum] || 0;
+                const pdfjs = await getPdfJs();
+                const buf = await entry.file.arrayBuffer();
+                const pdf = await pdfjs.getDocument({ data: buf }).promise;
+                if (!pdf || cands[c].pageNum < 1 || cands[c].pageNum > pdf.numPages) {
+                    try { pdf && pdf.destroy(); } catch (e) {}
+                    continue;
+                }
+                const page = await pdf.getPage(cands[c].pageNum);
+                // 150 DPI ≈ scale 2.08 (Letter → ~1650px); skip absurd renders.
+                const viewport = page.getViewport({ scale: 2.08, rotation: rotDeg || 0 });
+                if (Math.max(viewport.width, viewport.height) > 4000) {
+                    try { pdf.destroy(); } catch (e) {}
+                    continue;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                let url = '';
+                try { url = canvas.toDataURL('image/png'); } catch (e) { url = ''; }
+                try { pdf.destroy(); } catch (e) {}
+                if (url && url.length > 1000) out.push({ data: url, mimeType: 'image/png' });
+            } catch (e) { /* per-page best-effort — try the next candidate */ }
+        }
+    } catch (e) { /* slicing is best-effort */ }
+    return out;
+}
+
+// Merge AI values into EMPTY preview boxes + stamp provenance (Decision A3).
+// Returns the filled count. Non-empty boxes keep rule values in v1 (user edits freely).
+// Called by: _tryAiAssist().
+function mergeAiParsedIntoPreview(aiParsed) {
+    let filled = 0;
+    try {
+        const core = (typeof getCore === 'function') ? getCore() : null;
+        const toInput = {};
+        try {
+            for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+                toInput[AUTOFILL_CORE_FIELDS[inputId]] = inputId;
+            }
+        } catch (e) { return 0; }
+        window._autofillAiAssisted = window._autofillAiAssisted || {};
+        for (const coreField of Object.keys(toInput)) {
+            const val = aiParsed ? aiParsed[coreField] : null;
+            if (val === null || val === undefined || String(val).trim() === '') continue;
+            const el = document.getElementById('previewInput-' + toInput[coreField]);
+            if (!el || String(el.value || '').trim() !== '') continue;
+            let shown = String(val);
+            try {
+                if (el.type === 'date' && core) shown = core.parseToInputDate(val) || shown;
+            } catch (e) { /* keep raw on normalizer failure */ }
+            el.value = shown;
+            window._autofillAiAssisted[coreField] = true;
+            try {
+                const td = el.closest ? el.closest('td') : (el.parentNode || null);
+                if (td && !td.querySelector('[data-ai-marker]')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-info text-dark';
+                    badge.setAttribute('data-ai-marker', '1');
+                    badge.title = 'Filled by the AI-assisted read — please verify';
+                    badge.textContent = 'AI-assisted';
+                    td.appendChild(document.createTextNode(' '));
+                    td.appendChild(badge);
+                }
+            } catch (e) { /* marker is best-effort */ }
+            filled++;
+        }
+    } catch (e) { /* merge is best-effort */ }
+    return filled;
+}
+
+// POST slices to parse-gemini (role-aware, one call). Returns parsed shape or null.
+// Called by: _tryAiAssist*().
+async function postAiSlices(slices) {
+    const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+    if (path.indexOf('/contractor/') !== -1) return null;
+    const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+    const token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
+        (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
+    const res = await fetch(base + '/document/parse-gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
+        body: JSON.stringify({ images: slices }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok || !data || !data.success || !data.parsed) return null;
+    return data.parsed;
+}
+
+// Preview-banner entry: slice weakest pages, ask AI once, merge into empty boxes.
+// Stale-run guarded; busy-guarded (one call per preview); failures surface inline.
+// Called by: inline onclick on the AI banner button.
+window._tryAiAssist = async function () {
+    if (window._autofillAiBusy) return;
+    const runAtClick = (typeof _autofillRunId !== 'undefined') ? _autofillRunId : null;
+    const aiEl = document.getElementById('autofillPreviewAi');
+    const btn = aiEl ? aiEl.querySelector('button') : null;
+    window._autofillAiBusy = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Asking AI…'; }
+    try {
+        const slices = await buildAiSlices(2);
+        if (runAtClick !== null && runAtClick !== _autofillRunId) return;
+        if (!slices.length) {
+            if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
+            window._autofillAiBusy = false;
+            return;
+        }
+        const parsed = await postAiSlices(slices);
+        if (runAtClick !== null && runAtClick !== _autofillRunId) return;
+        if (!parsed) {
+            try {
+                if (aiEl && !aiEl.querySelector('[data-ai-error]')) {
+                    const err = document.createElement('div');
+                    err.setAttribute('data-ai-error', '1');
+                    err.style.fontSize = '0.85em';
+                    err.textContent = 'The AI assistant could not read these pages either — please fill in the fields manually.';
+                    aiEl.appendChild(err);
+                }
+            } catch (e) {}
+            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
+            window._autofillAiBusy = false;
+            return;
+        }
+        const n = mergeAiParsedIntoPreview(parsed);
+        try {
+            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + n + '</strong> empty box(es) — review, edit freely, then Apply. Boxes with local values were left alone.</span>';
+        } catch (e) {}
+        window._autofillAiMerged = true;
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('AI assist failed — please fill in the fields manually', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
+        window._autofillAiBusy = false;
+    }
+};
+
+// Empty-warning entry (zero-fill runs have no preview): same slice + ask, then OPEN a
+// preview with the AI values on an empty baseline so kept rows harvest with AI source.
+// Called by: inline onclick on the empty-warning AI button.
+window._tryAiAssistFromWarning = async function () {
+    if (window._autofillAiBusy) return;
+    window._autofillAiBusy = true;
+    if (typeof showToast === 'function') showToast('Asking the AI assistant to read the weakest pages…', 'info');
+    try {
+        const slices = await buildAiSlices(2);
+        if (!slices.length) {
+            if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
+            window._autofillAiBusy = false;
+            return;
+        }
+        const parsed = await postAiSlices(slices);
+        if (!parsed) {
+            if (typeof showToast === 'function') showToast('The AI assistant could not read these pages either', 'error');
+            window._autofillAiBusy = false;
+            return;
+        }
+        const core = (typeof getCore === 'function') ? getCore() : null;
+        const fields = ['title', 'location', 'description', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration', 'contractor'];
+        const full = {};
+        window._autofillAiAssisted = {};
+        for (const f of fields) {
+            const v = parsed[f];
+            full[f] = (v === null || v === undefined) ? null : String(v);
+            if (full[f] !== null && full[f].trim() !== '') window._autofillAiAssisted[f] = true;
+        }
+        try { hideAutofillBanner(); } catch (e) {}
+        showAutofillPreview(full, { aiAssist: false, emptyBaseline: true, runId: (typeof _autofillRunId !== 'undefined') ? _autofillRunId : null });
+        window._autofillAiMerged = true;
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('AI assist failed', 'error');
+    }
+    window._autofillAiBusy = false;
+};
+
 function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     const modalEl = document.getElementById('autofillPreviewModal');
     if (!modalEl) {
@@ -1226,6 +1459,17 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             }
             return '';
         };
+        // AI-3: per-field "AI-assisted" marker for values merged from the AI read.
+        // Stamped at merge time in window._autofillAiAssisted (Decision A3 provenance).
+        const aiMarkerFor = (inputId) => {
+            try {
+                const stamped = (typeof window !== 'undefined' && window._autofillAiAssisted) ? window._autofillAiAssisted : null;
+                if (!stamped) return '';
+                const coreField = (typeof AUTOFILL_CORE_FIELDS !== 'undefined' && AUTOFILL_CORE_FIELDS[inputId]) ? AUTOFILL_CORE_FIELDS[inputId] : null;
+                if (!coreField || !stamped[coreField]) return '';
+                return ' <span class="badge bg-info text-dark" data-ai-marker="1" title="Filled by the AI-assisted read — please verify">AI-assisted</span>';
+            } catch (e) { return ''; }
+        };
         tbody.innerHTML = fields.map(f => {
             const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
             const value = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
@@ -1236,18 +1480,23 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                         <input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
                             value="${value ? escapeHtml(value) : ''}"
                             placeholder="${f.value ? '' : 'Not found — fill manually'}" />
-                        ${disagreeNoteFor(f.id)}
+                        ${disagreeNoteFor(f.id)}${aiMarkerFor(f.id)}
                     </td>
                 </tr>
             `;
         }).join('');
         // L1 learning loop: snapshot what extraction guessed per CORE field, so Apply can
         // diff guesses vs user-kept values. Date-normalized exactly like the inputs above.
+        // AI-3 emptyBaseline: the AI-from-warning flow opens a preview with no rule guesses —
+        // every box starts empty so AI-kept values harvest with AI source (Decision A3).
         try {
+            const emptyBaseline = !!(arguments[1] && arguments[1].emptyBaseline);
             const snap = {};
             for (const f of fields) {
                 const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
-                snap[AUTOFILL_CORE_FIELDS[f.id] || f.id] = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
+                snap[AUTOFILL_CORE_FIELDS[f.id] || f.id] = emptyBaseline
+                    ? ''
+                    : (isDate ? (core.parseToInputDate(f.value) || '') : (f.value || ''));
             }
             window._autofillOriginal = snap;
         } catch (e) { window._autofillOriginal = null; /* snapshot is best-effort */ }
@@ -1392,6 +1641,28 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         mismatchEl.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> <strong>Possible mis-upload detected — files appear to be from different projects.</strong> Please verify which file to keep. The preview shows the majority vote (' + (mismatch.details[0].variants[0].count) + '/' + (mismatch.details[0].variants.reduce((s,v)=>s+v.count,0)) + ' files). You can still edit and Apply.' + '<div class="mt-2">' + rows + '</div>' + verdictHtml;
         mismatchEl.style.display = '';
     }
+    // AI-3 opt-in banner (Tier 3, very last): offered only when the local pipeline admits
+    // weakness (aiAssist computed at run time). S1: remove any previous run's node first.
+    // One AI call per file max (free-tier guard lives in the click handler + server cap).
+    try {
+        const oldAi = document.getElementById('autofillPreviewAi');
+        if (oldAi && oldAi.remove) oldAi.remove();
+    } catch (e) { /* best-effort */ }
+    const aiAssist = arguments[1] && arguments[1].aiAssist ? arguments[1].aiAssist : false;
+    if (aiAssist) {
+        try {
+            const pathNow = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+            if (pathNow.indexOf('/contractor/') === -1) {
+                const aiEl = document.createElement('div');
+                aiEl.id = 'autofillPreviewAi';
+                aiEl.className = 'alert alert-warning d-flex align-items-center gap-2 flex-wrap mt-3';
+                aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> Sends at most 2 confusing pages (never the whole file).</span>' +
+                    '<button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">Try AI assist</button>';
+                const container = modalEl.querySelector('.modal-body') || modalEl;
+                container.appendChild(aiEl);
+            }
+        } catch (e) { /* banner is best-effort — preview still shows */ }
+    }
     // S0: log the banner decision with the run id (stale-render diagnosis).
     try {
         const rid = (arguments[1] && arguments[1].runId !== undefined) ? arguments[1].runId : '?';
@@ -1480,6 +1751,9 @@ function harvestCorrections(applied) {
         const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
         const docText = texts.join('\n\n');
         const disagree = window._autofillDisagree || null;
+        // AI-4 provenance (Decision A3: learn everything, but tag the origin): rows kept
+        // from an AI-assisted read post with source 'AI-assisted' for the desk badge.
+        const aiStamped = (typeof window !== 'undefined' && window._autofillAiAssisted) ? window._autofillAiAssisted : null;
         const proposals = [];
         for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
             const field = AUTOFILL_CORE_FIELDS[inputId];
@@ -1493,6 +1767,7 @@ function harvestCorrections(applied) {
                     label: mined ? mined.label : null,
                     excerpt: mined ? mined.excerpt : null,
                     had_disagree: !!(disagree && disagree[field]),
+                    source: (aiStamped && aiStamped[field]) ? 'AI-assisted' : 'correction',
                 });
                 // Server batch cap is 33 (11 fields × 3 labels) — never overflow it.
                 if (proposals.length >= 33) break;
@@ -1855,6 +2130,18 @@ function showAutofillWarning(message, opts) {
         });
         if (btns.length) rotBtns = '<div>' + btns.join('') + '</div>';
     } catch (e) { rotBtns = ''; /* rotate affordance is best-effort */ }
+    // AI-3 on empty runs (zero fills, no preview): offer the same opt-in assist — on success
+    // a preview OPENS with the AI values on an empty baseline (see emptyBaseline snapshot).
+    // Contractors have no endpoint; files must still be stashed for slicing.
+    let aiBtn = '';
+    try {
+        const wantAi = !opts || opts.aiAssist !== false;
+        const cPath = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        const hasFiles = (window._autofillPdfFiles || []).some(f => f && f.file);
+        if (wantAi && hasFiles && cPath.indexOf('/contractor/') === -1 && typeof window._tryAiAssistFromWarning === 'function') {
+            aiBtn = '<button type="button" class="btn btn-sm btn-warning mt-2" onclick="window._tryAiAssistFromWarning()" title="Send at most 2 confusing pages to the AI assistant (never the whole file)">Try AI assist</button>';
+        }
+    } catch (e) { aiBtn = ''; /* assist affordance is best-effort */ }
     banner.innerHTML = `
         <i class="bi bi-exclamation-triangle flex-shrink-0 fs-5"></i>
         <div>
@@ -1864,6 +2151,7 @@ function showAutofillWarning(message, opts) {
             ${straightenBtn}
             ${rotBtns}
             ${snapBtns}
+            ${aiBtn}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
     `;

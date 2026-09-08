@@ -1735,6 +1735,26 @@ const DocumentParserCore = (function () {
         return keys.filter(k => parsed[k] !== null && parsed[k] !== '' && parsed[k] !== undefined).length;
     }
 
+    // AI-3 opt-in trigger (Tier 3, very last): should the preview offer "[Try AI assist?]".
+    // Offers when the local pipeline admits weakness — few fills, low confidence, or an
+    // unresolved pooled disagreement. Silent on clean runs (including blinded-clean files
+    // whose only miss is the blinded ABC: 10/11 fills at ~85 confidence, no disagree).
+    // Thresholds are starting values; the AI plan leaves final tuning to live test4 numbers.
+    // Pure (no DOM) — the wrapper decides presentation. Called by: runDocumentAutofill().
+    function shouldOfferAiAssist(parsed, disagree) {
+        const filled = countFilled(parsed || {});
+        if (filled === 0) return true;
+        if (filled <= 3) return true;
+        if (((parsed && parsed._confidence) || 0) < 40) return true;
+        if (disagree) {
+            for (const k of Object.keys(disagree)) {
+                const d = disagree[k];
+                if (d && d.winner && d.runnerUp) return true;
+            }
+        }
+        return false;
+    }
+
     return {
         cleanValue,
         toTitleCase,
@@ -1763,6 +1783,7 @@ const DocumentParserCore = (function () {
         DESCRIPTION_NEXT_FIELD,
         parseProjectInfo,
         countFilled,
+        shouldOfferAiAssist,
         glueMoneyFragments,
         getSectionWeight,
         normalizeForPool,

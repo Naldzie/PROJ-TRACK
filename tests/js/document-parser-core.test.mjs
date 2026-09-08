@@ -728,6 +728,27 @@ test('ABC words-shape: end-to-end via the shared helper on the real funds-cert w
     const norm = core.buildLinesFromText(
         'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100 (contract funds certified)');
     assert.equal(core.readAbcWordsAmount(norm), '4834297.59');
+});
+
+// --- AI-3 trigger: offer AI assist only when the local pipeline admits weakness ---
+
+test('AI trigger: weak fills, low confidence, or unresolved disagree offer; clean stays silent', () => {
+    const full = (over = {}) => Object.assign({
+        title: 'T', location: 'L', description: 'D', budget: '1.00', abc: '2.00',
+        budgetSource: 'S', category: 'C', startDate: '2025-01-01', endDate: '2025-02-01',
+        duration: '30', contractor: 'K', _confidence: 95,
+    }, over);
+    // Empty and near-empty runs offer.
+    assert.equal(core.shouldOfferAiAssist({ _confidence: 0 }, null), true);
+    assert.equal(core.shouldOfferAiAssist({ title: 'T', _confidence: 20 }, null), true);
+    // Low confidence offers even with several fills.
+    assert.equal(core.shouldOfferAiAssist(full({ _confidence: 30 }), null), true);
+    // Unresolved disagree offers on an otherwise decent run.
+    const disagree = { budget: { winner: { value: '1.00' }, runnerUp: { value: '2.00' } } };
+    assert.equal(core.shouldOfferAiAssist(full({ _confidence: 80 }), disagree), true);
+    // Clean run stays silent — including the blinded-clean shape (only ABC missing).
+    assert.equal(core.shouldOfferAiAssist(full({ _confidence: 85 }), { budget: null, abc: null }), false);
+    assert.equal(core.shouldOfferAiAssist(full({ abc: null, _confidence: 85 }), null), false);
 });// --- D-total: Total Contract Time outranks Original ----------------------------------
 
 test('D-total: Total Contract Time wins outright when present (single-match)', () => {

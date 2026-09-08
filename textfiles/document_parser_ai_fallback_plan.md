@@ -159,6 +159,27 @@ Sensitivity basis (user-approved)
       nothing, all-null + empty-images decline, 3-image cap asserted on the wire, invalid
       values → null). First Http::fake() use in the suite. No commit without OK.
 
+  2026-09-08 — AI-3 + AI-4 BUILT on merge15-baseline (code, NOT committed; folded — AI-4
+  sourcing rides the AI-3 merge so provenance never corrupts; no push per user).
+    - Trigger: core shouldOfferAiAssist(parsed, disagree) pure + exported (fills≤3 OR
+      confidence<40 OR unresolved disagree; clean incl. blinded-clean stays silent).
+      Fixture locks all five branches.
+    - Banner: dynamic amber opt-in in showAutofillPreview (S1 remove-first, contractor
+      hidden); empty-warning path gets the same button (opens a preview on emptyBaseline
+      snapshot so AI-kept rows harvest with AI source).
+    - Slice: buildAiSlices(2) reuses the snapshot re-render (stashed Files + live rotations,
+      150 DPI ≈ scale 2.08, 4000px absurd-guard); weakest pages first (unread scanned, then
+      scanned, then first pages); one POST per click (busy + stale-run guarded).
+    - Merge: AI values into EMPTY boxes only (v1 scope — rule values kept, user edits freely),
+      per-field AI-assisted badge, window._autofillAiAssisted stamps; success/failure notes
+      inline; resets in cancel path + per run.
+    - Sourcing: migration source column (correction default) + model SOURCES + collect
+      validation/store + list mapping + desk Origin badge column (shared with parked P1).
+      Harvest tags AI-touched rows; miner/caps/trust unchanged.
+    - Tests: +1 core trigger fixture; +1 PHP source test (AI-assisted stored/listed, bogus
+      rejected, omission defaults). JS 90/92 (2 intended blinding fails); combined AI suites
+      25/25; Blade view:cache clean. No commit/push without OK.
+
   2026-09-08 — AI-2 BUILT on merge15-baseline (code, NOT committed; no UI yet).
     - Endpoint app/Http/Controllers/DocumentParserController.php::parseWithGemini(): exactly
       one source (images[] client slices | image file upload | image document_id), 201/422

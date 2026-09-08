@@ -10,7 +10,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small">
-                    Wording suggestions harvested from project-form corrections.
+                    Wording suggestions harvested from project-form corrections and AI-assisted reads.
                     <strong>Approve</strong> to let the reader use a wording,
                     <strong>Reject</strong> to discard it. Learned wording only ever fills a box
                     when the built-in labels miss — nothing approved here can override them.
@@ -37,6 +37,7 @@
                                 <th>Suggested wording</th>
                                 <th>Box</th>
                                 <th title="How many corrections produced this wording">Seen</th>
+                                <th title="Where this wording was learned">Origin</th>
                                 <th>Status</th>
                                 <th class="text-end">Actions</th>
                             </tr>
@@ -139,7 +140,7 @@ async function loadParserKeywordsForManagement() {
         tbody.innerHTML = '';
 
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No ' + pkpEscapeHtml(_pkpFilter) + ' suggestions yet. Corrections made while creating projects will appear here.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No ' + pkpEscapeHtml(_pkpFilter) + ' suggestions yet. Corrections made while creating projects will appear here.</td></tr>';
             return;
         }
 
@@ -148,6 +149,10 @@ async function loadParserKeywordsForManagement() {
             const badge = row.status === 'live'
                 ? '<span class="badge bg-success">Live</span>'
                 : '<span class="badge bg-warning text-dark">Proposed</span>';
+            // AI-4 origin badge: AI-assisted rows carry AI-taught wording (Decision A3).
+            const origin = row.source === 'AI-assisted'
+                ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'
+                : '<span class="badge bg-secondary" title="Learned from a human correction">Correction</span>';
             const label = row.label_phrase ? pkpEscapeHtml(row.label_phrase) : '<span class="text-muted">(field count only — no wording found)</span>';
             const excerpt = row.excerpt
                 ? '<br><small class="text-muted" title="' + pkpEscapeHtml(row.excerpt) + '">' + pkpEscapeHtml(row.excerpt.substring(0, 90)) + (row.excerpt.length > 90 ? '…' : '') + '</small>'
@@ -158,6 +163,7 @@ async function loadParserKeywordsForManagement() {
                 '<td>' + label + excerpt + '</td>' +
                 '<td>' + pkpEscapeHtml(pkpFieldLabel(row.field)) + '</td>' +
                 '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
+                '<td>' + origin + '</td>' +
                 '<td>' + badge + '</td>' +
                 '<td class="text-end"><div class="d-flex gap-2 justify-content-end">' + approveBtn +
                 '<button class="btn btn-sm btn-outline-danger" data-pkp-reject="' + row.id + '" title="Discard this suggestion"><i class="bi bi-trash"></i></button>' +

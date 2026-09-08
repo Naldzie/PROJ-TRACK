@@ -44,11 +44,13 @@ class ParserKeywordProposalController extends Controller
 
         $validated = $request->validate([
             // Multi-label desk: up to 3 distinct labels per corrected box (11 fields × 3).
+            // AI-4: origin tagging ('correction' default, 'AI-assisted' for AI-kept rows).
             'proposals' => 'required|array|max:33',
             'proposals.*.field' => 'required|string|in:' . implode(',', self::LEARNABLE_FIELDS),
             'proposals.*.label' => 'nullable|string|max:255',
             'proposals.*.excerpt' => 'nullable|string|max:1000',
             'proposals.*.had_disagree' => 'sometimes|boolean',
+            'proposals.*.source' => 'sometimes|string|in:correction,AI-assisted',
         ]);
 
         $stored = 0;
@@ -78,6 +80,7 @@ class ParserKeywordProposalController extends Controller
                     'excerpt' => $item['excerpt'] ?? null,
                     'occurrences' => 1,
                     'status' => 'proposed',
+                    'source' => $item['source'] ?? 'correction',
                 ]);
             }
             $stored++;
@@ -119,6 +122,7 @@ class ParserKeywordProposalController extends Controller
                 'excerpt' => $row->excerpt ?? '',
                 'occurrences' => $row->occurrences,
                 'status' => $row->status,
+                'source' => $row->source ?? 'correction',
                 'created_at' => $row->created_at,
                 'updated_at' => $row->updated_at,
             ];
