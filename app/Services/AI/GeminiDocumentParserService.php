@@ -148,9 +148,12 @@ class GeminiDocumentParserService
     /**
      * Build the strict-JSON S-curve extraction prompt around workbook text.
      *
-     * Asks for two series so the server can apply the same reference+warn the
-     * rules use: activity-derived months (the baseline) plus the author's own
-     * summary-row values as printed (reference only, never recomputed).
+     * Asks for strict homework so the server can verify instead of trusting:
+     * activity-derived months + the monthly peso amounts and divisor behind
+     * them (recomputed server-side; mismatch = declined fabrication) + the
+     * author's own summary-row values as printed + whether a summary row
+     * exists at all. Copying the summary row into months is explicitly
+     * forbidden — it must arrive separately under "summary".
      *
      * Called by: parseExcelSlice()
      */
@@ -161,14 +164,18 @@ class GeminiDocumentParserService
             . ' names, bare numbers, ordinals ("1st."), or day-group headers; values may be pesos'
             . ' (possibly duplicated across paired columns — count each month once), weights, or'
             . ' cumulative percents. Return ONLY a JSON object {"months": [{"month_index": 1,'
-            . ' "planned_progress_percent": 12.5}, ...], "summary": [{"month_index": 1, "percent": 12.0},'
-            . ' ...], "contractAmount": 32588531.43}. Rules: "months" MUST be computed from the'
-            . ' activity/schedule rows (add each month\'s amounts, divide by the contract total,'
-            . ' cumulative 0-100 per month, month_index sequential from 1); "summary" is the file\'s'
-            . ' OWN summary/cumulative row values copied as printed (no recomputation — omit the key'
-            . ' when the file has no summary row); contractAmount the total contract figure or null;'
-            . ' use null fields you cannot find.'
-            . ' Return ONLY the JSON object, no explanations, no markdown fences.'
+            . ' "planned_progress_percent": 12.5}, ...], "monthlyAmounts": [{"month_index": 1,'
+            . ' "pesos": 50000}, ...], "summary": [{"month_index": 1, "percent": 12.0},'
+            . ' ...], "hasSummaryRow": true, "contractAmount": 32588531.43}. Rules:'
+            . ' "months" MUST be computed from the activity/schedule rows (add each month\'s amounts,'
+            . ' divide by the contract total, cumulative 0-100 per month, month_index sequential from'
+            . ' 1); "monthlyAmounts" are those per-month peso totals and "contractAmount" is the'
+            . ' divisor you used (omit monthlyAmounts only for percent/weight-only files with no peso'
+            . ' figures); "summary" is the file\'s OWN summary/cumulative row values copied as printed'
+            . ' (no recomputation — omit the key when the file has no summary row); "hasSummaryRow"'
+            . ' tells whether such a row exists. DO NOT copy the summary row into "months" — the two'
+            . ' series must be reported independently even when they agree. Use null fields you cannot'
+            . ' find. Return ONLY the JSON object, no explanations, no markdown fences.'
             . "\n\nCSV:\n" . mb_substr($csv, 0, 12000);
     }
 
@@ -181,6 +188,15 @@ class GeminiDocumentParserService
      * when no usable activity values exist (mirrors the rules' summary
      * fallback, flagged never silent).
      *
+     * Verification without layout knowledge (strict homework):
+     * - monthlyAmounts + contractAmount let the server RECOMPUTE the curve;
+     *   months that don't follow from the stated amounts are declined as
+     *   fabrication. Absent/partial amounts skip the check silently
+     *   (percent/weight-only files legitimately have no peso figures).
+     * - months mirroring an attached summary are labeled as unverified copies
+     *   instead of passing silently; a claimed-but-unshown summary row earns
+     *   an explicit could-not-verify note.
+     *
      * Called by: parseExcelSlice()
      */
     private function validateSCurveMonths(mixed $decoded): ?array
@@ -191,24 +207,49 @@ class GeminiDocumentParserService
 
         $months = $this->sanitizeCurvePoints($decoded['months'] ?? null);
         $summary = $this->sanitizeSummaryPoints($decoded['summary'] ?? null);
+        $amounts = $this->sanitizeAmountPoints($decoded['monthlyAmounts'] ?? null);
         $contract = $this->sanitizeContractAmount($decoded['contractAmount'] ?? null);
+        $hasSummaryRow = ($decoded['hasSummaryRow'] ?? null) === true;
 
         // Activity series usable — keep it, summary only warns.
         if (count($months) >= 2) {
+            // Recompute check on PRE-sanitizer values (clamp/force-last-100 are
+            // ours, not the model's — checking sanitized months would punish
+            // honest output for our own adjustments).
+            $rawMonths = $this->extractRawPoints($decoded['months'] ?? null);
+            if ($contract !== null && $contract > 0 && !$this->monthsFollowAmounts($rawMonths, $amounts, $contract)) {
+                return null;
+            }
+
             $warnings = ['AI-assisted curve — verify before locking the baseline.'];
             $byMonth = [];
             foreach ($months as $m) {
                 $byMonth[$m['month_index']] = $m['planned_progress_percent'];
             }
+            $compared = 0;
+            $mirrored = 0;
             foreach ($summary as $s) {
                 if (!isset($byMonth[$s['month_index']])) continue;
+                $compared++;
                 $gap = abs($s['percent'] - $byMonth[$s['month_index']]);
-                if ($gap > 1.0) {
+                if ($gap <= 0.01) {
+                    $mirrored++;
+                } elseif ($gap > 1.0) {
                     $warnings[] = "Heads-up (Month {$s['month_index']}): the file's own summary"
                         . " says {$s['percent']}%, but its activity rows add up to"
                         . " {$byMonth[$s['month_index']]}%. Your baseline below uses the"
                         . ' activity math — no action needed.';
                 }
+            }
+            // Months mirror an attached summary — say so instead of passing silently.
+            if ($compared > 0 && $mirrored === $compared) {
+                $warnings[] = 'Heads-up: these months match the file\'s own summary exactly —'
+                    . ' they could not be independently verified from the activity rows.'
+                    . ' Please review before locking.';
+            } elseif ($hasSummaryRow && count($summary) === 0) {
+                // Claimed summary row, nothing shown — unverified by construction.
+                $warnings[] = 'Heads-up: the file has a summary row that could not be compared —'
+                    . ' treat these months as unverified. Please review before locking.';
             }
 
             return [
@@ -322,6 +363,101 @@ class GeminiDocumentParserService
         usort($points, fn ($a, $b) => $a['month_index'] <=> $b['month_index']);
 
         return $points;
+    }
+
+    /**
+     * Sanitize monthly peso amounts into homework data (sorted, deduped —
+     * no forcing: amounts are evidence, never the curve itself).
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function sanitizeAmountPoints(mixed $rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $points = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !isset($row['month_index'], $row['pesos'])) {
+                continue;
+            }
+            $idx = (int) $row['month_index'];
+            $pesos = is_numeric($row['pesos']) ? (float) $row['pesos'] : null;
+            if ($idx < 1 || $idx > 60 || $pesos === null || !is_finite($pesos) || $pesos < 0) {
+                continue;
+            }
+            if (isset($seen[$idx])) continue;
+            $seen[$idx] = true;
+            $points[] = ['month_index' => $idx, 'pesos' => round($pesos, 2)];
+        }
+
+        usort($points, fn ($a, $b) => $a['month_index'] <=> $b['month_index']);
+
+        return $points;
+    }
+
+    /**
+     * Bounds-checked raw month points (sorted, NOT clamped/forced) for the
+     * recompute check — verification must see the model's numbers, not ours.
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function extractRawPoints(mixed $rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $points = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !isset($row['month_index'], $row['planned_progress_percent'])) {
+                continue;
+            }
+            $idx = (int) $row['month_index'];
+            $pct = is_numeric($row['planned_progress_percent']) ? (float) $row['planned_progress_percent'] : null;
+            if ($idx < 1 || $idx > 60 || $pct === null || !is_finite($pct) || $pct < 0) {
+                continue;
+            }
+            $points[] = ['month_index' => $idx, 'planned_progress_percent' => min($pct, 100.0)];
+        }
+
+        usort($points, fn ($a, $b) => $a['month_index'] <=> $b['month_index']);
+
+        return $points;
+    }
+
+    /**
+     * Recompute check: stated months must follow from stated amounts.
+     *
+     * Pure arithmetic on the AI's own reported numbers (cumulative prior +
+     * pesos/total×100 per month) — needs no layout knowledge. Months that
+     * don't follow are declined as fabrication. Requires amounts covering
+     * every stated month; partial/absent amounts skip the check silently
+     * (percent/weight-only files legitimately report no peso figures).
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function monthsFollowAmounts(array $months, array $amounts, float $contract): bool
+    {
+        $byAmount = [];
+        foreach ($amounts as $a) {
+            $byAmount[$a['month_index']] = $a['pesos'];
+        }
+
+        $running = 0.0;
+        foreach ($months as $m) {
+            if (!isset($byAmount[$m['month_index']])) {
+                return true;
+            }
+            $running += ($byAmount[$m['month_index']] / $contract) * 100;
+            if (abs($running - $m['planned_progress_percent']) > 1.0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

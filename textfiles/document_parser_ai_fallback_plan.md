@@ -147,6 +147,9 @@ Sensitivity basis (user-approved)
       for map-less rows; lettered-list picking proposed) → B learn-from-AI maps (E2
       success on rules-failed files validates back to columns; proposed-only, one-click
       approval required — never auto-live, hallucinations must not self-trust).
+    - STRICT HOMEWORK + PREFER-MATH BUILT 2026-09-09 (code, see accuracy plan E2 entry
+      for the cause chain): prompt homework + server recompute-decline + mirror/unverified
+      notes + endpoint prefer-math swap. +4 service / +2 endpoint tests green.
 
 ===============================================================================
   6. SESSION LOGS

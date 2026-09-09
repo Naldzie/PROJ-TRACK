@@ -65,6 +65,12 @@ class SCurveImportController extends Controller
      * text and ask Gemini for the months. Same file|document_id dual input as
      * parseExcel (Excel only — the server holds no PDF renderer); same response
      * shapes. Results merge into the setup modal for review — never auto-applied.
+     *
+     * Prefer-math (2026-09-09, user choice): when an approved learned layout
+     * parses the same file and diverges past 1.0, the AI months are REPLACED
+     * with the checkable activity math (R3 principle) plus a swap note — the
+     * AI can no longer silently bake a summary series into a baseline wherever
+     * ground truth exists. No map → AI result stands with its own warnings.
      */
     public function parseWithGemini(Request $request): JsonResponse
     {
@@ -77,6 +83,8 @@ class SCurveImportController extends Controller
             if ($result === null) {
                 throw new RuntimeException('The AI assistant could not read an S-curve from this file. Please set up the baseline manually.');
             }
+
+            $result = $this->preferMapMath($request, $path, $result);
 
             return response()->json([
                 'success' => true,
@@ -143,6 +151,78 @@ class SCurveImportController extends Controller
             return array_merge($mine, $global);
         } catch (\Throwable $e) {
             return [];
+        }
+    }
+
+    /**
+     * Prefer-math cross-check for AI results (user choice 2026-09-09).
+     *
+     * Quietly runs the map reader on the same file; when an approved layout
+     * parses it and any same-month gap past 1.0 appears, the AI months are
+     * replaced with the map's activity math plus a swap note (same threshold
+     * as the 2b warnings). Agreeing maps, map-less files, and map failures
+     * all leave the AI result untouched — this never blocks, only corrects.
+     *
+     * Called by: parseWithGemini() after a successful AI read.
+     */
+    protected function preferMapMath(Request $request, string $path, array $aiResult): array
+    {
+        try {
+            $maps = $this->loadLiveMaps($request);
+            if (count($maps) === 0) {
+                return $aiResult;
+            }
+
+            $mapResult = $this->sCurveImportService->parse($path, $maps);
+            if (($mapResult['meta']['mapUsed'] ?? false) !== true) {
+                return $aiResult;
+            }
+
+            $aiByMonth = [];
+            foreach (($aiResult['months'] ?? []) as $m) {
+                if (isset($m['month_index'], $m['planned_progress_percent'])) {
+                    $aiByMonth[(int) $m['month_index']] = (float) $m['planned_progress_percent'];
+                }
+            }
+
+            $diverges = false;
+            foreach (($mapResult['months'] ?? []) as $m) {
+                if (!isset($m['month_index'], $m['planned_progress_percent'])) continue;
+                $idx = (int) $m['month_index'];
+                if (isset($aiByMonth[$idx])
+                    && abs($aiByMonth[$idx] - (float) $m['planned_progress_percent']) > 1.0) {
+                    $diverges = true;
+                    break;
+                }
+            }
+
+            if (!$diverges) {
+                return $aiResult;
+            }
+
+            $months = [];
+            foreach ($mapResult['months'] as $m) {
+                $months[] = [
+                    'month_index' => (int) $m['month_index'],
+                    'planned_progress_percent' => (float) $m['planned_progress_percent'],
+                ];
+            }
+
+            $meta = $aiResult['meta'] ?? [];
+            if (($meta['contractAmount'] ?? null) === null
+                && isset($mapResult['meta']['contractAmount'])) {
+                $meta['contractAmount'] = $mapResult['meta']['contractAmount'];
+            }
+            $warnings = $meta['warnings'] ?? [];
+            $warnings[] = 'Heads-up: the AI matched the file\'s summary line, so the baseline'
+                . ' below uses the activity math from the learned layout instead. No action'
+                . ' needed unless something looks off.';
+            $meta['warnings'] = $warnings;
+            $meta['mapPreferred'] = true;
+
+            return ['months' => $months, 'meta' => $meta];
+        } catch (\Throwable $e) {
+            return $aiResult;
         }
     }
 

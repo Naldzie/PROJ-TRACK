@@ -2112,6 +2112,21 @@ Related plan
       Service suite green; endpoint/serializer suites untouched (summary optional).
       NEXT (user-approved 2026-09-09, in order): C (this parity, built) → A point-and-teach
       desk for map-less rows → B learn-from-AI maps (proposed-only, approval required).
+    - STRICT HOMEWORK + PREFER-MATH 2026-09-09 (user re-test: fresh code, wiped maps —
+      AI still returned the 45-series silently; parity never fired because the model sent
+      months-only with no summary to compare and no map to check against).
+      Cause chain: asking for two series doesn't enforce two series. Fix: (1) prompt
+      demands homework (monthlyAmounts + divisor + separate summary + hasSummaryRow +
+      do-not-copy); (2) server recomputes from the AI's own amounts on PRE-sanitizer
+      values (mismatch >1.0 = declined fabrication; absent/partial amounts skip silently
+      for weight-only files); (3) months mirroring an attached summary get an explicit
+      unverified-copy note, claimed-but-unshown summary gets could-not-verify note;
+      (4) endpoint prefer-math (user choice): quiet map parse on the same file, divergence
+      >1.0 REPLACES AI months with activity math + swap note (never blocks without a map).
+      Rejected: literal number-presence audit (paired halves + budget-cost pollution make
+      it noisy both ways). Tests (+4 service: fabrication decline, consistent pass with
+      partial skip, mirror note, unverified note; +2 endpoint: swap with mapPreferred flag,
+      agree-untouched). Suites green (see commit).
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

@@ -1028,4 +1028,116 @@ class SCurveImportTest extends TestCase
         $this->expectException(RuntimeException::class);
         app(SCurveImportService::class)->serializeForAi('/nonexistent/path.xlsx');
     }
+
+    /**
+     * Near-miss workbook for prefer-math tests: novel "TASK DETAILS" header
+     * (rules miss) with standard months; month weights 50/50 of 400,000.
+     */
+    protected function makePreferMathWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('C10', 'TASK DETAILS');
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+
+        $sheet->setCellValue('C12', 'Ground Works');
+        $sheet->setCellValue('F12', 400000);
+        // Paired-month convention: each month's peso written twice (half per
+        // cell), so M1 = I+J = 200000 (50%), M2 = K+L = 200000 (100%).
+        $sheet->setCellValue('I12', 100000);
+        $sheet->setCellValue('J12', 100000);
+        $sheet->setCellValue('K12', 100000);
+        $sheet->setCellValue('L12', 100000);
+
+        $sheet->setCellValue('C13', 'TOTAL');
+        $sheet->setCellValue('F13', 400000);
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    protected function storeLiveGlobalMap(array $columnMap): void
+    {
+        \App\Models\ScurveHeaderProposal::create([
+            'contractor_id' => null,
+            'header_rows_text' => 'prefer-math',
+            'header_hash' => hash('sha256', uniqid()),
+            'column_map' => $columnMap,
+            'status' => 'live',
+        ]);
+    }
+
+    protected function fakeAiMonths(array $months): void
+    {
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'months' => $months,
+                ])]]]]],
+            ], 200),
+        ]);
+    }
+
+    /**
+     * Prefer-math (user choice 2026-09-09): AI months matching the file's
+     * summary are REPLACED with map activity math plus a swap note.
+     */
+    public function test_parse_gemini_prefers_map_math_on_divergence(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makePreferMathWorkbook($path);
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+        $this->storeLiveGlobalMap($map);
+
+        // Map math reads 50/100; the AI parrots a summary-like 45/100.
+        $this->fakeAiMonths([
+            ['month_index' => 1, 'planned_progress_percent' => 45],
+            ['month_index' => 2, 'planned_progress_percent' => 100],
+        ]);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $response = $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $response->assertJsonPath('months.0.planned_progress_percent', 50);
+        $response->assertJsonPath('months.1.planned_progress_percent', 100);
+        $response->assertJsonPath('meta.mapPreferred', true);
+        $response->assertJsonPath('meta.aiAssisted', true);
+
+        unlink($path);
+    }
+
+    /**
+     * Prefer-math leaves agreeing AI results untouched (no swap, no note).
+     */
+    public function test_parse_gemini_keeps_ai_months_when_map_agrees(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makePreferMathWorkbook($path);
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+        $this->storeLiveGlobalMap($map);
+
+        $this->fakeAiMonths([
+            ['month_index' => 1, 'planned_progress_percent' => 50],
+            ['month_index' => 2, 'planned_progress_percent' => 100],
+        ]);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $response = $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $response->assertJsonPath('months.0.planned_progress_percent', 50);
+        $response->assertJsonMissingPath('meta.mapPreferred');
+
+        unlink($path);
+    }
 }

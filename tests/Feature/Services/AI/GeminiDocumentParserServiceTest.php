@@ -317,6 +317,111 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNull($service->parseExcelSlice('WORK DETAILS,P1'));
     }
 
+    // Strict homework: months that don't follow from the stated amounts are
+    // declined as fabrication (needs no layout knowledge — pure arithmetic).
+    // Called by: monthsFollowAmounts() recompute check.
+    public function test_excel_slice_declines_fabricated_months(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        // Stated 70% but stated amounts (50k+50k of 1M) recompute to 10%.
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 5],
+                ['month_index' => 2, 'planned_progress_percent' => 70],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 50000],
+                ['month_index' => 2, 'pesos' => 50000],
+            ],
+            'contractAmount' => 1000000,
+        ]));
+        $this->assertNull($service->parseExcelSlice('WORK DETAILS,P1'));
+    }
+
+    // Consistent homework passes the recompute (pre-sanitizer values checked,
+    // so our own clamp/force never punishes honest output).
+    // Called by: monthsFollowAmounts() via extractRawPoints().
+    public function test_excel_slice_passes_consistent_homework(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 30],
+                ['month_index' => 3, 'planned_progress_percent' => 99.5],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 200000],
+                ['month_index' => 2, 'pesos' => -99999],
+                ['month_index' => 3, 'pesos' => 198000],
+            ],
+            'contractAmount' => 400000,
+        ]));
+
+        // Month 2's bogus negative amount is dropped → partial amounts skip
+        // the check silently instead of declining (weight-file safe).
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+        $this->assertCount(3, $out['months']);
+    }
+
+    // Months mirroring an attached summary are labeled, not passed silently.
+    // Called by: validateSCurveMonths() mirror branch.
+    public function test_excel_slice_labels_summary_mirror(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 60],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 45],
+                ['month_index' => 2, 'percent' => 60],
+                ['month_index' => 3, 'percent' => 100],
+            ],
+            'hasSummaryRow' => true,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertSame(45.0, $out['months'][0]['planned_progress_percent']);
+        $this->assertStringContainsString(
+            'could not be independently verified',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
+    // Claimed-but-unshown summary row earns an explicit unverified note.
+    // Called by: validateSCurveMonths() hasSummaryRow branch.
+    public function test_excel_slice_notes_uncompared_summary(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => true,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertStringContainsString(
+            'could not be compared',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
     // E2 declines: empty text/key, malformed payloads, single-month curves.
     // Called by: parseExcelSlice() failure paths.
     public function test_excel_slice_decline_paths(): void
