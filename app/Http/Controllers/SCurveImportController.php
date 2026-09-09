@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Contractor;
 use App\Models\Document;
+use App\Models\ScurveHeaderProposal;
 use App\Services\AI\GeminiDocumentParserService;
 use App\Services\SCurveImportService;
 use Illuminate\Http\Request;
@@ -34,7 +36,10 @@ class SCurveImportController extends Controller
         try {
             $path = $this->resolveSource($request);
 
-            $result = $this->sCurveImportService->parse($path);
+            // E1-3: learned layouts ride along as the lowest-priority fallback
+            // (rules-first inside the service; empty maps = today's behavior).
+            // Loading never breaks imports — any failure yields no maps.
+            $result = $this->sCurveImportService->parse($path, $this->loadLiveMaps($request));
 
             return response()->json([
                 'success' => true,
@@ -89,6 +94,55 @@ class SCurveImportController extends Controller
                 'success' => false,
                 'message' => 'An unexpected error occurred while asking the AI assistant to read the S-curve file.',
             ], 422);
+        }
+    }
+
+    /**
+     * E1-3 — load live learned layout maps for this import (server-side consult).
+     *
+     * Scope order per E1a: this contractor's live maps first, then global
+     * (NULL-contractor) maps. Only map-bearing Excel rows travel — version
+     * gating stays in the service (single enforcer, also covers direct callers).
+     * Wizard sends contractor_id explicitly (project unsaved); detail resolves
+     * it via document_id → project. Unknown ids degrade to global-only.
+     *
+     * Called by: parseExcel() on every import (cheap: live rows are few).
+     */
+    protected function loadLiveMaps(Request $request): array
+    {
+        try {
+            $contractorId = $request->input('contractor_id');
+            if ($contractorId !== null && !Contractor::where('id', $contractorId)->exists()) {
+                $contractorId = null;
+            }
+            if ($contractorId === null && $request->filled('document_id')) {
+                $doc = Document::find($request->input('document_id'));
+                $contractorId = $doc?->project?->contractor_id;
+            }
+
+            $mine = [];
+            $global = [];
+            $rows = ScurveHeaderProposal::live()
+                ->where('source_type', 'excel')
+                ->orderBy('id')
+                ->get();
+            foreach ($rows as $row) {
+                if (!is_array($row->column_map)) continue;
+                $entry = [
+                    'id' => $row->id,
+                    'contractor_id' => $row->contractor_id,
+                    'column_map' => $row->column_map,
+                ];
+                if ($contractorId !== null && (int) $row->contractor_id === (int) $contractorId) {
+                    $mine[] = $entry;
+                } elseif ($row->contractor_id === null) {
+                    $global[] = $entry;
+                }
+            }
+
+            return array_merge($mine, $global);
+        } catch (\Throwable $e) {
+            return [];
         }
     }
 

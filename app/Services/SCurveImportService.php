@@ -43,6 +43,17 @@ use RuntimeException;
 class SCurveImportService
 {
     /**
+     * E1-3 — learned layout map schema version.
+     *
+     * Stored inside every auto-derived column_map as ['v' => 1]. The reader
+     * applies a map ONLY on exact version match, so a future span-semantics
+     * change (e.g. the parked 2c SUM-vs-MAX rule) can bump this const and old
+     * maps safely stop applying instead of silently corrupting curves.
+     *
+     * Called by: deriveAutoColumnMap() (writes), findHeaderViaMaps() (gates).
+     */
+    public const MAP_VERSION = 1;
+    /**
      * Serialize a workbook to compact CSV text for the E2 AI fallback.
      *
      * Dumps the first non-trivial sheet (header block + data rows, capped) so Gemini
@@ -103,12 +114,19 @@ class SCurveImportService
     /**
      * Parse an S-curve workbook file into baseline months.
      *
+     * E1-3: optional $liveMaps (learned layouts, contractor-first then global
+     * from the controller) act as the LOWEST-priority fallback — every sheet
+     * is tried with rule detection first, and maps are consulted only when no
+     * sheet yields a rule header. Omitted/empty maps reproduce today's
+     * behavior exactly.
+     *
      * @param  string  $path  Absolute path to an .xlsx/.xls file.
+     * @param  array|null  $liveMaps  [{id, contractor_id, column_map}] or null.
      * @return array{months: array, meta: array}
      * @throws RuntimeException  When the workbook can't be read or no S-curve
      *                           layout is found.
      */
-    public function parse(string $path): array
+    public function parse(string $path, ?array $liveMaps = null): array
     {
         if (!is_file($path)) {
             throw new RuntimeException('The file could not be found.');
@@ -120,16 +138,33 @@ class SCurveImportService
             throw new RuntimeException('The file is not a valid Excel workbook.');
         }
 
-        // Find the sheet that carries the S-curve header block.
+        // Pass 1 — rule detection on every sheet (unchanged behavior; rules
+        // always win ties against learned maps).
         $sheetData = null;
+        $sheets = [];
         foreach ($spreadsheet->getAllSheets() as $sheet) {
             $rows = $sheet->toArray(null, true, false, true);
             $rows = $this->resolveFormulas($sheet, $rows);
             $mergeMap = $this->buildMergeSpanMap($sheet);
+            $sheets[] = ['rows' => $rows, 'mergeMap' => $mergeMap];
             $header = $this->findHeader($rows, $mergeMap);
             if ($header) {
                 $sheetData = ['rows' => $rows, 'header' => $header];
                 break;
+            }
+        }
+
+        // Pass 2 — E1-3 learned maps, only when rules missed everywhere.
+        $mapId = null;
+        if (!$sheetData && !empty($liveMaps)) {
+            foreach ($sheets as $cached) {
+                $hit = $this->findHeaderViaMaps($cached['rows'], $liveMaps);
+                if ($hit !== null) {
+                    $mapId = $hit['_mapId'] ?? null;
+                    unset($hit['_mapId']);
+                    $sheetData = ['rows' => $cached['rows'], 'header' => $hit];
+                    break;
+                }
             }
         }
 
@@ -141,7 +176,19 @@ class SCurveImportService
             );
         }
 
-        return $this->buildMonths($sheetData['rows'], $sheetData['header']);
+        $result = $this->buildMonths($sheetData['rows'], $sheetData['header']);
+
+        // E1-3 provenance: flag map-built curves (additive keys; rule-built
+        // results keep mapUsed=false with zero new warnings).
+        $result['meta']['mapUsed'] = $mapId !== null;
+        $result['meta']['mapId'] = $mapId;
+        if ($mapId !== null) {
+            $result['meta']['warnings'][] = 'Heads-up: the table was read with a'
+                . ' learned layout for this contractor — the months below came from'
+                . ' that mapping. No action needed unless something looks off.';
+        }
+
+        return $result;
     }
 
     // ─── HEADER DETECTION ─────────────────────────────────────────────────────
@@ -160,11 +207,26 @@ class SCurveImportService
      */
     private function findHeader(array $rows, array $mergeMap = []): ?array
     {
+        return $this->findHeaderWith($rows, $mergeMap, fn (array $cells) => $this->detectHeaderRow($cells));
+    }
+
+    /**
+     * E1-3 — shared header search behind both detectors.
+     *
+     * Runs the given single-row detector over every row plus every adjacent
+     * merged pair, keeping the best score. findHeader() passes the strict
+     * detector (unchanged behavior); deriveAutoColumnMap() passes the relaxed
+     * one (novel description wordings only — month rules identical).
+     *
+     * Called by: findHeader(), deriveAutoColumnMap().
+     */
+    private function findHeaderWith(array $rows, array $mergeMap, callable $detect, bool $finalize = true): ?array
+    {
         $best = null;
 
         // Single-row pass.
         foreach ($rows as $rowIndex => $row) {
-            $det = $this->detectHeaderRow(array_values($row));
+            $det = $detect(array_values($row));
             if ($det === null) continue;
             $det['firstRow'] = $rowIndex;
             $det['lastRow'] = $rowIndex;
@@ -177,7 +239,7 @@ class SCurveImportService
         foreach ($rowList as $i => $row) {
             if (!isset($rowList[$i + 1])) break;
             $merged = $this->mergeHeaderRows($row, $rowList[$i + 1]);
-            $det = $this->detectHeaderRow(array_values($merged));
+            $det = $detect(array_values($merged));
             if ($det === null) continue;
             $det['firstRow'] = $i;
             $det['lastRow'] = $i + 1;
@@ -187,14 +249,19 @@ class SCurveImportService
 
         if ($best === null) return null;
 
-        return $this->finalizeHeader($best);
+        return $finalize ? $this->finalizeHeader($best) : $best;
     }
 
     /**
      * Inspect one (possibly merged) header row and return the columns it
      * advertises, or null when it cannot be a header row.
+     *
+     * E1-3: $relaxed widens ONLY the description match (novel contractor
+     * wordings like "TASK DESCRIPTION"); month/item/weight/contract rules and
+     * the hard gate (desc + ≥2 months) are identical. Relaxed hits never enter
+     * the main path — they become scoped auto-maps via deriveAutoColumnMap().
      */
-    private function detectHeaderRow(array $cells): ?array
+    private function detectHeaderRow(array $cells, bool $relaxed = false): ?array
     {
         $hasItem = false;
         $codeCol = null;
@@ -211,7 +278,8 @@ class SCurveImportService
             if ($this->isItemLabel($label)) {
                 $hasItem = true;
                 $codeCol = $colIndex + 1; // item codes sit one column right
-            } elseif ($this->isDescriptionLabel($label)) {
+            } elseif ($this->isDescriptionLabel($label)
+                || ($relaxed && $this->isLooseDescriptionLabel($label))) {
                 $descCol = $colIndex;
             } elseif ($this->isWeightLabel($label)) {
                 $weightCol = $colIndex;
@@ -219,7 +287,7 @@ class SCurveImportService
                 $contractCol = $colIndex;
             }
 
-            $month = $this->matchMonthLabel($label);
+            $month = $this->matchMonthLabel($label, $relaxed);
             if ($month !== null) {
                 $monthCols[$month] = $colIndex;
             } elseif (preg_match('/^(\d{1,2})$/', $label, $m)) {
@@ -256,6 +324,256 @@ class SCurveImportService
     private function betterHeader(array $candidate, ?array $best): bool
     {
         return $best === null || $candidate['score'] > $best['score'];
+    }
+
+    /**
+     * E1-3 — loose description wording for auto-map derivation (relaxed path only).
+     *
+     * Catches novel contractor phrasings the strict full-cell match rejects
+     * ("TASK DESCRIPTION", "PAY ITEM", "SCOPE OF WORKS"). Never runs in the
+     * main path — hits become contractor/hash-scoped maps, so looseness here
+     * cannot false-positive on other contractors' files.
+     *
+     * Called by: detectHeaderRow() when $relaxed is true.
+     */
+    private function isLooseDescriptionLabel(string $label): bool
+    {
+        return (bool) preg_match('/\b(descript\w*|detail\w*|particular\w*|activit\w*|pay\s*item|bill\s*of|work\s*items?|scope|specification|desc)\b/i', $label);
+    }
+
+    /**
+     * E1-3 — auto-derive a versioned layout map from a failed workbook.
+     *
+     * Runs the relaxed detector (novel description wording + standard month
+     * rules, still ≥2 months) over every sheet and packs the best header into
+     * a v:1 column_map with a fuzzy signature of the header row. Returns null
+     * when nothing derivable exists — the capture then stores a map-less row
+     * (reviewable, but never consulted) instead of a guess.
+     *
+     * Called by: ScurveHeaderProposalController::collect() (best-effort).
+     */
+    public function deriveAutoColumnMap(string $path): ?array
+    {
+        try {
+            if (!is_file($path)) return null;
+            $spreadsheet = IOFactory::load($path);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            $rows = $sheet->toArray(null, true, false, true);
+            $rows = $this->resolveFormulas($sheet, $rows);
+            $mergeMap = $this->buildMergeSpanMap($sheet);
+            $det = $this->findHeaderWith($rows, $mergeMap, fn (array $cells) => $this->detectHeaderRow($cells, true), false);
+            if ($det === null) continue;
+            $header = $this->finalizeHeader($det);
+            if (count($header['monthSpans']) < 2) continue;
+
+            return [
+                'v' => self::MAP_VERSION,
+                'rowHint' => $header['row'],
+                'codeCol' => $header['codeCol'],
+                'descCol' => $header['descCol'],
+                'weightCol' => $header['weightCol'],
+                'contractCol' => $header['contractCol'],
+                'monthSpans' => $header['monthSpans'],
+                'sig' => $this->headerSignature($rows, $det),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * E1-3 — signature of a detected header block for typo-tolerant matching.
+     *
+     * Stores the merged header cells as [col, normalized text] pairs (labels
+     * only — no project values), so a later file from the same template
+     * matches even with reworded values or small header typos elsewhere.
+     *
+     * Called by: deriveAutoColumnMap().
+     */
+    private function headerSignature(array $rows, array $det): array
+    {
+        // Single-row detections store the ORIGINAL row key (toArray keys are
+        // 1-based); two-row detections store 0-based positions — resolve each
+        // shape in its own space (see findHeaderWith).
+        if ($det['lastRow'] === $det['firstRow']) {
+            $merged = $rows[$det['firstRow']] ?? [];
+        } else {
+            $list = array_values($rows);
+            $merged = $this->mergeHeaderRows(
+                $list[$det['firstRow']] ?? [],
+                $list[$det['lastRow']] ?? []
+            );
+        }
+
+        $sig = [];
+        foreach (array_values($merged) as $col => $value) {
+            $text = strtolower(trim((string) ($value ?? '')));
+            if ($text !== '') {
+                $sig[] = [$col, $text];
+            }
+        }
+
+        return $sig;
+    }
+
+    /**
+     * E1-3 — consult live learned maps after rule detection missed.
+     *
+     * Tries each map in controller order (contractor's first, then global):
+     * version-gated to MAP_VERSION, signature row located with typo tolerance,
+     * desc-cell anchored, and month spans proven to hold numbers below. First
+     * hit wins; anything else falls through to the next map (or the honest
+     * "No S-curve table found" error when none hit).
+     *
+     * Called by: parse() pass 2 only.
+     */
+    private function findHeaderViaMaps(array $rows, array $liveMaps): ?array
+    {
+        foreach ($liveMaps as $entry) {
+            if (!is_array($entry)) continue;
+            $cm = $entry['column_map'] ?? null;
+            if (!is_array($cm)) continue;
+            // Version flag: stale-semantics maps never apply (see MAP_VERSION).
+            if (($cm['v'] ?? null) !== self::MAP_VERSION) continue;
+            $sig = $cm['sig'] ?? null;
+            if (!is_array($sig) || count($sig) < 2) continue;
+            $descCol = $cm['descCol'] ?? null;
+            if (!is_int($descCol)) continue;
+            $spans = $cm['monthSpans'] ?? null;
+            if (!is_array($spans) || count($spans) < 2) continue;
+
+            // Normalize JSON-decoded spans (string keys → int months/cols).
+            $monthSpans = [];
+            foreach ($spans as $m => $cols) {
+                $monthSpans[(int) $m] = array_map('intval', (array) $cols);
+            }
+
+            $rowIdx = $this->findSignatureRow($rows, $sig, $descCol);
+            if ($rowIdx === null) continue;
+            if (!$this->mapSpansHoldNumbers($rows, $rowIdx, $monthSpans)) continue;
+
+            return [
+                'row' => $rowIdx,
+                'codeCol' => isset($cm['codeCol']) ? (int) $cm['codeCol'] : null,
+                'descCol' => $descCol,
+                'weightCol' => isset($cm['weightCol']) ? (int) $cm['weightCol'] : null,
+                'contractCol' => isset($cm['contractCol']) ? (int) $cm['contractCol'] : null,
+                'monthSpans' => $monthSpans,
+                '_mapId' => $entry['id'] ?? null,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * E1-3 — locate a stored header signature in a new workbook.
+     *
+     * Scores every single row and every adjacent merged pair (same shapes the
+     * detector tries) by matched signature cells. A row wins only with the
+     * description cell matched (exact/fuzzy) plus ≥2 matched cells at ≥0.5
+     * coverage — data rows cannot reach this (their desc cells hold activity
+     * names, never header labels).
+     *
+     * Called by: findHeaderViaMaps().
+     */
+    private function findSignatureRow(array $rows, array $sig, int $descCol): ?int
+    {
+        $keys = array_keys($rows);
+        $list = array_values($rows);
+
+        $best = null;
+        $bestScore = 0.0;
+        $total = count($sig);
+
+        $consider = function (array $cells, int $rowKey) use ($sig, $descCol, $total, &$best, &$bestScore) {
+            $matched = 0;
+            $descOk = false;
+            foreach ($sig as $pair) {
+                [$col, $text] = $pair;
+                $cell = strtolower(trim((string) ($cells[$col] ?? '')));
+                if ($cell === '' || $text === '') continue;
+                if ($this->sigCellMatches($cell, (string) $text)) {
+                    $matched++;
+                    if ($col === $descCol) $descOk = true;
+                }
+            }
+            $score = $total > 0 ? $matched / $total : 0;
+            if ($descOk && $matched >= 2 && $score >= 0.5 && $score > $bestScore) {
+                $bestScore = $score;
+                $best = $rowKey;
+            }
+        };
+
+        foreach ($list as $i => $row) {
+            $consider(array_values($row), $keys[$i]);
+            if (isset($list[$i + 1])) {
+                $consider(array_values($this->mergeHeaderRows($row, $list[$i + 1])), $keys[$i + 1]);
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * E1-3 — typo-tolerant single-cell match for signature search.
+     *
+     * Exact, \b-bounded substring (shorter side ≥4 chars — bounded so "Month 1"
+     * never matches "Month 12"), or Levenshtein ≤2 on long words (the R2a
+     * headerFuzzyMatch rule, both directions). Mirrors the user-approved
+     * typo-tolerant choice without touching rule detection.
+     *
+     * Called by: findSignatureRow().
+     */
+    private function sigCellMatches(string $cell, string $text): bool
+    {
+        if ($cell === $text) return true;
+
+        $short = mb_strlen($cell) <= mb_strlen($text) ? $cell : $text;
+        $long = $short === $cell ? $text : $cell;
+        if (mb_strlen($short) >= 4
+            && preg_match('/\b' . preg_quote($short, '/') . '\b/u', $long)) {
+            return true;
+        }
+
+        return $this->headerFuzzyMatch($cell, [$text])
+            || $this->headerFuzzyMatch($text, [$cell]);
+    }
+
+    /**
+     * E1-3 — false-positive guard: mapped month spans must hold real numbers.
+     *
+     * Scans up to 60 rows below the signature row for any numeric cell under
+     * the mapped spans. A map applied to the wrong sheet shape finds only
+     * text/empties and is skipped instead of building a corrupt curve.
+     *
+     * Called by: findHeaderViaMaps().
+     */
+    private function mapSpansHoldNumbers(array $rows, int $rowIdx, array $monthSpans): bool
+    {
+        $spanCols = [];
+        foreach ($monthSpans as $cols) {
+            foreach ((array) $cols as $col) {
+                $spanCols[(int) $col] = true;
+            }
+        }
+        if (count($spanCols) === 0) return false;
+
+        $scanned = 0;
+        foreach ($rows as $idx => $row) {
+            if ($idx <= $rowIdx) continue;
+            if (++$scanned > 60) break;
+            $cells = array_values($row);
+            foreach (array_keys($spanCols) as $col) {
+                if (is_numeric($cells[$col] ?? null)) return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -467,10 +785,21 @@ class SCurveImportService
      * month label. Accepts "Month N", "M N", full month names and 3-letter
      * abbreviations, plus ordinals ("1st."–"12th", roof family). Bare numbers
      * are handled separately by longestNumberRun.
+     *
+     * E1-3: $relaxed additionally accepts contractor shorthand "P1"–"P12"
+     * ("Period/Phase N" spellings free) — third-family files label months
+     * that way. Relaxed-only so the main path never learns new synonyms
+     * without evidence; hits become scoped auto-maps.
      */
-    private function matchMonthLabel(string $label): ?int
+    private function matchMonthLabel(string $label, bool $relaxed = false): ?int
     {
         if (preg_match('/^(?:month|m)\s*(\d{1,2})$/i', $label, $m)) {
+            $n = (int) $m[1];
+            return ($n >= 1 && $n <= 12) ? $n : null;
+        }
+
+        // E1-3 relaxed: "P1"–"P12" / "Period N" / "Phase N" (third family).
+        if ($relaxed && preg_match('/^(?:p|period|phase)\s*(\d{1,2})$/i', $label, $m)) {
             $n = (int) $m[1];
             return ($n >= 1 && $n <= 12) ? $n : null;
         }

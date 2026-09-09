@@ -2095,6 +2095,23 @@ Related plan
       provenance note in the modal. Twin-bullet class closed (fix verified live, root path
       unisolated by design — all layers hardened). E2 end-to-end proven on the cumulative-only
       recreation (rules 422 → assist → accurate 10-month curve → review modal).
+    - E2 PARITY 2026-09-09 (user finding on the real third-family 10-month file, then fix).
+      Finding: map-built curve read M5 50% (activity math) while AI assist returned 45%
+      (author's CUMULATIVE % ACHIEVED line) — the file disagrees with itself from M5 on
+      (M1–M4 agree exactly, both converge at 100), same class as the BUHI denominator
+      story, and the ACHIEVED label marks the summary as the accomplished series per the
+      R3 taxonomy. Root cause (verified in code): buildSCurvePrompt asked for ONE months
+      series with no activity-vs-summary distinction, so the AI parroted the summary row
+      with only the generic provenance note — silently baking accomplished numbers into a
+      baseline, exactly what the 2b redesign forbade the rules path from doing.
+      Fix (mirrors 2b): two-series prompt (activity-derived months + author's summary as
+      printed) + server reference+warn (gap >1.0, same plain wording) + summary adoption
+      ONLY when no usable activity values exist (flagged, never silent). Prompt month
+      coverage also gains P1..P12. Tests (+4 service: gap-warn keeps 70 over 45,
+      agree-silent, summary fallback adopts flagged, both-unusable declines).
+      Service suite green; endpoint/serializer suites untouched (summary optional).
+      NEXT (user-approved 2026-09-09, in order): C (this parity, built) → A point-and-teach
+      desk for map-less rows → B learn-from-AI maps (proposed-only, approval required).
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

@@ -132,9 +132,21 @@ Sensitivity basis (user-approved)
     - Dark-at-every-angle file: banner appears, slice sent once, preview merges for review,
       kept/corrected values harvest with AI source. THEN the step is closed.
 
-  AI-6 S-curve AI (PARKED — separate go-ahead).
-    - parseSCurveSlice + parse-gemini route + months validation (monotonic, last = 100,
-      Validated summary-vs-activity warning). Not started until AI-5 passes.
+   AI-6 S-curve AI (PARKED — separate go-ahead).
+     - parseSCurveSlice + parse-gemini route + months validation (monotonic, last = 100,
+       Validated summary-vs-activity warning). Not started until AI-5 passes.
+
+  E2 PARITY 2026-09-09 (Excel AI, live bug → fix; AI-6 stays parked — this is the
+  E2 Excel path, not the PDF-slice AI-6).
+    - Finding (user, real third-family file): AI returned the author's summary (45%)
+      while rules read activity math (50%) — prompt asked for one series, so the AI
+      parroted the summary silently. Fix: two-series prompt + reference+warn + flagged
+      summary-only fallback (mirrors 2b; see accuracy plan E2 PARITY entry). +4 service
+      tests green.
+    - NEXT (user-approved 2026-09-09): A point-and-teach desk (reviewer assigns columns
+      for map-less rows; lettered-list picking proposed) → B learn-from-AI maps (E2
+      success on rules-failed files validates back to columns; proposed-only, one-click
+      approval required — never auto-live, hallucinations must not self-trust).
 
 ===============================================================================
   6. SESSION LOGS

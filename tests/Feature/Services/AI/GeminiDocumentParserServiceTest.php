@@ -215,6 +215,108 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNotEmpty($out['meta']['warnings']);
     }
 
+    // E2 parity (2026-09-09): two-series AI output keeps the activity series
+    // and warns past 1.0 gaps against the author's summary (mirrors 2b).
+    // Called by: validateSCurveMonths() reference branch.
+    public function test_excel_slice_warns_on_summary_gap(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 70],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 50],
+                ['month_index' => 2, 'percent' => 45],
+                ['month_index' => 3, 'percent' => 100],
+            ],
+            'contractAmount' => 1000000,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        // Activity series kept (month 2 stays 70, not the summary's 45).
+        $this->assertSame(70.0, $out['months'][1]['planned_progress_percent']);
+        $this->assertStringContainsString(
+            "Month 2",
+            implode("\n", $out['meta']['warnings'])
+        );
+        $this->assertStringContainsString('45%', implode("\n", $out['meta']['warnings']));
+    }
+
+    // Agreeing summary stays silent (gap ≤1.0 is not worth a look).
+    // Called by: validateSCurveMonths() reference branch.
+    public function test_excel_slice_silent_when_summary_agrees(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 50.5],
+                ['month_index' => 2, 'percent' => 100],
+            ],
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertCount(1, $out['meta']['warnings']);
+    }
+
+    // No usable activity values: the summary is adopted as the curve, flagged.
+    // Called by: validateSCurveMonths() fallback branch (mirrors rules).
+    public function test_excel_slice_adopts_summary_without_activity_values(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 10],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 45],
+                ['month_index' => 2, 'percent' => 60],
+                ['month_index' => 3, 'percent' => 100],
+            ],
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertSame(45.0, $out['months'][0]['planned_progress_percent']);
+        $this->assertSame(60.0, $out['months'][1]['planned_progress_percent']);
+        $this->assertSame(100.0, $out['months'][2]['planned_progress_percent']);
+        $this->assertStringContainsString(
+            'own summary column',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
+    // Neither series usable: honest decline (summary with <2 points is not a curve).
+    // Called by: validateSCurveMonths() decline path.
+    public function test_excel_slice_declines_when_both_series_unusable(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        $this->fakeSuccess(json_encode([
+            'months' => [['month_index' => 1, 'planned_progress_percent' => 10]],
+            'summary' => [['month_index' => 1, 'percent' => 45]],
+        ]));
+        $this->assertNull($service->parseExcelSlice('WORK DETAILS,P1'));
+
+        $this->fakeSuccess(json_encode(['bogus' => true]));
+        $this->assertNull($service->parseExcelSlice('WORK DETAILS,P1'));
+    }
+
     // E2 declines: empty text/key, malformed payloads, single-month curves.
     // Called by: parseExcelSlice() failure paths.
     public function test_excel_slice_decline_paths(): void

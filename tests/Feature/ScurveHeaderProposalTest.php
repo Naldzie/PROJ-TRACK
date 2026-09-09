@@ -8,11 +8,13 @@ use App\Models\DocumentType;
 use App\Models\Project;
 use App\Models\ScurveHeaderProposal;
 use App\Models\User;
+use App\Services\SCurveImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use RuntimeException;
 use Tests\TestCase;
 
 // E1-1: silent header-block capture from failed S-curve imports.
@@ -40,6 +42,103 @@ class ScurveHeaderProposalTest extends TestCase
         $sheet->setCellValue('B10', 'TIMEFRAME ONE');
         $sheet->setCellValue('A11', 'Some Work');
         $sheet->setCellValue('B11', 100);
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    // Near-miss layout: months use standard labels but the description header
+    // is a novel contractor wording ("TASK DESCRIPTION") the strict rules
+    // reject — the exact class E1-3 auto-maps are for. Same figures as the
+    // SCurveImportTest fixture (contract 400000; M1 87.5 / M2 87.5 / M3 100).
+    private function makeNearMissWorkbook(string $path, string $descHeader = 'TASK DESCRIPTION'): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', $descHeader);
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('M10', 'Month 3');
+
+        $sheet->setCellValue('B12', '1');
+        $sheet->setCellValue('C12', 'Mobilization and Demobilization');
+        $sheet->setCellValue('F12', 100000);
+        $sheet->setCellValue('G12', 25);
+        $sheet->setCellValue('I12', 50000);
+        $sheet->setCellValue('N12', 50000);
+
+        $sheet->setCellValue('B13', '2');
+        $sheet->setCellValue('C13', 'Site Layout and Survey Works');
+        $sheet->setCellValue('F13', 300000);
+        $sheet->setCellValue('G13', 75);
+        $sheet->setCellValue('I13', 150000);
+        $sheet->setCellValue('J13', 150000);
+
+        $sheet->setCellValue('C14', 'TOTAL');
+        $sheet->setCellValue('F14', 400000);
+        $sheet->setCellValue('G14', 100);
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    // Standard layout the strict rules already cover (proves rules-win ties).
+    private function makeStandardWorkbook(string $path): void
+    {
+        $this->makeNearMissWorkbook($path, 'DESCRIPTION');
+    }
+
+    // Third-family layout (user's real 10-month file, 2026-09-09): months as
+    // P1..P10 single columns, description as "WORK DETAILS". Both labels miss
+    // the strict rules — the exact double-miss E1-3 widening covers. Figures
+    // mirror the file's own summary row (5..100 of 1,000,000).
+    private function makeThirdFamilyWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'CONSTRUCTION SCHEDULE AND S-CURVE (THIRD-FAMILY TEST FILE)');
+        $sheet->setCellValue('A2', 'ITEM');
+        $sheet->setCellValue('B2', 'WORK DETAILS');
+        $sheet->setCellValue('C2', 'QTY');
+        $sheet->setCellValue('D2', 'UNIT');
+        $sheet->setCellValue('E2', 'BUDGET COST');
+        // Helper: write by 1-based column index (PhpSpreadsheet 4 has no
+        // setCellValueByColumnAndRow — build the A1 address instead).
+        $put = function (int $col, int $row, mixed $value) use ($sheet): void {
+            $sheet->setCellValue(
+                \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row,
+                $value
+            );
+        };
+        foreach (range(1, 10) as $m) {
+            $put(5 + $m, 2, 'P' . $m);
+        }
+
+        // Month columns are F(6)..O(15); rows 3..6 hold the activities.
+        $activities = [
+            ['1', 'Mobilization Works', 100000, [1 => 50000, 2 => 50000]],
+            ['2', 'Earthworks and Excavation', 400000, [3 => 100000, 4 => 100000, 5 => 100000, 6 => 100000]],
+            ['3', 'Concrete and Masonry Works', 300000, [5 => 50000, 6 => 50000, 7 => 150000, 8 => 50000]],
+            ['4', 'Finishing and Painting Works', 200000, [8 => 50000, 9 => 100000, 10 => 50000]],
+        ];
+        $row = 3;
+        foreach ($activities as [$code, $name, $cost, $months]) {
+            $put(1, $row, $code);
+            $put(2, $row, $name);
+            $put(5, $row, $cost);
+            foreach ($months as $m => $peso) {
+                $put(5 + $m, $row, $peso);
+            }
+            $row++;
+        }
+
+        $sheet->setCellValue('B7', 'TOTAL');
+        $sheet->setCellValue('E7', 1000000);
+        $sheet->setCellValue('B8', 'CUMULATIVE % ACHIEVED');
+        foreach ([5, 10, 20, 30, 45, 60, 75, 85, 95, 100] as $i => $pct) {
+            $put(6 + $i, 8, $pct);
+        }
+
         (new Xlsx($spreadsheet))->save($path);
     }
 
@@ -264,5 +363,344 @@ class ScurveHeaderProposalTest extends TestCase
         $this->actingAs($contractor)->getJson('/staff/scurve-header-proposals/all')->assertRedirect(route('unauthorized'));
         $this->actingAs($contractor)->patchJson("/admin/scurve-header-proposals/{$row->id}/approve")->assertRedirect(route('unauthorized'));
         $this->assertSame('proposed', $row->fresh()->status);
+    }
+
+    // =====================================================================
+    // E1-3 — reader consults live maps (lowest-priority fallback).
+    // =====================================================================
+
+    // Capture auto-derives a v:1 map for near-miss layouts (novel description
+    // wording, standard months) — user choice: auto, with version flag.
+    // Called by: POST .../collect from scurveCaptureHeaders().
+    public function test_collect_derives_v1_auto_map_for_near_miss_layout(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $upload = new UploadedFile($path, 'nearmiss.xlsx', null, null, true);
+
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', ['file' => $upload])
+            ->assertCreated();
+
+        $row = ScurveHeaderProposal::first();
+        $this->assertNotNull($row);
+        $this->assertIsArray($row->column_map);
+        $this->assertSame(1, $row->column_map['v']);
+        $this->assertIsInt($row->column_map['descCol']);
+        $this->assertCount(3, $row->column_map['monthSpans']);
+        $this->assertNotEmpty($row->column_map['sig']);
+
+        unlink($path);
+    }
+
+    // Junk with no derivable header still captures (reviewable) but map-less.
+    // Called by: POST .../collect with an unrecognizable workbook.
+    public function test_collect_stores_null_map_when_no_header_derivable(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeWorkbook($path);
+        $upload = new UploadedFile($path, 'weird.xlsx', null, null, true);
+
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', ['file' => $upload])
+            ->assertCreated();
+
+        $this->assertNull(ScurveHeaderProposal::first()->column_map);
+
+        unlink($path);
+    }
+
+    // Repeats backfill maps onto pre-E1-3 rows captured when maps were null.
+    // Called by: POST .../collect for an already-stored (contractor, hash).
+    public function test_repeat_backfills_missing_map(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+
+        $text = app(SCurveImportService::class)->serializeForAi($path, 15);
+        $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
+        ScurveHeaderProposal::create([
+            'header_rows_text' => mb_substr($text, 0, 4000),
+            'header_hash' => $hash,
+            'column_map' => null,
+            'status' => 'proposed',
+        ]);
+
+        $upload = new UploadedFile($path, 'nearmiss.xlsx', null, null, true);
+        $this->actingAs($this->makeUser('staff'))
+            ->post('/staff/scurve-header-proposals/collect', ['file' => $upload])
+            ->assertCreated();
+
+        $row = ScurveHeaderProposal::first();
+        $this->assertIsArray($row->column_map);
+        $this->assertSame(1, $row->column_map['v']);
+
+        unlink($path);
+    }
+
+    // The near-miss file 422s under rules but parses via its live map with
+    // the exact expected curve + map provenance in meta.
+    // Called by: SCurveImportService::parse($path, $liveMaps) pass 2.
+    public function test_service_parses_via_live_map_when_rules_fail(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        try {
+            $service->parse($path);
+            $this->fail('Rules should miss the near-miss layout.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        $map = $service->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+
+        $result = $service->parse($path, [
+            ['id' => 7, 'contractor_id' => null, 'column_map' => $map],
+        ]);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(87.5, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(87.5, $result['months'][1]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][2]['planned_progress_percent']);
+        $this->assertSame(400000.0, $result['meta']['contractAmount']);
+        $this->assertTrue($result['meta']['mapUsed']);
+        $this->assertSame(7, $result['meta']['mapId']);
+        $this->assertNotEmpty($result['meta']['warnings']);
+
+        unlink($path);
+    }
+
+    // Typo tolerance (user choice): a re-upload with a header typo still
+    // matches the stored signature and parses via the same map.
+    // Called by: findSignatureRow() fuzzy per-cell matching.
+    public function test_typo_variant_matches_live_map(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $service = app(SCurveImportService::class);
+        $map = $service->deriveAutoColumnMap($path);
+        unlink($path);
+
+        $typo = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($typo, 'TASK DESCRIPTON');
+
+        $result = $service->parse($typo, [
+            ['id' => 8, 'contractor_id' => null, 'column_map' => $map],
+        ]);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(100.0, $result['months'][2]['planned_progress_percent']);
+        $this->assertTrue($result['meta']['mapUsed']);
+
+        unlink($typo);
+    }
+
+    // Rules win ties: a file the rules cover ignores even a matching live map.
+    // Called by: parse() pass 1 running before pass 2.
+    public function test_rules_win_over_matching_live_map(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeStandardWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $plain = $service->parse($path);
+        $this->assertFalse($plain['meta']['mapUsed']);
+
+        $map = $service->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+
+        $viaMap = $service->parse($path, [
+            ['id' => 9, 'contractor_id' => null, 'column_map' => $map],
+        ]);
+
+        $this->assertFalse($viaMap['meta']['mapUsed']);
+        $this->assertSame($plain['months'], $viaMap['months']);
+        $this->assertSame($plain['meta']['warnings'], $viaMap['meta']['warnings']);
+
+        unlink($path);
+    }
+
+    // Version flag: a map from a future span semantics never applies.
+    // Called by: findHeaderViaMaps() MAP_VERSION gate.
+    public function test_version_mismatch_map_is_ignored(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $map = $service->deriveAutoColumnMap($path);
+        $map['v'] = 999;
+
+        try {
+            $service->parse($path, [
+                ['id' => 10, 'contractor_id' => null, 'column_map' => $map],
+            ]);
+            $this->fail('A version-mismatched map must never apply.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        unlink($path);
+    }
+
+    // A map for another contractor never leaks (E1a hybrid scope, scoped first).
+    // Called by: POST /admin/s-curve/parse with contractor_id scoping.
+    public function test_parse_endpoint_scopes_maps_by_contractor(): void
+    {
+        $admin = $this->makeUser('admin');
+        $contractorA = Contractor::create([
+            'user_id' => $this->makeUser('contractor')->id,
+            'company_name' => 'Map Builders A',
+        ]);
+        $contractorB = Contractor::create([
+            'user_id' => $this->makeUser('contractor')->id,
+            'company_name' => 'Map Builders B',
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        ScurveHeaderProposal::create([
+            'contractor_id' => $contractorA->id,
+            'header_rows_text' => 'near-miss',
+            'header_hash' => hash('sha256', uniqid()),
+            'column_map' => $map,
+            'status' => 'live',
+        ]);
+
+        // Own contractor: map applies.
+        $upload = new UploadedFile($path, 'nearmiss.xlsx', null, null, true);
+        $this->actingAs($admin)->post('/admin/s-curve/parse', [
+            'file' => $upload,
+            'contractor_id' => $contractorA->id,
+        ])->assertOk()->assertJsonPath('success', true)
+            ->assertJsonPath('meta.mapUsed', true)
+            ->assertJsonCount(3, 'months');
+
+        // Other contractor: honestly 422s (no leak).
+        $upload2 = new UploadedFile($path, 'nearmiss.xlsx', null, null, true);
+        $this->actingAs($admin)->post('/admin/s-curve/parse', [
+            'file' => $upload2,
+            'contractor_id' => $contractorB->id,
+        ])->assertStatus(422)->assertJsonPath('success', false);
+
+        unlink($path);
+    }
+
+    // Global (NULL-contractor) live maps apply when no contractor map matches.
+    // Called by: POST /admin/s-curve/parse without contractor scope.
+    public function test_parse_endpoint_applies_global_map(): void
+    {
+        $admin = $this->makeUser('admin');
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        ScurveHeaderProposal::create([
+            'contractor_id' => null,
+            'header_rows_text' => 'near-miss global',
+            'header_hash' => hash('sha256', uniqid()),
+            'column_map' => $map,
+            'status' => 'live',
+        ]);
+
+        $upload = new UploadedFile($path, 'nearmiss.xlsx', null, null, true);
+        $this->actingAs($admin)->post('/admin/s-curve/parse', ['file' => $upload])
+            ->assertOk()->assertJsonPath('success', true)
+            ->assertJsonPath('meta.mapUsed', true);
+
+        unlink($path);
+    }
+
+    // =====================================================================
+    // E1-3 widening 2026-09-09 — third family (P1..P10 + WORK DETAILS).
+    // =====================================================================
+
+    // The user's real 10-month file double-misses strict rules (both labels
+    // novel) but auto-derives a v:1 map with 10 single-column spans.
+    // Called by: POST .../collect from scurveCaptureHeaders().
+    public function test_collect_derives_map_for_p1_third_family(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeThirdFamilyWorkbook($path);
+        $upload = new UploadedFile($path, 'third.xlsx', null, null, true);
+
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', ['file' => $upload])
+            ->assertCreated();
+
+        $row = ScurveHeaderProposal::first();
+        $this->assertNotNull($row);
+        $this->assertIsArray($row->column_map);
+        $this->assertSame(1, $row->column_map['v']);
+        $this->assertCount(10, $row->column_map['monthSpans']);
+
+        unlink($path);
+    }
+
+    // Rules honestly 422 the P1 file; the live map parses the full 10-month
+    // curve matching the file's own summary row (5..100 of 1,000,000).
+    // Called by: SCurveImportService::parse($path, $liveMaps) pass 2.
+    public function test_service_parses_p1_file_via_live_map(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeThirdFamilyWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        try {
+            $service->parse($path);
+            $this->fail('Rules should miss the P1/WORK DETAILS layout.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        $map = $service->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+
+        $result = $service->parse($path, [
+            ['id' => 11, 'contractor_id' => null, 'column_map' => $map],
+        ]);
+
+        $this->assertCount(10, $result['months']);
+        $this->assertSame(
+            [5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 75.0, 85.0, 95.0, 100.0],
+            array_map(fn ($m) => $m['planned_progress_percent'], $result['months'])
+        );
+        $this->assertSame(1000000.0, $result['meta']['contractAmount']);
+        $this->assertTrue($result['meta']['mapUsed']);
+        $this->assertSame(11, $result['meta']['mapId']);
+
+        unlink($path);
+    }
+
+    // End-to-end version of the user's flow: capture → approve → re-import a
+    // global live map parses without the AI-assist fallback.
+    // Called by: POST /admin/s-curve/parse with a live global map in scope.
+    public function test_parse_endpoint_parses_p1_file_after_approval(): void
+    {
+        $admin = $this->makeUser('admin');
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeThirdFamilyWorkbook($path);
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+        ScurveHeaderProposal::create([
+            'contractor_id' => null,
+            'header_rows_text' => 'third-family',
+            'header_hash' => hash('sha256', uniqid()),
+            'column_map' => $map,
+            'status' => 'live',
+        ]);
+
+        $upload = new UploadedFile($path, 'third.xlsx', null, null, true);
+        $this->actingAs($admin)->post('/admin/s-curve/parse', ['file' => $upload])
+            ->assertOk()->assertJsonPath('success', true)
+            ->assertJsonPath('meta.mapUsed', true)
+            ->assertJsonCount(10, 'months');
+
+        unlink($path);
     }
 }

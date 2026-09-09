@@ -110,7 +110,15 @@ class GeminiDocumentParserService
      * ['months' => [{month_index, planned_progress_percent}], 'meta' => [
      * 'contractAmount' => ?float, 'warnings' => [...]]] with the same sanitization
      * the rule importer applies (monotonic clamp + force-last-100), or null.
-     * Null on: empty text/key, HTTP failure, malformed JSON, <2 usable months.
+     * Null on: empty text/key, HTTP failure, malformed JSON, <2 usable months
+     * AND <2 usable summary points.
+     *
+     * E2 parity (2026-09-09): mirrors the rule importer's 2b reference+warn —
+     * the prompt asks for TWO series (activity-derived months + the author's own
+     * summary row); the activity series is kept, summary gaps past 1.0 warn with
+     * the same plain wording, and the summary is adopted ONLY when no usable
+     * activity values exist (same fallback the rules have). Previously the AI
+     * returned a single series that could silently be the summary row.
      *
      * Called by: SCurveImportController::parseWithGemini() (planned E2 endpoint).
      */
@@ -140,18 +148,26 @@ class GeminiDocumentParserService
     /**
      * Build the strict-JSON S-curve extraction prompt around workbook text.
      *
+     * Asks for two series so the server can apply the same reference+warn the
+     * rules use: activity-derived months (the baseline) plus the author's own
+     * summary-row values as printed (reference only, never recomputed).
+     *
      * Called by: parseExcelSlice()
      */
     private function buildSCurvePrompt(string $csv): string
     {
         return 'You are reading a contractor S-curve schedule table (CSV text) for a Philippine'
-            . ' government construction project. Months may be labeled "Month 1..N", "M1..N", month'
+            . ' government construction project. Months may be labeled "Month 1..N", "M1..N", "P1..N", month'
             . ' names, bare numbers, ordinals ("1st."), or day-group headers; values may be pesos'
             . ' (possibly duplicated across paired columns — count each month once), weights, or'
             . ' cumulative percents. Return ONLY a JSON object {"months": [{"month_index": 1,'
-            . ' "planned_progress_percent": 12.5}, ...], "contractAmount": 32588531.43}. Rules:'
-            . ' month_index sequential from 1; planned_progress_percent cumulative 0-100 per month;'
-            . ' contractAmount the total contract figure or null; use null fields you cannot find.'
+            . ' "planned_progress_percent": 12.5}, ...], "summary": [{"month_index": 1, "percent": 12.0},'
+            . ' ...], "contractAmount": 32588531.43}. Rules: "months" MUST be computed from the'
+            . ' activity/schedule rows (add each month\'s amounts, divide by the contract total,'
+            . ' cumulative 0-100 per month, month_index sequential from 1); "summary" is the file\'s'
+            . ' OWN summary/cumulative row values copied as printed (no recomputation — omit the key'
+            . ' when the file has no summary row); contractAmount the total contract figure or null;'
+            . ' use null fields you cannot find.'
             . ' Return ONLY the JSON object, no explanations, no markdown fences.'
             . "\n\nCSV:\n" . mb_substr($csv, 0, 12000);
     }
@@ -159,19 +175,94 @@ class GeminiDocumentParserService
     /**
      * Validate + sanitize AI months into the importer shape.
      *
-     * Requires ≥2 usable months; clamps monotonic and forces the last month to 100
-     * (the same guarantees BaselineScheduleController demands). Unknown keys dropped.
+     * Keeps the activity-derived series whenever usable (≥2 months); summary
+     * points become reference warnings past a 1.0 gap (same threshold/wording
+     * family as the rule importer). The summary is adopted as the curve ONLY
+     * when no usable activity values exist (mirrors the rules' summary
+     * fallback, flagged never silent).
      *
      * Called by: parseExcelSlice()
      */
     private function validateSCurveMonths(mixed $decoded): ?array
     {
-        if (!is_array($decoded) || !isset($decoded['months']) || !is_array($decoded['months'])) {
+        if (!is_array($decoded)) {
             return null;
         }
 
+        $months = $this->sanitizeCurvePoints($decoded['months'] ?? null);
+        $summary = $this->sanitizeSummaryPoints($decoded['summary'] ?? null);
+        $contract = $this->sanitizeContractAmount($decoded['contractAmount'] ?? null);
+
+        // Activity series usable — keep it, summary only warns.
+        if (count($months) >= 2) {
+            $warnings = ['AI-assisted curve — verify before locking the baseline.'];
+            $byMonth = [];
+            foreach ($months as $m) {
+                $byMonth[$m['month_index']] = $m['planned_progress_percent'];
+            }
+            foreach ($summary as $s) {
+                if (!isset($byMonth[$s['month_index']])) continue;
+                $gap = abs($s['percent'] - $byMonth[$s['month_index']]);
+                if ($gap > 1.0) {
+                    $warnings[] = "Heads-up (Month {$s['month_index']}): the file's own summary"
+                        . " says {$s['percent']}%, but its activity rows add up to"
+                        . " {$byMonth[$s['month_index']]}%. Your baseline below uses the"
+                        . ' activity math — no action needed.';
+                }
+            }
+
+            return [
+                'months' => array_values($months),
+                'meta' => [
+                    'contractAmount' => $contract,
+                    'warnings' => $warnings,
+                ],
+            ];
+        }
+
+        // No usable activity values — adopt the summary as the curve (flagged).
+        if (count($summary) >= 2) {
+            $adopted = [];
+            foreach ($summary as $s) {
+                $adopted[] = [
+                    'month_index' => $s['month_index'],
+                    'planned_progress_percent' => $s['percent'],
+                ];
+            }
+            $adopted = $this->sanitizeCurvePoints($adopted);
+
+            return [
+                'months' => array_values($adopted),
+                'meta' => [
+                    'contractAmount' => $contract,
+                    'warnings' => [
+                        'Heads-up: no usable activity values were found, so the baseline below'
+                        . " is built from the file's own summary column. Please verify carefully"
+                        . ' before locking.',
+                        'AI-assisted curve — verify before locking the baseline.',
+                    ],
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Sanitize month points into a cumulative curve (monotonic clamp +
+     * force-last-100 — the same guarantees BaselineScheduleController demands).
+     * Unknown keys dropped; requires no minimum (callers decide).
+     *
+     * Called by: validateSCurveMonths() for activity months and summary adoption.
+     */
+    private function sanitizeCurvePoints(mixed $rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
         $months = [];
-        foreach ($decoded['months'] as $row) {
+        foreach ($rows as $row) {
             if (!is_array($row) || !isset($row['month_index'], $row['planned_progress_percent'])) {
                 continue;
             }
@@ -181,10 +272,6 @@ class GeminiDocumentParserService
                 continue;
             }
             $months[] = ['month_index' => $idx, 'planned_progress_percent' => min($pct, 100.0)];
-        }
-
-        if (count($months) < 2) {
-            return null;
         }
 
         usort($months, fn ($a, $b) => $a['month_index'] <=> $b['month_index']);
@@ -197,29 +284,71 @@ class GeminiDocumentParserService
             $months[$i]['planned_progress_percent'] = round($v, 2);
             $prev = $v;
         }
-        $months[count($months) - 1]['planned_progress_percent'] = 100.0;
-
-        $contract = null;
-        if (isset($decoded['contractAmount'])) {
-            $clean = preg_replace('/[^0-9.,]/', '', (string) $decoded['contractAmount']);
-            if ($clean !== '' && preg_match('/([.,])(\d{2})$/', $clean, $m)) {
-                $int = str_replace([',', '.'], '', substr($clean, 0, -3));
-                $clean = $int . '.' . $m[2];
-            } else {
-                $clean = str_replace([',', '.'], '', (string) $clean);
-            }
-            if (is_numeric($clean) && (float) $clean > 0) {
-                $contract = round((float) $clean, 2);
-            }
+        if (count($months) > 0) {
+            $months[count($months) - 1]['planned_progress_percent'] = 100.0;
         }
 
-        return [
-            'months' => array_values($months),
-            'meta' => [
-                'contractAmount' => $contract,
-                'warnings' => ['AI-assisted curve — verify before locking the baseline.'],
-            ],
-        ];
+        return $months;
+    }
+
+    /**
+     * Sanitize author-summary points into reference data (sorted, rounded —
+     * never forced: reference must stay exactly as printed for honest gaps).
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function sanitizeSummaryPoints(mixed $rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $points = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !isset($row['month_index'], $row['percent'])) {
+                continue;
+            }
+            $idx = (int) $row['month_index'];
+            $pct = is_numeric($row['percent']) ? (float) $row['percent'] : null;
+            if ($idx < 1 || $idx > 60 || $pct === null || !is_finite($pct) || $pct < 0 || $pct > 100) {
+                continue;
+            }
+            if (isset($seen[$idx])) continue;
+            $seen[$idx] = true;
+            $points[] = ['month_index' => $idx, 'percent' => round($pct, 2)];
+        }
+
+        usort($points, fn ($a, $b) => $a['month_index'] <=> $b['month_index']);
+
+        return $points;
+    }
+
+    /**
+     * Sanitize a contract-amount figure (last-separator-wins decimal handles
+     * both US figures and OCR period-thousands).
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function sanitizeContractAmount(mixed $value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $contract = null;
+        $clean = preg_replace('/[^0-9.,]/', '', (string) $value);
+        if ($clean !== '' && preg_match('/([.,])(\d{2})$/', $clean, $m)) {
+            $int = str_replace([',', '.'], '', substr($clean, 0, -3));
+            $clean = $int . '.' . $m[2];
+        } else {
+            $clean = str_replace([',', '.'], '', (string) $clean);
+        }
+        if (is_numeric($clean) && (float) $clean > 0) {
+            $contract = round((float) $clean, 2);
+        }
+
+        return $contract;
     }
 
     /**

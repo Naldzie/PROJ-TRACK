@@ -65,6 +65,16 @@ class ScurveHeaderProposalController extends Controller
 
         $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
 
+        // E1-3: auto-derive a versioned layout map from the failed bytes (user
+        // choice: auto, not reviewer-assigned). Best-effort — null when nothing
+        // derivable exists; the capture still stores (reviewable, never consulted).
+        $columnMap = null;
+        try {
+            $columnMap = $this->sCurveImportService->deriveAutoColumnMap($path);
+        } catch (\Throwable $e) {
+            $columnMap = null;
+        }
+
         $query = ScurveHeaderProposal::where('header_hash', $hash);
         if ($contractorId === null) {
             $query->whereNull('contractor_id');
@@ -78,13 +88,17 @@ class ScurveHeaderProposalController extends Controller
             if ($row->occurrences >= 3 && $row->status === 'proposed') {
                 $row->update(['status' => 'live']);
             }
+            // Backfill pre-E1-3 rows captured when maps were always null.
+            if ($row->column_map === null && $columnMap !== null) {
+                $row->update(['column_map' => $columnMap]);
+            }
         } else {
             ScurveHeaderProposal::create([
                 'contractor_id' => $contractorId,
                 'source_type' => $validated['source_type'] ?? 'excel',
                 'header_rows_text' => mb_substr($text, 0, 4000),
                 'header_hash' => $hash,
-                'column_map' => null,
+                'column_map' => $columnMap,
                 'occurrences' => 1,
                 'status' => 'proposed',
                 'source' => 'auto-capture',
@@ -110,11 +124,14 @@ class ScurveHeaderProposalController extends Controller
         $rows = $query->get()->map(function ($row) {
             return [
                 'id' => $row->id,
+                'contractor_id' => $row->contractor_id,
                 'contractor' => $row->contractor
                     ? ($row->contractor->company_name ?: $row->contractor->contractor_name)
                     : '',
                 'source_type' => $row->source_type,
                 'header_rows_text' => $row->header_rows_text ?? '',
+                'header_hash' => $row->header_hash ?? '',
+                'column_map' => $row->column_map,
                 'occurrences' => $row->occurrences,
                 'status' => $row->status,
                 'source' => $row->source ?? 'auto-capture',
@@ -129,7 +146,8 @@ class ScurveHeaderProposalController extends Controller
 
     /**
      * Approve a capture: flip it live so the E1-3 reader may consult it.
-     * Column maps attach in E1-3; approval today trusts the header block exists.
+     * The auto-derived column_map (when derivable) rides along; approval
+     * trusts this (contractor, header-block, column_map) mapping.
      */
     public function approve(ScurveHeaderProposal $proposal)
     {

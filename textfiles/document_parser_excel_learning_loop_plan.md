@@ -133,19 +133,50 @@ Frontend convention (IMPORTANT)
     - Tests: list+filter, staff approve, admin reject-soft-delete, contractor blocked
       everywhere. Proof: approve one row in browser; audit shows who/when.
 
-  PHASE E1-3 — Reader consults maps (lowest-priority fallback)  ⬜ NOT STARTED
-    - Loader (classic script): fetch live maps ONCE per import run (role-base + CSRF pattern;
-      contractors skip; 24h sessionStorage TTL; never cache empty) — mirrors
-      loadLearnedKeywords. Shape: { maps: [{contractor_id, header_hash, column_map}] }.
-    - Threading (mirror L3 optional-param): SCurveImportController passes maps into
-      parse($path, $liveMaps); findHeader tries rule detection FIRST; only when it returns
-      null, tries each live map in order (contractor's maps, then global): column_map pins
-      {descCol, weightCol, contractCol, monthSpans} directly (header text match by hash +
-      fuzzy tolerance for typo drift). Old calls unchanged; empty table = today's behavior.
-    - Tests: synthetic unknown-layout fixture (miss → map → approve → hit); rules win ties
-      (mapped file that rules now cover ignores the map); empty table = byte-identical.
-      Full suite + BUHI/roof re-verify green.
-    - Proof: third-layout file fails before approval, parses after, nothing else moving.
+  PHASE E1-3 — Reader consults maps (lowest-priority fallback)  ✅ BUILT 2026-09-09 (code, NOT committed; user choices: auto maps + typo-tolerant + v:1 flag)
+    - Service (SCurveImportService): MAP_VERSION=1 const; parse($path, $liveMaps=null)
+      two-pass (rules on all sheets first, maps only when rules miss everywhere);
+      meta gains mapUsed/mapId + one plain-worded in-modal FYI warning on map-built
+      curves (rule-built results byte-identical: mapUsed=false, zero new warnings).
+      deriveAutoColumnMap() (relaxed detector: ONLY delta vs strict is loose
+      description wording — same ≥2-month gate; packs v/sig/cols, null when nothing
+      derivable). findHeaderViaMaps(): version gate (stale v never applies) +
+      fuzzy signature search (exact / \b-bounded substring / Levenshtein≤2, desc-cell
+      anchored, ≥2 cells at ≥0.5) + month-spans-hold-numbers guard (wrong-shape
+      sheets skip instead of corrupting). findHeader() refactored behind
+      findHeaderWith(callable) — strict path behavior unchanged.
+    - Controller: parseExcel loads live maps server-side (contractor's first, then
+      global; explicit contractor_id → document→project → global; unknown ids
+      degrade; all failures → [] so imports never break). No new routes (stale
+      route-cache incident class avoided). collect() auto-derives + stores the map
+      (backfills pre-E1-3 null-map rows on repeat); list gains contractor_id,
+      header_hash, column_map (additive).
+    - Client (one spot, capture pattern): wizard parse appends contractorSelect;
+      detail unchanged (server resolves). Map FYI rides the existing warning stash
+      → renders in-modal, no new UI code.
+    - Caught pre-green: toArray() is 1-based row keys — signature builder read the
+      wrong row (empty sig → all 5 map tests failed); fixed with per-shape key
+      resolution (single-row = original key, two-row = positions).
+    - Tests (+9 in ScurveHeaderProposalTest, 19/19): v:1 auto-map on capture,
+      null-map junk, repeat backfill, miss→map→hit exact curve, typo variant
+      (TASK DESCRIPTON) hit, rules-win-ties (identical months+warnings), v:999
+      ignored, contractor scoping (A applies / B 422s), global applies.
+      SCurveImportTest 29/29; JS 90/92 (2 intended blinding fails); full suite
+      1064 passed / same 7 pre-existing clean-tree failures — zero regressions.
+    - Proof for user browser: third-family/layout-variant Excel that 422s today →
+      capture row shows map → approve → re-import parses (mapUsed note in modal).
+    - WIDENING 2026-09-09 (user's real 10-month file double-missed: months P1..P10
+      + desc WORK DETAILS — relaxed knew neither, so the map stayed null and the
+      approved row kept 422ing): matchMonthLabel gains relaxed-only P1–P12 /
+      Period / Phase N; isLooseDescriptionLabel gains detail\w*. Both scoped to
+      auto-maps (strict path untouched — single call site, default false). The
+      file's TOTAL / CUMULATIVE % ACHIEVED / single-column months were already
+      friendly, so labels were the only blind spot. Existing approved null-map
+      rows self-heal: re-upload backfills the map (status untouched). Tests (+3:
+      P1 collect derivation with 10 spans, service miss→map→hit with the exact
+      5..100 curve of 1,000,000, endpoint parses after approval without AI offer).
+      ScurveHeaderProposalTest 22/22; SCurveImportTest 29/29; full suite 1067
+      passed / same 7 pre-existing clean-tree failures — zero regressions.
 
 ===============================================================================
   6. SESSION LOGS

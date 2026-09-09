@@ -28,6 +28,12 @@ function scurveCsrfToken() {
 async function parseSCurveFile(file, parseUrl) {
     var fd = new FormData();
     fd.append('file', file);
+    // E1-3: wizard contractor choice scopes learned-map consult (project still
+    // unsaved, so the client is the only contractor source — same read as capture).
+    try {
+        var csel = document.getElementById('contractorSelect');
+        if (csel && csel.value) fd.append('contractor_id', csel.value);
+    } catch (e) { /* scope is best-effort */ }
     var res = await fetch(parseUrl, {
         method: 'POST',
         headers: { 'X-CSRF-TOKEN': scurveCsrfToken(), 'Accept': 'application/json' },
