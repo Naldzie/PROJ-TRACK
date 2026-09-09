@@ -1082,6 +1082,13 @@ Related plan
           100%) with in-modal provenance → E1-1 capture row stored with full R1–R8 header text
           + hash. column_map EMPTY is correct-by-design (fills at E1-2 review; auto-filling it
           from a failed parse would violate hybrid trust).
+          (c) 2c SPECIMEN (SCurve-Test-5Month-Lone-Body-Specimen.xlsx, git-ignored, built
+          2026-09-08): paired headers (Month 1..5 at F/H/J/L/N) + lone bodies + one full+full
+          duplicate row (J12/K12) + TOTAL anchor (contract 450000; true months
+          50000/60000/50000/100000/140000; second cells 95% empty). CURRENT behavior reads
+          [11.11,24.44,46.67,68.89,100] — m3/m4 inflated by the duplicate; correct MAX curve
+          is [11.11,24.44,35.56,57.78,100 forced]. Failing-then-passing evidence banked for the
+          2c build (unparks it on user order — the file it waited on now exists).
         - Some contractors do NOT duplicate the value in two columns — currently
           SUM(pair) would double-count; detect by checking if col+1 is mostly
           empty (>70% null/0) then use MAX not SUM for that month.
