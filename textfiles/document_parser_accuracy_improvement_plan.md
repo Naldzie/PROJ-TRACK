@@ -965,7 +965,19 @@ Related plan
         m12 97/100/3 WARN]. Tests: +2 fixtures (warn/silent branches incl. the 1.0 boundary +
         fraction scaling; no-summary file stays []). SCurveImportTest 21/21. Full suite 1035
         passed / 7 pre-existing failures — zero regressions. No commit without user OK.
-        R2b-GRID (display-grid fallback) — ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed).
+        R2b-GRID (display-grid fallback) — ✅ BUILT + COMMITTED on merge15-baseline 2026-09-08.
+        EXPLAINED (user Q 2026-09-08 — what it is, plainly): the reference reader used to look
+        for summary values ONLY under month-span columns (BUHI: I/O/U/AA sit inside spans, so
+        it worked). Roof keeps engine numbers in hidden AM:AS and shows humans a PARALLEL
+        display grid G:AG (merged 4-col groups: G=AM31, K=AN31, …; cumulative row 33 chains
+        G33==G32, K33==K32+G33, … AE33==1.0). Nothing readable sits under AM:AS on row 33 —
+        first version reported [] (honest, but blind). The rule: when span collection finds
+        ZERO values, collect the row's numerics left-to-right and pair positionally with
+        months 1..N — ONLY on exact count match (roof: 7 values → 7 months ⇒ 6.32/24.31/
+        42.30/59.71/77.03/99.14/100.0, gaps 0 vs ours, silent with reference recorded). Any
+        other count ⇒ honestly empty (a 3-value row against 7 months would pair garbage —
+        the gate is the safety). BUHI never reaches the fallback (span path hits first).
+        No curve moves anywhere — reference-only stands, same as 2b.
         Roof's cumulative VALUES live in the G:AG display grid (merged 4-col groups linking
         =AM31/=AN31…, =G31/F31…, running =K32+G33… sums), NOT under month-span columns —
         forensics: R33 = 6.32/24.31/42.30/59.71/77.03/99.14/1.0, R34 running pesos, R35/36
@@ -2027,6 +2039,12 @@ Related plan
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +
     PDF header-synonym mirroring; Tier-2 OCR stays separately queued as engine work); E1/E2
     unpark only on explicit order. Blinding stays ON throughout (demo proof).
+  - EXCEL END-TO-END vs ORIGINAL TIERS (clarified 2026-09-08 — one file type fully through
+    all tiers before moving on): Tier 1 DONE (2a/R2a/2b/fallback/GRID/UX all built, committed,
+    browser-proven; GRID explanation filed 2026-09-08); Tier 2 (local OCR auto) is N/A for
+    Excel by construction (.xlsx is never a scan — PhpSpreadsheet reads cells directly);
+    Tier 3 = E2 AI-for-Excel (parked); learning = E1 header-learning (parked); 2c parked for
+    lack of evidence.
 
   - Summary-Row Validated tuning: threshold currently |summary - activity| >1%
     → warning; after QA on BUHI vs others, tighten to 0.5% or loosen to 2%
