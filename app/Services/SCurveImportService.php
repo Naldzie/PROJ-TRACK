@@ -732,6 +732,23 @@ class SCurveImportService
         $months[$finalMonth]['planned_progress_percent'] = 100.0;
         $running = 100.0;
 
+        // R2b (redesigned 2026-09-08: reference + warn — the plan curve above NEVER moves).
+        // Read the author's cumulative summary row and compare each value against OUR
+        // cumulative at the attributed month. A summary value sitting in month m's span
+        // covers the interval up to the month before the next summary value (BUHI: I in
+        // span 1 → month 3, O in span 4 → month 6 …). Fractions (< 1.5) scale to percent.
+        // Gaps past 1.0 warn with the cause: the block tracks ACCOMPLISHED % (often on
+        // another divisor, e.g. BUHI's pre-discount bid), so it informs review but never
+        // replaces planned values.
+        $summaryReference = $this->readSummaryReference($rows, $header, $dataStart, $months);
+        foreach ($summaryReference as $ref) {
+            if ($ref['gap'] > 1.0) {
+                $warnings[] = "Author block: month {$ref['month']} cumulative {$ref['summary_percent']}%"
+                    . " vs activity-derived {$ref['activity_percent']}% — the block tracks"
+                    . " accomplished % (may use another divisor); baseline kept from planned activities.";
+            }
+        }
+
         // Weight sanity check (weights should sum to ~100).
         if ($weightSum > 0 && abs($weightSum - 100) > 1) {
             $warnings[] = 'Sum of activity % weights is ' . round($weightSum, 2) . '% (expected ~100%).';
@@ -747,12 +764,91 @@ class SCurveImportService
             'warnings' => $warnings,
             // Step 2a: cumulative summary-row detection for the Step 2b reader.
             'cumulativeRow' => $cumulativeRow,
+            // R2b: author-block reference points ({month, summary_percent,
+            // activity_percent, gap}); empty when the file carries no readable block.
+            'summaryReference' => $summaryReference,
         ];
 
         return [
             'months' => array_values($months),
             'meta' => $meta,
         ];
+    }
+
+    /**
+     * R2b: read the author's cumulative summary row as REFERENCE points.
+     *
+     * Prefers a /cumulat|commulat/ row (the true cumulative series), else the detected
+     * cumulativeRow. Each numeric value found in a month span is attributed to the last
+     * month before the next summary value (or the final month). Fractions scale to
+     * percent. Returns [{month, summary_percent, activity_percent, gap}]; empty when the
+     * file carries no readable block. Never moves the plan curve — callers only warn.
+     *
+     * Called by: buildMonths() after months are final (force-final included).
+     */
+    private function readSummaryReference(array $rows, array $header, int $dataStart, array $months): array
+    {
+        $monthSpans = $header['monthSpans'] ?? [];
+        if (count($monthSpans) === 0) {
+            return [];
+        }
+
+        $summaryIdx = null;
+        foreach ($rows as $rowIndex => $row) {
+            if ($rowIndex < $dataStart || !is_array($row)) {
+                continue;
+            }
+            $text = implode(' ', $this->rowTexts($row));
+            if ($text !== '' && preg_match('/cumulat\w*|commulat\w*/i', $text)) {
+                $summaryIdx = $rowIndex;
+                break;
+            }
+        }
+
+        if ($summaryIdx === null) {
+            return [];
+        }
+
+        $row = $rows[$summaryIdx];
+        $found = [];
+        foreach ($monthSpans as $m => $cols) {
+            foreach ((array) $cols as $col) {
+                $raw = $row[$this->letter($col)] ?? null;
+                if (is_numeric($raw)) {
+                    $found[$m] = (float) $raw;
+                    break;
+                }
+            }
+        }
+
+        if (count($found) === 0) {
+            return [];
+        }
+
+        ksort($found);
+        $sMonths = array_keys($found);
+        $maxMonth = max(array_keys($monthSpans));
+        $out = [];
+        foreach ($sMonths as $i => $sm) {
+            $attr = ($i + 1 < count($sMonths)) ? $sMonths[$i + 1] - 1 : $maxMonth;
+            if (!isset($months[$attr])) {
+                continue;
+            }
+            $v = $found[$sm];
+            if ($v < 0) {
+                continue;
+            }
+            $pct = ($v > 0 && $v < 1.5) ? round($v * 100, 2) : round($v, 2);
+            $act = (float) $months[$attr]['planned_progress_percent'];
+            $out[] = [
+                'month' => $attr,
+                'summary_percent' => $pct,
+                'activity_percent' => $act,
+                'gap' => round(abs($pct - $act), 2),
+            ];
+        }
+
+        return $out;
     }
 
     // ─── HELPERS ──────────────────────────────────────────────────────────────

@@ -159,6 +159,18 @@ Sensitivity basis (user-approved)
       nothing, all-null + empty-images decline, 3-image cap asserted on the wire, invalid
       values → null). First Http::fake() use in the suite. No commit without OK.
 
+  2026-09-08 — AI-5 BROWSER-PROVEN on merge15-baseline (user test4 run; formal log close).
+    Evidence (all user-reported, all passing): banner offered on the weak test4 run → one
+    assist call → merged with AI badges on Location, Description, ABC, Budget Source, user
+    verdict "the ai fill is accurate" → pooled amber disagree on price (4204128.84 vs
+    4323196.77) intact alongside AI fills → rule-kept boxes (dates, title) untouched →
+    Apply → Learned Keywords desk shows the new rows with the AI-assisted badge (AI-4
+    sourcing verified live). Blinded-ABC exclusion intact throughout (ABC filled BY AI while
+    the hardcoded path slept). Trivia (correctable, not defects): title "PE" prefix artifact
+    (OCR misread propagated); "Fiduciary Fund" flagged at Apply by the admin-only dropdown
+    rule (user decision: Budget Source/Category stay manual-as-today, zero change).
+    AI-5 CLOSED (normal-doc). AI-6 (S-curve slice) stays parked. No commit in this entry.
+
   2026-09-08 — AI-3 + AI-4 BUILT on merge15-baseline (code, NOT committed; folded — AI-4
   sourcing rides the AI-3 merge so provenance never corrupts; no push per user).
     - Trigger: core shouldOfferAiAssist(parsed, disagree) pure + exported (fills≤3 OR

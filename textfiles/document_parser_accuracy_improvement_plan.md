@@ -827,6 +827,16 @@ Related plan
           browser-proven accurate end-to-end. For an ONGOING project per client — still a
           PLANNED curve (all values formula-chained to plan data; PMU records actuals
           separately via monthly inspections).
+        - Roof engine/display split (user-confirmed 2026-09-08): AM:AS are calculation-engine
+          columns the contractor HIDES (user: hidden in the working file) — the human-visible
+          table is the G:AG display grid (merged 4-col groups linking =AM31/=AN31…,
+          =G31/F31…=, running =K32+G33… sums). Hidden ≠ unreadable via API, but the narrow
+          forensic dump skipped AP:AS + never read G:AG and falsely reported "summary empty".
+          Lesson banked: dump the whole grid (both tables), not assumed columns.
+        - SUMMARY SECTION CONFIRMED (user Q 2026-09-08): yes — the bottom block in BOTH files
+          (TOTAL + % + cumulative + COST/Cash Flow + durations) is THE summary section. BUHI:
+          R88 TOTAL / R89 % / R90 cumulative / R91 COST / R92 cumulative cost. Roof: R31 TOTAL /
+          R32 % / R33 cumulative / R34 Cash Flow / R35 duration / R36 cumulative days.
           Table proper ~A-AU; A10:IR82 width is title-block artifact. Reference:
           sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE.xlsx
           (git-ignored, manual QA only). Same contractor ⇒ same format assumed (user, evidenced
@@ -939,7 +949,33 @@ Related plan
         - Deferred tag on 2b stands, reason updated: awaits build go-ahead, NOT a missing file
           (BUHI is its own mismatch evidence).
 
-    2b. Summary-Row Reference + Warn (REDESIGNED 2026-09-08 — was "Validated adopts summary"; see R3. Reference-only per triple-grounded workflow reason) — ⏸ awaits build go-ahead (BUHI is its own evidence; no missing file)
+    2b. Summary-Row Reference + Warn (REDESIGNED 2026-09-08 — was "Validated adopts summary"; see R3. Reference-only per triple-grounded workflow reason) — ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed; curve behavior unchanged by construction).
+        Order in buildMonths() (plan UNCHANGED, reference attached AFTER final numbers):
+          1) Months computed exactly as before (paired SUM → monotonic clamp → force-last-100).
+          2) readSummaryReference(): prefer a /cumulat|commulat/ row, else the detected
+             cumulativeRow; per month span take the first numeric cell; attribute each value
+             to the last month before the next summary value (BUHI: I in span 1 → month 3);
+             fractions (< 1.5) scale to percent; negatives skipped.
+          3) meta['summaryReference'] = [{month, summary_percent, activity_percent, gap}];
+             gaps past 1.0 push the cause-naming warning (baseline kept from planned activities).
+             Files without a readable block report [] with zero new warnings (roof: summary cells
+             empty → []; %-only period rows never feed the cumulative comparison).
+        BUHI live result (the reviewable output): curve byte-identical; reference
+        [m3 6.53/6.74/0.21 silent, m6 20.46/21.09/0.63 silent, m9 48.24/49.73/1.49 WARN,
+        m12 97/100/3 WARN]. Tests: +2 fixtures (warn/silent branches incl. the 1.0 boundary +
+        fraction scaling; no-summary file stays []). SCurveImportTest 21/21. Full suite 1035
+        passed / 7 pre-existing failures — zero regressions. No commit without user OK.
+        R2b-GRID (display-grid fallback) — APPROVED 2026-09-08, NOT YET BUILT (build on go-ahead):
+        roof's cumulative VALUES live in the G:AG display grid (merged 4-col groups linking
+        =AM31/=AN31…, =G31/F31…, running =K32+G33… sums), NOT under month-span columns —
+        forensics: R33 = 6.32/24.31/42.30/59.71/77.03/99.14/1.0, R34 running pesos, R35/36
+        days→187; AM:AS engine columns intentionally empty there. Rule: (a) values under
+        month spans first (BUHI path, unchanged); (b) else collect the cumulative row's
+        numerics in column order and, ONLY when the count equals the month count, pair
+        positionally (roof: 7 values → 7 months, gaps 0, silent with reference recorded).
+        Mismatched counts → honestly empty. No curve moves anywhere — reference-only stands.
+        (Supersedes the adopt-branch text below, kept as history of the abandoned design.)
+        --- ABANDONED adopt-branch text (kept for history; DO NOT build) ---
         Order in buildMonths():
           1) Detect monthSpans via findHeader (already anchor-based).
           2) Try to read summary row: scan rows after header for isCumulativeLabel

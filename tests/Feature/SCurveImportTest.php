@@ -635,6 +635,81 @@ class SCurveImportTest extends TestCase
         unlink($path);
     }
 
+    /**
+     * R2b (reference + warn): the author's cumulative row is read as reference points —
+     * fractions scale to percent, values attribute to the interval's last month, gaps past
+     * 1.0 warn WITHOUT moving the plan curve. Gap of exactly 1.0 stays silent (boundary).
+     */
+    public function test_summary_reference_warns_only_past_threshold(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'CUMULATIVE % DONE');
+        $sheet->setCellValue('B12', 0.49);
+        $sheet->setCellValue('C12', 90);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        // Plan curve untouched by the reference read.
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+
+        $ref = $result['meta']['summaryReference'];
+        $this->assertCount(2, $ref);
+        $this->assertSame(['month' => 1, 'summary_percent' => 49.0, 'activity_percent' => 50.0, 'gap' => 1.0], $ref[0]);
+        $this->assertSame(['month' => 2, 'summary_percent' => 90.0, 'activity_percent' => 100.0, 'gap' => 10.0], $ref[1]);
+
+        $warnings = implode("\n", $result['meta']['warnings']);
+        $this->assertStringNotContainsString('month 1', $warnings);
+        $this->assertStringContainsString('month 2', $warnings);
+        $this->assertStringContainsString('baseline kept from planned activities', $warnings);
+
+        unlink($path);
+    }
+
+    /**
+     * R2b: files without a cumulative row report an empty reference and no new warnings.
+     */
+    public function test_no_summary_row_means_empty_reference(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'GRAND TOTAL');
+        $sheet->setCellValue('E12', 60000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame([], $result['meta']['summaryReference']);
+        $this->assertSame([], $result['meta']['warnings']);
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
     protected function createAdminUser()
     {
         // User::create (not the factory) — the users table has no
