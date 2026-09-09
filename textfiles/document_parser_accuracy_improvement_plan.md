@@ -1029,7 +1029,18 @@ Related plan
         transparency warning you wanted, and still works for the label-less
         CONSCHEDSAVINGS.pdf (no summary row → activity path).
 
-    2c. Single-column month fallback — ⏸ DEFERRED until a second real contractor Excel exists (user decision 2026-09-08)
+    2c. Single-column month fallback — ⏸ PARKED until a paired-header/lone-body file exists (user decision 2026-09-08; restudied same day)
+        - Precise file spec: header infers PAIRED spans (labels 2 apart or merged) BUT body
+          carries each month's FULL peso in ONE cell of the pair (other mostly empty) +
+          a couple of full+full duplicates + a TOTAL/contract anchor. Neither family has it
+          (BUHI paired/paired; roof single/single) — restudy proved pure lone-style needs no
+          rule (SUM≡MAX); only MIXED files diverge (SUM double-counts duplicates, MAX halves
+          BUHI-class rows). Hence the file-level >70%-empty gate — whose threshold is
+          INVENTED until a real file calibrates it.
+        - Risk verdict (user-accepted): building now is riskier than waiting — the branch sits
+          on the hottest path (month summation touches every file); silent curve corruption
+          (halving/doubling) is the worst failure class; tests would re-assert our own guess.
+          Design recorded, one batch when the file arrives.
         - Some contractors do NOT duplicate the value in two columns — currently
           SUM(pair) would double-count; detect by checking if col+1 is mostly
           empty (>70% null/0) then use MAX not SUM for that month.
@@ -1993,6 +2004,29 @@ Related plan
     source_type enum excel/pdf, column_map JSON, created_by) + UI
     resources/views/admin/_template_mapper_modal.blade.php that reuses
     findHeader's anchor scan to propose mappings and saves per-contractor.
+
+  - E1. EXCEL HEADER-LEARNING (user-proposed 2026-09-08 — the Excel analog of the normal-doc
+    learning loop; revives parser_templates with a capture-first design). Status: PARKED,
+    plan only. Shape: unknown-header capture (on "No S-curve table found" 422s, stash the
+    header block) → review desk cloned from the keyword desk (same approve/reject/occurrences
+    trust, staff+admin per L0a) → live maps consulted by findHeader as lowest-priority
+    fallback, keyed per contractor where known (same-format evidence: BUHI, roof+hard-copy).
+    Distinct from normal-doc parser_keywords (vocabulary) — this learns LAYOUTS. Feeds the
+    R2a fuzzy layer instead of replacing it (fuzzy catches typos; maps cover novel layouts).
+
+  - E2. AI FALLBACK FOR EXCEL (user-proposed 2026-09-08). Status: PARKED, plan only. Design
+    (no renderer needed — key insight): serialize server-side via PhpSpreadsheet to COMPACT
+    TEXT (header block + first ~40 data rows as CSV, never the whole workbook) and send text,
+    not images; Gemini returns the same {months, meta} JSON shape; PHP validates (monotonic,
+    force-last-100, contract sanity) exactly like the service. Triggers mirror normal-doc:
+    422 no-table OR low-confidence import, opt-in banner, merge-for-review (never auto-apply),
+    one call per file, Http::fake tests. Sensitivity: schedule numbers only (public-bidding
+    data), same slice-minimal precedent as the normal-doc slice.
+
+  - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
+    2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +
+    PDF header-synonym mirroring; Tier-2 OCR stays separately queued as engine work); E1/E2
+    unpark only on explicit order. Blinding stays ON throughout (demo proof).
 
   - Summary-Row Validated tuning: threshold currently |summary - activity| >1%
     → warning; after QA on BUHI vs others, tighten to 0.5% or loosen to 2%
