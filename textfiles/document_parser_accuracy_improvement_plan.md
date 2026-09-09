@@ -862,6 +862,26 @@ Related plan
         Rejected for PMU: platform answers (Mastt/monday "stop using spreadsheets" — PMU cannot
         mandate contractor tooling); heavy cleaners (OpenRefine/Talend — overkill for 2 families).
 
+    R4. RESEARCH ROUND 2 — S-CURVE FORMAT VARIANCE IN THE WILD (2026-09-08, web sources;
+        extends R1, contradicts nothing in it).
+        - Primavera P6 (Oracle, the construction-schedule industry standard): handles variance by
+          REFUSING freeform input — canonical exchange formats (XER/XML/MPX) + an Import Wizard
+          with SAVED per-import configurations (layout mapping, insert-vs-update collision
+          policies) + import logs. Nobody in construction EVM parses arbitrary contractor
+          spreadsheets. Mapping to us: canonical {months, meta} schema (= their XER),
+          contractor-keyed parser_templates (= their saved configurations), hybrid trust +
+          warnings/activity log (= their collision policies + import log). The E1 revival is
+          validated by the market leader, not just by analogy.
+        - Academic state of practice (SIGMATYPER, CIDR'22): production-viable table
+          understanding is a CONFIDENCE-GATED CASCADE — header fuzzy-match, then value-lookup
+          rules only below threshold, then embeddings only below threshold again. Heavy ML
+          (TURL/TaBERT transformers) judged unsuitable for production without training data and
+          expert time. Mapping to us: that cascade IS Tier 1 → L1-L3 loop → AI fallback,
+          independently derived. Consequence banked: our trigger thresholds (_confidence < 40,
+          gap > 1.0) play the SIGMATYPER gate role — tune them from live evidence over time,
+          never treat them as constants.
+        - Net effect: validation, not redirection. No structural change follows from R4.
+
     R2a. ROOF-FAMILY SUPPORT (FAMILY-R) — ✅ BUILT + BROWSER-PROVEN on merge15-baseline 2026-09-08 (committed; blinding untouched — S-curve track has no parser overlap).
         - Detection: headerFuzzyMatch() (Levenshtein ≤2, words ≥6 chars, anchored full-cell)
           wired into isDescriptionLabel (DESCRITPION ✓) + isCumulativeLabel (Commulative ✓);
