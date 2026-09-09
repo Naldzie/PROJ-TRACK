@@ -287,6 +287,16 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])
         ->name('staff.scurve-headers.collect');
 
+    // === S-CURVE HEADER REVIEW (E1-2 desk; staff + admin per E1b) ===
+    Route::get('/scurve-header-proposals/all', [SCurveHeaderProposalController::class, 'getAllForManagement'])
+        ->name('staff.scurve-headers.all');
+
+    Route::patch('/scurve-header-proposals/{proposal}/approve', [SCurveHeaderProposalController::class, 'approve'])
+        ->name('staff.scurve-headers.approve');
+
+    Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
+        ->name('staff.scurve-headers.destroy');
+
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
         ->name('staff.documents.upload');
@@ -753,6 +763,16 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     // === S-CURVE HEADER LEARNING (E1-1 silent capture; staff + admin, contractors excluded) ===
     Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])
         ->name('admin.scurve-headers.collect');
+
+    // === S-CURVE HEADER REVIEW (E1-2 desk; staff + admin per E1b) ===
+    Route::get('/scurve-header-proposals/all', [SCurveHeaderProposalController::class, 'getAllForManagement'])
+        ->name('admin.scurve-headers.all');
+
+    Route::patch('/scurve-header-proposals/{proposal}/approve', [SCurveHeaderProposalController::class, 'approve'])
+        ->name('admin.scurve-headers.approve');
+
+    Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
+        ->name('admin.scurve-headers.destroy');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])

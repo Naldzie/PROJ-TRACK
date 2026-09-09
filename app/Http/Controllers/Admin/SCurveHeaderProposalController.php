@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Models\Project;
 use App\Models\ScurveHeaderProposal;
 use App\Services\SCurveImportService;
+use App\Traits\LogsActivity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -23,6 +24,8 @@ use RuntimeException;
  */
 class ScurveHeaderProposalController extends Controller
 {
+    use LogsActivity;
+
     public function __construct(
         protected SCurveImportService $sCurveImportService,
     ) {}
@@ -89,6 +92,89 @@ class ScurveHeaderProposalController extends Controller
         }
 
         return response()->json(['success' => true, 'stored' => 1], 201);
+    }
+
+    /**
+     * List captures for the review screen (?status=proposed|live, default all).
+     * Most-seen first so the highest-value layouts are reviewed first.
+     */
+    public function getAllForManagement(Request $request)
+    {
+        $this->ensureReviewer();
+
+        $query = ScurveHeaderProposal::with('contractor')->orderByDesc('occurrences')->orderBy('id');
+        if (in_array($request->query('status'), ['proposed', 'live'], true)) {
+            $query->where('status', $request->query('status'));
+        }
+
+        $rows = $query->get()->map(function ($row) {
+            return [
+                'id' => $row->id,
+                'contractor' => $row->contractor
+                    ? ($row->contractor->company_name ?: $row->contractor->contractor_name)
+                    : '',
+                'source_type' => $row->source_type,
+                'header_rows_text' => $row->header_rows_text ?? '',
+                'occurrences' => $row->occurrences,
+                'status' => $row->status,
+                'source' => $row->source ?? 'auto-capture',
+                'has_map' => $row->column_map !== null,
+                'created_at' => $row->created_at,
+                'updated_at' => $row->updated_at,
+            ];
+        });
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Approve a capture: flip it live so the E1-3 reader may consult it.
+     * Column maps attach in E1-3; approval today trusts the header block exists.
+     */
+    public function approve(ScurveHeaderProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        $proposal->update(['status' => 'live']);
+
+        $who = $proposal->contractor
+            ? ($proposal->contractor->company_name ?: $proposal->contractor->contractor_name)
+            : 'global';
+        $this->logActivity('Approve S-Curve Header', "Approved S-curve header capture #{$proposal->id} ({$who})");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Header approved successfully',
+            'proposal' => $proposal->fresh(),
+        ]);
+    }
+
+    /**
+     * Reject a capture: soft-delete it (recoverable via restore, keeps history).
+     */
+    public function destroy(ScurveHeaderProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        $id = $proposal->id;
+        $proposal->delete();
+
+        $this->logActivity('Reject S-Curve Header', "Rejected S-curve header capture #{$id}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Header rejected successfully',
+        ]);
+    }
+
+    /**
+     * Review gate shared by every management endpoint (E1b: staff + admin).
+     */
+    protected function ensureReviewer()
+    {
+        if (!in_array(auth()->user()->role, ['admin', 'staff'], true)) {
+            abort(response()->json(['message' => 'Unauthorized'], 403));
+        }
     }
 
     /**

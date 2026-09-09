@@ -198,4 +198,71 @@ class ScurveHeaderProposalTest extends TestCase
 
         unlink($path);
     }
+
+    // Staff can review: list shows captures most-seen first, with ?status= filter.
+    // Called by: GET .../scurve-header-proposals/all from the review modal.
+    public function test_staff_can_list_captures_with_status_filter(): void
+    {
+        $staff = $this->makeUser('staff');
+        ScurveHeaderProposal::create([
+            'header_rows_text' => 'WEIRD DESC HEADER', 'header_hash' => hash('sha256', 'a'),
+            'occurrences' => 5, 'status' => 'proposed',
+        ]);
+        ScurveHeaderProposal::create([
+            'header_rows_text' => 'OTHER HEADER', 'header_hash' => hash('sha256', 'b'),
+            'occurrences' => 1, 'status' => 'live',
+        ]);
+
+        $this->actingAs($staff)->getJson('/staff/scurve-header-proposals/all')
+            ->assertOk()->assertJsonCount(2);
+        $this->actingAs($staff)->getJson('/staff/scurve-header-proposals/all?status=live')
+            ->assertOk()->assertJsonCount(1)->assertJsonPath('0.status', 'live');
+    }
+
+    // Approve flips proposed → live (staff may approve per E1b, via staff route).
+    // Called by: PATCH .../approve from the review modal Approve button.
+    public function test_staff_can_approve_capture(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'WEIRD DESC HEADER', 'header_hash' => hash('sha256', 'a'),
+            'status' => 'proposed',
+        ]);
+
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$row->id}/approve")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSame('live', $row->fresh()->status);
+    }
+
+    // Reject soft-deletes (history preserved, recoverable).
+    // Called by: DELETE from the review modal Reject button.
+    public function test_admin_can_reject_capture(): void
+    {
+        $admin = $this->makeUser('admin');
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'WEIRD DESC HEADER', 'header_hash' => hash('sha256', 'a'),
+            'status' => 'proposed',
+        ]);
+
+        $this->actingAs($admin)->deleteJson("/admin/scurve-header-proposals/{$row->id}")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSoftDeleted('scurve_header_proposals', ['id' => $row->id]);
+    }
+
+    // Contractors get nothing on review routes either (redirect by role middleware).
+    // Called by: any contractor request to the review endpoints.
+    public function test_contractor_blocked_from_review_endpoints(): void
+    {
+        $contractor = $this->makeUser('contractor');
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'WEIRD DESC HEADER', 'header_hash' => hash('sha256', 'a'),
+            'status' => 'proposed',
+        ]);
+
+        $this->actingAs($contractor)->getJson('/staff/scurve-header-proposals/all')->assertRedirect(route('unauthorized'));
+        $this->actingAs($contractor)->patchJson("/admin/scurve-header-proposals/{$row->id}/approve")->assertRedirect(route('unauthorized'));
+        $this->assertSame('proposed', $row->fresh()->status);
+    }
 }

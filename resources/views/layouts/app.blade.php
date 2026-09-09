@@ -293,6 +293,11 @@
         <i class="bi bi-magic"></i> Learned Keywords
     </a>
 
+    {{-- E1-2 S-curve layouts review desk (modal launcher — no dedicated page) --}}
+    <a href="javascript:void(0)" onclick="openManageScurveHeaders(); return false;" title="Review S-curve header layouts captured from failed imports">
+        <i class="bi bi-table"></i> S-Curve Layouts
+    </a>
+
     <a href="{{ route('admin.profile') }}"
        class="{{ request()->routeIs('admin.profile') ? 'active' : '' }}">
         <i class="bi bi-gear"></i> Admin Profile
@@ -382,6 +387,9 @@
 
 {{-- LEARNED KEYWORDS REVIEW MODAL (L2 — admin role layout; staff has its own include) --}}
 @include('admin._manage_parser_keywords_modal')
+
+{{-- S-CURVE LAYOUTS REVIEW MODAL (E1-2 — admin role layout; staff has its own include) --}}
+@include('admin._manage_scurve_headers_modal')
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')

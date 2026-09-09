@@ -262,6 +262,11 @@
         <i class="bi bi-magic"></i> Learned Keywords
     </a>
 
+    {{-- E1-2 S-curve layouts review desk (modal launcher — no dedicated page) --}}
+    <a href="javascript:void(0)" onclick="openManageScurveHeaders(); return false;" title="Review S-curve header layouts captured from failed imports">
+        <i class="bi bi-table"></i> S-Curve Layouts
+    </a>
+
     <span class="nav-section-label">Account</span>
 
     <a href="{{ route('staff.profile') }}"
@@ -390,6 +395,9 @@ Swal.fire({
 
 {{-- LEARNED KEYWORDS REVIEW MODAL (L2 — staff role layout; admin has its own include) --}}
 @include('admin._manage_parser_keywords_modal')
+
+{{-- S-CURVE LAYOUTS REVIEW MODAL (E1-2 — staff role layout; admin has its own include) --}}
+@include('admin._manage_scurve_headers_modal')
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')

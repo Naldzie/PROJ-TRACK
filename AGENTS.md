@@ -67,6 +67,31 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
 - Full suite: 985 tests / 3474 assertions (2 pre-existing `EmailDraftTest` failures excluded).
 
+## Session Handoff (updated 2026-09-08 — read this first in a new session)
+
+Working tree: `merge ver15\PMU_System`, branch `merge15-baseline` (merge-10 frozen at 7b0056d as cold backup — do not build there). Future sessions open here.
+
+### What is done and proven (all on merge15-baseline, all pushed unless noted)
+- **Normal-doc parser + L1/L2/L3 learning loop** (`document-parser-core.js`, `document-parser.js`, `parser_keywords` table + desk): miss → teach → approve → fills free, browser-proven incl. organic TOTAL ESTIMATED discovery. Multi-label harvest (cap 3), ABC pooling (vote/debug/disagree), ABC words-rule, weak-find guard at shared `asMoney`. JS 90/92 (2 intended blinding fails).
+- **S-curve Excel end-to-end (Tier 1 DONE; Tier 2 N/A by construction):** 2a synonyms, R2a roof family (fuzzy headers, ordinal months, orphan-subtotal + off-column TOTAL rules), 2b reference+warn + summary fallback + R2b-GRID positional pairing, UX-2b (in-modal notes, no warning toast, plain wording, `$jsv` versioning on bare-asset tags). Two planned families (BUHI paired/paired, roof ordinal/single) + one verified single/single variant, all browser-proven. `SCurveImportTest` 24/24.
+- **AI fallback normal-doc (AI-1..AI-4)** (`GeminiDocumentParserService`, `DocumentParserController`, banner/slice/merge, source-tagged harvest): browser-proven on test4 scans. AI-5 formally closed.
+- **AI fallback Excel (E2):** `parseExcelSlice` + `serializeForAi` + `parseWithGemini` endpoint/routes + assist-button flow, browser-proven (loader, single note, accurate curve).
+- **E1 Excel header learning:** E1-1 capture endpoint (silent, auto on 422s) + E1-2 review desk (`S-Curve Layouts` menu, approve/reject) — built, browser-proven display; E1-3 reader consults maps NOT STARTED.
+- **Full suite:** ~1045 passed / same 7 pre-existing merge-15 failures (2 ContractorDashboard + 1 OverdueInspection + 2 EmailDraft + 2 baseline — all reproduce on the clean tree).
+
+### What is next (in queue order)
+1. **E1-3** reader consults live maps (lowest-priority fallback, contractor-first then global).
+2. Non-OCR **PDF batch** (monthly-path parity 1–5 + weekly polish + header-synonym mirroring).
+3. **2c** lone-column MAX (parked — specimen file + gap evidence banked, needs user order).
+4. Tier-2 OCR, **blinding lift** (demo's end; flips blinded fixtures to full green), parked items (P1/P2 passive mining + lifetime counting, `parser_templates` revival, genuine-actuals import).
+
+### Standing constraints (do not violate)
+- **Blinding stays ON** (`L3_TEST_BLIND_ABC = true` in `document-parser-core.js`); restore is a tracked pre-merge-to-main prerequisite, not a routine step. JS suite reads 90/92 + 2 intended while blinded.
+- Plan files: `textfiles/document_parser_accuracy_improvement_plan.md` (S-curve/Excel/AI plans + R0–R4), `document_parser_learning_loop_plan.md` (L1-L3), `document_parser_excel_learning_loop_plan.md` (E1), `document_parser_ai_fallback_plan.md` (AI-1..AI-6), `document_parser_future_improvements_plan.md` (parked P1/P2). Log every behavioral change + browser result before committing (Adjustment Logging).
+- Sample files live in git-ignored `sampledocs/` (BUHI, roof, test5 selectable, test_page_6, third-family + 2c specimens) — reference by name, never commit.
+- `bootstrap/cache/routes-v7.php` goes stale on route changes — `route:clear` whenever endpoints are added (recurring incident).
+- No merge to main without explicit user confirmation (Rule 12); user uses short orders — "commit" alone means no push unless "push" is said.
+
 ## Development Rules
 
 ### Adjustment Logging (mandatory)

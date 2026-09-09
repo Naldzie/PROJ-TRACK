@@ -120,7 +120,7 @@ Frontend convention (IMPORTANT)
       JS suite untouched (no core changes). Proof: failed roof-style import (pre-R2a shape)
       leaves one proposed row; extraction output byte-identical (reader untouched).
 
-  PHASE E1-2 — Review desk (staff + admin)  ⬜ NOT STARTED
+  PHASE E1-2 — Review desk (staff + admin)  ✅ BUILT 2026-09-08 (code, NOT committed)
     - Clone _manage_parser_keywords_modal: table (header-block excerpt | contractor |
       occurrences | source badge | status | approve/reject), Proposed/Live/All tabs,
       occurrences DESC; approve→live + activity log, reject→soft-delete + log; same policy
@@ -176,6 +176,23 @@ Frontend convention (IMPORTANT)
       contractor-403 both routes, bad payloads, document→contractor resolution, explicit
       contractor wins). S-curve suites 35/35 with SCurveImportTest; both real files
       byte-identical (E1-1 touches no parse path). JS syntax clean. No commit without OK.
+
+  2026-09-08 — E1-2 BUILT on merge15-baseline (code, NOT committed).
+    - Backend: getAllForManagement (?status=, occurrences DESC, contractor name resolved,
+      source + has_map flags) + approve (→live + activity log) + destroy (soft-delete +
+      log); staff+admin gates; routes mirrored admin+staff (contractors: nothing).
+    - Desk _manage_scurve_headers_modal.blade.php: table (header block + excerpt tooltip |
+      contractor/Global | seen | origin badge | status | approve/reject), Proposed/Live/All
+      tabs, data-* delegation, empty-state colspan 6; menu entries + includes in both layouts;
+      no popup launcher (deliberate review fits infrequent imports — plan deviation noted).
+    - Approve trusts the header block's existence; column_map attaches in E1-3 (auto-proposal
+      or reviewer assignment — open question below).
+    - Tests: +4 mirrored (list+filter, staff approve, admin reject, contractor blocked).
+      ScurveHeaderProposalTest 10/10; combined suites 50/50; Blade view:cache clean;
+      both real files byte-identical. No commit without OK.
+    - BROWSER PROOF 2026-09-08 (user): S-Curve Layouts desk renders in both layouts with the
+      third-family capture Proposed (header text + contractor/Global + seen-count visible).
+      Review flow closed for display (approve/reject paths covered by tests).
 
 ===============================================================================
   7. OPEN QUESTIONS
