@@ -157,6 +157,26 @@ Frontend convention (IMPORTANT)
     - Decisions banked: hybrid scope (E1a), same trust (E1b), auto capture (E1c).
     - Awaiting build go-ahead (phase branch per Rule 12). No merge without confirmation.
 
+  2026-09-08 — E1-1 BUILT on merge15-baseline (code, NOT committed; PDF twin deferred per user).
+    - Migration scurve_header_proposals (contractor_id nullable FK nullOnDelete, source_type
+      default excel, header_rows_text, header_hash indexed, column_map nullable, occurrences,
+      status, source auto-capture, softDeletes) + model (fillable, SOURCES, live/proposed
+      scopes, belongsTo contractor) + policy (all-six admin||staff) + explicit
+      AppServiceProvider registration (BudgetSource gap not repeated).
+    - Endpoint Admin\SCurveHeaderProposalController::collect (file|document_id XOR, Excel
+      only, contractor explicit-wins → Document→project → null; header slice via
+      serializeForAi($path, 15); sha256 of normalized text; upsert by (contractor,
+      hash)+auto-live ≥3; 201/422 shapes mirroring keywords); routes mirrored admin+staff.
+    - Wrapper scurveCaptureHeaders() fire-and-forget in both 422 branches (wizard: File +
+      contractorSelect; detail: document_id; contractors: no path; all swallowed).
+    - Caught pre-green: stale route cache hid new routes (same L1/AI-2 incident — route:clear
+      fixed); multipart validation failures redirect without JSON Accept header (tests now
+      send it); seeded 'Schedule' DocumentType collides with create (firstOrCreate in tests).
+    - Tests ScurveHeaderProposalTest.php: 6/6 green (store global-NULL, repeat-promote,
+      contractor-403 both routes, bad payloads, document→contractor resolution, explicit
+      contractor wins). S-curve suites 35/35 with SCurveImportTest; both real files
+      byte-identical (E1-1 touches no parse path). JS syntax clean. No commit without OK.
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================

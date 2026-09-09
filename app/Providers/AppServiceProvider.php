@@ -10,9 +10,11 @@ use App\Models\ActivityLog;
 use App\Models\Category;
 use App\Models\ParserKeywordProposal;
 use App\Models\Project;
+use App\Models\ScurveHeaderProposal;
 use App\Policies\CategoryPolicy;
 use App\Policies\ParserKeywordProposalPolicy;
 use App\Policies\ProjectPolicy;
+use App\Policies\ScurveHeaderProposalPolicy;
 use App\Services\AI\AIRecommendationService;
 use App\Services\AI\RecommendationEngine;
 use Carbon\Carbon;
@@ -23,6 +25,7 @@ class AppServiceProvider extends ServiceProvider
         Category::class => CategoryPolicy::class,
         Project::class => ProjectPolicy::class,
         ParserKeywordProposal::class => ParserKeywordProposalPolicy::class,
+        ScurveHeaderProposal::class => ScurveHeaderProposalPolicy::class,
     ];
 
     public function register(): void

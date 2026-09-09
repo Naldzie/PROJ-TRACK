@@ -1073,6 +1073,15 @@ Related plan
           on the hottest path (month summation touches every file); silent curve corruption
           (halving/doubling) is the worst failure class; tests would re-assert our own guess.
           Design recorded, one batch when the file arrives.
+        - PROOFS 2026-09-08 (user browser + service runs, logged post-hoc):
+          (a) Single-column BUHI redo (months without the 15-day split): extracts accurately —
+          promoted to a verified third shape (single/single; SUM≡value, no rule needed). The
+          parked 2c shape is SPECIFICALLY paired-header + lone-body, nothing else.
+          (b) Third-family sample (SCurve-Test-10Month-Unknown-Layout.xlsx, git-ignored):
+          rules 422 honestly → E2 assist returns an accurate 10-month curve (Jul 2025–Apr 2026,
+          100%) with in-modal provenance → E1-1 capture row stored with full R1–R8 header text
+          + hash. column_map EMPTY is correct-by-design (fills at E1-2 review; auto-filling it
+          from a failed parse would violate hybrid trust).
         - Some contractors do NOT duplicate the value in two columns — currently
           SUM(pair) would double-count; detect by checking if col+1 is mostly
           empty (>70% null/0) then use MAX not SUM for that month.

@@ -29,6 +29,7 @@ use App\Http\Controllers\staff\StaffWarrantyController;
 use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\BudgetSourceController;
 use App\Http\Controllers\Admin\ParserKeywordProposalController;
+use App\Http\Controllers\Admin\SCurveHeaderProposalController;
 use App\Http\Controllers\Admin\DocumentTypeController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\AttachmentController;
@@ -281,6 +282,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
 
     Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
         ->name('staff.parser-keywords.destroy');
+
+    // === S-CURVE HEADER LEARNING (E1-1 silent capture; staff + admin, contractors excluded) ===
+    Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])
+        ->name('staff.scurve-headers.collect');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
@@ -744,6 +749,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
         ->name('admin.parser-keywords.destroy');
+
+    // === S-CURVE HEADER LEARNING (E1-1 silent capture; staff + admin, contractors excluded) ===
+    Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])
+        ->name('admin.scurve-headers.collect');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])

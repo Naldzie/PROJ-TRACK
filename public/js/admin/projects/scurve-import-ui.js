@@ -199,6 +199,41 @@ window._trySCurveAiAssist = async function () {
     }
 };
 
+/* ─── E1-1 silent header capture (unknown layouts learn future maps) ────────── */
+// Fire-and-forget POST of the failed source to the capture endpoint (E1-1). All failures
+// swallowed — the error UX is untouched. Wizard sends the live File + Page-4 contractor
+// choice (project unsaved, so the client is the only contractor source); detail sends
+// document_id (server resolves contractor via Document→project). Contractors never reach
+// here (no upload surface, no route).
+// Called by: both import catch blocks on no-table 422s (Excel sources only).
+function scurveCaptureHeaders(kind, source, extra) {
+    try {
+        var path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return;
+        var base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+        var fd = new FormData();
+        if (kind === 'file' && source) {
+            fd.append('file', source);
+            try {
+                var csel = document.getElementById('contractorSelect');
+                if (csel && csel.value) fd.append('contractor_id', csel.value);
+            } catch (e) {}
+        } else if (kind === 'document' && source) {
+            fd.append('document_id', source);
+        } else {
+            return;
+        }
+        var token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
+            (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
+        fetch(base + '/scurve-header-proposals/collect', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
+            body: fd,
+            keepalive: true,
+        }).catch(function () {});
+    } catch (e) { /* capture is best-effort */ }
+}
+
 /* ─── Create-project wizard wiring ────────────────────────────────────────── */
 
 function refreshSCurveImportButton() {
@@ -322,8 +357,10 @@ function initCreateWizardSCurveImport() {
             scurveToast(err.message, 'danger');
             // E2: no-table 422 on an Excel source offers the AI assist (PDFs excluded —
             // the endpoint declines them; the offer carries the original file for retry).
+            // E1-1: same failure silently stashes the header block for future maps.
             if (err && err.isNoTable && mode === 'excel' && window._scurvePendingFile) {
                 scurveOfferAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn });
+                scurveCaptureHeaders('file', window._scurvePendingFile);
             }
         } finally {
             btn.disabled = false;
@@ -386,8 +423,11 @@ function initProjectDetailSCurveImport() {
         } catch (err) {
             scurveToast(err.message, 'danger');
             // E2: same assist offer on the detail flow (stored Excel documents only).
+            // E1-1: same failure silently stashes the header block (server resolves
+            // the contractor via Document→project).
             if (err && err.isNoTable && btn.dataset.docType !== 'pdf') {
                 scurveOfferAiAssist({ kind: 'document', documentId: documentId, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn });
+                scurveCaptureHeaders('document', documentId);
             }
         } finally {
             btn.disabled = false;
