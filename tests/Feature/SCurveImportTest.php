@@ -672,9 +672,9 @@ class SCurveImportTest extends TestCase
         $this->assertSame(['month' => 2, 'summary_percent' => 90.0, 'activity_percent' => 100.0, 'gap' => 10.0], $ref[1]);
 
         $warnings = implode("\n", $result['meta']['warnings']);
-        $this->assertStringNotContainsString('month 1', $warnings);
-        $this->assertStringContainsString('month 2', $warnings);
-        $this->assertStringContainsString('baseline kept from planned activities', $warnings);
+        $this->assertStringNotContainsString('Month 1', $warnings);
+        $this->assertStringContainsString('Heads-up (Month 2)', $warnings);
+        $this->assertStringContainsString('no action needed', $warnings);
 
         unlink($path);
     }
@@ -708,6 +708,140 @@ class SCurveImportTest extends TestCase
         $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
 
         unlink($path);
+    }
+
+    /**
+     * R2b-GRID: cumulative values in a parallel display grid (outside month spans)
+     * pair positionally ONLY on exact count match — curve still untouched.
+     */
+    public function test_display_grid_values_pair_positionally_on_exact_count(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+        $sheet->setCellValue('C11', 30000);
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'CUMULATIVE % DONE');
+        $sheet->setCellValue('F12', 48.5);
+        $sheet->setCellValue('G12', 99.5);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        // Plan curve untouched; reference paired m1/m2 in order; only m1 warns.
+        $this->assertSame(50.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $ref = $result['meta']['summaryReference'];
+        $this->assertCount(2, $ref);
+        $this->assertSame(['month' => 1, 'summary_percent' => 48.5, 'activity_percent' => 50.0, 'gap' => 1.5], $ref[0]);
+        $this->assertSame(['month' => 2, 'summary_percent' => 99.5, 'activity_percent' => 100.0, 'gap' => 0.5], $ref[1]);
+        $warnings = implode("\n", $result['meta']['warnings']);
+        $this->assertStringContainsString('Heads-up (Month 1)', $warnings);
+        $this->assertStringNotContainsString('Month 2', $warnings);
+
+        unlink($path);
+    }
+
+    /**
+     * R2b fallback: valueless activity rows + valued summary (≥2 points) adopts the
+     * summary as the curve with provenance — the client-practice case.
+     */
+    public function test_summary_fallback_adopts_when_activity_math_absent(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Section Works');
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'CUMULATIVE % DONE');
+        $sheet->setCellValue('B12', 20);
+        $sheet->setCellValue('C12', 80);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame('summary', $result['meta']['curveSource']);
+        $this->assertSame(20.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertNull($result['meta']['summaryReference'][0]['activity_percent']);
+        $this->assertNull($result['meta']['summaryReference'][0]['gap']);
+        $warnings = implode("\n", $result['meta']['warnings']);
+        $this->assertStringContainsString('built from the file', $warnings);
+        $this->assertStringContainsString('source: summary', $warnings);
+
+        unlink($path);
+    }
+
+    /**
+     * R2b fallback guards: a single summary point is not a curve (no adoption), and
+     * scrambled summary values raise the jumble flag on adoption.
+     */
+    public function test_summary_fallback_needs_two_points_and_flags_jumble(): void
+    {
+        // Single point → honest empty curve, activities provenance, no adopt warning.
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        $sheet->setCellValue('A11', 'Section Works');
+        $sheet->setCellValue('E11', 60000);
+        $sheet->setCellValue('A12', 'CUMULATIVE % DONE');
+        $sheet->setCellValue('B12', 20);
+
+        (new Xlsx($spreadsheet))->save($path);
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        $this->assertSame(0.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertStringNotContainsString(
+            'built from the file',
+            implode("\n", $result['meta']['warnings'])
+        );
+        unlink($path);
+
+        // Scrambled summary → adopted with clamp + jumble flag.
+        $path2 = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet2 = new Spreadsheet();
+        $sheet2 = $spreadsheet2->getActiveSheet();
+        $sheet2->setCellValue('A10', 'DESCRIPTION');
+        $sheet2->setCellValue('B10', 'Month 1');
+        $sheet2->setCellValue('C10', 'Month 2');
+        $sheet2->setCellValue('E10', 'CONTRACT');
+        $sheet2->setCellValue('A11', 'Section Works');
+        $sheet2->setCellValue('E11', 60000);
+        $sheet2->setCellValue('A12', 'CUMULATIVE % DONE');
+        $sheet2->setCellValue('B12', 80);
+        $sheet2->setCellValue('C12', 20);
+
+        (new Xlsx($spreadsheet2))->save($path2);
+        $result2 = app(SCurveImportService::class)->parse($path2);
+
+        $this->assertSame('summary', $result2['meta']['curveSource']);
+        $this->assertSame(80.0, $result2['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result2['months'][1]['planned_progress_percent']);
+        $this->assertStringContainsString(
+            'not in cumulative order',
+            implode("\n", $result2['meta']['warnings'])
+        );
+        unlink($path2);
     }
 
     protected function createAdminUser()

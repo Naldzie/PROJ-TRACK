@@ -71,29 +71,14 @@ function scurveToast(message, type) {
 }
 
 /* ─── Import warnings ──────────────────────────────────────────────────────── */
-
-function scurveWarningsEl(container) {
-    var el = document.getElementById('scurveImportWarnings');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'scurveImportWarnings';
-        el.style.cssText = 'margin-top:6px;padding:6px 10px;border:1px solid #fcd34d;' +
-            'background:#fef3c7;color:#92400e;font-size:12px;border-radius:6px;' +
-            'display:none;white-space:pre-line;';
-        (container || document.body).appendChild(el);
-    }
-    return el;
-}
-
+// Import notes render INSIDE the setup modal (stashed via window._scurveImportWarnings),
+// never beside the button — and never as a toast (toasts read as errors, notes are FYI).
+// This helper only clears any stale beside-button box from older runs.
 function scurveShowWarnings(warnings, container) {
-    var el = scurveWarningsEl(container);
-    if (!warnings || warnings.length === 0) {
-        el.style.display = 'none';
-        return;
-    }
-    el.textContent = 'Import notes:\n' + warnings.join('\n');
-    el.style.display = 'block';
-    scurveToast('Import succeeded with notes: ' + warnings[0], 'warning');
+    try {
+        var el = document.getElementById('scurveImportWarnings');
+        if (el && el.remove) el.remove();
+    } catch (e) { /* best-effort */ }
 }
 
 /* ─── Create-project wizard wiring ────────────────────────────────────────── */
@@ -212,7 +197,12 @@ function initCreateWizardSCurveImport() {
                 'Imported ' + months.length + ' baseline months from the S-curve file.',
                 'success'
             );
-            scurveShowWarnings(data.meta ? data.meta.warnings : null, btn.parentElement);
+            // Import notes travel into the setup modal (rendered there, cleared on close) —
+            // never beside the button, never as a toast.
+            try {
+                var importWarnings = (data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
+                window._scurveImportWarnings = importWarnings;
+            } catch (e) { window._scurveImportWarnings = []; }
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
         } catch (err) {
@@ -266,12 +256,18 @@ function initProjectDetailSCurveImport() {
                 mode: 'save-immediately',
                 existingMonths: months,
             };
+            // Import notes travel into the setup modal (rendered there, cleared on close) —
+            // never beside the button, never as a toast. Stash BEFORE opening: the modal
+            // reads the stash at render time.
+            try {
+                var importWarnings = (data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
+                window._scurveImportWarnings = importWarnings;
+            } catch (e) { window._scurveImportWarnings = []; }
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
             scurveToast(
                 'Imported ' + months.length + ' baseline months. Review, then Done to lock.',
                 'success'
             );
-            scurveShowWarnings(data.meta ? data.meta.warnings : null, btn.parentElement);
         } catch (err) {
             scurveToast(err.message, 'danger');
         } finally {

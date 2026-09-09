@@ -127,6 +127,36 @@ function getSetupDateBounds() {
 
 // ─── OPEN / CLOSE ─────────────────────────────────────────────────────────────
 
+// Render stashed S-curve import notes INSIDE the setup modal (below the frozen-baseline
+// notice) so they are read BEFORE locking. Remove-first rebuild keeps re-opens clean.
+// Stash is set by scurve-import-ui at import time; cleared on modal hide (below).
+// Called by: openSetupBaselineModal() for import-preloaded months. Best-effort, textContent
+// only (server strings never become HTML).
+function renderSetupImportNotes(warnings) {
+    try {
+        var old = document.getElementById('setupImportNotes');
+        if (old && old.remove) old.remove();
+        if (!warnings || warnings.length === 0) return;
+        var anchor = document.getElementById('setupWarningNotice');
+        var host = (anchor && anchor.parentNode) ? anchor.parentNode : null;
+        if (!host) return;
+        var box = document.createElement('div');
+        box.id = 'setupImportNotes';
+        box.style.cssText = 'background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;';
+        var title = document.createElement('div');
+        title.style.cssText = 'font-weight:700;color:#92400e;font-size:12px;margin-bottom:4px;';
+        title.textContent = 'Import notes — read before locking the baseline';
+        box.appendChild(title);
+        warnings.forEach(function (w) {
+            var line = document.createElement('div');
+            line.style.cssText = 'color:#78350f;font-size:11px;line-height:1.5;margin-bottom:2px;';
+            line.textContent = '• ' + String(w);
+            box.appendChild(line);
+        });
+        host.insertBefore(box, anchor.nextSibling);
+    } catch (e) { /* notes are best-effort */ }
+}
+
 /**
  * Open the Set Up Baseline modal.
  *
@@ -173,6 +203,12 @@ function openSetupBaselineModal() {
     // Hide remaining work wrapper (only shown in adjust mode)
     var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
     if (rwWrapper) rwWrapper.style.display = 'none';
+
+    // Import notes stashed at S-curve import time render here (not beside the button),
+    // but only when the modal opens on imported months — manual opens stay quiet.
+    try {
+        renderSetupImportNotes(existingData.length > 0 ? (window._scurveImportWarnings || []) : []);
+    } catch (e) { /* notes are best-effort */ }
 
     updateAutoGenVisibility();
 
@@ -2165,6 +2201,14 @@ document.addEventListener('DOMContentLoaded', function () {
             setupProjectEndDate = null;
             // Clear caller context to prevent stale state on re-open
             window.__setupModalContext = null;
+            // S-curve import notes: clear the stash + node so a later manual open
+            // never shows a previous import's notes (save paths hide the modal first,
+            // so this one listener covers close AND save).
+            window._scurveImportWarnings = [];
+            try {
+                var staleNote = document.getElementById('setupImportNotes');
+                if (staleNote && staleNote.remove) staleNote.remove();
+            } catch (e) { /* best-effort */ }
             resetModalUIToDefaults();
         });
     }

@@ -529,8 +529,9 @@
 <script src="{{ asset('js/admin/projects/s-curve-chart.js') }}"></script>
 {{-- Baseline schedule utilities --}}
 <script src="{{ asset('js/admin/projects/baseline-schedule-utils.js') }}"></script>
-{{-- Set Up Baseline modal logic --}}
-<script src="{{ asset('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
+{{-- Set Up Baseline modal logic (filemtime cache-bust: same $jsv convention as _create_project_modal) --}}
+@php $jsvSetupModal = fn($p) => asset($p) . '?v=' . filemtime(public_path($p)); @endphp
+<script src="{{ $jsvSetupModal('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
 
 <script>
 let currentSearchTerm = '';

@@ -965,15 +965,48 @@ Related plan
         m12 97/100/3 WARN]. Tests: +2 fixtures (warn/silent branches incl. the 1.0 boundary +
         fraction scaling; no-summary file stays []). SCurveImportTest 21/21. Full suite 1035
         passed / 7 pre-existing failures — zero regressions. No commit without user OK.
-        R2b-GRID (display-grid fallback) — APPROVED 2026-09-08, NOT YET BUILT (build on go-ahead):
-        roof's cumulative VALUES live in the G:AG display grid (merged 4-col groups linking
+        R2b-GRID (display-grid fallback) — ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed).
+        Roof's cumulative VALUES live in the G:AG display grid (merged 4-col groups linking
         =AM31/=AN31…, =G31/F31…, running =K32+G33… sums), NOT under month-span columns —
         forensics: R33 = 6.32/24.31/42.30/59.71/77.03/99.14/1.0, R34 running pesos, R35/36
         days→187; AM:AS engine columns intentionally empty there. Rule: (a) values under
         month spans first (BUHI path, unchanged); (b) else collect the cumulative row's
-        numerics in column order and, ONLY when the count equals the month count, pair
-        positionally (roof: 7 values → 7 months, gaps 0, silent with reference recorded).
-        Mismatched counts → honestly empty. No curve moves anywhere — reference-only stands.
+        numerics in column order and, ONLY on exact count match with month spans, pair
+        positionally. Mismatched counts stay honestly empty; no curve moves either way.
+        SUMMARY FALLBACK (valueless activities + valued summary) — ✅ BUILT same batch:
+        adopt summary as curve ONLY when activity math absent (lastNonZero===0) with ≥2
+        reference points (single point is not a curve); re-clamp + force-100 (controller
+        demands it); curveSource meta flag; provenance + jumble warnings; reference entries
+        nulled (no self-comparison); gap warnings suppressed without activity math.
+        Disagreement never adopts. Proof: S-curve 24/24; BUHI + roof byte-identical;
+        full suite 1038 passed / same 7 pre-existing — zero regressions. No commit w/o OK.
+    UX-2b (toast drop + in-modal note + plain wording) — ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed; user-reported gap: warning invisible inside modal + toast reads as error).
+        - Toast: scurveShowWarnings no longer toasts or renders the beside-button box (stale-box
+          cleanup only); success toasts untouched. Import success paths stash
+          window._scurveImportWarnings instead (both entry points).
+        - Modal: renderSetupImportNotes() renders the stash below the frozen-baseline notice in
+          openSetupBaselineModal for import-preloaded months only (manual opens quiet);
+          textContent-only (no HTML injection); cleared with the stash on hidden.bs.modal
+          (covers close AND save — single listener).
+        - Wording (user-approved plain): "Heads-up (Month 9): the file's own summary says
+          48.24%, but its activity rows add up to 49.73% — the summary was likely computed
+          against a different total. Your baseline below uses the activity math — no action
+          needed." Fixtures updated to the new text. BUHI/roof re-verified identical curves
+          with the new wording live. Awaiting user browser proof (toast gone, note in modal).
+        - FIX 2026-09-08 (missing note in browser — root cause, mine): the DETAIL flow called
+          openSetupBaselineModal() BEFORE the stash assignment (wizard order was correct),
+          so the modal rendered against an empty stash. Fixed by moving the stash above the
+          open call in initProjectDetailSCurveImport. Lesson: stash-then-open ordering is part
+          of the pattern, not incidental.
+        - FIX 2026-09-08 (stale-JS ghost class): detail tab + project-list blades loaded the two
+          touched scripts via bare asset() with no ?v= (the $jsv filemtime closure lived only in
+          the wizard modal). Added the same one-liner + switched those tags
+          (baseline-schedule.blade.php both files; index + admin/projects setup-modal tag), so
+          edited JS invalidates browser caches on every change. view:cache clean; 24/24 S-curve
+          tests; both real files re-verified identical. Awaiting user browser re-proof.
+        - BROWSER PROOF 2026-09-08 (user): in-modal import-notes block renders correctly on the
+          detail-tab flow. UX-2b CLOSED end-to-end (moved warning + dropped toast + plain wording
+          + versioned scripts + ordering fix).
         (Supersedes the adopt-branch text below, kept as history of the abandoned design.)
         --- ABANDONED adopt-branch text (kept for history; DO NOT build) ---
         Order in buildMonths():

@@ -732,20 +732,85 @@ class SCurveImportService
         $months[$finalMonth]['planned_progress_percent'] = 100.0;
         $running = 100.0;
 
-        // R2b (redesigned 2026-09-08: reference + warn — the plan curve above NEVER moves).
+        // R2b (redesigned 2026-09-08: reference + warn — the plan curve above NEVER moves
+        // while activity math exists; the summary-fallback branch below is the sole exception).
         // Read the author's cumulative summary row and compare each value against OUR
         // cumulative at the attributed month. A summary value sitting in month m's span
         // covers the interval up to the month before the next summary value (BUHI: I in
         // span 1 → month 3, O in span 4 → month 6 …). Fractions (< 1.5) scale to percent.
         // Gaps past 1.0 warn with the cause: the block tracks ACCOMPLISHED % (often on
         // another divisor, e.g. BUHI's pre-discount bid), so it informs review but never
-        // replaces planned values.
+        // replaces planned values — UNLESS activity math is absent (see fallback below).
         $summaryReference = $this->readSummaryReference($rows, $header, $dataStart, $months);
-        foreach ($summaryReference as $ref) {
-            if ($ref['gap'] > 1.0) {
-                $warnings[] = "Author block: month {$ref['month']} cumulative {$ref['summary_percent']}%"
-                    . " vs activity-derived {$ref['activity_percent']}% — the block tracks"
-                    . " accomplished % (may use another divisor); baseline kept from planned activities.";
+
+        // Summary fallback: activity rows exist but carry NO usable month values, while the
+        // author block does (client practice bases monthly cumulative on it). Adopt the
+        // summary as the curve — flagged, never silent. Disagreement never triggers this:
+        // it fires only when activity math is absent ($lastNonZero === 0) with at least 2
+        // reference points (a single point is not a curve). Sanitized like any plan curve
+        // (monotonic clamp + force-last-100) because the controller rejects anything else.
+        $curveSource = 'activities';
+        if ($lastNonZero === 0 && count($summaryReference) >= 2) {
+            $curveSource = 'summary';
+            $adopted = [];
+            foreach ($months as $m => $mo) {
+                $adopted[$m] = 0.0;
+            }
+            foreach ($summaryReference as $ref) {
+                if (isset($adopted[$ref['month']])) {
+                    $adopted[$ref['month']] = (float) $ref['summary_percent'];
+                }
+            }
+            // Jumble flag: adopted raw values must already read cumulative — a scrambled
+            // summary is the least trustworthy input in the system.
+            $prev = -1.0;
+            $jumbled = false;
+            foreach ($adopted as $v) {
+                if ($v < $prev) {
+                    $jumbled = true;
+                    break;
+                }
+                $prev = $v;
+            }
+            $running = 0.0;
+            foreach ($months as $m => $mo) {
+                $v = $adopted[$m] ?? 0.0;
+                if ($v < $running) {
+                    $v = $running;
+                }
+                $v = min($v, 100.0);
+                $running = $v;
+                $months[$m]['planned_progress_percent'] = round($v, 2);
+            }
+            $months[$maxMonth]['planned_progress_percent'] = 100.0;
+            // No activity math exists, so reference gaps are meaningless — null them instead
+            // of comparing the curve against itself.
+            foreach ($summaryReference as $i => $ref) {
+                $summaryReference[$i]['activity_percent'] = null;
+                $summaryReference[$i]['gap'] = null;
+            }
+            $warnings[] = 'Heads-up: no usable activity values were found, so the baseline below'
+                . ' is built from the file\u2019s own summary column (source: summary).'
+                . ' Please verify carefully before locking.';
+            if ($jumbled) {
+                $warnings[] = 'Heads-up: the summary values were not in cumulative order — review carefully.';
+            }
+        } else {
+            // Gap warnings need activity math to compare against — with none (lastNonZero
+            // === 0) any comparison is against a degenerate curve, so stay silent here; the
+            // fallback branch above already warned (or the file truly has nothing to say).
+            // Plain-language wording (user-approved): numbers kept for verification, meaning
+            // first — shown inside the setup modal (moved from the beside-button box).
+            if ($lastNonZero > 0) {
+                foreach ($summaryReference as $ref) {
+                    if ($ref['gap'] > 1.0) {
+                        $warnings[] = "Heads-up (Month {$ref['month']}): the file's own summary"
+                            . " says {$ref['summary_percent']}%, but its activity rows add up to"
+                            . " {$ref['activity_percent']}%. The summary was likely computed against"
+                            . " a different total. Your baseline below uses the activity math —"
+                            . " no action needed.";
+                    }
+                }
             }
         }
 
@@ -766,7 +831,11 @@ class SCurveImportService
             'cumulativeRow' => $cumulativeRow,
             // R2b: author-block reference points ({month, summary_percent,
             // activity_percent, gap}); empty when the file carries no readable block.
+            // activity_percent/gap are null when the curve itself came from the summary.
             'summaryReference' => $summaryReference,
+            // R2b fallback provenance: 'activities' normally, 'summary' when activity math
+            // was absent and the author block was adopted (explicit verify warning raised).
+            'curveSource' => $curveSource,
         ];
 
         return [
@@ -817,6 +886,25 @@ class SCurveImportService
                 if (is_numeric($raw)) {
                     $found[$m] = (float) $raw;
                     break;
+                }
+            }
+        }
+
+        // R2b-GRID: values in a parallel display grid (roof G:AG) rather than under month
+        // spans — pair positionally ONLY on exact count match (7 values → 7 months).
+        // Mismatched counts stay honestly empty; no curve moves anywhere either way.
+        if (count($found) === 0 && is_array($row)) {
+            $ordered = [];
+            foreach (array_values($row) as $raw) {
+                if (is_numeric($raw)) {
+                    $ordered[] = (float) $raw;
+                }
+            }
+            $spanKeys = array_keys($monthSpans);
+            sort($spanKeys);
+            if (count($ordered) === count($spanKeys) && count($ordered) > 0) {
+                foreach ($spanKeys as $i => $m) {
+                    $found[$m] = $ordered[$i];
                 }
             }
         }

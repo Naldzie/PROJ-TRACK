@@ -1,4 +1,9 @@
 <!-- safe to consolidate to this file -->
+@php
+    // Cache-busting for feature scripts (same $jsv convention as _create_project_modal):
+    // filemtime query strings so browser caches invalidate on every deploy/edit.
+    $jsv = fn($p) => asset($p) . '?v=' . filemtime(public_path($p));
+@endphp
 
 <!-- Set window variables for utility functions before loading -->
 <script>
@@ -490,9 +495,9 @@ function toggleActivityCompletion(activityId, isCompleted) {
 @include('projects.project_detail.components.modals._edit_progress_modal')
 
 <script src="{{ asset('js/admin/projects/baseline-schedule-add-month-modal.js') }}"></script>
-<script src="{{ asset('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
 <script type="module" src="{{ asset('js/admin/projects/scurve-import-core.js') }}"></script>
-<script src="{{ asset('js/admin/projects/scurve-import-ui.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/scurve-import-ui.js') }}"></script>
 <script type="module" src="{{ asset('js/admin/projects/scurve-pdf-parser-core.js') }}"></script>
 <script src="{{ asset('js/admin/projects/scurve-pdf-parser.js') }}"></script>
 <script src="{{ asset('js/admin/projects/baseline-schedule-manage-month-modal.js') }}"></script>
