@@ -35,7 +35,10 @@ async function parseSCurveFile(file, parseUrl) {
     });
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Could not parse the S-curve file.');
+        var err = new Error(data.message || 'Could not parse the S-curve file.');
+        err.status = res.status;
+        err.isNoTable = /No S-curve table found/i.test(data.message || '');
+        throw err;
     }
     return data;
 }
@@ -50,7 +53,10 @@ async function parseSCurveDocument(documentId, parseUrl) {
     });
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Could not parse the selected document.');
+        var err2 = new Error(data.message || 'Could not parse the selected document.');
+        err2.status = res.status;
+        err2.isNoTable = /No S-curve table found/i.test(data.message || '');
+        throw err2;
     }
     return data;
 }
@@ -80,6 +86,118 @@ function scurveShowWarnings(warnings, container) {
         if (el && el.remove) el.remove();
     } catch (e) { /* best-effort */ }
 }
+
+/* ─── E2 AI assist (Excel Tier 3, opt-in) ────────────────────────────────────── */
+// Offered ONLY on no-table 422s for Excel sources (PDFs are declined server-side).
+// Clicking POSTs the same source to parse-gemini once (busy-guarded), then rejoins the
+// normal success path (normalize → modal → in-modal notes) with an AI-assisted
+// provenance note appended. Results merge for review — never auto-applied.
+// Called by: both import catch blocks (excel no-table failures only).
+
+function scurveStashWarnings(data) {
+    // Shared stash helper for rule + AI success paths (E2 provenance appended here).
+    // Idempotent: consecutive duplicate notes collapse (double-fired imports/assists can
+    // otherwise paint twin bullets — reported 2026-09-08).
+    try {
+        var list = (data && data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
+        if (data && data.meta && data.meta.aiAssisted) {
+            list.push('AI-assisted curve — verify before locking the baseline.');
+        }
+        var deduped = [];
+        list.forEach(function (w) {
+            if (deduped[deduped.length - 1] !== w) deduped.push(w);
+        });
+        window._scurveImportWarnings = deduped;
+    } catch (e) { window._scurveImportWarnings = []; }
+}
+
+function scurveGeminiUrl(parseUrl) {
+    return String(parseUrl || '').replace(/\/s-curve\/parse$/, '/s-curve/parse-gemini');
+}
+
+function scurveOfferAiAssist(ctx) {
+    try {
+        var old = document.getElementById('scurveAiAssistWrap');
+        if (old && old.remove) old.remove();
+        window._scurveAiCtx = ctx;
+        var host = ctx && ctx.btn ? ctx.btn.parentElement : document.body;
+        var wrap = document.createElement('div');
+        wrap.id = 'scurveAiAssistWrap';
+        wrap.style.cssText = 'margin-top:6px;padding:6px 10px;border:1px solid #fcd34d;' +
+            'background:#fef3c7;color:#92400e;font-size:12px;border-radius:6px;';
+        wrap.innerHTML = 'The table was not recognized. <strong>Try AI assist?</strong>' +
+            ' Sends a compact text excerpt (never the whole file). ';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-warning';
+        btn.textContent = 'Try AI assist';
+        // Loading state lives on the button itself (4-8s cold calls look dead otherwise):
+        // disable + spinner immediately; _trySCurveAiAssist restores on failure, the node
+        // is removed on success.
+        btn.setAttribute('onclick', 'this.disabled=true;this.innerHTML=\'<span class="spinner-border spinner-border-sm"></span> Asking AI…\';window._trySCurveAiAssist()');
+        wrap.appendChild(btn);
+        (host || document.body).appendChild(wrap);
+    } catch (e) { /* offer is best-effort */ }
+}
+
+window._trySCurveAiAssist = async function () {
+    if (window._scurveAiBusy) return;
+    var ctx = window._scurveAiCtx || null;
+    // Restore the offer button's idle state (loading state was set inline at click).
+    var restoreOfferBtn = function () {
+        try {
+            var wrap = document.getElementById('scurveAiAssistWrap');
+            var b = wrap ? wrap.querySelector('button') : null;
+            if (b) { b.disabled = false; b.textContent = 'Try AI assist'; }
+        } catch (e) {}
+    };
+    if (!ctx) { restoreOfferBtn(); return; }
+    window._scurveAiBusy = true;
+    try {
+        var fd = new FormData();
+        var geminiUrl = scurveGeminiUrl(ctx.parseUrl);
+        if (ctx.kind === 'file' && ctx.file) {
+            fd.append('file', ctx.file);
+        } else if (ctx.kind === 'document' && ctx.documentId) {
+            fd.append('document_id', ctx.documentId);
+        } else {
+            throw new Error('Original file no longer available — re-upload to retry.');
+        }
+        var res = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': scurveCsrfToken(), 'Accept': 'application/json' },
+            body: fd,
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok || !data.success || !data.months || !data.months.length) {
+            throw new Error((data && data.message) || 'The AI assistant could not read an S-curve from this file.');
+        }
+        var core = window.scurveImportCore;
+        if (!core) throw new Error('Import helpers not loaded.');
+        var months = core.normalizeSCurveMonths(data.months, ctx.startDate || '', ctx.endDate || '');
+        if (!months.length) throw new Error('The AI response held no usable months.');
+        try {
+            var old = document.getElementById('scurveAiAssistWrap');
+            if (old && old.remove) old.remove();
+        } catch (e) {}
+        scurveStashWarnings(data);
+        if (ctx.flow === 'detail') {
+            window.__setupModalContext = { mode: 'save-immediately', existingMonths: months };
+            if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
+            scurveToast('Imported ' + months.length + ' baseline months (AI-assisted). Review, then Done to lock.', 'success');
+        } else {
+            window._baselineSetupMonths = months;
+            if (typeof updateBaselineSetupButton === 'function') updateBaselineSetupButton();
+            scurveToast('Imported ' + months.length + ' baseline months from the S-curve file (AI-assisted).', 'success');
+            if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
+        }
+    } catch (err) {
+        scurveToast(err.message, 'danger');
+        restoreOfferBtn();
+    } finally {
+        window._scurveAiBusy = false;
+    }
+};
 
 /* ─── Create-project wizard wiring ────────────────────────────────────────── */
 
@@ -197,16 +315,16 @@ function initCreateWizardSCurveImport() {
                 'Imported ' + months.length + ' baseline months from the S-curve file.',
                 'success'
             );
-            // Import notes travel into the setup modal (rendered there, cleared on close) —
-            // never beside the button, never as a toast.
-            try {
-                var importWarnings = (data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
-                window._scurveImportWarnings = importWarnings;
-            } catch (e) { window._scurveImportWarnings = []; }
+            scurveStashWarnings(data);
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
         } catch (err) {
             scurveToast(err.message, 'danger');
+            // E2: no-table 422 on an Excel source offers the AI assist (PDFs excluded —
+            // the endpoint declines them; the offer carries the original file for retry).
+            if (err && err.isNoTable && mode === 'excel' && window._scurvePendingFile) {
+                scurveOfferAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn });
+            }
         } finally {
             btn.disabled = false;
             btn.textContent = originalLabel;
@@ -258,11 +376,8 @@ function initProjectDetailSCurveImport() {
             };
             // Import notes travel into the setup modal (rendered there, cleared on close) —
             // never beside the button, never as a toast. Stash BEFORE opening: the modal
-            // reads the stash at render time.
-            try {
-                var importWarnings = (data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
-                window._scurveImportWarnings = importWarnings;
-            } catch (e) { window._scurveImportWarnings = []; }
+            // reads the stash at render time (shared helper appends AI provenance).
+            scurveStashWarnings(data);
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
             scurveToast(
                 'Imported ' + months.length + ' baseline months. Review, then Done to lock.',
@@ -270,6 +385,10 @@ function initProjectDetailSCurveImport() {
             );
         } catch (err) {
             scurveToast(err.message, 'danger');
+            // E2: same assist offer on the detail flow (stored Excel documents only).
+            if (err && err.isNoTable && btn.dataset.docType !== 'pdf') {
+                scurveOfferAiAssist({ kind: 'document', documentId: documentId, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn });
+            }
         } finally {
             btn.disabled = false;
             btn.textContent = originalLabel;

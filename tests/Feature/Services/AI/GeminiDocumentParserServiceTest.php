@@ -186,4 +186,58 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNull($out['duration']);
         $this->assertSame('SkyScraper Construction and Engineering Services Company', $out['contractor']);
     }
+
+    // E2 Excel slice: months JSON validates + sanitizes (monotonic clamp,
+    // force-last-100, contract sanity, unknown keys dropped).
+    // Called by: SCurveImportController::parseWithGemini() (planned E2 endpoint).
+    public function test_excel_slice_success_sanitizes_curve(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 30],
+                ['month_index' => 3, 'planned_progress_percent' => 99.5],
+            ],
+            'contractAmount' => '2,239,599.72',
+            'bogus' => 'dropped',
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+        $this->assertCount(3, $out['months']);
+        $this->assertSame(50.0, $out['months'][0]['planned_progress_percent']);
+        $this->assertSame(50.0, $out['months'][1]['planned_progress_percent']);
+        $this->assertSame(100.0, $out['months'][2]['planned_progress_percent']);
+        $this->assertSame(2239599.72, $out['meta']['contractAmount']);
+        $this->assertNotEmpty($out['meta']['warnings']);
+    }
+
+    // E2 declines: empty text/key, malformed payloads, single-month curves.
+    // Called by: parseExcelSlice() failure paths.
+    public function test_excel_slice_decline_paths(): void
+    {
+        $service = new GeminiDocumentParserService();
+
+        // Empty key first (nothing may be sent before this assertion).
+        config(['services.gemini.key' => null]);
+        $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
+        Http::assertNothingSent();
+
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->assertNull($service->parseExcelSlice(''));
+        $this->assertNull($service->parseExcelSlice('   '));
+
+        $this->fakeSuccess('no json here');
+        $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
+
+        $this->fakeSuccess(json_encode(['months' => [['month_index' => 1, 'planned_progress_percent' => 50]]]));
+        $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
+
+        $this->fakeSuccess(json_encode(['months' => []]));
+        $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
+    }
 }

@@ -2026,14 +2026,39 @@ Related plan
     Distinct from normal-doc parser_keywords (vocabulary) — this learns LAYOUTS. Feeds the
     R2a fuzzy layer instead of replacing it (fuzzy catches typos; maps cover novel layouts).
 
-  - E2. AI FALLBACK FOR EXCEL (user-proposed 2026-09-08). Status: PARKED, plan only. Design
-    (no renderer needed — key insight): serialize server-side via PhpSpreadsheet to COMPACT
-    TEXT (header block + first ~40 data rows as CSV, never the whole workbook) and send text,
-    not images; Gemini returns the same {months, meta} JSON shape; PHP validates (monotonic,
-    force-last-100, contract sanity) exactly like the service. Triggers mirror normal-doc:
-    422 no-table OR low-confidence import, opt-in banner, merge-for-review (never auto-apply),
-    one call per file, Http::fake tests. Sensitivity: schedule numbers only (public-bidding
-    data), same slice-minimal precedent as the normal-doc slice.
+  - E2. AI FALLBACK FOR EXCEL (user-proposed 2026-09-08). Status: ✅ BUILT on merge15-baseline 2026-09-08 (code, NOT committed; normal-doc prompt broadened in the same batch).
+    - Service GeminiDocumentParserService::parseExcelSlice() (strict-JSON months prompt,
+      ≥2-month minimum, monotonic clamp + force-last-100, contract sanity, unknown keys
+      dropped, fail-closed). Caught pre-green: mixed-separator branch mangled "4,323,196.77"
+      → replaced with last-separator-wins decimal.
+    - Serializer SCurveImportService::serializeForAi() (first content-bearing sheet, 40 rows ×
+      80 cols, trailing empties trimmed, formulas calculated).
+    - Endpoint SCurveImportController::parseWithGemini() (file|document_id dual input, Excel
+      only, same 201/422 shapes + aiAssisted meta flag); routes POST /{staff,admin}/s-curve/
+      parse-gemini (no contractor route — 4xx by absence); resolveSource now reads via the
+      Storage disk (value-identical on local disk, Storage::fake-compatible in tests).
+    - Client: no-table 422s on Excel sources offer an inline "Try AI assist" button (PDFs
+      excluded); one POST per click (busy-guarded); success rejoins the normal flow
+      (normalize → modal → in-modal notes) with the AI-assisted provenance note appended.
+      Merge-for-review only — never auto-applied. Normal-doc prompt broadened beyond
+      "bidding pages" (contracts/reports/estimates, any layout) as approved.
+    - Tests: service 9/9 (incl. E2 clamp/force/cap/decline), endpoint 3 contract tests
+      (upload/doc-id/decline incl. contractor-absence), serializer 2; combined suites 56/56.
+      BUHI + roof re-verified byte-identical. Full-suite re-run due at commit time. No commit
+      without user OK. Browser proof (roof 422 → assist → modal) is the user's step.
+    - FIX 2026-09-08 (user-reported twin provenance bullets after double-clicking Import +
+      accurate 10-month AI curve on a cumulative-only recreation): audit found every layer
+      individually guarded (sync button disables, assist busy flag, offer remove-first, modal
+      remove-first, replace-not-append stash) with no single path explaining twins — hardened
+      all three anyway: (a) loading state on the assist button (disable + spinner immediately,
+      restored on every failure path incl. missing-context); (b) idempotent stash (consecutive
+      duplicate notes collapse — twin bullets impossible regardless of source). Main-button
+      double-fire independently ruled out (synchronous disable before first await). S-curve
+      29/29 green. Awaiting user browser re-proof (spinner visible on cold calls, single note).
+    - BROWSER PROOF 2026-09-08 (user): loader visible during cold assist runs; exactly ONE
+      provenance note in the modal. Twin-bullet class closed (fix verified live, root path
+      unisolated by design — all layers hardened). E2 end-to-end proven on the cumulative-only
+      recreation (rules 422 → assist → accurate 10-month curve → review modal).
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

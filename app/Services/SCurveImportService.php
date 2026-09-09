@@ -43,6 +43,64 @@ use RuntimeException;
 class SCurveImportService
 {
     /**
+     * Serialize a workbook to compact CSV text for the E2 AI fallback.
+     *
+     * Dumps the first non-trivial sheet (header block + data rows, capped) so Gemini
+     * reads layout + figures as text — no page rendering exists for Excel by design.
+     * Minimized: at most $maxRows rows × 80 columns, trailing empty cells trimmed.
+     *
+     * @param  string  $path  Absolute path to an .xlsx/.xls file.
+     * @throws RuntimeException  When the workbook can't be read.
+     *
+     * Called by: SCurveImportController::parseWithGemini() (planned E2 endpoint).
+     */
+    public function serializeForAi(string $path, int $maxRows = 40): string
+    {
+        if (!is_file($path)) {
+            throw new RuntimeException('The file could not be found.');
+        }
+
+        try {
+            $spreadsheet = IOFactory::load($path);
+        } catch (\Throwable $e) {
+            throw new RuntimeException('The file is not a valid Excel workbook.');
+        }
+
+        $lines = [];
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            $rows = $sheet->toArray(null, true, false, false);
+            $kept = 0;
+            foreach ($rows as $row) {
+                $cells = array_slice(array_values($row ?? []), 0, 80);
+                while (count($cells) > 0 && trim((string) end($cells)) === '') {
+                    array_pop($cells);
+                }
+                if (count($cells) === 0) {
+                    continue;
+                }
+                $fp = fopen('php://memory', 'r+');
+                fputcsv($fp, array_map(fn ($c) => trim((string) ($c ?? '')), $cells));
+                rewind($fp);
+                $lines[] = 'R' . ($kept + 1) . ': ' . trim((string) stream_get_contents($fp));
+                fclose($fp);
+                if (++$kept >= $maxRows) {
+                    break;
+                }
+            }
+            if ($kept >= 2) {
+                break;
+            }
+            $lines = [];
+        }
+
+        if (count($lines) < 2) {
+            throw new RuntimeException('The workbook holds no readable rows to send.');
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * Parse an S-curve workbook file into baseline months.
      *
      * @param  string  $path  Absolute path to an .xlsx/.xls file.

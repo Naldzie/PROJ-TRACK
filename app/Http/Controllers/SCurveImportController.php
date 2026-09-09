@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Document;
+use App\Services\AI\GeminiDocumentParserService;
 use App\Services\SCurveImportService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
@@ -24,6 +26,7 @@ class SCurveImportController extends Controller
 {
     public function __construct(
         protected SCurveImportService $sCurveImportService,
+        protected GeminiDocumentParserService $geminiParser,
     ) {}
 
     public function parseExcel(Request $request): JsonResponse
@@ -53,7 +56,47 @@ class SCurveImportController extends Controller
     }
 
     /**
+     * AI fallback (E2 Excel Tier 3, opt-in): serialize the workbook to compact CSV
+     * text and ask Gemini for the months. Same file|document_id dual input as
+     * parseExcel (Excel only — the server holds no PDF renderer); same response
+     * shapes. Results merge into the setup modal for review — never auto-applied.
+     */
+    public function parseWithGemini(Request $request): JsonResponse
+    {
+        try {
+            $path = $this->resolveSource($request);
+
+            $csv = $this->sCurveImportService->serializeForAi($path);
+            $result = $this->geminiParser->parseExcelSlice($csv);
+
+            if ($result === null) {
+                throw new RuntimeException('The AI assistant could not read an S-curve from this file. Please set up the baseline manually.');
+            }
+
+            return response()->json([
+                'success' => true,
+                'months' => $result['months'],
+                'meta' => array_merge($result['meta'], ['aiAssisted' => true]),
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred while asking the AI assistant to read the S-curve file.',
+            ], 422);
+        }
+    }
+
+    /**
      * Resolve the Excel source to a filesystem path.
+     *
+     * Stored bytes resolve via the Storage disk (not full_path) so Storage::fake()
+     * feature tests exercise the same code as production (identical value on local disk).
      *
      * @throws RuntimeException
      */
@@ -87,7 +130,7 @@ class SCurveImportController extends Controller
                 throw new RuntimeException('The selected document is not an Excel (.xls / .xlsx) file.');
             }
 
-            return $document->full_path;
+            return Storage::disk('public')->path($document->file_path);
         }
 
         throw new RuntimeException('No S-curve file was provided.');

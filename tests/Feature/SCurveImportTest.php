@@ -856,4 +856,176 @@ class SCurveImportTest extends TestCase
             'is_active' => true,
         ]);
     }
+
+    /**
+     * E2 endpoint: file-upload success returns AI months with the assisted flag.
+     */
+    public function test_parse_gemini_accepts_file_upload(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'months' => [
+                        ['month_index' => 1, 'planned_progress_percent' => 40],
+                        ['month_index' => 2, 'planned_progress_percent' => 90],
+                    ],
+                    'contractAmount' => 60000,
+                ])]]]]],
+            ], 200),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $response = $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $response->assertJsonPath('months.0.month_index', 1);
+        $response->assertJsonPath('months.1.planned_progress_percent', 100);
+        $response->assertJsonPath('meta.aiAssisted', true);
+
+        unlink($path);
+    }
+
+    /**
+     * E2 endpoint: AI miss, missing source, PDFs, and contractors all decline.
+     */
+    public function test_parse_gemini_decline_paths(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        // AI miss → honest 422.
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => 'no json']]]]],
+            ], 200),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload])
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        // Missing source → 422.
+        $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), [])
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        // PDF upload → 422 (no server renderer by design).
+        $pdf = \Illuminate\Http\UploadedFile::fake()->create('curve.pdf', 100, 'application/pdf');
+        $this->actingAs($this->createAdminUser())
+            ->post(route('admin.projects.s-curve.parse-gemini'), ['file' => $pdf])
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        // No contractor route exists at all → client error, never reachable.
+        $contractor = \App\Models\User::create([
+            'name' => 'SCurve Contractor',
+            'email' => fake()->unique()->safeEmail(),
+            'password' => bcrypt('password'),
+            'role' => 'contractor',
+            'is_active' => true,
+        ]);
+        $this->actingAs($contractor)
+            ->postJson('/contractor/s-curve/parse-gemini', ['document_id' => 1])
+            ->assertClientError();
+
+        unlink($path);
+    }
+
+    /**
+     * E2 endpoint: stored Excel documents resolve via document_id.
+     */
+    public function test_parse_gemini_accepts_document_id(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'months' => [
+                        ['month_index' => 1, 'planned_progress_percent' => 50],
+                        ['month_index' => 2, 'planned_progress_percent' => 100],
+                    ],
+                ])]]]]],
+            ], 200),
+        ]);
+        \Illuminate\Support\Facades\Storage::fake('public');
+
+        $admin = $this->createAdminUser();
+        $staff = \App\Models\User::create([
+            'name' => 'SCurve Staff',
+            'email' => fake()->unique()->safeEmail(),
+            'password' => bcrypt('password'),
+            'role' => 'staff',
+            'is_active' => true,
+        ]);
+        $project = \App\Models\Project::factory()->create();
+        // The migration seeds a 'Schedule' type — reuse it instead of colliding.
+        $type = \App\Models\DocumentType::firstOrCreate(['name' => 'Schedule']);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        \Illuminate\Support\Facades\Storage::disk('public')->put(
+            'ai/curve.xlsx',
+            file_get_contents($path)
+        );
+
+        $doc = \App\Models\Document::create([
+            'project_id' => $project->id,
+            'document_type_id' => $type->id,
+            'document_name' => 'S-curve',
+            'file_path' => 'ai/curve.xlsx',
+            'uploaded_by' => $admin->id,
+        ]);
+
+        $this->actingAs($staff)
+            ->postJson(route('staff.projects.s-curve.parse-gemini'), ['document_id' => $doc->id])
+            ->assertOk()->assertJsonPath('success', true);
+
+        $this->actingAs($staff)
+            ->postJson(route('staff.projects.s-curve.parse-gemini'), ['document_id' => 999999])
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        unlink($path);
+    }
+
+    /**
+     * E2 serializer: header block + data rows as compact CSV text (never the workbook).
+     */
+    public function test_serialize_for_ai_emits_compact_csv_text(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('A11', 'Works');
+        $sheet->setCellValue('B11', 30000);
+
+        (new Xlsx($spreadsheet))->save($path);
+
+        $csv = app(SCurveImportService::class)->serializeForAi($path);
+
+        $this->assertStringContainsString('DESCRIPTION', $csv);
+        $this->assertStringContainsString('30000', $csv);
+        // Compact: capped rows, no raw workbook bytes.
+        $this->assertLessThanOrEqual(41, count(explode("\n", trim($csv))));
+
+        unlink($path);
+    }
+
+    /**
+     * E2 serializer: missing files throw honestly.
+     */
+    public function test_serialize_for_ai_rejects_missing_source(): void
+    {
+        $this->expectException(RuntimeException::class);
+        app(SCurveImportService::class)->serializeForAi('/nonexistent/path.xlsx');
+    }
 }
