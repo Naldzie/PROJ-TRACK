@@ -2127,6 +2127,34 @@ Related plan
       it noisy both ways). Tests (+4 service: fabrication decline, consistent pass with
       partial skip, mirror note, unverified note; +2 endpoint: swap with mapPreferred flag,
       agree-untouched). Suites green (see commit).
+    - CONFIRMED DIAGNOSIS 2026-09-09 (user re-test: stopped server + cleared cache + fresh
+      `php artisan serve` + wiped header-proposals table + import → 422 → AI click → silent
+      45-series again). Stale code RULED OUT — parity was live. Mechanism: the model sent
+      months-only (no amounts/summary/flag), and every check abstained exactly as designed
+      (absent amounts skip for weight-file safety; absent summary = nothing to compare;
+      absent flag = no note). Lesson banked: conditional verification FAILS OPEN — the next
+      design makes a verdict unconditional (every AI curve labeled, never silent).
+    - IMPOSSIBLE TEST FLOW 2026-09-09 (user report): "re-upload + approve, then hit AI assist"
+      cannot be followed — approval makes imports succeed, success means no 422, no 422 means
+      no offer button (single-use by design, removed on success). Consequence: a learned layout
+      can never be AI-checked again, and users get no second-opinion path. Fix queued below
+      (on-demand cross-check), not a lifecycle bug.
+    - ADJUSTED PLAN (user-approved 2026-09-09, NO implementation yet):
+      1. Schema-enforced homework — months + hasSummaryRow REQUIRED at protocol level
+         (response schema, not just prompt prose); amounts/summary optional; few-shot full-format
+         example in prompt.
+      2. Universal verification verdict — every AI curve labeled: verified (amounts recompute,
+         shown as confirmation) / compared (summary gaps warned) / unverified-single-series
+         (explicit note). Silence no longer an outcome.
+      3. Debug breadcrumb — server logs returned keys + verdict per AI call (evidence, not inference).
+      4. On-demand cross-check link — small secondary affordance after SUCCESSFUL imports
+         ("Cross-check with AI?"); same quota discipline (one call per click, busy-guarded),
+         same modal flow + verification notes + prefer-math swap. Agreement behavior per user
+         choice (a): quiet confirmation note in modal ("AI agrees with these months"); only
+         disagreements get full warnings. Fixes the impossible test flow + gives second opinions.
+      5. Tests per branch (minimal reply → unverified note; schema enforcement; verified
+         confirmation; on-demand link wiring), full + JS suites with clean-tree regression check.
+      A/B (point-and-teach desk, learn-from-AI maps) stay queued behind this batch.
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

@@ -150,6 +150,13 @@ Sensitivity basis (user-approved)
     - STRICT HOMEWORK + PREFER-MATH BUILT 2026-09-09 (code, see accuracy plan E2 entry
       for the cause chain): prompt homework + server recompute-decline + mirror/unverified
       notes + endpoint prefer-math swap. +4 service / +2 endpoint tests green.
+    - CONFIRMED GAP + ADJUSTED PLAN 2026-09-09 (user re-test with stale code ruled out:
+      wiped maps + fresh serve → silent 45; model sent months-only, all checks abstained —
+      conditional verification fails open). Next, NO implementation yet: schema-enforced
+      homework + universal verdict (verified/compared/unverified, never silent) + debug
+      breadcrumb + on-demand cross-check link (user choice a: quiet confirmation on
+      agreement). Fixes the impossible approve-then-AI test flow. See accuracy plan E2
+      ADJUSTED PLAN for the full five steps. A/B stay queued behind.
 
 ===============================================================================
   6. SESSION LOGS
