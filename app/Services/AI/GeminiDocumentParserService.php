@@ -68,6 +68,51 @@ class GeminiDocumentParserService
     private const MAX_IMAGES = 3;
 
     /**
+     * E3 (2026-09-10): parser credential seam — document/Excel parsing uses its
+     * own key + model (institute second key; pinned gemini-2.5-flash), falling
+     * back to the shared prediction credentials when the parser env is missing.
+     * Runtime fallback (not just config-file) so direct config overrides and
+     * cached configs resolve the same way.
+     *
+     * Called by: callGeminiText(), callGeminiWithImages().
+     */
+    private function parserKey(): ?string
+    {
+        $key = config('services.gemini.parser_key') ?? config('services.gemini.key');
+
+        return is_string($key) && $key !== '' ? $key : null;
+    }
+
+    /**
+     * E3 parser model seam (fallback chain ends at the legacy default).
+     *
+     * Called by: callGeminiText(), callGeminiWithImages().
+     */
+    private function parserModel(): string
+    {
+        $model = config('services.gemini.parser_model') ?? config('services.gemini.model');
+
+        return is_string($model) && $model !== '' ? $model : 'gemini-1.5-flash';
+    }
+
+    /**
+     * E3: one-line failure breadcrumb so a dead model ID (404) or revoked key
+     * (4xx) is diagnosable from logs instead of looking like "AI found nothing".
+     */
+    private function logGeminiFailure(string $where, string $model, mixed $status): void
+    {
+        try {
+            Log::debug('E3 gemini parser call failed', [
+                'where' => $where,
+                'model' => $model,
+                'status' => $status,
+            ]);
+        } catch (\Throwable $e) {
+            // Logging never breaks calls.
+        }
+    }
+
+    /**
      * Read project fields from page images.
      *
      * Accepts a list of ['data' => base64, 'mimeType' => 'image/png'] slices.
@@ -676,8 +721,8 @@ class GeminiDocumentParserService
      */
     private function callGeminiText(string $prompt, ?array $filePart = null): string
     {
-        $apiKey = config('services.gemini.key');
-        $model = config('services.gemini.model', 'gemini-1.5-flash');
+        $apiKey = $this->parserKey();
+        $model = $this->parserModel();
 
         if (empty($apiKey)) {
             return '';
@@ -710,6 +755,8 @@ class GeminiDocumentParserService
             ]);
 
             if (!$response->successful()) {
+                $this->logGeminiFailure('text', $model, $response->status());
+
                 return '';
             }
 
@@ -717,6 +764,8 @@ class GeminiDocumentParserService
 
             return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
         } catch (\Exception $e) {
+            $this->logGeminiFailure('text', $model, 'throwable');
+
             return '';
         }
     }
@@ -787,8 +836,8 @@ class GeminiDocumentParserService
      */
     private function callGeminiWithImages(string $prompt, array $images): string
     {
-        $apiKey = config('services.gemini.key');
-        $model = config('services.gemini.model', 'gemini-1.5-flash');
+        $apiKey = $this->parserKey();
+        $model = $this->parserModel();
 
         if (empty($apiKey)) {
             return '';
@@ -817,6 +866,8 @@ class GeminiDocumentParserService
             ]);
 
             if (!$response->successful()) {
+                $this->logGeminiFailure('images', $model, $response->status());
+
                 return '';
             }
 
@@ -824,6 +875,8 @@ class GeminiDocumentParserService
 
             return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
         } catch (\Exception $e) {
+            $this->logGeminiFailure('images', $model, 'throwable');
+
             return '';
         }
     }

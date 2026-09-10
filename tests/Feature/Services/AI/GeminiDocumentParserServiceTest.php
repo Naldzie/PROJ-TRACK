@@ -640,4 +640,88 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->fakeSuccess(json_encode(['months' => []]));
         $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
     }
+
+    // E3 seam: parser key + model ride the wire (both senders — one fake per
+    // test, since re-faking keeps serving the first stub).
+    // Called by: callGeminiText(), callGeminiWithImages() via parserKey()/parserModel().
+    public function test_parser_credentials_ride_the_excel_wire(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'main-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'gemini-2.5-flash',
+        ]);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $url = $request->url();
+
+            return str_contains($url, 'key=parser-key')
+                && str_contains($url, 'gemini-2.5-flash')
+                && !str_contains($url, 'main-key');
+        });
+    }
+
+    // E3 seam on the images sender (normal-doc slices use the same credentials).
+    // Called by: callGeminiWithImages() via parserKey()/parserModel().
+    public function test_parser_credentials_ride_the_images_wire(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'main-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'gemini-2.5-flash',
+        ]);
+
+        $this->fakeSuccess(json_encode(['title' => 'Canteen Works Project Title Here']));
+        $out = (new GeminiDocumentParserService())->parseProjectSlice($this->sliceImages());
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $url = $request->url();
+
+            return str_contains($url, 'key=parser-key')
+                && str_contains($url, 'gemini-2.5-flash')
+                && !str_contains($url, 'main-key');
+        });
+    }
+
+    // E3 fallback: missing parser env degrades to the shared credentials.
+    // Called by: parserKey()/parserModel() runtime fallback.
+    public function test_parser_credentials_fall_back_to_shared(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'main-model',
+            'services.gemini.parser_key' => null,
+            'services.gemini.parser_model' => null,
+        ]);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $url = $request->url();
+
+            return str_contains($url, 'key=main-key')
+                && str_contains($url, 'main-model');
+        });
+    }
 }

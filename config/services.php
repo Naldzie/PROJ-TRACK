@@ -44,6 +44,12 @@ return [
     'gemini' => [
         'key' => env('AI_API_KEY'),
         'model' => env('AI_MODEL', 'gemini-1.5-flash'),
+        // E3 (2026-09-10): document/Excel parsing rides its own key + model
+        // (institute second key; pinned gemini-2.5-flash per user). Fallbacks
+        // keep everything working when the parser env is missing; prediction
+        // services keep reading key/model above (Lite stays).
+        'parser_key' => env('AI_PARSER_API_KEY', env('AI_API_KEY')),
+        'parser_model' => env('AI_PARSER_MODEL', env('AI_MODEL', 'gemini-1.5-flash')),
     ],
 
 ];

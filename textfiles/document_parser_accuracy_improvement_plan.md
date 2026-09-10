@@ -2251,6 +2251,14 @@ Related plan
       Tests: +2 service (file part on wire, text-only path), schema test gains temperature,
       +1 controller (MIME sniff, ceiling fallback, ghost path). Full-suite + JS + clean-tree
       check due next (see below).
+    - MODEL VERDICT CLOSED 2026-09-10 (user live test, E3 key/model live: institute second
+      key + gemini-flash-latest — pinned 2.5 404s/retired, alias answers; drift caveat
+      accepted and logged in E3 file). Full Flash returned the TRUE 10-month curve
+      (5,10,20,30,50,70,80,90,95,100) with four honest gap warnings (M5–M8) and a
+      legitimately-earned Checked badge — same file/prompt/slice/validation Lite copied.
+      The 400 on the new key was a user-side paste/enablement slip (later success on the
+      same key proves it). Prime-suspect status resolved: the model was the blocker; the
+      validation stack stands as built. Full E3 record in document_parser_key_model_split_plan.md.
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

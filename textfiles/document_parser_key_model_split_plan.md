@@ -1,7 +1,7 @@
 # AI PARSER KEY + MODEL SPLIT PLAN (E3)
 # Parent refs: textfiles/document_parser_accuracy_improvement_plan.md (E2 entries),
 #   textfiles/document_parser_ai_fallback_plan.md (E2/AI-6 notes)
-# Date: September 10, 2026 — Status: PLANNED (no code yet; awaits Flash ID + go-ahead)
+# Date: September 10, 2026 — Status: BUILT + LIVE-PROVEN (committed this session; predictions untouched)
 # Branch on build: merge15-baseline (config + service seam, Rule 12; no merge to main without OK)
 
 ===============================================================================
@@ -124,6 +124,42 @@ Frontend convention (IMPORTANT)
       key = hygiene/tracking, separate project = real pool split.
     - Awaiting: exact Flash ID (user list-call) + parser key provisioning (user pastes
       into .env; unproducible by assistant) + build go-ahead. No merge without OK.
+
+  2026-09-10 — E3-1 + E1-3 CLOSED WITH LIVE EVIDENCE (user test; commit + push ordered).
+    - Parser key LIVE: institute second key (same project, per K1). The earlier 400 on the
+      new key was a paste/enablement slip on the user side (proven by subsequent success
+      on the same key — no code or plan change needed for it).
+    - Parser model LIVE: gemini-flash-latest (DEVIATION from the pinned-2.5 recommendation,
+      user-approved): pinned gemini-2.5-flash 404s (retired) while the alias answers. DRIFT
+      CAVEAT (user-accepted): the alias floats — if AI behavior ever drifts mysteriously,
+      alias repointing is suspect #1 (same class as the Lite-alias note for predictions).
+      Revisit pinning only if drift is ever observed; the status log will name it.
+    - RE-TEST PROTOCOL PASSED (E3-3, user browser, wiped-table conditions): full Flash
+      returned the TRUE curve (5,10,20,30,50,70,80,90,95,100) with four honest gap warnings
+      (M5–M8) and a legitimately-earned Checked badge — no copy, no silence. Model verdict
+      CLOSED: Lite copied, Flash computes (same file/prompt/slice/validation).
+    - Standing queue reminder: A point-and-teach desk → B learn-from-AI maps,
+      both behind the AI-verification batch.
+    - Config: services.php gemini += parser_key (AI_PARSER_API_KEY → AI_API_KEY) +
+      parser_model (AI_PARSER_MODEL → AI_MODEL → legacy default); runtime fallback in
+      the service too (direct config overrides + cached configs resolve identically).
+    - Service: parserKey()/parserModel() helpers wired into BOTH senders
+      (callGeminiText, callGeminiWithImages); predictions services untouched (Lite).
+      Status-code debug log on every failure path (both senders) — dead IDs/keys
+      diagnose in one line (Decision K4).
+    - .env.example: AI_PARSER_API_KEY= / AI_PARSER_MODEL=gemini-2.5-flash placeholders
+      (values never committed).
+    - Caught pre-green (all fixed before green, no reverts): (1) re-calling Http::fake()
+      does NOT replace the stub as assumed — second fake kept serving the first stub,
+      so the project-slice half validated months-JSON as all-null (proven via reflection
+      probe + recorded() log); split into single-fake-per-test. Lesson banked: one fake
+      per test. (2) My own edit clipped two test bodies (decline test, agree test) —
+      restored immediately, suites proved each. (3) Sender-label mixup: an 'images' tag
+      landed in the text sender — corrected, both senders verified by grep.
+    - Tests: +3 (excel-wire creds, images-wire creds, shared fallback). Suites: AI service
+      27/27; combined parser suites 89/89. Full-suite + JS + clean-tree check due next.
+    - User action outstanding: paste parser key + AI_PARSER_MODEL=gemini-2.5-flash into
+      local .env, restart serve; re-test protocol (E3-3) is the user's step.
 
 ===============================================================================
   7. OPEN QUESTIONS / STILL TO RESOLVE

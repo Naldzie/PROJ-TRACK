@@ -168,6 +168,10 @@ Sensitivity basis (user-approved)
       (OLE sniff, 15MB ceiling + CSV fallback note) + temperature 0.0 on the wire. Tests:
       +2 service (file part, text-only), +1 controller (MIME/ceiling/ghost). Full 1086
       passed / same 7 pre-existing; JS 90/92. See accuracy plan.
+    - MODEL VERDICT CLOSED 2026-09-10 (user live test): institute second key + 
+      gemini-flash-latest live (pinned 2.5 retired/404s; drift caveat accepted). Flash
+      returned the TRUE curve with four honest warnings — Lite copied under identical
+      conditions. Full record in document_parser_key_model_split_plan.md + accuracy plan.
     - DECISIONS 2026-09-10 (logged only, NO implementation): whole-workbook native upload
       APPROVED (public-transparency justification; guards stay); temperature 0 EXPLAINED,
       decision rides with build go-ahead (deterministic ≠ correct; Excel path only).
