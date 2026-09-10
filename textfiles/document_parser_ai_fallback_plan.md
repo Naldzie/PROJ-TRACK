@@ -290,6 +290,21 @@ Sensitivity basis (user-approved)
       unproven-spans / no-matching-sheet); controller logs the reason per skip; store
       outcomes already logged. Test pins all six user-reachable reasons. Full 1117 passed /
       same 7 pre-existing; JS 90/92. NO commit per user.
+    - REVERSAL BUILT 2026-09-10 (code, NOT committed per user): G1/G2 guards removed —
+      mirrored and adopted answers now teach columns whenever structurally valid (flags
+      still computed + logged, unconsumed); 'mirrored'/'adopted-summary' reason codes
+      retired. Desk list rows render the map inline (DESC=C · M1=I+J…) so approval sees
+      what it trusts. Tests flipped + added (mirror-learns unit, adopted-learns unit,
+      mirror-learns endpoint with note intact). Full 1119 passed / same 7 pre-existing;
+      JS 90/92. NO commit per user.
+    - B-5 PROVEN LIVE 2026-09-10 (user browser, 6-stage file): 422 → assist → proposed
+      AI-derived row (backfilled the null auto-capture) → approve → re-import parses
+      (5/20/40/60/80/100 with correct per-month activities) with the learned-layout note
+      and NO AI call. Desk row reads testcompany · AI-derived · Live. B CLOSED end to end.
+    - F6 WART LOGGED (user screenshot): header-row picker defaults to the first R-line
+      when no HEADER tags exist — on unknown files that's the TITLE row, wrong more often
+      than right. Fix approved: default to EMPTY (force explicit choice via the existing
+      hint + save gate). Build next.
     - B-5 SPECIMEN BANKED 2026-09-10 (git-ignored sampledocs/SCurve-Test-6Stage-Novel-Layout-Specimen.xlsx, never commit — 2c-specimen precedent).
       Fourth family, novel on BOTH axes: desc "SCHEDULED TASKS" (misses strict+loose+fuzzy
       vocab) + months "STAGE 1..6" (match no month rule, strict or relaxed). 4 activities,

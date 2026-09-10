@@ -618,15 +618,18 @@ class SCurveImportService
      *
      * $layout comes sanitized from the AI service (headerRow R-number as shown,
      * monthColumns {m: [letters]}, desc/contract/weight/code letters, plus
-     * activityBased + mirrored flags). Refuses untrusted answers outright
-     * (non-activity months, mirrored copies). R-numbers index the default-40
-     * slice exactly like serializeForAi (kept-ordinals, NOT sheet rows), so the
-     * walk below mirrors that walk cell-for-cell. Letters become 0-based indices;
-     * the header row's own cells feed buildTaughtMap (same gates as hand teaching);
+     * activityBased + mirrored flags which are LOGGED for transparency but never
+     * consulted). REVERSAL (2026-09-10, user order): column trust ≠ month trust —
+     * maps store POSITIONS and buildMonths recomputes from rows, so correct columns
+     * yield correct curves whatever the months claimed. Mirror/adopted status
+     * describes months (handled: mirror note, prefer-math swap, fallback flag),
+     * never columns. R-numbers index the default-40 slice exactly like
+     * serializeForAi (kept-ordinals, NOT sheet rows), so the walk below mirrors
+     * that walk cell-for-cell. Letters become 0-based indices; the header row's
+     * own cells feed buildTaughtMap (same gates as hand teaching);
      * mapSpansHoldNumbers proves the spans against REAL bytes. Single-header B v1
      * only — two-row headers honestly yield null. Best-effort: any failure → null
-     * with $reason naming the gate (never silent — the 18:15-18:58 "underivable"
-     * streak was undiagnosable without it).
+     * with $reason naming the gate (never silent).
      *
      * Called by: SCurveImportController LearnMap step.
      */
@@ -639,8 +642,6 @@ class SCurveImportService
         };
 
         try {
-            if (($layout['activityBased'] ?? false) !== true) return $refuse('adopted-summary');
-            if (($layout['mirrored'] ?? false) === true) return $refuse('mirrored');
             $headerR = (int) ($layout['headerRow'] ?? 0);
             if ($headerR < 1) return $refuse('no-header-row');
             $monthColumns = $layout['monthColumns'] ?? null;

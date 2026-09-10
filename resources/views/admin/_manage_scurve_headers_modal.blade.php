@@ -299,11 +299,36 @@ async function loadScurveHeadersForManagement() {
             const mapMark = row.has_map
                 ? ' <span class="badge bg-primary" title="A column map is attached">Mapped</span>'
                 : '';
+            // Inline map summary (2026-09-10 reversal companion): reviewers approve
+            // AI-sourced columns, so show WHAT they'd approve (DESC=C · M1=I+J…).
+            let mapSummary = '';
+            try {
+                const cm = row.column_map || null;
+                if (row.has_map && cm && typeof cm === 'object') {
+                    const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
+                    const bits = [];
+                    const dc = L(cm.descCol);
+                    if (dc) bits.push('DESC=' + dc);
+                    const cc = L(cm.contractCol);
+                    if (cc) bits.push('AMT=' + cc);
+                    const wc = L(cm.weightCol);
+                    if (wc) bits.push('WT=' + wc);
+                    const spans = cm.monthSpans || {};
+                    Object.keys(spans).map(Number).filter(n => n >= 1).sort((x, y) => x - y).forEach(m => {
+                        const cols = (spans[m] || []).map(L).filter(Boolean);
+                        if (cols.length) bits.push('M' + m + '=' + cols.join('+'));
+                    });
+                    if (bits.length) {
+                        mapSummary = '<div class="text-muted" style="font-size:10px;" title="Taught/learned column positions — what approval would trust">'
+                            + schEscapeHtml(bits.join(' · ')) + '</div>';
+                    }
+                }
+            } catch (e) { /* summary is best-effort */ }
             const approveBtn = row.status === 'live' ? '' :
                 '<button class="btn btn-sm btn-outline-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>';
             const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
             html += '<tr>' +
-                '<td><span' + headerTip + '>' + header + '</span>' + mapMark + '</td>' +
+                '<td><span' + headerTip + '>' + header + '</span>' + mapMark + mapSummary + '</td>' +
                 '<td>' + contractor + '</td>' +
                 '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
                 '<td>' + origin + '</td>' +

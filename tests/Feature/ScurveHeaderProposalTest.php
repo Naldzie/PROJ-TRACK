@@ -972,7 +972,8 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
-    // Untrusted answers never teach: mirrored, adopted, headerless, or garbage.
+    // Structural refusals stay: headerless, single-month, garbage (column trust
+    // is proven per-answer, independent of month trust since the 2026-09-10 reversal).
     // Called by: deriveMapFromAiLayout() guard block.
     public function test_derive_map_refuses_untrusted_layouts(): void
     {
@@ -981,17 +982,35 @@ class ScurveHeaderProposalTest extends TestCase
         $service = app(SCurveImportService::class);
 
         $this->assertNull($service->deriveMapFromAiLayout(
-            $this->novelLayout(['mirrored' => true]), $path
-        ));
-        $this->assertNull($service->deriveMapFromAiLayout(
-            $this->novelLayout(['activityBased' => false]), $path
-        ));
-        $this->assertNull($service->deriveMapFromAiLayout(
             $this->novelLayout(['headerRow' => 9]), $path
         ));
         $this->assertNull($service->deriveMapFromAiLayout(
             $this->novelLayout(['monthColumns' => [1 => ['B']]]), $path
         ));
+        $this->assertNull($service->deriveMapFromAiLayout(
+            $this->novelLayout(['descCol' => null]), $path
+        ));
+
+        unlink($path);
+    }
+
+    // Reversal (2026-09-10): mirrored and adopted answers TEACH columns whenever
+    // structurally valid — column trust is independent of month trust.
+    // Called by: deriveMapFromAiLayout() without the old G1/G2 guards.
+    public function test_derive_map_learns_from_mirrored_and_adopted(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $mirrored = $service->deriveMapFromAiLayout($this->novelLayout(['mirrored' => true]), $path);
+        $this->assertIsArray($mirrored);
+        $this->assertSame(1, $mirrored['v']);
+        $this->assertCount(3, $mirrored['monthSpans']);
+
+        $adopted = $service->deriveMapFromAiLayout($this->novelLayout(['activityBased' => false]), $path);
+        $this->assertIsArray($adopted);
+        $this->assertSame(0, $adopted['descCol']);
 
         unlink($path);
     }
@@ -1147,8 +1166,10 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
-    // Refusal reasons (2026-09-10): every derivation refusal names its gate so
-    // live "learn skipped" lines diagnose themselves.
+    // Refusal reasons (2026-09-10, revised with the reversal): every remaining
+    // derivation refusal names its gate so live "learn skipped" lines diagnose
+    // themselves. Mirror/adopted cases moved to learns-tests (columns teach
+    // regardless of month trust).
     // Called by: deriveMapFromAiLayout() $reason out-param.
     public function test_derive_map_refusal_reasons(): void
     {
@@ -1157,8 +1178,6 @@ class ScurveHeaderProposalTest extends TestCase
         $service = app(SCurveImportService::class);
 
         $cases = [
-            [$this->novelLayout(['mirrored' => true]), 'mirrored'],
-            [$this->novelLayout(['activityBased' => false]), 'adopted-summary'],
             [$this->novelLayout(['headerRow' => 9]), 'header-row-unresolved'],
             [$this->novelLayout(['monthColumns' => [1 => ['B']]]), 'no-month-columns'],
             [$this->novelLayout(['descCol' => null]), 'no-desc-col'],
@@ -1173,6 +1192,55 @@ class ScurveHeaderProposalTest extends TestCase
             );
             $this->assertSame($expected, $reason);
         }
+
+        unlink($path);
+    }
+
+    // Reversal end-to-end: a MIRRORED AI answer still teaches a proposed map.
+    // Called by: POST /admin/s-curve/parse-gemini LearnMap step.
+    public function test_parse_gemini_learns_map_from_mirrored_answer(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 25],
+                ['month_index' => 2, 'planned_progress_percent' => 50],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 25],
+                ['month_index' => 2, 'percent' => 50],
+                ['month_index' => 3, 'percent' => 100],
+            ],
+            'hasSummaryRow' => true,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+                ['month_index' => 3, 'columns' => ['D']],
+            ],
+            'descCol' => 'A',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [
+                    ['content' => ['parts' => [['text' => $aiText]]]],
+                ],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        // Months mirror the summary (mirror note fires) AND the row still learns.
+        $response = $this->actingAs($admin)->post('/admin/s-curve/parse-gemini', ['file' => $upload]);
+        $response->assertOk()->assertJsonPath('success', true);
+        $row = ScurveHeaderProposal::where('source', 'ai-derived')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('proposed', $row->status);
+        $this->assertCount(3, $row->column_map['monthSpans']);
 
         unlink($path);
     }
