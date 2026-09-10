@@ -950,4 +950,66 @@ class GeminiDocumentParserServiceTest extends TestCase
                 && str_contains($url, 'main-model');
         });
     }
+
+    // B-1 layout passthrough: reported columns ride the result for derivation,
+    // with activity/mirror flags the derivation trusts for skipping.
+    // Called by: validateSCurveMonths() layout block.
+    public function test_excel_slice_passes_layout_through(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+            'headerRow' => 2,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['F']],
+                ['month_index' => 2, 'columns' => ['G', 'H']],
+            ],
+            'descCol' => 'B',
+            'contractCol' => 'E',
+            'bogusLayout' => 'dropped',
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+        $this->assertTrue($out['layout']['activityBased']);
+        $this->assertFalse($out['layout']['mirrored']);
+        $this->assertSame(2, $out['layout']['headerRow']);
+        $this->assertSame(['F'], $out['layout']['monthColumns'][1]);
+        $this->assertSame(['G', 'H'], $out['layout']['monthColumns'][2]);
+        $this->assertSame('B', $out['layout']['descCol']);
+        $this->assertSame('E', $out['layout']['contractCol']);
+        $this->assertArrayNotHasKey('bogusLayout', $out['layout']);
+    }
+
+    // Adopted curves carry activityBased=false so derivation refuses them.
+    // Called by: validateSCurveMonths() fallback layout block.
+    public function test_excel_slice_marks_adopted_layout_unlearnable(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [['month_index' => 1, 'planned_progress_percent' => 10]],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 45],
+                ['month_index' => 2, 'percent' => 100],
+            ],
+            'headerRow' => 2,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['F']],
+                ['month_index' => 2, 'columns' => ['G']],
+            ],
+            'descCol' => 'B',
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertFalse($out['layout']['activityBased']);
+    }
 }

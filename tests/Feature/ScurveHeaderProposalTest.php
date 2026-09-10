@@ -908,4 +908,272 @@ class ScurveHeaderProposalTest extends TestCase
 
         unlink($path);
     }
+
+    // =====================================================================
+    // Phase-B learn-from-AI (AI success → proposed layout, never auto-live).
+    // =====================================================================
+
+    // A novel layout even relaxed detection misses: undescribed desc wording
+    // plus quarter-style months (Q1..Q3 match no month rule at all).
+    private function makeNovelWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A2', 'LINE HEADINGS');
+        $sheet->setCellValue('B2', 'Q1');
+        $sheet->setCellValue('C2', 'Q2');
+        $sheet->setCellValue('D2', 'Q3');
+        $sheet->setCellValue('A3', 'Ground Works');
+        $sheet->setCellValue('B3', 100000);
+        $sheet->setCellValue('C3', 100000);
+        $sheet->setCellValue('D3', 200000);
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    private function novelLayout(array $overrides = []): array
+    {
+        return array_merge([
+            'activityBased' => true,
+            'mirrored' => false,
+            'headerRow' => 1,
+            'monthColumns' => [1 => ['B'], 2 => ['C'], 3 => ['D']],
+            'descCol' => 'A',
+            'contractCol' => null,
+            'weightCol' => null,
+            'codeCol' => null,
+        ], $overrides);
+    }
+
+    // Derivation from AI-reported columns: valid layout on real bytes yields a
+    // consultable v1 map (10-point curve math lives downstream, not here).
+    // Called by: SCurveImportService::deriveMapFromAiLayout().
+    public function test_derive_map_from_ai_layout(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        // Rules AND relaxed both miss this file (novel words on both axes).
+        try {
+            $service->parse($path);
+            $this->fail('Rules should miss the novel layout.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+        $this->assertNull($service->deriveAutoColumnMap($path));
+
+        $map = $service->deriveMapFromAiLayout($this->novelLayout(), $path);
+        $this->assertIsArray($map);
+        $this->assertSame(1, $map['v']);
+        $this->assertSame(0, $map['descCol']);
+        $this->assertCount(3, $map['monthSpans']);
+        $this->assertNotEmpty($map['sig']);
+
+        unlink($path);
+    }
+
+    // Untrusted answers never teach: mirrored, adopted, headerless, or garbage.
+    // Called by: deriveMapFromAiLayout() guard block.
+    public function test_derive_map_refuses_untrusted_layouts(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $this->assertNull($service->deriveMapFromAiLayout(
+            $this->novelLayout(['mirrored' => true]), $path
+        ));
+        $this->assertNull($service->deriveMapFromAiLayout(
+            $this->novelLayout(['activityBased' => false]), $path
+        ));
+        $this->assertNull($service->deriveMapFromAiLayout(
+            $this->novelLayout(['headerRow' => 9]), $path
+        ));
+        $this->assertNull($service->deriveMapFromAiLayout(
+            $this->novelLayout(['monthColumns' => [1 => ['B']]]), $path
+        ));
+
+        unlink($path);
+    }
+
+    // Store: backfills a matching null-map row (keeping it proposed, occurrences
+    // untouched) or creates a proposed ai-derived row.
+    // Called by: ScurveHeaderProposal::storeAiDerived().
+    public function test_store_ai_derived_backfills_or_creates(): void
+    {
+        $map = ['v' => 1, 'sig' => [[0, 'x'], [1, 'y']], 'descCol' => 0, 'monthSpans' => [1 => [1], 2 => [2]]];
+
+        $existing = ScurveHeaderProposal::create([
+            'header_rows_text' => 'R1 [HEADER]: LINE HEADINGS,Q1',
+            'header_hash' => hash('sha256', 'novel'),
+            'column_map' => null,
+            'occurrences' => 5,
+            'status' => 'live',
+            'source' => 'auto-capture',
+        ]);
+        $row = ScurveHeaderProposal::storeAiDerived(null, hash('sha256', 'novel'), 'ignored text', $map);
+        $this->assertSame($existing->id, $row->id);
+        // Live + mapless demotes to proposed: unreviewed maps never ride live status.
+        $this->assertSame('proposed', $row->fresh()->status);
+        $this->assertSame('ai-derived', $row->fresh()->source);
+        $this->assertSame($map, $row->fresh()->column_map);
+        $this->assertSame(5, $row->fresh()->occurrences);
+
+        $fresh = ScurveHeaderProposal::storeAiDerived(null, hash('sha256', 'other'), 'R1 [HEADER]: OTHER', $map);
+        $this->assertSame('proposed', $fresh->status);
+        $this->assertSame('ai-derived', $fresh->source);
+        $this->assertSame(1, $fresh->occurrences);
+    }
+
+    // Absolute rule: ai-derived rows NEVER auto-live, however often re-captured.
+    // Called by: collect() auto-promote guard.
+    public function test_ai_derived_never_auto_lives(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+
+        // Seed the ai-derived row with the REAL capture hash at 2 sightings, so
+        // one more collect repeat hits the auto-promote threshold directly.
+        $text = app(SCurveImportService::class)->serializeForAi($path, 15);
+        $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
+        ScurveHeaderProposal::create([
+            'header_rows_text' => mb_substr($text, 0, 4000),
+            'header_hash' => $hash,
+            'column_map' => ['v' => 1, 'sig' => [[0, 'x']], 'descCol' => 0, 'monthSpans' => [1 => [1], 2 => [2]]],
+            'occurrences' => 2,
+            'status' => 'proposed',
+            'source' => 'ai-derived',
+        ]);
+
+        $staff = $this->makeUser('staff');
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+        $this->actingAs($staff)
+            ->post('/staff/scurve-header-proposals/collect', ['file' => $upload])
+            ->assertCreated();
+
+        $row = ScurveHeaderProposal::where('source', 'ai-derived')->first();
+        $this->assertSame(3, $row->occurrences);
+        $this->assertSame('proposed', $row->status);
+
+        unlink($path);
+    }
+
+    // End-to-end: rules-failed file + faked AI WITH columns → 200 plus a proposed
+    // ai-derived map row carrying a consultable map.
+    // Called by: POST /admin/s-curve/parse-gemini LearnMap step.
+    public function test_parse_gemini_learns_map_from_ai_columns(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 25],
+                ['month_index' => 2, 'planned_progress_percent' => 50],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 100000],
+                ['month_index' => 2, 'pesos' => 100000],
+                ['month_index' => 3, 'pesos' => 200000],
+            ],
+            'contractAmount' => 400000,
+            'hasSummaryRow' => false,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+                ['month_index' => 3, 'columns' => ['D']],
+            ],
+            'descCol' => 'A',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [
+                    ['content' => ['parts' => [['text' => $aiText]]]],
+                ],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        $this->actingAs($admin)->post('/admin/s-curve/parse-gemini', ['file' => $upload])
+            ->assertOk()->assertJsonPath('success', true);
+
+        $row = ScurveHeaderProposal::where('source', 'ai-derived')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('proposed', $row->status);
+        $this->assertIsArray($row->column_map);
+        $this->assertSame(1, $row->column_map['v']);
+        $this->assertCount(3, $row->column_map['monthSpans']);
+
+        unlink($path);
+    }
+
+    // Learned maps consult: approving the ai-derived row lets the novel file parse.
+    // Called by: parse() pass 2 via live ai-derived maps.
+    public function test_learned_map_consults_after_approval(): void
+    {
+        $staff = $this->makeUser('staff');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $map = $service->deriveMapFromAiLayout($this->novelLayout(), $path);
+        $this->assertIsArray($map);
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'novel',
+            'header_hash' => hash('sha256', 'novel-consult'),
+            'column_map' => $map,
+            'status' => 'proposed',
+            'source' => 'ai-derived',
+        ]);
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/approve")
+            ->assertOk();
+
+        $liveMaps = ScurveHeaderProposal::live()->orderBy('id')->get()->map(fn ($r) => [
+            'id' => $r->id,
+            'contractor_id' => $r->contractor_id,
+            'column_map' => $r->column_map,
+        ])->all();
+        $result = $service->parse($path, $liveMaps);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertTrue($result['meta']['mapUsed']);
+        $this->assertSame($row->id, $result['meta']['mapId']);
+
+        unlink($path);
+    }
+
+    // Refusal reasons (2026-09-10): every derivation refusal names its gate so
+    // live "learn skipped" lines diagnose themselves.
+    // Called by: deriveMapFromAiLayout() $reason out-param.
+    public function test_derive_map_refusal_reasons(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $cases = [
+            [$this->novelLayout(['mirrored' => true]), 'mirrored'],
+            [$this->novelLayout(['activityBased' => false]), 'adopted-summary'],
+            [$this->novelLayout(['headerRow' => 9]), 'header-row-unresolved'],
+            [$this->novelLayout(['monthColumns' => [1 => ['B']]]), 'no-month-columns'],
+            [$this->novelLayout(['descCol' => null]), 'no-desc-col'],
+            // E3/F3 hold no numbers: structurally valid, proof fails.
+            [$this->novelLayout(['monthColumns' => [1 => ['E'], 2 => ['F']]]), 'unproven-spans'],
+        ];
+        foreach ($cases as [$layout, $expected]) {
+            $reason = null;
+            $this->assertNull(
+                $service->deriveMapFromAiLayout($layout, $path, $reason),
+                "Expected refusal for {$expected}"
+            );
+            $this->assertSame($expected, $reason);
+        }
+
+        unlink($path);
+    }
 }

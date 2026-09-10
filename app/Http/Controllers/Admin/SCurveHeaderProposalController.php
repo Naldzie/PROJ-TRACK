@@ -85,7 +85,9 @@ class ScurveHeaderProposalController extends Controller
         $row = $query->first();
         if ($row) {
             $row->increment('occurrences');
-            if ($row->occurrences >= 3 && $row->status === 'proposed') {
+            // Phase-B absolute: ai-derived rows NEVER auto-live (a hallucinated layout
+            // must not self-trust into baselines) — only human approval flips them.
+            if ($row->occurrences >= 3 && $row->status === 'proposed' && $row->source !== 'ai-derived') {
                 $row->update(['status' => 'live']);
             }
             // Backfill pre-E1-3 rows captured when maps were always null.

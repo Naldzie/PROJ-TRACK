@@ -376,6 +376,12 @@ window._trySCurveAiAssist = async function () {
         var geminiUrl = scurveGeminiUrl(ctx.parseUrl);
         if (ctx.kind === 'file' && ctx.file) {
             fd.append('file', ctx.file);
+            // Phase-B: wizard contractor choice scopes AI-learned maps (project still
+            // unsaved, so the client is the only contractor source — mirrors capture).
+            try {
+                var csel = document.getElementById('contractorSelect');
+                if (csel && csel.value) fd.append('contractor_id', csel.value);
+            } catch (e) {}
         } else if (ctx.kind === 'document' && ctx.documentId) {
             fd.append('document_id', ctx.documentId);
         } else {

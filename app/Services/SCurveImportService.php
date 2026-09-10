@@ -614,6 +614,148 @@ class SCurveImportService
     }
 
     /**
+     * E1-B — derive a layout map from an AI-reported layout (learn-from-AI).
+     *
+     * $layout comes sanitized from the AI service (headerRow R-number as shown,
+     * monthColumns {m: [letters]}, desc/contract/weight/code letters, plus
+     * activityBased + mirrored flags). Refuses untrusted answers outright
+     * (non-activity months, mirrored copies). R-numbers index the default-40
+     * slice exactly like serializeForAi (kept-ordinals, NOT sheet rows), so the
+     * walk below mirrors that walk cell-for-cell. Letters become 0-based indices;
+     * the header row's own cells feed buildTaughtMap (same gates as hand teaching);
+     * mapSpansHoldNumbers proves the spans against REAL bytes. Single-header B v1
+     * only — two-row headers honestly yield null. Best-effort: any failure → null
+     * with $reason naming the gate (never silent — the 18:15-18:58 "underivable"
+     * streak was undiagnosable without it).
+     *
+     * Called by: SCurveImportController LearnMap step.
+     */
+    public function deriveMapFromAiLayout(array $layout, string $path, ?string &$reason = null): ?array
+    {
+        $refuse = function (string $why) use (&$reason): ?array {
+            $reason = $why;
+
+            return null;
+        };
+
+        try {
+            if (($layout['activityBased'] ?? false) !== true) return $refuse('adopted-summary');
+            if (($layout['mirrored'] ?? false) === true) return $refuse('mirrored');
+            $headerR = (int) ($layout['headerRow'] ?? 0);
+            if ($headerR < 1) return $refuse('no-header-row');
+            $monthColumns = $layout['monthColumns'] ?? null;
+            if (!is_array($monthColumns) || count($monthColumns) < 2) return $refuse('no-month-columns');
+            $descLetter = $layout['descCol'] ?? null;
+            if (!is_string($descLetter) || $descLetter === '') return $refuse('no-desc-col');
+            if (!is_file($path)) return $refuse('unreadable-file');
+
+            $spreadsheet = IOFactory::load($path);
+            foreach ($spreadsheet->getAllSheets() as $sheet) {
+                $grid = $sheet->toArray(null, true, false, true);
+                $grid = $this->resolveFormulas($sheet, $grid);
+                $keptKeys = $this->keptRowKeys($grid, 40);
+                if (count($keptKeys) < 2) continue;
+                if (!isset($keptKeys[$headerR - 1])) {
+                    $reason = 'header-row-unresolved';
+
+                    continue;
+                }
+                $sheetKey = $keptKeys[$headerR - 1];
+
+                $toIndex = function ($letter): ?int {
+                    if (!is_string($letter) || !preg_match('/^[A-Z]{1,3}$/', $letter)) {
+                        return null;
+                    }
+                    try {
+                        return Coordinate::columnIndexFromString($letter) - 1;
+                    } catch (\Throwable $e) {
+                        return null;
+                    }
+                };
+
+                $descCol = $toIndex($descLetter);
+                if ($descCol === null) {
+                    $reason = 'bad-desc-letter';
+
+                    continue;
+                }
+                $codeCol = isset($layout['codeCol']) ? $toIndex($layout['codeCol']) : null;
+                $weightCol = isset($layout['weightCol']) ? $toIndex($layout['weightCol']) : null;
+                $contractCol = isset($layout['contractCol']) ? $toIndex($layout['contractCol']) : null;
+                // A null taught code/weight/contract means "absent" (sanitizer drops
+                // junk to null); garbage MONTH letters fail the whole derivation.
+                $spans = [];
+                $bad = false;
+                foreach ($monthColumns as $m => $letters) {
+                    $mi = (int) $m;
+                    $cols = [];
+                    foreach ((array) $letters as $letter) {
+                        $idx = $toIndex($letter);
+                        if ($idx === null) {
+                            $bad = true;
+                            break;
+                        }
+                        $cols[] = $idx;
+                    }
+                    if ($bad) break;
+                    $spans[$mi] = $cols;
+                }
+                if ($bad) {
+                    $reason = 'bad-month-letters';
+
+                    continue;
+                }
+
+                $headerCells = array_values($grid[$sheetKey] ?? []);
+                $map = $this->buildTaughtMap($headerCells, $descCol, $codeCol, $weightCol, $contractCol, $spans);
+                if ($map === null) {
+                    $reason = 'invalid-map';
+
+                    continue;
+                }
+                if (!$this->mapSpansHoldNumbers($grid, $sheetKey, $map['monthSpans'])) {
+                    $reason = 'unproven-spans';
+
+                    continue;
+                }
+
+                return $map;
+            }
+        } catch (\Throwable $e) {
+            return $refuse('error');
+        }
+
+        return $refuse($reason ?? 'no-matching-sheet');
+    }
+
+    /**
+     * E1-B — kept-ordinal walk mirroring serializeForAi (R-numbers, NOT sheet rows).
+     *
+     * Returns sheet keys of kept rows in order (trailing-trimmed, empties skipped,
+     * capped) so an AI-reported headerRow R# resolves to the same row the slice
+     * showed. Must stay identical to the serialize walk by construction.
+     */
+    private function keptRowKeys(array $grid, int $maxRows): array
+    {
+        $keys = [];
+        foreach ($grid as $rowKey => $row) {
+            $cells = array_slice(array_values($row ?? []), 0, 80);
+            while (count($cells) > 0 && trim((string) end($cells)) === '') {
+                array_pop($cells);
+            }
+            if (count($cells) === 0) {
+                continue;
+            }
+            $keys[] = $rowKey;
+            if (count($keys) >= $maxRows) {
+                break;
+            }
+        }
+
+        return $keys;
+    }
+
+    /**
      * E1-3 — consult live learned maps after rule detection missed.
      *
      * Tries each map in controller order (contractor's first, then global):

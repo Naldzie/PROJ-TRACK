@@ -219,6 +219,99 @@ Sensitivity basis (user-approved)
       agreement). Fixes the impossible approve-then-AI test flow. See accuracy plan E2
       ADJUSTED PLAN for the full five steps. A/B stay queued behind.
 
+  B. LEARN-FROM-AI MAPS (BUILT 2026-09-10, code NOT committed per user)
+    Idea (user-approved direction): an AI success on a rules-failed file should leave a
+    reusable layout behind, so the next identical file parses without spending quota.
+    - B-1 prompt/schema/layout: headerRow + monthColumns[] + desc/contract/weight/code
+      letters asked (optional keys), schema extended, debug log counts, result carries
+      layout{activityBased, mirrored} (controller strips before responding).
+    - B-2 deriveMapFromAiLayout: R#→sheet key via kept-ordinal re-walk (same 40-row
+      recipe as serialize); letters→indices; header row = reported line if it carries
+      the desc label else relaxed-detected row; full buildTaughtMap gates + numbers-proof
+      on real bytes; single-header v1 only; best-effort null throughout.
+    - B-3 store: model storeAiDerived (backfill map-less match + drop-to-proposed, else
+      create proposed ai-derived; occurrences never touched); collect() auto-promote
+      skips ai-derived rows (absolute never-auto-live); SOURCES += ai-derived + desk
+      badge; controller LearnMap step after unswapped success (contractor scope mirrored);
+      wizard assist sends contractorSelect.
+    - Caught pre-green: (1) wiring passed $result['layout'] into a helper expecting
+      $result (layout read as null — silent skip found by the endpoint test); (2) docblock
+      opener eaten again (repaired, php -l clean).
+    - Tests: +layout passthrough, +adopted-unlearnable, +derivation valid, +refuses
+      untrusted (4 shapes), +backfill-or-create, +never-auto-live (guard hit directly),
+      +endpoint learns row, +consults-after-approval. Header 34/34; full 1116 passed /
+      same 7 pre-existing; JS 90/92. Browser proof (novel file → AI → proposed row →
+      approve → parse without AI) is the user's step. NO commit per user.
+
+    B-0 Banked principles (recommendations — user can override):
+      - Proposed-only, NEVER auto-live (not even at ≥3 repeats): a hallucinated layout
+        must not self-trust into baselines. Approval stays the sole live flip.
+      - Skip learning when the answer is untrusted: mirrored months, adopted-from-summary
+        fallback, or preferMapMath already fired (a map exists — nothing to learn).
+      - Excel-only (AI path holds no PDF renderer); zero extra AI cost (reuses the
+        already-paid answer); best-effort inline (never breaks the 200 response).
+
+    B-1 Prompt extension (GeminiDocumentParserService::buildSCurvePrompt + schema):
+      ask for headerRow (R-number as shown), monthColumns ({m: [letters]}),
+      descCol/contractCol (+weightCol/codeCol optional) letters. Schema keys OPTIONAL
+      (weight-only/summary-less files stay legal); debug log gains the new key counts.
+
+    B-2 Derivation helper (new SCurveImportService::deriveMapFromAiLayout, beside
+      deriveAutoColumnMap): map AI R-number → sheet key by re-walking kept ordinals
+      (serializeForAi keeps R = kept-ordinal, NOT sheet rows); letters → 0-based;
+      header row = AI-reported line if its cells carry the desc label else the
+      relaxed-detected row; sig built from that row; single-header-row B v1 only
+      (two-row files honestly yield nothing). Then the FULL buildTaughtMap gate set
+      (≥2 months, int desc, disjoint spans, desc-outside-spans, ascending months,
+      sig≥2 with desc cell) PLUS mapSpansHoldNumbers against the REAL bytes.
+
+    B-3 Store (collect upsert reuse): hash = sha256 of serializeForAi($path, 15)
+      (same 15-row recipe as capture, NOT the 40-row AI slice); contractor scope from
+      the request (explicit contractor_id else document→project — AI routes carry no
+      project_id); matching null-map row gets backfilled, else create proposed with
+      source ai-derived. SOURCES += ai-derived; desk origin badge branch; approve/
+      reject/teach work unchanged (teach can edit ai-derived maps too).
+
+    B-4 Tests: faked AI with columns → proposed map with valid shape; mirror →
+      nothing stored; adopted-summary → nothing stored; preferMap-fired → nothing
+      stored; invalid letters → nothing stored; repeat stays proposed (never auto-live);
+      endpoint integration (rules-failed file + faked columns → 200 + map row);
+      full + JS suites with clean-tree check.
+
+    B-5 Proof (user browser): novel-layout file (rules AND relaxed both miss) → AI
+      assist succeeds → proposed ai-derived row appears → approve → re-import parses
+      with the learned-layout note and NO AI call.
+
+    Open for user: (1) never-auto-live absolute? (2) single-header B v1, two-row later?
+      (3) go to build?
+    - REFUSAL REASONS BUILT 2026-09-10 (code, NOT committed per user): derivation
+      refusal names its gate via out-param (mirrored / adopted-summary / no-header-row /
+      no-month-columns / no-desc-col / bad-desc-letter / bad-month-letters / invalid-map /
+      unproven-spans / no-matching-sheet); controller logs the reason per skip; store
+      outcomes already logged. Test pins all six user-reachable reasons. Full 1117 passed /
+      same 7 pre-existing; JS 90/92. NO commit per user.
+    - B-5 SPECIMEN BANKED 2026-09-10 (git-ignored sampledocs/SCurve-Test-6Stage-Novel-Layout-Specimen.xlsx, never commit — 2c-specimen precedent).
+      Fourth family, novel on BOTH axes: desc "SCHEDULED TASKS" (misses strict+loose+fuzzy
+      vocab) + months "STAGE 1..6" (match no month rule, strict or relaxed). 4 activities,
+      contract 1,200,000, single columns, true curve 5/20/40/60/80/100. Verified by
+      standalone service probe: rules 422 "No S-curve table found" AND auto-map null —
+      a genuine B candidate (only AI assist or hand-teaching can take it). Browser proof
+      script: import → 422 + capture → AI assist → proposed ai-derived row → approve →
+      re-import parses with learned-layout note, no AI call.
+    - REVERSAL APPROVED 2026-09-10 (user: learn columns regardless of mirror).
+      Corrected principle: column trust ≠ month trust — maps store POSITIONS, and
+      buildMonths recomputes from rows, so correct columns yield correct curves whatever
+      the months claimed. Mirror/adopted status describes months (already handled: mirror
+      note, prefer-math swap, fallback flag), never columns. 2c does NOT cover this
+      (SUM-vs-MAX inside a span vs which-columns mapping — adjacent, not overlapping);
+      guards are sig + numbers-proof + approval + the new inline column display.
+      Retrospective banked: mirror/adopted skips were caution-first placeholders that
+      stood unreviewed until the 6-stage runs made the skip visible; refusal substituted
+      for reviewability, now fixed by displaying columns pre-approval.
+      Build (separate order below): drop G1/G2 + retire the two reason codes, desk inline
+      map summary (DESC=C · M1=I+J), flip the 3 encoding tests + add mirror/adopted-learn
+      tests, suites, no commit until ordered.
+
 ===============================================================================
   6. SESSION LOGS
 ===============================================================================

@@ -293,7 +293,9 @@ async function loadScurveHeadersForManagement() {
                 ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'
                 : (row.source === 'manual-teach'
                     ? '<span class="badge bg-dark" title="Taught by a reviewer">Taught</span>'
-                    : '<span class="badge bg-secondary" title="Captured from a failed import">Auto-capture</span>');
+                    : (row.source === 'ai-derived'
+                        ? '<span class="badge bg-info text-dark" title="Learned from a successful AI read — needs review">AI-derived</span>'
+                        : '<span class="badge bg-secondary" title="Captured from a failed import">Auto-capture</span>'));
             const mapMark = row.has_map
                 ? ' <span class="badge bg-primary" title="A column map is attached">Mapped</span>'
                 : '';

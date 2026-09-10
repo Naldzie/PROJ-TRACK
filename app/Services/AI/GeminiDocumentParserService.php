@@ -379,6 +379,10 @@ class GeminiDocumentParserService
                 'summary' => is_array($decoded['summary'] ?? null) ? count($decoded['summary']) : 0,
                 'amounts' => is_array($decoded['monthlyAmounts'] ?? null) ? count($decoded['monthlyAmounts']) : 0,
                 'hasSummaryRow' => $decoded['hasSummaryRow'] ?? null,
+                'layoutKeys' => is_array($decoded) ? array_values(array_intersect(
+                    array_keys($decoded),
+                    ['headerRow', 'monthColumns', 'descCol', 'contractCol', 'weightCol', 'codeCol']
+                )) : [],
             ]);
         } catch (\Throwable $e) {
             // Logging never breaks imports.
@@ -428,12 +432,21 @@ class GeminiDocumentParserService
             . ' percent/weight-only files with no peso figures); "summary" is the SUMMARY lines\' values'
             . ' copied as printed (no recomputation — omit the key when no SUMMARY row exists);'
             . ' "hasSummaryRow" tells whether one exists. DO NOT copy SUMMARY values into "months" —'
-            . ' the two series must be reported independently even when they agree. Example with a'
+            . ' the two series must be reported independently even when they agree.'
+            . ' For layout learning, ALSO report where you read the table (use the COLUMNS letters'
+            . ' and R-numbers shown): "headerRow" is the R-number holding the column labels (single'
+            . ' header row only — omit when labels span two rows); "monthColumns" lists each month\'s'
+            . ' column letter(s) (1-2 letters, e.g. single P1 as ["F"], paired Month 1 as ["I","J"]);'
+            . ' "descCol" is the work-names column letter, "contractCol" the peso-total letter'
+            . ' (plus "weightCol"/"codeCol" when present). Omit layout keys you cannot determine.'
+            . ' Example with a'
             . ' disagreeing file: {"months": [{"month_index": 1, "planned_progress_percent": 5},'
             . ' {"month_index": 2, "planned_progress_percent": 10}], "monthlyAmounts":'
             . ' [{"month_index": 1, "pesos": 50000}, {"month_index": 2, "pesos": 50000}],'
             . ' "summary": [{"month_index": 1, "percent": 5}, {"month_index": 2, "percent": 9}],'
-            . ' "hasSummaryRow": true, "contractAmount": 1000000}.'
+            . ' "hasSummaryRow": true, "contractAmount": 1000000,'
+            . ' "headerRow": 2, "monthColumns": [{"month_index": 1, "columns": ["F"]},'
+            . ' {"month_index": 2, "columns": ["G"]}], "descCol": "B", "contractCol": "E"}.'
             . ' Return ONLY the JSON object, no explanations, no markdown fences.'
             . "\n\nSHEET:\n" . mb_substr($csv, 0, 12000);
     }
@@ -542,6 +555,16 @@ class GeminiDocumentParserService
                     'contractAmount' => $contract,
                     'warnings' => $warnings,
                 ],
+                // B-1 learn-from-AI passthrough (controller strips before responding):
+                // activity-backed months plus the layout keys for derivation. The
+                // mirrored flag rides along so derivation skips copies.
+                'layout' => array_merge(
+                    $this->sanitizeLayoutPoints($decoded),
+                    [
+                        'activityBased' => true,
+                        'mirrored' => $compared > 0 && $mirrored === $compared,
+                    ]
+                ),
             ];
         }
 
@@ -567,10 +590,86 @@ class GeminiDocumentParserService
                         'AI-assisted curve — verify before locking the baseline.',
                     ],
                 ],
+                // Adopted curves carry no learnable layout (months ARE the summary).
+                'layout' => array_merge(
+                    $this->sanitizeLayoutPoints($decoded),
+                    ['activityBased' => false, 'mirrored' => false]
+                ),
             ];
         }
 
         return null;
+    }
+
+    /**
+     * B-1 — sanitize AI-reported layout keys (shape only, no semantics).
+     *
+     * Returns {headerRow: ?int, monthColumns: {m: [letters]}, descCol/contractCol/
+     * weightCol/codeCol: ?letter}. Semantics (do these letters hold numbers? does
+     * the header row exist?) are proven later against real bytes by derivation —
+     * never trusted here.
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function sanitizeLayoutPoints(mixed $decoded): array
+    {
+        $out = [
+            'headerRow' => null,
+            'monthColumns' => [],
+            'descCol' => null,
+            'contractCol' => null,
+            'weightCol' => null,
+            'codeCol' => null,
+        ];
+        if (!is_array($decoded)) {
+            return $out;
+        }
+
+        $cleanLetter = function ($v): ?string {
+            if (!is_string($v)) {
+                return null;
+            }
+            $v = strtoupper(trim($v));
+            if (!preg_match('/^[A-Z]{1,3}$/', $v)) {
+                return null;
+            }
+
+            return $v;
+        };
+
+        $hr = $decoded['headerRow'] ?? null;
+        if (is_numeric($hr) && (int) $hr >= 1 && (int) $hr <= 200) {
+            $out['headerRow'] = (int) $hr;
+        }
+
+        $mc = $decoded['monthColumns'] ?? null;
+        if (is_array($mc)) {
+            foreach ($mc as $entry) {
+                if (!is_array($entry) || !isset($entry['month_index'], $entry['columns'])) {
+                    continue;
+                }
+                $mi = (int) $entry['month_index'];
+                if ($mi < 1 || $mi > 60 || isset($out['monthColumns'][$mi])) {
+                    continue;
+                }
+                $cols = [];
+                foreach ((array) $entry['columns'] as $letter) {
+                    $clean = $cleanLetter($letter);
+                    if ($clean !== null && count($cols) < 4 && !in_array($clean, $cols, true)) {
+                        $cols[] = $clean;
+                    }
+                }
+                if (count($cols) > 0) {
+                    $out['monthColumns'][$mi] = $cols;
+                }
+            }
+        }
+
+        foreach (['descCol', 'contractCol', 'weightCol', 'codeCol'] as $key) {
+            $out[$key] = $cleanLetter($decoded[$key] ?? null);
+        }
+
+        return $out;
     }
 
     /**
@@ -933,7 +1032,9 @@ class GeminiDocumentParserService
      *
      * Requires months + hasSummaryRow (a reply without the verification
      * scaffolding is a protocol miss, not a curve); amounts/summary stay
-     * optional since weight-only and summary-less files are legitimate.
+     * optional since weight-only and summary-less files are legitimate. Layout
+     * keys (B-1 learn-from-AI) stay optional — older or terse replies without
+     * them still validate; derivation simply skips.
      *
      * Called by: callGeminiText()
      */
@@ -958,6 +1059,19 @@ class GeminiDocumentParserService
                 'summary' => ['type' => 'ARRAY', 'items' => $point('percent', 'NUMBER')],
                 'hasSummaryRow' => ['type' => 'BOOLEAN'],
                 'contractAmount' => ['type' => 'NUMBER'],
+                'headerRow' => ['type' => 'INTEGER'],
+                'monthColumns' => ['type' => 'ARRAY', 'items' => [
+                    'type' => 'OBJECT',
+                    'properties' => [
+                        'month_index' => ['type' => 'INTEGER'],
+                        'columns' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']],
+                    ],
+                    'required' => ['month_index', 'columns'],
+                ]],
+                'descCol' => ['type' => 'STRING'],
+                'contractCol' => ['type' => 'STRING'],
+                'weightCol' => ['type' => 'STRING'],
+                'codeCol' => ['type' => 'STRING'],
             ],
             'required' => ['months', 'hasSummaryRow'],
         ];

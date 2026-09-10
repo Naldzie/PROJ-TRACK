@@ -78,6 +78,10 @@ class SCurveImportController extends Controller
      * with the checkable activity math (R3 principle) plus a swap note — the
      * AI can no longer silently bake a summary series into a baseline wherever
      * ground truth exists. No map → AI result stands with its own warnings.
+     *
+     * Learn-from-AI (Phase-B): on a trusted AI read with no map in play, derive
+     * a proposed layout from the AI's reported columns (best-effort, never
+     * blocks the response; never auto-live).
      */
     public function parseWithGemini(Request $request): JsonResponse
     {
@@ -96,6 +100,13 @@ class SCurveImportController extends Controller
             }
 
             $result = $this->preferMapMath($request, $path, $result);
+
+            // Phase-B: a trusted answer on a map-less file teaches a layout.
+            // Skipped when preferMapMath already fired (a map exists — nothing
+            // to learn) or the layout rode along unresolved.
+            if (!($result['meta']['mapPreferred'] ?? false) && isset($result['layout'])) {
+                $this->learnMapFromAi($request, $path, $result);
+            }
 
             $meta = array_merge($result['meta'], ['aiAssisted' => true]);
             if ($filePart === null) {
@@ -239,6 +250,74 @@ class SCurveImportController extends Controller
             return ['months' => $months, 'meta' => $meta];
         } catch (\Throwable $e) {
             return $aiResult;
+        }
+    }
+
+    /**
+     * Phase-B learn-from-AI (best-effort, never blocks the response).
+     *
+     * Derives a proposed layout from the AI's reported columns and stores it
+     * (backfill-or-create, ai-derived, never auto-live — approval stays the sole
+     * live flip). Untrusted answers never teach: mirrored months and adopted
+     * summaries are refused inside derivation, and preferMapMath wins first
+     * (a map exists → nothing to learn). Uses the same Log import as the file.
+     *
+     * Called by: parseWithGemini() after a successful, unswapped AI read.
+     */
+    protected function learnMapFromAi(Request $request, string $path, array $aiResult): void
+    {
+        $note = function (string $reason, array $extra = []): void {
+            try {
+                \Illuminate\Support\Facades\Log::debug('E1-B learn skipped', array_merge(['reason' => $reason], $extra));
+            } catch (\Throwable $ignored) {
+            }
+        };
+
+        try {
+            $layout = $aiResult['layout'] ?? null;
+            if (!is_array($layout)) {
+                $note('no-layout');
+
+                return;
+            }
+
+            $reason = null;
+            $map = $this->sCurveImportService->deriveMapFromAiLayout($layout, $path, $reason);
+            if ($map === null) {
+                $note($reason ?? 'underivable');
+
+                return;
+            }
+
+            // Contractor scope mirrors loadLiveMaps (explicit input wins, else the
+            // stored document's project; AI routes carry no project_id).
+            $contractorId = $request->input('contractor_id');
+            if ($contractorId !== null && !Contractor::where('id', $contractorId)->exists()) {
+                $contractorId = null;
+            }
+            if ($contractorId === null && $request->filled('document_id')) {
+                $doc = Document::find($request->input('document_id'));
+                $contractorId = $doc?->project?->contractor_id;
+            }
+
+            $text = $this->sCurveImportService->serializeForAi($path, 15);
+            $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
+            $row = ScurveHeaderProposal::storeAiDerived(
+                $contractorId !== null ? (int) $contractorId : null,
+                $hash,
+                $text,
+                $map
+            );
+            try {
+                \Illuminate\Support\Facades\Log::debug('E1-B learned map', [
+                    'proposal' => $row->id,
+                    'status' => $row->status,
+                    'source' => $row->source,
+                ]);
+            } catch (\Throwable $ignored) {
+            }
+        } catch (\Throwable $e) {
+            // Learning never breaks imports.
         }
     }
 
