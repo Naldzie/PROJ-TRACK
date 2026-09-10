@@ -1297,8 +1297,11 @@ function mergeAiParsedIntoPreview(aiParsed) {
 }
 
 // POST slices to parse-gemini (role-aware, one call). Returns parsed shape or null.
+// Stashes the server's message (mapped transport texts like quota/busy/dead-model)
+// so failure spots surface it instead of a generic line.
 // Called by: _tryAiAssist*().
 async function postAiSlices(slices) {
+    try { window._autofillAiLastError = null; } catch (e) {}
     const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
     if (path.indexOf('/contractor/') !== -1) return null;
     const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
@@ -1311,8 +1314,29 @@ async function postAiSlices(slices) {
     });
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
-    if (!res.ok || !data || !data.success || !data.parsed) return null;
+    if (!res.ok || !data || !data.success || !data.parsed) {
+        // Keep the mapped server message (422 transport voices); validation
+        // misses carry no message and fall back to the generic lines below.
+        try {
+            window._autofillAiLastError =
+                (!res.ok && data && typeof data.message === 'string' && data.message.trim() !== '')
+                    ? data.message.trim()
+                    : null;
+        } catch (e) {}
+        return null;
+    }
     return data.parsed;
+}
+
+// Server-mapped message from the last assist call, or the generic fallback.
+// Called by: _tryAiAssist*() failure spots.
+function aiFailureMessage(fallback) {
+    try {
+        if (typeof window._autofillAiLastError === 'string' && window._autofillAiLastError !== '') {
+            return window._autofillAiLastError;
+        }
+    } catch (e) {}
+    return fallback;
 }
 
 // Preview-banner entry: slice weakest pages, ask AI once, merge into empty boxes.
@@ -1342,7 +1366,7 @@ window._tryAiAssist = async function () {
                     const err = document.createElement('div');
                     err.setAttribute('data-ai-error', '1');
                     err.style.fontSize = '0.85em';
-                    err.textContent = 'The AI assistant could not read these pages either — please fill in the fields manually.';
+                    err.textContent = aiFailureMessage('The AI assistant could not read these pages either — please fill in the fields manually.');
                     aiEl.appendChild(err);
                 }
             } catch (e) {}
@@ -1356,7 +1380,7 @@ window._tryAiAssist = async function () {
         } catch (e) {}
         window._autofillAiMerged = true;
     } catch (e) {
-        if (typeof showToast === 'function') showToast('AI assist failed — please fill in the fields manually', 'error');
+        if (typeof showToast === 'function') showToast(aiFailureMessage('AI assist failed — please fill in the fields manually'), 'error');
         if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
         window._autofillAiBusy = false;
     }
@@ -1378,7 +1402,7 @@ window._tryAiAssistFromWarning = async function () {
         }
         const parsed = await postAiSlices(slices);
         if (!parsed) {
-            if (typeof showToast === 'function') showToast('The AI assistant could not read these pages either', 'error');
+            if (typeof showToast === 'function') showToast(aiFailureMessage('The AI assistant could not read these pages either'), 'error');
             window._autofillAiBusy = false;
             return;
         }
@@ -1395,7 +1419,7 @@ window._tryAiAssistFromWarning = async function () {
         showAutofillPreview(full, { aiAssist: false, emptyBaseline: true, runId: (typeof _autofillRunId !== 'undefined') ? _autofillRunId : null });
         window._autofillAiMerged = true;
     } catch (e) {
-        if (typeof showToast === 'function') showToast('AI assist failed', 'error');
+        if (typeof showToast === 'function') showToast(aiFailureMessage('AI assist failed'), 'error');
     }
     window._autofillAiBusy = false;
 };

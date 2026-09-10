@@ -175,6 +175,26 @@ Sensitivity basis (user-approved)
       duplicate capture, contractor map, button look. OPEN GAP: normal-doc assist shows
       hardcoded generics (never the mapped transport messages) — next build. Full record
       in accuracy plan.
+    - NORMAL-DOC MESSAGE PARITY BUILT 2026-09-10 (code, NOT committed per user).
+      Root cause (user report: normal-doc assist on latest says only "could not read"
+      while 3.7 works): postAiSlices DISCARDED data.message — mapped transport voices
+      died there, so all four failure spots could only print generics. Fix: stash the
+      server message per call (aiFailureMessage helper) + thread through both banner and
+      empty-warning flows (inline error + toasts), generic text kept as fallback.
+      node --check clean; JS 90/92 (core untouched — wrapper-only change, browser proof
+      is the user's step: storm-time assist should now speak quota/busy/dead-model).
+    - FALLBACK POLICY DECIDED 2026-09-10 (user: normal-doc falls back, Excel NEVER).
+      Context: user asked how fallback-to-Lite works; established: only CONFIG fallback
+      exists today (missing parser env → shared creds at boot), NO runtime model fallback
+      anywhere. Correction logged: assistant once misread a log line as flash-lite-latest
+      and theorized a Lite fallback — the true line read flash-latest; theory WITHDRAWN.
+      Rationale banked: normal-doc prose fields were "usually accurate" on Lite during
+      AI-fallback dev (only table math defeats it — proven), while a Lite S-curve in a
+      baseline is the exact failure two weeks removed. Policy: images sender falls back
+      (eligible failures only: 404/429/502/503/504 + throws; never 400/401/403 where the
+      key itself is broken), Excel sender never does. Backup-model notice on merge so
+      review knows the provenance. Lite pool verified breathing (user probe: 200 STOP).
+      Build next (NOT committed per user order).
     - MODEL VERDICT CLOSED 2026-09-10 (user live test): institute second key + 
       gemini-flash-latest live (pinned 2.5 retired/404s; drift caveat accepted). Flash
       returned the TRUE curve with four honest warnings — Lite copied under identical
