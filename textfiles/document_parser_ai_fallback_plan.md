@@ -183,18 +183,25 @@ Sensitivity basis (user-approved)
       empty-warning flows (inline error + toasts), generic text kept as fallback.
       node --check clean; JS 90/92 (core untouched — wrapper-only change, browser proof
       is the user's step: storm-time assist should now speak quota/busy/dead-model).
-    - FALLBACK POLICY DECIDED 2026-09-10 (user: normal-doc falls back, Excel NEVER).
-      Context: user asked how fallback-to-Lite works; established: only CONFIG fallback
-      exists today (missing parser env → shared creds at boot), NO runtime model fallback
-      anywhere. Correction logged: assistant once misread a log line as flash-lite-latest
-      and theorized a Lite fallback — the true line read flash-latest; theory WITHDRAWN.
-      Rationale banked: normal-doc prose fields were "usually accurate" on Lite during
-      AI-fallback dev (only table math defeats it — proven), while a Lite S-curve in a
-      baseline is the exact failure two weeks removed. Policy: images sender falls back
-      (eligible failures only: 404/429/502/503/504 + throws; never 400/401/403 where the
-      key itself is broken), Excel sender never does. Backup-model notice on merge so
       review knows the provenance. Lite pool verified breathing (user probe: 200 STOP).
       Build next (NOT committed per user order).
+    - FALLBACK BUILT 2026-09-10 (code, NOT committed per user).
+      GeminiTransportException (carries status + quotaId; extends RuntimeException so all
+      existing catches/messages/tests hold) thrown by postGemini instead of silent '';
+      callGeminiWithImages catches eligible failures for ONE Lite attempt (backup model =
+      admin-chosen main model, never hardcoded; same key, same project) then flows through
+      unchanged validation; Excel sender untouched (no fallback branch by design).
+      Provenance: service lastFallbackModel flag → controller fallbackModel field →
+      client backup-model suffix on the merge notice (+ per-call stash reset).
+      Tests: +images-fallback-to-Lite (sequence 429/429/200, Lite URL + flag asserted),
+      +excel-never-falls-back, +no-fallback-on-auth (401 single-shot), +endpoint
+      provenance flag. Suites below.
+    - FALLBACK PROVEN LIVE 2026-09-10 (user browser; committed + pushed this session).
+      Log chain: 503 → retry 503 → "fallback to Lite" info → extraction succeeded; merge
+      notice showed "Answered by backup model — verify carefully." verbatim (user-confirmed).
+      Parser model at test time was flash-latest BY USER CHOICE (deliberate overload/quota
+      trigger to exercise the fallback — not the standing 3.7 pin for daily use, which
+      remains the recommendation).
     - MODEL VERDICT CLOSED 2026-09-10 (user live test): institute second key + 
       gemini-flash-latest live (pinned 2.5 retired/404s; drift caveat accepted). Flash
       returned the TRUE curve with four honest warnings — Lite copied under identical

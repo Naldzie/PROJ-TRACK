@@ -183,4 +183,31 @@ class DocumentParserGeminiTest extends TestCase
         $this->actingAs($admin)->postJson('/admin/document/parse-gemini', ['document_id' => 999999])
             ->assertUnprocessable()->assertJsonPath('success', false);
     }
+
+    // Lite fallback provenance: parser-model quota then Lite success returns the
+    // shape plus fallbackModel (single sequence fake — re-faking serves stale stubs).
+    // Called by: POST /admin/document/parse-gemini through callGeminiWithImages().
+    public function test_page_images_fallback_marks_provenance(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'title' => 'Fallback Answered Project Title Here',
+            ])]]]]]], 200),
+        ]);
+
+        $this->actingAs($this->makeUser('admin'))
+            ->postJson('/admin/document/parse-gemini', $this->slicePayload())
+            ->assertOk()->assertJsonPath('success', true)
+            ->assertJsonPath('parsed.title', 'Fallback Answered Project Title Here')
+            ->assertJsonPath('fallbackModel', 'lite-model');
+    }
 }

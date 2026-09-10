@@ -203,6 +203,79 @@ class GeminiDocumentParserServiceTest extends TestCase
         }
     }
 
+    // Normal-doc Lite fallback: parser-model 429 then Lite success returns a shape.
+    // Single sequence fake (one fake per test — re-faking serves the first stub).
+    // Called by: callGeminiWithImages() fallback branch.
+    public function test_images_fallback_to_lite_on_quota(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'title' => 'Canteen Works Project Title Here',
+            ])]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseProjectSlice($this->sliceImages());
+
+        $this->assertNotNull($out);
+        $this->assertSame('Canteen Works Project Title Here', $out['title']);
+        $this->assertSame('lite-model', $service->lastFallbackModel);
+
+        $sent = Http::recorded();
+        $this->assertCount(3, $sent);
+        $this->assertStringContainsString('flash-model', $sent[0][0]->url());
+        $this->assertStringContainsString('lite-model', $sent[2][0]->url());
+    }
+
+    // Excel never falls back (a Lite S-curve in a baseline is the known failure).
+    // Called by: callGeminiText() — no fallback branch by design.
+    public function test_excel_never_falls_back_to_lite(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+
+        Http::fake(['*generativelanguage*' => Http::response('slow down', 429, ['Retry-After' => 0])]);
+        try {
+            (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Excel quota failures must speak, never Lite-fallback.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('quota', $e->getMessage());
+        }
+
+        foreach (Http::recorded() as $pair) {
+            $this->assertStringNotContainsString('lite-model', $pair[0]->url());
+        }
+    }
+
+    // Auth failures never fall back either (Lite shares the project — same 401).
+    // Called by: isFallbackEligible() exclusion.
+    public function test_images_no_fallback_on_auth_failure(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        Http::fake(['*generativelanguage*' => Http::response('bad key', 401)]);
+        try {
+            (new GeminiDocumentParserService())->parseProjectSlice($this->sliceImages());
+            $this->fail('Auth failures must speak, never Lite-fallback.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('could not be reached', $e->getMessage());
+        }
+        Http::assertSentCount(1);
+    }
+
     // Quota-kind handling: per-DAY exhaustion fails fast with a tomorrow message —
     // no retry burned on a meter that refills at midnight.
     // Called by: extractQuotaId() + isPerDayQuota() + transportMessage().

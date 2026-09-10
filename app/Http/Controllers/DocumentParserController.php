@@ -54,6 +54,9 @@ class DocumentParserController extends Controller
             return response()->json([
                 'success' => true,
                 'parsed' => $parsed,
+                // Normal-doc Lite fallback provenance (null unless the backup
+                // model answered — review should know whose homework this is).
+                'fallbackModel' => $this->parserService->lastFallbackModel,
             ]);
         } catch (RuntimeException $e) {
             return response()->json([

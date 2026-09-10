@@ -1301,7 +1301,7 @@ function mergeAiParsedIntoPreview(aiParsed) {
 // so failure spots surface it instead of a generic line.
 // Called by: _tryAiAssist*().
 async function postAiSlices(slices) {
-    try { window._autofillAiLastError = null; } catch (e) {}
+    try { window._autofillAiLastError = null; window._autofillAiFallbackModel = null; } catch (e) {}
     const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
     if (path.indexOf('/contractor/') !== -1) return null;
     const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
@@ -1325,6 +1325,8 @@ async function postAiSlices(slices) {
         } catch (e) {}
         return null;
     }
+    // Backup-model provenance (normal-doc Lite fallback): review knows whose homework.
+    try { window._autofillAiFallbackModel = data.fallbackModel || null; } catch (e) {}
     return data.parsed;
 }
 
@@ -1376,7 +1378,13 @@ window._tryAiAssist = async function () {
         }
         const n = mergeAiParsedIntoPreview(parsed);
         try {
-            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + n + '</strong> empty box(es) — review, edit freely, then Apply. Boxes with local values were left alone.</span>';
+            let fallbackNote = '';
+            try {
+                if (window._autofillAiFallbackModel) {
+                    fallbackNote = ' Answered by backup model — verify carefully.';
+                }
+            } catch (e) {}
+            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + n + '</strong> empty box(es) — review, edit freely, then Apply. Boxes with local values were left alone.' + fallbackNote + '</span>';
         } catch (e) {}
         window._autofillAiMerged = true;
     } catch (e) {

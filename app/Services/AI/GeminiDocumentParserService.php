@@ -69,6 +69,15 @@ class GeminiDocumentParserService
     private const MAX_IMAGES = 3;
 
     /**
+     * Normal-doc Lite fallback marker (user-approved 2026-09-10: images sender
+     * only, Excel never). Holds the backup model id when the last call was
+     * answered by Lite, else null. Reset at the start of every images call so
+     * stale flags can never leak across runs; read by DocumentParserController
+     * to provenance-tag the response.
+     */
+    public ?string $lastFallbackModel = null;
+
+    /**
      * E3 (2026-09-10): parser credential seam — document/Excel parsing uses its
      * own key + model (institute second key; pinned gemini-2.5-flash), falling
      * back to the shared prediction credentials when the parser env is missing.
@@ -160,13 +169,13 @@ class GeminiDocumentParserService
             } catch (\Exception $e) {
                 $this->logGeminiFailure($where, $model, 'throwable');
                 if ($attempts >= $maxAttempts) {
-                    throw new RuntimeException('The AI service could not be reached. Please try again in a moment.');
+                    throw new GeminiTransportException('The AI service could not be reached. Please try again in a moment.', 0, null, $e);
                 }
                 $this->backoff(null);
             }
         }
 
-        throw new RuntimeException($this->transportMessage($lastStatus, $lastQuotaId));
+        throw new GeminiTransportException($this->transportMessage($lastStatus, $lastQuotaId), $lastStatus, $lastQuotaId);
     }
 
     /**
@@ -978,13 +987,18 @@ class GeminiDocumentParserService
      * Send prompt + image slices to Gemini and return the raw text.
      *
      * Same shape as AIRecommendationService::callGemini(), plus inline_data image
-     * parts (base64 + mimeType) after the text part.
+     * parts (base64 + mimeType) after the text part. Normal-doc Lite fallback
+     * (user-approved 2026-09-10, images sender ONLY): when the parser-model call
+     * fails eligible (404/429/502/503/504 + throws — never 400/401/403 where the
+     * key itself is broken), ONE attempt goes to Lite, whose answer flows through
+     * the same validation. lastFallbackModel records the rescue for provenance.
      *
      * Called by: parseProjectSlice()
-     * Uses: config/services.php (gemini key & model)
+     * Uses: config/services.php (gemini parser key/model + main model for backup)
      */
     private function callGeminiWithImages(string $prompt, array $images): string
     {
+        $this->lastFallbackModel = null;
         $apiKey = $this->parserKey();
         $model = $this->parserModel();
 
@@ -1005,17 +1019,78 @@ class GeminiDocumentParserService
             ];
         }
 
-        $result = $this->postGemini($url, [
+        $payload = [
             'contents' => [
                 [
                     'parts' => $parts,
                 ],
             ],
-        ], $model, 'images');
+        ];
+
+        try {
+            $result = $this->postGemini($url, $payload, $model, 'images');
+        } catch (GeminiTransportException $e) {
+            if (!$this->isFallbackEligible($e->status)) {
+                throw $e;
+            }
+            // One Lite attempt, no retry loop (the parser model already spent it).
+            $liteModel = $this->backupModel();
+            try {
+                Log::info('E3 parser fallback to Lite', ['where' => 'images', 'from' => $model]);
+            } catch (\Throwable $ignored) {
+            }
+            $liteUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$liteModel}:generateContent?key={$apiKey}";
+            try {
+                $response = Http::timeout(30)->post($liteUrl, $payload);
+                if (!$response->successful()) {
+                    throw $e;
+                }
+                $liteData = $response->json();
+                $text = is_array($liteData)
+                    ? ($liteData['candidates'][0]['content']['parts'][0]['text'] ?? '')
+                    : '';
+                if (!is_string($text) || trim($text) === '') {
+                    throw $e;
+                }
+                $this->lastFallbackModel = $liteModel;
+
+                return $text;
+            } catch (GeminiTransportException $liteError) {
+                throw $e;
+            } catch (\Exception $liteError) {
+                throw $e;
+            }
+        }
 
         $data = $result['payload'];
 
         return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    }
+
+    /**
+     * Lite fallback eligibility (normal-doc only): overload/quota/dead-model/
+     * gateway failures and throws. Auth/key failures (400/401/403) are excluded —
+     * Lite shares the project and would fail identically.
+     *
+     * Called by: callGeminiWithImages().
+     */
+    private function isFallbackEligible(int $status): bool
+    {
+        return $status === 0
+            || in_array($status, [404, 429, 502, 503, 504], true);
+    }
+
+    /**
+     * Backup model id for the normal-doc fallback (the admin-chosen main model —
+     * Lite family in practice; never hardcoded so alias moves need no rebuild).
+     *
+     * Called by: callGeminiWithImages().
+     */
+    private function backupModel(): string
+    {
+        $model = config('services.gemini.model');
+
+        return is_string($model) && $model !== '' ? $model : 'gemini-1.5-flash';
     }
 
     /**
