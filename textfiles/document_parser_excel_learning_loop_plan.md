@@ -225,6 +225,18 @@ Frontend convention (IMPORTANT)
       third-family capture Proposed (header text + contractor/Global + seen-count visible).
       Review flow closed for display (approve/reject paths covered by tests).
 
+  2026-09-10 — A POINT-AND-TEACH RESTUDY (read-only, three probes, no code).
+    - User complaint (screenshot): the Header-block column's 120-char raw dump is
+      incomprehensible — letters visible but no table picture. Restudy confirms the
+      stored text already carries everything needed (COLUMNS legend + [ROLE] tags).
+    - Decisions banked (user): text-only (no re-upload — approval IS the trust event;
+      consult-time signature + numbers guards still refuse bad maps); variant-creating
+      teaches (alternating contractor formats never forgotten — consult already tries
+      all live maps per contractor; explicit warned replace reserved for genuine mistakes
+      and drops to proposed); clickable mini-grid primary (list cell + teach modal),
+      letter confirmation readout, never typed-letters-only.
+    - Full build design in §7A below. No implementation yet.
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================
@@ -236,6 +248,41 @@ Frontend convention (IMPORTANT)
     E1-3 build.
   - Wizard contractorSelect empty at import time (user skips Page 4): capture stores
     contractor_id NULL → consults as global. Accepted per E1a; revisit if noisy.
+  - E1-2 column_map timing ("attaches in E1-3 (auto-proposal or reviewer assignment —
+    open question)"): RESOLVED 2026-09-10 — BOTH. Auto-proposal built in E1-3;
+    reviewer assignment is Phase A below.
+
+===============================================================================
+  7A. PHASE A — POINT-AND-TEACH (PLANNED, NOT STARTED — user-approved design)
+===============================================================================
+
+  Goal: a reviewer teaches column positions by CLICKING a rendered mini-grid —
+  no developer, no re-upload, no typed letters. Covers map-less rows AND lets a
+  contractor's alternating formats coexist as variants.
+
+  A-1 Teach endpoint: PATCH .../scurve-header-proposals/{proposal}/columns
+    (mirrored admin+staff; ensureReviewer + update policy + activity log, mirroring
+    approve). Accepts letters (desc + optional code/weight/contract + per-month
+    letter groups + header R-line picker defaulting to the desc line); server
+    converts (letter→0-based), stamps v=MAP_VERSION, rebuilds sig from taught
+    columns, validates (≥2 months, int desc, no overlaps/desc-in-months, sig≥2,
+    ascending month keys), stores. Approve stays the sole live flip.
+
+  A-2 Desk UI (Blade-inline JS per convention):
+    - List cell: raw dump REPLACED by a compact grid (first ~8 rows × ~16 cols,
+      scrollable, role badges, dimmed empties; proper CSV split — quoted cells
+      break naive comma-split; R<n> labeled kept-order-not-Excel-rows; 4000-char
+      truncation badged).
+    - Per-row "Teach columns" button (always rendered; styled by mapped/unmapped).
+    - Standalone teach modal (never stacked): full grid (≤15 stored rows, both-way
+      scroll) as the click surface (desc column, month spans single/paired, contract
+      column) + letter confirmation readout + contractor context + existing-map prefill.
+    - Teach CREATES A VARIANT row (same contractor, own occurrences, needs own
+      approval — alternating formats never forgotten; consult tries all live maps).
+      Explicit warned "replace" reserved for genuine mistakes and drops to proposed.
+
+  A-3 Proof: teach a map-less layout by clicking only → re-import parses with the
+    learned-layout note; full + JS suites green; logs; commit/push only on user word.
 
 ===============================================================================
   8. CONVERSATION CONTINUATION GUIDE
