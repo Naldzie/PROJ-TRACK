@@ -1030,6 +1030,26 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * Slice reform: rows carry detector roles + a column legend (the flat CSV
+     * made copying the summary the rational move — roles remove the excuse).
+     */
+    public function test_serialize_for_ai_labels_roles_and_columns(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+
+        $csv = app(SCurveImportService::class)->serializeForAi($path);
+
+        $this->assertStringContainsString('COLUMNS:', $csv);
+        $this->assertStringContainsString('[HEADER]', $csv);
+        $this->assertStringContainsString('[DATA]', $csv);
+        $this->assertStringContainsString('[SUMMARY]', $csv);
+        $this->assertStringContainsString('DESCRIPTION', $csv);
+
+        unlink($path);
+    }
+
+    /**
      * Near-miss workbook for prefer-math tests: novel "TASK DETAILS" header
      * (rules miss) with standard months; month weights 50/50 of 400,000.
      */
@@ -1139,5 +1159,47 @@ class SCurveImportTest extends TestCase
         $response->assertJsonMissingPath('meta.mapPreferred');
 
         unlink($path);
+    }
+
+    /**
+     * Inline workbook part: small files ride along (OLE sniff → legacy MIME),
+     * oversize files fall back to null (CSV-only path with a note).
+     */
+    public function test_build_inline_workbook_part_respects_ceiling(): void
+    {
+        $controller = new \App\Http\Controllers\SCurveImportController(
+            app(SCurveImportService::class),
+            app(\App\Services\AI\GeminiDocumentParserService::class)
+        );
+        $method = new \ReflectionMethod($controller, 'buildInlineWorkbookPart');
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $part = $method->invoke($controller, $path);
+        $this->assertIsArray($part);
+        $this->assertSame(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            $part['mimeType']
+        );
+        $this->assertSame(file_get_contents($path), base64_decode($part['data']));
+        unlink($path);
+
+        // Legacy OLE magic sniffs to the ms-excel MIME.
+        $ole = tempnam(sys_get_temp_dir(), 'scurve_') . '.xls';
+        file_put_contents($ole, "\xD0\xCF\x11\xE0" . str_repeat("\x00", 100));
+        $olePart = $method->invoke($controller, $ole);
+        $this->assertSame('application/vnd.ms-excel', $olePart['mimeType']);
+        unlink($ole);
+
+        // Past the ceiling → null (caller falls back to CSV-only).
+        $big = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $handle = fopen($big, 'wb');
+        fseek($handle, \App\Http\Controllers\SCurveImportController::FILE_INLINE_MAX_BYTES);
+        fwrite($handle, 'x');
+        fclose($handle);
+        $this->assertNull($method->invoke($controller, $big));
+        unlink($big);
+
+        $this->assertNull($method->invoke($controller, '/nonexistent/path.xlsx'));
     }
 }

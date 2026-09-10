@@ -362,8 +362,9 @@ class GeminiDocumentParserServiceTest extends TestCase
         ]));
 
         // Month 2's bogus negative amount is dropped → partial amounts skip
-        // the check silently instead of declining (weight-file safe).
-        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+        // the recompute; the claimed 200000/198000 are really in the sheet,
+        // so the presence audit passes too (weight-file safe).
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,200000\nMore,198000");
 
         $this->assertNotNull($out);
         $this->assertCount(3, $out['months']);
@@ -420,6 +421,198 @@ class GeminiDocumentParserServiceTest extends TestCase
             'could not be compared',
             implode("\n", $out['meta']['warnings'])
         );
+    }
+
+    // Universal verdict: full consistent homework earns a checked confirmation.
+    // Called by: validateSCurveMonths() amounts coverage branch.
+    public function test_excel_slice_confirms_verified_homework(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 200000],
+                ['month_index' => 2, 'pesos' => 200000],
+            ],
+            'contractAmount' => 400000,
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,200000\nMore,200000");
+
+        $this->assertNotNull($out);
+        $this->assertStringContainsString(
+            'Checked:',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
+    // Universal verdict: months-only replies are labeled single-series, never silent.
+    // Called by: validateSCurveMonths() unverified branch.
+    public function test_excel_slice_labels_single_series_reply(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'contractAmount' => 1000000,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("WORK DETAILS,P1\nWorks,50000");
+
+        $this->assertNotNull($out);
+        $this->assertSame(45.0, $out['months'][0]['planned_progress_percent']);
+        $this->assertStringContainsString(
+            'could not be cross-checked',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
+    // Slice-truth presence audit: internally-consistent homework for a copied
+    // summary is declined when a claimed peso appears nowhere in the sheet
+    // (the phantom 150,000 behind the 45-series).
+    // Called by: amountsPresentInSheet() gate.
+    public function test_excel_slice_declines_phantom_amounts(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 450000],
+                ['month_index' => 2, 'pesos' => 550000],
+            ],
+            'contractAmount' => 1000000,
+            'hasSummaryRow' => true,
+        ]));
+        // Internally consistent (45 → 100) but 450000/550000 are in no cell.
+        $this->assertNull($service->parseExcelSlice("WORK DETAILS,P1,P2\nWorks,50000,50000"));
+    }
+
+    // Presence audit accepts adjacent-pair sums (paired layouts store halves).
+    // Called by: extractSheetNumbers() pair sums.
+    public function test_excel_slice_accepts_pair_sum_amounts(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 200000],
+                ['month_index' => 2, 'pesos' => 200000],
+            ],
+            'contractAmount' => 400000,
+            'hasSummaryRow' => false,
+        ]));
+
+        // Halves only in cells; the 200000 monthly totals exist as pair sums.
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1,Month 1b,Month 2,Month 2b\nWorks,100000,100000,100000,100000");
+
+        $this->assertNotNull($out);
+        $this->assertStringContainsString(
+            'Checked:',
+            implode("\n", $out['meta']['warnings'])
+        );
+    }
+
+    // Schema enforcement: homework format (months + hasSummaryRow required)
+    // rides the wire so minimal replies fail closed at the protocol level.
+    // Called by: callGeminiText() generationConfig.
+    public function test_excel_slice_sends_response_schema(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            $schema = $body['generationConfig']['responseSchema'] ?? null;
+            // Temperature rides as "0" over form-encoding — presence + zero value.
+            $temp = $body['generationConfig']['temperature'] ?? null;
+
+            return ($body['generationConfig']['responseMimeType'] ?? null) === 'application/json'
+                && $temp !== null && $temp == 0
+                && is_array($schema)
+                && ($schema['required'] ?? []) === ['months', 'hasSummaryRow'];
+        });
+    }
+
+    // Native workbook bytes ride alongside the tagged CSV (user-approved:
+    // public schedule data; the webapp proved native-grid reads compute).
+    // Called by: parseExcelSlice() file passthrough → callGeminiText().
+    public function test_excel_slice_sends_workbook_file_part(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $file = ['data' => base64_encode('PKfake-bytes'), 'mimeType' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000", $file);
+
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) use ($file) {
+            $parts = $request->data()['contents'][0]['parts'] ?? [];
+
+            return count($parts) === 2
+                && ($parts[1]['inline_data']['mime_type'] ?? null) === $file['mimeType']
+                && ($parts[1]['inline_data']['data'] ?? null) === $file['data'];
+        });
+    }
+
+    // Text-only calls send no file part (oversize fallback path).
+    // Called by: parseExcelSlice() with a null workbook file.
+    public function test_excel_slice_without_file_sends_text_only(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000", null);
+
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $parts = $request->data()['contents'][0]['parts'] ?? [];
+
+            return count($parts) === 1 && isset($parts[0]['text']);
+        });
     }
 
     // E2 declines: empty text/key, malformed payloads, single-month curves.

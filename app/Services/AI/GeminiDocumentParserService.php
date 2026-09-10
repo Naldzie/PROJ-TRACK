@@ -3,6 +3,7 @@
 namespace App\Services\AI;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 /**
  * ============================================================================
@@ -120,9 +121,16 @@ class GeminiDocumentParserService
      * activity values exist (same fallback the rules have). Previously the AI
      * returned a single series that could silently be the summary row.
      *
+     * Native grid (2026-09-10, user-approved): $workbookFile carries the native
+     * .xlsx bytes (inline_data) alongside the tagged CSV — the webapp proved the
+     * same model computes correctly from the native sheet while flat CSV elicited
+     * copies. S-curves are public-bidding schedule data (transparency class), so
+     * the whole workbook is proportionate; Excel-only, one explicit click, never
+     * auto-applied. Null file = text-only path (oversize fallback).
+     *
      * Called by: SCurveImportController::parseWithGemini() (planned E2 endpoint).
      */
-    public function parseExcelSlice(string $csv): ?array
+    public function parseExcelSlice(string $csv, ?array $workbookFile = null): ?array
     {
         $csv = trim($csv);
 
@@ -130,7 +138,12 @@ class GeminiDocumentParserService
             return null;
         }
 
-        $raw = $this->callGeminiText($this->buildSCurvePrompt($csv));
+        $filePart = null;
+        if (is_array($workbookFile) && !empty($workbookFile['data'])) {
+            $filePart = $workbookFile;
+        }
+
+        $raw = $this->callGeminiText($this->buildSCurvePrompt($csv, $filePart !== null), $filePart);
 
         if ($raw === '') {
             return null;
@@ -142,7 +155,21 @@ class GeminiDocumentParserService
             return null;
         }
 
-        return $this->validateSCurveMonths($decoded);
+        // Debug breadcrumb (evidence, not inference): what the model actually
+        // returned, so silent single-series replies are diagnosable in logs.
+        try {
+            Log::debug('E2 excel slice response keys', [
+                'keys' => is_array($decoded) ? array_keys($decoded) : [],
+                'months' => is_array($decoded['months'] ?? null) ? count($decoded['months']) : 0,
+                'summary' => is_array($decoded['summary'] ?? null) ? count($decoded['summary']) : 0,
+                'amounts' => is_array($decoded['monthlyAmounts'] ?? null) ? count($decoded['monthlyAmounts']) : 0,
+                'hasSummaryRow' => $decoded['hasSummaryRow'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            // Logging never breaks imports.
+        }
+
+        return $this->validateSCurveMonths($decoded, $this->extractSheetNumbers($csv));
     }
 
     /**
@@ -157,26 +184,43 @@ class GeminiDocumentParserService
      *
      * Called by: parseExcelSlice()
      */
-    private function buildSCurvePrompt(string $csv): string
+    private function buildSCurvePrompt(string $csv, bool $hasWorkbookFile = false): string
     {
-        return 'You are reading a contractor S-curve schedule table (CSV text) for a Philippine'
-            . ' government construction project. Months may be labeled "Month 1..N", "M1..N", "P1..N", month'
-            . ' names, bare numbers, ordinals ("1st."), or day-group headers; values may be pesos'
-            . ' (possibly duplicated across paired columns — count each month once), weights, or'
-            . ' cumulative percents. Return ONLY a JSON object {"months": [{"month_index": 1,'
+        $source = $hasWorkbookFile
+            ? 'An attached native workbook copy accompanies this text (authoritative grid — trust'
+            . ' its columns, merged spans, and values over the text when they differ); the tagged rows'
+            . ' below guide its reading.'
+            : 'Only the serialized text below is available (workbook too large to attach).';
+        return 'You are reading a contractor S-curve schedule table for a Philippine'
+            . ' government construction project. ' . $source
+            . ' The text is the workbook serialized as tagged'
+            . ' rows: a COLUMNS legend (A,B,C... letter per position) then one line per row as'
+            . ' "R<n> [ROLE]: values". Roles: META = title block (ignore for math); HEADER = column'
+            . ' labels (month columns may be "Month 1..N", "M1..N", "P1..N", month names, bare numbers,'
+            . ' ordinals like "1st.", or day-group headers; a month may span two adjacent columns whose'
+            . ' values must be ADDED once, never double-counted); DATA = activity rows (compute months'
+            . ' ONLY from these); SUMMARY = the author\'s own total rows (labels like CUMULATIVE %,'
+            . ' % ACCOMPLISHED, COST, Cash Flow, Project Duration — reference only).'
+            . ' Return ONLY a JSON object {"months": [{"month_index": 1,'
             . ' "planned_progress_percent": 12.5}, ...], "monthlyAmounts": [{"month_index": 1,'
             . ' "pesos": 50000}, ...], "summary": [{"month_index": 1, "percent": 12.0},'
             . ' ...], "hasSummaryRow": true, "contractAmount": 32588531.43}. Rules:'
-            . ' "months" MUST be computed from the activity/schedule rows (add each month\'s amounts,'
-            . ' divide by the contract total, cumulative 0-100 per month, month_index sequential from'
-            . ' 1); "monthlyAmounts" are those per-month peso totals and "contractAmount" is the'
-            . ' divisor you used (omit monthlyAmounts only for percent/weight-only files with no peso'
-            . ' figures); "summary" is the file\'s OWN summary/cumulative row values copied as printed'
-            . ' (no recomputation — omit the key when the file has no summary row); "hasSummaryRow"'
-            . ' tells whether such a row exists. DO NOT copy the summary row into "months" — the two'
-            . ' series must be reported independently even when they agree. Use null fields you cannot'
-            . ' find. Return ONLY the JSON object, no explanations, no markdown fences.'
-            . "\n\nCSV:\n" . mb_substr($csv, 0, 12000);
+            . ' "months" MUST be computed from the DATA rows (add each month\'s amounts using the'
+            . ' HEADER month columns, divide by the contract total — the TOTAL figure the activity'
+            . ' costs sum to, NOT the divisor the SUMMARY row may use — cumulative 0-100 per month,'
+            . ' month_index sequential from 1); "monthlyAmounts" are those per-month peso totals and'
+            . ' "contractAmount" is the divisor you used (omit monthlyAmounts only for'
+            . ' percent/weight-only files with no peso figures); "summary" is the SUMMARY lines\' values'
+            . ' copied as printed (no recomputation — omit the key when no SUMMARY row exists);'
+            . ' "hasSummaryRow" tells whether one exists. DO NOT copy SUMMARY values into "months" —'
+            . ' the two series must be reported independently even when they agree. Example with a'
+            . ' disagreeing file: {"months": [{"month_index": 1, "planned_progress_percent": 5},'
+            . ' {"month_index": 2, "planned_progress_percent": 10}], "monthlyAmounts":'
+            . ' [{"month_index": 1, "pesos": 50000}, {"month_index": 2, "pesos": 50000}],'
+            . ' "summary": [{"month_index": 1, "percent": 5}, {"month_index": 2, "percent": 9}],'
+            . ' "hasSummaryRow": true, "contractAmount": 1000000}.'
+            . ' Return ONLY the JSON object, no explanations, no markdown fences.'
+            . "\n\nSHEET:\n" . mb_substr($csv, 0, 12000);
     }
 
     /**
@@ -190,16 +234,22 @@ class GeminiDocumentParserService
      *
      * Verification without layout knowledge (strict homework):
      * - monthlyAmounts + contractAmount let the server RECOMPUTE the curve;
-     *   months that don't follow from the stated amounts are declined as
+     *   months that don't follow from stated amounts are declined as
      *   fabrication. Absent/partial amounts skip the check silently
      *   (percent/weight-only files legitimately have no peso figures).
      * - months mirroring an attached summary are labeled as unverified copies
      *   instead of passing silently; a claimed-but-unshown summary row earns
      *   an explicit could-not-verify note.
+     * - slice-truth presence audit ($sheetNumbers): every CLAIMED monthly peso
+     *   must appear among the sheet's real numbers (or an adjacent-pair sum
+     *   for paired layouts, rounding-tolerant) — fabricated-consistent
+     *   homework (e.g. the phantom 150,000 behind a copied summary) is
+     *   declined outright. Pollution (budget costs) can only false-pass,
+     *   never false-decline — the safe direction.
      *
      * Called by: parseExcelSlice()
      */
-    private function validateSCurveMonths(mixed $decoded): ?array
+    private function validateSCurveMonths(mixed $decoded, array $sheetNumbers = ['values' => [], 'pairSums' => []]): ?array
     {
         if (!is_array($decoded)) {
             return null;
@@ -217,11 +267,25 @@ class GeminiDocumentParserService
             // ours, not the model's — checking sanitized months would punish
             // honest output for our own adjustments).
             $rawMonths = $this->extractRawPoints($decoded['months'] ?? null);
-            if ($contract !== null && $contract > 0 && !$this->monthsFollowAmounts($rawMonths, $amounts, $contract)) {
+            $amountsCoverAll = $contract !== null && $contract > 0
+                && count($amounts) > 0
+                && $this->amountsCoverMonths($rawMonths, $amounts);
+            if ($amountsCoverAll && !$this->monthsFollowAmounts($rawMonths, $amounts, $contract)) {
+                return null;
+            }
+
+            // Slice-truth presence audit: don't claim sheet numbers you can't
+            // point to. Each claimed monthly peso must appear among the sheet's
+            // real numbers (or an adjacent-pair sum for paired layouts).
+            if (count($amounts) > 0 && !$this->amountsPresentInSheet($amounts, $sheetNumbers)) {
                 return null;
             }
 
             $warnings = ['AI-assisted curve — verify before locking the baseline.'];
+            // Universal verdict (2026-09-09): full homework recomputed cleanly.
+            if ($amountsCoverAll) {
+                $warnings[] = 'Checked: these months follow from the stated monthly amounts.';
+            }
             $byMonth = [];
             foreach ($months as $m) {
                 $byMonth[$m['month_index']] = $m['planned_progress_percent'];
@@ -250,6 +314,11 @@ class GeminiDocumentParserService
                 // Claimed summary row, nothing shown — unverified by construction.
                 $warnings[] = 'Heads-up: the file has a summary row that could not be compared —'
                     . ' treat these months as unverified. Please review before locking.';
+            } elseif (!$amountsCoverAll && count($summary) === 0) {
+                // Single-series reply with nothing to check against — the exact
+                // shape that passed the 45-series silently. Never silent again.
+                $warnings[] = 'Heads-up: only one series could be read — these months could not'
+                    . ' be cross-checked. Please review before locking.';
             }
 
             return [
@@ -429,6 +498,32 @@ class GeminiDocumentParserService
     }
 
     /**
+     * Do the stated amounts cover every stated month? Full coverage earns the
+     * recompute check (and the verified confirmation); anything less skips it
+     * silently — percent/weight-only files legitimately report no peso figures.
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function amountsCoverMonths(array $months, array $amounts): bool
+    {
+        if (count($months) === 0 || count($amounts) === 0) {
+            return false;
+        }
+
+        $covered = [];
+        foreach ($amounts as $a) {
+            $covered[$a['month_index']] = true;
+        }
+        foreach ($months as $m) {
+            if (!isset($covered[$m['month_index']])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Recompute check: stated months must follow from stated amounts.
      *
      * Pure arithmetic on the AI's own reported numbers (cumulative prior +
@@ -453,6 +548,83 @@ class GeminiDocumentParserService
             }
             $running += ($byAmount[$m['month_index']] / $contract) * 100;
             if (abs($running - $m['planned_progress_percent']) > 1.0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Extract sheet numbers from the serialized slice for the presence audit.
+     *
+     * Parses the R-lines (skipping the COLUMNS legend), collecting every
+     * numeric cell plus every adjacent-pair sum (paired layouts store halves).
+     * Labels/ordinals/month names never parse as numeric, so text can't pollute.
+     *
+     * Called by: parseExcelSlice()
+     */
+    private function extractSheetNumbers(string $csv): array
+    {
+        $values = [];
+        $pairSums = [];
+
+        foreach (explode("\n", $csv) as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, 'COLUMNS:')) {
+                continue;
+            }
+            // Strip the "Rn [ROLE]:" prefix; tolerate the legacy bare "Rn:" shape.
+            $text = preg_replace('/^R\d+\s*(\[[A-Z]+\]\s*)?:\s*/', '', $line);
+            $cells = str_getcsv((string) $text);
+            $nums = [];
+            foreach ($cells as $cell) {
+                $t = str_replace([',', ' ', '%'], '', trim((string) $cell));
+                if ($t !== '' && is_numeric($t) && is_finite((float) $t)) {
+                    $nums[] = (float) $t;
+                } else {
+                    $nums[] = null;
+                }
+            }
+            foreach ($nums as $i => $v) {
+                if ($v === null) continue;
+                $values[] = $v;
+                if (isset($nums[$i + 1]) && $nums[$i + 1] !== null) {
+                    $pairSums[] = $v + $nums[$i + 1];
+                }
+            }
+        }
+
+        return ['values' => $values, 'pairSums' => $pairSums];
+    }
+
+    /**
+     * Slice-truth presence audit: every claimed monthly peso must appear among
+     * the sheet's real numbers (or an adjacent-pair sum), rounding-tolerant
+     * (±1.0 absolute). Fabricated-consistent homework fails here even when its
+     * internal arithmetic is perfect.
+     *
+     * Called by: validateSCurveMonths().
+     */
+    private function amountsPresentInSheet(array $amounts, array $sheetNumbers): bool
+    {
+        $pool = array_merge(
+            (array) ($sheetNumbers['values'] ?? []),
+            (array) ($sheetNumbers['pairSums'] ?? [])
+        );
+        if (count($pool) === 0) {
+            return false;
+        }
+
+        foreach ($amounts as $a) {
+            $found = false;
+            foreach ($pool as $v) {
+                if (abs($v - $a['pesos']) <= 1.0) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
                 return false;
             }
         }
@@ -490,12 +662,19 @@ class GeminiDocumentParserService
     /**
      * Send a text prompt to Gemini and return the raw text.
      *
-     * Same shape as callGeminiWithImages() without image parts.
+     * Same shape as callGeminiWithImages() without image parts. Schema-enforced
+     * (2026-09-09): the Excel homework format (months + hasSummaryRow required)
+     * is declared at the protocol level so minimal months-only replies fail
+     * closed instead of passing silently. Temperature 0 (2026-09-10):
+     * deterministic extraction — the 45-then-55 run variance was dice, not
+     * reasoning, and comparisons/tests need reproducibility. Costs nothing
+     * (same tokens). This sender serves ONLY the Excel slice path — the 11-field
+     * project slice keeps its own sender below.
      *
      * Called by: parseExcelSlice()
      * Uses: config/services.php (gemini key & model)
      */
-    private function callGeminiText(string $prompt): string
+    private function callGeminiText(string $prompt, ?array $filePart = null): string
     {
         $apiKey = config('services.gemini.key');
         $model = config('services.gemini.model', 'gemini-1.5-flash');
@@ -506,14 +685,27 @@ class GeminiDocumentParserService
 
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
 
+        $parts = [['text' => $prompt]];
+        if (is_array($filePart) && !empty($filePart['data'])) {
+            $parts[] = [
+                'inline_data' => [
+                    'mime_type' => $filePart['mimeType'] ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'data' => $filePart['data'],
+                ],
+            ];
+        }
+
         try {
             $response = Http::timeout(30)->post($url, [
                 'contents' => [
                     [
-                        'parts' => [
-                            ['text' => $prompt],
-                        ],
+                        'parts' => $parts,
                     ],
+                ],
+                'generationConfig' => [
+                    'temperature' => 0.0,
+                    'responseMimeType' => 'application/json',
+                    'responseSchema' => $this->scurveResponseSchema(),
                 ],
             ]);
 
@@ -527,6 +719,41 @@ class GeminiDocumentParserService
         } catch (\Exception $e) {
             return '';
         }
+    }
+
+    /**
+     * Response schema for the Excel homework format.
+     *
+     * Requires months + hasSummaryRow (a reply without the verification
+     * scaffolding is a protocol miss, not a curve); amounts/summary stay
+     * optional since weight-only and summary-less files are legitimate.
+     *
+     * Called by: callGeminiText()
+     */
+    private function scurveResponseSchema(): array
+    {
+        $point = function (string $valueKey, string $valueType): array {
+            return [
+                'type' => 'OBJECT',
+                'properties' => [
+                    'month_index' => ['type' => 'INTEGER'],
+                    $valueKey => ['type' => $valueType],
+                ],
+                'required' => ['month_index', $valueKey],
+            ];
+        };
+
+        return [
+            'type' => 'OBJECT',
+            'properties' => [
+                'months' => ['type' => 'ARRAY', 'items' => $point('planned_progress_percent', 'NUMBER')],
+                'monthlyAmounts' => ['type' => 'ARRAY', 'items' => $point('pesos', 'NUMBER')],
+                'summary' => ['type' => 'ARRAY', 'items' => $point('percent', 'NUMBER')],
+                'hasSummaryRow' => ['type' => 'BOOLEAN'],
+                'contractAmount' => ['type' => 'NUMBER'],
+            ],
+            'required' => ['months', 'hasSummaryRow'],
+        ];
     }
     /**
      * Build the strict-JSON extraction prompt.

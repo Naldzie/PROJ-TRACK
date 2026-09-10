@@ -2155,6 +2155,102 @@ Related plan
       5. Tests per branch (minimal reply → unverified note; schema enforcement; verified
          confirmation; on-demand link wiring), full + JS suites with clean-tree regression check.
       A/B (point-and-teach desk, learn-from-AI maps) stay queued behind this batch.
+    - ADJUSTED PLAN BUILT 2026-09-09 (code, NOT committed per user).
+      1. Schema-enforced homework: callGeminiText (Excel-only sender) declares
+         responseMimeType application/json + responseSchema (months + hasSummaryRow
+         required; amounts/summary optional) — minimal replies fail closed at protocol
+         level. Few-shot full-format example appended to the prompt.
+      2. Universal verdict: full-coverage amounts recompute cleanly → "Checked"
+         confirmation; summary compared with gaps → warnings (as before); mirror →
+         mirror note; claimed-unshown → could-not-verify; single-series with nothing to
+         check → NEW "could not be cross-checked" note. Silence is no longer an outcome
+         (existing agree/weight-file cases verified unaffected by suite).
+      3. Debug breadcrumb: Log::debug response keys + series counts + hasSummaryRow per
+         AI call (best-effort, never breaks imports).
+      4. On-demand cross-check link (choice a): "Second opinion — Cross-check with AI?"
+         rendered after successful imports in both flows (cleared on each new attempt);
+         one call per click; READ-ONLY compare vs imported baseline (tolerance 1.0);
+         agree → quiet success toast, diverge → warning toast listing months + console
+         detail. Never touches baseline/modal. Detail-PDF flow reuses the fetched File.
+      Tests: +3 service (verified confirmation, single-series note, schema-on-wire);
+      suites: header 22/22, import 31/31, AI service 20/20; node --check clean.
+      Full-suite + clean-tree check due next (see below).
+    - LIVE EVIDENCE 2026-09-10 (user): webapp Gemini FLASH (same family as ours) computed
+      the 10-month file correctly from the uploaded xlsx (50/70/80/90) AND flagged row 14's
+      formulas as suspect — capability proven, so the fault is our slice/prompt, not the model.
+      Live log line proves full homework complied (months:10/summary:10/amounts:10/flag:true)
+      and the mirror note fired as designed; months kept with warning per current judgment rule.
+      User understanding CONFIRMED: pure-AI path does no independent recomputation (self-checks
+      + map swap only). Two defects queued: (1) duplicate generic note (service stamps + client
+      appends; dedupe is consecutive-only) → collapse-all-duplicates fix; (2) homework-spoof
+      (fabricated-consistent amounts earn Checked) → slice-truth presence audit: each claimed
+      monthly peso must appear among sheet numbers or adjacent-pair sums (rounding-tolerant;
+      phantom 150,000 fails); mirror-case + absent amounts = DECLINED, genuine agreement passes
+      (pollution causes false passes only — the safe direction). Decisions: in-modal link +
+      quiet toast CONFIRMED (user choice a); model bump DEPRIORITIZED (same flash family won in
+      webapp — fix the slice first). Revised build queue (NOT STARTED): slice reform (server
+      detectors label AUTHOR SUMMARY vs ACTIVITY ROWS + column letters; exact summary labels;
+      diverging example; divisor rule) → presence-audit gate → dedupe fix → in-modal link →
+      tests/suites/commit-push on word.
+    - REVISED QUEUE BUILT 2026-09-10 (code, NOT committed per user).
+      1. Slice reform: serializeForAi emits a COLUMNS legend + [META]/[HEADER]/[DATA]/
+         [SUMMARY] tags from the server's own detectors (strict then relaxed header guess;
+         isCumulativeRow + TOTAL fallback for summary rows). CSV body byte-compatible
+         (existing contains/count tests intact). Caught pre-green: my prompt edit dropped
+         a concatenation dot (ParseError, whole AI suite red) — fixed, suite green.
+         Note: tags change the capture hash — pre-reform captures may re-capture once as
+         a second proposed row (approve one, reject the other; E1-3 signatures unaffected).
+      2. Prompt repair: documents the tagged format + column letters; names exact summary
+         labels (CUMULATIVE %/% ACCOMPLISHED/COST/Cash Flow/Project Duration); example
+         swapped to DIVERGING months-vs-summary; divisor rule (TOTAL the activity costs
+         sum to, not the summary's divisor).
+      3. Presence-audit gate: extractSheetNumbers (values + adjacent-pair sums per row,
+         rounding-tolerant ±1.0) + amountsPresentInSheet; ANY claimed monthly peso absent
+         from the sheet declines outright (phantom 150,000 fails; honest pair-halves pass
+         via pair sums; pollution false-passes only). Fixtures updated where CSVs lacked
+         the claimed figures (+2 tests: phantom decline, pair-sum accept).
+      4. Dedupe fix: stash collapses ALL duplicates positionally (service stamps + client
+         appends the same generic note — the twin from the user's screenshot).
+      5. In-modal cross-check link (choice a): renders inside the modal body below import
+         notes (beside-button node removed — modal backdrop buried it); live month refresh
+         from setupLocalMonths (positional 1..N, snapshot fallback); guarded open-hook +
+         hide-teardown in the modal script (zero coupling when UI script absent); detail-PDF
+         flow reuses the fetched File. Read-only compare (agree = quiet toast, diverge =
+         warning toast + console detail).
+      Tests: +2 service (phantom decline, pair-sum accept), +1 serializer (role tags);
+      suites: header 22/22, import 32/32, AI service 22/22; node --check clean on both
+      touched scripts. Full suite 1083 passed / same 7 pre-existing clean-tree failures;
+      JS 90/92 (2 intended blinding fails). NO commit per user — all below uncommitted.
+    - DECISIONS 2026-09-10 (user, logged only — NO implementation yet):
+      (a) WHOLE-WORKBOOK UPLOAD APPROVED — user: S-curves hold no sensitive privacy data
+      and are public for transparency, so send the native .xlsx bytes (inline_data,
+      spreadsheet MIME) alongside the tagged CSV instead of struggling to make the AI
+      compute from flat text. Standing sensitivity basis upheld (public-bidding schedule
+      data); remaining guards stay (Excel-only, one call per explicit click, never
+      auto-applied, inline-ceiling size guard). Rationale banked: webapp proved the same
+      model computes correctly from the native sheet; our CSV flattening destroys the
+      attribution signals (letters, spans, grid adjacency).
+      (b) TEMPERATURE EXPLAINED, decision pending with build go-ahead — dice dial 0–2;
+      default ~1.0 explains the 45-then-55 run variance (dice, not reasoning); 0 gives
+      reproducible extraction at zero token/quota cost. Limit banked: deterministic ≠
+      correct (rides with, never replaces, the native-file fix); Excel path only, normal-doc
+      prose path out of scope unless later ordered.
+    - NEXT BUILD QUEUE (NOT STARTED, awaiting go): native bytes + tagged CSV companion →
+      temperature 0 on the wire (asserted) → validation/presence/swap untouched → tests →
+      full + JS suites → logs → commit/push on word. Pair-sum allowance stays (removing it
+      would false-decline honest BUHI-shape reads; attribution is the native file's job).
+    - NATIVE + TEMP0 BUILT 2026-09-10 (code, NOT committed per user).
+      parseWithGemini reads the workbook bytes into an inline_data part (OLE sniff picks
+      legacy vs modern MIME — temp upload paths carry no extension) with a 15MB ceiling
+      falling back to CSV-only + note; parseExcelSlice accepts the optional file part;
+      prompt names the native grid authoritative with the tagged CSV as guide; temperature
+      0.0 rides generationConfig (deterministic extraction; same tokens).
+      Caught pre-green: my temperature assertion used strict float compare but the fake
+      wire form-encodes 0.0 as "0" — loosened to presence + zero value. Also repaired an
+      edit that clipped a prefer-math test body (restored immediately, suite proved it).
+      Tests: +2 service (file part on wire, text-only path), schema test gains temperature,
+      +1 controller (MIME sniff, ceiling fallback, ghost path). Full-suite + JS + clean-tree
+      check due next (see below).
 
   - QUEUE (user-confirmed 2026-09-08): Excel end-to-end first (2a/R2a/2b/fallback/UX done;
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +

@@ -58,7 +58,18 @@ class SCurveImportService
      *
      * Dumps the first non-trivial sheet (header block + data rows, capped) so Gemini
      * reads layout + figures as text — no page rendering exists for Excel by design.
-     * Minimized: at most $maxRows rows × 80 columns, trailing empty cells trimmed.
+     * Minimized: one legend line + at most $maxRows rows × 80 columns, trailing
+     * empty cells trimmed.
+     *
+     * Slice reform (2026-09-10): rows carry [ROLE] tags from the server's own
+     * detectors (META title block / HEADER column labels / DATA activity rows /
+     * SUMMARY author totals) plus a column-letter legend — the flat unlabeled CSV
+     * made copying the summary row the rational move (proven live: webapp Gemini
+     * computed correctly from the native sheet while our slice elicited a copy).
+     * Header detection tries strict then relaxed (novel wordings still get roles
+     * even when the main path 422s). NOTE: tags change the capture hash — files
+     * captured pre-reform may re-capture once as a second proposed row (approve
+     * one, reject the other; E1-3 signature matching is unaffected).
      *
      * @param  string  $path  Absolute path to an .xlsx/.xls file.
      * @throws RuntimeException  When the workbook can't be read.
@@ -79,9 +90,16 @@ class SCurveImportService
 
         $lines = [];
         foreach ($spreadsheet->getAllSheets() as $sheet) {
+            // Letter-keyed grid for role detection (keys are sheet rows).
+            $grid = $sheet->toArray(null, true, false, true);
+            $grid = $this->resolveFormulas($sheet, $grid);
+            $roles = $this->labelSliceRows($grid, $sheet);
+
             $rows = $sheet->toArray(null, true, false, false);
+            $width = 0;
             $kept = 0;
-            foreach ($rows as $row) {
+            $keptKeys = [];
+            foreach ($rows as $rowKey => $row) {
                 $cells = array_slice(array_values($row ?? []), 0, 80);
                 while (count($cells) > 0 && trim((string) end($cells)) === '') {
                     array_pop($cells);
@@ -89,26 +107,109 @@ class SCurveImportService
                 if (count($cells) === 0) {
                     continue;
                 }
+                $width = max($width, count($cells));
+                $keptKeys[] = $rowKey;
                 $fp = fopen('php://memory', 'r+');
                 fputcsv($fp, array_map(fn ($c) => trim((string) ($c ?? '')), $cells));
                 rewind($fp);
-                $lines[] = 'R' . ($kept + 1) . ': ' . trim((string) stream_get_contents($fp));
+                $kept++;
+                $keptKeys[count($keptKeys) - 1] = ['key' => $rowKey, 'csv' => trim((string) stream_get_contents($fp)), 'n' => $kept];
                 fclose($fp);
-                if (++$kept >= $maxRows) {
+                if ($kept >= $maxRows) {
                     break;
                 }
             }
             if ($kept >= 2) {
+                // Column-letter legend + role key (one line; row tags below).
+                $letters = [];
+                for ($c = 0; $c < $width; $c++) {
+                    $letters[] = Coordinate::stringFromColumnIndex($c + 1);
+                }
+                $lines[] = 'COLUMNS: ' . implode(',', $letters)
+                    . ' | META: title block | HEADER: column labels'
+                    . ' | DATA: activity rows — compute months from these ONLY'
+                    . ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months';
+                foreach ($keptKeys as $k) {
+                    $lines[] = 'R' . $k['n'] . ' [' . ($roles[$k['key']] ?? 'DATA') . ']: ' . $k['csv'];
+                }
                 break;
             }
             $lines = [];
         }
 
-        if (count($lines) < 2) {
+        if (count($lines) < 3) {
             throw new RuntimeException('The workbook holds no readable rows to send.');
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Slice reform — label each grid row META/HEADER/DATA/SUMMARY for the AI slice.
+     *
+     * Header comes from the detectors (strict, then relaxed so novel wordings
+     * still get structure); summary rows reuse isCumulativeRow plus the TOTAL
+     * fallback shape from buildMonths. Rows before the header are META.
+     * Without any header, everything is DATA except detected summary rows.
+     *
+     * Called by: serializeForAi().
+     */
+    private function labelSliceRows(array $grid, Worksheet $sheet): array
+    {
+        $mergeMap = $this->buildMergeSpanMap($sheet);
+        $det = $this->findHeaderWith($grid, $mergeMap, fn (array $cells) => $this->detectHeaderRow($cells), false);
+        if ($det === null) {
+            $det = $this->findHeaderWith($grid, $mergeMap, fn (array $cells) => $this->detectHeaderRow($cells, true), false);
+        }
+
+        // Resolve header keys (single-row detections store keys, two-row store
+        // positions — same duality as headerSignature).
+        $headerKeys = [];
+        if ($det !== null) {
+            if ($det['lastRow'] === $det['firstRow']) {
+                $headerKeys = [$det['firstRow']];
+            } else {
+                $keys = array_keys($grid);
+                foreach ([$det['firstRow'], $det['lastRow']] as $pos) {
+                    if (isset($keys[$pos])) {
+                        $headerKeys[] = $keys[$pos];
+                    }
+                }
+            }
+        }
+        $firstHeader = count($headerKeys) > 0 ? min($headerKeys) : null;
+
+        $roles = [];
+        foreach ($grid as $rowKey => $row) {
+            if (in_array($rowKey, $headerKeys, true)) {
+                $roles[$rowKey] = 'HEADER';
+            } elseif ($firstHeader !== null && $rowKey < $firstHeader) {
+                $roles[$rowKey] = 'META';
+            } elseif ($this->isCumulativeRow($row) || $this->isSliceTotalRow($row)) {
+                $roles[$rowKey] = 'SUMMARY';
+            } else {
+                $roles[$rowKey] = 'DATA';
+            }
+        }
+
+        return $roles;
+    }
+
+    /**
+     * Slice reform — TOTAL-row shape for slice labeling (mirrors the buildMonths
+     * fallback: TOTAL label anywhere in the row; hyphen-guarded so Sub-Total
+     * never matches).
+     *
+     * Called by: labelSliceRows().
+     */
+    private function isSliceTotalRow(mixed $row): bool
+    {
+        $texts = $this->rowTexts($row);
+        if (count($texts) === 0) {
+            return false;
+        }
+
+        return (bool) preg_match('/(?<![\w-])(grand\s*)?totals?(?![\w-])/i', implode(' ', $texts));
     }
 
     /**

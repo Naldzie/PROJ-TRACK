@@ -102,16 +102,18 @@ function scurveShowWarnings(warnings, container) {
 
 function scurveStashWarnings(data) {
     // Shared stash helper for rule + AI success paths (E2 provenance appended here).
-    // Idempotent: consecutive duplicate notes collapse (double-fired imports/assists can
-    // otherwise paint twin bullets — reported 2026-09-08).
+    // Idempotent: duplicate notes collapse ANYWHERE in the list (the service stamps
+    // the generic AI note and this helper appends it again — non-consecutive twins
+    // reported 2026-09-10 — so dedupe is positional, not just consecutive).
     try {
         var list = (data && data.meta && data.meta.warnings) ? data.meta.warnings.slice() : [];
         if (data && data.meta && data.meta.aiAssisted) {
             list.push('AI-assisted curve — verify before locking the baseline.');
         }
+        var seen = {};
         var deduped = [];
         list.forEach(function (w) {
-            if (deduped[deduped.length - 1] !== w) deduped.push(w);
+            if (!seen[w]) { seen[w] = true; deduped.push(w); }
         });
         window._scurveImportWarnings = deduped;
     } catch (e) { window._scurveImportWarnings = []; }
@@ -145,6 +147,146 @@ function scurveOfferAiAssist(ctx) {
         (host || document.body).appendChild(wrap);
     } catch (e) { /* offer is best-effort */ }
 }
+
+/* ─── On-demand AI cross-check (second opinion, in-modal) ──────────────────── */
+ // The assist offer above exists only on failure — once a layout is learned the
+ // import succeeds and AI can never be asked again (reported 2026-09-09: the
+ // approve-then-AI test flow is impossible). This quiet secondary link fills that
+ // gap. It lives INSIDE the setup modal under the import notes (the beside-button
+ // spot is buried behind the modal backdrop) and is rendered by
+ // scurveRenderCrossCheckLink(), called at modal open (guarded hook) and after
+ // each successful import. Same quota discipline (one call per click,
+ // busy-guarded), but READ-ONLY — it compares the AI answer against the live
+ // month list and reports, never replacing months (replacement stays in the
+ // fallback endpoint path). Agreement is quiet by user choice (a).
+ // Called by: import success paths (stash) + modal open hook (render) + modal
+ // hide/import-start (clear).
+function scurveClearCrossCheck() {
+    try {
+        window._scurveCrossCheckCtx = null;
+        var old = document.getElementById('scurveCrossCheckLink');
+        if (old && old.remove) old.remove();
+    } catch (e) { /* best-effort */ }
+}
+
+// Stash the cross-check source at import success (modal may not exist yet).
+function scurveOfferCrossCheck(ctx) {
+    try {
+        scurveClearCrossCheck();
+        if (!ctx || !ctx.baselineMonths || !ctx.baselineMonths.length) return;
+        if (!ctx.parseUrl) return;
+        if (!(ctx.kind === 'file' && ctx.file)
+            && !(ctx.kind === 'document' && ctx.documentId)) return;
+        window._scurveCrossCheckCtx = ctx;
+        scurveRenderCrossCheckLink();
+    } catch (e) { /* offer is best-effort */ }
+}
+
+// Render (or re-render) the in-modal link. Reads the LIVE month list so edits
+// made before clicking are honored; falls back to the import-time snapshot.
+window.scurveRenderCrossCheckLink = function () {
+    try {
+        var old = document.getElementById('scurveCrossCheckLink');
+        if (old && old.remove) old.remove();
+        var ctx = window._scurveCrossCheckCtx || null;
+        if (!ctx) return;
+        var anchor = document.getElementById('setupImportNotes')
+            || document.getElementById('setupWarningNotice');
+        var host = (anchor && anchor.parentNode) ? anchor.parentNode : null;
+        if (!host || !document.getElementById('setupBaselineModal').contains(host)) return;
+        var wrap = document.createElement('div');
+        wrap.id = 'scurveCrossCheckLink';
+        wrap.style.cssText = 'font-size:11px;color:#6b7280;margin:-8px 0 14px 0;';
+        wrap.appendChild(document.createTextNode('Second opinion — '));
+        var link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'btn btn-link btn-sm p-0';
+        link.style.cssText = 'font-size:11px;vertical-align:baseline;';
+        link.textContent = 'Cross-check with AI?';
+        link.title = 'Ask the AI assistant to re-read this file and compare (one AI call).';
+        link.setAttribute('onclick', 'window._trySCurveCrossCheck()');
+        wrap.appendChild(link);
+        host.insertBefore(wrap, anchor.nextSibling);
+        // Keep the fresh link adjacent to the notes when both render.
+        try {
+            var notes = document.getElementById('setupImportNotes');
+            if (notes && notes.nextSibling !== wrap) host.insertBefore(wrap, notes.nextSibling);
+        } catch (e) {}
+    } catch (e) { /* offer is best-effort */ }
+};
+
+window._trySCurveCrossCheck = async function () {
+    if (window._scurveXBusy) return;
+    var ctx = window._scurveCrossCheckCtx || null;
+    if (!ctx) return;
+    window._scurveXBusy = true;
+    try {
+        var fd = new FormData();
+        var geminiUrl = scurveGeminiUrl(ctx.parseUrl);
+        if (ctx.kind === 'file' && ctx.file) {
+            fd.append('file', ctx.file);
+        } else if (ctx.kind === 'document' && ctx.documentId) {
+            fd.append('document_id', ctx.documentId);
+        } else {
+            throw new Error('Original file no longer available — re-import to retry.');
+        }
+        var res = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': scurveCsrfToken(), 'Accept': 'application/json' },
+            body: fd,
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok || !data.success || !data.months || !data.months.length) {
+            throw new Error((data && data.message) || 'The AI assistant could not re-read this file.');
+        }
+        var core = window.scurveImportCore;
+        if (!core) throw new Error('Import helpers not loaded.');
+        var aiMonths = core.normalizeSCurveMonths(data.months, ctx.startDate || '', ctx.endDate || '');
+        // Compare against the LIVE month list (pre-lock edits honored), falling
+        // back to the import-time snapshot. setupLocalMonths carries no index,
+        // so position maps 1..N (imports always emit sequential months).
+        var liveMonths = null;
+        try {
+            if (typeof setupLocalMonths !== 'undefined' && setupLocalMonths && setupLocalMonths.length) {
+                liveMonths = setupLocalMonths.map(function (m, i) {
+                    return { month_index: i + 1, planned_progress_percent: m.planned_progress_percent };
+                });
+            }
+        } catch (e) { liveMonths = null; }
+        var baseByMonth = {};
+        ((liveMonths && liveMonths.length ? liveMonths : ctx.baselineMonths) || []).forEach(function (m) {
+            if (m && m.month_index != null) baseByMonth[m.month_index] = m.planned_progress_percent;
+        });
+        var divergent = [];
+        aiMonths.forEach(function (m) {
+            if (m && baseByMonth[m.month_index] != null
+                && Math.abs(baseByMonth[m.month_index] - m.planned_progress_percent) > 1.0) {
+                divergent.push(m.month_index);
+            }
+        });
+        try {
+            console.info('[scurve] cross-check', {
+                baseline: ctx.baselineMonths,
+                ai: aiMonths,
+                divergent: divergent,
+            });
+        } catch (e) {}
+        if (divergent.length === 0) {
+            scurveToast('AI cross-check agrees with the imported months.', 'success');
+        } else {
+            scurveToast(
+                'AI cross-check differs in Month ' + divergent.slice(0, 3).join(', Month ')
+                + (divergent.length > 3 ? ' (and ' + (divergent.length - 3) + ' more)' : '')
+                + ' — review before locking.',
+                'warning'
+            );
+        }
+    } catch (err) {
+        scurveToast(err.message, 'danger');
+    } finally {
+        window._scurveXBusy = false;
+    }
+};
 
 window._trySCurveAiAssist = async function () {
     if (window._scurveAiBusy) return;
@@ -322,6 +464,7 @@ function initCreateWizardSCurveImport() {
         btn.disabled = true;
         var originalLabel = btn.textContent;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
+        scurveClearCrossCheck();
 
         try {
             var data;
@@ -359,6 +502,7 @@ function initCreateWizardSCurveImport() {
             scurveStashWarnings(data);
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
+            scurveOfferCrossCheck({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, baselineMonths: months, btn: btn });
         } catch (err) {
             scurveToast(err.message, 'danger');
             // E2: no-table 422 on an Excel source offers the AI assist (PDFs excluded —
@@ -392,13 +536,16 @@ function initProjectDetailSCurveImport() {
         btn.disabled = true;
         var originalLabel = btn.textContent;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
+        scurveClearCrossCheck();
 
         try {
             var data;
             if (btn.dataset.docType === 'pdf') {
                 var file = await scurveFetchDocument(btn.dataset.downloadUrl, btn.dataset.documentName || 's-curve.pdf');
+                try { window._scurveDetailFile = file; } catch (e) {}
                 data = await importPDFSCurve(file);
             } else {
+                try { window._scurveDetailFile = null; } catch (e) {}
                 data = await parseSCurveDocument(documentId, parseUrl);
             }
             scurveShowWarnings(null, btn.parentElement);
@@ -426,6 +573,16 @@ function initProjectDetailSCurveImport() {
                 'Imported ' + months.length + ' baseline months. Review, then Done to lock.',
                 'success'
             );
+            // Cross-check source mirrors the import source (fetched PDF file or stored document).
+            var xCtx = (btn.dataset.docType === 'pdf' && window._scurveDetailFile)
+                ? { kind: 'file', file: window._scurveDetailFile }
+                : { kind: 'document', documentId: documentId };
+            xCtx.parseUrl = parseUrl;
+            xCtx.startDate = startDate;
+            xCtx.endDate = endDate;
+            xCtx.baselineMonths = months;
+            xCtx.btn = btn;
+            scurveOfferCrossCheck(xCtx);
         } catch (err) {
             scurveToast(err.message, 'danger');
             // E2: same assist offer on the detail flow (stored Excel documents only).

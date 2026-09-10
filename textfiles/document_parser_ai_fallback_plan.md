@@ -150,6 +150,29 @@ Sensitivity basis (user-approved)
     - STRICT HOMEWORK + PREFER-MATH BUILT 2026-09-09 (code, see accuracy plan E2 entry
       for the cause chain): prompt homework + server recompute-decline + mirror/unverified
       notes + endpoint prefer-math swap. +4 service / +2 endpoint tests green.
+    - ADJUSTED PLAN BUILT 2026-09-09 (code, NOT committed per user): schema-enforced
+      homework + universal verdict + debug breadcrumb + on-demand cross-check link
+      (choice a: quiet confirmation on agreement). See accuracy plan E2 ADJUSTED PLAN
+      BUILT entry for the full record.
+    - LIVE EVIDENCE + REVISED QUEUE 2026-09-10 (user: webapp flash computed correctly from
+      the xlsx and flagged row 14; live log shows full 10/10/10/true homework with mirror
+      note fired; pure-AI path confirmed to do no independent recomputation). Decisions:
+      in-modal link + quiet toast (a) CONFIRMED; model bump deprioritized. Build queue
+      (NOT STARTED): slice reform → presence-audit gate (mirror+absent = decline) →
+      dedupe fix → in-modal link → tests/suites. See accuracy plan LIVE EVIDENCE entry.
+    - REVISED QUEUE BUILT 2026-09-10 (code, NOT committed per user — full record in the
+      accuracy plan E2 entry): tagged slice + repaired prompt + presence gate + dedupe +
+      in-modal link. Suites: AI service 22/22, import 32/32; full 1083 passed / same 7
+      pre-existing; JS 90/92 (2 intended blinding fails).
+    - NATIVE + TEMP0 BUILT 2026-09-10 (code, NOT committed per user): inline workbook part
+      (OLE sniff, 15MB ceiling + CSV fallback note) + temperature 0.0 on the wire. Tests:
+      +2 service (file part, text-only), +1 controller (MIME/ceiling/ghost). Full 1086
+      passed / same 7 pre-existing; JS 90/92. See accuracy plan.
+    - DECISIONS 2026-09-10 (logged only, NO implementation): whole-workbook native upload
+      APPROVED (public-transparency justification; guards stay); temperature 0 EXPLAINED,
+      decision rides with build go-ahead (deterministic ≠ correct; Excel path only).
+      NEXT BUILD QUEUE (NOT STARTED): native bytes + companion CSV → temp 0 on wire →
+      validation untouched → tests/suites → commit/push on word. See accuracy plan.
     - CONFIRMED GAP + ADJUSTED PLAN 2026-09-09 (user re-test with stale code ruled out:
       wiped maps + fresh serve → silent 45; model sent months-only, all checks abstained —
       conditional verification fails open). Next, NO implementation yet: schema-enforced

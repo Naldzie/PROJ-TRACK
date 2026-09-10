@@ -210,6 +210,12 @@ function openSetupBaselineModal() {
         renderSetupImportNotes(existingData.length > 0 ? (window._scurveImportWarnings || []) : []);
     } catch (e) { /* notes are best-effort */ }
 
+    // On-demand AI cross-check link (in-modal second opinion, guarded so this
+    // file never depends on the import UI script being loaded).
+    try {
+        if (typeof window.scurveRenderCrossCheckLink === 'function') window.scurveRenderCrossCheckLink();
+    } catch (e) { /* link is best-effort */ }
+
     updateAutoGenVisibility();
 
     setupModalInstance.show();
@@ -2208,6 +2214,9 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 var staleNote = document.getElementById('setupImportNotes');
                 if (staleNote && staleNote.remove) staleNote.remove();
+                var staleX = document.getElementById('scurveCrossCheckLink');
+                if (staleX && staleX.remove) staleX.remove();
+                if (window._scurveCrossCheckCtx) window._scurveCrossCheckCtx = null;
             } catch (e) { /* best-effort */ }
             resetModalUIToDefaults();
         });

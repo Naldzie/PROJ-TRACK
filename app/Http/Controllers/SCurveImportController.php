@@ -26,6 +26,13 @@ use RuntimeException;
  */
 class SCurveImportController extends Controller
 {
+    /**
+     * Inline workbook ceiling (2026-09-10): native bytes ride the request only
+     * under this size (Gemini inline_data caps at 20MB; headroom kept). Past it
+     * the endpoint falls back to the tagged-CSV path with a note — never a refusal.
+     */
+    public const FILE_INLINE_MAX_BYTES = 15 * 1024 * 1024;
+
     public function __construct(
         protected SCurveImportService $sCurveImportService,
         protected GeminiDocumentParserService $geminiParser,
@@ -78,7 +85,11 @@ class SCurveImportController extends Controller
             $path = $this->resolveSource($request);
 
             $csv = $this->sCurveImportService->serializeForAi($path);
-            $result = $this->geminiParser->parseExcelSlice($csv);
+            // Native grid alongside the tagged CSV (user-approved 2026-09-10:
+            // public-bidding schedule data; the webapp proved the same model
+            // computes correctly from the native sheet).
+            $filePart = $this->buildInlineWorkbookPart($path);
+            $result = $this->geminiParser->parseExcelSlice($csv, $filePart);
 
             if ($result === null) {
                 throw new RuntimeException('The AI assistant could not read an S-curve from this file. Please set up the baseline manually.');
@@ -86,10 +97,15 @@ class SCurveImportController extends Controller
 
             $result = $this->preferMapMath($request, $path, $result);
 
+            $meta = array_merge($result['meta'], ['aiAssisted' => true]);
+            if ($filePart === null) {
+                $meta['warnings'][] = 'Sent as a text excerpt — the workbook was too large to attach.';
+            }
+
             return response()->json([
                 'success' => true,
                 'months' => $result['months'],
-                'meta' => array_merge($result['meta'], ['aiAssisted' => true]),
+                'meta' => $meta,
             ]);
         } catch (RuntimeException $e) {
             return response()->json([
@@ -223,6 +239,37 @@ class SCurveImportController extends Controller
             return ['months' => $months, 'meta' => $meta];
         } catch (\Throwable $e) {
             return $aiResult;
+        }
+    }
+
+    /**
+     * Build the native-workbook inline part for the AI call.
+     *
+     * Returns ['data' => base64, 'mimeType' => ...] or null when the bytes are
+     * unavailable or past the inline ceiling (caller falls back to CSV-only).
+     * Best-effort by contract — never throws into the import flow.
+     *
+     * Called by: parseWithGemini()
+     */
+    protected function buildInlineWorkbookPart(string $path): ?array
+    {
+        try {
+            if (!is_file($path) || filesize($path) > self::FILE_INLINE_MAX_BYTES) {
+                return null;
+            }
+            $bytes = @file_get_contents($path);
+            if ($bytes === false || $bytes === '') {
+                return null;
+            }
+            // Uploaded temp paths carry no extension (phpXXXX.tmp), so sniff the
+            // magic bytes: OLE compound document = legacy .xls, otherwise ZIP = .xlsx.
+            $mime = str_starts_with($bytes, "\xD0\xCF\x11\xE0")
+                ? 'application/vnd.ms-excel'
+                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+            return ['data' => base64_encode($bytes), 'mimeType' => $mime];
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
