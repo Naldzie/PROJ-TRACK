@@ -2221,6 +2221,50 @@ Related plan
       suites: header 22/22, import 32/32, AI service 22/22; node --check clean on both
       touched scripts. Full suite 1083 passed / same 7 pre-existing clean-tree failures;
       JS 90/92 (2 intended blinding fails). NO commit per user — all below uncommitted.
+    - RESILIENCE + CROSS-CHECK BUTTON BUILT 2026-09-10 (code, NOT committed per user).
+      Cause: user hit 3× 503 (model overloaded, Google-side). (1) Shared postGemini():
+      initial + 1 retry (user choice a), transient-only (429/502/503/504 + throws),
+      Retry-After honored (cap 20s, default 2s, zero-safe). Transport failures THROW with
+      status-mapped messages (503 busy / 429 quota / 404 dead-model / generic unreachable)
+      through both controllers' catches; validation misses stay silent-null. Added missing
+      RuntimeException import (namespaced file would fatal). (2) Cross-check control is a
+      real button (outline pill) with spinner/disabled loading + persistent in-modal result
+      box (agree-green / diverge-amber / error-red, textContent-only) replacing toast-only.
+      (3) Quota-kind handling: QuotaFailure quotaId read from error bodies; PerDay fails
+      fast with tomorrow-message (no retry burned); per-minute keeps backoff. (4) Toast root
+      cause (user screenshot: blue bubble reading just "error"): scurveToast assumed the
+      legacy type-first showToast, but the global component is message-first with info
+      fallback — every import toast printed its TYPE. Fixed with a self-contained renderer
+      (same look/position, textContent-only); callers unchanged.
+      Caught pre-green: (a) live .env leaks its real key into parser_key at boot, so
+      key-nulling tests fired REAL requests (proxy 429/503s as suite failures) — null BOTH
+      keys (lesson: two credential paths need both guards covered); (b) Http::fake()
+      re-calls keep serving the FIRST stub (recorded()-proven) — one fake per test, split
+      3 multi-fake tests (lesson: one fake per test). My own edit clipped two test bodies
+      (restored immediately, suites proved each).
+      Tests: +retry-heals (503→200 sequence), +sustained-503 busy, +quota, +dead-model,
+      +500-speaks, +endpoint busy, +per-day tomorrow (no-retry asserted), +per-minute retry.
+      Full suite 1097 passed / same 7 pre-existing clean-tree failures; JS 90/92
+      (2 intended blinding fails). NO commit per user — all above uncommitted.
+    - LIVE PROOF ROUNDUP 2026-09-10 (user browser; parser model now gemini-3.7-flash in
+      local .env — pinned dated winner from the probe table, alias abandoned with reasons
+      logged in E3 file).
+      Proven live: first-try TRUE curve on a new format (50/70/80/90, map-less AI);
+      unknown-format 422 + AI offer; tomorrow-message on per-day exhaustion (quota-kind
+      handling works); in-modal cross-check agree ("agrees with the imported months");
+      map import with reference warnings + learned-layout note.
+      Rate-limit verdict CLOSED: upload transport innocent (parses + proper JSON errors
+      flow through it); guilty = 3.8-flash RPD meter of 20/day + pool saturation (user's
+      429 body). Normal per-day PMU usage fits; marathon test days do not (second-project
+      key doubles headroom when needed).
+      NOT yet proven live: cross-check DIVERGE warning; AI summary-fallback adoption file;
+      transient retry-heal observation; per-day fail-fast single-line proof; E1-3 duplicate
+      capture after slice-reform hash change; contractor-scoped map end-to-end; new button
+      look (screenshot predates build — hard refresh ordered; script tags are $jsv-versioned
+      on both pages so cache should already bust).
+      OPEN GAP CONFIRMED (next build): normal-doc AI assist hardcodes generic failures
+      (document-parser.js:1345/1359/1381/1398) and never surfaces the server's mapped
+      transport messages — same adjustment Excel received.
     - DECISIONS 2026-09-10 (user, logged only — NO implementation yet):
       (a) WHOLE-WORKBOOK UPLOAD APPROVED — user: S-curves hold no sensitive privacy data
       and are public for transparency, so send the native .xlsx bytes (inline_data,
@@ -2251,6 +2295,25 @@ Related plan
       Tests: +2 service (file part on wire, text-only path), schema test gains temperature,
       +1 controller (MIME sniff, ceiling fallback, ghost path). Full-suite + JS + clean-tree
       check due next (see below).
+    - RESILIENCE + CROSS-CHECK UX BUILT 2026-09-10 (code, NOT committed per user).
+      Cause: user hit 3× 503 (model overloaded, Google-side — quota/config innocent).
+      (1) Shared postGemini(): initial + 1 retry (user choice; worst ~35s), transient-only
+      (429/502/503/504 + throws), Retry-After honored (cap 20s, default 2s, zero-safe).
+      Transport failures now THROW with status-mapped messages (503 busy / 429 quota /
+      404 dead-model / generic unreachable) through both controllers' existing catches;
+      validation misses stay silent-null as before. Added missing RuntimeException import
+      (namespaced file would fatal without it).
+      (2) Cross-check control is now a real button (outline pill) with spinner/disabled
+      loading + persistent in-modal result box (agree-green / diverge-amber /
+      error-red, textContent-only) replacing toast-only replies; result node nests in
+      the link wrap so hide-teardown covers both.
+      Caught pre-green: (a) live .env leaks its real key into parser_key at boot, so
+      key-nulling tests still sent REAL requests (proxy 503s surfaced as suite failures)
+      — null BOTH keys in those tests; lesson banked: with two credential paths, empty
+      guards must cover both. (b) Http::fake() re-calls keep serving the FIRST stub
+      (proven via recorded()) — one fake per test from now on; split 3 multi-fake tests.
+      Tests: +1 retry-heals (503→200 sequence), +1 sustained-503 busy, +1 quota, +1 dead
+      model, +1 500-speaks, +1 endpoint busy-message. Suites below.
     - MODEL VERDICT CLOSED 2026-09-10 (user live test, E3 key/model live: institute second
       key + gemini-flash-latest — pinned 2.5 404s/retired, alias answers; drift caveat
       accepted and logged in E3 file). Full Flash returned the TRUE 10-month curve

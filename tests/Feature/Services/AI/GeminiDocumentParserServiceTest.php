@@ -100,7 +100,7 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertSame('Canteen Works Project', $out['title']);
     }
 
-    // Malformed JSON, non-object JSON, and HTTP failures all decline (null).
+    // Malformed JSON and non-object JSON decline (null).
     // Called by: parseProjectSlice() failure paths.
     public function test_malformed_and_failed_responses_decline(): void
     {
@@ -112,16 +112,168 @@ class GeminiDocumentParserServiceTest extends TestCase
 
         $this->fakeSuccess(json_encode(['just', 'a', 'list']));
         $this->assertNull($service->parseProjectSlice($this->sliceImages()));
+    }
 
-        Http::fake(['*generativelanguage*' => Http::response('server boom', 500)]);
-        $this->assertNull($service->parseProjectSlice($this->sliceImages()));
+    // Transport failures speak (RuntimeException) instead of mimicking a miss.
+    // Single fake: re-faking serves the first stub, so each status gets its own test.
+    // Called by: postGemini() throw path.
+    public function test_http_500_speaks_after_retry(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        Http::fake(['*generativelanguage*' => Http::response('server boom', 500, ['Retry-After' => 0])]);
+        try {
+            $service->parseProjectSlice($this->sliceImages());
+            $this->fail('Transport failures must speak, not decline silently.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('could not be reached', $e->getMessage());
+        }
+    }
+
+    // Bounded retry (user choice: 1 retry): a transient 503 then success heals.
+    // Called by: postGemini() retryable path.
+    public function test_transient_503_then_success_heals(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('overloaded', 503, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'months' => [
+                    ['month_index' => 1, 'planned_progress_percent' => 50],
+                    ['month_index' => 2, 'planned_progress_percent' => 100],
+                ],
+                'hasSummaryRow' => false,
+            ])]]]]]], 200),
+        ]);
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+        $this->assertCount(2, $out['months']);
+    }
+
+    // Sustained 503s speak the busy message (never silent, never generic-miss).
+    // Called by: transportMessage() 503 branch.
+    public function test_sustained_503_speaks_busy_message(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        Http::fake(['*generativelanguage*' => Http::response('overloaded', 503, ['Retry-After' => 0])]);
+        try {
+            $service->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Sustained overload must speak.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('busy (overloaded)', $e->getMessage());
+        }
+    }
+
+    // 429 gets its own voice (quota). Single fake per test (re-faking keeps
+    // serving the first stub — proven 2026-09-10).
+    // Called by: transportMessage() 429 branch.
+    public function test_quota_exhaustion_speaks(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        Http::fake(['*generativelanguage*' => Http::response('slow down', 429, ['Retry-After' => 0])]);
+        try {
+            $service->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Quota exhaustion must speak.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('quota', $e->getMessage());
+        }
+    }
+
+    // 404 gets its own voice (dead model). Single fake per test (see above).
+    // Called by: transportMessage() 404 branch.
+    public function test_dead_model_speaks(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        Http::fake(['*generativelanguage*' => Http::response('no such model', 404)]);
+        try {
+            $service->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Dead models must speak.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('unavailable', $e->getMessage());
+        }
+    }
+
+    // Quota-kind handling: per-DAY exhaustion fails fast with a tomorrow message —
+    // no retry burned on a meter that refills at midnight.
+    // Called by: extractQuotaId() + isPerDayQuota() + transportMessage().
+    public function test_per_day_quota_fails_fast_with_tomorrow_message(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        Http::fake(['*generativelanguage*' => Http::response(json_encode([
+            'error' => [
+                'code' => 429,
+                'status' => 'RESOURCE_EXHAUSTED',
+                'details' => [[
+                    '@type' => 'type.googleapis.com/google.rpc.QuotaFailure',
+                    'violations' => [[
+                        'quotaId' => 'GenerateRequestsPerDayPerProjectPerModel-FreeTier',
+                    ]],
+                ]],
+            ],
+        ]), 429)]);
+        try {
+            $service->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Per-day exhaustion must speak tomorrow-message.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('tomorrow', $e->getMessage());
+        }
+        Http::assertSentCount(1);
+    }
+
+    // Per-minute quota keeps the backoff retry (yesterday's storm heals this way).
+    // Called by: postGemini() retry path with quotaId present but not per-day.
+    public function test_per_minute_quota_still_retries(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $quotaBody = json_encode([
+            'error' => [
+                'code' => 429,
+                'status' => 'RESOURCE_EXHAUSTED',
+                'details' => [[
+                    '@type' => 'type.googleapis.com/google.rpc.QuotaFailure',
+                    'violations' => [[
+                        'quotaId' => 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier',
+                    ]],
+                ]],
+            ],
+        ]);
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push($quotaBody, 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'months' => [
+                    ['month_index' => 1, 'planned_progress_percent' => 50],
+                    ['month_index' => 2, 'planned_progress_percent' => 100],
+                ],
+                'hasSummaryRow' => false,
+            ])]]]]]], 200),
+        ]);
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        $this->assertNotNull($out);
+        $this->assertCount(2, $out['months']);
     }
 
     // Empty API key: no request is sent, null returns (graceful decline).
     // Called by: parseProjectSlice() empty-key guard.
     public function test_empty_key_sends_nothing_and_declines(): void
     {
-        config(['services.gemini.key' => null]);
+        // Null BOTH keys (live .env leaks its real key into parser_key at boot —
+        // nulling one still sends over the other, hitting real network).
+        config(['services.gemini.key' => null, 'services.gemini.parser_key' => null]);
 
         $out = (new GeminiDocumentParserService())->parseProjectSlice($this->sliceImages());
 
@@ -621,8 +773,9 @@ class GeminiDocumentParserServiceTest extends TestCase
     {
         $service = new GeminiDocumentParserService();
 
-        // Empty key first (nothing may be sent before this assertion).
-        config(['services.gemini.key' => null]);
+        // Empty keys first (nothing may be sent before this assertion — null BOTH,
+        // since the live .env leaks its real key into parser_key at boot).
+        config(['services.gemini.key' => null, 'services.gemini.parser_key' => null]);
         $this->assertNull($service->parseExcelSlice('DESCRIPTION,Month 1'));
         Http::assertNothingSent();
 

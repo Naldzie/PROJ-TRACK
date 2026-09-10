@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 /**
  * ============================================================================
@@ -98,18 +99,178 @@ class GeminiDocumentParserService
     /**
      * E3: one-line failure breadcrumb so a dead model ID (404) or revoked key
      * (4xx) is diagnosable from logs instead of looking like "AI found nothing".
+     * Carries the quota reason when the body names one (per-day vs per-minute
+     * decides retry-vs-tomorrow downstream and in human debugging).
      */
-    private function logGeminiFailure(string $where, string $model, mixed $status): void
+    private function logGeminiFailure(string $where, string $model, mixed $status, ?string $quotaId = null): void
     {
         try {
             Log::debug('E3 gemini parser call failed', [
                 'where' => $where,
                 'model' => $model,
                 'status' => $status,
+                'quota' => $quotaId,
             ]);
         } catch (\Throwable $e) {
             // Logging never breaks calls.
         }
+    }
+
+    /**
+     * POST to Gemini with one bounded retry (user choice 2026-09-10: 1 retry —
+     * worst case ~35s at the spinner; sustained saturation still fails fast-ish).
+     *
+     * Retries TRANSIENT failures only (429/502/503/504 + connection throws),
+     * honoring the Retry-After header when Google sends one (capped at 20s).
+     * Returns ['status' => int, 'payload' => decoded body]. Throws
+     * RuntimeException with a status-mapped message when transport ultimately
+     * fails — validation misses still return null downstream (unchanged), so
+     * only transport gets a voice, never silent nulls for dead models/keys.
+     *
+     * Called by: callGeminiText(), callGeminiWithImages().
+     */
+    private function postGemini(string $url, array $payload, string $model, string $where): array
+    {
+        $maxAttempts = 2;
+        $attempts = 0;
+        $lastStatus = 0;
+        $lastQuotaId = null;
+
+        while ($attempts < $maxAttempts) {
+            $attempts++;
+            try {
+                $response = Http::timeout(30)->post($url, $payload);
+                $status = $response->status();
+                if ($response->successful()) {
+                    return ['status' => $status, 'payload' => $response->json()];
+                }
+                $lastStatus = $status;
+                // Quota-kind handling (2026-09-10): the body names the meter.
+                // Per-DAY exhaustion fails fast with a tomorrow message — retrying
+                // burns quota and time for nothing. Per-minute keeps backoff.
+                $lastQuotaId = $this->extractQuotaId($response);
+                $this->logGeminiFailure($where, $model, $status, $lastQuotaId);
+                if ($lastQuotaId !== null && $this->isPerDayQuota($lastQuotaId)) {
+                    break;
+                }
+                if (!$this->isRetryableStatus($status) || $attempts >= $maxAttempts) {
+                    break;
+                }
+                $this->backoff($response);
+            } catch (\Exception $e) {
+                $this->logGeminiFailure($where, $model, 'throwable');
+                if ($attempts >= $maxAttempts) {
+                    throw new RuntimeException('The AI service could not be reached. Please try again in a moment.');
+                }
+                $this->backoff(null);
+            }
+        }
+
+        throw new RuntimeException($this->transportMessage($lastStatus, $lastQuotaId));
+    }
+
+    /**
+     * Transient failures worth one retry (Google's own guidance: wait + retry
+     * for these; fail fast on everything else like dead IDs and bad keys).
+     *
+     * Called by: postGemini().
+     */
+    private function isRetryableStatus(int $status): bool
+    {
+        return in_array($status, [429, 502, 503, 504], true);
+    }
+
+    /**
+     * Pause before the single retry — Retry-After when sent (capped), else a
+     * short default. Zero-safe for tests faking Retry-After: 0.
+     *
+     * Called by: postGemini().
+     */
+    private function backoff($response): void
+    {
+        $wait = 2;
+        try {
+            $retryAfter = $response !== null ? $response->header('Retry-After') : null;
+            if ($retryAfter !== null && $retryAfter !== '' && is_numeric($retryAfter)) {
+                $wait = min(20, max(0, (int) $retryAfter));
+            }
+        } catch (\Throwable $e) {
+            // Default stands.
+        }
+        if ($wait > 0) {
+            sleep($wait);
+        }
+    }
+
+    /**
+     * Read the quota meter from an error body (QuotaFailure violations).
+     * Returns the first quotaId found, else null (non-quota errors, bodies
+     * without details, and undecodable bodies all read as "no meter named").
+     *
+     * Called by: postGemini().
+     */
+    private function extractQuotaId($response): ?string
+    {
+        try {
+            $body = $response->json();
+            if (!is_array($body)) {
+                return null;
+            }
+            $details = $body['error']['details'] ?? null;
+            if (!is_array($details)) {
+                return null;
+            }
+            foreach ($details as $detail) {
+                if (!is_array($detail)) continue;
+                $type = (string) ($detail['@type'] ?? '');
+                if (stripos($type, 'QuotaFailure') === false) continue;
+                foreach ((array) ($detail['violations'] ?? []) as $violation) {
+                    $quotaId = is_array($violation) ? ($violation['quotaId'] ?? null) : null;
+                    if (is_string($quotaId) && $quotaId !== '') {
+                        return $quotaId;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Unreadable body — no meter named.
+        }
+
+        return null;
+    }
+
+    /**
+     * Per-day exhaustion never heals within a session (midnight Pacific at best).
+     *
+     * Called by: postGemini().
+     */
+    private function isPerDayQuota(string $quotaId): bool
+    {
+        return stripos($quotaId, 'PerDay') !== false;
+    }
+
+    /**
+     * User-facing transport messages per status (validation misses keep their
+     * own existing texts — this voice is transport-only).
+     *
+     * Called by: postGemini().
+     */
+    private function transportMessage(int $status, ?string $quotaId = null): string
+    {
+        if ($status === 503) {
+            return 'The AI service is busy (overloaded). Please wait a minute and try again.';
+        }
+        if ($status === 429) {
+            if ($quotaId !== null && $this->isPerDayQuota($quotaId)) {
+                return "Today's AI allowance is used up. Please try again tomorrow.";
+            }
+
+            return 'The AI service quota is exhausted for now. Please try again later.';
+        }
+        if ($status === 404) {
+            return 'The configured AI model is unavailable. Please contact the administrator.';
+        }
+
+        return 'The AI service could not be reached. Please try again in a moment.';
     }
 
     /**
@@ -740,34 +901,22 @@ class GeminiDocumentParserService
             ];
         }
 
-        try {
-            $response = Http::timeout(30)->post($url, [
-                'contents' => [
-                    [
-                        'parts' => $parts,
-                    ],
+        $result = $this->postGemini($url, [
+            'contents' => [
+                [
+                    'parts' => $parts,
                 ],
-                'generationConfig' => [
-                    'temperature' => 0.0,
-                    'responseMimeType' => 'application/json',
-                    'responseSchema' => $this->scurveResponseSchema(),
-                ],
-            ]);
+            ],
+            'generationConfig' => [
+                'temperature' => 0.0,
+                'responseMimeType' => 'application/json',
+                'responseSchema' => $this->scurveResponseSchema(),
+            ],
+        ], $model, 'text');
 
-            if (!$response->successful()) {
-                $this->logGeminiFailure('text', $model, $response->status());
+        $data = $result['payload'];
 
-                return '';
-            }
-
-            $data = $response->json();
-
-            return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        } catch (\Exception $e) {
-            $this->logGeminiFailure('text', $model, 'throwable');
-
-            return '';
-        }
+        return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     }
 
     /**
@@ -856,29 +1005,17 @@ class GeminiDocumentParserService
             ];
         }
 
-        try {
-            $response = Http::timeout(30)->post($url, [
-                'contents' => [
-                    [
-                        'parts' => $parts,
-                    ],
+        $result = $this->postGemini($url, [
+            'contents' => [
+                [
+                    'parts' => $parts,
                 ],
-            ]);
+            ],
+        ], $model, 'images');
 
-            if (!$response->successful()) {
-                $this->logGeminiFailure('images', $model, $response->status());
+        $data = $result['payload'];
 
-                return '';
-            }
-
-            $data = $response->json();
-
-            return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
-        } catch (\Exception $e) {
-            $this->logGeminiFailure('images', $model, 'throwable');
-
-            return '';
-        }
+        return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
     }
 
     /**

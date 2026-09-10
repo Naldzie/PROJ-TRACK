@@ -891,6 +891,28 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * E2 endpoint: sustained AI overload surfaces the busy message (not generic).
+     */
+    public function test_parse_gemini_sustained_overload_speaks_busy(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response('overloaded', 503, ['Retry-After' => 0]),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload])
+            ->assertStatus(422)->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'The AI service is busy (overloaded). Please wait a minute and try again.');
+
+        unlink($path);
+    }
+
+    /**
      * E2 endpoint: AI miss, missing source, PDFs, and contractors all decline.
      */
     public function test_parse_gemini_decline_paths(): void

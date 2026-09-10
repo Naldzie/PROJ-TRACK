@@ -68,18 +68,54 @@ async function parseSCurveDocument(documentId, parseUrl) {
 }
 
 function scurveToast(message, type) {
-    // Existing helpers disagree on arg order: admin's showToast(type, message),
-    // baseline-schedule-utils' queueToastAfterReload(message, type). Normalize.
-    var safeType = type === 'danger' ? 'error' : type;
-    if (typeof showToast === 'function') {
-        showToast(safeType, message);
-        return;
+    // Self-contained renderer (2026-09-10): the shared showToast() helpers
+    // disagree on argument order across pages (type-first legacy vs
+    // message-first component), which once rendered every import toast as a
+    // blue bubble reading just "error"/"success". Rendering our own DOM kills
+    // that class instead of picking a side. Same look/position as the global
+    // toasts (top-right stack); textContent-only, never HTML.
+    // Callers keep calling scurveToast(message, type) unchanged.
+    try {
+        var safeType = type === 'danger' ? 'error' : (type || 'info');
+        var palette = {
+            success: { bg: '#f0fdf4', border: '#86efac', text: '#166534', icon: 'bi-check-circle-fill', iconColor: '#16a34a' },
+            error: { bg: '#fef2f2', border: '#fca5a5', text: '#991b1b', icon: 'bi-exclamation-circle-fill', iconColor: '#dc2626' },
+            warning: { bg: '#fffbeb', border: '#fde047', text: '#92400e', icon: 'bi-exclamation-triangle-fill', iconColor: '#f59e0b' },
+            info: { bg: '#f0f9ff', border: '#bae6fd', text: '#0c4a6e', icon: 'bi-info-circle-fill', iconColor: '#0369a1' }
+        };
+        var c = palette[safeType] || palette.info;
+        var container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainerFallback';
+            container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;';
+            document.body.appendChild(container);
+        }
+        var toast = document.createElement('div');
+        toast.setAttribute('role', 'alert');
+        toast.style.cssText = 'background:' + c.bg + ';border:1px solid ' + c.border
+            + ';border-radius:8px;padding:14px 16px;box-shadow:0 4px 16px rgba(0,0,0,0.12);'
+            + 'display:flex;align-items:flex-start;gap:12px;min-width:260px;max-width:380px;';
+        var icon = document.createElement('i');
+        icon.className = 'bi ' + c.icon;
+        icon.style.cssText = 'font-size:18px;color:' + c.iconColor + ';flex-shrink:0;margin-top:1px;';
+        var span = document.createElement('span');
+        span.style.cssText = 'flex:1;font-size:14px;font-weight:500;color:' + c.text + ';line-height:1.4;';
+        span.textContent = String(message == null ? '' : message);
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.setAttribute('aria-label', 'Close');
+        close.style.cssText = 'background:none;border:none;cursor:pointer;padding:0;color:' + c.text + ';opacity:0.6;font-size:16px;line-height:1;flex-shrink:0;margin-top:1px;';
+        close.textContent = '×';
+        close.onclick = function () { try { toast.remove(); } catch (e) {} };
+        toast.appendChild(icon);
+        toast.appendChild(span);
+        toast.appendChild(close);
+        container.appendChild(toast);
+        setTimeout(function () { try { toast.remove(); } catch (e) {} }, 5000);
+    } catch (e) {
+        try { alert(message); } catch (e2) {}
     }
-    if (typeof queueToastAfterReload === 'function') {
-        queueToastAfterReload(message, safeType);
-        return;
-    }
-    alert(message);
 }
 
 /* ─── Import warnings ──────────────────────────────────────────────────────── */
@@ -198,14 +234,19 @@ window.scurveRenderCrossCheckLink = function () {
         wrap.id = 'scurveCrossCheckLink';
         wrap.style.cssText = 'font-size:11px;color:#6b7280;margin:-8px 0 14px 0;';
         wrap.appendChild(document.createTextNode('Second opinion — '));
-        var link = document.createElement('button');
-        link.type = 'button';
-        link.className = 'btn btn-link btn-sm p-0';
-        link.style.cssText = 'font-size:11px;vertical-align:baseline;';
-        link.textContent = 'Cross-check with AI?';
-        link.title = 'Ask the AI assistant to re-read this file and compare (one AI call).';
-        link.setAttribute('onclick', 'window._trySCurveCrossCheck()');
-        wrap.appendChild(link);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-secondary';
+        btn.style.cssText = 'font-size:11px;padding:1px 10px;border-radius:20px;';
+        btn.textContent = 'Cross-check with AI?';
+        btn.title = 'Ask the AI assistant to re-read this file and compare (one AI call).';
+        btn.setAttribute('onclick', 'window._trySCurveCrossCheck(this)');
+        wrap.appendChild(btn);
+        // Persistent result box (replaces toast-only replies — toasts are missed).
+        var result = document.createElement('div');
+        result.id = 'scurveCrossCheckResult';
+        result.style.cssText = 'display:none;margin-top:6px;font-size:11px;line-height:1.5;';
+        wrap.appendChild(result);
         host.insertBefore(wrap, anchor.nextSibling);
         // Keep the fresh link adjacent to the notes when both render.
         try {
@@ -215,12 +256,39 @@ window.scurveRenderCrossCheckLink = function () {
     } catch (e) { /* offer is best-effort */ }
 };
 
-window._trySCurveCrossCheck = async function () {
+window._trySCurveCrossCheck = async function (clickedBtn) {
     if (window._scurveXBusy) return;
     var ctx = window._scurveCrossCheckCtx || null;
     if (!ctx) return;
     window._scurveXBusy = true;
+    // Loading state on the button itself (4-8s cold calls look dead otherwise),
+    // mirroring the assist button; plus a persistent result box (never toast-only).
+    var wrap = document.getElementById('scurveCrossCheckLink');
+    var btn = (clickedBtn && clickedBtn.tagName === 'BUTTON') ? clickedBtn
+        : (wrap ? wrap.querySelector('button') : null);
+    var resultBox = wrap ? wrap.querySelector('#scurveCrossCheckResult') : null;
+    function paintResult(text, kind) {
+        try {
+            if (!resultBox) return;
+            resultBox.style.display = 'block';
+            if (kind === 'ok') {
+                resultBox.style.cssText = 'display:block;margin-top:6px;font-size:11px;line-height:1.5;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;';
+            } else if (kind === 'warn') {
+                resultBox.style.cssText = 'display:block;margin-top:6px;font-size:11px;line-height:1.5;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;';
+            } else {
+                resultBox.style.cssText = 'display:block;margin-top:6px;font-size:11px;line-height:1.5;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 10px;';
+            }
+            resultBox.textContent = text;
+        } catch (e) {}
+    }
+    function restoreBtn() {
+        try {
+            if (btn) { btn.disabled = false; btn.innerHTML = 'Cross-check with AI?'; }
+        } catch (e) {}
+    }
     try {
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Checking…'; }
+        if (resultBox) resultBox.style.display = 'none';
         var fd = new FormData();
         var geminiUrl = scurveGeminiUrl(ctx.parseUrl);
         if (ctx.kind === 'file' && ctx.file) {
@@ -272,17 +340,19 @@ window._trySCurveCrossCheck = async function () {
             });
         } catch (e) {}
         if (divergent.length === 0) {
-            scurveToast('AI cross-check agrees with the imported months.', 'success');
+            paintResult('AI cross-check agrees with the imported months.', 'ok');
         } else {
-            scurveToast(
+            paintResult(
                 'AI cross-check differs in Month ' + divergent.slice(0, 3).join(', Month ')
                 + (divergent.length > 3 ? ' (and ' + (divergent.length - 3) + ' more)' : '')
                 + ' — review before locking.',
-                'warning'
+                'warn'
             );
         }
+        restoreBtn();
     } catch (err) {
-        scurveToast(err.message, 'danger');
+        paintResult(err.message, 'err');
+        restoreBtn();
     } finally {
         window._scurveXBusy = false;
     }

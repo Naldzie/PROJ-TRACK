@@ -168,6 +168,13 @@ Sensitivity basis (user-approved)
       (OLE sniff, 15MB ceiling + CSV fallback note) + temperature 0.0 on the wire. Tests:
       +2 service (file part, text-only), +1 controller (MIME/ceiling/ghost). Full 1086
       passed / same 7 pre-existing; JS 90/92. See accuracy plan.
+    - LIVE ROUNDUP 2026-09-10 (user browser; parser model gemini-3.7-flash): true-curve
+      first try, unknown-format offer, tomorrow-message, cross-check agree, map import —
+      all proven live. Rate verdict: upload innocent, 3.8-flash RPD-20 + saturation guilty.
+      Unproven: diverge warning, fallback file, retry-heal sighting, fail-fast line,
+      duplicate capture, contractor map, button look. OPEN GAP: normal-doc assist shows
+      hardcoded generics (never the mapped transport messages) — next build. Full record
+      in accuracy plan.
     - MODEL VERDICT CLOSED 2026-09-10 (user live test): institute second key + 
       gemini-flash-latest live (pinned 2.5 retired/404s; drift caveat accepted). Flash
       returned the TRUE curve with four honest warnings — Lite copied under identical
