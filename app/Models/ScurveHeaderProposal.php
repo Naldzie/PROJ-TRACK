@@ -14,7 +14,8 @@ class ScurveHeaderProposal extends Model
 {
     use HasFactory, SoftDeletes;
 
-    public const SOURCES = ['auto-capture'];
+    // Phase-A: reviewer-taught variants arrive as manual-teach (proposed, own approval).
+    public const SOURCES = ['auto-capture', 'manual-teach'];
 
     public const SOURCE_TYPES = ['excel', 'pdf'];
 

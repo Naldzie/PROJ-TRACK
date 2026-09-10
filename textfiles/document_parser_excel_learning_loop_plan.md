@@ -237,6 +237,39 @@ Frontend convention (IMPORTANT)
       letter confirmation readout, never typed-letters-only.
     - Full build design in §7A below. No implementation yet.
 
+  2026-09-10 — PHASE A BUILT (code, NOT committed per user).
+    - A-1 endpoint: teachColumns (PATCH .../{proposal}/columns, admin+staff mirrored;
+      ensureReviewer + update-policy shape; activity-logged both modes). Letters in
+      (desc/code/weight/contract + per-month groups + 1-2 header R-lines);
+      parseStoredSlice (legend + quote-aware CSV + R-line map); server converts,
+      merges header lines positionally (fixed-width, no shift), stamps v/sig via
+      buildTaughtMap (new public service method: disjoint spans, desc-outside-spans,
+      ascending months, sig≥2 incl. desc cell); variant creates a SIBLING row
+      (manual-teach source, proposed, own approval — alternation safe); replace
+      overwrites + drops to proposed. SOURCES += manual-teach (+ desk badge).
+    - Caught pre-green (all fixed before green): (1) docblock opener eaten by a
+      short-anchor edit — restored, php -l clean; (2) sparse merge keys would shift
+      columns — fixed-width merge; (3) $request->route('proposal') returns the bound
+      model (fatal in logs) — capture id first; (4) my own fixture truncated the text
+      at M while the file has N12=50000 — taught M3 empty → lastNonZero=1 →
+      force-final pinned M1 at 100 (non-monotonic output with no clamp warning);
+      fixed fixture to A..N + M:N span, suite proves the exact curve. Lesson banked:
+      force-final pins the last month WITH DATA, and truncation lies by omission —
+      the UI badges 4000-char caps for the same reason.
+    - A-2 desk UI (Blade-inline per convention): schSplitCsv (quote-aware) +
+      schParseHeaderBlock + mini-grid list cell (8×16 capped, scrollable, role badges,
+      truncation badge) replacing the raw dump; Teach button per row (data-* delegated);
+      standalone teach modal (header checkboxes ≤2, field palette desc/contract/weight/
+      code + Month 1..12, click-assign with steal semantics, max 2 per month, live
+      readout + inline validation gating Save, variant/replace radios, existing-map
+      prefill); list rows cached for lookup (no extra endpoint); explainer rewritten.
+    - Tests: +variant-creates-sibling, +taught-variant end-to-end (exact 87.5 curve via
+      hand map), +replace-drops-to-proposed, +validation rejects (5 shapes), +contractor
+      blocked both routes. ScurveHeaderProposalTest 27/27; Blade view:cache clean.
+    - Full suite 1106 passed / same 7 pre-existing clean-tree failures; JS 90/92
+      (2 intended blinding fails). Browser proof (click-only teaching → parse) is the
+      user's step. NO commit per user.
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================

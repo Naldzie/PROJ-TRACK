@@ -522,6 +522,91 @@ class SCurveImportService
     }
 
     /**
+     * E1-A — build a versioned layout map from reviewer-taught columns.
+     *
+     * The Phase-A desk sends column LETTERS; the caller converts to 0-based
+     * indices first. $mergedHeaderCells is the 0-based value list of the taught
+     * header row(s), already merged for two-row headers. Validation mirrors the
+     * consult gates plus hygiene the reader assumes: disjoint spans, no label
+     * column inside a month span, strictly increasing months (catches swapped
+     * P1/P12 teaching), and a sig the consult can actually anchor (≥2 cells
+     * incl. a non-empty desc cell). Returns null when unteachable.
+     *
+     * Called by: ScurveHeaderProposalController::teachColumns().
+     */
+    public function buildTaughtMap(
+        array $mergedHeaderCells,
+        int $descCol,
+        ?int $codeCol,
+        ?int $weightCol,
+        ?int $contractCol,
+        array $monthSpans
+    ): ?array {
+        if ($descCol < 0) return null;
+        foreach (['code' => $codeCol, 'weight' => $weightCol, 'contract' => $contractCol] as $name => $col) {
+            if ($col !== null && $col < 0) return null;
+        }
+
+        // Normalize month keys (JSON arrives string-keyed) and span cols.
+        $spans = [];
+        foreach ($monthSpans as $m => $cols) {
+            $mi = (int) $m;
+            if ($mi < 1 || $mi > 12 || isset($spans[$mi])) return null;
+            $cols = array_map('intval', (array) $cols);
+            if (count($cols) === 0) return null;
+            foreach ($cols as $c) {
+                if ($c < 0 || $c > 79) return null;
+            }
+            $spans[$mi] = array_values(array_unique($cols));
+        }
+        if (count($spans) < 2) return null;
+        ksort($spans);
+
+        // Span cells pairwise disjoint; label cols outside every span.
+        $used = [];
+        foreach ($spans as $cols) {
+            foreach ($cols as $c) {
+                if (isset($used[$c])) return null;
+                $used[$c] = true;
+            }
+        }
+        foreach ([$descCol, $codeCol, $weightCol, $contractCol] as $col) {
+            if ($col !== null && isset($used[$col])) return null;
+        }
+
+        // Months run left-to-right (first col of each span strictly increasing).
+        $prev = -1;
+        foreach ($spans as $cols) {
+            $first = min($cols);
+            if ($first <= $prev) return null;
+            $prev = $first;
+        }
+
+        // Signature mirrors auto maps: all non-empty normalized header cells.
+        $sig = [];
+        foreach (array_values($mergedHeaderCells) as $col => $value) {
+            $text = strtolower(trim((string) ($value ?? '')));
+            if ($text !== '') {
+                $sig[] = [$col, $text];
+            }
+        }
+        if (count($sig) < 2) return null;
+        $descText = strtolower(trim((string) ($mergedHeaderCells[$descCol] ?? '')));
+        if ($descText === '') return null;
+
+        return [
+            'v' => self::MAP_VERSION,
+            'rowHint' => null,
+            'codeCol' => $codeCol,
+            'descCol' => $descCol,
+            'weightCol' => $weightCol,
+            'contractCol' => $contractCol,
+            'monthSpans' => $spans,
+            'sig' => $sig,
+        ];
+    }
+
+    /**
      * E1-3 — consult live learned maps after rule detection missed.
      *
      * Tries each map in controller order (contractor's first, then global):

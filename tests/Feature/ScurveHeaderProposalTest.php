@@ -366,6 +366,184 @@ class ScurveHeaderProposalTest extends TestCase
     }
 
     // =====================================================================
+    // Phase-A point-and-teach (reviewer-picked letters → validated v1 map).
+    // =====================================================================
+
+    private function makeTeachableRow(array $overrides = []): ScurveHeaderProposal
+    {
+        // NOTE: legend runs A..N — N12 holds 50000 in the real file, so M3 must
+        // span M:N. Truncating the text at M once produced a perfect red herring:
+        // empty M3 → lastNonZero=1 → force-final pinned M1 at 100.
+        $text = "COLUMNS: A,B,C,D,E,F,G,H,I,J,K,L,M,N | META: title | HEADER: labels | DATA: rows | SUMMARY: totals\n"
+            . "R1 [HEADER]: ITEM,,TASK DESCRIPTION,,,CONTRACT AMOUNT,% WEIGHT,,Month 1,,Month 2,,Month 3\n"
+            . 'R2 [DATA]: ,1,Mobilization,,,100000,25,,50000,,,,,50000';
+
+        return ScurveHeaderProposal::create(array_merge([
+            'header_rows_text' => $text,
+            'header_hash' => hash('sha256', uniqid()),
+            'column_map' => null,
+            'occurrences' => 2,
+            'status' => 'proposed',
+            'source' => 'auto-capture',
+        ], $overrides));
+    }
+
+    private function teachPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'desc' => 'C',
+            'contract' => 'F',
+            'weight' => 'G',
+            'months' => ['1' => ['I', 'J'], '2' => ['K', 'L'], '3' => ['M', 'N']],
+            'header_rows' => [1],
+            'mode' => 'variant',
+        ], $overrides);
+    }
+
+    // Teaching saves a SIBLING variant (original untouched) so alternating
+    // contractor formats are never forgotten.
+    // Called by: PATCH .../columns from the teach modal (mode variant).
+    public function test_teach_variant_creates_sibling_row(): void
+    {
+        $staff = $this->makeUser('staff');
+        $original = $this->makeTeachableRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$original->id}/columns", $this->teachPayload())
+            ->assertOk()->assertJsonPath('success', true)
+            ->assertJsonPath('mode', 'variant');
+
+        $this->assertSame(2, ScurveHeaderProposal::count());
+        $this->assertNull($original->fresh()->column_map);
+        $this->assertSame('proposed', $original->fresh()->status);
+
+        $variant = ScurveHeaderProposal::where('source', 'manual-teach')->first();
+        $this->assertNotNull($variant);
+        $this->assertSame('proposed', $variant->status);
+        $this->assertSame(1, $variant->occurrences);
+        $map = $variant->column_map;
+        $this->assertSame(1, $map['v']);
+        $this->assertSame(2, $map['descCol']);
+        $this->assertCount(3, $map['monthSpans']);
+        $this->assertNotEmpty($map['sig']);
+    }
+
+    // A taught variant actually consults: approve it, then the near-miss file
+    // parses through the hand-built map with the exact expected curve.
+    // Called by: parse() pass 2 via live manual-teach maps.
+    public function test_taught_variant_consults_end_to_end(): void
+    {
+        $staff = $this->makeUser('staff');
+        $original = $this->makeTeachableRow();
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$original->id}/columns", $this->teachPayload())
+            ->assertOk();
+
+        $variant = ScurveHeaderProposal::where('source', 'manual-teach')->first();
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$variant->id}/approve")
+            ->assertOk();
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+
+        $liveMaps = ScurveHeaderProposal::live()->orderBy('id')->get()->map(fn ($r) => [
+            'id' => $r->id,
+            'contractor_id' => $r->contractor_id,
+            'column_map' => $r->column_map,
+        ])->all();
+        $result = app(\App\Services\SCurveImportService::class)->parse($path, $liveMaps);
+
+        $this->assertCount(3, $result['months']);
+        $this->assertSame(87.5, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][2]['planned_progress_percent']);
+        $this->assertTrue($result['meta']['mapUsed']);
+
+        unlink($path);
+    }
+
+    // Explicit replace overwrites the map AND drops live → proposed (re-review).
+    // Called by: PATCH .../columns with mode replace.
+    public function test_teach_replace_drops_live_to_proposed(): void
+    {
+        $admin = $this->makeUser('admin');
+        $row = $this->makeTeachableRow([
+            'column_map' => ['v' => 1, 'sig' => [[0, 'x'], [1, 'y']], 'descCol' => 0, 'monthSpans' => [1 => [5], 2 => [6]]],
+            'status' => 'live',
+        ]);
+
+        $this->actingAs($admin)
+            ->patchJson("/admin/scurve-header-proposals/{$row->id}/columns", $this->teachPayload(['mode' => 'replace']))
+            ->assertOk()->assertJsonPath('mode', 'replace');
+
+        $fresh = $row->fresh();
+        $this->assertSame(1, ScurveHeaderProposal::count());
+        $this->assertSame('proposed', $fresh->status);
+        $this->assertSame(2, $fresh->column_map['descCol']);
+    }
+
+    // Validation guards the reader: overlaps, desc-in-span, unknown letters,
+    // single-month, and unknown header rows all 422 with plain messages.
+    // Called by: teachColumns() guards + buildTaughtMap().
+    public function test_teach_validation_rejects_bad_teaching(): void
+    {
+        $staff = $this->makeUser('staff');
+
+        // Overlapping spans (J claimed by two months).
+        $row = $this->makeTeachableRow();
+        $this->actingAs($staff)->patchJson(
+            "/staff/scurve-header-proposals/{$row->id}/columns",
+            $this->teachPayload(['months' => ['1' => ['I', 'J'], '2' => ['J', 'K']]])
+        )->assertUnprocessable();
+
+        // Description column inside a month span.
+        $row2 = $this->makeTeachableRow();
+        $this->actingAs($staff)->patchJson(
+            "/staff/scurve-header-proposals/{$row2->id}/columns",
+            $this->teachPayload(['desc' => 'I'])
+        )->assertUnprocessable();
+
+        // Unknown letter.
+        $row3 = $this->makeTeachableRow();
+        $this->actingAs($staff)->patchJson(
+            "/staff/scurve-header-proposals/{$row3->id}/columns",
+            $this->teachPayload(['desc' => 'ZZ'])
+        )->assertUnprocessable();
+
+        // Single month (validator min:2).
+        $row4 = $this->makeTeachableRow();
+        $this->actingAs($staff)->patchJson(
+            "/staff/scurve-header-proposals/{$row4->id}/columns",
+            $this->teachPayload(['months' => ['1' => ['I', 'J']]])
+        )->assertUnprocessable();
+
+        // Unknown header row.
+        $row5 = $this->makeTeachableRow();
+        $this->actingAs($staff)->patchJson(
+            "/staff/scurve-header-proposals/{$row5->id}/columns",
+            $this->teachPayload(['header_rows' => [9]])
+        )->assertUnprocessable();
+
+        $this->assertSame(0, ScurveHeaderProposal::where('source', 'manual-teach')->count());
+    }
+
+    // Contractors stay out of the teach endpoint on both role routes.
+    // Called by: ensureReviewer() via role middleware + controller guard.
+    public function test_contractor_blocked_from_teach_endpoint(): void
+    {
+        $contractor = $this->makeUser('contractor');
+        $row = $this->makeTeachableRow();
+
+        $this->actingAs($contractor)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->teachPayload())
+            ->assertRedirect(route('unauthorized'));
+        $this->actingAs($contractor)
+            ->patchJson("/admin/scurve-header-proposals/{$row->id}/columns", $this->teachPayload())
+            ->assertRedirect(route('unauthorized'));
+        $this->assertNull($row->fresh()->column_map);
+    }
+
+    // =====================================================================
     // E1-3 — reader consults live maps (lowest-priority fallback).
     // =====================================================================
 

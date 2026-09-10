@@ -294,6 +294,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::patch('/scurve-header-proposals/{proposal}/approve', [SCurveHeaderProposalController::class, 'approve'])
         ->name('staff.scurve-headers.approve');
 
+    // === S-CURVE HEADER TEACHING (Phase-A point-and-teach; staff + admin per E1b) ===
+    Route::patch('/scurve-header-proposals/{proposal}/columns', [SCurveHeaderProposalController::class, 'teachColumns'])
+        ->name('staff.scurve-headers.columns');
+
     Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
         ->name('staff.scurve-headers.destroy');
 
@@ -770,6 +774,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::patch('/scurve-header-proposals/{proposal}/approve', [SCurveHeaderProposalController::class, 'approve'])
         ->name('admin.scurve-headers.approve');
+
+    // === S-CURVE HEADER TEACHING (Phase-A point-and-teach; staff + admin per E1b) ===
+    Route::patch('/scurve-header-proposals/{proposal}/columns', [SCurveHeaderProposalController::class, 'teachColumns'])
+        ->name('admin.scurve-headers.columns');
 
     Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
         ->name('admin.scurve-headers.destroy');
