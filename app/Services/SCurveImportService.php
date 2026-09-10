@@ -95,7 +95,14 @@ class SCurveImportService
             $grid = $this->resolveFormulas($sheet, $grid);
             $roles = $this->labelSliceRows($grid, $sheet);
 
-            $rows = $sheet->toArray(null, true, false, false);
+            // OFF-BY-ONE FIX (2026-09-10): the CSV MUST come from the SAME grid the
+            // roles were keyed on. A previous revision read a second, numeric-keyed
+            // toArray (0-based) while roles were keyed 1-based sheet rows — every kept
+            // line wore the previous row's role (header labeled META, first data row
+            // labeled HEADER), silently teaching the AI wrong roles. Single source of
+            // truth below: array_values() on the letter-keyed rows is positionally
+            // identical to the old numeric view, so CSV output is byte-compatible.
+            $rows = $grid;
             $width = 0;
             $kept = 0;
             $keptKeys = [];

@@ -881,4 +881,31 @@ class ScurveHeaderProposalTest extends TestCase
 
         unlink($path);
     }
+
+    // Role placement on the third-family shape (off-by-one fix 2026-09-10): the
+    // user's live report showed R2 [META] + R3 [HEADER] on a file whose labels
+    // sit on sheet row 2 — the numeric grid (0-based) was read against
+    // letter-keyed roles (1-based sheet rows). Rows here: 1 title, 2 header,
+    // 3-6 activities, 7 TOTAL, 8 summary — tags must match exactly.
+    public function test_third_family_roles_sit_on_correct_rows(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeThirdFamilyWorkbook($path);
+
+        $csv = app(\App\Services\SCurveImportService::class)->serializeForAi($path, 15);
+        $tags = [];
+        foreach (explode("\n", $csv) as $line) {
+            if (preg_match('/^(R\d+) \[([A-Z]+)\]:/', trim($line), $m)) {
+                $tags[$m[1]] = $m[2];
+            }
+        }
+
+        $this->assertSame('META', $tags['R1'] ?? null);
+        $this->assertSame('HEADER', $tags['R2'] ?? null);
+        $this->assertSame('DATA', $tags['R3'] ?? null);
+        $this->assertSame('SUMMARY', $tags['R7'] ?? null);
+        $this->assertSame('SUMMARY', $tags['R8'] ?? null);
+
+        unlink($path);
+    }
 }

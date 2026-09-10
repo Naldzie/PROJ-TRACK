@@ -2314,6 +2314,20 @@ Related plan
       (proven via recorded()) — one fake per test from now on; split 3 multi-fake tests.
       Tests: +1 retry-heals (503→200 sequence), +1 sustained-503 busy, +1 quota, +1 dead
       model, +1 500-speaks, +1 endpoint busy-message. Suites below.
+    - OFF-BY-ONE ROLES BUILT 2026-09-10 (code, NOT committed per user).
+      Cause (user paste: R2 [META] + R3 [HEADER] on labels sitting at sheet row 10):
+      serializeForAi read a numeric-keyed grid (0-based) against letter-keyed roles
+      (1-based sheet rows) — every kept line wore the previous row's role (header as
+      META, first data row as HEADER), silently teaching the AI wrong roles on EVERY
+      file; co-suspect with Lite for the whole copying saga. Fix: single grid source
+      (array_values on the letter-keyed rows is positionally identical, so CSV output
+      is byte-compatible) — key-base mismatch structurally impossible now. Side effect
+      banked: uncached formula cells now serialize calculated (were raw "=..."), strictly
+      better; capture hashes change (one re-capture wave, same drill as slice reform).
+      Tests: existing tag test upgraded to placement asserts (R4 HEADER / R8+R9 SUMMARY
+      on BUHI shape) + new third-family placement test (R1 META / R2 HEADER / R3 DATA /
+      R7+R8 SUMMARY — the exact reported shape). Full suite 1108 passed / same 7
+      pre-existing; JS 90/92. NO commit per user.
     - MODEL VERDICT CLOSED 2026-09-10 (user live test, E3 key/model live: institute second
       key + gemini-flash-latest — pinned 2.5 404s/retired, alias answers; drift caveat
       accepted and logged in E3 file). Full Flash returned the TRUE 10-month curve

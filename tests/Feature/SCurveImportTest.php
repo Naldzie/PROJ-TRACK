@@ -1072,6 +1072,36 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * Role placement (off-by-one fix 2026-09-10): tags must sit on the RIGHT
+     * rows — the serializer once read a numeric-keyed grid (0-based) against
+     * letter-keyed roles (1-based sheet rows), so every line wore the previous
+     * row's role (header labeled META, first data row labeled HEADER). Fixture
+     * rows: A1-A3 metadata, row 10 header, row 11 code-only, 12-13 activities,
+     * 14 TOTAL, 15 summary.
+     */
+    public function test_serialize_for_ai_places_roles_on_correct_rows(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+
+        $csv = app(SCurveImportService::class)->serializeForAi($path);
+        $tags = [];
+        foreach (explode("\n", $csv) as $line) {
+            if (preg_match('/^(R\d+) \[([A-Z]+)\]:/', trim($line), $m)) {
+                $tags[$m[1]] = $m[2];
+            }
+        }
+
+        $this->assertSame('META', $tags['R1'] ?? null);
+        $this->assertSame('HEADER', $tags['R4'] ?? null);
+        $this->assertSame('DATA', $tags['R6'] ?? null);
+        $this->assertSame('SUMMARY', $tags['R8'] ?? null);
+        $this->assertSame('SUMMARY', $tags['R9'] ?? null);
+
+        unlink($path);
+    }
+
+    /**
      * Near-miss workbook for prefer-math tests: novel "TASK DETAILS" header
      * (rules miss) with standard months; month weights 50/50 of 400,000.
      */

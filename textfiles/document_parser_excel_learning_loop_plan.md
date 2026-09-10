@@ -270,6 +270,45 @@ Frontend convention (IMPORTANT)
       (2 intended blinding fails). Browser proof (click-only teaching → parse) is the
       user's step. NO commit per user.
 
+  2026-09-10 — PHASE A COMMITTED (2831deb, pushed) + USER FEEDBACK ROUND (code: off-by-one fix, NOT committed yet).
+    - Pasted auto map for the third-family file dissects VALID (v1, 10 single spans
+      P1–P10, 15-cell sig, descCol B; rowHint 10 = correct sheet row). Detection proven
+      right by the user's own evidence; pasted-map R-badge dispute stays open as F1 below.
+    - F1 RESOLVED as a REAL BUG (user re-paste with full header text + Excel shot):
+      serializer read a numeric-keyed grid (0-based) against letter-keyed roles (1-based
+      sheet rows) — every kept line wore the previous row's role. Fixed structurally
+      (single grid source for CSV + roles); placement tests on both families. Re-capture
+      wave noted (hashes change). See accuracy plan OFF-BY-ONE entry for the full record.
+    - BROWSER PROOF SKIPPED for now (user order 2026-09-10 — click-only teaching →
+      parse untested live). Phase-A end-to-end rests on unit/endpoint proof (hand map →
+      exact 87.5 curve) until the user runs it. Re-capture + teach + approve + re-import
+      remains the acceptance script whenever resumed.
+    - DOCSUMO REVIEW studied (user Q): pre-trained extraction → confidence scores →
+      human queue (approve/correct/reject) → corrections retrain; validation formulas;
+      audit logs. Verdict logged: already convergent (extractors/warnings/desks/loops =
+      their pipeline at our weight); borrowable later: per-month confidence badges,
+      value-ordered queue. No ML retraining — mappings fit our scale.
+    - F1 (verify): user reads panel R3=[HEADER] but grid labels sit on R2, theorizing the
+      file's empty rows shift tags. Counter-evidence banked: R-numbers are kept-ordinals
+      (empties compressed), so empties CANNOT shift tags; detector analysis crowns R2
+      (single-row relaxed hit; nothing outscores it). Resolve by reopen-verify (which line
+      truly carries the blue badge) or pasting the stored block for hand-mapping; if R3 is
+      real, prime suspect is findHeaderWith scoring.
+    - F2 (micro-fix, planned): rename "Contract" → "Contract amount" everywhere in teach
+      UI + readout + endpoint messages (it's the peso/denominator column, not the document).
+    - F3 (study-sized, planned): >12-month schedules. Caps today: matchMonthLabel 1..12,
+      longestNumberRun 1..12, buildTaughtMap month keys 1..12 — plus unknown downstream
+      (buildMonths maxMonth, setup modal, charts, baseline tables). Needs a study before
+      any code; multi-year projects will eventually demand it.
+    - F4 (micro-fix, planned): one-line tooltips per teach field (Description = work-names
+      column; Contract amount = peso column, baseline denominator; Weight = % column;
+      Item code = numbering; Month N = monthly peso columns, 1–2 letters; header rows =
+      label lines; variant = sibling, replace = overwrite + re-review).
+    - F5 (validation gap, noted): auto maps can carry codeCol == descCol (ITEM-in-A pushes
+      the code guess into B = the description column; harmless today — flavors activity
+      sub-labels only, math untouched). Later: require label cols pairwise-distinct in
+      buildTaughtMap + finalizeHeader.
+
 ===============================================================================
   7. OPEN QUESTIONS
 ===============================================================================
@@ -286,7 +325,7 @@ Frontend convention (IMPORTANT)
     reviewer assignment is Phase A below.
 
 ===============================================================================
-  7A. PHASE A — POINT-AND-TEACH (PLANNED, NOT STARTED — user-approved design)
+  7A. PHASE A — POINT-AND-TEACH (BUILT + COMMITTED 2831deb; browser proof + F1–F5 open)
 ===============================================================================
 
   Goal: a reviewer teaches column positions by CLICKING a rendered mini-grid —
@@ -316,6 +355,7 @@ Frontend convention (IMPORTANT)
 
   A-3 Proof: teach a map-less layout by clicking only → re-import parses with the
     learned-layout note; full + JS suites green; logs; commit/push only on user word.
+    (Proof + commit DONE 2831deb; browser click-only proof + F1–F5 follow-ups open.)
 
 ===============================================================================
   8. CONVERSATION CONTINUATION GUIDE
