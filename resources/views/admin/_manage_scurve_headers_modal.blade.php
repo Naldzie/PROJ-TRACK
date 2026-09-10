@@ -77,13 +77,13 @@
                     Click a field on the left, then click its column letter(s) on the grid.
                     Rows tagged <span class="badge bg-primary">HEADER</span> hold the labels;
                     <span class="badge bg-warning text-dark">SUMMARY</span> rows are reference only.
-                    R-numbers are kept order, not Excel rows.
+                    R-numbers are kept order, not Excel rows. Hover any button for what it needs.
                 </p>
                 <div class="row">
                     <div class="col-md-3">
-                        <div class="mb-2"><strong>1. Header row(s)</strong> <small class="text-muted">(1–2)</small></div>
+                        <div class="mb-2" title="Tick the line(s) holding the column labels — usually exactly 1; tick a 2nd only if labels print across two lines."><strong>1. Header row(s)</strong> <small class="text-muted">(1–2)</small></div>
                         <div id="teachHeaderRows" class="mb-3"></div>
-                        <div class="mb-2"><strong>2. Click a field, then its column(s)</strong></div>
+                        <div class="mb-2" title="Arm a field, then click its column letter(s) on the grid. Assigned columns show badges; clicking a taken letter moves it."><strong>2. Click a field, then its column(s)</strong></div>
                         <div id="teachFieldPalette" class="d-flex flex-wrap gap-1 mb-3"></div>
                         <div class="mb-2"><strong>3. Save as</strong></div>
                         <div class="form-check">
@@ -99,13 +99,13 @@
                         <div id="teachHint" class="small text-danger"></div>
                     </div>
                     <div class="col-md-9">
-                        <div id="teachGrid" style="overflow:auto;max-height:420px;border:1px solid #dee2e6;border-radius:8px;"></div>
+                        <div id="teachGrid" title="Click a column letter to assign it to the armed field." style="overflow:auto;max-height:420px;border:1px solid #dee2e6;border-radius:8px;"></div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" id="teachSaveBtn" onclick="schSaveTeaching()">Save layout</button>
+                <button type="button" class="btn btn-primary" id="teachSaveBtn" title="Save as a new variant (or replace) — approval is still required before it can fill anything." onclick="schSaveTeaching()">Save layout</button>
             </div>
         </div>
     </div>
@@ -472,12 +472,12 @@ function schTeachColumns(id) {
 }
 
 const SCH_TEACH_FIELDS = [
-    { key: 'desc', label: 'Description' },
-    { key: 'contract', label: 'Contract' },
-    { key: 'weight', label: 'Weight' },
-    { key: 'code', label: 'Item code' },
+    { key: 'desc', label: 'Description', tip: 'Work-names column (e.g. TASK DESCRIPTION, WORK DETAILS) — activities are read from here. Required.' },
+    { key: 'contract', label: 'Contract amount', tip: 'Peso column holding each activity\u2019s cost (e.g. BUDGET COST) — the baseline denominator. Optional.' },
+    { key: 'weight', label: 'Weight', tip: 'Percent-weight column (e.g. % WEIGHT). Optional.' },
+    { key: 'code', label: 'Item code', tip: 'Row numbering column (e.g. ITEM). Optional.' },
 ];
-for (let m = 1; m <= 12; m++) SCH_TEACH_FIELDS.push({ key: 'm' + m, label: 'Month ' + m });
+for (let m = 1; m <= 12; m++) SCH_TEACH_FIELDS.push({ key: 'm' + m, label: 'Month ' + m, tip: 'Monthly peso columns for Month ' + m + ' — click 1 letter for single-column months (P1), 2 for paired months (value written twice).' });
 
 function schTeachFieldLabel(key) {
     if (key === 'desc') return 'DESC';
@@ -497,6 +497,7 @@ function schRenderTeachPalette() {
         b.type = 'button';
         b.className = 'btn btn-sm ' + (_schTeach.field === f.key ? 'btn-primary' : 'btn-outline-secondary');
         b.textContent = f.label;
+        b.title = f.tip || f.label;
         b.onclick = function () { _schTeach.field = f.key; schRenderTeachPalette(); };
         host.appendChild(b);
     });
@@ -615,7 +616,7 @@ function schRenderTeachReadout() {
     const a = _schTeach.assigns;
     const parts = [];
     if (a.desc) parts.push('Description=' + a.desc);
-    if (a.contract) parts.push('Contract=' + a.contract);
+    if (a.contract) parts.push('Contract amount=' + a.contract);
     if (a.weight) parts.push('Weight=' + a.weight);
     if (a.code) parts.push('Code=' + a.code);
     const months = Object.keys(a.months).sort((x, y) => x - y);

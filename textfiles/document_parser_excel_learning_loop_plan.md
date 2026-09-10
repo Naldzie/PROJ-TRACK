@@ -270,7 +270,7 @@ Frontend convention (IMPORTANT)
       (2 intended blinding fails). Browser proof (click-only teaching → parse) is the
       user's step. NO commit per user.
 
-  2026-09-10 — PHASE A COMMITTED (2831deb, pushed) + USER FEEDBACK ROUND (code: off-by-one fix, NOT committed yet).
+  2026-09-10 — PHASE A COMMITTED (2831deb, pushed) + USER FEEDBACK ROUND (no code yet).
     - Pasted auto map for the third-family file dissects VALID (v1, 10 single spans
       P1–P10, 15-cell sig, descCol B; rowHint 10 = correct sheet row). Detection proven
       right by the user's own evidence; pasted-map R-badge dispute stays open as F1 below.
@@ -308,6 +308,12 @@ Frontend convention (IMPORTANT)
       the code guess into B = the description column; harmless today — flavors activity
       sub-labels only, math untouched). Later: require label cols pairwise-distinct in
       buildTaughtMap + finalizeHeader.
+    - F2+F4 BUILT 2026-09-10 (code, NOT committed per user): palette label + readout now
+      "Contract amount" (endpoint messages already said so; AMT badge kept short); hover
+      tooltips on every palette button (per-field purpose + single-vs-paired rule),
+      header-row section, grid container, and Save (approval still required). Blade
+      view:cache clean; header suite 28/28 (no PHP touched — display text only).
+    - F3 STUDY KICKED OFF 2026-09-10 (user order; study first, no code yet).
 
 ===============================================================================
   7. OPEN QUESTIONS
