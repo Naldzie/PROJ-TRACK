@@ -266,6 +266,112 @@ Proof files (git-ignored sampledocs/, never commit)
       stash: identical 7 — zero regressions). No commit per user.
     - NEXT = Phase F-B (endpoint + routes) on go-ahead.
 
+  2026-09-11 — F-B BUILT (code, NOT committed per user).
+    - Endpoint: SCurveImportController::parsePdfWithGemini (images[] only +
+      optional pageWords[] — no file/document_id since the server holds no PDF
+      renderer; compact slice resolver mirroring DocumentParserController
+      budgets 10MB/30MB PNG-JPEG-WebP incl. data-URIs; monthLabels stripped for
+      F-D; aiAssisted + fallbackModel provenance; 422 shapes mirroring
+      parseWithGemini). No map consult (Excel column maps don't apply to PDFs).
+    - Routes: POST /{staff,admin}/s-curve/parse-pdf-gemini (contractors: nothing;
+      route:clear run — recurring incident class).
+    - Caught pre-green (1, test-side): bare Http::sequence() never registers as
+      the fake — requests escaped to the real network (status-0 decline). Fixed
+      with the mapped Http::fake(['*generativelanguage*' => sequence]) idiom +
+      Retry-After 0 + explicit model config (same as DocumentParserGeminiTest).
+      Lesson: sequences always ride inside Http::fake.
+    - Tests (+8 SCurvePdfGeminiTest): admin/staff success (months + kept names +
+      aiAssisted + monthLabels stripped), discipline (empty/>3/bad-mime/empty),
+      data-URI accept, AI-miss 422, hallucinated-drop end-to-end (pageWords
+      wiring proof), contractor redirect both routes, Lite provenance.
+    - Suites: endpoint 8/8; full 1138 passed / same 7 pre-existing (clean-tree
+      proven at F-A — unchanged since). No PHP regressions. No commit per user.
+    - NEXT = Phase F-C (button + slice + merge) on go-ahead.
+
+  2026-09-11 — F-C BUILT (code, NOT committed per user).
+    - Trigger: core isWeakPdfCurve(parsed) pure + exported (months-short /
+      generic-names ≥50% / summary-gap >1.0; empty = failure not weak; nameless
+      weekly curves never flag). +3 fixtures.
+    - Slicer: window.buildSCurvePdfSlices(2) in the PDF wrapper — table pages
+      (P2-0 header hits) first, then leading pages; ~150 DPI, 4000px budget,
+      toDataURL PNG; returns slices + per-page words. Stale-file guard by
+      reference. DOM/canvas paths = browser proof covers them.
+    - Offer + merge: beside-button wrap (failures, same home as Excel) +
+      in-modal link (weak successes — modal buries the button); one POST per
+      click to parse-pdf-gemini (images + pageWords JSON); mapped failure
+      voices surface; backup-model note appended in scurveStashWarnings;
+      wizard + detail flows rejoin their normal modal paths.
+    - Caught pre-green (2, both fixed before green): (1) normalizeSCurveMonths
+      dropped string-form AI activities (a.activity_name on a string) — now
+      accepts bare names (+1 import fixture); (2) detail tab loaded 3 of the 4
+      touched scripts without $jsv versioning (stale-JS ghost class from UX-2b)
+      — versioned, view:cache clean.
+    - Suites: JS 113 + 2 intended blinding fails (suite +4, all green); full
+      1138 passed / same 7 pre-existing (clean-tree proven at F-A). No commit.
+    - NEXT = user browser proof (button on failure + weak 10-month/6-stage;
+      merged names + notes) → then F-D (vocabulary save) on go-ahead.
+
+  2026-09-11 — F-C POLISH from browser proof (code, NOT committed per user).
+    User findings on real files: (a) Excel cross-check link also rendered on PDF
+    imports (dead — Excel endpoint declines PDFs); (b) AI names recorded but not
+    shown on the month list; (c) in-modal link had no loading/error states.
+    - (a) Cross-check offer gated to non-PDF flows (wizard mode + detail
+      docType); modal-open hook needs no change (reads the same ctx, cleared
+      every import start). PDF flows show only the PDF AI link.
+    - (b) normalizeSCurveMonths falls back to joined activity names when
+      description is empty (rule months always carry description — untouched;
+      heals Excel-AI imports too). Caught pre-green: my own edit left the old
+      activities block duplicated below the new return (dead code) — removed.
+    - (c) In-modal link now carries the approved recommended wording + its own
+      spinner/disabled loading + persistent error box (cross-check pattern);
+      _trySCurvePdfAiAssist drives the clicked button and paints errors
+      in-modal (toast kept as backup).
+    - Suites: JS 113 + 2 intended blinding fails; full 1138 passed / same 7
+      pre-existing. No commit.
+    - OPEN (needs user's 10-month AI notes text): the 4 summary warnings are
+      still absent on the AI 10-month curve — likely the AI never reported the
+      summary block. Slice/prompt fix queued after the evidence lands.
+
+  2026-09-11 — LITE FALLBACK REVERTED on the PDF path (code, NOT committed).
+    User evidence: log showed "fallback to Lite" firing on PDF slices + a
+    copied-summary result — the exact failure Excel excluded Lite for (E3: Lite
+    copies author summaries instead of computing). The rescue rode in with the
+    shared images sender from normal-doc; F-A never excluded it.
+    - Fix: callGeminiWithImages gains $allowFallback=true (normal-doc default
+      unchanged — its rescue + provenance tests still green); parseSCurvePdfSlice
+      passes false (Flash-or-nothing). Overload/quota/dead-model now throw
+      their mapped voices straight to the endpoint 422 → in-modal error box.
+      fallbackModel stays null on PDFs, so no backup note ever prints there.
+    - Tests: +service no-fallback case (busy,busy → mapped throw, exactly 2
+      requests, lastFallbackModel null); endpoint fallback test rewritten to
+      assert the honest 422 + mapped voice + 2 requests. Consequence accepted:
+      spent Flash daily quota reads "try again tomorrow" instead of a Lite copy.
+    - Suites: AI suites 66/66; JS 113 + 2 intended blinding fails; full 1139
+      passed / same 7 pre-existing. No commit.
+    - CLOSED by user evidence the same day: the 4 warnings + Checked note DO
+      appear on the Flash 10-month run (user pasted all four) — the earlier
+      silence was the Lite copy, not a slice gap. No slice/prompt fix needed.
+    - SIDE OBSERVATION (needs one browser check): a Flash reply carried
+      months:11 on the 10-month file — the sanitizer clamps values but never
+      caps the count. If the modal ever imports 11 months, a count-sanity guard
+      gets built.
+
+  2026-09-11 — BROWSER PROOF (user, live runs on both proof files).
+    - 10-month PDF via AI: TRUE curve (5/10/20/30/50/70/80/90/95/100) with
+      per-month counts matching Excel (1,1,1,1,2,2,1,1,1,1) + all 4 summary
+      warnings + Checked note. F-C merge + description fallback proven (names
+      recorded; list shows them).
+    - 6-stage PDF via AI: 5/20/40/60/80/100 with Excel-matching counts
+      (1,2,1,2,1,1); names accurate in edit/manage. Rule-only read still shows
+      generic Activity N over-assignment — expected, AI is the remedy.
+    - Quota voice proven live: Flash per-day 429 surfaces "Today's AI allowance
+      is used up. Please try again tomorrow." (log: GenerateRequestsPerDay-
+      PerProjectPerModel-FreeTier) — the Flash-or-nothing revert behaves as
+      designed. All three AI buttons share the parser meter and rest together.
+    - Status: F-A..F-C + polish + revert COMMITTED (see log below); F-E proof
+      substantially done (both files merge correctly). Remaining: F-D
+      vocabulary save + months:11 count check, on go-ahead.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

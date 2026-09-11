@@ -748,6 +748,43 @@ export function parseSCurvePdf(itemsByPage, opts) {
     return parseWeeklySchedulePdf(itemsByPage);
 }
 
+/**
+ * Weak-read check (F-C): does this parsed PDF curve deserve an AI-assist offer?
+ *
+ * Pure and side-effect free. Weak when months are short (<2), when half or
+ * more of the listed names are generic fallbacks ("Activity N"), or when the
+ * author's own summary gaps past 1.0. Empty parses are failures, not weak —
+ * callers handle those in their catch branches.
+ *
+ * @param {{months: Array, meta: Object}|null} parsed  parseSCurvePdf output.
+ * @returns {{weak: boolean, reasons: Array<string>}}
+ */
+export function isWeakPdfCurve(parsed) {
+    const reasons = [];
+    if (!parsed || !Array.isArray(parsed.months) || parsed.months.length === 0) {
+        return { weak: false, reasons };
+    }
+    if (parsed.months.length < 2) reasons.push('months-short');
+    const names = [];
+    parsed.months.forEach((m) => {
+        ((m && m.activities) || []).forEach((a) => {
+            const n = a && typeof a === 'object' ? a.activity_name : a;
+            if (typeof n === 'string' && n.trim() !== '') names.push(n.trim());
+        });
+    });
+    // Nameless curves (weekly path emits []) are not weak by names — only
+    // generic-fallback floods are. Weekly successes must never offer AI.
+    if (names.length > 0) {
+        const generic = names.filter((n) => /^Activity \d+$/i.test(n)).length;
+        if (generic / names.length >= 0.5) reasons.push('generic-names');
+    }
+    const refs = (parsed.meta && parsed.meta.summaryReference) || [];
+    if (refs.some((r) => r && typeof r.gap === 'number' && r.gap > 1.0)) {
+        reasons.push('summary-gap');
+    }
+    return { weak: reasons.length > 0, reasons };
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -764,5 +801,6 @@ if (typeof window !== 'undefined') {
         linesToTokenLines,
         parseSCurvePdf,
         parseWeeklySchedulePdf,
+        isWeakPdfCurve,
     };
 }

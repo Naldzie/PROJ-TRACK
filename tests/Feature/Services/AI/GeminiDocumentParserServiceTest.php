@@ -3,6 +3,7 @@
 namespace Tests\Feature\Services\AI;
 
 use App\Services\AI\GeminiDocumentParserService;
+use App\Services\AI\GeminiTransportException;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -1232,6 +1233,37 @@ class GeminiDocumentParserServiceTest extends TestCase
             }
         }
         $this->assertTrue($flagged);
+    }
+
+    // PDF path never falls back to Lite (Flash-or-nothing, user 2026-09-11):
+    // sustained overload throws the mapped voice with no third (Lite) call.
+    // Called by: parseSCurvePdfSlice() via callGeminiWithImages(..., false).
+    public function test_pdf_slice_never_falls_back_to_lite(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('overloaded', 503, ['Retry-After' => 0])
+            ->push('overloaded', 503, ['Retry-After' => 0]),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+
+        try {
+            $service->parseSCurvePdfSlice($this->sliceImages(1));
+            $this->fail('Expected a transport exception, got a decline.');
+        } catch (GeminiTransportException $e) {
+            $this->assertStringContainsString('busy (overloaded)', $e->getMessage());
+        }
+
+        // Initial + one retry only — a Lite rescue would be a third request.
+        Http::assertSentCount(2);
+        $this->assertNull($service->lastFallbackModel);
     }
 
     // F-A fence-wrapped payloads still parse.

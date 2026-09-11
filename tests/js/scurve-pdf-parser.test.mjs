@@ -9,6 +9,7 @@ import {
     isSummaryLabel,
     isDescriptionLabel,
     headerFuzzyMatch,
+    isWeakPdfCurve,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
 
 /* ─── Fixture helpers ─────────────────────────────────────────────────────── */
@@ -503,4 +504,50 @@ test('parses a weekly schedule with month-span boundaries and cumulative %', () 
     assert.equal(result.months[3].month_index, 4);
     assert.equal(result.months[3].planned_progress_percent, 100);
     assert.equal(result.months[3].description, 'March');
+});
+
+/* ─── F-C: weak-read trigger ─────────────────────────────────────────────── */
+
+function weakMonths(namesPerMonth, gaps) {
+    return {
+        months: namesPerMonth.map((names, i) => ({
+            month_index: i + 1,
+            planned_progress_percent: (i + 1) * 10,
+            activities: names.map((n) => ({ activity_name: n })),
+        })),
+        meta: {
+            summaryReference: (gaps || []).map((gap, i) => ({
+                month: i + 1, summary_percent: 0, activity_percent: gap, gap,
+            })),
+        },
+    };
+}
+
+test('isWeakPdfCurve stays silent on strong and empty parses', () => {
+    const strong = weakMonths([['Mobilization Works'], ['Earthworks']], [0.2]);
+    assert.equal(isWeakPdfCurve(strong).weak, false);
+    assert.equal(isWeakPdfCurve(null).weak, false);
+    assert.equal(isWeakPdfCurve({ months: [], meta: {} }).weak, false);
+});
+
+test('isWeakPdfCurve flags generic-name floods but not nameless weekly curves', () => {
+    const generic = weakMonths([['Activity 1', 'Activity 3'], ['Activity 2', 'Activity 4']], []);
+    const found = isWeakPdfCurve(generic);
+    assert.equal(found.weak, true);
+    assert.ok(found.reasons.includes('generic-names'));
+
+    const weekly = weakMonths([[], []], []);
+    assert.equal(isWeakPdfCurve(weekly).weak, false);
+});
+
+test('isWeakPdfCurve flags short curves and summary gaps', () => {
+    const short = weakMonths([['Mobilization Works']], []);
+    const s = isWeakPdfCurve(short);
+    assert.equal(s.weak, true);
+    assert.ok(s.reasons.includes('months-short'));
+
+    const gapped = weakMonths([['Mobilization Works'], ['Earthworks']], [0.2, 4.5]);
+    const g = isWeakPdfCurve(gapped);
+    assert.equal(g.weak, true);
+    assert.ok(g.reasons.includes('summary-gap'));
 });

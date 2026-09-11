@@ -429,7 +429,11 @@ class GeminiDocumentParserService
             return is_string($w) ? $w : '';
         }, $pageWords)));
 
-        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images);
+        // Flash-or-nothing (user decision 2026-09-11): the PDF path never
+        // falls back to Lite — Lite copies author summaries instead of
+        // computing (E3 verdict), the exact failure Excel excluded it for.
+        // Transport failures throw their mapped voices instead.
+        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images, false);
 
         if ($raw === '') {
             return null;
@@ -1468,11 +1472,13 @@ class GeminiDocumentParserService
      * fails eligible (404/429/502/503/504 + throws — never 400/401/403 where the
      * key itself is broken), ONE attempt goes to Lite, whose answer flows through
      * the same validation. lastFallbackModel records the rescue for provenance.
+     * $allowFallback=false disables the rescue (PDF S-curve: Flash-or-nothing
+     * per user 2026-09-11 — Lite copies summaries instead of computing).
      *
-     * Called by: parseProjectSlice()
+     * Called by: parseProjectSlice(), parseSCurvePdfSlice()
      * Uses: config/services.php (gemini parser key/model + main model for backup)
      */
-    private function callGeminiWithImages(string $prompt, array $images): string
+    private function callGeminiWithImages(string $prompt, array $images, bool $allowFallback = true): string
     {
         $this->lastFallbackModel = null;
         $apiKey = $this->parserKey();
@@ -1506,7 +1512,7 @@ class GeminiDocumentParserService
         try {
             $result = $this->postGemini($url, $payload, $model, 'images');
         } catch (GeminiTransportException $e) {
-            if (!$this->isFallbackEligible($e->status)) {
+            if (!$allowFallback || !$this->isFallbackEligible($e->status)) {
                 throw $e;
             }
             // One Lite attempt, no retry loop (the parser model already spent it).

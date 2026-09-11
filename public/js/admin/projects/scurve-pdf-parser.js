@@ -39,12 +39,85 @@ window.parseSCurvePdfFile = async function (file) {
         itemsByPage.push(content.items || []);
     }
 
+    // F-C stash for the AI slicer: the file (re-rendered on demand), the
+    // machine-read words per page (names alignment), and the table pages (the
+    // P2-0 header hits — those pages hold the table, so they slice first).
+    try {
+        window._scurvePdfFile = file;
+        window._scurvePdfPageTexts = itemsByPage.map((items) =>
+            (items || []).map((it) => (it && it.str) || '').join(' ')
+        );
+    } catch (e) { /* stash is best-effort */ }
+
     // P2-0 — month-attribution debug: set window.__scurvePdfDebug = true in the
     // console before importing to log which page/row/cell built each month total.
     const debug = [];
     const out = core.parseSCurvePdf(itemsByPage, { debug });
     try {
         if (window.__scurvePdfDebug && debug.length) console.info('[scurve-pdf] attribution', debug);
+        const pages = [];
+        debug.forEach((d) => {
+            if (d && d.t === 'header' && Number.isInteger(d.page) && pages.indexOf(d.page) === -1) {
+                pages.push(d.page);
+            }
+        });
+        window._scurvePdfTablePages = pages;
     } catch (e) { /* logging never blocks imports */ }
     return out;
+};
+
+/**
+ * Render the weakest S-curve PDF pages to image slices for the F-B endpoint.
+ *
+ * Re-opens the stashed file (table pages first, then leading pages), renders
+ * at ~150 DPI (scale 2.08) with the AI-3 pixel budget (skip absurd canvases),
+ * and returns { slices: [{data, mimeType}], pageWords: [...] } for those
+ * pages. Best-effort: skips unreadable pages, throws only when nothing
+ * sliceable remains.
+ */
+window.buildSCurvePdfSlices = async function (maxN) {
+    const file = window._scurvePdfFile || null;
+    if (!file) throw new Error('Original file no longer available — re-import to retry.');
+    if (typeof window.loadPdfJs !== 'function') {
+        throw new Error('PDF.js is not available on this page.');
+    }
+    const limit = Math.max(1, Math.min(maxN || 2, 3));
+    const pdfjs = await window.loadPdfJs();
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjs.getDocument({ data: buf }).promise;
+    try {
+        const tablePages = (window._scurvePdfTablePages || []).filter(
+            (p) => Number.isInteger(p) && p >= 0 && p < doc.numPages
+        );
+        const picks = tablePages.slice(0, limit);
+        for (let p = 0; picks.length < limit && p < Math.min(doc.numPages, 20); p++) {
+            if (picks.indexOf(p) === -1) picks.push(p);
+        }
+        const texts = window._scurvePdfPageTexts || [];
+        const slices = [];
+        const pageWords = [];
+        for (const p of picks) {
+            try {
+                const page = await doc.getPage(p + 1);
+                const viewport = page.getViewport({ scale: 2.08 });
+                // AI-3 pixel budget: absurd canvases never ride the request.
+                if (Math.max(viewport.width, viewport.height) > 4000) continue;
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                const url = canvas.toDataURL('image/png');
+                if (!url || url.length <= 1000) continue;
+                slices.push({ data: url.split(',')[1], mimeType: 'image/png' });
+                pageWords.push(texts[p] || '');
+                if (slices.length >= limit) break;
+            } catch (e) { /* next page */ }
+        }
+        if (slices.length === 0) {
+            throw new Error('The PDF pages could not be rendered to images.');
+        }
+        return { slices, pageWords };
+    } finally {
+        try { await doc.destroy(); } catch (e) { /* cleanup is best-effort */ }
+    }
 };

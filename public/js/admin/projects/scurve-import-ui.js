@@ -146,6 +146,10 @@ function scurveStashWarnings(data) {
         if (data && data.meta && data.meta.aiAssisted) {
             list.push('AI-assisted curve — verify before locking the baseline.');
         }
+        // F-C: backup-model provenance rides the notes (null unless Lite answered).
+        if (data && data.fallbackModel) {
+            list.push('Answered by backup model — verify carefully.');
+        }
         var seen = {};
         var deduped = [];
         list.forEach(function (w) {
@@ -423,6 +427,200 @@ window._trySCurveAiAssist = async function () {
     }
 };
 
+/* ─── F-C AI assist (PDF Tier 3, opt-in) ───────────────────────────────────── */
+ // Same beside-button home as the Excel offer (user decision: one place to look,
+// both file types) — plus a small in-modal link for weak-but-parseable curves
+// (the modal buries the beside-button spot once it opens). Offered on PDF
+// import failures AND weak successes (user: both cases). Clicking slices the
+// weakest 2 pages client-side (never the whole file) and POSTs them once
+// (busy-guarded) to parse-pdf-gemini, then rejoins the normal success path
+// (normalize → modal → in-modal notes) with AI provenance appended. Results
+// merge for review — never auto-applied.
+// Called by: both PDF import catch blocks (failures) + success paths (weak).
+
+function scurvePdfGeminiUrl(parseUrl) {
+    return String(parseUrl || '').replace(/\/s-curve\/parse$/, '/s-curve/parse-pdf-gemini');
+}
+
+function scurveOfferPdfAiAssist(ctx, note) {
+    try {
+        // Contractors never reach here (no upload surface, no route) — belt
+        // and suspenders alongside the server role gates.
+        var path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return;
+        var old = document.getElementById('scurvePdfAiAssistWrap');
+        if (old && old.remove) old.remove();
+        window._scurvePdfAiCtx = ctx;
+        var host = ctx && ctx.btn ? ctx.btn.parentElement : document.body;
+        var wrap = document.createElement('div');
+        wrap.id = 'scurvePdfAiAssistWrap';
+        wrap.style.cssText = 'margin-top:6px;padding:6px 10px;border:1px solid #fcd34d;' +
+            'background:#fef3c7;color:#92400e;font-size:12px;border-radius:6px;';
+        wrap.innerHTML = (note || 'The PDF reading looks weak.') + ' <strong>Try AI assist?</strong>' +
+            ' Sends 2 page images (never the whole file). ';
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-warning';
+        btn.textContent = 'Try AI assist';
+        // Loading state lives on the button itself (cold calls look dead otherwise):
+        // disable + spinner immediately; _trySCurvePdfAiAssist restores on failure,
+        // the node is removed on success.
+        btn.setAttribute('onclick', 'this.disabled=true;this.innerHTML=\'<span class="spinner-border spinner-border-sm"></span> Asking AI…\';window._trySCurvePdfAiAssist()');
+        wrap.appendChild(btn);
+        (host || document.body).appendChild(wrap);
+    } catch (e) { /* offer is best-effort */ }
+}
+
+function scurveClearPdfAiLink() {
+    try {
+        window._scurvePdfAiCtx = null;
+        var old = document.getElementById('scurvePdfAiLink');
+        if (old && old.remove) old.remove();
+        var wrap = document.getElementById('scurvePdfAiAssistWrap');
+        if (wrap && wrap.remove) wrap.remove();
+    } catch (e) { /* best-effort */ }
+}
+
+// In-modal link for weak-but-parseable PDF curves (beside-button is buried
+// behind the modal backdrop once it opens). Same quota discipline (one call
+// per click, busy-guarded) as the beside-button offer — both read the same
+// stashed ctx. Carries its own loading state + persistent result box (never
+// toast-only — toasts are missed behind the modal).
+window.scurveRenderPdfAiLink = function () {
+    try {
+        var old = document.getElementById('scurvePdfAiLink');
+        if (old && old.remove) old.remove();
+        if (!window._scurvePdfAiCtx) return;
+        var anchor = document.getElementById('setupImportNotes')
+            || document.getElementById('setupWarningNotice');
+        var host = (anchor && anchor.parentNode) ? anchor.parentNode : null;
+        if (!host || !document.getElementById('setupBaselineModal').contains(host)) return;
+        var wrap = document.createElement('div');
+        wrap.id = 'scurvePdfAiLink';
+        wrap.style.cssText = 'font-size:11px;color:#6b7280;margin:-8px 0 14px 0;';
+        wrap.appendChild(document.createTextNode(
+            'This PDF reading looks weak (generic names / uncertain months) — ' +
+            'cross-checking with AI is recommended. '
+        ));
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-secondary';
+        btn.style.cssText = 'font-size:11px;padding:1px 10px;border-radius:20px;';
+        btn.textContent = 'Try AI assist?';
+        btn.title = 'Ask the AI assistant to re-read 2 pages of this PDF (one AI call, never the whole file).';
+        btn.setAttribute('onclick', 'window._trySCurvePdfAiAssist(this)');
+        wrap.appendChild(btn);
+        // Persistent result box (mirrors the cross-check pattern — errors stay
+        // visible in-modal instead of flashing a toast behind the backdrop).
+        var result = document.createElement('div');
+        result.id = 'scurvePdfAiResult';
+        result.style.cssText = 'display:none;margin-top:6px;font-size:11px;line-height:1.5;';
+        wrap.appendChild(result);
+        host.insertBefore(wrap, anchor.nextSibling);
+        try {
+            var notes = document.getElementById('setupImportNotes');
+            if (notes && notes.nextSibling !== wrap) host.insertBefore(wrap, notes.nextSibling);
+        } catch (e) {}
+    } catch (e) { /* offer is best-effort */ }
+};
+
+window._trySCurvePdfAiAssist = async function (clickedBtn) {
+    if (window._scurvePdfAiBusy) return;
+    var ctx = window._scurvePdfAiCtx || null;
+    var wrap = document.getElementById('scurvePdfAiAssistWrap');
+    var link = document.getElementById('scurvePdfAiLink');
+    var linkBtn = (clickedBtn && clickedBtn.tagName === 'BUTTON') ? clickedBtn
+        : (link ? link.querySelector('button') : null);
+    var resultBox = link ? link.querySelector('#scurvePdfAiResult') : null;
+    // Loading state on the clicked in-modal button (cold calls look dead
+    // otherwise); the beside-button wrap sets its own inline at click.
+    function paintResult(text, kind) {
+        try {
+            if (!resultBox) return;
+            resultBox.style.display = 'block';
+            if (kind === 'err') {
+                resultBox.style.cssText = 'display:block;margin-top:6px;font-size:11px;line-height:1.5;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:6px 10px;';
+            } else {
+                resultBox.style.cssText = 'display:block;margin-top:6px;font-size:11px;line-height:1.5;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;';
+            }
+            resultBox.textContent = text;
+        } catch (e) {}
+    }
+    // Restore both offer surfaces' idle state (loading was set inline at click
+    // for the beside-button wrap, here for the in-modal link).
+    var restoreOffer = function () {
+        try {
+            var b = wrap ? wrap.querySelector('button') : null;
+            if (b) { b.disabled = false; b.textContent = 'Try AI assist'; }
+            if (linkBtn) { linkBtn.disabled = false; linkBtn.textContent = 'Try AI assist?'; }
+        } catch (e) {}
+    };
+    if (!ctx || !ctx.file) { restoreOffer(); return; }
+    window._scurvePdfAiBusy = true;
+    try {
+        if (linkBtn) { linkBtn.disabled = true; linkBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Asking AI…'; }
+        if (resultBox) resultBox.style.display = 'none';
+        if (typeof window.buildSCurvePdfSlices !== 'function') {
+            throw new Error('The S-curve PDF slicer is not loaded.');
+        }
+        // Stale-file guard: slices render from the last parsed file only.
+        try {
+            if (window._scurvePdfFile && window._scurvePdfFile !== ctx.file) {
+                throw new Error('Original file no longer available — re-import to retry.');
+            }
+        } catch (e) {
+            if (e && e.message) throw e;
+        }
+        var pack = await window.buildSCurvePdfSlices(2);
+        if (!pack || !pack.slices || !pack.slices.length) {
+            throw new Error('The PDF pages could not be rendered to images.');
+        }
+        var geminiUrl = scurvePdfGeminiUrl(ctx.parseUrl);
+        var res = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': scurveCsrfToken(),
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ images: pack.slices, pageWords: pack.pageWords || [] }),
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok || !data.success || !data.months || !data.months.length) {
+            // Mapped transport voices ride data.message (quota/busy/dead-model
+            // speak plainly instead of generics — E2 message-parity lesson).
+            throw new Error((data && data.message) || 'The AI assistant could not read an S-curve from these pages.');
+        }
+        var core = window.scurveImportCore;
+        if (!core) throw new Error('Import helpers not loaded.');
+        var months = core.normalizeSCurveMonths(data.months, ctx.startDate || '', ctx.endDate || '');
+        if (!months.length) throw new Error('The AI response held no usable months.');
+        try {
+            var old = document.getElementById('scurvePdfAiAssistWrap');
+            if (old && old.remove) old.remove();
+            scurveClearPdfAiLink();
+            window._scurvePdfAiCtx = null;
+        } catch (e) {}
+        scurveStashWarnings(data);
+        if (ctx.flow === 'detail') {
+            window.__setupModalContext = { mode: 'save-immediately', existingMonths: months };
+            if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
+            scurveToast('Imported ' + months.length + ' baseline months (AI-assisted). Review, then Done to lock.', 'success');
+        } else {
+            window._baselineSetupMonths = months;
+            if (typeof updateBaselineSetupButton === 'function') updateBaselineSetupButton();
+            scurveToast('Imported ' + months.length + ' baseline months from the S-curve PDF (AI-assisted).', 'success');
+            if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
+        }
+    } catch (err) {
+        paintResult(err.message, 'err');
+        scurveToast(err.message, 'danger');
+        restoreOffer();
+    } finally {
+        window._scurvePdfAiBusy = false;
+    }
+};
+
 /* ─── E1-1 silent header capture (unknown layouts learn future maps) ────────── */
 // Fire-and-forget POST of the failed source to the capture endpoint (E1-1). All failures
 // swallowed — the error UX is untouched. Wizard sends the live File + Page-4 contractor
@@ -541,6 +739,7 @@ function initCreateWizardSCurveImport() {
         var originalLabel = btn.textContent;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
         scurveClearCrossCheck();
+        scurveClearPdfAiLink();
 
         try {
             var data;
@@ -578,7 +777,24 @@ function initCreateWizardSCurveImport() {
             scurveStashWarnings(data);
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
-            scurveOfferCrossCheck({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, baselineMonths: months, btn: btn });
+            // Cross-check is Excel-only (it replays the Excel endpoint, which
+            // declines PDFs) — PDF flows get the PDF AI link instead.
+            if (mode !== 'pdf') {
+                scurveOfferCrossCheck({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, baselineMonths: months, btn: btn });
+            }
+            // F-C: weak-but-parseable PDF curves keep an in-modal AI link (user:
+            // both cases) — the beside-button spot is buried behind the modal.
+            // No-op without a stashed ctx.
+            try {
+                var pdfCore = window.scurvePdfParserCore || null;
+                if (mode === 'pdf' && pdfCore && typeof pdfCore.isWeakPdfCurve === 'function') {
+                    var weak = pdfCore.isWeakPdfCurve(data);
+                    if (weak && weak.weak) {
+                        window._scurvePdfAiCtx = { kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn };
+                    }
+                }
+            } catch (e) {}
+            if (typeof window.scurveRenderPdfAiLink === 'function') window.scurveRenderPdfAiLink();
         } catch (err) {
             scurveToast(err.message, 'danger');
             // E2: no-table 422 on an Excel source offers the AI assist (PDFs excluded —
@@ -587,6 +803,11 @@ function initCreateWizardSCurveImport() {
             if (err && err.isNoTable && mode === 'excel' && window._scurvePendingFile) {
                 scurveOfferAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn });
                 scurveCaptureHeaders('file', window._scurvePendingFile);
+            }
+            // F-C: unreadable PDFs offer the PDF assist beside the button (the
+            // local parser throws plain Errors — gate on mode, not isNoTable).
+            if (mode === 'pdf' && window._scurvePendingFile) {
+                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn }, 'The PDF table was not recognized.');
             }
         } finally {
             btn.disabled = false;
@@ -613,6 +834,7 @@ function initProjectDetailSCurveImport() {
         var originalLabel = btn.textContent;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
         scurveClearCrossCheck();
+        scurveClearPdfAiLink();
 
         try {
             var data;
@@ -658,7 +880,22 @@ function initProjectDetailSCurveImport() {
             xCtx.endDate = endDate;
             xCtx.baselineMonths = months;
             xCtx.btn = btn;
-            scurveOfferCrossCheck(xCtx);
+            // Cross-check is Excel-only (it replays the Excel endpoint, which
+            // declines PDFs) — PDF flows get the PDF AI link instead.
+            if (btn.dataset.docType !== 'pdf') {
+                scurveOfferCrossCheck(xCtx);
+            }
+            // F-C: weak-but-parseable PDF documents keep the in-modal AI link.
+            try {
+                var pdfCore2 = window.scurvePdfParserCore || null;
+                if (btn.dataset.docType === 'pdf' && pdfCore2 && typeof pdfCore2.isWeakPdfCurve === 'function') {
+                    var weak2 = pdfCore2.isWeakPdfCurve(data);
+                    if (weak2 && weak2.weak) {
+                        window._scurvePdfAiCtx = { kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn };
+                    }
+                }
+            } catch (e) {}
+            if (typeof window.scurveRenderPdfAiLink === 'function') window.scurveRenderPdfAiLink();
         } catch (err) {
             scurveToast(err.message, 'danger');
             // E2: same assist offer on the detail flow (stored Excel documents only).
@@ -667,6 +904,12 @@ function initProjectDetailSCurveImport() {
             if (err && err.isNoTable && btn.dataset.docType !== 'pdf') {
                 scurveOfferAiAssist({ kind: 'document', documentId: documentId, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn });
                 scurveCaptureHeaders('document', documentId);
+            }
+            // F-C: unreadable PDF documents offer the PDF assist beside the
+            // button (sliced client-side from the fetched file — the endpoint
+            // takes images only, never document_id).
+            if (btn.dataset.docType === 'pdf' && window._scurveDetailFile) {
+                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn }, 'The PDF table was not recognized.');
             }
         } finally {
             btn.disabled = false;

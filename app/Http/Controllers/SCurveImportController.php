@@ -133,6 +133,128 @@ class SCurveImportController extends Controller
     }
 
     /**
+     * AI fallback (F-B PDF Tier 3, opt-in): read S-curve months from PDF page
+     * images the local PDF rules provably cannot solve. Images-only input —
+     * the server holds no PDF renderer by design, so the client renders the
+     * weakest 1-2 pages to canvas (≈150 DPI) and uploads base64 slices (same
+     * shape as DocumentParserController::parseWithGemini). Optional
+     * `pageWords[]` carries the machine-read words per page for the
+     * printed-words names check (empty on scanned pages).
+     *
+     * No map consult here (E1 maps are Excel column layouts — PDFs have no
+     * columns); F-D learns vocabulary from verified answers instead. The
+     * service's monthLabels ride-along is stripped before responding (F-D
+     * wires it later). Results merge into the setup modal for review — never
+     * auto-applied.
+     */
+    public function parsePdfWithGemini(Request $request): JsonResponse
+    {
+        try {
+            $images = $this->resolvePdfSlices($request);
+            $pageWords = $request->input('pageWords', []);
+            $pageWords = is_array($pageWords) ? array_values($pageWords) : [];
+
+            $result = $this->geminiParser->parseSCurvePdfSlice($images, $pageWords);
+
+            if ($result === null) {
+                throw new RuntimeException('The AI assistant could not read an S-curve from these pages. Please set up the baseline manually.');
+            }
+
+            // F-D fuel stripped for now (wired when vocabulary learning lands).
+            unset($result['monthLabels']);
+
+            $meta = array_merge($result['meta'], ['aiAssisted' => true]);
+
+            return response()->json([
+                'success' => true,
+                'months' => $result['months'],
+                'meta' => $meta,
+                // Images-sender Lite fallback provenance (null unless the
+                // backup model answered — review should know whose homework).
+                'fallbackModel' => $this->geminiParser->lastFallbackModel,
+            ]);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json([
+                'success' => false,
+                'message' => 'An unexpected error occurred while asking the AI assistant to read the S-curve pages.',
+            ], 422);
+        }
+    }
+
+    /**
+     * Resolve client-rendered PDF page slices to service input.
+     *
+     * Mirrors DocumentParserController::resolveSlices() budgets (10 MB per
+     * slice, 30 MB total, PNG/JPEG/WebP, data-URI or raw base64) — duplicated
+     * compactly because this endpoint takes images[] only (no file or
+     * document_id: stored S-curve documents are PDFs the server cannot
+     * render, and photo uploads are not S-curves).
+     *
+     * @throws RuntimeException
+     */
+    protected function resolvePdfSlices(Request $request): array
+    {
+        $images = $request->input('images');
+
+        if (!is_array($images) || count($images) === 0 || count($images) > 3) {
+            throw new RuntimeException('Provide 1 to 3 page images. Render PDF pages to images in the browser first.');
+        }
+
+        $slices = [];
+
+        foreach ($images as $img) {
+            $data = is_array($img) ? ($img['data'] ?? null) : $img;
+
+            if (!is_string($data) || $data === '') {
+                throw new RuntimeException('Each page image must carry base64 data.');
+            }
+
+            // Accept raw base64 or data URIs (canvas.toDataURL emits the latter).
+            if (str_starts_with($data, 'data:')) {
+                $parts = explode(',', $data, 2);
+
+                if (count($parts) !== 2 || $parts[1] === '') {
+                    throw new RuntimeException('Each page image must carry base64 data.');
+                }
+
+                $mime = 'image/png';
+
+                if (preg_match('#^data:([\w/\-\.+]+);base64$#', $parts[0], $m)) {
+                    $mime = strtolower($m[1]);
+                }
+
+                $data = $parts[1];
+            } else {
+                $mime = is_array($img) && !empty($img['mimeType']) ? strtolower($img['mimeType']) : 'image/png';
+            }
+
+            if (!in_array($mime, ['image/png', 'image/jpeg', 'image/webp'], true)) {
+                throw new RuntimeException('Page images must be PNG, JPEG, or WebP.');
+            }
+
+            if (strlen($data) > 10485760) {
+                throw new RuntimeException('A page image exceeds the size budget. Re-render at 150 DPI and retry.');
+            }
+
+            $slices[] = ['data' => $data, 'mimeType' => $mime];
+        }
+
+        $total = array_sum(array_map('strlen', array_column($slices, 'data')));
+
+        if ($total > 31457280) {
+            throw new RuntimeException('The page images exceed the total size budget. Send fewer pages.');
+        }
+
+        return $slices;
+    }
+
+    /**
      * E1-3 — load live learned layout maps for this import (server-side consult).
      *
      * Scope order per E1a: this contractor's live maps first, then global

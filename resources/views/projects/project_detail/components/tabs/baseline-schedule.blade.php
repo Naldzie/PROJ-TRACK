@@ -496,10 +496,10 @@ function toggleActivityCompletion(activityId, isCompleted) {
 
 <script src="{{ asset('js/admin/projects/baseline-schedule-add-month-modal.js') }}"></script>
 <script src="{{ $jsv('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
-<script type="module" src="{{ asset('js/admin/projects/scurve-import-core.js') }}"></script>
+<script type="module" src="{{ $jsv('js/admin/projects/scurve-import-core.js') }}"></script>
 <script src="{{ $jsv('js/admin/projects/scurve-import-ui.js') }}"></script>
-<script type="module" src="{{ asset('js/admin/projects/scurve-pdf-parser-core.js') }}"></script>
-<script src="{{ asset('js/admin/projects/scurve-pdf-parser.js') }}"></script>
+<script type="module" src="{{ $jsv('js/admin/projects/scurve-pdf-parser-core.js') }}"></script>
+<script src="{{ $jsv('js/admin/projects/scurve-pdf-parser.js') }}"></script>
 <script src="{{ asset('js/admin/projects/baseline-schedule-manage-month-modal.js') }}"></script>
 <script src="{{ asset('js/admin/projects/progress-attachments.js') }}"></script>
 <script src="{{ asset('js/admin/projects/baseline-schedule-record-progress-modal.js') }}"></script>

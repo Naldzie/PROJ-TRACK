@@ -60,18 +60,30 @@ export function normalizeSCurveMonths(months, startDate, endDate) {
             plannedDate = formatDateInput(d);
             monthLabel = plannedDate.slice(0, 7);
         }
+        var acts = (m.activities || []).map(function (a) {
+            if (typeof a === 'string') {
+                return { id: null, activity_name: a, description: '' };
+            }
+            return {
+                id: a.id || null,
+                activity_name: a.activity_name || '',
+                description: a.description || '',
+            };
+        });
+        // AI months arrive description-less (rule months build it from names) —
+        // fall back to the joined names so the list shows them. Rule months
+        // always carry description, so they never reach the fallback.
+        var desc = m.description || acts.map(function (a) {
+            return a.activity_name;
+        }).filter(function (n) {
+            return !!n;
+        }).join(', ');
         return {
             month_label: monthLabel,
             planned_date: plannedDate,
             planned_progress_percent: m.planned_progress_percent,
-            description: m.description || '',
-            activities: (m.activities || []).map(function (a) {
-                return {
-                    id: a.id || null,
-                    activity_name: a.activity_name || '',
-                    description: a.description || '',
-                };
-            }),
+            description: desc,
+            activities: acts,
         };
     });
 }

@@ -206,6 +206,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/s-curve/parse-gemini', [SCurveImportController::class, 'parseWithGemini'])
         ->name('staff.projects.s-curve.parse-gemini');
 
+    // S-Curve AI fallback (F-B PDF Tier 3, opt-in — page images only)
+    Route::post('/s-curve/parse-pdf-gemini', [SCurveImportController::class, 'parsePdfWithGemini'])
+        ->name('staff.projects.s-curve.parse-pdf-gemini');
+
     // AI fallback for normal-document parsing (Tier 3, opt-in — see AI plan)
     Route::post('/document/parse-gemini', [DocumentParserController::class, 'parseWithGemini'])
         ->name('staff.projects.document.parse-gemini');
@@ -622,6 +626,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     // S-Curve AI fallback (E2 Excel Tier 3, opt-in)
     Route::post('/s-curve/parse-gemini', [SCurveImportController::class, 'parseWithGemini'])
         ->name('admin.projects.s-curve.parse-gemini');
+
+    // S-Curve AI fallback (F-B PDF Tier 3, opt-in — page images only)
+    Route::post('/s-curve/parse-pdf-gemini', [SCurveImportController::class, 'parsePdfWithGemini'])
+        ->name('admin.projects.s-curve.parse-pdf-gemini');
 
     // AI fallback for normal-document parsing (Tier 3, opt-in — see AI plan)
     Route::post('/document/parse-gemini', [DocumentParserController::class, 'parseWithGemini'])

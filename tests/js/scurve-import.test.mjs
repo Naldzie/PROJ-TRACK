@@ -82,6 +82,27 @@ test('normalizeSCurveMonths passes activities through with normalized keys', () 
     ]);
 });
 
+test('normalizeSCurveMonths accepts bare AI name strings as activities', () => {
+    const months = normalizeSCurveMonths(
+        [
+            {
+                month_index: 1,
+                planned_progress_percent: 5,
+                activities: ['Mobilization Works', 'Earthworks'],
+            },
+        ],
+        '',
+        ''
+    );
+
+    assert.deepEqual(months[0].activities, [
+        { id: null, activity_name: 'Mobilization Works', description: '' },
+        { id: null, activity_name: 'Earthworks', description: '' },
+    ]);
+    // Description-less AI months fall back to the joined names for the list.
+    assert.equal(months[0].description, 'Mobilization Works, Earthworks');
+});
+
 test('normalizeSCurveMonths guards against non-array input', () => {
     assert.deepEqual(normalizeSCurveMonths(undefined, '', ''), []);
     assert.deepEqual(normalizeSCurveMonths(null, '2026-01-01', ''), []);
