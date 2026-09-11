@@ -314,6 +314,13 @@ Frontend convention (IMPORTANT)
       header-row section, grid container, and Save (approval still required). Blade
       view:cache clean; header suite 28/28 (no PHP touched — display text only).
     - F3 STUDY KICKED OFF 2026-09-10 (user order; study first, no code yet).
+    - F6 BUILT 2026-09-10 (code, NOT committed per user): untagged blocks open Teach
+      with an EMPTY header selection (was: first R-line pre-ticked — usually the TITLE
+      row on unknown files, spotted live by user); the existing "Pick at least one
+      header row" hint + disabled Save enforce the explicit pick. Tagged blocks
+      unchanged (pre-ticked). Blade view:cache clean; no PHP touched (DOM-only path —
+      browser proof is the user's step: Teach on an untagged capture shows nothing
+      pre-ticked).
 
 ===============================================================================
   7. OPEN QUESTIONS

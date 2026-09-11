@@ -467,9 +467,12 @@ function schTeachColumns(id) {
             assigns: { desc: null, code: null, weight: null, contract: null, months: {} },
             headerRows: [],
         };
-        // Default header rows: tagged HEADER lines (max 2), else the first line.
+        // Default header rows: tagged HEADER lines (max 2). When NOTHING is tagged
+        // (unknown files), default to EMPTY and force an explicit pick — defaulting
+        // to the first line would usually arm the title row (F6 wart, 2026-09-10).
+        // The readout + save gate already require ≥1 row.
         const tagged = parsed.rows.filter(r => r.role === 'HEADER').map(r => r.n).slice(0, 2);
-        _schTeach.headerRows = tagged.length ? tagged : [parsed.rows[0].n];
+        _schTeach.headerRows = tagged;
         // Prefill from an attached map (indices → letters).
         try {
             const cm = row.column_map || null;
