@@ -401,6 +401,36 @@ Proof files (git-ignored sampledocs/, never commit)
     - NEXT = user browser proof (novel month word → AI → proposed row →
       approve → re-import reads without AI) → then months:11 count check.
 
+  2026-09-11 — ROOF PROBE settles A-vs-B: B WINS, guard-only (no code yet).
+    User ran AI assist on the Roof PDF (CSPC-Rehabilitation-of-Roof…-pdf):
+    TRUE 7-month curve (6.32/24.31/42.30/59.71/77.03/99.14/100, counts
+    4,4,4,4,3,4,3) with real names + Checked note + honest mirror note; no
+    #REF! contamination, no phantom months (this run: months:7 — the months:11
+    sighting stays a one-off on the 10-month file, still watching). Forensic
+    (read-only pixel dump + core run: 2 pages, 250+71 items, zero header hits)
+    had shown duration labels + percent-shaped cells + TOTAL-row pesos — a
+    full family build (A) if needed. Verdict: one AI call reads it perfectly,
+    so A parks behind proven need (repeats + quota pressure revive it).
+    - Outage postscript: user's 4-hour error storm investigated jointly —
+      external web evidence (Sept 10 multi-day flash 503 thread, Sept 1 30-day
+      37% 503 on 3.6-flash, Sept 3 outage news) confirms upstream sickness on
+      free-tier flash; user's 4/5 scenario-1 retest closed the case (no A/B
+      checkout needed; tree stayed clean throughout). Lesson banked: the Lite
+      revert unmasked transport failures into honest "busy" voices — correct,
+      do not re-mask.
+    - B scope FINAL (guard + label, no family, no prompt/quota/trust changes):
+      (1) harvest guard skipping duration-shaped labels ("30 days" carries no
+      index — banking it would pollute the desk); genuine word-variants flow
+      untouched. (2) 'S-Curve Month' human label in the Learned Keywords desk
+      (pkpFieldLabel fallback shows raw "scurveMonth" today — verified
+      read-only; cosmetic one-liner riding with B).
+    - Desk placement (user Q, answered): F-D rows live in Learned Keywords
+      (the vocabulary desk: wording → field, generic rows) under Field
+      `scurveMonth` — NOT in S-curve Layouts (columns-only: header blocks +
+      letter maps + teach grid; a word row has nothing to display/teach there).
+      Split stands: words → Learned Keywords; columns → S-curve Layouts.
+    - NEXT = build B on go-ahead.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
