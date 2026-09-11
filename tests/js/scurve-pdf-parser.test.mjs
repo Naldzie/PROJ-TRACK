@@ -506,6 +506,30 @@ test('parses a weekly schedule with month-span boundaries and cumulative %', () 
     assert.equal(result.months[3].description, 'March');
 });
 
+/* ─── F-D: learned month-header words ─────────────────────────────────────── */
+
+test('matchMonthLabel learns taught words with new numbers, hardcoded wins ties', () => {
+    assert.equal(matchMonthLabel('SEGMENT 3', ['SEGMENT 1']), 3);
+    assert.equal(matchMonthLabel('SEGMENT 3'), null);
+    assert.equal(matchMonthLabel('P1', ['P1']), 1);
+    assert.equal(matchMonthLabel('JANUARY', ['JANUARY']), 1);
+    assert.equal(matchMonthLabel('SEGMENT 13', ['SEGMENT 1']), null);
+});
+
+test('parseSCurvePdf reads a taught-word header end to end', () => {
+    const sheet = page([
+        [800, [['DESCRIPTION', 50, 90], ['SEGMENT 1', 200, 70], ['SEGMENT 2', 300, 70], ['SEGMENT 3', 400, 70]]],
+        [760, [['1', 55, 8], ['Mobilization', 70, 100], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [720, [['TOTAL', 55, 45], ['6000', 210, 30]]],
+    ]);
+
+    assert.equal(parseSCurvePdf([sheet]), null);
+    const result = parseSCurvePdf([sheet], { monthWords: ['SEGMENT 1'] });
+    assert.ok(result, 'expected a parse result');
+    assert.equal(result.months.length, 3);
+    assert.equal(result.months[2].planned_progress_percent, 100);
+});
+
 /* ─── F-C: weak-read trigger ─────────────────────────────────────────────── */
 
 function weakMonths(namesPerMonth, gaps) {

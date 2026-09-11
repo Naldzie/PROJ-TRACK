@@ -33,7 +33,22 @@ export function parseNumeric(str) {
     return isFinite(n) ? n : null;
 }
 
-export function matchMonthLabel(str) {
+// F-D — normalize taught month-header labels to bare words ("SEGMENT 1" →
+// "segment"). Pure; untrusted input yields [] (reader behavior unchanged).
+function normalizeMonthWords(monthWords) {
+    const out = [];
+    (Array.isArray(monthWords) ? monthWords : []).forEach((w) => {
+        const s = String(w || '').trim().toLowerCase().replace(/\s*(\d{1,2})$/, '');
+        if (s.length >= 2 && out.indexOf(s) === -1) out.push(s);
+    });
+    return out;
+}
+
+function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function matchMonthLabel(str, monthWords) {
     const s = String(str || '').trim().toLowerCase();
     const m = s.match(/^(?:month|m)\s*(\d{1,2})$/);
     if (m) {
@@ -61,7 +76,21 @@ export function matchMonthLabel(str) {
         const n = parseInt(o[1], 10);
         return (n >= 1 && n <= 12) ? n : null;
     }
-    return MONTHS[s] || null;
+    const known = MONTHS[s] || null;
+    if (known) return known;
+    // F-D — learned month-header words (approved scurveMonth rows): a taught
+    // "SEGMENT 1" generalizes to "SEGMENT N" (word + number 1..12). Lowest
+    // priority — every hardcoded tier above already won its ties. Omitted
+    // list = today's behavior exactly.
+    const learned = normalizeMonthWords(monthWords);
+    for (const w of learned) {
+        const lm = s.match(new RegExp('^' + escapeRegExp(w) + '\\s*(\\d{1,2})$'));
+        if (lm) {
+            const n = parseInt(lm[1], 10);
+            if (n >= 1 && n <= 12) return n;
+        }
+    }
+    return null;
 }
 
 // Levenshtein distance (fuzzy header match needs no library for short labels).
@@ -204,8 +233,9 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
     const explicit = [];
     const labelOnly = [];
     const bare = {};
+    const monthWords = opts.monthWords || null;
     for (const t of sorted) {
-        const idx = matchMonthLabel(t.str);
+        const idx = matchMonthLabel(t.str, monthWords);
         if (idx !== null) {
             explicit.push({ index: idx, x: t.x, xEnd: t.xEnd });
             continue;
@@ -701,6 +731,8 @@ export function parseWeeklySchedulePdf(itemsByPage) {
  * Parse an S-curve PDF from its per-page pdf.js text items.
  *
  * @param {Array<Array<object>>} itemsByPage  textContent.items per page.
+ * @param {Object} [opts]  {debug: Array, monthWords: Array<string>} — learned
+ *          month-header words (F-D, lowest priority; omitted = today exactly).
  * @returns {{months: Array, meta: Object}|null}  Same shape as the Excel
  *          importer, or null when no S-curve table layout is recognised.
  */
@@ -719,7 +751,7 @@ export function parseSCurvePdf(itemsByPage, opts) {
         let headerIndex = -1;
         for (let i = 0; i < tokenLines.length; i++) {
             const next = tokenLines[i + 1] ? tokenLines[i + 1].tokens : null;
-            const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i, continuation: priorHeader !== null });
+            const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i, continuation: priorHeader !== null, monthWords: options.monthWords || null });
             if (h) { header = h; headerIndex = i; break; }
         }
 

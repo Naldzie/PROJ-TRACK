@@ -602,6 +602,8 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
             window._scurvePdfAiCtx = null;
         } catch (e) {}
         scurveStashWarnings(data);
+        // F-D: the verified answer teaches novel month words (approval-gated).
+        scurveHarvestPdfMonthLabels(data);
         if (ctx.flow === 'detail') {
             window.__setupModalContext = { mode: 'save-immediately', existingMonths: months };
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
@@ -620,6 +622,55 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         window._scurvePdfAiBusy = false;
     }
 };
+
+/* ─── F-D vocabulary harvest (AI month-header words → review desk) ────────── */
+// Verified AI answers teach wording (Option 1): month-header labels the rules
+// never knew become scurveMonth proposals (AI-assisted source, approval still
+// required — same trust rule as the loop: ≥3 repeats or one click). Labels the
+// hardcoded tiers already read are skipped (nothing to learn); server upsert
+// turns repeats into occurrence bumps (free corroboration). Fire-and-forget —
+// never blocks the merge UX. Values never leave the browser (labels only).
+// Called by: _trySCurvePdfAiAssist() on every successful AI merge.
+function scurveHarvestPdfMonthLabels(data) {
+    try {
+        var path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return;
+        var labels = (data && data.monthLabels) || {};
+        var keys = Object.keys(labels);
+        if (!keys.length) return;
+        var core = window.scurvePdfParserCore || null;
+        var proposals = [];
+        var seen = {};
+        keys.forEach(function (k) {
+            if (proposals.length >= 12) return;
+            var label = String(labels[k] == null ? '' : labels[k]).trim();
+            if (!label || label.length > 80 || seen[label.toLowerCase()]) return;
+            seen[label.toLowerCase()] = true;
+            // Rules-knew-it check (hardcoded tiers only — no learned list, so
+            // already-live words still corroborate through the upsert).
+            try {
+                if (core && typeof core.matchMonthLabel === 'function'
+                    && core.matchMonthLabel(label) !== null) return;
+            } catch (e) {}
+            proposals.push({
+                field: 'scurveMonth',
+                label: label,
+                excerpt: 'AI S-curve PDF month header',
+                source: 'AI-assisted',
+            });
+        });
+        if (!proposals.length) return;
+        var base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+        var token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
+            (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
+        fetch(base + '/parser-keyword-proposals/collect', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': token },
+            body: JSON.stringify({ proposals: proposals }),
+            keepalive: true,
+        }).catch(function () {});
+    } catch (e) { /* harvest is best-effort */ }
+}
 
 /* ─── E1-1 silent header capture (unknown layouts learn future maps) ────────── */
 // Fire-and-forget POST of the failed source to the capture endpoint (E1-1). All failures

@@ -49,10 +49,22 @@ window.parseSCurvePdfFile = async function (file) {
         );
     } catch (e) { /* stash is best-effort */ }
 
+    // F-D — learned month-header words (approved scurveMonth rows) ride as the
+    // lowest-priority fallback (reuses the L3 loader when present; any failure
+    // reproduces today's behavior exactly — never blocks the import).
+    let monthWords = null;
+    try {
+        if (typeof window.loadLearnedKeywords === 'function') {
+            const pairs = await window.loadLearnedKeywords();
+            const words = pairs && pairs.labels && pairs.labels.scurveMonth;
+            if (Array.isArray(words) && words.length) monthWords = words;
+        }
+    } catch (e) { /* learned vocabulary is best-effort */ }
+
     // P2-0 — month-attribution debug: set window.__scurvePdfDebug = true in the
     // console before importing to log which page/row/cell built each month total.
     const debug = [];
-    const out = core.parseSCurvePdf(itemsByPage, { debug });
+    const out = core.parseSCurvePdf(itemsByPage, { debug, monthWords });
     try {
         if (window.__scurvePdfDebug && debug.length) console.info('[scurve-pdf] attribution', debug);
         const pages = [];

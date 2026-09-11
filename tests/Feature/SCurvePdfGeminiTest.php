@@ -82,8 +82,8 @@ class SCurvePdfGeminiTest extends TestCase
         $this->assertSame(['Mobilization Works'], $response->json('months.0.activities'));
         $response->assertJsonPath('meta.aiAssisted', true);
         $response->assertJsonPath('fallbackModel', null);
-        // F-D fuel stays server-side until vocabulary learning lands.
-        $this->assertArrayNotHasKey('monthLabels', $response->json());
+        // F-D vocabulary fuel rides along (untrusted until desk approval).
+        $this->assertSame('STAGE 1', $response->json('monthLabels.1'));
     }
 
     // Staff route mirrors admin (Decision L0a roles).

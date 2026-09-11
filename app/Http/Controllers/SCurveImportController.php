@@ -160,14 +160,15 @@ class SCurveImportController extends Controller
                 throw new RuntimeException('The AI assistant could not read an S-curve from these pages. Please set up the baseline manually.');
             }
 
-            // F-D fuel stripped for now (wired when vocabulary learning lands).
-            unset($result['monthLabels']);
-
+            // F-D vocabulary fuel: exact month-header labels ride the response
+            // so the client can harvest NOVEL words as proposals (approval
+            // stays the finish line — nothing here is trusted yet).
             $meta = array_merge($result['meta'], ['aiAssisted' => true]);
 
             return response()->json([
                 'success' => true,
                 'months' => $result['months'],
+                'monthLabels' => $result['monthLabels'] ?? [],
                 'meta' => $meta,
                 // Images-sender Lite fallback provenance (null unless the
                 // backup model answered — review should know whose homework).

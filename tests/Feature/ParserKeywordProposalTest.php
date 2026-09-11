@@ -85,6 +85,33 @@ class ParserKeywordProposalTest extends TestCase
         $this->assertDatabaseCount('parser_keyword_proposals', 0);
     }
 
+    // F-D: the loop also banks PDF S-curve month-header words (AI-sourced,
+    // approved in the same desk before the PDF reader consults them).
+    // Called by: POST /admin/parser-keyword-proposals/collect from the PDF AI merge.
+    public function test_scurve_month_field_is_learnable(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop Admin FD',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [
+                ['field' => 'scurveMonth', 'label' => 'SEGMENT 1', 'excerpt' => 'AI S-curve PDF month header', 'source' => 'AI-assisted'],
+            ],
+        ]);
+
+        $response->assertCreated()->assertJson(['success' => true, 'stored' => 1]);
+        $this->assertDatabaseHas('parser_keyword_proposals', [
+            'field' => 'scurveMonth',
+            'label_phrase' => 'SEGMENT 1',
+            'status' => 'proposed',
+            'source' => 'AI-assisted',
+        ]);
+    }
+
     // Unknown fields and oversized batches are rejected (loop learns labels only, capped).
     // Called by: malformed or abusive collect payloads.
     public function test_validation_rejects_unknown_fields(): void

@@ -16,6 +16,8 @@ class ParserKeywordProposalController extends Controller
 
     /**
      * Fields the loop is allowed to learn labels for (labels only, never values).
+     * F-D adds 'scurveMonth' (PDF S-curve month-header words from verified AI
+     * answers — same trust rule: ≥3 repeats or one-click approval).
      */
     public const LEARNABLE_FIELDS = [
         'title',
@@ -29,6 +31,7 @@ class ParserKeywordProposalController extends Controller
         'endDate',
         'duration',
         'contractor',
+        'scurveMonth',
     ];
 
     /**

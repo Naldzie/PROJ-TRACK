@@ -372,6 +372,35 @@ Proof files (git-ignored sampledocs/, never commit)
       substantially done (both files merge correctly). Remaining: F-D
       vocabulary save + months:11 count check, on go-ahead.
 
+  2026-09-11 — F-D BUILT, month words only (code, NOT committed per user).
+    Option 1 as approved: verified AI answers teach month-header WORDS (not
+    positions — PDFs have no stable columns). Desc-label learning queued (needs
+    a prompt-reported descLabel + the same plumbing — small follow-up).
+    - Backend: 'scurveMonth' joins LEARNABLE_FIELDS (single shared controller
+      serves staff+admin; desk renders it generically; same trust rule ≥3 /
+      one-click). F-B endpoint now RETURNS monthLabels (was stripped — the
+      F-B test updated to assert their presence).
+    - Core: matchMonthLabel(str, monthWords) — taught "SEGMENT 1" generalizes
+      to "SEGMENT N" (word ≥2 chars + number 1..12); lowest priority, omitted =
+      today exactly. Threaded detectHeaderColumns ← parseSCurvePdf(opts).
+      Weekly path untouched (monthly only).
+    - Wrapper: parseSCurvePdfFile loads live scurveMonth rows (reuses the L3
+      loader; any failure = today's behavior) and forwards them.
+    - Harvest: scurveHarvestPdfMonthLabels fires on every AI merge — skips
+      rules-known labels (hardcoded check, no learned list so live words still
+      corroborate), cap 12, AI-assisted source, fire-and-forget, values never
+      leave the browser. Contractors guarded.
+    - Caught pre-green (2, both mine): (1) e2e fixture split header/rows into
+      two pages (positional merge needs one page) — fixed to one sheet;
+      (2) harvest edit first anchored a twice-present block — re-anchored on
+      the PDF-only toast text.
+    - Tests: +1 PHP (scurveMonth collect, AI source stored); +2 core fixtures
+      (taught-word hit/tie/empty + e2e miss→hit); endpoint monthLabels assert.
+      Suites: related 70/70; JS 115 + 2 intended blinding fails; full 1140
+      passed / same 7 pre-existing. No commit.
+    - NEXT = user browser proof (novel month word → AI → proposed row →
+      approve → re-import reads without AI) → then months:11 count check.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
