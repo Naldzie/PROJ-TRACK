@@ -2346,6 +2346,61 @@ Related plan
     plumbing and TOTAL-guard changes OUT). TOTAL hyphen-guard (Sub-Total false positive)
     split as a SEPARATE micro-fix, later. E1-PDF "header slice" design decision deferred
     until P1 lands (rules first, learning second, per house sequence).
+  - P1 BUILT 2026-09-10 (code, NOT committed per user — all in
+    public/js/admin/projects/scurve-pdf-parser-core.js + tests/js/scurve-pdf-parser.test.mjs).
+    Findings vs plan: desc synonyms were ALREADY mirrored (particulars/work-items present
+    from earlier work) — the real desc work was loose vocabulary (detail\w*/pay-item/…)
+    + fuzzy typos; P1 kept single-column spans (no double-count by construction).
+    MAY abbrev skipped (same string as full month, no-op); added sept + Commulative-word
+    match (deterministic, typo-specific) alongside the levenshtein helper.
+    ## = presence flag (listed, never summed — Decision 10); % values parse as numbers;
+    presence survives all three page-merge paths. isSummaryLabel broadened carefully
+    (cumulat|commulat word match — existing CUMULATIVE expectations re-verified).
+    Tests: +10 fixtures (ordinals, P-family, loose, fuzzy, far-word still null,
+    ordinal/P/typo end-to-end curves, ## presence curve, % curve, Commulative skip).
+    JS 100 pass / same 2 intended blinding fails (F-B1 + L3-hardcoded-ABC) — zero
+    regressions; existing 11 untouched-green. No PHP touched. Browser re-proof on the
+    two sample PDFs is the user's step. NO commit per user.
+  - PDF FORENSICS 2026-09-10 (user ran P1 build live; both PDFs are conversions of the
+    Excel test twins — ground truth fully known; item geometry dumped read-only via
+    vendored pdfjs-dist, no binaries opened).
+    Ground truth (user-confirmed): the 10-month PDF is the SAME conflicting file as its
+    Excel twin — activity math 50/70/80/90 (M5–M8) vs summary 45/60/75/85 (different
+    divisor, same BUHI class). Correct PDF behavior = activity curve + the same 4
+    warnings, NOT summary-copy. This file is therefore a DIVERGING proof case (ideal
+    for the 2b port), not an agreement case.
+    D1 (biggest): page-2 summary row (bare 45..100, no label cells, x89–342) absorbed
+    as a phantom activity — descText is empty on desc-less continuation pages so
+    isSummaryLabel('') never fires. Needs continuation-page summary exclusion (P2-c).
+    D2: desc bleeding ("Mobilization Works LOT 100000") — BUDGET COST values (x273)
+    sit left of P1 (x311) inside the everything-left-of-first-month span. Needs a
+    descRight bound from the next header token (P2-b).
+    D3: TOTAL value (x268, left of all spans) never summed → contract falls back to
+    activity sums. Needs the Excel off-column TOTAL rule port (P2-d).
+    D4 (minor): 19.99-style drift — needs the attribution audit to separate float noise
+    from double-counting (P2-f; P2-0 tooling first).
+    6-stage PDF (67+11 items, text healthy — TT warning BENIGN, fires on parsing files
+    too): fails on vocabulary alone (SCHEDULED TASKS matches no desc tier — bare
+    "tasks" was never added; STAGE N matches no month tier — P1 added P/Period/Phase
+    only). Plus structural: page-2 header (STAGE 5/6, 2 months, no desc) fails the
+    allowNoDesc gate (needs ≥3) → months 5–6 lost even after vocab fix. Needs
+    continuation inheritance (P2-c, load-bearing, not optional).
+    TT: undefined function: 21 = benign font warning, fires on working files — closed.
+  - P1-FOLLOW-UP (user-ordered micro-batch, NOT STARTED): bare tasks? in loose-desc
+    (PDF core + Excel loose list for parity) + STAGE-family months (stage/stg/quarter/
+    qtr/q) in matchMonthLabel. Detection-only, same proof bar (fixtures + byte-identical
+    re-verify). Gets the 6-stage file DETECTED (page-1 months); months 5–6 still need P2-c.
+  - P2 PLAN (user-ordered, after P1-follow-up — evidence in hand, specimens above):
+    P2-0 month-attribution debug flag (which page/row/cell built each month total);
+    P2-b descRight bound; P2-c merge hardening (descX/header inheritance to desc-less
+    continuation pages, row-count mismatch warning, continuation-page summary exclusion
+    for wordless ascending-to-100 rows when a summary was seen); P2-d TOTAL-row fallback
+    (full-row sum as contract candidate); P2-e 2b reference+warn port (monthly first —
+    the 10-month diverging file is the proof: same 4 warnings as Excel); P2-f rounding
+    audit. Fixtures transcribed from the real geometry dumped above; both files
+    byte-verified vs TRUE activity math (50/70/80/90); full + JS suites; commit/push only
+    on user word. Explicitly OUT: weight plumbing, TOTAL-guard (separate micro-fix),
+    Tier-2 OCR, AI-for-PDF, 2c-PDF, quarterly layouts.
   - EXCEL END-TO-END vs ORIGINAL TIERS (clarified 2026-09-08 — one file type fully through
     all tiers before moving on): Tier 1 DONE (2a/R2a/2b/fallback/GRID/UX all built, committed,
     browser-proven; GRID explanation filed 2026-09-08); Tier 2 (local OCR auto) is N/A for
