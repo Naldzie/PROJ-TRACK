@@ -207,6 +207,118 @@ test('far-word headers still fail detection', () => {
     assert.equal(parseSCurvePdf([items]), null);
 });
 
+/* ─── P2: desc bound, center assignment, TOTAL fallback, merge, reference ─── */
+
+test('budget values left of the months stay out of activity names', () => {
+    const items = page([
+        [800, [['DESCRIPTION', 50, 90], ['QTY', 150, 30], ['Month 1', 300, 55], ['Month 2', 400, 55]]],
+        [760, [['1', 55, 8], ['Mobilization', 70, 100], ['LOT', 155, 25], ['100000', 250, 35], ['50000', 310, 30], ['50000', 410, 30]]],
+    ]);
+    const result = parseSCurvePdf([items]);
+
+    assert.ok(result, 'expected a parse result');
+    // LOT + contract figure excluded by the descRight bound (QTY@150).
+    assert.equal(result.months[0].description, 'Mobilization');
+});
+
+test('a straddling token counts in exactly one month (center rule)', () => {
+    const items = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['Works', 70, 80], ['1000', 290, 30]]],
+    ]);
+    const result = parseSCurvePdf([items]);
+
+    assert.ok(result, 'expected a parse result');
+    // Center 305 falls in Month 2 only (old overlap logic read both).
+    assert.equal(result.months[0].planned_progress_percent, 0);
+    assert.equal(result.months[1].planned_progress_percent, 100);
+});
+
+test('off-column TOTAL value becomes the contract fallback', () => {
+    const items = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 300, 55], ['Month 2', 400, 55]]],
+        [760, [['Works', 70, 80], ['100000', 310, 35], ['100000', 410, 35]]],
+        [720, [['TOTAL', 55, 50], ['400000', 100, 40]]],
+    ]);
+    const result = parseSCurvePdf([items]);
+
+    assert.ok(result, 'expected a parse result');
+    assert.equal(result.meta.contractAmount, 400000);
+    assert.equal(result.months[0].planned_progress_percent, 25);
+    assert.equal(result.months[1].planned_progress_percent, 100);
+});
+
+test('wordless summary reprint on a continuation page is excluded', () => {
+    const page1 = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['Works', 70, 80], ['3000', 210, 25], ['3000', 310, 25]]],
+        [720, [['CUMULATIVE %', 55, 110], ['50', 210, 20], ['100', 310, 25]]],
+    ]);
+    const page2 = page([
+        [800, [['Month 3', 200, 55], ['Month 4', 300, 55], ['Month 5', 400, 55]]],
+        [760, [['60', 210, 20], ['80', 310, 20], ['100', 410, 25]]],
+    ]);
+    const result = parseSCurvePdf([page1, page2]);
+
+    assert.ok(result, 'expected a parse result');
+    // The trailing 60/80/100 row is the summary reprinted without labels, not
+    // a fourth activity — page 1 showed the labeled original.
+    assert.equal(result.meta.activityCount, 1);
+    assert.equal(result.meta.monthCount, 5);
+});
+
+test('genuine desc-less percent rows still parse without a prior summary', () => {
+    const page1 = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['Works', 70, 80], ['3000', 210, 25], ['3000', 310, 25]]],
+    ]);
+    const page2 = page([
+        [800, [['Month 3', 200, 55], ['Month 4', 300, 55], ['Month 5', 400, 55]]],
+        [760, [['60', 210, 20], ['80', 310, 20], ['100', 410, 25]]],
+    ]);
+    const result = parseSCurvePdf([page1, page2]);
+
+    assert.ok(result, 'expected a parse result');
+    // No labeled summary anywhere → the exclusion stays shut. Under column-overflow
+    // semantics the desc-less row CONTINUES the positional row (Works), so its
+    // values land in the curve (Month 3 reads 60) instead of vanishing.
+    assert.equal(result.meta.activityCount, 1);
+    assert.ok(result.months[2].planned_progress_percent > 0);
+    assert.ok(result.months[2].description.includes('Works'));
+});
+
+test('summary gaps warn without moving the curve', () => {
+    const items = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['Works', 70, 80], ['3000', 210, 25], ['3000', 310, 25]]],
+        [720, [['CUMULATIVE %', 55, 110], ['40', 210, 20], ['90', 310, 20]]],
+    ]);
+    const result = parseSCurvePdf([items]);
+
+    assert.ok(result, 'expected a parse result');
+    assert.equal(result.months[0].planned_progress_percent, 50);
+    assert.equal(result.months[1].planned_progress_percent, 100);
+    assert.equal(result.meta.warnings.length, 2);
+    assert.equal(result.meta.summaryReference.length, 2);
+    assert.equal(result.meta.summaryReference[0].gap, 10);
+});
+
+test('row-count drift across overflow pages warns', () => {
+    const page1 = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['A', 70, 20], ['1000', 210, 25], ['1000', 310, 25]]],
+        [720, [['B', 70, 20], ['1000', 210, 25], ['1000', 310, 25]]],
+    ]);
+    const page2 = page([
+        [800, [['Month 3', 200, 55], ['Month 4', 300, 55]]],
+        [760, [['500', 210, 25], ['500', 310, 25]]],
+    ]);
+    const result = parseSCurvePdf([page1, page2]);
+
+    assert.ok(result, 'expected a parse result');
+    assert.ok(result.meta.warnings.some((w) => /different row counts/.test(w)));
+});
+
 test('isNumericToken / parseNumeric handle peso formatting', () => {
     assert.equal(isNumericToken('1,234.56'), true);
     assert.equal(isNumericToken('₱5000'), true);

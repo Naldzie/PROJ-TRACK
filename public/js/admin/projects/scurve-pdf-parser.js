@@ -39,5 +39,12 @@ window.parseSCurvePdfFile = async function (file) {
         itemsByPage.push(content.items || []);
     }
 
-    return core.parseSCurvePdf(itemsByPage);
+    // P2-0 — month-attribution debug: set window.__scurvePdfDebug = true in the
+    // console before importing to log which page/row/cell built each month total.
+    const debug = [];
+    const out = core.parseSCurvePdf(itemsByPage, { debug });
+    try {
+        if (window.__scurvePdfDebug && debug.length) console.info('[scurve-pdf] attribution', debug);
+    } catch (e) { /* logging never blocks imports */ }
+    return out;
 };

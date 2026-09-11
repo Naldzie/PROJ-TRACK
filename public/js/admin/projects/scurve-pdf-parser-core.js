@@ -245,8 +245,14 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
         }
     }
 
-    const allowNoDesc = lineIndex < 8 && months.length >= 3;
+    // Continuation pages (a prior page already yielded a table header) relax the
+    // no-desc minimum to 2 months (tail pages like STAGE 5/6 carry few columns),
+    // but additionally require at least one EXPLICIT month label — bare "1 2"
+    // number lines elsewhere must never become headers.
+    const minNoDesc = opts.continuation ? 2 : 3;
+    const allowNoDesc = lineIndex < 8 && months.length >= minNoDesc;
     if ((descTokens.length === 0 && !allowNoDesc) || months.length < 2) return null;
+    if (descTokens.length === 0 && opts.continuation && explicit.length < 1) return null;
 
     months.sort((a, b) => a.index - b.index);
     months = months.map((m, i) => ({
@@ -255,59 +261,135 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
         xEnd: months[i + 1] ? months[i + 1].x : (pageMaxX + 1),
     }));
 
+    // P2-b — description right edge: the x of the first header token right of
+    // the description label (e.g. QTY/UNIT/BUDGET COST sit between the desc and
+    // the months in contractor tables). Without it every value left of the first
+    // month (item codes, quantities, peso totals) bleeds into activity names.
+    // Falls back to the first month start when the desc label is last.
+    let descRight = null;
+    if (descX !== null) {
+        for (const t of sorted) {
+            if (t.x > descX && !isDescriptionLabel(t.str)) {
+                if (descRight === null || t.x < descRight) descRight = t.x;
+            }
+        }
+    }
+
     return {
         descX: descX !== null ? descX : Math.max(0, months[0].x - 200),
+        descRight: descRight !== null ? descRight : months[0].x,
         monthCols: months,
     };
 }
 
 /* ─── Row assembly ────────────────────────────────────────────────────────── */
 
-function buildRows(tokenLines, header, startIndex) {
+function buildRows(tokenLines, header, startIndex, ctx) {
     const rows = [];
+    const summaryCandidates = [];
     let totalRowSum = null;
+    let sawSummary = false;
     const firstMonthX = header.monthCols[0].x;
+    // P2-b — description lives strictly between its label column and the next
+    // header column (QTY/UNIT/COST sit left of the months). Falls back to the
+    // old first-month boundary when the header gave no right edge.
+    const descLimit = header.descRight != null ? Math.min(header.descRight, firstMonthX) : firstMonthX;
+    const context = ctx || {};
+    const priorSummary = !!context.priorSummary;
 
     for (let i = startIndex; i < tokenLines.length; i++) {
         const tokens = tokenLines[i].tokens;
 
-        const descTokens = tokens.filter((t) => t.x < firstMonthX);
+        const descTokens = tokens.filter((t) => t.x < descLimit);
         let descText = descTokens.map((t) => t.str).join(' ').trim();
         descText = descText.replace(/^\s*\d{1,3}\s+/, '').trim();
+        // Continuation value rows carry no words — a purely numeric desc is a
+        // column value, never an activity name.
+        if (/^[\d,\s.₱%#]+$/.test(descText)) descText = '';
 
+        // P2-f — single assignment by token CENTER: a wide token straddling a
+        // month boundary used to count in BOTH spans (the 19.99-style drift).
+        // NOTE: token lines carry x/xEnd (computed from item widths upstream),
+        // never width — center from xEnd, not t.width (which is undefined here).
         const monthVals = {};
         const monthPresence = {};
         let hasMonthValue = false;
-        for (const mc of header.monthCols) {
-            let sum = 0;
-            let presence = false;
-            for (const t of tokens) {
-                if (!(t.xEnd > mc.x && t.x < mc.xEnd)) continue;
-                if (isNumericToken(t.str)) {
-                    sum += (parseNumeric(t.str) || 0);
-                    presence = true;
-                } else if (/^#+$/.test(t.str.trim())) {
-                    // P1 — Excel column-width overflow ("###"): the value exists but
-                    // is unreadable. Presence flag only — never summed (Decision 10).
-                    presence = true;
-                } else if (/^\d[\d,]*(\.\d+)?\s*%$/.test(t.str.trim())) {
-                    // P1 — physical-copy weighted % (e.g. "1.20%"): intentional
-                    // activity weight, parsed as a number (Decision 10).
-                    sum += (parseFloat(t.str.trim().replace('%', '').replace(/,/g, '')) || 0);
-                    presence = true;
-                }
+        for (const t of tokens) {
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            const cx = (t.x + xEnd) / 2;
+            let mc = null;
+            for (let k = 0; k < header.monthCols.length; k++) {
+                const c = header.monthCols[k];
+                const isLast = k === header.monthCols.length - 1;
+                if (cx >= c.x && (isLast ? cx <= c.xEnd : cx < c.xEnd)) { mc = c; break; }
             }
-            if (presence) {
-                monthVals[mc.index] = sum;
+            if (!mc) continue;
+            const s = t.str.trim();
+            if (isNumericToken(s)) {
+                monthVals[mc.index] = (monthVals[mc.index] || 0) + (parseNumeric(s) || 0);
+                monthPresence[mc.index] = true;
+                hasMonthValue = true;
+            } else if (/^#+$/.test(s)) {
+                // P1 — Excel column-width overflow ("###"): the value exists but
+                // is unreadable. Presence flag only — never summed (Decision 10).
+                monthPresence[mc.index] = true;
+                hasMonthValue = true;
+            } else if (/^\d[\d,]*(\.\d+)?\s*%$/.test(s)) {
+                // P1 — physical-copy weighted % (e.g. "1.20%"): intentional
+                // activity weight, parsed as a number (Decision 10).
+                monthVals[mc.index] = (monthVals[mc.index] || 0) + (parseFloat(s.replace('%', '').replace(/,/g, '')) || 0);
                 monthPresence[mc.index] = true;
                 hasMonthValue = true;
             }
         }
 
         if (!hasMonthValue && descText === '') continue;
-        if (isSummaryLabel(descText)) continue;
+        if (isSummaryLabel(descText)) {
+            sawSummary = true;
+            // P2-e — keep labeled summary rows as reference candidates (values per
+            // span) instead of dropping them outright; the curve never moves.
+            const vals = {};
+            let any = false;
+            for (const mcc of header.monthCols) {
+                if (monthVals[mcc.index] !== undefined && monthVals[mcc.index] > 0) {
+                    vals[mcc.index] = monthVals[mcc.index];
+                    any = true;
+                }
+            }
+            if (any) summaryCandidates.push({ values: vals });
+            continue;
+        }
+        // P2-c — continuation-page summary exclusion: a desc-less row on a page
+        // whose prior pages showed an EXPLICIT summary, carrying small strictly
+        // ascending values up to exactly 100 across every month span, is the
+        // summary reprinted without labels — not an activity. Genuine percent
+        // activities only trip this when a labeled summary already exists in the
+        // same file, which is precisely when the summary reading wins.
+        if (descText === '' && priorSummary) {
+            const keys = header.monthCols.map((mcc) => mcc.index);
+            const vs = keys.map((k) => monthVals[k]);
+            if (vs.length >= 2 && vs.every((v) => v !== undefined)
+                && vs.every((v) => v < 1000) && vs[vs.length - 1] === 100
+                && vs.every((v, k) => k === 0 || v > vs[k - 1])) {
+                sawSummary = true;
+                continue;
+            }
+        }
         if (isTotalLabel(descText)) {
-            const s = Object.values(monthVals).reduce((a, b) => a + b, 0);
+            let s = Object.values(monthVals).reduce((a, b) => a + b, 0);
+            if (!(s > 0)) {
+                // P2-d — off-column TOTAL fallback (mirrors the Excel rule): the
+                // contract figure often sits left of the month spans (budgets do).
+                // Largest numeric token wins; sub-1000 guards against item codes.
+                let best = 0;
+                for (const t of tokens) {
+                    if (isNumericToken(t.str)) {
+                        const v = parseNumeric(t.str) || 0;
+                        if (v > best) best = v;
+                    }
+                }
+                if (best >= 1000) s = best;
+            }
             if (s > 0) totalRowSum = s;
             continue;
         }
@@ -319,7 +401,7 @@ function buildRows(tokenLines, header, startIndex) {
         });
     }
 
-    return { rows, totalRowSum };
+    return { rows, totalRowSum, summaryCandidates, sawSummary };
 }
 
 /* ─── Page merging ────────────────────────────────────────────────────────── */
@@ -328,6 +410,7 @@ function mergePages(pageResults) {
     let mergedRows = [];
     let mergedMonths = [];
     let totalContract = null;
+    const warnings = [];
 
     for (const pr of pageResults) {
         const pageMonths = pr.header.monthCols.map((mc) => mc.index);
@@ -346,6 +429,12 @@ function mergePages(pageResults) {
         } else {
             // Disjoint months → the page holds the overflowing COLUMNS of the
             // same rows; align by row position and fill the extra columns in.
+            // P2-c — positional alignment is a guess: flag row-count drift so a
+            // human verifies instead of silently misattributing months.
+            if (pr.rows.length !== mergedRows.length) {
+                warnings.push('Heads-up: pages carry different row counts (' + mergedRows.length + ' vs ' + pr.rows.length
+                    + ') — months were aligned by position. Verify the monthly split before locking.');
+            }
             const n = Math.min(mergedRows.length, pr.rows.length);
             for (let i = 0; i < n; i++) {
                 for (const key of Object.keys(pr.rows[i].months)) {
@@ -369,12 +458,13 @@ function mergePages(pageResults) {
     }
 
     mergedMonths.sort((a, b) => a - b);
-    return { rows: mergedRows, months: mergedMonths, totalContract };
+    return { rows: mergedRows, months: mergedMonths, totalContract, warnings };
 }
 
 /* ─── Cumulative months ───────────────────────────────────────────────────── */
 
-export function buildMonthsFromRows(rows, monthIndices, totalContract) {
+export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
+    const opts = extra || {};
     const warnings = [];
     const totals = {};
     const activitiesByMonth = {};
@@ -389,6 +479,7 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract) {
             if (v > 0) {
                 totals[idx] += v;
                 activitiesByMonth[idx].push(row.description);
+                if (opts.debug) opts.debug.push({ t: 'contrib', month: idx, activity: row.description, value: v });
             } else if (row.presence && row.presence[idx] && activitiesByMonth[idx].indexOf(row.description) === -1) {
                 // P1 — presence-only months (## overflow): the activity visibly
                 // spans this month even though its value is unreadable. Listed
@@ -443,6 +534,37 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract) {
         running = 100;
     }
 
+    // P2-e — author-block reference + warn (mirrors the Excel 2b redesign): the
+    // plan curve above NEVER moves while activity math exists. Each summary value
+    // sitting in a month span is compared against our cumulative at that month;
+    // gaps past 1.0 warn with the cause named. Percent-shaped blocks (max ≤ 100)
+    // compare directly; peso blocks scale through the contract. Weekly path has no
+    // activity math to compare against and never reaches this branch.
+    const summaryReference = [];
+    const candidates = (opts && opts.summaryCandidates) || [];
+    if (lastNonZero > 0 && candidates.length > 0) {
+        const byMonth = {};
+        months.forEach((m) => { byMonth[m.month_index] = m.planned_progress_percent; });
+        candidates.forEach((cand) => {
+            const keys = Object.keys(cand.values || {}).map(Number);
+            const maxVal = keys.length ? Math.max(...keys.map((k) => cand.values[k])) : 0;
+            const asPercent = maxVal <= 100;
+            keys.forEach((m) => {
+                if (byMonth[m] === undefined) return;
+                const raw = cand.values[m];
+                const summaryPct = Math.round((asPercent ? raw : (contract > 0 ? (raw / contract) * 100 : 0)) * 100) / 100;
+                const gap = Math.round(Math.abs(summaryPct - byMonth[m]) * 100) / 100;
+                summaryReference.push({ month: m, summary_percent: summaryPct, activity_percent: byMonth[m], gap });
+                if (opts.debug) opts.debug.push({ t: 'ref', month: m, summary: summaryPct, activity: byMonth[m], gap });
+                if (gap > 1.0) {
+                    warnings.push(`Heads-up (Month ${m}): the file's own summary says ${summaryPct}%, but its activity rows add up to`
+                        + ` ${byMonth[m]}%. The summary was likely computed against a different total. Your baseline below uses the activity math —`
+                        + ' no action needed.');
+                }
+            });
+        });
+    }
+
     return {
         months,
         meta: {
@@ -451,6 +573,7 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract) {
             monthCount: monthIndices.length,
             activityCount: rows.length,
             warnings,
+            summaryReference,
         },
     };
 }
@@ -581,8 +704,11 @@ export function parseWeeklySchedulePdf(itemsByPage) {
  * @returns {{months: Array, meta: Object}|null}  Same shape as the Excel
  *          importer, or null when no S-curve table layout is recognised.
  */
-export function parseSCurvePdf(itemsByPage) {
+export function parseSCurvePdf(itemsByPage, opts) {
+    const options = opts || {};
     const pageResults = [];
+    let priorSummary = false;
+    let priorHeader = null;
 
     for (let p = 0; p < itemsByPage.length; p++) {
         const lines = groupItemsIntoLines(itemsByPage[p] || []);
@@ -593,19 +719,29 @@ export function parseSCurvePdf(itemsByPage) {
         let headerIndex = -1;
         for (let i = 0; i < tokenLines.length; i++) {
             const next = tokenLines[i + 1] ? tokenLines[i + 1].tokens : null;
-            const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i });
+            const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i, continuation: priorHeader !== null });
             if (h) { header = h; headerIndex = i; break; }
         }
 
         if (!header) continue;
-        const parsed = buildRows(tokenLines, header, headerIndex + 1);
-        pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum });
+        if (!priorHeader) priorHeader = header;
+        if (options.debug) options.debug.push({ t: 'header', page: p, months: header.monthCols.map((mc) => mc.index), descX: header.descX });
+        // P2-c — continuation pages inherit the summary context (not the geometry):
+        // a desc-less page following an explicit summary gets the stricter reading.
+        const parsed = buildRows(tokenLines, header, headerIndex + 1, { priorSummary, debug: options.debug });
+        if (parsed.sawSummary) priorSummary = true;
+        pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum, summaryCandidates: parsed.summaryCandidates });
     }
 
     if (pageResults.length > 0) {
         const merged = mergePages(pageResults);
         if (merged.rows.length > 0 && merged.months.length > 0) {
-            return buildMonthsFromRows(merged.rows, merged.months, merged.totalContract);
+            // Summary candidates survive only single-page reads for now: positional
+            // merging across different x-grids cannot attribute reference values.
+            const summaryCandidates = pageResults.length === 1 ? pageResults[0].summaryCandidates : [];
+            const out = buildMonthsFromRows(merged.rows, merged.months, merged.totalContract, { summaryCandidates, debug: options.debug });
+            (merged.warnings || []).forEach((w) => out.meta.warnings.unshift(w));
+            return out;
         }
     }
 
