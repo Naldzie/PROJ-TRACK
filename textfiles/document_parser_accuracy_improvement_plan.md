@@ -2341,6 +2341,11 @@ Related plan
     2c parked above); then ONE non-OCR PDF batch (monthly-path parity 1–5 + weekly polish +
     PDF header-synonym mirroring; Tier-2 OCR stays separately queued as engine work); E1/E2
     unpark only on explicit order. Blinding stays ON throughout (demo proof).
+  - P1 SCOPE DECIDED 2026-09-10 (user): detection-only batch (desc synonyms + ordinal
+    months + fuzzy headers + P1–P12/Period/Phase + loose-desc + ##/% handling; weight
+    plumbing and TOTAL-guard changes OUT). TOTAL hyphen-guard (Sub-Total false positive)
+    split as a SEPARATE micro-fix, later. E1-PDF "header slice" design decision deferred
+    until P1 lands (rules first, learning second, per house sequence).
   - EXCEL END-TO-END vs ORIGINAL TIERS (clarified 2026-09-08 — one file type fully through
     all tiers before moving on): Tier 1 DONE (2a/R2a/2b/fallback/GRID/UX all built, committed,
     browser-proven; GRID explanation filed 2026-09-08); Tier 2 (local OCR auto) is N/A for
