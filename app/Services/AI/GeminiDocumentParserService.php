@@ -392,6 +392,368 @@ class GeminiDocumentParserService
     }
 
     /**
+     * Read S-curve months from PDF page images (F-A PDF AI fallback).
+     *
+     * Accepts 1-3 page-image slices (client-rendered ~150 DPI PNGs of the
+     * weakest pages, same shape as parseProjectSlice) plus the machine-read
+     * words per page ($pageWords, from client pdf.js text — may be empty for
+     * scanned pages). Returns ['months' => [{month_index,
+     * planned_progress_percent, activities: [names]}], 'meta' => [
+     * 'contractAmount' => ?float, 'warnings' => [...]], 'monthLabels' => {m:
+     * exact header text}] with the same sanitization the Excel path applies
+     * (monotonic clamp + force-last-100), or null.
+     * Null on: empty images/key, HTTP failure, malformed JSON, <2 usable
+     * months AND <2 usable summary points, fabricated homework.
+     *
+     * Names policy (user decision 2026-09-11: drop, keep generic): activity
+     * names must match words printed on the page — hallucinated names are
+     * dropped server-side and the client falls back to generic labels.
+     * 'monthLabels' rides along as F-D vocabulary fuel (controller strips
+     * before responding; never trusted without approval).
+     *
+     * Called by: SCurveImportController::parsePdfWithGemini() (planned F-B).
+     */
+    public function parseSCurvePdfSlice(array $images, array $pageWords = []): ?array
+    {
+        $images = array_values(array_filter($images, function ($img) {
+            return is_array($img) && !empty($img['data']);
+        }));
+
+        if (count($images) === 0) {
+            return null;
+        }
+
+        $images = array_slice($images, 0, self::MAX_IMAGES);
+
+        $pageText = implode("\n", array_filter(array_map(function ($w) {
+            return is_string($w) ? $w : '';
+        }, $pageWords)));
+
+        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images);
+
+        if ($raw === '') {
+            return null;
+        }
+
+        $decoded = $this->parseJsonObject($raw);
+
+        if ($decoded === null) {
+            return null;
+        }
+
+        // Debug breadcrumb (evidence, not inference): what the model actually
+        // returned, so silent single-series replies are diagnosable in logs.
+        try {
+            Log::debug('F-A pdf slice response keys', [
+                'keys' => is_array($decoded) ? array_keys($decoded) : [],
+                'months' => is_array($decoded['months'] ?? null) ? count($decoded['months']) : 0,
+                'summary' => is_array($decoded['summary'] ?? null) ? count($decoded['summary']) : 0,
+                'amounts' => is_array($decoded['monthlyAmounts'] ?? null) ? count($decoded['monthlyAmounts']) : 0,
+                'hasSummaryRow' => $decoded['hasSummaryRow'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            // Logging never breaks imports.
+        }
+
+        return $this->validatePdfCurve($decoded, $pageText);
+    }
+
+    /**
+     * Build the strict-JSON PDF S-curve extraction prompt around page images.
+     *
+     * Same two-series homework as the Excel prompt (activity-derived months +
+     * monthly peso amounts and divisor, recomputed server-side; author's own
+     * summary row copied as printed, never merged) plus per-month activity
+     * names copied EXACTLY as printed — invented names are dropped downstream,
+     * so the prompt forbids them outright. The machine-read words (when the
+     * pages carry selectable text) ride along as alignment reference.
+     *
+     * Called by: parseSCurvePdfSlice()
+     */
+    private function buildSCurvePdfPrompt(array $pageWords = []): string
+    {
+        $words = trim(implode("\n", array_filter(array_map(function ($w) {
+            return is_string($w) ? trim($w) : '';
+        }, $pageWords))));
+
+        $reference = $words !== ''
+            ? ' The machine-read words from these pages (may be partial or empty'
+            . ' on scanned pages) follow for alignment — trust the pixels over'
+            . ' this text when they differ.'
+            : ' No machine-read text is available (scanned pages) — read the pixels.';
+
+        return 'You are reading a contractor S-curve schedule table for a Philippine'
+            . ' government construction project, shown as page images (1-2 pages of the'
+            . ' same table; later pages may continue the months without repeating the'
+            . ' headers).' . $reference
+            . ' Month columns may be labeled "Month 1..N", "M1..N", "P1..N", "STAGE 1..N",'
+            . ' month names, bare numbers, or ordinals like "1st."; a month may span two'
+            . ' adjacent columns whose values must be ADDED once, never double-counted.'
+            . ' Return ONLY a JSON object {"months": [{"month_index": 1,'
+            . ' "planned_progress_percent": 12.5, "activities": ["Mobilization Works"]}, ...],'
+            . ' "monthlyAmounts": [{"month_index": 1, "pesos": 50000}, ...],'
+            . ' "summary": [{"month_index": 1, "percent": 12.0}, ...],'
+            . ' "hasSummaryRow": true, "contractAmount": 32588531.43,'
+            . ' "monthLabels": [{"month_index": 1, "label": "P1"}]}. Rules:'
+            . ' "months" MUST be computed from the activity rows (add each month\'s amounts,'
+            . ' divide by the contract total — the TOTAL figure the activity costs sum to,'
+            . ' NOT the divisor the summary row may use — cumulative 0-100 per month,'
+            . ' month_index sequential from 1); "monthlyAmounts" are those per-month peso'
+            . ' totals and "contractAmount" is the divisor you used (omit monthlyAmounts only'
+            . ' for percent/weight-only tables with no peso figures); "summary" is the'
+            . ' author\'s own summary-row values copied as printed (no recomputation — omit'
+            . ' the key when no summary row exists); "hasSummaryRow" tells whether one'
+            . ' exists. DO NOT copy summary values into "months".'
+            . ' "activities" lists each month\'s work names copied EXACTLY as printed'
+            . ' (use ONLY words visible on the page — never invent names; omit the key or'
+            . ' use [] when a month\'s names are unreadable). "monthLabels" records the'
+            . ' exact header text per month as printed (e.g. "P1", "STAGE 1", "JANUARY").'
+            . ' Return ONLY the JSON object, no explanations, no markdown fences.'
+            . ($words !== '' ? "\n\nMACHINE-READ WORDS:\n" . mb_substr($words, 0, 6000) : '');
+    }
+
+    /**
+     * Validate + sanitize AI PDF months into the importer shape.
+     *
+     * Same guarantees as validateSCurveMonths (activity series kept when
+     * usable, summary only warns past 1.0, summary adopted ONLY when no
+     * activity values exist, recompute check declines fabrication) minus the
+     * sheet-truth presence audit (no CSV exists for image slices) and layout
+     * keys (PDFs have no columns — F-D learns vocabulary instead). Activity
+     * names pass the printed-words check; failures drop to [] for the
+     * client's generic fallback (user decision 2026-09-11).
+     *
+     * Called by: parseSCurvePdfSlice()
+     */
+    private function validatePdfCurve(mixed $decoded, string $pageText = ''): ?array
+    {
+        if (!is_array($decoded)) {
+            return null;
+        }
+
+        $months = $this->sanitizeCurvePoints($decoded['months'] ?? null);
+        $summary = $this->sanitizeSummaryPoints($decoded['summary'] ?? null);
+        $amounts = $this->sanitizeAmountPoints($decoded['monthlyAmounts'] ?? null);
+        $contract = $this->sanitizeContractAmount($decoded['contractAmount'] ?? null);
+        $hasSummaryRow = ($decoded['hasSummaryRow'] ?? null) === true;
+
+        // Attach printed-words-checked names to each kept month (drops never
+        // move the curve — names ride, numbers decide).
+        $namesByMonth = [];
+        foreach ((array) ($decoded['months'] ?? []) as $row) {
+            if (!is_array($row) || !isset($row['month_index'])) {
+                continue;
+            }
+            $namesByMonth[(int) $row['month_index']] = $this->sanitizeActivityNames(
+                $row['activities'] ?? null,
+                $pageText
+            );
+        }
+
+        // Activity series usable — keep it, summary only warns.
+        if (count($months) >= 2) {
+            // Recompute check on PRE-sanitizer values (same rationale as Excel).
+            $rawMonths = $this->extractRawPoints($decoded['months'] ?? null);
+            $amountsCoverAll = $contract !== null && $contract > 0
+                && count($amounts) > 0
+                && $this->amountsCoverMonths($rawMonths, $amounts);
+            if ($amountsCoverAll && !$this->monthsFollowAmounts($rawMonths, $amounts, $contract)) {
+                return null;
+            }
+
+            $warnings = ['AI-assisted curve — verify before locking the baseline.'];
+            // Universal verdict: full homework recomputed cleanly.
+            if ($amountsCoverAll) {
+                $warnings[] = 'Checked: these months follow from the stated monthly amounts.';
+            }
+            $byMonth = [];
+            foreach ($months as $m) {
+                $byMonth[$m['month_index']] = $m['planned_progress_percent'];
+            }
+            $compared = 0;
+            $mirrored = 0;
+            foreach ($summary as $s) {
+                if (!isset($byMonth[$s['month_index']])) continue;
+                $compared++;
+                $gap = abs($s['percent'] - $byMonth[$s['month_index']]);
+                if ($gap <= 0.01) {
+                    $mirrored++;
+                } elseif ($gap > 1.0) {
+                    $warnings[] = "Heads-up (Month {$s['month_index']}): the file's own summary"
+                        . " says {$s['percent']}%, but its activity rows add up to"
+                        . " {$byMonth[$s['month_index']]}%. Your baseline below uses the"
+                        . ' activity math — no action needed.';
+                }
+            }
+            // Months mirror an attached summary — say so instead of passing silently.
+            if ($compared > 0 && $mirrored === $compared) {
+                $warnings[] = 'Heads-up: these months match the file\'s own summary exactly —'
+                    . ' they could not be independently verified from the activity rows.'
+                    . ' Please review before locking.';
+            } elseif ($hasSummaryRow && count($summary) === 0) {
+                // Claimed summary row, nothing shown — unverified by construction.
+                $warnings[] = 'Heads-up: the file has a summary row that could not be compared —'
+                    . ' treat these months as unverified. Please review before locking.';
+            } elseif (!$amountsCoverAll && count($summary) === 0) {
+                // Single-series reply with nothing to check against — never silent.
+                $warnings[] = 'Heads-up: only one series could be read — these months could not'
+                    . ' be cross-checked. Please review before locking.';
+            }
+
+            $outMonths = [];
+            foreach ($months as $m) {
+                $outMonths[] = [
+                    'month_index' => $m['month_index'],
+                    'planned_progress_percent' => $m['planned_progress_percent'],
+                    'activities' => $namesByMonth[$m['month_index']] ?? [],
+                ];
+            }
+
+            return [
+                'months' => array_values($outMonths),
+                'meta' => [
+                    'contractAmount' => $contract,
+                    'warnings' => $warnings,
+                ],
+                // F-D vocabulary fuel (controller strips before responding):
+                // exact header labels + surviving activity words per month.
+                'monthLabels' => $this->sanitizeMonthLabels($decoded['monthLabels'] ?? null),
+            ];
+        }
+
+        // No usable activity values — adopt the summary as the curve (flagged).
+        if (count($summary) >= 2) {
+            $adopted = [];
+            foreach ($summary as $s) {
+                $adopted[] = [
+                    'month_index' => $s['month_index'],
+                    'planned_progress_percent' => $s['percent'],
+                ];
+            }
+            $adopted = $this->sanitizeCurvePoints($adopted);
+
+            $outAdopted = [];
+            foreach ($adopted as $m) {
+                $outAdopted[] = [
+                    'month_index' => $m['month_index'],
+                    'planned_progress_percent' => $m['planned_progress_percent'],
+                    'activities' => [],
+                ];
+            }
+
+            return [
+                'months' => array_values($outAdopted),
+                'meta' => [
+                    'contractAmount' => $contract,
+                    'warnings' => [
+                        'Heads-up: no usable activity values were found, so the baseline below'
+                        . " is built from the file's own summary column. Please verify carefully"
+                        . ' before locking.',
+                        'AI-assisted curve — verify before locking the baseline.',
+                    ],
+                ],
+                'monthLabels' => $this->sanitizeMonthLabels($decoded['monthLabels'] ?? null),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * Keep only activity names built from words printed on the page.
+     *
+     * Normalizes the page text once (lowercase, punctuation to spaces) and
+     * requires every significant word (3+ chars) of a name to appear in it.
+     * Hallucinated names drop to nothing — the client falls back to generic
+     * labels (user decision 2026-09-11). Cap + dedupe bound the shape.
+     *
+     * Called by: validatePdfCurve().
+     */
+    private function sanitizeActivityNames(mixed $names, string $pageText): array
+    {
+        if (!is_array($names)) {
+            return [];
+        }
+
+        $haystack = mb_strtolower($pageText);
+        $haystack = preg_replace('/[^a-z0-9]+/u', ' ', $haystack);
+        $haystack = ' ' . trim(preg_replace('/\s+/', ' ', $haystack)) . ' ';
+
+        $out = [];
+        foreach ($names as $name) {
+            if (!is_string($name)) {
+                continue;
+            }
+            $name = trim(preg_replace('/\s+/', ' ', $name));
+            if ($name === '' || mb_strlen($name) < 3 || mb_strlen($name) > 120) {
+                continue;
+            }
+            $needle = mb_strtolower($name);
+            $needle = preg_replace('/[^a-z0-9]+/u', ' ', $needle);
+            $words = array_values(array_filter(
+                explode(' ', $needle),
+                fn ($w) => mb_strlen($w) >= 3
+            ));
+            if (count($words) === 0) {
+                continue;
+            }
+            $printed = true;
+            foreach ($words as $w) {
+                // Full-word hit always counts; longer words also allow a
+                // prefix hit (OCR truncation tolerance) — short words never do
+                // ("act" must not ride on "activity").
+                $full = mb_strpos($haystack, ' ' . $w . ' ') !== false;
+                $prefix = mb_strlen($w) >= 5 && mb_strpos($haystack, ' ' . $w) !== false;
+                if (!$full && !$prefix) {
+                    $printed = false;
+                    break;
+                }
+            }
+            if (!$printed) {
+                continue;
+            }
+            if (!in_array($name, $out, true) && count($out) < 6) {
+                $out[] = $name;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Sanitize exact month-header labels ({month_index, label}) for F-D fuel.
+     *
+     * Shape only (month 1..60, label 1..40 chars) — trust (approval) happens
+     * in the review desk, never here.
+     *
+     * Called by: validatePdfCurve().
+     */
+    private function sanitizeMonthLabels(mixed $rows): array
+    {
+        if (!is_array($rows)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !isset($row['month_index'], $row['label'])) {
+                continue;
+            }
+            $idx = (int) $row['month_index'];
+            $label = is_string($row['label']) ? trim($row['label']) : '';
+            if ($idx < 1 || $idx > 60 || isset($out[$idx])) {
+                continue;
+            }
+            if ($label === '' || mb_strlen($label) > 40) {
+                continue;
+            }
+            $out[$idx] = $label;
+        }
+
+        return $out;
+    }
+
+    /**
      * Build the strict-JSON S-curve extraction prompt around workbook text.
      *
      * Asks for strict homework so the server can verify instead of trusting:

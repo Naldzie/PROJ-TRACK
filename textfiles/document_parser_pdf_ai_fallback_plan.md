@@ -246,6 +246,26 @@ Proof files (git-ignored sampledocs/, never commit)
       numbers+names, save-words). Ordered dedicated md file + back-references.
     - No code, no commit — NEXT = Phase F-A on go-ahead.
 
+  2026-09-11 — F-A BUILT (code, NOT committed per user; restudy decisions:
+  button on failures AND weak reads, drop-hallucinated-names, 2 pages/slice).
+    - Service: parseSCurvePdfSlice(images, pageWords) — images sender with Lite
+      backup + provenance (same as normal-doc); buildSCurvePdfPrompt (two-series
+      homework + activities/monthLabels copied-as-printed-only); validatePdfCurve
+      (sanitizeCurvePoints/Summary/Amount/Contract + recompute-decline reuse;
+      no sheet-presence audit — no CSV for image slices; no layout keys — PDFs
+      have no columns); sanitizeActivityNames (printed-words check, full-word
+      always, prefix only for 5+ char words so "act" can't ride "activity");
+      sanitizeMonthLabels (F-D fuel, shape-only). Caught pre-green: none —
+      first green held (tightened the prefix rule by review before running).
+    - Tests (+10 in GeminiDocumentParserServiceTest): success+names+Checked,
+      hallucinated-drop, summary-gap warn, fabricated-homework decline,
+      empty/key decline (both keys nulled + assertNothingSent), malformed,
+      thin-reply, 3-image cap, summary adoption flagged, fences. All green.
+    - Suites: service 49/49; JS 109 + 2 intended blinding fails (blinding ON);
+      full 1130 passed / 7 failed = same 7 pre-existing (clean-tree verified via
+      stash: identical 7 — zero regressions). No commit per user.
+    - NEXT = Phase F-B (endpoint + routes) on go-ahead.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

@@ -1012,4 +1012,244 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNotNull($out);
         $this->assertFalse($out['layout']['activityBased']);
     }
+
+    // F-A PDF slice success: months + printed names + checked verdict + labels.
+    // Called by: parseSCurvePdfSlice() activity branch.
+    public function test_pdf_slice_success_returns_months_names_and_checked_verdict(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $words = ['SCHEDULED TASKS STAGE 1 Mobilization Works Earthworks and Excavation '
+            . 'Concrete and Masonry Works Finishing and Painting Works'];
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 5, 'activities' => ['Mobilization Works']],
+                ['month_index' => 2, 'planned_progress_percent' => 20, 'activities' => ['Mobilization Works', 'Earthworks and Excavation']],
+                ['month_index' => 3, 'planned_progress_percent' => 40, 'activities' => ['Earthworks and Excavation']],
+                ['month_index' => 4, 'planned_progress_percent' => 60, 'activities' => ['Earthworks and Excavation', 'Concrete and Masonry Works']],
+                ['month_index' => 5, 'planned_progress_percent' => 80, 'activities' => ['Concrete and Masonry Works']],
+                ['month_index' => 6, 'planned_progress_percent' => 100, 'activities' => ['Finishing and Painting Works']],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 60000],
+                ['month_index' => 2, 'pesos' => 180000],
+                ['month_index' => 3, 'pesos' => 240000],
+                ['month_index' => 4, 'pesos' => 240000],
+                ['month_index' => 5, 'pesos' => 240000],
+                ['month_index' => 6, 'pesos' => 240000],
+            ],
+            'hasSummaryRow' => false,
+            'contractAmount' => 1200000,
+            'monthLabels' => [
+                ['month_index' => 1, 'label' => 'STAGE 1'],
+                ['month_index' => 2, 'label' => 'STAGE 2'],
+            ],
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(2), $words);
+
+        $this->assertNotNull($out);
+        $this->assertCount(6, $out['months']);
+        $this->assertSame(['Mobilization Works'], $out['months'][0]['activities']);
+        $this->assertSame(['Mobilization Works', 'Earthworks and Excavation'], $out['months'][1]['activities']);
+        $this->assertSame(1200000.0, $out['meta']['contractAmount']);
+        $this->assertContains('AI-assisted curve — verify before locking the baseline.', $out['meta']['warnings']);
+        $this->assertContains('Checked: these months follow from the stated monthly amounts.', $out['meta']['warnings']);
+        $this->assertSame('STAGE 1', $out['monthLabels'][1]);
+        $this->assertSame('STAGE 2', $out['monthLabels'][2]);
+    }
+
+    // F-A hallucinated names drop while the month survives (user: drop, generic).
+    // Called by: validatePdfCurve() names block.
+    public function test_pdf_slice_drops_hallucinated_names_but_keeps_months(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50, 'activities' => ['Mobilization Works', 'Skyhook Assembly']],
+                ['month_index' => 2, 'planned_progress_percent' => 100, 'activities' => ['Mobilization Works']],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice(
+            $this->sliceImages(1),
+            ['Mobilization Works P1 P2']
+        );
+
+        $this->assertNotNull($out);
+        $this->assertSame(['Mobilization Works'], $out['months'][0]['activities']);
+        $this->assertSame(['Mobilization Works'], $out['months'][1]['activities']);
+    }
+
+    // F-A diverging summary warns (same plain wording as Excel) without moving months.
+    // Called by: validatePdfCurve() summary block.
+    public function test_pdf_slice_warns_on_summary_gap(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 50000],
+                ['month_index' => 2, 'pesos' => 50000],
+            ],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 45],
+                ['month_index' => 2, 'percent' => 100],
+            ],
+            'hasSummaryRow' => true,
+            'contractAmount' => 100000,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNotNull($out);
+        $this->assertSame(50.0, $out['months'][0]['planned_progress_percent']);
+        $warned = false;
+        foreach ($out['meta']['warnings'] as $w) {
+            if (str_contains($w, 'Heads-up (Month 1)') && str_contains($w, '45%')) {
+                $warned = true;
+            }
+        }
+        $this->assertTrue($warned);
+    }
+
+    // F-A fabricated homework declines: amounts cover months but months don't follow.
+    // Called by: validatePdfCurve() recompute block.
+    public function test_pdf_slice_declines_fabricated_homework(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 90],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 10000],
+                ['month_index' => 2, 'pesos' => 10000],
+            ],
+            'hasSummaryRow' => false,
+            'contractAmount' => 100000,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNull($out);
+    }
+
+    // F-A empty inputs decline without sending (both credential paths nulled).
+    // Called by: parseSCurvePdfSlice() guards.
+    public function test_pdf_slice_empty_images_and_key_decline(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->assertNull((new GeminiDocumentParserService())->parseSCurvePdfSlice([]));
+
+        config(['services.gemini.key' => null, 'services.gemini.parser_key' => null]);
+        $this->fakeSuccess('{"months": []}');
+        $this->assertNull((new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1)));
+        Http::assertNothingSent();
+    }
+
+    // F-A malformed JSON declines.
+    // Called by: parseSCurvePdfSlice() decode block.
+    public function test_pdf_slice_malformed_json_declines(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess('not json at all {{{');
+        $this->assertNull((new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1)));
+    }
+
+    // F-A thin replies decline (<2 months and <2 summary).
+    // Called by: validatePdfCurve() tail.
+    public function test_pdf_slice_thin_reply_declines(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [['month_index' => 1, 'planned_progress_percent' => 10]],
+            'hasSummaryRow' => false,
+        ]));
+        $this->assertNull((new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1)));
+    }
+
+    // F-A image cap: 4 slices in, 3 image parts on the wire (free-tier guard).
+    // Called by: parseSCurvePdfSlice() slice block.
+    public function test_pdf_slice_caps_images_at_three(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(4));
+        $this->assertNotNull($out);
+
+        Http::assertSent(function ($request) {
+            $parts = $request->data()['contents'][0]['parts'] ?? [];
+
+            return count($parts) === 4;
+        });
+    }
+
+    // F-A summary adoption: no activity values + ≥2 summary points adopts flagged.
+    // Called by: validatePdfCurve() fallback block.
+    public function test_pdf_slice_adopts_summary_when_no_activity(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [['month_index' => 1, 'planned_progress_percent' => 10]],
+            'summary' => [
+                ['month_index' => 1, 'percent' => 45],
+                ['month_index' => 2, 'percent' => 100],
+            ],
+            'hasSummaryRow' => true,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNotNull($out);
+        $this->assertSame(45.0, $out['months'][0]['planned_progress_percent']);
+        $this->assertSame([], $out['months'][0]['activities']);
+        $flagged = false;
+        foreach ($out['meta']['warnings'] as $w) {
+            if (str_contains($w, 'own summary column')) {
+                $flagged = true;
+            }
+        }
+        $this->assertTrue($flagged);
+    }
+
+    // F-A fence-wrapped payloads still parse.
+    // Called by: parseSCurvePdfSlice() via parseJsonObject().
+    public function test_pdf_slice_fence_wrapped_json_parses(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess("```json\n" . json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]) . "\n```");
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+        $this->assertNotNull($out);
+        $this->assertCount(2, $out['months']);
+    }
 }
