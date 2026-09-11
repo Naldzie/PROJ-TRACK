@@ -2404,6 +2404,34 @@ Related plan
     byte-verified vs TRUE activity math (50/70/80/90); full + JS suites; commit/push only
     on user word. Explicitly OUT: weight plumbing, TOTAL-guard (separate micro-fix),
     Tier-2 OCR, AI-for-PDF, 2c-PDF, quarterly layouts.
+  - P2 BUILT 2026-09-10 (code, NOT committed per user — all in
+    scurve-pdf-parser-core.js + wrapper + tests/js/scurve-pdf-parser.test.mjs).
+    P2-0: opts.debug attribution ({header, contrib, ref} entries) + wrapper console
+    behind window.__scurvePdfDebug. P2-b: descRight bound (next header token past the
+    desc label, fallback first-month start) + numeric-desc guard. P2-f: single
+    assignment by token CENTER from xEnd (tokens carry x/xEnd, never width — first
+    draft used t.width and double-counted everything; caught by the new fixtures).
+    P2-c: continuation-header relaxation (prior header ⇒ 2-month minimum + explicit
+    month label required, so stray "1 2" lines never become headers) + priorSummary
+    threading + wordless-summary exclusion (full-coverage, <1000, ascending to 100) +
+    row-count mismatch warning plumbed through merge into meta. P2-d: off-column TOTAL
+    fallback (largest numeric ≥1000 when spans sum to zero). P2-e: summary candidates
+    retained from labeled rows + reference/gap warnings (same plain wording + 1.0
+    threshold as Excel) + meta.summaryReference; weekly path untouched.
+    Caught pre-green: (a) t.width bug above; (b) my 270-fixture expectation fought the
+    merge semantics (desc-less continuation values belong to the positional row —
+    rewritten to assert incorporation, not separation); (c) my mismatch fixture used a
+    2-month desc-less header that the gate correctly rejects (continuation needs the
+    relaxed path — fixture fixed to 3 months, which also proves it).
+    Tests: +7 fixtures (desc-bound, center rule, TOTAL fallback, continuation exclusion
+    + genuine negative, reference gaps, mismatch warning). JS 109 pass / same 2 intended
+    blinding fails; full suite 1120 passed / same 7 pre-existing; no PHP touched.
+    Browser proof on both real PDFs is the user's step. NO commit per user.
+  - PDF AI-FALLBACK 2026-09-11 (user: skip further manual PDF geometry, go AI
+    directly — button-only, numbers+names, save-words): dedicated plan
+    textfiles/document_parser_pdf_ai_fallback_plan.md (Phases F-A..F-E). P2-f
+    rounding audit + desc-bound tightening park behind F-E (revive only on
+    AI-reviewed evidence). This P2 entry stays as the rule-reader record.
   - EXCEL END-TO-END vs ORIGINAL TIERS (clarified 2026-09-08 — one file type fully through
     all tiers before moving on): Tier 1 DONE (2a/R2a/2b/fallback/GRID/UX all built, committed,
     browser-proven; GRID explanation filed 2026-09-08); Tier 2 (local OCR auto) is N/A for

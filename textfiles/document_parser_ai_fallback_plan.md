@@ -135,6 +135,9 @@ Sensitivity basis (user-approved)
    AI-6 S-curve AI (PARKED — separate go-ahead).
      - parseSCurveSlice + parse-gemini route + months validation (monotonic, last = 100,
        Validated summary-vs-activity warning). Not started until AI-5 passes.
+     - SUPERSEDED 2026-09-11 for PDF: build from
+       textfiles/document_parser_pdf_ai_fallback_plan.md (Phases F-A..F-E:
+       button-only, numbers+names, save-words). This AI-6 entry stays as history.
 
   E2 PARITY 2026-09-09 (Excel AI, live bug → fix; AI-6 stays parked — this is the
   E2 Excel path, not the PDF-slice AI-6).
