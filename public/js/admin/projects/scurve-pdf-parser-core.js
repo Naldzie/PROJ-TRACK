@@ -19,7 +19,7 @@ const MONTHS = {
     january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
     july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
     jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8,
-    sep: 9, oct: 10, nov: 11, dec: 12,
+    sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
 };
 
 export function isNumericToken(str) {
@@ -40,12 +40,77 @@ export function matchMonthLabel(str) {
         const n = parseInt(m[1], 10);
         return (n >= 1 && n <= 12) ? n : null;
     }
+    // P1 — contractor shorthand months ("P1"–"P12", "Period/Phase N"), mirrored
+    // from the Excel relaxed detector (E1-3 widening). Single-column spans only.
+    const p = s.match(/^(?:p|period|phase)\s*(\d{1,2})$/);
+    if (p) {
+        const n = parseInt(p[1], 10);
+        return (n >= 1 && n <= 12) ? n : null;
+    }
+    // P1-follow-up — stage/quarter months ("STAGE 1"–"STAGE 6", "Q1"–"Q4").
+    // Proven necessary by the 6-stage specimen (STAGE matched no tier at all).
+    // Single-column spans only.
+    const g = s.match(/^(?:stage|stg|quarter|qtr|q)\s*(\d{1,2})$/);
+    if (g) {
+        const n = parseInt(g[1], 10);
+        return (n >= 1 && n <= 12) ? n : null;
+    }
+    // P1 — ordinal months ("1st."–"12th.", roof family), single-column spans.
+    const o = s.match(/^(\d{1,2})(st|nd|rd|th)\.?$/);
+    if (o) {
+        const n = parseInt(o[1], 10);
+        return (n >= 1 && n <= 12) ? n : null;
+    }
     return MONTHS[s] || null;
 }
 
+// Levenshtein distance (fuzzy header match needs no library for short labels).
+function levenshtein(a, b) {
+    const m = a.length;
+    const n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = new Array(n + 1);
+    for (let j = 0; j <= n; j++) prev[j] = j;
+    for (let i = 1; i <= m; i++) {
+        const cur = [i];
+        for (let j = 1; j <= n; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+    }
+    return prev[n];
+}
+
+// P1 — typo-tolerant header match (mirrors the Excel R2a headerFuzzyMatch):
+// Levenshtein ≤ 2, long words only (short words never fuzz — exact regexes own
+// them), anchored full-cell by the caller. Catches contractor misspellings like
+// DESCRITPION → description while far words ("NO. OF DAYS") stay rejected.
+export function headerFuzzyMatch(label, words, maxDist = 2) {
+    const s = String(label || '').trim().toLowerCase();
+    if (s === '' || s.length > 100) return false;
+    for (const word of words) {
+        if (word.length < 6) continue;
+        if (levenshtein(s, word) <= maxDist) return true;
+    }
+    return false;
+}
+
 export function isDescriptionLabel(str) {
-    return /^(description|particulars|work\s*items?|activities?|scope|items?|item|list\s*of\s*works?|description\s*of\s*works?)$/i
-        .test(String(str || '').trim());
+    const s = String(str || '').trim();
+    if (/^(description|particulars|work\s*items?|activities?|scope|items?|item|list\s*of\s*works?|description\s*of\s*works?)$/i.test(s)) {
+        return true;
+    }
+    // P1 — loose contractor wordings ("WORK DETAILS", "PAY ITEM") + typo
+    // tolerance. Same vocabulary as the Excel relaxed detector; the hard
+    // ≥2-months gate in detectHeaderColumns keeps loose matches from
+    // hallucinating headers on their own.
+    // P1-follow-up adds bare "tasks" (SCHEDULED TASKS matched no tier at all —
+    // the list had "activities" but never task/tasks).
+    if (/\b(descript\w*|detail\w*|particular\w*|activit\w*|tasks?|pay\s*item|bill\s*of|work\s*items?|scope|specification)\b/i.test(s)) {
+        return true;
+    }
+    return headerFuzzyMatch(s, ['description', 'particulars', 'scope of work']);
 }
 
 export function isTotalLabel(str) {
@@ -53,7 +118,9 @@ export function isTotalLabel(str) {
 }
 
 export function isSummaryLabel(str) {
-    return /accomplished|cumulative|percent|%|cost\b/i.test(String(str || '').trim());
+    // P1 — the roof family's "Commulative" typo joins the vocabulary (deterministic
+    // word match; the Levenshtein path stays reserved for description labels).
+    return /accomplished|cumulat\w*|commulat\w*|percent|%|cost\b/i.test(String(str || '').trim());
 }
 
 export function isNumericPct(str) {
@@ -209,15 +276,32 @@ function buildRows(tokenLines, header, startIndex) {
         descText = descText.replace(/^\s*\d{1,3}\s+/, '').trim();
 
         const monthVals = {};
+        const monthPresence = {};
         let hasMonthValue = false;
         for (const mc of header.monthCols) {
             let sum = 0;
+            let presence = false;
             for (const t of tokens) {
-                if (isNumericToken(t.str) && t.xEnd > mc.x && t.x < mc.xEnd) {
+                if (!(t.xEnd > mc.x && t.x < mc.xEnd)) continue;
+                if (isNumericToken(t.str)) {
                     sum += (parseNumeric(t.str) || 0);
+                    presence = true;
+                } else if (/^#+$/.test(t.str.trim())) {
+                    // P1 — Excel column-width overflow ("###"): the value exists but
+                    // is unreadable. Presence flag only — never summed (Decision 10).
+                    presence = true;
+                } else if (/^\d[\d,]*(\.\d+)?\s*%$/.test(t.str.trim())) {
+                    // P1 — physical-copy weighted % (e.g. "1.20%"): intentional
+                    // activity weight, parsed as a number (Decision 10).
+                    sum += (parseFloat(t.str.trim().replace('%', '').replace(/,/g, '')) || 0);
+                    presence = true;
                 }
             }
-            if (sum > 0) { monthVals[mc.index] = sum; hasMonthValue = true; }
+            if (presence) {
+                monthVals[mc.index] = sum;
+                monthPresence[mc.index] = true;
+                hasMonthValue = true;
+            }
         }
 
         if (!hasMonthValue && descText === '') continue;
@@ -231,6 +315,7 @@ function buildRows(tokenLines, header, startIndex) {
         rows.push({
             description: descText || ('Activity ' + (rows.length + 1)),
             months: monthVals,
+            presence: monthPresence,
         });
     }
 
@@ -248,7 +333,7 @@ function mergePages(pageResults) {
         const pageMonths = pr.header.monthCols.map((mc) => mc.index);
 
         if (mergedMonths.length === 0) {
-            mergedRows = pr.rows.map((r) => ({ ...r, months: { ...r.months } }));
+            mergedRows = pr.rows.map((r) => ({ ...r, months: { ...r.months }, presence: { ...(r.presence || {}) } }));
             mergedMonths = pageMonths.slice();
             totalContract = pr.totalRowSum;
             continue;
@@ -257,7 +342,7 @@ function mergePages(pageResults) {
         const overlap = pageMonths.some((m) => mergedMonths.indexOf(m) !== -1);
         if (overlap) {
             // Same months repeated (or overlapping) → continuation rows.
-            mergedRows.push(...pr.rows.map((r) => ({ ...r, months: { ...r.months } })));
+            mergedRows.push(...pr.rows.map((r) => ({ ...r, months: { ...r.months }, presence: { ...(r.presence || {}) } })));
         } else {
             // Disjoint months → the page holds the overflowing COLUMNS of the
             // same rows; align by row position and fill the extra columns in.
@@ -266,9 +351,14 @@ function mergePages(pageResults) {
                 for (const key of Object.keys(pr.rows[i].months)) {
                     mergedRows[i].months[Number(key)] = pr.rows[i].months[Number(key)];
                 }
+                const prPresence = pr.rows[i].presence || {};
+                if (!mergedRows[i].presence) mergedRows[i].presence = {};
+                for (const key of Object.keys(prPresence)) {
+                    mergedRows[i].presence[Number(key)] = prPresence[key];
+                }
             }
             for (let i = n; i < pr.rows.length; i++) {
-                mergedRows.push({ ...pr.rows[i], months: { ...pr.rows[i].months } });
+                mergedRows.push({ ...pr.rows[i], months: { ...pr.rows[i].months }, presence: { ...(pr.rows[i].presence || {}) } });
             }
         }
 
@@ -298,6 +388,11 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract) {
             const v = row.months[idx] || 0;
             if (v > 0) {
                 totals[idx] += v;
+                activitiesByMonth[idx].push(row.description);
+            } else if (row.presence && row.presence[idx] && activitiesByMonth[idx].indexOf(row.description) === -1) {
+                // P1 — presence-only months (## overflow): the activity visibly
+                // spans this month even though its value is unreadable. Listed
+                // without moving the curve (totals untouched).
                 activitiesByMonth[idx].push(row.description);
             }
         }

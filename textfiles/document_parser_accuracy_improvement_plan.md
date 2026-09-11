@@ -2386,10 +2386,13 @@ Related plan
     allowNoDesc gate (needs ≥3) → months 5–6 lost even after vocab fix. Needs
     continuation inheritance (P2-c, load-bearing, not optional).
     TT: undefined function: 21 = benign font warning, fires on working files — closed.
-  - P1-FOLLOW-UP (user-ordered micro-batch, NOT STARTED): bare tasks? in loose-desc
-    (PDF core + Excel loose list for parity) + STAGE-family months (stage/stg/quarter/
-    qtr/q) in matchMonthLabel. Detection-only, same proof bar (fixtures + byte-identical
-    re-verify). Gets the 6-stage file DETECTED (page-1 months); months 5–6 still need P2-c.
+  - P1-FOLLOW-UP BUILT 2026-09-10 (code, NOT committed per user): bare tasks? in both
+    loose lists + STAGE-family months (stage/stg/quarter/qtr/q) — PDF main detector,
+    Excel relaxed-only (strict path untouched by doctrine). JS e2e STAGE fixture
+    (12.5/50/100 curve) + unit asserts; PHP relaxed-only proof test (strict 422s,
+    derivation succeeds → 33.33/100 via map). Caught pre-green: my own fixture
+    mispriced the contract (200000 vs 600000 month totals) — fixed before green.
+    Full suites below; NO commit per user.
   - P2 PLAN (user-ordered, after P1-follow-up — evidence in hand, specimens above):
     P2-0 month-attribution debug flag (which page/row/cell built each month total);
     P2-b descRight bound; P2-c merge hardening (descX/header inheritance to desc-less

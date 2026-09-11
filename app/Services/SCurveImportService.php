@@ -446,7 +446,8 @@ class SCurveImportService
      */
     private function isLooseDescriptionLabel(string $label): bool
     {
-        return (bool) preg_match('/\b(descript\w*|detail\w*|particular\w*|activit\w*|pay\s*item|bill\s*of|work\s*items?|scope|specification|desc)\b/i', $label);
+        // P1-follow-up adds bare "tasks" (SCHEDULED TASKS matched no tier at all).
+        return (bool) preg_match('/\b(descript\w*|detail\w*|particular\w*|activit\w*|tasks?|pay\s*item|bill\s*of|work\s*items?|scope|specification|desc)\b/i', $label);
     }
 
     /**
@@ -1136,6 +1137,14 @@ class SCurveImportService
 
         // E1-3 relaxed: "P1"–"P12" / "Period N" / "Phase N" (third family).
         if ($relaxed && preg_match('/^(?:p|period|phase)\s*(\d{1,2})$/i', $label, $m)) {
+            $n = (int) $m[1];
+            return ($n >= 1 && $n <= 12) ? $n : null;
+        }
+
+        // P1-follow-up relaxed: "STAGE 1"–"STAGE 6" / "Quarter|QTR|Q N" (fourth
+        // family). Relaxed-only like P-months — hits become scoped auto-maps,
+        // never strict-path behavior.
+        if ($relaxed && preg_match('/^(?:stage|stg|quarter|qtr|q)\s*(\d{1,2})$/i', $label, $m)) {
             $n = (int) $m[1];
             return ($n >= 1 && $n <= 12) ? $n : null;
         }

@@ -88,6 +88,28 @@ class ScurveHeaderProposalTest extends TestCase
         $this->makeNearMissWorkbook($path, 'DESCRIPTION');
     }
 
+    // Fourth-family layout (P1-follow-up 2026-09-10): STAGE months + TASKS desc.
+    // Both axes miss strict rules AND the old relaxed vocabulary — proves the
+    // relaxed-only widening (strict path never learns without evidence).
+    private function makeStageWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('C10', 'SCHEDULED TASKS');
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('I10', 'STAGE 1');
+        $sheet->setCellValue('K10', 'STAGE 2');
+        $sheet->setCellValue('C12', 'Mobilization');
+        $sheet->setCellValue('F12', 600000);
+        $sheet->setCellValue('I12', 100000);
+        $sheet->setCellValue('J12', 100000);
+        $sheet->setCellValue('K12', 200000);
+        $sheet->setCellValue('L12', 200000);
+        $sheet->setCellValue('C13', 'TOTAL');
+        $sheet->setCellValue('F13', 600000);
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
     // Third-family layout (user's real 10-month file, 2026-09-09): months as
     // P1..P10 single columns, description as "WORK DETAILS". Both labels miss
     // the strict rules — the exact double-miss E1-3 widening covers. Figures
@@ -815,6 +837,42 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertIsArray($row->column_map);
         $this->assertSame(1, $row->column_map['v']);
         $this->assertCount(10, $row->column_map['monthSpans']);
+
+        unlink($path);
+    }
+
+    // P1-follow-up: STAGE months + TASKS desc derive via the relaxed path while
+    // strict rules still 422 (relaxed-only doctrine — the main path never learns
+    // new synonyms without evidence).
+    // Called by: deriveAutoColumnMap() relaxed detector.
+    public function test_collect_derives_map_for_stage_tasks_layout(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeStageWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        try {
+            $service->parse($path);
+            $this->fail('Strict rules should miss the STAGE/TASKS layout.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        $map = $service->deriveAutoColumnMap($path);
+        $this->assertIsArray($map);
+        $this->assertSame(1, $map['v']);
+        $this->assertCount(2, $map['monthSpans']);
+
+        $result = $service->parse($path, [
+            ['id' => 12, 'contractor_id' => null, 'column_map' => $map],
+        ]);
+
+        // M1 = I+J pair = 200000, M2 = K+L pair = 400000, contract 600000 →
+        // 33.33 / 100.
+        $this->assertCount(2, $result['months']);
+        $this->assertSame(33.33, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertTrue($result['meta']['mapUsed']);
 
         unlink($path);
     }
