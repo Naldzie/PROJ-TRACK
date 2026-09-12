@@ -304,7 +304,55 @@ test('summary gaps warn without moving the curve', () => {
     assert.equal(result.meta.summaryReference[0].gap, 10);
 });
 
-test('row-count drift across overflow pages warns', () => {
+// P3 — pdf.js emits empty text items for padded cells. One sitting just right of
+// the description label used to become the description's right edge, collapsing
+// the window so every activity name was cut off and rows fell back to
+// "Activity N" (proven on the 6-stage and 10-month specimens, where it also let
+// the cumulative row in as a phantom activity and inflated the contract).
+test('blank header tokens never bound the description column', () => {
+    const items = page([
+        // The blank at x=150 sits between the names column and QTY.
+        [800, [['ITEM', 50, 40], ['', 150, 0], ['SCHEDULED TASKS', 160, 120], ['QTY', 300, 30],
+            ['MONTH 1', 400, 55], ['MONTH 2', 500, 55]]],
+        [760, [['1', 55, 8], ['Mobilization Works', 160, 110], ['410', 410, 30], ['600', 510, 30]]],
+        [720, [['2', 55, 8], ['Earthworks', 160, 80], ['390', 410, 30], ['600', 510, 30]]],
+    ]);
+    const result = parseSCurvePdf([items]);
+
+    assert.ok(result, 'expected a parse result');
+    const names = result.months.map((m) => m.description);
+    assert.ok(names[0].includes('Mobilization Works'), 'real name must survive, not "Activity 1"');
+    assert.ok(names[0].includes('Earthworks'), 'both rows contribute to month 1');
+    assert.ok(!names.some((n) => /Activity \d/.test(n)), 'no row may fall back to a stand-in name');
+});
+
+// P3 — a column-overflow page reprints the SAME rows at the SAME heights, so a
+// tail page that prints fewer rows must still land on the right activity. Before
+// this, rows were paired by ORDER and the late months inherited the first rows'
+// names (proven on the SEGMENT specimen: M3-M5 wore M1-M2's names).
+test('overflow pages align by row height, not row order', () => {
+    const page1 = page([
+        [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
+        [760, [['A', 70, 20], ['1000', 210, 25], ['1000', 310, 25]]],
+        [720, [['B', 70, 20], ['1000', 210, 25], ['1000', 310, 25]]],
+    ]);
+    // Only ONE value row, sitting at B's height — it belongs to B, not to A.
+    const page2 = page([
+        [800, [['Month 3', 200, 55], ['Month 4', 300, 55]]],
+        [720, [['500', 210, 25], ['500', 310, 25]]],
+    ]);
+    const result = parseSCurvePdf([page1, page2]);
+
+    assert.ok(result, 'expected a parse result');
+    const m3 = result.months.find((m) => m.month_index === 3);
+    assert.equal(m3.description, 'B', 'month 3 must carry B, the row at that height');
+    // Alignment is known, not guessed — the positional warning must stay away.
+    assert.ok(!result.meta.warnings.some((w) => /aligned by position/.test(w)));
+});
+
+// The P2-c guess-warning survives for pages that genuinely do NOT line up: the
+// tail page's row sits at no known row height, so position is all we have.
+test('row-count drift across overflow pages warns when heights do not line up', () => {
     const page1 = page([
         [800, [['DESCRIPTION', 50, 90], ['Month 1', 200, 55], ['Month 2', 300, 55]]],
         [760, [['A', 70, 20], ['1000', 210, 25], ['1000', 310, 25]]],
@@ -312,7 +360,7 @@ test('row-count drift across overflow pages warns', () => {
     ]);
     const page2 = page([
         [800, [['Month 3', 200, 55], ['Month 4', 300, 55]]],
-        [760, [['500', 210, 25], ['500', 310, 25]]],
+        [600, [['500', 210, 25], ['500', 310, 25]]],
     ]);
     const result = parseSCurvePdf([page1, page2]);
 

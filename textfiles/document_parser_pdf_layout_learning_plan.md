@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ⬜ NEXT (evidence in hand) · STAGE 2 (E1-PDF) ⬜ NOT STARTED
+# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT (browser proof pending) · STAGE 2 (E1-PDF) ⬜ NOT STARTED
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -136,8 +136,33 @@
     resources/views/admin/_manage_parser_keywords_modal.blade.php(bust on approve/reject)
 
 ===============================================================================
-  3. P3 — MERGE BY Y, NOT BY ROW POSITION  ⬜ NEXT (root-caused, not built)
+  3. P3 — MERGE BY Y, NOT BY ROW POSITION  ✅ BUILT 2026-09-12
 ===============================================================================
+
+  BUILT: three pure-core changes (see the §8 session log for the full account and
+  the measured before/after on every sample PDF). The section below is the
+  original spec, kept as the record of what was diagnosed and why.
+
+  WHAT SHIPPED
+    (1) rows carry their y + a `named` flag (buildRows).
+    (2) mergePages pairs column-overflow pages by ROW HEIGHT (matchRowsByY, with
+        a refuse-rather-than-guess contract); positional merge + its warning stay
+        as the fallback. Unmatched NAMELESS rows are dropped as page furniture
+        and SAID OUT LOUD in a new warning — leaving numbers out is never silent.
+    (3) blank tokens can no longer bound the description column — the fix that
+        turned out to be the real blocker (see below).
+
+  THE SECOND DEFECT, FOUND WHILE PROVING THE FIRST
+    detectHeaderColumns computed the description's right edge from the first
+    token right of the desc label WITHOUT skipping blanks. pdf.js emits empty
+    text items for padded cells, so an empty item at x=76 (between ITEM and
+    SCHEDULED TASKS on the 6-stage file) collapsed the description window to
+    nothing. Consequences, all now gone: every activity name fell back to
+    "Activity N"; the CUMULATIVE row lost its label, escaped summary detection
+    and entered the curve AS AN ACTIVITY; its 5/20/40/… values inflated the
+    contract denominator, which is exactly where the long-documented
+    "19.99-style dust" came from. This is the F-PDF4 "desc-bound tightening"
+    item that was parked pending evidence — the evidence arrived.
 
   SYMPTOM (step-6 proof, rule-only read of the SEGMENT PDF)
     Percentages perfect (5/20/40/65/100) but names wrong:
@@ -364,6 +389,52 @@
 
   2026-09-12 — Follow-ups built: in-memory memo replaces the sessionStorage
     cache; PDF AI link offered on strong reads (wording-only gate).
+
+  2026-09-12 — P3 BUILT (code, committed; browser proof is the user's step).
+    Pure-core only: no UI, no endpoints, no AI, no learning.
+    - buildRows carries each row's `y` and a `named` flag.
+    - matchRowsByY(): pairs an overflow page's rows with the merged rows by
+      height. Tolerance = HALF the median row gap, so a neighbour can never win.
+      Refuses (→ positional fallback + the old warning) on: missing y's, a tie
+      inside the tolerance, two rows claiming one partner, or nothing matching.
+    - mergePages: y-pairing first, positional only as fallback. A successful
+      y-merge does NOT warn (alignment is known, not guessed). Unmatched NAMED
+      rows are appended; unmatched NAMELESS rows are dropped as page furniture
+      WITH a new spoken warning ("N unnamed value row(s) … left out").
+    - detectHeaderColumns: blank/whitespace tokens skipped when computing the
+      description's right edge (the second defect — see §3).
+    - CAUGHT PRE-GREEN, in order, each by measurement rather than reasoning:
+      (i) first cut appended the unmatched cumulative row as a phantom 5th
+      activity on the 6-stage file (activities 4 → 5); (ii) dropping it instead
+      silently lost a real 240,000 (contract 1,200,305 → 960,305) — which is
+      what exposed defect (2): the row it should have matched did not exist
+      because its name had been cut off. Fixing the desc bound made both
+      symptoms vanish at once. Lesson banked: when a merge rule needs an
+      exception, suspect the data feeding it before trusting the exception.
+    - MEASURED BEFORE/AFTER, every S-curve sample PDF (real files through the
+      real core in node with node_modules/pdfjs-dist):
+        SEGMENT   : curve unchanged (5/20/40/65/100) · names M3-M5 FIXED
+                    (Concrete / Finishing / Finishing) · warning gone · contract
+                    1,000,000 ✓
+        6-stage   : curve unchanged (5/20/40/60/80/100) · names now REAL and the
+                    per-month split matches the Excel twin exactly
+                    (1,2,1,2,1,1) · contract 1,200,305 → 1,200,000 ✓
+        10-month  : "19.99-style dust" GONE — now exactly
+                    5/10/20/30/50/70/80/90/95/100 · names REAL with the
+                    AI-matching counts (1,1,1,1,2,2,1,1,1,1) · contract
+                    1,000,525 → 1,000,000 ✓
+        CONSCHEDSAVINGS (both copies, the real contractor file): IDENTICAL
+        Roof / scurvepdfsample2 / test_page_6: still NULL, unchanged
+      All three specimens now report isWeak:false (was generic-names on two), so
+      they get the optional "Cross-check with AI?" wording, not the weak one.
+      summaryReference stays [] on all — unchanged, still the known P2-c gap.
+    - Suites: JS 120 tests, 118 passed + the 2 intended blinding fails (+2
+      fixtures: height-alignment and blank-token bound; the old "row-count drift
+      warns" fixture SPLIT so the guess-warning is still proven, on a file whose
+      heights genuinely do not line up). PHP 1140 passed / same 7 pre-existing.
+    - NOT YET BROWSER-PROVEN: re-import the three specimens and confirm the
+      month lists show the real names. Node ran the same pure core the browser
+      loads, so the risk is low, but DOM proof is the standing rule.
 
   2026-09-12 — Specimen verified + P3 root-caused (read-only probes):
     Excel truth dumped via PhpSpreadsheet; the PDF run through the real core in

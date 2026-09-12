@@ -296,9 +296,15 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
     // the months in contractor tables). Without it every value left of the first
     // month (item codes, quantities, peso totals) bleeds into activity names.
     // Falls back to the first month start when the desc label is last.
+    // P3 — BLANK tokens can never be a column: pdf.js emits empty/whitespace text
+    // items for padded cells, and one sitting just right of the description label
+    // used to become the bound (e.g. an empty item at x=76 between ITEM and
+    // SCHEDULED TASKS), collapsing the description window so every activity name
+    // was cut off and rows fell back to "Activity N".
     let descRight = null;
     if (descX !== null) {
         for (const t of sorted) {
+            if (String(t.str || '').trim() === '') continue;
             if (t.x > descX && !isDescriptionLabel(t.str)) {
                 if (descRight === null || t.x < descRight) descRight = t.x;
             }
@@ -428,6 +434,15 @@ function buildRows(tokenLines, header, startIndex, ctx) {
             description: descText || ('Activity ' + (rows.length + 1)),
             months: monthVals,
             presence: monthPresence,
+            // P3 — the row's vertical position on its page. Column-split prints
+            // repeat the same rows at the same y on every page, so mergePages
+            // uses this to align pages instead of guessing by row order.
+            y: tokenLines[i].y,
+            // P3 — did this row carry a real name, or is "Activity N" a stand-in?
+            // A nameless row on a column-overflow page with no counterpart at its
+            // height is page furniture (a reprinted cumulative/total line), not an
+            // activity — mergePages drops those instead of inventing a row.
+            named: descText !== '',
         });
     }
 
@@ -435,6 +450,62 @@ function buildRows(tokenLines, header, startIndex, ctx) {
 }
 
 /* ─── Page merging ────────────────────────────────────────────────────────── */
+
+/**
+ * P3 — pair a column-overflow page's rows with the already-merged rows by their
+ * vertical position.
+ *
+ * A table whose COLUMNS overflow onto another page reprints the same rows at the
+ * same y on both pages (proven on the SEGMENT specimen: header 595.90/595.90,
+ * row 3 537.79/537.79, row 4 523.27/523.27). The tail page often prints FEWER
+ * rows than the first — only those with values in its months — so pairing by row
+ * ORDER attributes the wrong activity names to the late months.
+ *
+ * Refuses (returns null) whenever the evidence is not clean: missing y's, a tie
+ * inside the tolerance, two incoming rows claiming one row, or nothing matching.
+ * Callers then fall back to the positional merge and its warning.
+ *
+ * Called by: mergePages() for disjoint-month pages only.
+ * @returns {Map<number, number>|null}  incoming row index → merged row index.
+ */
+function matchRowsByY(mergedRows, incomingRows) {
+    if (mergedRows.length < 2 || !incomingRows.length) return null;
+    const isY = (r) => r && typeof r.y === 'number' && isFinite(r.y);
+    if (!mergedRows.every(isY) || !incomingRows.every(isY)) return null;
+
+    // Tolerance = half the median gap between adjacent rows: tight enough that a
+    // neighbouring row can never win, loose enough for print rounding drift.
+    const sorted = mergedRows.map((r) => r.y).sort((a, b) => b - a);
+    const gaps = [];
+    for (let i = 1; i < sorted.length; i++) {
+        const g = Math.abs(sorted[i - 1] - sorted[i]);
+        if (g > 0) gaps.push(g);
+    }
+    if (!gaps.length) return null;
+    gaps.sort((a, b) => a - b);
+    const tolerance = gaps[Math.floor(gaps.length / 2)] / 2;
+
+    const pairs = new Map();
+    const claimed = new Set();
+    for (let i = 0; i < incomingRows.length; i++) {
+        let best = -1;
+        let bestDist = Infinity;
+        let runnerUp = Infinity;
+        for (let j = 0; j < mergedRows.length; j++) {
+            const d = Math.abs(mergedRows[j].y - incomingRows[i].y);
+            if (d < bestDist) { runnerUp = bestDist; bestDist = d; best = j; }
+            else if (d < runnerUp) { runnerUp = d; }
+        }
+        // No partner in range = a row this page adds; the caller appends it.
+        if (bestDist > tolerance) continue;
+        // Two candidates in range, or a row already spoken for: the pages do not
+        // line up the way a column split does — refuse rather than guess.
+        if (runnerUp <= tolerance || claimed.has(best)) return null;
+        claimed.add(best);
+        pairs.set(i, best);
+    }
+    return pairs.size > 0 ? pairs : null;
+}
 
 function mergePages(pageResults) {
     let mergedRows = [];
@@ -458,26 +529,58 @@ function mergePages(pageResults) {
             mergedRows.push(...pr.rows.map((r) => ({ ...r, months: { ...r.months }, presence: { ...(r.presence || {}) } })));
         } else {
             // Disjoint months → the page holds the overflowing COLUMNS of the
-            // same rows; align by row position and fill the extra columns in.
-            // P2-c — positional alignment is a guess: flag row-count drift so a
-            // human verifies instead of silently misattributing months.
-            if (pr.rows.length !== mergedRows.length) {
-                warnings.push('Heads-up: pages carry different row counts (' + mergedRows.length + ' vs ' + pr.rows.length
-                    + ') — months were aligned by position. Verify the monthly split before locking.');
-            }
-            const n = Math.min(mergedRows.length, pr.rows.length);
-            for (let i = 0; i < n; i++) {
-                for (const key of Object.keys(pr.rows[i].months)) {
-                    mergedRows[i].months[Number(key)] = pr.rows[i].months[Number(key)];
+            // same rows, so its values must land on the RIGHT rows.
+            // P3 — align by row y when the pages agree on it (column splits
+            // reprint rows at identical heights); only guess by position — and
+            // warn — when they do not.
+            const byY = matchRowsByY(mergedRows, pr.rows);
+            const copyInto = (target, src) => {
+                for (const key of Object.keys(src.months)) {
+                    target.months[Number(key)] = src.months[Number(key)];
                 }
-                const prPresence = pr.rows[i].presence || {};
-                if (!mergedRows[i].presence) mergedRows[i].presence = {};
-                for (const key of Object.keys(prPresence)) {
-                    mergedRows[i].presence[Number(key)] = prPresence[key];
+                const srcPresence = src.presence || {};
+                if (!target.presence) target.presence = {};
+                for (const key of Object.keys(srcPresence)) {
+                    target.presence[Number(key)] = srcPresence[key];
                 }
-            }
-            for (let i = n; i < pr.rows.length; i++) {
-                mergedRows.push({ ...pr.rows[i], months: { ...pr.rows[i].months }, presence: { ...(pr.rows[i].presence || {}) } });
+            };
+
+            if (byY) {
+                let orphans = 0;
+                for (let i = 0; i < pr.rows.length; i++) {
+                    if (byY.has(i)) {
+                        copyInto(mergedRows[byY.get(i)], pr.rows[i]);
+                    } else if (pr.rows[i].named) {
+                        // A NAMED row with no counterpart is genuinely new here.
+                        mergedRows.push({ ...pr.rows[i], months: { ...pr.rows[i].months }, presence: { ...(pr.rows[i].presence || {}) } });
+                    } else {
+                        // Nameless AND unmatched: values that belong to no activity
+                        // on the description page (usually a cumulative/total line
+                        // reprinted on the overflow page). Attributing them would
+                        // invent an activity, so they are left out — and said out
+                        // loud, because leaving numbers out must never be silent.
+                        orphans++;
+                    }
+                }
+                if (orphans > 0) {
+                    warnings.push('Heads-up: ' + orphans + ' unnamed value row'
+                        + (orphans === 1 ? '' : 's') + ' on a continuation page matched no activity and '
+                        + (orphans === 1 ? 'was' : 'were') + ' left out. Verify the monthly split before locking.');
+                }
+            } else {
+                // P2-c — positional alignment is a guess: flag row-count drift so
+                // a human verifies instead of silently misattributing months.
+                if (pr.rows.length !== mergedRows.length) {
+                    warnings.push('Heads-up: pages carry different row counts (' + mergedRows.length + ' vs ' + pr.rows.length
+                        + ') — months were aligned by position. Verify the monthly split before locking.');
+                }
+                const n = Math.min(mergedRows.length, pr.rows.length);
+                for (let i = 0; i < n; i++) {
+                    copyInto(mergedRows[i], pr.rows[i]);
+                }
+                for (let i = n; i < pr.rows.length; i++) {
+                    mergedRows.push({ ...pr.rows[i], months: { ...pr.rows[i].months }, presence: { ...(pr.rows[i].presence || {}) } });
+                }
             }
         }
 
