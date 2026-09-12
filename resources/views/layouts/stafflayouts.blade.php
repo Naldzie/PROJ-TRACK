@@ -381,6 +381,12 @@ Swal.fire({
 
 <!-- PDF.js — used by document-parser.js for autofill (multi-CDN fallback loader) -->
 <script src="{{ asset('js/vendor/pdfjs-loader.js') . '?v=' . filemtime(public_path('js/vendor/pdfjs-loader.js')) }}"></script>
+
+{{-- LEARNED DATA LOADER — shared reader for the live learning desks. Layout-level
+     so BOTH the create wizard and the project-detail Baseline tab can consult
+     approved words (the detail tab never loads document-parser.js, where this
+     used to live). Contractor layout deliberately excludes it. --}}
+<script src="{{ asset('js/admin/projects/learned-keywords-loader.js') . '?v=' . filemtime(public_path('js/admin/projects/learned-keywords-loader.js')) }}"></script>
     
 {{-- FORM VALIDATOR JS FUNCTION(CREATE/EDIT FORM VALIDATION) --}}
 <script src="{{ asset('js/admin/projects/field-validation.js') }}"></script>

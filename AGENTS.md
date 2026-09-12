@@ -67,30 +67,35 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
 - Full suite: 985 tests / 3474 assertions (2 pre-existing `EmailDraftTest` failures excluded).
 
-## Session Handoff (updated 2026-09-08 — read this first in a new session)
+## Session Handoff (rewritten 2026-09-11 — read this first in a new session)
 
-Working tree: `merge ver15\PMU_System`, branch `merge15-baseline` (merge-10 frozen at 7b0056d as cold backup — do not build there). Future sessions open here.
+**What this is (30 seconds):** Laravel 12 + MySQL project-monitoring app for CSPC PMU. The current workstream is the **document parser track**: reading contractor PDFs/Excels to auto-fill project creation + S-curve baselines, with a rule reader first, a learning loop second, and Gemini AI last. Working tree: `merge ver15\PMU_System`, branch **`phase-5-parser-accuracy`** (merge-10 frozen at 7b0056d as cold backup — do not build there).
 
-### What is done and proven (all on merge15-baseline, all pushed unless noted)
-- **Normal-doc parser + L1/L2/L3 learning loop** (`document-parser-core.js`, `document-parser.js`, `parser_keywords` table + desk): miss → teach → approve → fills free, browser-proven incl. organic TOTAL ESTIMATED discovery. Multi-label harvest (cap 3), ABC pooling (vote/debug/disagree), ABC words-rule, weak-find guard at shared `asMoney`. JS 90/92 (2 intended blinding fails).
-- **S-curve Excel end-to-end (Tier 1 DONE; Tier 2 N/A by construction):** 2a synonyms, R2a roof family (fuzzy headers, ordinal months, orphan-subtotal + off-column TOTAL rules), 2b reference+warn + summary fallback + R2b-GRID positional pairing, UX-2b (in-modal notes, no warning toast, plain wording, `$jsv` versioning on bare-asset tags). Two planned families (BUHI paired/paired, roof ordinal/single) + one verified single/single variant, all browser-proven. `SCurveImportTest` 24/24.
-- **AI fallback normal-doc (AI-1..AI-4)** (`GeminiDocumentParserService`, `DocumentParserController`, banner/slice/merge, source-tagged harvest): browser-proven on test4 scans. AI-5 formally closed.
-- **AI fallback Excel (E2):** `parseExcelSlice` + `serializeForAi` + `parseWithGemini` endpoint/routes + assist-button flow, browser-proven (loader, single note, accurate curve).
-- **E1 Excel header learning:** E1-1 capture endpoint (silent, auto on 422s) + E1-2 review desk (`S-Curve Layouts` menu, approve/reject) — built, browser-proven display; E1-3 reader consults maps NOT STARTED.
-- **Full suite:** ~1045 passed / same 7 pre-existing merge-15 failures (2 ContractorDashboard + 1 OverdueInspection + 2 EmailDraft + 2 baseline — all reproduce on the clean tree).
+### What is done and proven (all on phase-5-parser-accuracy unless noted)
+- **Normal-doc parser + L1/L2/L3 learning loop** (miss → teach → approve → fills free), ABC pooling/words-rule, weak-find guard. Browser-proven. JS suite shows 2 intended blinding fails (see constraints).
+- **S-curve Excel end-to-end:** 2a/R2a (BUHI + roof families)/2b reference+warn/fallback/GRID/UX-2b, all browser-proven. Plus **E1 header learning** (E1-1 capture, E1-2 desk, E1-3 reader consult, Phase-A point-and-teach, E1-B learn-from-AI) and **E2 Excel AI** (`parseExcelSlice`, homework/presence-gate validation, prefer-math, Lite never falls back on this path). **E3 key/model split** live (parser = own Flash key; predictions untouched).
+- **PDF S-curve rules (P1/P2):** detection batch + merge hardening (continuation inheritance, TOTAL fallback, reference+warn, rounding audit). Months/percentages correct on both proof twins; activity *names* stay generic — AI is the remedy, not more geometry.
+- **PDF AI (F-A..F-D + B, committed through `1efc186`):** image-slice service with printed-words name guard (Flash-or-nothing — Lite rescue reverted after it masked transport failures as summary copies), `parse-pdf-gemini` endpoint (staff+admin), beside-button offer (failures) + in-modal recommended link (weak reads), merge with provenance, month-word learning (`scurveMonth` field, same trust rule). 10-month twin merges the TRUE curve + 4 warnings + Checked; 6-stage twin exact; Roof PDF probe returns the TRUE 7-month curve + real names (B-wins verdict — no rule family needed).
+- **Suites right now:** JS ~116 + 2 intended blinding fails; PHP ~1140 passed / same 7 pre-existing failures (2 ContractorDashboard + 1 OverdueInspection + 2 EmailDraft + 2 baseline — all reproduce on the clean tree, re-verified via stash).
 
-### What is next (in queue order)
-1. **E1-3** reader consults live maps (lowest-priority fallback, contractor-first then global).
-2. Non-OCR **PDF batch** (monthly-path parity 1–5 + weekly polish + header-synonym mirroring).
-3. **2c** lone-column MAX (parked — specimen file + gap evidence banked, needs user order).
-4. Tier-2 OCR, **blinding lift** (demo's end; flips blinded fixtures to full green), parked items (P1/P2 passive mining + lifetime counting, `parser_templates` revival, genuine-actuals import).
+### Current work — BLOCKED ON DELIVERY, NOT LEARNING (read before touching)
+- The SEGMENT loop proof (`sampledocs/SCurve-Test-Segment-Novel-Specimen.xlsx`, TRUE 5/20/40/65/100) shows learning works end-to-end (miss → 5 AI-assisted rows → approved Live) but the **re-import still misses on BOTH flows**. Full record: `textfiles/pdf_ai_loop_proof_tests.md`.
+- ~~**Bug (a)** the word loader (`loadLearnedKeywords`) lives in `document-parser.js`, loaded only in the create wizard — the detail Baseline tab never defines it~~ **FIXED 2026-09-12 (uncommitted):** moved to shared `public/js/admin/projects/learned-keywords-loader.js`, loaded by both role layouts; consumers go through `window.loadLearnedKeywords` behind a typeof guard.
+- ~~**Bug (b)** stale 24h `sessionStorage` word cache~~ **FIXED 2026-09-12 (uncommitted):** approve/reject bust it, and the cross-page-load cache is gone entirely — the live word set is memoized in memory per page load, so a refresh always re-reads the server (a DB-side wipe no longer "sticks"). Don't reintroduce a persistent cache without a version endpoint.
+- **B / F-D / F-E CLOSED 2026-09-12** (user step-6 re-run): approved SEGMENT row → rule reader parsed the TRUE 5/20/40/65/100 natively, zero AI. AI-assisted read on the same file verified EXACT against the Excel twin (curve + names + the Finishing M4+M5 span).
+- **NEXT WORK = P3 merge-by-Y** (root-caused 2026-09-12, not built): the SEGMENT PDF is a COLUMN split across 2 pages; `mergePages` aligns disjoint-month pages by row INDEX while the pages' row Y coordinates match exactly, so names drift on M3–M5. Deterministic fix, no AI. Then E1-PDF. Both specced in **`textfiles/document_parser_pdf_layout_learning_plan.md`** (handoff-ready).
+- PDF AI link now renders on strong reads too (worded as a cross-check), matching the always-available Excel cross-check.
+
+### Future queue (needs explicit user order each)
+1. ~~The two delivery fixes~~ BUILT 2026-09-12 — step-6 re-proof pending. **NEXT AFTER THAT: E1-PDF layout learning** (user-ordered 2026-09-12; own plan file on build — PDF twin of the Excel E1 loop: capture+consult, learn-from-AI from the `monthLabels` the PDF AI already returns, point-and-teach via pseudo-columns reusing the Phase-A desk UI; `scurve_header_proposals.source_type` already reserves it). 2. Months:11 count-sanity guard (one-off sighting, needs a confirming screenshot). 3. Clipped display names verdict (check edit/manage for full names first). 4. Time-budget hardening (PHP 60s overflow → honest 422; sender-only). 5. Desc-label learning (prompt-reported work-names title + same plumbing; F-D is month-words only). 6. Blinding lift (pre-merge-to-main prerequisite — flips blinded fixtures green; NOT routine). 7. Parked: fingerprint memory (F-PDF2), rule family A (Roof-style), Tier-2 OCR, E1-3 follow-ups, 2c, P1/P2 passive mining + lifetime counting.
 
 ### Standing constraints (do not violate)
-- **Blinding stays ON** (`L3_TEST_BLIND_ABC = true` in `document-parser-core.js`); restore is a tracked pre-merge-to-main prerequisite, not a routine step. JS suite reads 90/92 + 2 intended while blinded.
-- Plan files: `textfiles/document_parser_accuracy_improvement_plan.md` (S-curve/Excel/AI plans + R0–R4), `document_parser_learning_loop_plan.md` (L1-L3), `document_parser_excel_learning_loop_plan.md` (E1), `document_parser_ai_fallback_plan.md` (AI-1..AI-6), `document_parser_future_improvements_plan.md` (parked P1/P2). Log every behavioral change + browser result before committing (Adjustment Logging).
-- Sample files live in git-ignored `sampledocs/` (BUHI, roof, test5 selectable, test_page_6, third-family + 2c specimens) — reference by name, never commit.
-- `bootstrap/cache/routes-v7.php` goes stale on route changes — `route:clear` whenever endpoints are added (recurring incident).
-- No merge to main without explicit user confirmation (Rule 12); user uses short orders — "commit" alone means no push unless "push" is said.
+- **Blinding stays ON** (`L3_TEST_BLIND_ABC = true` in `document-parser-core.js`); restore is a tracked pre-merge-to-main prerequisite, not a routine step.
+- Plan files: `textfiles/document_parser_accuracy_improvement_plan.md` (history + R0–R4), `document_parser_learning_loop_plan.md` (L1-L3), `document_parser_excel_learning_loop_plan.md` (E1), `document_parser_ai_fallback_plan.md` (AI-1..AI-6 + E2), **`document_parser_pdf_ai_fallback_plan.md` (PDF AI F-A..F-D + B)**, **`document_parser_pdf_layout_learning_plan.md` (P3 merge-by-Y + E1-PDF layout learning — the active file, handoff-ready)**, **`textfiles/pdf_ai_loop_proof_tests.md` (all proof results — read before re-proving anything)**, `document_parser_future_improvements_plan.md` (parked P1/P2). Log every behavioral change + browser result before committing (Adjustment Logging).
+- Sample files live in git-ignored `sampledocs/` (BUHI, roof ×2, test5, test_page_6, third-family, 2c + 6-stage + SEGMENT specimens) — reference by name, never commit. One-off scripts go in `C:\temp\opencode` (outside the repo).
+- `bootstrap/cache/routes-v7.php` goes stale on route changes — `route:clear` whenever endpoints are added (recurring incident). Blade JS tags need `$jsv(...)` versioning or browsers serve ghosts (second recurring incident).
+- Browser-proven beats suite-green for DOM/canvas paths (slicers, buttons, links); suite-green suffices for pure/service paths. Clean-tree check (stash) before claiming zero regressions.
+- No merge to main without explicit user confirmation (Rule 12); user uses short orders — "commit" alone means no push unless "push" is said. Never link live framework dirs into temp worktrees (wiped-vendor incident — copy or checkout in place).
 
 ## Development Rules
 

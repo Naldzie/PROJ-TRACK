@@ -50,8 +50,10 @@ window.parseSCurvePdfFile = async function (file) {
     } catch (e) { /* stash is best-effort */ }
 
     // F-D — learned month-header words (approved scurveMonth rows) ride as the
-    // lowest-priority fallback (reuses the L3 loader when present; any failure
-    // reproduces today's behavior exactly — never blocks the import).
+    // lowest-priority fallback. The L3 loader is SHARED (learned-keywords-loader.js,
+    // loaded by the role layouts), so this resolves on the create wizard AND the
+    // project-detail Baseline tab; contractors and any failure reproduce today's
+    // behavior exactly — never blocks the import.
     let monthWords = null;
     try {
         if (typeof window.loadLearnedKeywords === 'function') {

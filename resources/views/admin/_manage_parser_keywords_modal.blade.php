@@ -110,6 +110,7 @@ function pkpFieldLabel(field) {
         budget: 'Contract Price', abc: 'ABC', budgetSource: 'Budget Source',
         category: 'Category', startDate: 'Start Date', endDate: 'End Date',
         duration: 'Duration', contractor: 'Contractor',
+        scurveMonth: 'S-Curve Month',
     };
     return map[field] || field;
 }
@@ -210,6 +211,13 @@ async function pkpApproveProposal(id) {
             return;
         }
 
+        // The browser caches the live word set per tab; a server-side approval is
+        // invisible to it, so the pre-approval set would keep serving imports for
+        // the rest of the TTL. Drop it here so the very next import re-fetches.
+        try {
+            if (typeof window.bustLearnedKeywordsCache === 'function') window.bustLearnedKeywordsCache();
+        } catch (e) { /* busting is best-effort — never blocks the approval */ }
+
         showToast('Wording approved — the reader may now use it', 'success');
         loadParserKeywordsForManagement();
     } catch (error) {
@@ -238,6 +246,12 @@ function pkpRejectProposal(id) {
                     showToast(pkpExtractErrorMessage(data, 'Failed to reject suggestion'), 'error');
                     return;
                 }
+
+                // Same reason as approve: a rejected wording must stop being served
+                // from the per-tab cache immediately, not after the TTL.
+                try {
+                    if (typeof window.bustLearnedKeywordsCache === 'function') window.bustLearnedKeywordsCache();
+                } catch (e) { /* busting is best-effort */ }
 
                 showToast('Suggestion rejected', 'success');
                 loadParserKeywordsForManagement();

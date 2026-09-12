@@ -88,6 +88,15 @@ export function normalizeSCurveMonths(months, startDate, endDate) {
     });
 }
 
+/**
+ * Duration-shaped month labels ("30 days", "7 days") carry no month index —
+ * banking one as a learned month word could never fire. The F-D harvester
+ * skips them so the review desk never fills with junk (B guard).
+ */
+export function isDurationShapedLabel(label) {
+    return /^(\d+)\s*days?$/i.test(String(label || '').trim());
+}
+
 /* ─── Auto-generate S-curve from start/end dates ──────────────────────────── */
 
 /**
@@ -186,5 +195,6 @@ if (typeof window !== 'undefined') {
         formatDateInput,
         normalizeSCurveMonths,
         generateAutoSCurve,
+        isDurationShapedLabel,
     };
 }

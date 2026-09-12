@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     addCalendarMonths,
     formatDateInput,
+    isDurationShapedLabel,
     isSCurveCandidate,
     isSCurveExcel,
     normalizeSCurveMonths,
@@ -101,6 +102,17 @@ test('normalizeSCurveMonths accepts bare AI name strings as activities', () => {
     ]);
     // Description-less AI months fall back to the joined names for the list.
     assert.equal(months[0].description, 'Mobilization Works, Earthworks');
+});
+
+test('isDurationShapedLabel spots index-less duration labels only', () => {
+    assert.equal(isDurationShapedLabel('30 days'), true);
+    assert.equal(isDurationShapedLabel('7 days'), true);
+    assert.equal(isDurationShapedLabel('187 days'), true);
+    assert.equal(isDurationShapedLabel('STAGE 1'), false);
+    assert.equal(isDurationShapedLabel('P1'), false);
+    assert.equal(isDurationShapedLabel('Month 1'), false);
+    assert.equal(isDurationShapedLabel(''), false);
+    assert.equal(isDurationShapedLabel(null), false);
 });
 
 test('normalizeSCurveMonths guards against non-array input', () => {

@@ -401,6 +401,35 @@ Proof files (git-ignored sampledocs/, never commit)
     - NEXT = user browser proof (novel month word → AI → proposed row →
       approve → re-import reads without AI) → then months:11 count check.
 
+  2026-09-11 — LOOP PROOF RUN: learning proven, DELIVERY failed both flows.
+    Full record (scripts, evidence, suspects): textfiles/pdf_ai_loop_proof_tests.md
+    (new file, single home for all proof results — this entry is the pointer).
+    SEGMENT specimen (TRUE 5/20/40/65/100): rule misses honestly → AI merges
+    the true curve + Checked → desk banks 5 correct AI-assisted rows → all
+    approved Live → re-import STILL misses on wizard AND detail.
+    Acquitted: harvesting, approval, generalization design (fixtures green).
+    Indicted: (a) detail tab never loads the word loader (document-parser.js
+    is wizard-only — wrapper guard silently yields nothing there; PROVEN by
+    code read); (b) stale 24h sessionStorage word cache after table wipe
+    (server wipe ≠ browser cache; OPEN, wizard flow). Queued fixes: shared
+    loader for the PDF wrapper + approval/cache-bust. Step-6 re-run closes
+    B/F-D/F-E in one go. No code yet.
+
+  2026-09-11 — SEGMENT SPECIMEN BUILT (git-ignored sampledocs/, never commit).
+    User-approved novel word (SEGMENT) + 5 months for the B/F-D loop proof.
+    sampledocs/SCurve-Test-Segment-Novel-Specimen.xlsx: single header row
+    (ITEM NO. / DESCRIPTION / CONTRACT AMOUNT / % WEIGHT / SEGMENT 1..5
+    single columns), 4 activities one-per-month + Finishing spanning M4+M5,
+    monthly pesos 50000/150000/200000/250000/350000 = 1000000, TRUE curve
+    5/20/40/65/100, TOTAL anchor row, no summary block (hasSummaryRow false).
+    Verified: Excel rule service MISSSES honestly ("No S-curve table found" —
+    SEGMENT unknown to strict+relaxed), so the PDF conversion will miss the
+    same way → beside-button AI offer. Builder/verifier scripts live in
+    C:\temp\opencode (outside the repo, not committed).
+    USER STEP: print to PDF in Excel (keeps the text layer) → Ctrl+A-paste
+    validity check → rule import must miss → AI assist → "S-Curve Month" row
+    for SEGMENT 1 → approve → re-import parses natively, zero AI. No commit.
+
   2026-09-11 — ROOF PROBE settles A-vs-B: B WINS, guard-only (no code yet).
     User ran AI assist on the Roof PDF (CSPC-Rehabilitation-of-Roof…-pdf):
     TRUE 7-month curve (6.32/24.31/42.30/59.71/77.03/99.14/100, counts
@@ -430,6 +459,99 @@ Proof files (git-ignored sampledocs/, never commit)
       letter maps + teach grid; a word row has nothing to display/teach there).
       Split stands: words → Learned Keywords; columns → S-curve Layouts.
     - NEXT = build B on go-ahead.
+
+  2026-09-11 — B BUILT, guard + label (code, NOT committed per user).
+    - Guard: isDurationShapedLabel() pure in scurve-import-core.js (number +
+      days, case-insensitive) + window export; harvest skips duration-shaped
+      AI month labels (best-effort lookup, guard failure never blocks merge).
+      Genuine word-variants flow untouched. +1 fixture (durations true incl.
+      187; STAGE/P1/Month/empty/null false).
+    - Label: 'S-Curve Month' joins pkpFieldLabel (single shared Blade serves
+      both layouts — one edit covers admin + staff).
+    - Caught pre-green (1, mine): helper insert first anchored a mismatched
+      comment line (edit rejected) — re-anchored on the exact header text.
+    - Suites: JS 116 + 2 intended blinding fails (+1 fixture, green);
+      Blade view:cache clean; full 1140 passed / same 7 pre-existing.
+      Harvest/desk paths are DOM-timing — browser proof covers them (Roof AI
+      merge banks nothing; novel word still banks). No commit.
+
+  2026-09-12 — DELIVERY FIXES BUILT (bugs (a) + (b); code, NOT committed per user).
+    Queue item 1. Learning was already proven (loop proof); this is the plumbing
+    that kept approved words from reaching the reader on re-import.
+    - Bug (a) SHARED LOADER: loadLearnedKeywords moved verbatim out of
+      document-parser.js (create-wizard only) into NEW
+      public/js/admin/projects/learned-keywords-loader.js, loaded by BOTH role
+      layouts (app.blade.php + stafflayouts.blade.php) beside the pdfjs loader,
+      filemtime-versioned (ghost-JS incident class). Contractor layout excluded
+      by design. document-parser.js now consults window.loadLearnedKeywords behind
+      the same typeof guard the PDF wrapper uses, so a missing loader degrades to
+      hardcoded labels exactly as an empty table does. The detail Baseline tab can
+      now consult learned words for the first time (it never loaded the definer).
+      Behavior preserved verbatim: role-base /admin vs /staff, /contractor/ skip,
+      { labels: { field: [phrase] } } shape, never-cache-an-empty-desk, any
+      failure → EMPTY.
+    - Bug (b) CACHE BUST, three layers: (1) the desk calls
+      window.bustLearnedKeywordsCache() after a successful approve AND reject
+      (guarded, best-effort, never blocks the write) — the desk ships in both
+      layouts so it shares the tab with the import, and sessionStorage survives
+      navigation within a tab; (2) key versioned parserLiveKeywordsV1 → V2, so
+      caches poisoned during the loop proof die on first load with no console
+      workaround; (3) TTL 24h → 15 min, bounding what busting cannot see
+      (approval in another tab, server-side table wipes during testing — the exact
+      Script 3 setup). Cache identity lives in ONE place (the loader) so the desk
+      and the reader can never drift.
+    - Rejected: refetch-on-miss — it only fires when the cached set has NO
+      scurveMonth rows, so a stale-but-non-empty set would still slip through.
+    - Suites: JS 116 passed + the 2 intended blinding fails (unchanged); full PHP
+      1140 passed / 7 failed = the same 7 pre-existing by NAME (2 Contractor-
+      Dashboard + 1 DashboardOverdueInspection + 2 EmailDraft + 2 default-baseline
+      in IssueLifecycle/RiskRegister). No PHP was touched — JS + Blade only.
+      view:clear run. No commit per user.
+    - PROVEN SAME DAY by the user's step-6 re-run: approved SEGMENT row → rule
+      reader parses the TRUE 5/20/40/65/100 natively with zero AI. B / F-D / F-E
+      CLOSED for the learning loop (full record + the residual name-assignment
+      note in pdf_ai_loop_proof_tests.md).
+
+  2026-09-12 — TWO FOLLOW-UPS from the step-6 session (code, NOT committed).
+    (1) CACHE MEMO replaces the sessionStorage TTL cache. User wiped the keyword
+      rows in the DATABASE and the reader still used them — a server-side change
+      the browser cannot see, exactly the residual case the 15-min TTL only
+      narrowed. The cache never bought more than one small GET per import, so the
+      live word set is now memoized IN MEMORY for the page load (shared in-flight
+      promise for concurrent callers, empty desks never memoized). Consequence:
+      any page refresh re-reads the server — what everyone already expects — and
+      approve/reject still bust immediately. bustLearnedKeywordsCache() also
+      removes the legacy parserLiveKeywordsV1/V2 sessionStorage keys so a set
+      cached by an older build can never be served after the upgrade.
+      Lesson banked: cross-page-load caches over a table the user edits by hand
+      cost two proof sessions; don't reintroduce one without a version endpoint.
+    (2) PDF AI LINK NOW OFFERED ON STRONG READS TOO (user request): the in-modal
+      link used to render only when isWeakPdfCurve() flagged the read, so a clean
+      PDF import had no way to ask for a second opinion — while the Excel flow
+      always offers its cross-check. Both stash sites (wizard + detail) now stash
+      the ctx on every parseable PDF with a `weak` flag; scurveRenderPdfAiLink
+      uses that flag for WORDING ONLY ("looks weak … recommended" + "Try AI
+      assist?" vs "Read offline from the PDF, no AI used. Want a second opinion?"
+      + "Cross-check with AI?"). Quota discipline unchanged: one call per click,
+      busy-guarded, opt-in — clean files still spend nothing unless clicked.
+    - Suites: JS 116 passed + the 2 intended blinding fails (unchanged; the
+      isWeakPdfCurve core is untouched, the link is a DOM path = browser proof).
+      No PHP touched. No commit per user.
+    - NEXT = P3 merge-by-Y, then E1-PDF layout learning. Both now live in their
+      own file: **textfiles/document_parser_pdf_layout_learning_plan.md**
+      (handoff-ready: status, order of work, hard rules, verify commands).
+
+  2026-09-12 — SPECIMEN VERIFIED + P3 ROOT-CAUSED (read-only probes, no code).
+    - User's AI-assisted re-run checked against the source files: EXACT on curve
+      (5/20/40/65/100), names (Mobilization / Earthworks / Concrete and Masonry /
+      Finishing ×2) and the Finishing-spans-M4+M5 split. The PDF AI track is
+      doing its job on this specimen.
+    - The rule-only name misassignment is NOT an AI or learning gap: the print is
+      a COLUMN split across 2 pages and mergePages() aligns disjoint-month pages
+      by row INDEX, while the pages' row Y coordinates match exactly. Full
+      forensic record in pdf_ai_loop_proof_tests.md; fix spec in the new layout
+      plan §3. Decision banked: P3 lands BEFORE E1-PDF (cheaper, deterministic,
+      and it cleans the captures E1-PDF would otherwise learn from).
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
