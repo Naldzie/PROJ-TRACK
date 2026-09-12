@@ -78,6 +78,18 @@ class GeminiDocumentParserService
     public ?string $lastFallbackModel = null;
 
     /**
+     * Layout keys of an answer whose NUMBERS were rejected by the fabrication
+     * guards (2026-09-12). Column trust is not month trust: a reply whose
+     * arithmetic fails still usually names the right columns, and those letters
+     * let the server compute the curve from real cells instead of sending the
+     * user away with "could not read". Set ONLY where those two guards decline,
+     * so malformed replies and transport failures can never trigger a salvage;
+     * reset at the start of every Excel call so a stale layout cannot leak.
+     * Read by SCurveImportController::salvageRejectedAnswer().
+     */
+    public ?array $lastRejectedLayout = null;
+
+    /**
      * E3 (2026-09-10): parser credential seam — document/Excel parsing uses its
      * own key + model (institute second key; pinned gemini-2.5-flash), falling
      * back to the shared prediction credentials when the parser env is missing.
@@ -347,6 +359,7 @@ class GeminiDocumentParserService
      */
     public function parseExcelSlice(string $csv, ?array $workbookFile = null): ?array
     {
+        $this->lastRejectedLayout = null;
         $csv = trim($csv);
 
         if ($csv === '') {
@@ -579,6 +592,31 @@ class GeminiDocumentParserService
             if ($amountsCoverAll) {
                 $warnings[] = 'Checked: these months follow from the stated monthly amounts.';
             }
+
+            // Figures-vs-page check (2026-09-12). The Excel path DECLINES an answer
+            // whose pesos are printed nowhere; PDFs only warn, because a month that
+            // sums several activity rows often has no printed total and throwing the
+            // read away would cost more than it saves. Silent when the page carries
+            // no numbers at all (scanned slice): missing evidence is not evidence.
+            if ($pageText !== '' && count($amounts) > 0) {
+                $printed = $this->extractPrintedNumbers($pageText);
+                $pool = array_merge($printed['values'], $printed['pairSums']);
+                if (count($pool) > 0) {
+                    $missing = array_values(array_filter(
+                        $this->unmatchedAmountMonths($amounts, $pool),
+                        fn ($m) => $m > 0
+                    ));
+                    if (count($missing) > 0) {
+                        $named = array_slice($missing, 0, 3);
+                        $warnings[] = 'Heads-up: the monthly figures for Month '
+                            . implode(', Month ', $named)
+                            . (count($missing) > count($named) ? ' (and others)' : '')
+                            . ' could not be found printed on the page, so they may have been'
+                            . ' inferred rather than read. Please review before locking.';
+                    }
+                }
+            }
+
             $byMonth = [];
             foreach ($months as $m) {
                 $byMonth[$m['month_index']] = $m['planned_progress_percent'];
@@ -908,6 +946,11 @@ class GeminiDocumentParserService
                 && count($amounts) > 0
                 && $this->amountsCoverMonths($rawMonths, $amounts);
             if ($amountsCoverAll && !$this->monthsFollowAmounts($rawMonths, $amounts, $contract)) {
+                // The numbers are refused, but the COLUMNS this answer named may
+                // still be right — hand them out so the caller can read the sheet
+                // itself rather than giving up (column trust ≠ month trust).
+                $this->lastRejectedLayout = $this->sanitizeLayoutPoints($decoded);
+
                 return null;
             }
 
@@ -915,6 +958,8 @@ class GeminiDocumentParserService
             // point to. Each claimed monthly peso must appear among the sheet's
             // real numbers (or an adjacent-pair sum for paired layouts).
             if (count($amounts) > 0 && !$this->amountsPresentInSheet($amounts, $sheetNumbers)) {
+                $this->lastRejectedLayout = $this->sanitizeLayoutPoints($decoded);
+
                 return null;
             }
 
@@ -1349,6 +1394,25 @@ class GeminiDocumentParserService
             return false;
         }
 
+        return count($this->unmatchedAmountMonths($amounts, $pool)) === 0;
+    }
+
+    /**
+     * Which claimed months' pesos appear nowhere in a pool of real numbers
+     * (±1.0, rounding-tolerant).
+     *
+     * The matching rule lives here so the Excel audit (which DECLINES on any
+     * miss) and the PDF check (which only WARNS — a month summing several
+     * activity rows often has no printed total, and a false decline would cost
+     * the user the whole answer) can never drift apart.
+     *
+     * Called by: amountsPresentInSheet(), validatePdfCurve().
+     *
+     * @return array<int, int>  month indices with no match
+     */
+    private function unmatchedAmountMonths(array $amounts, array $pool): array
+    {
+        $missing = [];
         foreach ($amounts as $a) {
             $found = false;
             foreach ($pool as $v) {
@@ -1358,11 +1422,47 @@ class GeminiDocumentParserService
                 }
             }
             if (!$found) {
-                return false;
+                $missing[] = (int) ($a['month_index'] ?? 0);
             }
         }
 
-        return true;
+        return $missing;
+    }
+
+    /**
+     * Numbers printed on a PDF page, as the page-text sibling of
+     * extractSheetNumbers() (which is CSV-shaped and cannot be reused).
+     *
+     * Splits on whitespace, strips peso signs, commas and percent marks, and
+     * pairs consecutive numerics the way the Excel audit pairs adjacent cells.
+     * Page words arrive joined per page, so "consecutive" can straddle rows —
+     * that only ever ADDS matches, which for a warning errs toward silence
+     * rather than crying wolf.
+     *
+     * Called by: validatePdfCurve().
+     */
+    private function extractPrintedNumbers(string $text): array
+    {
+        $values = [];
+        $pairSums = [];
+        $previous = null;
+
+        foreach (preg_split('/\s+/', $text) ?: [] as $token) {
+            $clean = str_replace(['₱', 'P', ',', '%'], '', trim((string) $token));
+            if ($clean === '' || !is_numeric($clean) || !is_finite((float) $clean)) {
+                $previous = null;
+
+                continue;
+            }
+            $value = (float) $clean;
+            $values[] = $value;
+            if ($previous !== null) {
+                $pairSums[] = $previous + $value;
+            }
+            $previous = $value;
+        }
+
+        return ['values' => $values, 'pairSums' => $pairSums];
     }
 
     /**

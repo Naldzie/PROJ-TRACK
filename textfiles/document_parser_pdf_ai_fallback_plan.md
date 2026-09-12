@@ -553,6 +553,31 @@ Proof files (git-ignored sampledocs/, never commit)
       plan §3. Decision banked: P3 lands BEFORE E1-PDF (cheaper, deterministic,
       and it cleans the captures E1-PDF would otherwise learn from).
 
+  2026-09-12 — FIGURES-VS-PAGE CHECK (PDF; code, committed).
+    Question that found it (user): "do both paths return the monthly AMOUNTS so
+    the system can check the AI?" Yes — both prompts request monthlyAmounts +
+    contractAmount and monthsFollowAmounts() recomputes from them. But the PDF
+    path verified WORDS against the page (sanitizeActivityNames) and never
+    FIGURES: the F-A reasoning "no CSV exists for image slices" went stale once
+    $pageWords started arriving for the name guard.
+    - extractPrintedNumbers() — page-text sibling of extractSheetNumbers (which is
+      CSV-shaped): whitespace split, strips peso/comma/percent, pairs consecutive
+      numerics. Page words arrive joined per page so "consecutive" can straddle
+      rows — that only ADDS matches, erring toward silence, the right bias here.
+    - unmatchedAmountMonths() — the matching rule extracted so the Excel audit
+      (which declines) and the PDF check (which warns) can never drift apart;
+      amountsPresentInSheet now delegates to it, behaviour unchanged.
+    - validatePdfCurve warns, naming up to 3 months, and NEVER declines (user
+      decision): a month summing several activity rows often has no printed
+      total, and a false decline costs the whole AI assist. Silent when the page
+      has no numbers (scanned slice).
+    - Tests: +3 (warn names the month AND months survive; silent without page
+      text; plus the salvage-seam pair below). Suites: PHP 1153 passed / same 7
+      pre-existing; JS 120 tests, 118 + the 2 intended blinding fails.
+    - NOT yet browser-proven: a clean-text PDF (10-month or 6-stage twin) must
+      show NO new warning. A warning there means extractPrintedNumbers is too
+      strict and should be loosened before anything else.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

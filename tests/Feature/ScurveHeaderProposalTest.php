@@ -1402,6 +1402,109 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+    // Salvage (2026-09-12) — an answer whose NUMBERS the fabrication guards refuse
+    // used to end the import with "could not read", thrown away before any map
+    // work even though its COLUMNS were fine. Now the sheet is read instead, and
+    // the refused figures never reach the preview.
+    // Called by: parseWithGemini() → salvageRejectedAnswer().
+    public function test_parse_gemini_salvages_rejected_numbers_with_sheet_math(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        // Internally consistent, but 450000/550000 are printed in no cell of the
+        // workbook — the presence audit refuses the numbers. The layout is right.
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 450000],
+                ['month_index' => 2, 'pesos' => 550000],
+            ],
+            'contractAmount' => 1000000,
+            'hasSummaryRow' => false,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+                ['month_index' => 3, 'columns' => ['D']],
+            ],
+            'descCol' => 'A',
+            'contractCol' => 'E',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => $aiText]]]]],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeCostedNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        $response = $this->actingAs($admin)
+            ->post('/admin/s-curve/parse-gemini', ['file' => $upload])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        // The sheet's own math, not the refused 45/100.
+        $months = $response->json('months');
+        $this->assertSame(25.0, (float) $months[0]['planned_progress_percent']);
+        $this->assertSame(50.0, (float) $months[1]['planned_progress_percent']);
+        $this->assertSame(100.0, (float) $months[2]['planned_progress_percent']);
+        $this->assertContains('Ground Works', $months[0]['activities']);
+
+        $warnings = $response->json('meta.warnings');
+        $this->assertTrue(
+            collect($warnings)->contains(fn ($w) => str_contains($w, 'read from the sheet itself')),
+            'the substitution must be announced'
+        );
+
+        // The columns earned trust even though the arithmetic did not.
+        $this->assertNotNull(ScurveHeaderProposal::where('source', 'ai-derived')->first());
+
+        unlink($path);
+    }
+
+    // With no usable layout there is nothing to salvage, so the original refusal
+    // stands — the salvage must never invent a baseline out of thin air.
+    // Called by: salvageRejectedAnswer() null path.
+    public function test_parse_gemini_still_refuses_when_nothing_can_be_salvaged(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        // Refused numbers AND no layout keys at all.
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 450000],
+                ['month_index' => 2, 'pesos' => 550000],
+            ],
+            'contractAmount' => 1000000,
+            'hasSummaryRow' => false,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => $aiText]]]]],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeCostedNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        $this->actingAs($admin)
+            ->post('/admin/s-curve/parse-gemini', ['file' => $upload])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        unlink($path);
+    }
+
     // Learned maps consult: approving the ai-derived row lets the novel file parse.
     // Called by: parse() pass 2 via live ai-derived maps.
     public function test_learned_map_consults_after_approval(): void

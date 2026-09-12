@@ -260,6 +260,48 @@
       declined derivation says 'header-row-unfindable' instead.
 
 ===============================================================================
+  SCRIPT 5 — FULL SWEEP AFTER THE SCHEMA + DERIVED-MATH WORK (user, Sept 12)
+===============================================================================
+
+  Both specimens, both file types, both flows (create wizard AND detail tab),
+  ~8 AI calls on the 10-month file alone. Every curve correct.
+
+  6-STAGE EXCEL
+    AI assist (first upload): exact curve 5/20/40/60/80/100 AND — for the first
+    time ever on the Excel path — REAL ACTIVITY NAMES from the model itself
+    (log: monthsWithActivities 6 of 6). The responseSchema fix is proven live.
+    Auto-capture stored a non-null map; no separate ai-derived row appeared,
+    which is CORRECT (storeAiDerived backfills only map-LESS rows).
+    After approval: learned-layout read, same curve, same names.
+  6-STAGE PDF
+    Recognized on FIRST upload with no import note (P3). AI cross-check agrees.
+  10-MONTH EXCEL
+    AI assist: true curve 5/10/20/30/50/70/80/90/95/100 with all four summary
+    warnings. Auto-capture map non-null; after approval the learned layout gives
+    the same curve, and AI cross-check answers "agrees with the imported months".
+  10-MONTH PDF
+    Rule read exact on first upload, no note. AI cross-check exact.
+
+  ✅ THE NEGATIVE THAT MATTERED: the new figures-vs-page check stayed SILENT on
+  both PDFs. No false "could not be found printed on the page" on clean-text
+  files, so extractPrintedNumbers is not too strict. That was the one result
+  that could have sent it back.
+
+  ⚠️ FOUND IN THE SWEEP — DUPLICATE MONTH LABELS (create wizard, 10-month PDF):
+    #9 and #10 both rendered "March 2026". Cause (user diagnosed, confirmed):
+    normalizeSCurveMonths dates each month as start + (index-1) and CLAMPS it to
+    the project's end date; the sample project ended March 2026 while the file
+    carries 10 months, so month 10 was pinned back onto month 9's slot. Setting
+    the end date to April fixed it.
+    WHY IT MATTERS: the clamp is silent, and applying that baseline would store
+    two rows labelled 2026-03. Month labels are keys downstream (activity
+    reloads, manage-month modal, progress recording) and the S-curve would plot
+    two points on one x. A project whose dates are shorter than its schedule file
+    can therefore produce a colliding baseline with nothing on screen explaining
+    why. Guard queued: detect duplicate labels after normalizing (pure helper in
+    scurve-import-core.js) and warn through the existing stash.
+
+===============================================================================
   MODEL PROVENANCE (asked + answered 2026-09-12 — read before blaming code)
 ===============================================================================
 
@@ -294,6 +336,25 @@
   cross-check now backstops its arithmetic against real cells. Recorded here so a
   future session knows which model the proofs below ran on.
 
+  "DID THE PROMPT EDITS CAUSE THE WRONG CURVE?" — asked by the user, answered from
+  the log against commit times. NO, and the evidence is specific:
+    12:47  10-month, contractAmount present → AI returned 40/60/70 (WRONG)
+    13:05  10-month, SAME prompt, 18 minutes later → 50/70/80 (RIGHT)
+    13:43  schema fix committed (021a2c0)
+    13:45  first reply ever with monthsWithActivities > 0 (6 of 6)
+  Same file, same prompt, opposite arithmetic: a deterministic prompt defect
+  cannot do that. The errors landed on months 5-6 — the only months where two
+  activities overlap in one column — which is a CELL-READING error, not a wording
+  one. Model swap (3.7-flash vs the pinned 2.5-flash) plus run-to-run variance are
+  the likely contributors and cannot be separated from this evidence.
+  THE REAL MISTAKE was the reverse of what was suspected: prompt text was added
+  asking for "activities" WITHOUT READING THE SCHEMA that forbade it, leaving the
+  request incoherent for a day. Read the schema before writing prompt text.
+  AND BE PRECISE ABOUT WHAT IMPROVED: a misread is NO LESS LIKELY now. What
+  changed is that it can no longer reach a baseline silently — applyDerivedLayout
+  recomputes from real cells and overrides past 1.0. That is protection of the
+  OUTCOME, not improvement of the model. Do not let these logs imply otherwise.
+
   SENDERS, FALLBACK AND SCHEMA (asked 2026-09-12: "does the Excel parser fall back
   to Lite the way the normal-doc one does?" — answer: NO, it cannot):
 
@@ -302,6 +363,21 @@
     normal-doc autofill      callGeminiWithImages()    YES (default) none
     PDF S-curve              callGeminiWithImages(,f)  NO (reverted) none
     Excel S-curve            callGeminiText()          NONE AT ALL   YES (enforced)
+
+  VERIFICATION PER PATH (what the server checks about the AI's own figures):
+
+    check                                  Excel              PDF
+    ------------------------------------------------------------------------
+    months recomputed from stated amounts  yes (declines)     yes (declines)
+    claimed pesos found in the file        yes (DECLINES)     yes (WARNS only)
+    activity names found in the file       yes (drops name)   yes (drops name)
+    independent re-read of the source      yes (derived map)  none possible
+
+  The PDF check warns rather than declines (user decision 2026-09-12): a month
+  that sums several activity rows often has no printed total anywhere on the
+  page, so Excel's strictness would throw away good reads. It stays silent when
+  the page carries no numbers at all (scanned slice) — missing evidence is not
+  evidence of fabrication.
 
   Two consequences worth remembering:
   - The Lite-copies-the-summary failure class (proven on PDFs, Sept 11) CANNOT

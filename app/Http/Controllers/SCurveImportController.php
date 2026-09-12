@@ -96,6 +96,12 @@ class SCurveImportController extends Controller
             $result = $this->geminiParser->parseExcelSlice($csv, $filePart);
 
             if ($result === null) {
+                // The answer's NUMBERS may have been refused while its columns were
+                // fine — read the sheet ourselves before giving up on the import.
+                $result = $this->salvageRejectedAnswer($path);
+            }
+
+            if ($result === null) {
                 throw new RuntimeException('The AI assistant could not read an S-curve from this file. Please set up the baseline manually.');
             }
 
@@ -528,6 +534,76 @@ class SCurveImportController extends Controller
         } catch (\Throwable $e) {
             // Never let the second opinion break an import.
             return $result;
+        }
+    }
+
+    /**
+     * Rescue an AI answer whose NUMBERS were rejected by the fabrication guards.
+     *
+     * Those guards (months not following the AI's own amounts; a claimed peso
+     * printed nowhere in the sheet) used to end the import with "could not read"
+     * — thrown away before any map work, even though the rejected reply almost
+     * always still named the right columns. Column trust is not month trust, so
+     * the letters are used to read the sheet and the SERVER's own math fills the
+     * baseline instead. The AI's refused figures never reach the preview.
+     *
+     * Considered and rejected (user 2026-09-12): retrying the AI. The parser
+     * sends temperature 0.0, so a second sample is near-deterministic — a
+     * systematic misreading reproduces identically and its agreement merely looks
+     * like confidence. Reading real cells is better evidence and costs no quota.
+     *
+     * Returns null when no layout was banked or no map derives, so the caller
+     * throws the original message unchanged.
+     *
+     * Called by: parseWithGemini() when parseExcelSlice() declines.
+     */
+    protected function salvageRejectedAnswer(string $path): ?array
+    {
+        try {
+            $layout = $this->geminiParser->lastRejectedLayout;
+            if (!is_array($layout) || count($layout) === 0) {
+                return null;
+            }
+
+            $parsed = $this->sCurveImportService->parseWithAiLayout($layout, $path);
+            if ($parsed === null || count($parsed['months'] ?? []) === 0) {
+                return null;
+            }
+
+            $months = [];
+            foreach ($parsed['months'] as $month) {
+                $months[] = [
+                    'month_index' => (int) $month['month_index'],
+                    'planned_progress_percent' => (float) $month['planned_progress_percent'],
+                    'activities' => $this->activityNamesOf($month),
+                ];
+            }
+
+            $warnings = ['AI-assisted curve — verify before locking the baseline.'];
+            $warnings[] = 'Heads-up: the AI\'s monthly figures did not check out against the file,'
+                . ' so the baseline below was read from the sheet itself using the columns the AI'
+                . ' identified. Please review carefully before locking.';
+            foreach (($parsed['meta']['warnings'] ?? []) as $warning) {
+                // No approved layout was involved — that note would misdescribe this.
+                if (mb_strpos($warning, 'learned layout') !== false) {
+                    continue;
+                }
+                $warnings[] = $warning;
+            }
+
+            return [
+                'months' => $months,
+                'meta' => [
+                    'contractAmount' => $parsed['meta']['contractAmount'] ?? null,
+                    'warnings' => $warnings,
+                    'derivedMathUsed' => true,
+                ],
+                // Kept so learnMapFromAi still banks the proposal: the columns
+                // earned trust here even though the arithmetic did not.
+                'layout' => $layout,
+            ];
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 

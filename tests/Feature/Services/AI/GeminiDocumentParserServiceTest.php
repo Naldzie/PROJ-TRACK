@@ -1285,6 +1285,127 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertCount(2, $out['months']);
     }
 
+    // Figures-vs-page (2026-09-12): a monthly peso printed nowhere on the page
+    // earns a WARNING, never a decline — the Excel path declines, but on a PDF a
+    // month summing several activity rows often has no printed total and throwing
+    // the read away would cost more than it saves.
+    // Called by: validatePdfCurve() via extractPrintedNumbers().
+    public function test_pdf_slice_warns_when_a_monthly_figure_is_not_printed(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 25],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            // Internally consistent (50k → 25%, +150k → 100% of 200k) so the
+            // recompute check passes; 50,000 is printed, 150,000 is not.
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 50000],
+                ['month_index' => 2, 'pesos' => 150000],
+            ],
+            'contractAmount' => 200000,
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice(
+            $this->sliceImages(1),
+            ['Mobilization Works 50,000 TOTAL 200,000']
+        );
+
+        $this->assertNotNull($out, 'an unprintable figure must never decline the read');
+        $this->assertCount(2, $out['months'], 'the months must survive the warning');
+        $this->assertTrue(
+            collect($out['meta']['warnings'])->contains(
+                fn ($w) => str_contains($w, 'Month 2') && str_contains($w, 'printed on the page')
+            ),
+            'the unmatched month must be named'
+        );
+        $this->assertFalse(
+            collect($out['meta']['warnings'])->contains(fn ($w) => str_contains($w, 'Month 1')),
+            'a printed figure must not be flagged'
+        );
+    }
+
+    // No page text (a scanned slice with no readable words) = missing evidence,
+    // not evidence of fabrication. The check stays silent.
+    // Called by: validatePdfCurve() figures-vs-page branch.
+    public function test_pdf_slice_figure_check_stays_silent_without_page_text(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 25],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 50000],
+                ['month_index' => 2, 'pesos' => 150000],
+            ],
+            'contractAmount' => 200000,
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1), []);
+
+        $this->assertNotNull($out);
+        $this->assertFalse(
+            collect($out['meta']['warnings'])->contains(fn ($w) => str_contains($w, 'printed on the page')),
+            'with nothing to check against, say nothing'
+        );
+    }
+
+    // Salvage seam: the layout of an answer whose NUMBERS were refused is handed
+    // out so the controller can read the sheet itself. It must be set ONLY by the
+    // fabrication guards — never by a malformed reply, or a salvage could ride on
+    // an answer that was never understood at all.
+    // Called by: SCurveImportController::salvageRejectedAnswer().
+    public function test_rejected_layout_is_exposed_only_for_fabricated_numbers(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        // Internally consistent but 450000/550000 appear in no cell.
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 45],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 450000],
+                ['month_index' => 2, 'pesos' => 550000],
+            ],
+            'contractAmount' => 1000000,
+            'hasSummaryRow' => false,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+            ],
+            'descCol' => 'A',
+        ]));
+
+        $this->assertNull($service->parseExcelSlice("WORK DETAILS,P1,P2\nWorks,50000,50000"));
+        $this->assertIsArray($service->lastRejectedLayout, 'the columns must survive the refusal');
+        $this->assertSame('A', $service->lastRejectedLayout['descCol'] ?? null);
+    }
+
+    // The other half of that guarantee, in its own test because Http::fake keeps
+    // the FIRST matching stub — a second fake in one test would never apply.
+    // Called by: SCurveImportController::salvageRejectedAnswer().
+    public function test_rejected_layout_stays_null_for_a_malformed_reply(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        $service = new GeminiDocumentParserService();
+
+        $this->fakeSuccess('not json at all');
+
+        $this->assertNull($service->parseExcelSlice("WORK DETAILS,P1\nWorks,50000"));
+        $this->assertNull($service->lastRejectedLayout, 'a malformed reply must not enable a salvage');
+    }
+
     // GAP 1 ROOT CAUSE — the Excel path sends a responseSchema, and structured
     // output drops every undeclared key, so asking the prompt for "activities"
     // was futile until the schema declared it. Every other test here feeds decoded

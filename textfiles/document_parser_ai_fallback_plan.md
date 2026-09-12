@@ -139,6 +139,34 @@ Sensitivity basis (user-approved)
        textfiles/document_parser_pdf_ai_fallback_plan.md (Phases F-A..F-E:
        button-only, numbers+names, save-words). This AI-6 entry stays as history.
 
+  SALVAGE 2026-09-12 (Excel AI; code, committed). When the fabrication guards
+  refuse an answer's NUMBERS — months not following the AI's own amounts, or a
+  claimed peso printed in no cell — parseExcelSlice still returns null, but the
+  import no longer dies there. The refused reply's COLUMN letters are handed out
+  (GeminiDocumentParserService::$lastRejectedLayout, set ONLY at those two guards,
+  reset per call, mirroring the $lastFallbackModel provenance idiom), and
+  SCurveImportController::salvageRejectedAnswer() reads the sheet with them via
+  the existing parseWithAiLayout(). The baseline then comes from REAL CELLS with a
+  plain note ("the AI's monthly figures did not check out … read from the sheet
+  itself"); the refused figures never reach the preview. learnMapFromAi still
+  banks the proposal, because the columns earned trust even though the arithmetic
+  did not (the 2026-09-10 column-trust-≠-month-trust reversal). No derivable
+  layout ⇒ the original 422 message, unchanged.
+    - CONSIDERED AND REJECTED (user proposal, reasoned through together): retry
+      the AI on disagreement and compare the two answers. The parser sends
+      temperature 0.0, so a second sample is near-deterministic — a systematic
+      misreading reproduces identically and its agreement merely LOOKS like
+      confidence, which is the very illusion that stamped "Checked" on a wrong
+      curve. Real sampling evidence would need temperature > 0 and 3+ calls, i.e.
+      more quota for weaker proof than simply reading the cells. Do not re-propose
+      without new evidence.
+    - Tests: +2 endpoint (salvage returns the sheet's curve + the note + still
+      banks ai-derived; nothing salvageable ⇒ 422 unchanged), +2 service (layout
+      exposed on a guard refusal; stays null for a malformed reply, so a salvage
+      can never ride on an answer that was never understood). Every pre-existing
+      assertNull(parseExcelSlice(...)) still passes — the service still declines;
+      only the controller now has somewhere better to go.
+
   E2 PARITY 2026-09-09 (Excel AI, live bug → fix; AI-6 stays parked — this is the
   E2 Excel path, not the PDF-slice AI-6).
     - Finding (user, real third-family file): AI returned the author's summary (45%)
