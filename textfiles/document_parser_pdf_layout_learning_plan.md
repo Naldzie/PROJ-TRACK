@@ -22,6 +22,7 @@
       reader parse the TRUE curve with zero AI.
     - P3 (merge-by-Y + the blank-token desc bound) BUILT and BROWSER-PROVEN
       2026-09-12: 6-stage and 10-month PDFs now read exactly on first upload,
+      with real names, and the long-standing "19.99 dust" is gone.
     - PDF-1 (capture) and PDF-2 (consult) BUILT and BROWSER-PROVEN 2026-09-12.
       The PDF loop CLOSES: rules miss → silent capture → approve → the same file
       reads 5/20/40/65/100 with real names and ZERO AI (SEGMENT specimen, live).
