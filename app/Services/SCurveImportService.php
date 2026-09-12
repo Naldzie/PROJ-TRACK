@@ -643,8 +643,12 @@ class SCurveImportService
         };
 
         try {
+            // headerRow may be ABSENT (GAP 2, 2026-09-12): when the rule detector
+            // cannot find a header, serializeForAi tags every row [DATA], so the
+            // slice shows the model no HEADER line and it rightly omits the key —
+            // and those are exactly the files that most need a learned layout.
+            // 0 now means "infer it from the sheet below" instead of refusing.
             $headerR = (int) ($layout['headerRow'] ?? 0);
-            if ($headerR < 1) return $refuse('no-header-row');
             $monthColumns = $layout['monthColumns'] ?? null;
             if (!is_array($monthColumns) || count($monthColumns) < 2) return $refuse('no-month-columns');
             $descLetter = $layout['descCol'] ?? null;
@@ -657,12 +661,6 @@ class SCurveImportService
                 $grid = $this->resolveFormulas($sheet, $grid);
                 $keptKeys = $this->keptRowKeys($grid, 40);
                 if (count($keptKeys) < 2) continue;
-                if (!isset($keptKeys[$headerR - 1])) {
-                    $reason = 'header-row-unresolved';
-
-                    continue;
-                }
-                $sheetKey = $keptKeys[$headerR - 1];
 
                 $toIndex = function ($letter): ?int {
                     if (!is_string($letter) || !preg_match('/^[A-Z]{1,3}$/', $letter)) {
@@ -708,6 +706,27 @@ class SCurveImportService
                     continue;
                 }
 
+                // Header row: the model's R-number when it gave one, otherwise
+                // inferred from the sheet's own cells (GAP 2). Inference trusts
+                // bytes, not the model: the row must read like LABELS at the very
+                // columns the model named — text (not numbers) in the description
+                // column and in at least two month columns.
+                if ($headerR >= 1) {
+                    if (!isset($keptKeys[$headerR - 1])) {
+                        $reason = 'header-row-unresolved';
+
+                        continue;
+                    }
+                    $sheetKey = $keptKeys[$headerR - 1];
+                } else {
+                    $sheetKey = $this->inferHeaderRowKey($grid, $keptKeys, $descCol, $spans);
+                    if ($sheetKey === null) {
+                        $reason = 'header-row-unfindable';
+
+                        continue;
+                    }
+                }
+
                 $headerCells = array_values($grid[$sheetKey] ?? []);
                 $map = $this->buildTaughtMap($headerCells, $descCol, $codeCol, $weightCol, $contractCol, $spans);
                 if ($map === null) {
@@ -728,6 +747,108 @@ class SCurveImportService
         }
 
         return $refuse($reason ?? 'no-matching-sheet');
+    }
+
+    /**
+     * GAP 1 / derived-math — read the sheet with the layout the AI reported.
+     *
+     * Asking the model for names did not work: it reliably reports layout keys
+     * (descCol/monthColumns — the logs show them on every reply) but keeps omitting
+     * per-month "activities", even with the worked example fixed. It does not need
+     * to: those keys plus the file are enough for the SERVER to read the sheet
+     * itself, from real cells, which is deterministic and impossible to
+     * hallucinate. Reuses deriveMapFromAiLayout (already validated against real
+     * bytes) and the ordinary map-parse path, so the result is identical to what a
+     * learned-layout import produces — names AND curve.
+     *
+     * The curve matters as much as the names: on the 10-month file the model
+     * returned 40/60/70 for months 5-7 where the sheet's own rows say 50/70/80,
+     * and its "Checked" verdict still passed because the amounts it invented
+     * coincided with budget-cost figures elsewhere in the sheet. The caller
+     * compares the two and prefers these bytes (user decision 2026-09-12).
+     *
+     * Best-effort by construction: any failure returns null and the caller keeps
+     * the AI's answer exactly as it arrived.
+     *
+     * Called by: SCurveImportController::applyDerivedLayout() after an AI read.
+     *
+     * @return array|null  the ordinary map-parse result (months carry names AND
+     *                     the recomputed curve), or null when nothing derivable.
+     */
+    public function parseWithAiLayout(array $layout, string $path): ?array
+    {
+        try {
+            $reason = null;
+            $map = $this->deriveMapFromAiLayout($layout, $path, $reason);
+            if ($map === null) {
+                return null;
+            }
+
+            // A synthetic live-map entry: same shape loadLiveMaps() hands parse().
+            $parsed = $this->parse($path, [[
+                'id' => 0,
+                'contractor_id' => null,
+                'column_map' => $map,
+            ]]);
+            if (($parsed['meta']['mapUsed'] ?? false) !== true) {
+                return null;
+            }
+
+            return $parsed;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * E1-B / GAP 2 — find the header row from the sheet when the AI named none.
+     *
+     * The model omits "headerRow" whenever the slice showed it no HEADER-tagged
+     * line, which happens precisely when our own detector could not recognise the
+     * table — so the files that most need a learned layout were the ones that
+     * could never get one. Rather than trust a guess, this reads the REAL cells at
+     * the columns the model DID name and keeps the first row that looks like
+     * labels there: text (never a number) in the description column and in at
+     * least two of the month columns. A data row fails on sight, because its month
+     * cells hold amounts. Returns the grid key, or null when nothing qualifies.
+     *
+     * Called by: deriveMapFromAiLayout() when headerRow is absent.
+     * @return int|string|null  the grid row key, in the same form keptRowKeys uses.
+     */
+    private function inferHeaderRowKey(array $grid, array $keptKeys, int $descCol, array $spans): mixed
+    {
+        $isLabel = function ($v): bool {
+            if (!is_string($v) && !is_numeric($v)) {
+                return false;
+            }
+            $s = trim((string) $v);
+            if ($s === '' || is_numeric(str_replace([',', ' '], '', $s))) {
+                return false;
+            }
+
+            return true;
+        };
+
+        foreach ($keptKeys as $key) {
+            $cells = array_values($grid[$key] ?? []);
+            if (!isset($cells[$descCol]) || !$isLabel($cells[$descCol])) {
+                continue;
+            }
+            $labelled = 0;
+            foreach ($spans as $cols) {
+                foreach ((array) $cols as $idx) {
+                    if (isset($cells[$idx]) && $isLabel($cells[$idx])) {
+                        $labelled++;
+                        break;
+                    }
+                }
+            }
+            if ($labelled >= 2) {
+                return $key;
+            }
+        }
+
+        return null;
     }
 
     /**

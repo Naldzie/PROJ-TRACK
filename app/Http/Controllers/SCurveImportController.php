@@ -101,6 +101,11 @@ class SCurveImportController extends Controller
 
             $result = $this->preferMapMath($request, $path, $result);
 
+            // GAP 1 + derived math: read the sheet with the layout the AI reported —
+            // names for months it left unnamed, and its own arithmetic when the AI's
+            // numbers disagree with the file's activity rows.
+            $result = $this->applyDerivedLayout($path, $result);
+
             // Phase-B: a trusted answer on a map-less file teaches a layout.
             // Skipped when preferMapMath already fired (a map exists — nothing
             // to learn) or the layout rode along unresolved.
@@ -355,6 +360,10 @@ class SCurveImportController extends Controller
                 $months[] = [
                     'month_index' => (int) $m['month_index'],
                     'planned_progress_percent' => (float) $m['planned_progress_percent'],
+                    // The map parse already read the work names from the sheet —
+                    // carry them instead of dropping them (they used to be built
+                    // here and thrown away, leaving the preferred curve nameless).
+                    'activities' => $m['activities'] ?? [],
                 ];
             }
 
@@ -374,6 +383,175 @@ class SCurveImportController extends Controller
         } catch (\Throwable $e) {
             return $aiResult;
         }
+    }
+
+    /**
+     * GAP 1 + derived math — read the sheet with the layout the AI reported, and
+     * let those bytes correct the AI where the two disagree.
+     *
+     * The Excel reply reports layout keys reliably but keeps omitting per-month
+     * "activities", so AI-assisted Excel imports arrived as bare percentages while
+     * PDF ones carried names. Rather than fight the prompt, the server reads the
+     * sheet with the layout the AI DID report — real cells, no hallucination
+     * possible, identical to what a learned-layout import shows.
+     *
+     * Numbers too (user decision 2026-09-12): on the 10-month file the model
+     * returned 40/60/70 for months 5-7 where the sheet's rows say 50/70/80, and its
+     * own "Checked" verdict passed because the amounts it invented coincided with
+     * budget figures elsewhere in the sheet. When the two disagree past 1.0 the
+     * sheet wins and says so; the AI's verdicts are dropped with its arithmetic,
+     * since they described numbers no longer on screen. Rationale is the banked
+     * reversal: maps store POSITIONS and the curve is recomputed from rows, so
+     * correct columns yield a correct curve whatever the months claimed.
+     *
+     * Mirrors preferMapMath but for the map DERIVED from this answer; an approved
+     * map still wins outright, and learning stays approval-gated (a separate flag
+     * is used so learnMapFromAi still banks the proposal). Best-effort — any
+     * failure leaves the AI's answer exactly as it arrived.
+     *
+     * Called by: parseWithGemini() after preferMapMath().
+     */
+    protected function applyDerivedLayout(string $path, array $result): array
+    {
+        try {
+            // An APPROVED map already won — that path is the stronger claim.
+            if ($result['meta']['mapPreferred'] ?? false) {
+                return $result;
+            }
+            $layout = $result['layout'] ?? null;
+            $months = $result['months'] ?? [];
+            if (!is_array($layout) || count($months) === 0) {
+                return $result;
+            }
+
+            $parsed = $this->sCurveImportService->parseWithAiLayout($layout, $path);
+            if ($parsed === null) {
+                return $result;
+            }
+
+            $sheetByMonth = [];
+            foreach (($parsed['months'] ?? []) as $month) {
+                $index = (int) ($month['month_index'] ?? 0);
+                if ($index > 0) {
+                    $sheetByMonth[$index] = $month;
+                }
+            }
+            if (count($sheetByMonth) === 0) {
+                return $result;
+            }
+
+            // A sheet curve is only worth preferring when it was computed from a
+            // real denominator and covers every month the AI reported. Without a
+            // contract column or TOTAL row the parse falls back to weights and can
+            // produce a degenerate curve (0/0/100) — replacing a good AI answer
+            // with that would be a downgrade, so its NAMES still ride but its
+            // numbers stay out.
+            $trustworthy = ((float) ($parsed['meta']['contractAmount'] ?? 0)) > 0;
+            foreach ($months as $month) {
+                if (!isset($sheetByMonth[(int) ($month['month_index'] ?? 0)])) {
+                    $trustworthy = false;
+                    break;
+                }
+            }
+
+            // Same 1.0 threshold the approved-map comparison uses.
+            $diverges = false;
+            foreach ($months as $month) {
+                $index = (int) ($month['month_index'] ?? 0);
+                if (!isset($sheetByMonth[$index])) {
+                    continue;
+                }
+                $gap = abs((float) $month['planned_progress_percent']
+                    - (float) $sheetByMonth[$index]['planned_progress_percent']);
+                if ($gap > 1.0) {
+                    $diverges = true;
+                    break;
+                }
+            }
+            $diverges = $diverges && $trustworthy;
+
+            if (!$diverges) {
+                // The numbers agree — keep the AI's curve and only fill in names
+                // for months it left unnamed.
+                foreach ($months as $i => $month) {
+                    $index = (int) ($month['month_index'] ?? 0);
+                    if (!empty($month['activities']) || !isset($sheetByMonth[$index])) {
+                        continue;
+                    }
+                    $names = $this->activityNamesOf($sheetByMonth[$index]);
+                    if (count($names) > 0) {
+                        $months[$i]['activities'] = $names;
+                    }
+                }
+                $result['months'] = $months;
+
+                return $result;
+            }
+
+            // They disagree: the sheet's own rows win (user decision 2026-09-12).
+            $newMonths = [];
+            foreach ($parsed['months'] as $month) {
+                $newMonths[] = [
+                    'month_index' => (int) $month['month_index'],
+                    'planned_progress_percent' => (float) $month['planned_progress_percent'],
+                    'activities' => $this->activityNamesOf($month),
+                ];
+            }
+
+            $meta = $result['meta'] ?? [];
+            if (($meta['contractAmount'] ?? null) === null
+                && isset($parsed['meta']['contractAmount'])) {
+                $meta['contractAmount'] = $parsed['meta']['contractAmount'];
+            }
+
+            // The AI's own verdicts described ITS arithmetic, which was just
+            // rejected — keeping them would describe numbers no longer on screen.
+            // The sheet parse brings its own summary comparisons; its
+            // learned-layout note is dropped because no approved layout was used.
+            $warnings = ['AI-assisted curve — verify before locking the baseline.'];
+            $warnings[] = 'Heads-up: the AI\'s monthly numbers did not match the file\'s own'
+                . ' activity rows, so the baseline below was recomputed from the sheet using'
+                . ' the columns the AI identified. Please review before locking.';
+            foreach (($parsed['meta']['warnings'] ?? []) as $warning) {
+                if (mb_strpos($warning, 'learned layout') !== false) {
+                    continue;
+                }
+                $warnings[] = $warning;
+            }
+            $meta['warnings'] = $warnings;
+            $meta['derivedMathUsed'] = true;
+
+            $result['months'] = $newMonths;
+            $result['meta'] = $meta;
+
+            return $result;
+        } catch (\Throwable $e) {
+            // Never let the second opinion break an import.
+            return $result;
+        }
+    }
+
+    /**
+     * Flatten a parsed month's activities to plain, de-duplicated names.
+     *
+     * The rule/map path stores activities as objects; the AI path sends bare
+     * strings. Both reach the same preview, so one shape goes out.
+     *
+     * Called by: applyDerivedLayout().
+     */
+    protected function activityNamesOf(array $month): array
+    {
+        $names = [];
+        foreach (($month['activities'] ?? []) as $activity) {
+            $name = trim((string) (is_array($activity)
+                ? ($activity['activity_name'] ?? '')
+                : $activity));
+            if ($name !== '' && !in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
     }
 
     /**

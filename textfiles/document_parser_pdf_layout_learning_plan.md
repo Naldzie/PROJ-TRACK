@@ -445,12 +445,45 @@
   detector cannot find gets every row tagged [DATA], so the AI has no headerRow
   to report and E1-B declines with "no-header-row" (GAP 2).
 
-  RE-SCOPE NOTE for Stage 2 (raised 2026-09-12, undecided): with P3 landed, the
+  2026-09-12 — GAP 1 + GAP 2 FIXED (user-ordered; full notes in
+  pdf_ai_loop_proof_tests.md Script 4). Both are Excel-side AI defects the parity
+  sweep exposed; neither touches the PDF reader.
+    - GAP 1: the Excel AI prompt now asks for per-month "activities", and
+      validateSCurveMonths runs them through the SAME printed-words sanitizer the
+      PDF path uses, checked against the CSV slice. AI-assisted Excel imports now
+      carry real names instead of bare percentages. Adopted-summary curves stay
+      nameless by design. +2 service tests.
+    - GAP 2: an absent headerRow no longer kills E1-B. inferHeaderRowKey() finds
+      the label row from real cells at the columns the AI named (text in the desc
+      column and ≥2 month columns; data rows fail because their month cells hold
+      amounts), and the prompt now tells the model a DATA-tagged row can still be
+      the header. Refusal stays honest when nothing qualifies
+      ('header-row-unfindable'); an inferred map equals the explicit one. +2 tests.
+    - Suites: JS 120/118 + 2 intended blinding fails (untouched); PHP 1144 passed
+      (+4) / same 7 pre-existing.
+    - GAP 1 NEEDED A SECOND PASS: the prompt route failed twice (live log
+      monthsWithActivities:0 even after the worked example was corrected). Fixed by
+      having the SERVER read the sheet with the layout the model DOES report —
+      parseWithAiLayout() + applyDerivedLayout(). See pdf_ai_loop_proof_tests.md.
+    - DERIVED MATH added with it (user decision): when that map's math differs from
+      the AI's by >1.0 the sheet wins, gated on a real denominator + full month
+      coverage. Caught by the tests: without the gate a degenerate 0/0/100 curve
+      would have replaced a good AI answer on files with no contract column.
+    - MODEL PROVENANCE recorded: parser is gemini-3.7-flash (E3 had pinned
+      gemini-2.5-flash); user chose to stay, since the cross-check backstops it.
+    - BROWSER-PROVEN 2026-09-12 (user, 10-month Excel): names on every month AND
+      the true curve 5/10/20/30/50/70/80/90/95/100 with all four summary warnings.
+      An earlier run of the same file returned 40/60/70 and passed both homework
+      guards — that is the run the derived-map cross-check now catches.
+
+  RE-SCOPE NOTE for Stage 2 (raised 2026-09-12, answered: KEEP ALL FOUR PHASES): with P3 landed, the
   offline PDF reader now matches the AI on all three specimens, so E1-PDF's value
   has narrowed to files the rules cannot detect AT ALL (the Roof family, which
-  still returns null). Decide scope with the user before building four phases —
-  PDF-1+PDF-2 alone may be the whole win, and GAP 2 suggests the capture story
-  needs the header question answered first.
+  still returns null). USER DECISION 2026-09-12: build ALL FOUR PHASES anyway
+  (PDF-1 capture, PDF-2 consult, PDF-3 learn-from-AI, PDF-4 point-and-teach).
+  Carry the GAP 2 lesson into PDF-1: a capture whose header the rules could not
+  find must still be able to learn, so PDF capture derives its candidate map from
+  the page's own geometry rather than depending on rule-side header detection.
 
   2026-09-12 — Specimen verified + P3 root-caused (read-only probes):
     Excel truth dumped via PhpSpreadsheet; the PDF run through the real core in

@@ -376,6 +376,13 @@ class GeminiDocumentParserService
             Log::debug('E2 excel slice response keys', [
                 'keys' => is_array($decoded) ? array_keys($decoded) : [],
                 'months' => is_array($decoded['months'] ?? null) ? count($decoded['months']) : 0,
+                // Per-month key, so the top-level list above can never reveal it —
+                // and "did the model send names at all?" cost a whole round trip to
+                // answer by code reading once. It is one number; log it.
+                'monthsWithActivities' => count(array_filter(
+                    (array) ($decoded['months'] ?? []),
+                    fn ($m) => is_array($m) && !empty($m['activities'])
+                )),
                 'summary' => is_array($decoded['summary'] ?? null) ? count($decoded['summary']) : 0,
                 'amounts' => is_array($decoded['monthlyAmounts'] ?? null) ? count($decoded['monthlyAmounts']) : 0,
                 'hasSummaryRow' => $decoded['hasSummaryRow'] ?? null,
@@ -388,7 +395,9 @@ class GeminiDocumentParserService
             // Logging never breaks imports.
         }
 
-        return $this->validateSCurveMonths($decoded, $this->extractSheetNumbers($csv));
+        // The CSV is the sheet's own text — it is what activity names are checked
+        // against, exactly as page words are on the PDF path.
+        return $this->validateSCurveMonths($decoded, $this->extractSheetNumbers($csv), $csv);
     }
 
     /**
@@ -787,7 +796,8 @@ class GeminiDocumentParserService
             . ' ONLY from these); SUMMARY = the author\'s own total rows (labels like CUMULATIVE %,'
             . ' % ACCOMPLISHED, COST, Cash Flow, Project Duration — reference only).'
             . ' Return ONLY a JSON object {"months": [{"month_index": 1,'
-            . ' "planned_progress_percent": 12.5}, ...], "monthlyAmounts": [{"month_index": 1,'
+            . ' "planned_progress_percent": 12.5, "activities": ["Mobilization Works"]}, ...],'
+            . ' "monthlyAmounts": [{"month_index": 1,'
             . ' "pesos": 50000}, ...], "summary": [{"month_index": 1, "percent": 12.0},'
             . ' ...], "hasSummaryRow": true, "contractAmount": 32588531.43}. Rules:'
             . ' "months" MUST be computed from the DATA rows (add each month\'s amounts using the'
@@ -799,15 +809,23 @@ class GeminiDocumentParserService
             . ' copied as printed (no recomputation — omit the key when no SUMMARY row exists);'
             . ' "hasSummaryRow" tells whether one exists. DO NOT copy SUMMARY values into "months" —'
             . ' the two series must be reported independently even when they agree.'
+            . ' "activities" lists that month\'s work names from the DATA rows\' description column,'
+            . ' copied EXACTLY as printed — only rows that actually carry a value in that month,'
+            . ' never invented, never a SUMMARY or TOTAL label; omit the key when you cannot read them.'
             . ' For layout learning, ALSO report where you read the table (use the COLUMNS letters'
             . ' and R-numbers shown): "headerRow" is the R-number holding the column labels (single'
-            . ' header row only — omit when labels span two rows); "monthColumns" lists each month\'s'
+            . ' header row only — omit when labels span two rows). Report it from what you SEE:'
+            . ' the labels often sit on a row tagged DATA because the tagger missed the table,'
+            . ' and that row still counts as the header row.'
+            . ' "monthColumns" lists each month\'s'
             . ' column letter(s) (1-2 letters, e.g. single P1 as ["F"], paired Month 1 as ["I","J"]);'
             . ' "descCol" is the work-names column letter, "contractCol" the peso-total letter'
             . ' (plus "weightCol"/"codeCol" when present). Omit layout keys you cannot determine.'
             . ' Example with a'
-            . ' disagreeing file: {"months": [{"month_index": 1, "planned_progress_percent": 5},'
-            . ' {"month_index": 2, "planned_progress_percent": 10}], "monthlyAmounts":'
+            . ' disagreeing file: {"months": [{"month_index": 1, "planned_progress_percent": 5,'
+            . ' "activities": ["Mobilization Works"]},'
+            . ' {"month_index": 2, "planned_progress_percent": 10,'
+            . ' "activities": ["Mobilization Works", "Earthworks and Excavation"]}], "monthlyAmounts":'
             . ' [{"month_index": 1, "pesos": 50000}, {"month_index": 2, "pesos": 50000}],'
             . ' "summary": [{"month_index": 1, "percent": 5}, {"month_index": 2, "percent": 9}],'
             . ' "hasSummaryRow": true, "contractAmount": 1000000,'
@@ -841,10 +859,20 @@ class GeminiDocumentParserService
      *   declined outright. Pollution (budget costs) can only false-pass,
      *   never false-decline — the safe direction.
      *
+     * Activity names (2026-09-12): reported per month and kept only when their
+     * words actually appear in the serialized sheet — the SAME discipline the PDF
+     * path applies to page words. Names ride, numbers decide: a dropped name never
+     * moves the curve, it just leaves the client on its generic label. Before
+     * this, the Excel prompt never asked for names at all, so AI-assisted Excel
+     * imports produced bare percentages while PDF ones carried real names.
+     *
      * Called by: parseExcelSlice()
      */
-    private function validateSCurveMonths(mixed $decoded, array $sheetNumbers = ['values' => [], 'pairSums' => []]): ?array
-    {
+    private function validateSCurveMonths(
+        mixed $decoded,
+        array $sheetNumbers = ['values' => [], 'pairSums' => []],
+        string $sheetText = ''
+    ): ?array {
         if (!is_array($decoded)) {
             return null;
         }
@@ -854,6 +882,21 @@ class GeminiDocumentParserService
         $amounts = $this->sanitizeAmountPoints($decoded['monthlyAmounts'] ?? null);
         $contract = $this->sanitizeContractAmount($decoded['contractAmount'] ?? null);
         $hasSummaryRow = ($decoded['hasSummaryRow'] ?? null) === true;
+
+        // Sheet-printed names per month (empty when the slice text is unavailable,
+        // which reproduces the previous nameless behavior exactly).
+        $namesByMonth = [];
+        if ($sheetText !== '') {
+            foreach ((array) ($decoded['months'] ?? []) as $row) {
+                if (!is_array($row) || !isset($row['month_index'])) {
+                    continue;
+                }
+                $namesByMonth[(int) $row['month_index']] = $this->sanitizeActivityNames(
+                    $row['activities'] ?? null,
+                    $sheetText
+                );
+            }
+        }
 
         // Activity series usable — keep it, summary only warns.
         if (count($months) >= 2) {
@@ -915,8 +958,18 @@ class GeminiDocumentParserService
                     . ' be cross-checked. Please review before locking.';
             }
 
+            // Names ride along with each kept month (drops never move the curve).
+            $outMonths = [];
+            foreach ($months as $m) {
+                $outMonths[] = [
+                    'month_index' => $m['month_index'],
+                    'planned_progress_percent' => $m['planned_progress_percent'],
+                    'activities' => $namesByMonth[$m['month_index']] ?? [],
+                ];
+            }
+
             return [
-                'months' => array_values($months),
+                'months' => array_values($outMonths),
                 'meta' => [
                     'contractAmount' => $contract,
                     'warnings' => $warnings,

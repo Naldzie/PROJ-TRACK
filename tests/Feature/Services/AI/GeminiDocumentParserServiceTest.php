@@ -1284,4 +1284,54 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNotNull($out);
         $this->assertCount(2, $out['months']);
     }
+
+    // GAP 1 — the Excel prompt now asks for activity names, and names printed in
+    // the sheet ride along with their month (parity with the PDF path).
+    // Called by: parseExcelSlice() via validateSCurveMonths().
+    public function test_excel_slice_keeps_activity_names_printed_in_the_sheet(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50, 'activities' => ['Mobilization Works']],
+                ['month_index' => 2, 'planned_progress_percent' => 100, 'activities' => ['Earthworks and Excavation']],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice(
+            "DESCRIPTION,Month 1,Month 2\nMobilization Works,30000,0\nEarthworks and Excavation,0,30000"
+        );
+
+        $this->assertNotNull($out);
+        $this->assertSame(['Mobilization Works'], $out['months'][0]['activities']);
+        $this->assertSame(['Earthworks and Excavation'], $out['months'][1]['activities']);
+    }
+
+    // Names the sheet never prints are dropped; the curve is untouched by the
+    // drop (names ride, numbers decide) and the client falls back to generics.
+    // Called by: parseExcelSlice() via sanitizeActivityNames().
+    public function test_excel_slice_drops_activity_names_absent_from_the_sheet(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50, 'activities' => ['Helicopter Landing Pad']],
+                ['month_index' => 2, 'planned_progress_percent' => 100, 'activities' => ['Mobilization Works']],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        $out = (new GeminiDocumentParserService())->parseExcelSlice(
+            "DESCRIPTION,Month 1,Month 2\nMobilization Works,30000,30000"
+        );
+
+        $this->assertNotNull($out);
+        $this->assertSame([], $out['months'][0]['activities'], 'invented name must not survive');
+        $this->assertSame(['Mobilization Works'], $out['months'][1]['activities']);
+        $this->assertSame(50.0, $out['months'][0]['planned_progress_percent'], 'a dropped name must not move the curve');
+        $this->assertSame(100.0, $out['months'][1]['planned_progress_percent']);
+    }
 }

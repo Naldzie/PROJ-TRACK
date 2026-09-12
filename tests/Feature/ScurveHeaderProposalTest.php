@@ -988,6 +988,29 @@ class ScurveHeaderProposalTest extends TestCase
         (new Xlsx($spreadsheet))->save($path);
     }
 
+    // Same novel layout, but WITH a cost column and TOTAL row — so a map derived
+    // from it has a real denominator. Without one the parse falls back to weights
+    // and its curve must not be preferred over the AI's (the gate in
+    // applyDerivedLayout). True math here: 100k/100k/200k of 400k = 25/50/100.
+    private function makeCostedNovelWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A2', 'LINE HEADINGS');
+        $sheet->setCellValue('B2', 'Q1');
+        $sheet->setCellValue('C2', 'Q2');
+        $sheet->setCellValue('D2', 'Q3');
+        $sheet->setCellValue('E2', 'PROJECT COST');
+        $sheet->setCellValue('A3', 'Ground Works');
+        $sheet->setCellValue('B3', 100000);
+        $sheet->setCellValue('C3', 100000);
+        $sheet->setCellValue('D3', 200000);
+        $sheet->setCellValue('E3', 400000);
+        $sheet->setCellValue('A4', 'TOTAL');
+        $sheet->setCellValue('E4', 400000);
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
     private function novelLayout(array $overrides = []): array
     {
         return array_merge([
@@ -1026,6 +1049,65 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame(0, $map['descCol']);
         $this->assertCount(3, $map['monthSpans']);
         $this->assertNotEmpty($map['sig']);
+
+        unlink($path);
+    }
+
+    // GAP 2 (2026-09-12) — an absent headerRow no longer kills derivation.
+    // When our detector cannot find the table, serializeForAi tags every row
+    // [DATA], the model sees no HEADER line and omits the key — exactly the files
+    // that most need a learned layout. The row is now inferred from REAL cells at
+    // the columns the model DID name.
+    // Called by: deriveMapFromAiLayout() → inferHeaderRowKey().
+    public function test_derive_map_infers_header_row_when_ai_reports_none(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $layout = $this->novelLayout();
+        unset($layout['headerRow']);
+
+        $map = $service->deriveMapFromAiLayout($layout, $path);
+
+        $this->assertIsArray($map, 'a headerless answer must still teach columns');
+        $this->assertSame(0, $map['descCol']);
+        $this->assertCount(3, $map['monthSpans']);
+        $this->assertNotEmpty($map['sig'], 'signature must come from the inferred label row');
+
+        // Identical to what the model naming the row explicitly produces.
+        $this->assertEquals($service->deriveMapFromAiLayout($this->novelLayout(), $path), $map);
+
+        unlink($path);
+    }
+
+    // Inference reads bytes, it does not guess: with no row that looks like labels
+    // at those columns (every month cell numeric), derivation still refuses.
+    // Called by: inferHeaderRowKey() negative path.
+    public function test_header_row_inference_refuses_when_no_row_looks_like_labels(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        // Two data rows, no label line anywhere.
+        $sheet->setCellValue('A2', 'Ground Works');
+        $sheet->setCellValue('B2', 100000);
+        $sheet->setCellValue('C2', 100000);
+        $sheet->setCellValue('D2', 200000);
+        $sheet->setCellValue('A3', 'Finishing Works');
+        $sheet->setCellValue('B3', 50000);
+        $sheet->setCellValue('C3', 50000);
+        $sheet->setCellValue('D3', 100000);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $layout = $this->novelLayout();
+        unset($layout['headerRow']);
+
+        $reason = null;
+        $this->assertNull(
+            app(SCurveImportService::class)->deriveMapFromAiLayout($layout, $path, $reason)
+        );
+        $this->assertSame('header-row-unfindable', $reason, 'the refusal must name its gate');
 
         unlink($path);
     }
@@ -1184,6 +1266,138 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertIsArray($row->column_map);
         $this->assertSame(1, $row->column_map['v']);
         $this->assertCount(3, $row->column_map['monthSpans']);
+
+        unlink($path);
+    }
+
+    // GAP 1 (2026-09-12) — the model keeps omitting per-month "activities" no
+    // matter how the prompt asks (proven live: monthsWithActivities:0 on real
+    // runs), so the SERVER reads the names from the sheet using the layout keys
+    // the model DOES report. Names come from real cells; the curve is untouched.
+    // Called by: parseWithGemini() → fillActivityNames() → namesFromAiLayout().
+    public function test_parse_gemini_fills_activity_names_from_the_sheet(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        // Deliberately NO "activities" anywhere — the exact shape the live model
+        // returns for Excel.
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 25],
+                ['month_index' => 2, 'planned_progress_percent' => 50],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 100000],
+                ['month_index' => 2, 'pesos' => 100000],
+                ['month_index' => 3, 'pesos' => 200000],
+            ],
+            'contractAmount' => 400000,
+            'hasSummaryRow' => false,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+                ['month_index' => 3, 'columns' => ['D']],
+            ],
+            'descCol' => 'A',
+            'contractCol' => 'E',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [
+                    ['content' => ['parts' => [['text' => $aiText]]]],
+                ],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeCostedNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        $response = $this->actingAs($admin)
+            ->post('/admin/s-curve/parse-gemini', ['file' => $upload])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $months = $response->json('months');
+        $this->assertNotEmpty($months);
+        // 'Ground Works' is the only activity row in the novel workbook, and it
+        // carries a value in every month.
+        foreach ($months as $month) {
+            $this->assertNotEmpty(
+                $month['activities'] ?? [],
+                "Month {$month['month_index']} should have been named from the sheet"
+            );
+            $this->assertContains('Ground Works', $month['activities']);
+        }
+        // The AI's curve is untouched by naming.
+        $this->assertSame(25.0, (float) $months[0]['planned_progress_percent']);
+        $this->assertSame(100.0, (float) $months[2]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
+    // Derived math (user decision 2026-09-12) — when the AI's numbers disagree with
+    // the file's own activity rows, the SHEET wins. Live precedent: the 10-month
+    // file came back 40/60/70 for months 5-7 where the rows say 50/70/80, and the
+    // AI's "Checked" verdict still passed. The AI's verdicts are dropped with its
+    // arithmetic; the recompute is announced, never silent.
+    // Called by: parseWithGemini() → applyDerivedLayout().
+    public function test_parse_gemini_prefers_sheet_math_when_ai_numbers_diverge(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        // Wrong curve (true math on this workbook is 25/50/100), right layout.
+        $aiText = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 10],
+                ['month_index' => 2, 'planned_progress_percent' => 20],
+                ['month_index' => 3, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+            'headerRow' => 1,
+            'monthColumns' => [
+                ['month_index' => 1, 'columns' => ['B']],
+                ['month_index' => 2, 'columns' => ['C']],
+                ['month_index' => 3, 'columns' => ['D']],
+            ],
+            'descCol' => 'A',
+            // The denominator the gate requires before sheet math may win.
+            'contractCol' => 'E',
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => $aiText]]]]],
+            ], 200),
+        ]);
+
+        $admin = $this->makeUser('admin');
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeCostedNovelWorkbook($path);
+        $upload = new UploadedFile($path, 'novel.xlsx', null, null, true);
+
+        $response = $this->actingAs($admin)
+            ->post('/admin/s-curve/parse-gemini', ['file' => $upload])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $months = $response->json('months');
+        $this->assertSame(25.0, (float) $months[0]['planned_progress_percent'], 'sheet math must win');
+        $this->assertSame(50.0, (float) $months[1]['planned_progress_percent']);
+        $this->assertSame(100.0, (float) $months[2]['planned_progress_percent']);
+
+        $warnings = $response->json('meta.warnings');
+        $this->assertTrue(
+            collect($warnings)->contains(fn ($w) => str_contains($w, 'recomputed from the sheet')),
+            'the recompute must be announced'
+        );
+        $this->assertFalse(
+            collect($warnings)->contains(fn ($w) => str_contains($w, 'learned layout')),
+            'no approved layout was used, so that note must not appear'
+        );
+
+        // Learning still happens: the derived map is banked for approval.
+        $this->assertNotNull(ScurveHeaderProposal::where('source', 'ai-derived')->first());
 
         unlink($path);
     }

@@ -170,7 +170,7 @@
                    names. ⇒ the long-documented "19.99-style dust" is gone in the
                    real app, not just in probes. ✅
 
-  GAPS FOUND (neither is a regression; both pre-date P3 — unordered, no code)
+  GAPS FOUND — BOTH FIXED 2026-09-12 (user-ordered; see the fix notes under each)
     GAP 1 — Excel AI returns no activity names. buildSCurveExcelPrompt asks for
       {"months":[{month_index, planned_progress_percent}], "monthlyAmounts",
       "summary", "hasSummaryRow", "contractAmount"} and never requests names,
@@ -178,6 +178,48 @@
       key to the Excel prompt + thread names through validateSCurveMonths with
       the SAME discipline the PDF path uses (names must appear in the sheet text;
       unmatched are dropped). Model-independent — proven on two models.
+      ⚠️ FIRST ATTEMPT FAILED (prompt-only, 2026-09-12): asking for "activities"
+      per month changed nothing — the live log read monthsWithActivities:0 on real
+      runs even after the prompt's worked EXAMPLE was corrected to include the key
+      (the example had contradicted the instruction; fixing it was necessary but
+      not sufficient). The model simply will not emit that nested key here, and it
+      dropped contractAmount from the same reply — a sign it economises on output,
+      so asking for MORE output was the wrong direction.
+      ✅ FIXED PROPERLY 2026-09-12 — the SERVER reads the sheet instead:
+      SCurveImportService::parseWithAiLayout() derives a map from the layout keys
+      the model DOES report reliably (descCol/monthColumns/headerRow — present in
+      every logged reply), parses the sheet with it, and the controller
+      (applyDerivedLayout) attaches those names. Real cells: hallucination is
+      impossible by construction, and it works even when the model omits names
+      entirely. The AI's own per-month "activities" are still honoured when present
+      (printed-words checked), so the PDF path and compliant replies are unchanged.
+      +2 service tests, +1 endpoint test.
+
+  DERIVED MATH — the same map also CORRECTS the curve (user decision 2026-09-12)
+    Found while proving GAP 1: on the 10-month file the model returned 40/60/70
+    for months 5-7 where the sheet's rows say 50/70/80, and it STILL printed
+    "Checked: these months follow from the stated monthly amounts". Both homework
+    guards passed because they check the answer against ITSELF and against any
+    number in the sheet: the invented amounts (400,000 / 200,000) exist in the
+    sheet as BUDGET COST figures. The code's own docblock predicted this —
+    "Pollution (budget costs) can only false-pass, never false-decline".
+    Meanwhile the derived map computed the TRUE curve (verified read-only). So the
+    system held the right answer and displayed the wrong one.
+    Fix: when the derived map's math differs from the AI's by >1.0, the SHEET wins
+    and says so; the AI's verdicts are dropped with its arithmetic (they described
+    numbers no longer on screen) and the map parse's own summary comparisons take
+    their place. The misleading "learned layout for this contractor" note is
+    filtered — no approved layout was involved. Learning stays approval-gated: a
+    separate meta flag is used so learnMapFromAi still banks the proposal.
+    GATE (caught by the tests, would have been a real downgrade): sheet math is
+    preferred ONLY when the parse found a real denominator (contractAmount > 0)
+    and covers every month the AI reported. Without a contract column or TOTAL row
+    the parse falls back to weights and can yield a degenerate 0/0/100 — its NAMES
+    still ride, its numbers stay out. +1 endpoint test.
+    NOTE: this lets an UNAPPROVED derived map influence the displayed curve. It is
+    a reviewed preview, gated as above, and Apply stays manual — but it is a real
+    move of the trust boundary. The warn-only variant is the fallback if it ever
+    feels too eager.
     GAP 2 — no HEADER tag ⇒ no AI layout learning. When the rule detector cannot
       find the header, serializeForAi tags every row [DATA], so the AI has no
       R-number to report and E1-B declines with "no-header-row". Exactly the
@@ -185,6 +227,53 @@
       automatically. Options: (a) prompt nudge to report headerRow even when no
       row is tagged HEADER; (b) infer headerRow server-side from the AI's own
       descCol/monthColumns letters; (c) leave it to manual teach (works today).
+      ✅ FIXED 2026-09-12 with (a) AND (b): the prompt now says the labels often
+      sit on a row tagged DATA because the tagger missed the table, and that row
+      still counts. Independently, an ABSENT headerRow no longer refuses —
+      inferHeaderRowKey() reads the REAL cells at the columns the AI DID name and
+      keeps the first row that reads like LABELS there (text, never numbers, in
+      the description column and in ≥2 month columns). A data row fails on sight
+      because its month cells hold amounts. Nothing is guessed: with no such row
+      the derivation still refuses, now naming the gate 'header-row-unfindable'.
+      The explicit-headerRow path is untouched, and an inferred map comes out
+      IDENTICAL to the one the model naming the row produces (asserted).
+      +2 tests. NOTE: the old 'no-header-row' reason is now unreachable — a
+      declined derivation says 'header-row-unfindable' instead.
+
+===============================================================================
+  MODEL PROVENANCE (asked + answered 2026-09-12 — read before blaming code)
+===============================================================================
+
+  User question: "the Excel AI fallback computed month 5 correctly BEFORE the PDF
+  work started — why is it wrong now?" Investigated read-only; answer in three
+  parts, none of which is the PDF work:
+
+  1. The double-check EXISTS and is not new: validateSCurveMonths runs the
+     recompute check (monthsFollowAmounts — months must follow from the AI's own
+     stated amounts) plus the presence audit (amountsPresentInSheet). It is what
+     replaced the Lite-era summary copying.
+  2. It has a KNOWN blind spot, documented in its own docblock: both guards test
+     the answer against itself and against any number in the sheet, never against
+     the RIGHT cells. Budget-cost pollution can false-pass. The 10-month file is
+     the pathological case (its BUDGET COST column holds 400,000 / 200,000).
+     The new derived-map cross-check is the first guard that tests against real
+     cells — it closes exactly this hole.
+  3. The PDF work did NOT touch the Excel path. Verified per commit: 5fd1457,
+     edbefc5 and 1efc186 changed ZERO lines in buildSCurvePrompt /
+     validateSCurveMonths / monthsFollowAmounts / amountsPresentInSheet, and the
+     two matching lines in d11f481 are both ADDITIONS inside the new PDF code.
+  4. What DID change: the parser model. config/services.php still carries the E3
+     comment "pinned gemini-2.5-flash per user", but the live config reads
+     parser_model = gemini-3.7-flash (key switched after a rate limit).
+     Long multi-series arithmetic is exactly what shifts between models.
+     Also honest: the 2026-09-12 prompt edits lengthened that prompt, which can
+     perturb output on its own (one reply dropped contractAmount entirely).
+     Model change, prompt change and plain run-to-run variance cannot be cleanly
+     separated from the evidence available.
+
+  USER DECISION 2026-09-12: stay on gemini-3.7-flash, because the derived-map
+  cross-check now backstops its arithmetic against real cells. Recorded here so a
+  future session knows which model the proofs below ran on.
 
 ===============================================================================
   RELIABILITY PROBES (Gemini weather, Sept 11)
