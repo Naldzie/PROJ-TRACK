@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT (browser proof pending) · STAGE 2 (E1-PDF) ⬜ NOT STARTED
+# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT + BROWSER-PROVEN · STAGE 2 (E1-PDF) ⬜ NOT STARTED (RE-SCOPE FIRST)
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -435,6 +435,22 @@
     - NOT YET BROWSER-PROVEN: re-import the three specimens and confirm the
       month lists show the real names. Node ran the same pure core the browser
       loads, so the risk is low, but DOM proof is the standing rule.
+
+  2026-09-12 — P3 BROWSER-PROVEN + parity sweep (user; full record in
+  pdf_ai_loop_proof_tests.md Script 4). 6-stage PDF recognized on FIRST import
+  with real names and NO import note; 10-month PDF exact with the dust gone;
+  SEGMENT PDF rule re-read identical to the AI after approving one word. Two
+  pre-existing gaps surfaced (both Excel-side, neither a regression): the Excel
+  AI prompt never asks for activity names (GAP 1), and a file whose header the
+  detector cannot find gets every row tagged [DATA], so the AI has no headerRow
+  to report and E1-B declines with "no-header-row" (GAP 2).
+
+  RE-SCOPE NOTE for Stage 2 (raised 2026-09-12, undecided): with P3 landed, the
+  offline PDF reader now matches the AI on all three specimens, so E1-PDF's value
+  has narrowed to files the rules cannot detect AT ALL (the Roof family, which
+  still returns null). Decide scope with the user before building four phases —
+  PDF-1+PDF-2 alone may be the whole win, and GAP 2 suggests the capture story
+  needs the header question answered first.
 
   2026-09-12 — Specimen verified + P3 root-caused (read-only probes):
     Excel truth dumped via PhpSpreadsheet; the PDF run through the real core in

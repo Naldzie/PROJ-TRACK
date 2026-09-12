@@ -122,6 +122,71 @@
     Fix spec + fixtures: textfiles/document_parser_pdf_layout_learning_plan.md §3.
 
 ===============================================================================
+  SCRIPT 4 — P3 BROWSER PROOF + EXCEL/PDF PARITY SWEEP (user, Sept 12)
+===============================================================================
+
+  All runs on the project-detail Baseline tab. AI was intermittently 503 during
+  the session (upstream weather, see the reliability probes below).
+
+  SEGMENT PDF
+    AI assist    : 5/20/40/65/100 + real names + Checked note. ✅
+    Rule re-read : IDENTICAL to the AI after approving ONE word (SEGMENT 1).
+                   ⇒ P3 + F-D word learning proven together in the browser.
+
+  SEGMENT EXCEL
+    AI assist    : curve correct (5/20/40/65/100) but NO activity names — see
+                   GAP 1 below (prompt omission, not a model failure).
+    Auto-capture : row stored with column_map NULL.
+    E1-B         : ran and DECLINED, reason "no-header-row" (log evidence).
+                   Root cause: serializeForAi tagged every row [DATA] — the role
+                   tagger uses the same detector as the rule reader, which does
+                   not know SEGMENT, so the slice showed the AI no HEADER row and
+                   the AI (correctly) omitted headerRow. See GAP 2.
+    Manual teach : taught columns → re-import parses with the learned-layout note
+                   and the CORRECT names. ✅ The designed human fallback works.
+
+  6-STAGE PDF
+    Rule read    : recognized on FIRST import, NO import note, exact curve
+                   5/20/40/60/80/100 with REAL names and the Excel-matching split
+                   (1,2,1,2,1,1). ✅ P3 in the browser.
+    AI crosscheck: same curve; adds the honest "matches the file's own summary
+                   exactly — could not be independently verified" note (the file
+                   does carry CUMULATIVE % ACHIEVED with those very values).
+    No keyword learning fired — CORRECT: STAGE is a built-in month word and the
+    harvester deliberately skips words the rules already know.
+
+  6-STAGE EXCEL
+    Rules missed → AI assist: curve correct, again NO activity names (GAP 1).
+    Retested on a second key/model (flash-latest vs 3.6-flash): identical, which
+    confirms GAP 1 is a PROMPT omission, not model weather.
+    Auto-capture : column_map NOT null; E1-B logged "learned map" for proposals
+                   41 and 42. ⇒ layout learning works end-to-end here.
+    Approved (no manual teach) → re-import reads with the learned layout AND real
+    names (1,2,1,2,1,1). ✅ Note the inversion worth remembering: the LAYOUT path
+    recovers activity names that the AI path does not report.
+
+  10-MONTH PDF
+    Rule read    : no import note, exact 5/10/20/30/50/70/80/90/95/100 with real
+                   names. ⇒ the long-documented "19.99-style dust" is gone in the
+                   real app, not just in probes. ✅
+
+  GAPS FOUND (neither is a regression; both pre-date P3 — unordered, no code)
+    GAP 1 — Excel AI returns no activity names. buildSCurveExcelPrompt asks for
+      {"months":[{month_index, planned_progress_percent}], "monthlyAmounts",
+      "summary", "hasSummaryRow", "contractAmount"} and never requests names,
+      while the PDF prompt asks for "activities" per month. Fix shape: add the
+      key to the Excel prompt + thread names through validateSCurveMonths with
+      the SAME discipline the PDF path uses (names must appear in the sheet text;
+      unmatched are dropped). Model-independent — proven on two models.
+    GAP 2 — no HEADER tag ⇒ no AI layout learning. When the rule detector cannot
+      find the header, serializeForAi tags every row [DATA], so the AI has no
+      R-number to report and E1-B declines with "no-header-row". Exactly the
+      files that most need layout learning are the ones that cannot get it
+      automatically. Options: (a) prompt nudge to report headerRow even when no
+      row is tagged HEADER; (b) infer headerRow server-side from the AI's own
+      descCol/monthColumns letters; (c) leave it to manual teach (works today).
+
+===============================================================================
   RELIABILITY PROBES (Gemini weather, Sept 11)
 ===============================================================================
 
