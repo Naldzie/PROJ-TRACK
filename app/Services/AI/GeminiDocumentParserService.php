@@ -1455,6 +1455,12 @@ class GeminiDocumentParserService
      * keys (B-1 learn-from-AI) stay optional — older or terse replies without
      * them still validate; derivation simply skips.
      *
+     * WATCH THIS WHEN THE PROMPT GROWS (lesson, 2026-09-12): this schema is the
+     * contract, not the prompt. Asking for a key the schema does not declare is
+     * silently futile — activity names were requested for a day, and dropped every
+     * time, before anyone read this method. Any new key the prompt asks for must
+     * be added here too.
+     *
      * Called by: callGeminiText()
      */
     private function scurveResponseSchema(): array
@@ -1470,10 +1476,20 @@ class GeminiDocumentParserService
             ];
         };
 
+        // Months carry an extra, OPTIONAL key the other two series must not have.
+        // Structured output drops anything undeclared, so before this the Excel
+        // reply could never contain activity names however the prompt asked —
+        // the PDF sender ships no schema at all, which is why it always could.
+        $monthPoint = $point('planned_progress_percent', 'NUMBER');
+        $monthPoint['properties']['activities'] = [
+            'type' => 'ARRAY',
+            'items' => ['type' => 'STRING'],
+        ];
+
         return [
             'type' => 'OBJECT',
             'properties' => [
-                'months' => ['type' => 'ARRAY', 'items' => $point('planned_progress_percent', 'NUMBER')],
+                'months' => ['type' => 'ARRAY', 'items' => $monthPoint],
                 'monthlyAmounts' => ['type' => 'ARRAY', 'items' => $point('pesos', 'NUMBER')],
                 'summary' => ['type' => 'ARRAY', 'items' => $point('percent', 'NUMBER')],
                 'hasSummaryRow' => ['type' => 'BOOLEAN'],

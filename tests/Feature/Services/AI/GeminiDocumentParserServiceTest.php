@@ -1285,6 +1285,44 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertCount(2, $out['months']);
     }
 
+    // GAP 1 ROOT CAUSE — the Excel path sends a responseSchema, and structured
+    // output drops every undeclared key, so asking the prompt for "activities"
+    // was futile until the schema declared it. Every other test here feeds decoded
+    // JSON straight to the validator, which is exactly how this hid for a day:
+    // this one inspects what actually goes OUT on the wire.
+    // Called by: callGeminiText() via scurveResponseSchema().
+    public function test_excel_request_schema_allows_activity_names_on_months_only(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+
+        $this->fakeSuccess(json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 50],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+        ]));
+
+        (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+
+        Http::assertSent(function ($request) {
+            $schema = $request->data()['generationConfig']['responseSchema'] ?? null;
+            if (!is_array($schema)) {
+                return false;
+            }
+            $months = $schema['properties']['months']['items']['properties'] ?? [];
+            $amounts = $schema['properties']['monthlyAmounts']['items']['properties'] ?? [];
+            $summary = $schema['properties']['summary']['items']['properties'] ?? [];
+
+            return array_key_exists('activities', $months)
+                // The other two series share the point builder and must stay clean.
+                && !array_key_exists('activities', $amounts)
+                && !array_key_exists('activities', $summary)
+                // Names are optional: a reply without them is still a valid curve.
+                && !in_array('activities', $schema['properties']['months']['items']['required'] ?? [], true);
+        });
+    }
+
     // GAP 1 — the Excel prompt now asks for activity names, and names printed in
     // the sheet ride along with their month (parity with the PDF path).
     // Called by: parseExcelSlice() via validateSCurveMonths().

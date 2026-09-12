@@ -465,6 +465,11 @@
       monthsWithActivities:0 even after the worked example was corrected). Fixed by
       having the SERVER read the sheet with the layout the model DOES report —
       parseWithAiLayout() + applyDerivedLayout(). See pdf_ai_loop_proof_tests.md.
+      CORRECTION 2026-09-12 (same day): the prompt route failed because the Excel
+      responseSchema never DECLARED "activities" — structured output drops
+      undeclared keys, so it was impossible, not refused. The schema now declares
+      it (optional, months only). The earlier "the model won't emit it" reading
+      recorded here and in commit ac9583b was wrong; full account in the proof file.
     - DERIVED MATH added with it (user decision): when that map's math differs from
       the AI's by >1.0 the sheet wins, gated on a real denominator + full month
       coverage. Caught by the tests: without the gate a degenerate 0/0/100 curve

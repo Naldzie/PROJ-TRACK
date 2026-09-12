@@ -178,14 +178,33 @@
       key to the Excel prompt + thread names through validateSCurveMonths with
       the SAME discipline the PDF path uses (names must appear in the sheet text;
       unmatched are dropped). Model-independent — proven on two models.
-      ⚠️ FIRST ATTEMPT FAILED (prompt-only, 2026-09-12): asking for "activities"
+      ⚠️ FIRST ATTEMPTS FAILED (prompt-only, 2026-09-12): asking for "activities"
       per month changed nothing — the live log read monthsWithActivities:0 on real
-      runs even after the prompt's worked EXAMPLE was corrected to include the key
-      (the example had contradicted the instruction; fixing it was necessary but
-      not sufficient). The model simply will not emit that nested key here, and it
-      dropped contractAmount from the same reply — a sign it economises on output,
-      so asking for MORE output was the wrong direction.
-      ✅ FIXED PROPERLY 2026-09-12 — the SERVER reads the sheet instead:
+      runs, both before and after the prompt's worked EXAMPLE was corrected to
+      include the key.
+      ❗ ROOT CAUSE, FOUND 2026-09-12 WHILE ANSWERING A DIFFERENT QUESTION — and it
+      corrects what this file said first: **the response SCHEMA forbade the key.**
+      callGeminiText sends generationConfig.responseSchema (structured output), and
+      scurveResponseSchema() built month items from
+      $point('planned_progress_percent','NUMBER') — exactly two declared
+      properties. Gemini drops every undeclared key, so "activities" was
+      STRUCTURALLY IMPOSSIBLE on this path no matter what the prompt or the example
+      said. callGeminiWithImages sends NO generationConfig at all, which is the
+      whole reason the PDF path returns names and Excel never could.
+      The earlier explanations recorded here — "the worked example overrode the
+      instruction" and "the model simply will not emit that nested key" — were
+      WRONG, and were written into commit ac9583b's message too. The model was
+      obeying a contract nobody had read.
+      ✅ SCHEMA FIXED: months items now declare an optional
+      activities: ARRAY<STRING> (monthlyAmounts/summary deliberately do NOT — they
+      share the point builder). +1 test that inspects the OUTGOING request, since
+      every other test feeds decoded JSON to the validator and bypasses the schema
+      entirely — which is precisely how this hid for a day.
+      LESSON BANKED: on the Excel path the SCHEMA is the contract, not the prompt.
+      Any new key the prompt asks for must be declared there too, or it is dropped
+      in silence.
+      ✅ ALSO FIXED 2026-09-12 (independent second source) — the SERVER reads the
+      sheet:
       SCurveImportService::parseWithAiLayout() derives a map from the layout keys
       the model DOES report reliably (descCol/monthColumns/headerRow — present in
       every logged reply), parses the sheet with it, and the controller
@@ -274,6 +293,22 @@
   USER DECISION 2026-09-12: stay on gemini-3.7-flash, because the derived-map
   cross-check now backstops its arithmetic against real cells. Recorded here so a
   future session knows which model the proofs below ran on.
+
+  SENDERS, FALLBACK AND SCHEMA (asked 2026-09-12: "does the Excel parser fall back
+  to Lite the way the normal-doc one does?" — answer: NO, it cannot):
+
+    path                     sender                    Lite rescue   responseSchema
+    ----------------------------------------------------------------------------
+    normal-doc autofill      callGeminiWithImages()    YES (default) none
+    PDF S-curve              callGeminiWithImages(,f)  NO (reverted) none
+    Excel S-curve            callGeminiText()          NONE AT ALL   YES (enforced)
+
+  Two consequences worth remembering:
+  - The Lite-copies-the-summary failure class (proven on PDFs, Sept 11) CANNOT
+    reach the Excel path: callGeminiText has no fallback code whatsoever.
+  - The Excel path is the only schema-constrained one, so it is the only path
+    where a prompt can ask for something the reply is structurally forbidden to
+    contain. That is what GAP 1 turned out to be.
 
 ===============================================================================
   RELIABILITY PROBES (Gemini weather, Sept 11)
