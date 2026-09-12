@@ -89,6 +89,34 @@ export function normalizeSCurveMonths(months, startDate, endDate) {
 }
 
 /**
+ * Month labels that ended up on the same date after normalization.
+ *
+ * normalizeSCurveMonths dates each month as start + (index - 1) and PINS any
+ * month that would fall past the project's end date onto that end date. So a
+ * schedule file carrying more months than the project's dates allow silently
+ * lands two months on one label — seen live 2026-09-12: a 10-month file on a
+ * project ending March 2026 rendered #9 and #10 both as "March 2026".
+ *
+ * That matters beyond looks: month labels are keys downstream (activity
+ * reloads, the manage-month modal, progress recording) and the S-curve would
+ * plot two points on one x, so applying such a baseline stores a collision.
+ * Callers warn on a non-empty result instead of letting the clamp pass in
+ * silence — the real fix is the project's dates, which only the user can set.
+ */
+export function duplicateMonthLabels(months) {
+    var seen = {};
+    var duplicates = [];
+    (Array.isArray(months) ? months : []).forEach(function (m) {
+        var label = (m && m.month_label) ? String(m.month_label) : '';
+        if (!label) return;
+        if (seen[label] && duplicates.indexOf(label) === -1) duplicates.push(label);
+        seen[label] = true;
+    });
+
+    return duplicates;
+}
+
+/**
  * Duration-shaped month labels ("30 days", "7 days") carry no month index —
  * banking one as a learned month word could never fire. The F-D harvester
  * skips them so the review desk never fills with junk (B guard).
@@ -196,5 +224,6 @@ if (typeof window !== 'undefined') {
         normalizeSCurveMonths,
         generateAutoSCurve,
         isDurationShapedLabel,
+        duplicateMonthLabels,
     };
 }

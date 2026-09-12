@@ -298,8 +298,18 @@
     reloads, manage-month modal, progress recording) and the S-curve would plot
     two points on one x. A project whose dates are shorter than its schedule file
     can therefore produce a colliding baseline with nothing on screen explaining
-    why. Guard queued: detect duplicate labels after normalizing (pure helper in
-    scurve-import-core.js) and warn through the existing stash.
+    why.
+    ✅ GUARD BUILT 2026-09-12 (same session): duplicateMonthLabels() — pure,
+    exported, node-tested — reports labels that ended up shared, and
+    scurveStashWarnings (which now takes the normalized months) turns a non-empty
+    result into an in-modal note: "this file has more months than the project's
+    dates allow, so N months landed on a date already used (…). Check the project
+    start and end dates before locking…". The clamp itself is UNCHANGED — only its
+    silence is fixed, because the real remedy is the project's dates and only the
+    user can set those. +2 JS fixtures (clamped case names the shared label;
+    well-spaced months and date-less labels stay quiet). Browser proof pending:
+    re-import a 10-month file into a project ending March 2026 and the note must
+    appear; with April it must not.
 
 ===============================================================================
   MODEL PROVENANCE (asked + answered 2026-09-12 — read before blaming code)

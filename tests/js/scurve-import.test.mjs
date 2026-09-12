@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     addCalendarMonths,
+    duplicateMonthLabels,
     formatDateInput,
     isDurationShapedLabel,
     isSCurveCandidate,
@@ -113,6 +114,44 @@ test('isDurationShapedLabel spots index-less duration labels only', () => {
     assert.equal(isDurationShapedLabel('Month 1'), false);
     assert.equal(isDurationShapedLabel(''), false);
     assert.equal(isDurationShapedLabel(null), false);
+});
+
+// Live 2026-09-12: a 10-month file on a project ending March 2026 rendered #9 and
+// #10 both as "March 2026" — normalizeSCurveMonths pins any month past the end
+// date ONTO it. Applying that stores two rows on one label, and labels are keys
+// downstream, so the clamp must stop being silent.
+test('duplicateMonthLabels catches months clamped onto the project end date', () => {
+    const months = normalizeSCurveMonths(
+        [
+            { month_index: 1, planned_progress_percent: 50 },
+            { month_index: 2, planned_progress_percent: 80 },
+            { month_index: 3, planned_progress_percent: 100 },
+        ],
+        '2026-01-01',
+        // Two months of room for a three-month file: month 3 lands on month 2.
+        '2026-02-28'
+    );
+
+    assert.equal(months[1].month_label, months[2].month_label, 'the clamp itself still happens');
+    assert.deepEqual(duplicateMonthLabels(months), ['2026-02']);
+});
+
+test('duplicateMonthLabels stays quiet when every month has its own slot', () => {
+    const months = normalizeSCurveMonths(
+        [
+            { month_index: 1, planned_progress_percent: 50 },
+            { month_index: 2, planned_progress_percent: 100 },
+        ],
+        '2026-01-01',
+        '2026-06-30'
+    );
+
+    assert.deepEqual(duplicateMonthLabels(months), []);
+    // No dates at all (labels fall back to "Month N") must not read as a clash.
+    assert.deepEqual(duplicateMonthLabels(normalizeSCurveMonths(
+        [{ month_index: 1, planned_progress_percent: 100 }], '', ''
+    )), []);
+    assert.deepEqual(duplicateMonthLabels(null), []);
 });
 
 test('normalizeSCurveMonths guards against non-array input', () => {

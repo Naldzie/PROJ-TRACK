@@ -136,7 +136,7 @@ function scurveShowWarnings(warnings, container) {
 // provenance note appended. Results merge for review — never auto-applied.
 // Called by: both import catch blocks (excel no-table failures only).
 
-function scurveStashWarnings(data) {
+function scurveStashWarnings(data, months) {
     // Shared stash helper for rule + AI success paths (E2 provenance appended here).
     // Idempotent: duplicate notes collapse ANYWHERE in the list (the service stamps
     // the generic AI note and this helper appends it again — non-consecutive twins
@@ -150,6 +150,23 @@ function scurveStashWarnings(data) {
         if (data && data.fallbackModel) {
             list.push('Answered by backup model — verify carefully.');
         }
+        // Clamped months (2026-09-12): when the file carries more months than the
+        // project's dates allow, normalizeSCurveMonths pins the overflow onto the
+        // end date and two months share a label — a collision if applied, and
+        // silent until now. Best-effort: never blocks the import.
+        try {
+            var importCore = window.scurveImportCore || null;
+            if (months && importCore && typeof importCore.duplicateMonthLabels === 'function') {
+                var clashing = importCore.duplicateMonthLabels(months);
+                if (clashing.length > 0) {
+                    list.push('Heads-up: this file has more months than the project\'s dates allow, so '
+                        + (clashing.length === 1 ? 'one month' : clashing.length + ' months')
+                        + ' landed on a date already used (' + clashing.slice(0, 3).join(', ') + ').'
+                        + ' Check the project start and end dates before locking, or those months'
+                        + ' will share a slot.');
+                }
+            }
+        } catch (e) { /* the note is a nicety — never block an import */ }
         var seen = {};
         var deduped = [];
         list.forEach(function (w) {
@@ -408,7 +425,7 @@ window._trySCurveAiAssist = async function () {
             var old = document.getElementById('scurveAiAssistWrap');
             if (old && old.remove) old.remove();
         } catch (e) {}
-        scurveStashWarnings(data);
+        scurveStashWarnings(data, months);
         if (ctx.flow === 'detail') {
             window.__setupModalContext = { mode: 'save-immediately', existingMonths: months };
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
@@ -607,7 +624,7 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
             scurveClearPdfAiLink();
             window._scurvePdfAiCtx = null;
         } catch (e) {}
-        scurveStashWarnings(data);
+        scurveStashWarnings(data, months);
         // F-D: the verified answer teaches novel month words (approval-gated).
         scurveHarvestPdfMonthLabels(data);
         if (ctx.flow === 'detail') {
@@ -838,7 +855,7 @@ function initCreateWizardSCurveImport() {
                 'Imported ' + months.length + ' baseline months from the S-curve file.',
                 'success'
             );
-            scurveStashWarnings(data);
+            scurveStashWarnings(data, months);
 
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
             // Cross-check is Excel-only (it replays the Excel endpoint, which
@@ -930,7 +947,7 @@ function initProjectDetailSCurveImport() {
             // Import notes travel into the setup modal (rendered there, cleared on close) —
             // never beside the button, never as a toast. Stash BEFORE opening: the modal
             // reads the stash at render time (shared helper appends AI provenance).
-            scurveStashWarnings(data);
+            scurveStashWarnings(data, months);
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
             scurveToast(
                 'Imported ' + months.length + ' baseline months. Review, then Done to lock.',
