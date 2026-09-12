@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture+consult BROWSER-PROVEN 2026-09-12 · PDF-3/4 ⬜
+# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ BROWSER-PROVEN · PDF-2 ✅ built (consult NOT browser-proven — see the corrected proof entry) · PDF-3/4 ⬜
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -23,10 +23,13 @@
     - P3 (merge-by-Y + the blank-token desc bound) BUILT and BROWSER-PROVEN
       2026-09-12: 6-stage and 10-month PDFs now read exactly on first upload,
       with real names, and the long-standing "19.99 dust" is gone.
-    - PDF-1 (capture) and PDF-2 (consult) BUILT and BROWSER-PROVEN 2026-09-12.
-      The PDF loop CLOSES: rules miss → silent capture → approve → the same file
-      reads 5/20/40/65/100 with real names and ZERO AI (SEGMENT specimen, live).
-      Desk badges, grid and approval all confirmed in the browser.
+    - PDF-1 (capture) BUILT and BROWSER-PROVEN 2026-09-12: rules miss → silent
+      capture → the desk row renders with its PDF/Mapped badges and grid.
+    - PDF-2 (consult) BUILT, core proven on the real file by node probe, but NOT
+      browser-proven: the live run that looked like proof was actually served by
+      LIVE MONTH WORDS (SEGMENT 1..5 auto-promoted at seen=3), so the map pass
+      never ran. To prove it: reject those words, keep the layout live, re-import
+      — and expect the "learned layout" note. See the corrected proof entry.
     - PDF-3 (learn-from-AI) and PDF-4 (teach) NOT started.
 
   ORDER OF WORK: PDF-3 → PDF-4 (P3, PDF-1 and PDF-2 are done), each proved
@@ -492,24 +495,42 @@
     - NOT browser-proven yet: capture POST, desk PDF badge, and the approve →
       re-import round trip. The core path is proven on the real file above.
 
-  2026-09-12 — E1-PDF BROWSER-PROVEN END TO END (user, SEGMENT PDF).
-    The loop the whole track was built for, run live with the keyword and layout
-    tables wiped first so nothing could be inherited from earlier tests:
-      1. AI assist → correct curve + names (the paid path still works).
-      2. Rules miss → SILENT CAPTURE. Desk row renders exactly as designed:
-         red PDF badge, blue Mapped badge, contractor "testcompany", seen 1x,
-         Auto-capture origin, Proposed status, and a readable mini-grid
-         (R1/R2 META, R3 HEADER = ITEM NO./DESCRIPTION/CONTRACT AMOUNT/% WEIGHT/
-         SEGMENT 1/SEGMENT 2, R4-R7 DATA, R8 SUMMARY = the TOTAL row).
-      3. APPROVE → re-import reads 5 / 20 / 40 / 65 / 100 with the true names
-         (Mobilization, Earthworks, Concrete and Masonry, Finishing x2 spanning
-         M4+M5) and NO AI CALL.
-    PDF-1 and PDF-2 are therefore browser-proven, not just suite-green: capture
-    POST, desk badges, grid rendering, approval and consult all confirmed live.
-    Excel capture re-verified in the same session after the wipe.
+  2026-09-12 — E1-PDF LIVE RUN + A CORRECTED PROOF CLAIM (user, SEGMENT PDF).
+    WHAT IS PROVEN (browser, tables wiped first so nothing was inherited):
+      - AI assist returns the correct curve + names (the paid path still works).
+      - Rules miss → SILENT CAPTURE. The desk row renders exactly as designed:
+        red PDF badge, blue Mapped badge, contractor "testcompany", seen 1x,
+        Auto-capture origin, Proposed status, and a readable mini-grid (R1/R2
+        META, R3 HEADER = ITEM NO./DESCRIPTION/CONTRACT AMOUNT/% WEIGHT/
+        SEGMENT 1/SEGMENT 2, R4-R7 DATA, R8 SUMMARY = the TOTAL row).
+        ⇒ PDF-1 capture, the endpoint, the badges and the grid are BROWSER-PROVEN.
+      - Approving the layout, then re-importing, reads 5/20/40/65/100 with the
+        true names and no AI call.
+    CLAIM CORRECTED THE SAME HOUR — that last read does NOT prove PDF-2.
+      This file first logged it as "E1-PDF browser-proven end to end". It is not.
+      The database shows five LIVE scurveMonth words (SEGMENT 1..5, seen=3,
+      source AI-assisted) that auto-promoted under the ≥3 rule during the day's
+      repeated AI runs. With those live, the RULES find the header on pass 1, the
+      map pass never runs, and mapUsed stays false — which is precisely why the
+      user saw NO import note. The zero-AI read is real, but it was delivered by
+      WORD learning (already proven earlier today), not by the newly approved
+      LAYOUT. PDF-2 consult remains BROWSER-UNPROVEN; its core path is proven
+      only by the node probe against the real file.
+      The absent note is therefore CORRECT behaviour, not the bug it looked like:
+      no map was consulted, so no map note. Nothing to fix there.
+    HOW TO ACTUALLY PROVE PDF-2 (next session, one run):
+      Reject the five live SEGMENT words in Learned Keywords, KEEP the approved
+      layout live, then re-import the SEGMENT PDF. The rules must miss, the map
+      must fire, and the modal must carry "read with a learned layout for this
+      contractor". If the curve comes back without that note, THEN something is
+      wrong — but only under those conditions.
+    LESSON: two learning channels now read the same file, so a zero-AI read no
+    longer identifies WHICH one worked. Isolate the channel under test (wipe or
+    reject the other) before claiming a proof, and read meta.mapUsed rather than
+    inferring from the curve being right.
     STILL PAGE-1 ONLY IN THE GRID: the teach surface shows SEGMENT 1-2 while the
     stored map holds 3,4,5 as well. The map is complete; only the human-facing
-    grid is single-page, which is PDF-4's job (see its scope note).
+    grid is single-page, which is PDF-4's job.
     OPEN QUESTION for the next session: the user's paste of the post-approval run
     carried no import notes, and a map-built curve is supposed to announce itself
     ("read with a learned layout for this contractor"). The wiring reads sound —
