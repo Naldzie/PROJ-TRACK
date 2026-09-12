@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ capture · PDF-2 ✅ consult (core proven; browser proof pending) · PDF-3/4 ⬜
+# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture+consult BROWSER-PROVEN 2026-09-12 · PDF-3/4 ⬜
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -22,12 +22,10 @@
       reader parse the TRUE curve with zero AI.
     - P3 (merge-by-Y + the blank-token desc bound) BUILT and BROWSER-PROVEN
       2026-09-12: 6-stage and 10-month PDFs now read exactly on first upload,
-      with real names, and the long-standing "19.99 dust" is gone.
-    - PDF-1 (capture) and PDF-2 (consult) BUILT 2026-09-12. The PDF loop closes:
-      an unreadable layout is captured, and once approved the SAME file parses
-      with zero AI (proven on the SEGMENT specimen: 5/20/40/65/100 with real
-      names). NOT browser-proven: the capture POST, the desk PDF badge, and the
-      approve → re-import round trip.
+    - PDF-1 (capture) and PDF-2 (consult) BUILT and BROWSER-PROVEN 2026-09-12.
+      The PDF loop CLOSES: rules miss → silent capture → approve → the same file
+      reads 5/20/40/65/100 with real names and ZERO AI (SEGMENT specimen, live).
+      Desk badges, grid and approval all confirmed in the browser.
     - PDF-3 (learn-from-AI) and PDF-4 (teach) NOT started.
 
   ORDER OF WORK: PDF-3 → PDF-4 (P3, PDF-1 and PDF-2 are done), each proved
@@ -492,6 +490,32 @@
       same 7 pre-existing; all 16 sample-PDF rule reads byte-IDENTICAL.
     - NOT browser-proven yet: capture POST, desk PDF badge, and the approve →
       re-import round trip. The core path is proven on the real file above.
+
+  2026-09-12 — E1-PDF BROWSER-PROVEN END TO END (user, SEGMENT PDF).
+    The loop the whole track was built for, run live with the keyword and layout
+    tables wiped first so nothing could be inherited from earlier tests:
+      1. AI assist → correct curve + names (the paid path still works).
+      2. Rules miss → SILENT CAPTURE. Desk row renders exactly as designed:
+         red PDF badge, blue Mapped badge, contractor "testcompany", seen 1x,
+         Auto-capture origin, Proposed status, and a readable mini-grid
+         (R1/R2 META, R3 HEADER = ITEM NO./DESCRIPTION/CONTRACT AMOUNT/% WEIGHT/
+         SEGMENT 1/SEGMENT 2, R4-R7 DATA, R8 SUMMARY = the TOTAL row).
+      3. APPROVE → re-import reads 5 / 20 / 40 / 65 / 100 with the true names
+         (Mobilization, Earthworks, Concrete and Masonry, Finishing x2 spanning
+         M4+M5) and NO AI CALL.
+    PDF-1 and PDF-2 are therefore browser-proven, not just suite-green: capture
+    POST, desk badges, grid rendering, approval and consult all confirmed live.
+    Excel capture re-verified in the same session after the wipe.
+    STILL PAGE-1 ONLY IN THE GRID: the teach surface shows SEGMENT 1-2 while the
+    stored map holds 3,4,5 as well. The map is complete; only the human-facing
+    grid is single-page, which is PDF-4's job (see its scope note).
+    OPEN QUESTION for the next session: the user's paste of the post-approval run
+    carried no import notes, and a map-built curve is supposed to announce itself
+    ("read with a learned layout for this contractor"). The wiring reads sound —
+    importPDFSCurve returns {months, meta} and scurveStashWarnings(data, months)
+    reads data.meta.warnings — so this may simply be an unpasted section. CONFIRM
+    before assuming either way; if the note is genuinely absent, the map-built
+    read is silent, which is exactly what the Excel path refuses to be.
 
   2026-09-12 — PDF-1 CORRECTED for column-split tables (user catch).
     USER CORRECTION: the roof has a SEVENTH month labelled "7 days", on page 2
