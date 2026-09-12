@@ -17,10 +17,11 @@
 //
 // EXPOSES:
 //   window.loadLearnedKeywords()      → Promise<{ labels: { field: [phrase] } }>
+//   window.loadLiveScurveLayouts()    → Promise<[{ id, contractorId, map }]>  (PDF layouts)
 //   window.bustLearnedKeywordsCache() → drops the cached set (approve/reject)
 //
 // CALLED BY: document-parser.js (runDocumentAutofill), scurve-pdf-parser.js
-//            (parseSCurvePdfFile), _manage_parser_keywords_modal.blade.php.
+//            (parseSCurvePdfFile — words AND layouts), the review desks.
 // ===================================================
 
 (function () {
@@ -87,6 +88,51 @@
         return _inflight;
     }
 
+
+    // PDF-2 — live S-curve LAYOUTS (scurve_header_proposals rows with
+    // status=live). Same desk, same roles, same best-effort contract as the words
+    // above: any failure yields [] and the reader behaves exactly as it does with
+    // nothing approved. Memoized per page load for the same reason — a layout
+    // approved in another tab should not need a TTL to appear, just a refresh.
+    // Shape: [{ id, contractorId, map }] filtered to PDF rows carrying a map.
+    // Called by: scurve-pdf-parser.js (parseSCurvePdfFile).
+    var _mapMemo = null;
+    var _mapInflight = null;
+
+    async function fetchLiveLayouts() {
+        try {
+            const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+            if (path.indexOf('/contractor/') !== -1) return [];
+            const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+            const res = await fetch(base + '/scurve-header-proposals/all?status=live', {
+                headers: { 'Accept': 'application/json' },
+            });
+            if (!res || !res.ok) return [];
+            const rows = await res.json();
+            const out = [];
+            for (const r of (rows || [])) {
+                // PDF rows only: an Excel map addresses spreadsheet columns and
+                // would be meaningless (and dangerous) against page geometry.
+                if (!r || r.source_type !== 'pdf' || !r.column_map) continue;
+                out.push({ id: r.id, contractorId: r.contractor_id || null, map: r.column_map });
+            }
+            return out;
+        } catch (e) { return []; }
+    }
+
+    async function loadLiveScurveLayouts() {
+        if (_mapMemo) return _mapMemo;
+        if (!_mapInflight) {
+            _mapInflight = fetchLiveLayouts()
+                .then(function (rows) {
+                    if (rows.length > 0) _mapMemo = rows;
+                    return rows;
+                })
+                .finally(function () { _mapInflight = null; });
+        }
+        return _mapInflight;
+    }
+
     // Drop the remembered word set so the very next import re-reads the server.
     // Called by the review desk right after a successful approve/reject: a server
     // write the browser cannot otherwise see would keep serving the pre-approval
@@ -95,11 +141,14 @@
     function bustLearnedKeywordsCache() {
         _memo = null;
         _inflight = null;
+        _mapMemo = null;
+        _mapInflight = null;
         for (var i = 0; i < LEGACY_KEYS.length; i++) {
             try { sessionStorage.removeItem(LEGACY_KEYS[i]); } catch (e) { /* best-effort */ }
         }
     }
 
     window.loadLearnedKeywords = loadLearnedKeywords;
+    window.loadLiveScurveLayouts = loadLiveScurveLayouts;
     window.bustLearnedKeywordsCache = bustLearnedKeywordsCache;
 })();

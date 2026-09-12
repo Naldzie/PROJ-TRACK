@@ -755,3 +755,97 @@ test('a positional split is captured WITHOUT a map instead of guessed', () => {
     assert.equal(out.map, null, 'an unknowable numbering must not be invented');
     assert.match(out.block, /^COLUMNS: /, 'the slice is still shown for teaching');
 });
+
+/* ─── E1-PDF consult (PDF-2) ──────────────────────────────────────────────── */
+
+// The whole point of the loop: a file the rules cannot read becomes readable
+// once its captured layout is approved — with no AI call.
+test('an approved layout parses a file the rules cannot read', () => {
+    const unreadable = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['30000', 310, 30]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['10000', 410, 30]]],
+    ]);
+
+    assert.equal(parseSCurvePdf([unreadable]), null, 'precondition: the rules must miss');
+
+    const captured = derivePdfLayout([unreadable]);
+    const liveMaps = [{ id: 7, map: captured.map }];
+    const result = parseSCurvePdf([unreadable], { liveMaps });
+
+    assert.ok(result, 'the learned layout must make it readable');
+    assert.equal(result.meta.mapUsed, true);
+    assert.equal(result.meta.mapId, 7);
+    // 30000 then 10000 of 40000 → 75 / 100, names read from the desc band.
+    assert.deepEqual(result.months.map((m) => m.planned_progress_percent), [75, 100]);
+    assert.equal(result.months[0].description, 'Mobilization Works');
+    assert.ok(
+        result.meta.warnings.some((w) => w.includes('learned layout')),
+        'a map-built curve must say so'
+    );
+});
+
+// Maps EXTEND the reader, they never override it: a file the rules can read is
+// byte-identical whatever has been approved.
+test('rules win outright when they can read the file', () => {
+    const readable = page([...HEADER, ...ROW1, ...ROW2, ...TOTAL]);
+    const decoy = derivePdfLayout([page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60], ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20]]],
+    ])]);
+
+    const plain = parseSCurvePdf([readable]);
+    const withMaps = parseSCurvePdf([readable], { liveMaps: [{ id: 9, map: decoy.map }] });
+
+    assert.deepEqual(withMaps.months, plain.months, 'the curve must not move');
+    assert.ok(!withMaps.meta.mapUsed, 'no map may claim a rules-read file');
+});
+
+// Stored maps are gated on version, kind and SHAPE. The shape gate is not
+// theoretical: captures taken before maps went multi-page carry a single-page
+// layout that would read a column-split table short, so they must be ignored
+// even when a row says "live".
+test('unusable maps are ignored rather than trusted', () => {
+    const unreadable = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['30000', 310, 30]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['10000', 410, 30]]],
+    ]);
+    const good = derivePdfLayout([unreadable]).map;
+
+    const stale = { v: 1, kind: 'pdf', sig: good.pages[0].sig, ...good.pages[0] };
+    delete stale.pages;
+
+    for (const bad of [
+        stale,                                   // pre-correction single-page shape
+        { ...good, v: 999 },                     // version we do not understand
+        { ...good, kind: 'excel' },              // an Excel map must never apply
+        { ...good, pages: [] },                  // nothing to match
+    ]) {
+        assert.equal(
+            parseSCurvePdf([unreadable], { liveMaps: [{ id: 1, map: bad }] }),
+            null,
+            'an unusable map must leave the file unread, not half-read'
+        );
+    }
+});
+
+// A signature can match on wording alone; the bands still have to hold numbers.
+// Without this a same-worded cover page could pose as the table.
+test('a matching signature over empty bands does not apply', () => {
+    const unreadable = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['30000', 310, 30]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['10000', 410, 30]]],
+    ]);
+    const map = derivePdfLayout([unreadable]).map;
+
+    // Same header wording, but the rows below carry no figures at all.
+    const wordsOnly = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['see attached schedule', 120, 140]]],
+    ]);
+
+    assert.equal(parseSCurvePdf([wordsOnly], { liveMaps: [{ id: 3, map }] }), null);
+});

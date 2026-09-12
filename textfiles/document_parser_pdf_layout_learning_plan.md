@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT + BROWSER-PROVEN · PDF-1 ✅ BUILT (capture; not browser-proven) · PDF-2..4 ⬜ NOT STARTED
+# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ capture · PDF-2 ✅ consult (core proven; browser proof pending) · PDF-3/4 ⬜
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -23,12 +23,14 @@
     - P3 (merge-by-Y + the blank-token desc bound) BUILT and BROWSER-PROVEN
       2026-09-12: 6-stage and 10-month PDFs now read exactly on first upload,
       with real names, and the long-standing "19.99 dust" is gone.
-    - PDF-1 (capture) BUILT 2026-09-12, corrected the same day for column-split
-      tables (see the session log). NOT browser-proven: the capture POST and the
-      desk PDF badge still need a live run.
-    - PDF-2 (consult), PDF-3 (learn-from-AI), PDF-4 (teach) NOT started.
+    - PDF-1 (capture) and PDF-2 (consult) BUILT 2026-09-12. The PDF loop closes:
+      an unreadable layout is captured, and once approved the SAME file parses
+      with zero AI (proven on the SEGMENT specimen: 5/20/40/65/100 with real
+      names). NOT browser-proven: the capture POST, the desk PDF badge, and the
+      approve → re-import round trip.
+    - PDF-3 (learn-from-AI) and PDF-4 (teach) NOT started.
 
-  ORDER OF WORK: PDF-2 → PDF-3 → PDF-4 (P3 and PDF-1 are done), each proved
+  ORDER OF WORK: PDF-3 → PDF-4 (P3, PDF-1 and PDF-2 are done), each proved
   before the next, each needing an explicit user order (Rule 10).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
@@ -44,7 +46,7 @@
       @vite, never resources/ for new feature scripts.
 
   VERIFY COMMANDS
-    npm run test:js          → expect 127 passed + 2 intended blinding fails
+    npm run test:js          → expect 131 passed + 2 intended blinding fails
     php artisan test         → expect 1156 passed / 7 pre-existing failures
                                (2 ContractorDashboard, 1 DashboardOverdueInspection,
                                 2 EmailDraft, 2 default-baseline)
@@ -449,6 +451,47 @@
       or a partial map would build a short, WRONG curve. Do not ship consult
       without this.
     - NOT browser-proven yet: the capture POST and the desk badge.
+
+  2026-09-12 — PDF-2 BUILT (consult). The loop now closes for PDFs.
+    - Two passes, mirroring E1-3 exactly: collectPdfPages() walks the pages with
+      the RULES first, and a learned layout is consulted ONLY when nothing was
+      recognised on any page. A file the rules can read is therefore untouched by
+      whatever has been approved — proven by fixture and by the 16-file probe.
+    - matchMapPage(): a stored page matches when >=2 of its remembered header
+      cells are found on a line (exactly or within the reader's existing typo
+      tolerance) AND at least half of them; bands are rehydrated by multiplying
+      the stored FRACTIONS by THIS page's width, which is what lets a map fit a
+      differently sized print. bandsHoldNumbers() has the final say, so wording
+      alone can never make a cover page pose as the table.
+    - usableLayoutMap() gates version, kind AND SHAPE. The shape gate is not
+      theoretical: pre-correction captures hold a single-page map that would read
+      a column-split table short, so they are ignored outright even if a row says
+      "live" (this is what neutralises the stale roof row id=55 without touching
+      the data).
+    - One map owns a file: once a map has matched, only its other pages are tried,
+      so two layouts can never interleave within one read.
+    - meta gains mapUsed/mapId plus one plain in-modal note, wording borrowed from
+      the Excel learned-layout note.
+    - Loader: window.loadLiveScurveLayouts() joins the shared learned-data loader
+      (same role-base, same contractor exclusion, same per-page-load memo, same
+      best-effort [] on failure), filtered to source_type='pdf' rows carrying a
+      map. bustLearnedKeywordsCache() clears it too, so approving in the desk
+      shows up on the next import. NO new route — getAllForManagement already
+      serves this (restudy finding (a)), so the stale-route-cache class is avoided.
+    - PROOF ON THE REAL FILE (capture → consult, no AI): the SEGMENT PDF, which
+      the rules MISS entirely, parsed through its own captured layout as
+      5 / 20 / 40 / 65 / 100 with the true names (Mobilization, Earthworks,
+      Concrete and Masonry, Finishing x2 spanning M4+M5) and contract 1,000,000.
+      The 6-stage file (rules-readable) came back byte-identical with that map
+      present and mapUsed false.
+    - Tests +4 JS (an approved layout reads an unreadable file incl. the note;
+      rules win outright when they can read it; unusable maps — stale shape, bad
+      version, excel kind, empty pages — are ignored rather than half-applied; a
+      matching signature over empty bands does not apply).
+      JS 133 tests, 131 passed + the 2 intended blinding fails; PHP 1156 passed /
+      same 7 pre-existing; all 16 sample-PDF rule reads byte-IDENTICAL.
+    - NOT browser-proven yet: capture POST, desk PDF badge, and the approve →
+      re-import round trip. The core path is proven on the real file above.
 
   2026-09-12 — PDF-1 CORRECTED for column-split tables (user catch).
     USER CORRECTION: the roof has a SEVENTH month labelled "7 days", on page 2

@@ -981,11 +981,88 @@ export function parseWeeklySchedulePdf(itemsByPage) {
  * @returns {{months: Array, meta: Object}|null}  Same shape as the Excel
  *          importer, or null when no S-curve table layout is recognised.
  */
-export function parseSCurvePdf(itemsByPage, opts) {
-    const options = opts || {};
+/**
+ * PDF-2 — can a learned layout's page be recognised on THIS page?
+ *
+ * Signature matching mirrors the Excel consult: at least two remembered header
+ * cells must be found (exactly, or within the same typo tolerance the reader
+ * already uses), and at least half of them. Bands are then rehydrated by
+ * multiplying the stored FRACTIONS by this page's width, which is why a map
+ * still fits a differently sized print of the same layout.
+ *
+ * bandsHoldNumbers has the final say: a signature can match on wording alone,
+ * but a layout only applies if numbers actually sit under its month columns.
+ *
+ * Called by: collectPdfPages() on the map pass.
+ */
+function matchMapPage(tokenLines, pageMaxX, mapPage) {
+    const sig = (mapPage.sig || [])
+        .map((s) => String(s || '').trim().toLowerCase())
+        .filter((s) => s !== '');
+    if (sig.length < 2) return null;
+
+    const monthCols = (mapPage.monthCols || []).map((mc) => ({
+        index: mc.index,
+        x: mc.x * pageMaxX,
+        xEnd: mc.xEnd * pageMaxX,
+    }));
+    if (monthCols.length < 2) return null;
+
+    for (let i = 0; i < Math.min(tokenLines.length, 12); i++) {
+        const words = tokenLines[i].tokens
+            .map((t) => String(t.str || '').trim().toLowerCase())
+            .filter((s) => s !== '');
+        if (words.length < 2) continue;
+
+        let hits = 0;
+        for (const s of sig) {
+            if (words.some((w) => w === s || headerFuzzyMatch(w, [s]))) hits++;
+        }
+        if (hits < 2 || hits < Math.ceil(sig.length / 2)) continue;
+        if (!bandsHoldNumbers(tokenLines, i, monthCols)) continue;
+
+        return {
+            header: {
+                descX: (mapPage.descX || 0) * pageMaxX,
+                descRight: (mapPage.descRight || 0) * pageMaxX,
+                monthCols,
+            },
+            headerIndex: i,
+        };
+    }
+
+    return null;
+}
+
+/**
+ * Is this stored map safe to consult at all?
+ *
+ * Version, kind and SHAPE are all gated. The shape check matters in practice:
+ * captures taken before maps became multi-page carry a single-page layout that
+ * would read a column-split table short, so they are ignored outright rather
+ * than trusted because a row happens to say "live".
+ */
+function usableLayoutMap(map) {
+    return !!map
+        && map.v === PDF_MAP_VERSION
+        && map.kind === 'pdf'
+        && Array.isArray(map.pages)
+        && map.pages.length > 0;
+}
+
+/**
+ * Walk the pages, collecting one table read per page.
+ *
+ * liveMaps === null is the RULES pass (what the reader has always done). With
+ * maps, the same walk runs against remembered layouts instead — the rows, the
+ * merge and the curve are built by exactly the same code either way, so a
+ * learned layout can only change WHERE the reader looks, never how it counts.
+ */
+function collectPdfPages(itemsByPage, options, liveMaps) {
     const pageResults = [];
     let priorSummary = false;
     let priorHeader = null;
+    let mapId = null;
 
     for (let p = 0; p < itemsByPage.length; p++) {
         const lines = groupItemsIntoLines(itemsByPage[p] || []);
@@ -994,20 +1071,59 @@ export function parseSCurvePdf(itemsByPage, opts) {
 
         let header = null;
         let headerIndex = -1;
-        for (let i = 0; i < tokenLines.length; i++) {
-            const next = tokenLines[i + 1] ? tokenLines[i + 1].tokens : null;
-            const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i, continuation: priorHeader !== null, monthWords: options.monthWords || null });
-            if (h) { header = h; headerIndex = i; break; }
+
+        if (!liveMaps) {
+            for (let i = 0; i < tokenLines.length; i++) {
+                const next = tokenLines[i + 1] ? tokenLines[i + 1].tokens : null;
+                const h = detectHeaderColumns(tokenLines[i].tokens, next, { pageMaxX, lineIndex: i, continuation: priorHeader !== null, monthWords: options.monthWords || null });
+                if (h) { header = h; headerIndex = i; break; }
+            }
+        } else if (pageMaxX > 0) {
+            // One map owns a whole file: once a map has spoken for this file, only
+            // its other pages are tried, so two layouts can never interleave.
+            for (const entry of liveMaps) {
+                if (mapId !== null && entry.id !== mapId) continue;
+                if (!usableLayoutMap(entry.map)) continue;
+                for (const mapPage of entry.map.pages) {
+                    const hit = matchMapPage(tokenLines, pageMaxX, mapPage);
+                    if (!hit) continue;
+                    header = hit.header;
+                    headerIndex = hit.headerIndex;
+                    mapId = entry.id;
+                    break;
+                }
+                if (header) break;
+            }
         }
 
         if (!header) continue;
         if (!priorHeader) priorHeader = header;
-        if (options.debug) options.debug.push({ t: 'header', page: p, months: header.monthCols.map((mc) => mc.index), descX: header.descX });
+        if (options.debug) options.debug.push({ t: 'header', page: p, months: header.monthCols.map((mc) => mc.index), descX: header.descX, viaMap: !!liveMaps });
         // P2-c — continuation pages inherit the summary context (not the geometry):
         // a desc-less page following an explicit summary gets the stricter reading.
         const parsed = buildRows(tokenLines, header, headerIndex + 1, { priorSummary, debug: options.debug });
         if (parsed.sawSummary) priorSummary = true;
         pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum, summaryCandidates: parsed.summaryCandidates });
+    }
+
+    return { pageResults, mapId };
+}
+
+export function parseSCurvePdf(itemsByPage, opts) {
+    const options = opts || {};
+
+    // Two passes, mirroring the Excel reader: the RULES read every page first, and
+    // a learned layout is consulted only when nothing was recognised anywhere. A
+    // file the rules can read is therefore byte-identical to before, whatever has
+    // been approved — maps extend the reader, they never override it.
+    let { pageResults } = collectPdfPages(itemsByPage, options, null);
+    let mapId = null;
+    if (pageResults.length === 0 && Array.isArray(options.liveMaps) && options.liveMaps.length > 0) {
+        const viaMaps = collectPdfPages(itemsByPage, options, options.liveMaps);
+        if (viaMaps.pageResults.length > 0) {
+            pageResults = viaMaps.pageResults;
+            mapId = viaMaps.mapId;
+        }
     }
 
     if (pageResults.length > 0) {
@@ -1018,6 +1134,13 @@ export function parseSCurvePdf(itemsByPage, opts) {
             const summaryCandidates = pageResults.length === 1 ? pageResults[0].summaryCandidates : [];
             const out = buildMonthsFromRows(merged.rows, merged.months, merged.totalContract, { summaryCandidates, debug: options.debug });
             (merged.warnings || []).forEach((w) => out.meta.warnings.unshift(w));
+            if (mapId !== null) {
+                out.meta.mapUsed = true;
+                out.meta.mapId = mapId;
+                out.meta.warnings.unshift('Heads-up: this PDF was read with a learned layout for this'
+                    + ' contractor — the months below came from that mapping. No action needed unless'
+                    + ' something looks off.');
+            }
             return out;
         }
     }

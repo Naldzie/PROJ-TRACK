@@ -63,10 +63,22 @@ window.parseSCurvePdfFile = async function (file) {
         }
     } catch (e) { /* learned vocabulary is best-effort */ }
 
+    // PDF-2 — approved LAYOUTS for this file type. Consulted only when the rules
+    // recognise nothing at all (the core runs them first and keeps their answer),
+    // so a readable PDF is unaffected by whatever has been approved. Any failure
+    // yields none, which is exactly today's behavior.
+    let liveMaps = null;
+    try {
+        if (typeof window.loadLiveScurveLayouts === 'function') {
+            const maps = await window.loadLiveScurveLayouts();
+            if (Array.isArray(maps) && maps.length) liveMaps = maps;
+        }
+    } catch (e) { /* learned layouts are best-effort */ }
+
     // P2-0 — month-attribution debug: set window.__scurvePdfDebug = true in the
     // console before importing to log which page/row/cell built each month total.
     const debug = [];
-    const out = core.parseSCurvePdf(itemsByPage, { debug, monthWords });
+    const out = core.parseSCurvePdf(itemsByPage, { debug, monthWords, liveMaps });
 
     // E1-PDF (PDF-1) — a PDF the rules could not read proposes a layout for the
     // review desk, exactly as a failed Excel import does. Derived from the page's
