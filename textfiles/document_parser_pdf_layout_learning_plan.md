@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT + BROWSER-PROVEN · STAGE 2 (E1-PDF) ⬜ NOT STARTED (RE-SCOPE FIRST)
+# Status: STAGE 1 ✅ BUILT + USER-PROVEN · P3 ✅ BUILT + BROWSER-PROVEN · PDF-1 ✅ BUILT (capture; not browser-proven) · PDF-2..4 ⬜ NOT STARTED
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -20,12 +20,15 @@
     - Stage 1 (delivery fixes) BUILT and PROVEN live 2026-09-12. The PDF word
       loop (B / F-D / F-E) is CLOSED: a taught month word makes the offline
       reader parse the TRUE curve with zero AI.
-    - P3 (merge-by-Y) is the NEXT item: root-caused with forensic evidence on
-      2026-09-12, not yet built. It is cheaper than Stage 2 and fixes the
-      activity-name misassignment the proof exposed.
-    - Stage 2 (E1-PDF layout learning) is designed but NOT started.
+    - P3 (merge-by-Y + the blank-token desc bound) BUILT and BROWSER-PROVEN
+      2026-09-12: 6-stage and 10-month PDFs now read exactly on first upload,
+      with real names, and the long-standing "19.99 dust" is gone.
+    - PDF-1 (capture) BUILT 2026-09-12, corrected the same day for column-split
+      tables (see the session log). NOT browser-proven: the capture POST and the
+      desk PDF badge still need a live run.
+    - PDF-2 (consult), PDF-3 (learn-from-AI), PDF-4 (teach) NOT started.
 
-  ORDER OF WORK: P3 → Stage 2 (PDF-1 → PDF-2 → PDF-3 → PDF-4), each proved
+  ORDER OF WORK: PDF-2 → PDF-3 → PDF-4 (P3 and PDF-1 are done), each proved
   before the next, each needing an explicit user order (Rule 10).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
@@ -41,8 +44,8 @@
       @vite, never resources/ for new feature scripts.
 
   VERIFY COMMANDS
-    npm run test:js          → expect 116 passed + 2 intended blinding fails
-    php artisan test         → expect 1140 passed / 7 pre-existing failures
+    npm run test:js          → expect 127 passed + 2 intended blinding fails
+    php artisan test         → expect 1156 passed / 7 pre-existing failures
                                (2 ContractorDashboard, 1 DashboardOverdueInspection,
                                 2 EmailDraft, 2 default-baseline)
     php artisan view:clear   → after ANY Blade edit
@@ -379,6 +382,110 @@
 ===============================================================================
   8. SESSION LOGS
 ===============================================================================
+
+  2026-09-12 — RESTUDY before building (read-only). Findings that changed scope:
+    (a) PDF-2 needs NO new route — getAllForManagement already returns column_map
+        /source_type/contractor_id and supports ?status=live, mirrored on both
+        roles. (Avoids the stale-route-cache incident class entirely.)
+    (b) loadLiveMaps already filters source_type='excel', so PDF rows cannot leak
+        into the Excel reader. Only the reverse guard is needed.
+    (c) The desk had ZERO source_type handling, so PDF rows would arrive
+        unlabelled → the PDF/Excel badge moved into PDF-1 rather than PDF-4.
+    (d) serializeForAi's block shape is exactly reproducible
+        ("COLUMNS: A,B,… | …" + "R<n> [ROLE]: csv", parsed back by
+        parseStoredSlice with str_getcsv) — so a PDF capture that emits the SAME
+        shape gets the desk grid, the teach modal and teachColumns for free.
+    (e) collect() required file XOR document_id and always called serializeForAi
+        — impossible for a PDF; needed a branch.
+    (f) Only joined page STRINGS are stashed today, so PDF-3 will need token
+        positions retained to locate the AI's monthLabels.
+    (g) Gates to mirror from buildTaughtMap: ≥2 months, disjoint spans, labels
+        outside spans, ascending order, signature from non-empty header cells.
+
+  2026-09-12 — PDF-1 BUILT (capture). Code committed only after the probes below.
+    - Relaxed detection lives INSIDE detectHeaderColumns behind opts.relaxed, and
+      the banding was extracted to finalizeHeaderBands() shared by both paths —
+      so strict and relaxed geometry cannot drift. Only the WORDING differs.
+    - Two ways to find months when the vocabulary is unknown:
+      relaxedMonthColumns() groups "WORD N" tokens by STEM and keeps the stem
+      with the most ascending indices (a shared stem is what stops "ITEM 1 …
+      QTY 2" posing as months); positionalMonthColumns() handles labels with no
+      index at all by REPETITION — the roof family prints "30 days" six times, so
+      the Nth repetition is month N. Positional demands THREE repetitions (two
+      identical words prove far less than an ascending 1,2,3).
+    - bandsHoldNumbers() pays for that permissiveness: a candidate is refused
+      unless ≥2 different month bands hold numeric OR PERCENT values in the rows
+      beneath (the roof's cells are "16%", not pesos).
+    - derivePdfLayout() returns {map, block}. The map stores FRACTIONS of
+      pageMaxX (so another page size still matches) plus a pseudoCols legend for
+      PDF-4; the block is byte-compatible with the Excel slice.
+    - Wrapper stashes a candidate ONLY on a rules miss; scurveCaptureHeaders
+      gained a 'pdf' mode posting source_type/header_rows_text/column_map (the
+      server owns no PDF reader, so the browser's pdf.js pass is the only reader
+      there is); collect() gained the PDF branch, refusing a slice that is not a
+      COLUMNS block and refusing to store a NON-pdf map on a PDF row; the dedupe
+      query now scopes by source_type so Excel and PDF rows can never merge.
+      Desk shows a PDF/Excel badge.
+    - PROBES ON REAL FILES (the point of building capture first):
+        SEGMENT → derives months 1,2 + correct desc band + a clean block.
+        ROOF    → derives ALL SIX months from the repeated "30 days" labels,
+                  desc band 0.045→0.330 over the names, numbers guard satisfied.
+                  This is the family E1-PDF exists for, and the indexed detector
+                  alone could NOT see it — positional detection was added for it
+                  after the probe proved the gap (user decision).
+        All 16 sample-PDF rule reads byte-IDENTICAL before and after.
+    - CAUGHT PRE-GREEN (2, both mine): (1) role tagging tested EVERY cell, and
+      isSummaryLabel matches a bare "%", so every percent-valued activity row was
+      tagged SUMMARY — roles now read label cells only, never value cells;
+      (2) restructuring collect() dropped the $hash line (500s on the Excel path)
+      — caught by the existing Excel tests, which is exactly why they exist.
+    - Tests: +4 JS (relaxedMonthLabel; indexed capture end-to-end incl. block
+      shape; positional/roof shape; refusal with no numbers under the grid),
+      +3 PHP (client-read slice stored + repeat counts; junk and foreign-map
+      refusals; Excel path still XOR-gated). JS 126/124 + the 2 intended blinding
+      fails; PHP 1156 passed / same 7 pre-existing.
+    - KNOWN, CARRIED INTO PDF-2: on a COLUMN-SPLIT file the capture sees only the
+      first page's months (SEGMENT → 1,2). Consult must apply bands across pages,
+      or a partial map would build a short, WRONG curve. Do not ship consult
+      without this.
+    - NOT browser-proven yet: the capture POST and the desk badge.
+
+  2026-09-12 — PDF-1 CORRECTED for column-split tables (user catch).
+    USER CORRECTION: the roof has a SEVENTH month labelled "7 days", on page 2
+    (L4: "30 days@40  7 days@116"). The arithmetic confirms it — 6x30 + 7 = the
+    187 days printed on page 1. My capture read ONE page, so it proposed 6 months
+    for a 7-month schedule; approving that would have taught a wrong curve. The
+    same flaw hit SEGMENT (page 1 has SEGMENT 1,2; page 2 has 3,4,5 = 2 of 5).
+    BOTH real capture candidates are column-split, so a single-page map was
+    simply the wrong shape. Caught by the user reading the file, not by a test —
+    every fixture described a single-page table, which is what hid the gap.
+    - Shape grouping replaces identical-text grouping: the key masks digit runs
+      ("30 days"/"30days"/"7 days" -> "#days"), so a tail column of a different
+      length joins its family. That exact-text key is why "7 days" was invisible.
+    - Maps are now MULTI-PAGE: { v, kind:'pdf', pages:[{pageHint, sig, descX,
+      descRight, monthCols, pseudoCols}, ...] }. Continuation pages relax the
+      positional minimum 3 -> 2 once a family is established.
+    - CAUGHT WHILE PROBING: continuation pages were still rejected because the
+      relaxed branch demanded a description column, which an overflow page never
+      has (its names were printed on page 1). The strict detector already allows
+      this via allowNoDesc — the relaxed branch now mirrors that rule with the
+      same thresholds instead of inventing a second convention.
+    - AMBIGUITY IS REFUSED, NOT GUESSED: indexed wording numbers itself, so a
+      SEGMENT split merges exactly (page 0 -> 1,2; page 1 -> 3,4,5; map stored).
+      Positional wording restarts at 1 on every page and the roof's page 2 even
+      repeats its last column, so no numbering can be read from the bytes — that
+      capture is stored with column_map NULL. The row still reaches the desk and
+      PDF-4's teach supplies the numbering (the proven Excel null-map-then-teach
+      path). A guess must never become an approved schedule.
+    - PROBED ON THE REAL FILES: SEGMENT -> 2 pages, months 1,2 + 3,4,5, map
+      stored, ambiguous=false. ROOF -> ambiguous=true, map NULL, block still
+      offered for review. All 16 sample-PDF rule reads still byte-IDENTICAL.
+    - Tests +3 (shape grouping unites 30/7 days; indexed split carries both pages
+      with true indices; positional split yields a NULL map but still a block);
+      2 existing capture fixtures updated to the map.pages shape, and the PHP
+      endpoint test now posts the real two-page payload.
+      JS 129 tests, 127 passed + the 2 intended blinding fails; PHP 1156 passed /
+      same 7 pre-existing.
 
   2026-09-12 — Stage 1 BUILT (shared loader + cache fix), suites green
     (JS 116 + 2 intended blinding fails; PHP 1140 / same 7 pre-existing).

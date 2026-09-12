@@ -715,7 +715,23 @@ function scurveCaptureHeaders(kind, source, extra) {
         if (path.indexOf('/contractor/') !== -1) return;
         var base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
         var fd = new FormData();
-        if (kind === 'file' && source) {
+        if (kind === 'pdf') {
+            // E1-PDF: the server owns no PDF reader, so the CLIENT sends what it
+            // saw — the slice block and the candidate map derived in the wrapper.
+            // Nothing is posted unless a candidate actually exists.
+            var capture = window._scurvePdfCapture || null;
+            if (!capture || !capture.map || !capture.block) return;
+            fd.append('source_type', 'pdf');
+            fd.append('header_rows_text', capture.block);
+            fd.append('column_map', JSON.stringify(capture.map));
+            // Contractor scope: the wizard knows it from the form, the detail flow
+            // from the document (the server resolves that one itself).
+            if (source) fd.append('document_id', source);
+            try {
+                var pdfSel = document.getElementById('contractorSelect');
+                if (pdfSel && pdfSel.value) fd.append('contractor_id', pdfSel.value);
+            } catch (e) {}
+        } else if (kind === 'file' && source) {
             fd.append('file', source);
             try {
                 var csel = document.getElementById('contractorSelect');
@@ -890,6 +906,8 @@ function initCreateWizardSCurveImport() {
             // local parser throws plain Errors — gate on mode, not isNoTable).
             if (mode === 'pdf' && window._scurvePendingFile) {
                 scurveOfferPdfAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn }, 'The PDF table was not recognized.');
+                // E1-PDF: the same failure silently proposes a layout for review.
+                scurveCaptureHeaders('pdf', null);
             }
         } finally {
             btn.disabled = false;
@@ -992,6 +1010,9 @@ function initProjectDetailSCurveImport() {
             // takes images only, never document_id).
             if (btn.dataset.docType === 'pdf' && window._scurveDetailFile) {
                 scurveOfferPdfAiAssist({ kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn }, 'The PDF table was not recognized.');
+                // E1-PDF: document_id rides along so the server can scope the
+                // capture to this project's contractor (it is never read as a source).
+                scurveCaptureHeaders('pdf', documentId);
             }
         } finally {
             btn.disabled = false;

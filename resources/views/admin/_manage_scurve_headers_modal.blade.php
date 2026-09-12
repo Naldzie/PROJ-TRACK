@@ -299,6 +299,12 @@ async function loadScurveHeadersForManagement() {
             const mapMark = row.has_map
                 ? ' <span class="badge bg-primary" title="A column map is attached">Mapped</span>'
                 : '';
+            // E1-PDF: PDF captures land in this same desk, so say which file kind a
+            // row came from — the two are read by different engines and a reviewer
+            // approving columns should know which one they are teaching.
+            const kindMark = row.source_type === 'pdf'
+                ? ' <span class="badge bg-danger" title="Captured from a PDF schedule">PDF</span>'
+                : ' <span class="badge bg-success" title="Captured from an Excel workbook">Excel</span>';
             // Inline map summary (2026-09-10 reversal companion): reviewers approve
             // AI-sourced columns, so show WHAT they'd approve (DESC=C · M1=I+J…).
             let mapSummary = '';
@@ -328,7 +334,7 @@ async function loadScurveHeadersForManagement() {
                 '<button class="btn btn-sm btn-outline-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>';
             const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
             html += '<tr>' +
-                '<td><span' + headerTip + '>' + header + '</span>' + mapMark + mapSummary + '</td>' +
+                '<td><span' + headerTip + '>' + header + '</span>' + kindMark + mapMark + mapSummary + '</td>' +
                 '<td>' + contractor + '</td>' +
                 '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
                 '<td>' + origin + '</td>' +

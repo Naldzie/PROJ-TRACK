@@ -67,6 +67,17 @@ window.parseSCurvePdfFile = async function (file) {
     // console before importing to log which page/row/cell built each month total.
     const debug = [];
     const out = core.parseSCurvePdf(itemsByPage, { debug, monthWords });
+
+    // E1-PDF (PDF-1) — a PDF the rules could not read proposes a layout for the
+    // review desk, exactly as a failed Excel import does. Derived from the page's
+    // own geometry (never from rule-side header detection, or the files that most
+    // need learning could never get it), stashed for the caller to post. Nothing
+    // here is used: a capture only becomes readable after a human approves it.
+    try {
+        window._scurvePdfCapture = (!out && typeof core.derivePdfLayout === 'function')
+            ? core.derivePdfLayout(itemsByPage)
+            : null;
+    } catch (e) { window._scurvePdfCapture = null; }
     try {
         if (window.__scurvePdfDebug && debug.length) console.info('[scurve-pdf] attribution', debug);
         const pages = [];

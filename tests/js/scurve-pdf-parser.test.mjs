@@ -10,6 +10,8 @@ import {
     isDescriptionLabel,
     headerFuzzyMatch,
     isWeakPdfCurve,
+    relaxedMonthLabel,
+    derivePdfLayout,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
 
 /* ─── Fixture helpers ─────────────────────────────────────────────────────── */
@@ -622,4 +624,134 @@ test('isWeakPdfCurve flags short curves and summary gaps', () => {
     const g = isWeakPdfCurve(gapped);
     assert.equal(g.weak, true);
     assert.ok(g.reasons.includes('summary-gap'));
+});
+/* ─── E1-PDF capture (PDF-1) ──────────────────────────────────────────────── */
+
+test('relaxedMonthLabel reads any word-plus-index wording', () => {
+    assert.deepEqual(relaxedMonthLabel('SEGMENT 1'), { stem: 'segment', index: 1 });
+    assert.deepEqual(relaxedMonthLabel('P3'), { stem: 'p', index: 3 });
+    assert.deepEqual(relaxedMonthLabel('Phase-2'), { stem: 'phase', index: 2 });
+    // Out of month range, or not a word+index at all.
+    assert.equal(relaxedMonthLabel('SEGMENT 13'), null);
+    assert.equal(relaxedMonthLabel('50,000'), null);
+    assert.equal(relaxedMonthLabel('Mobilization Works'), null);
+    assert.equal(relaxedMonthLabel(''), null);
+});
+
+// A layout the reader cannot parse becomes a capture CANDIDATE: unknown wording
+// is read by shape, and offered for approval rather than used.
+test('derivePdfLayout proposes a map for unknown indexed wording', () => {
+    const items = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['50000', 310, 30], ['0', 410, 10]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['0', 310, 10], ['150000', 410, 30]]],
+    ]);
+
+    // The rules must still miss it — otherwise this is not a capture case at all.
+    assert.equal(parseSCurvePdf([items]), null);
+
+    const out = derivePdfLayout([items]);
+    assert.ok(out, 'expected a capture candidate');
+    const first = out.map.pages[0];
+    assert.deepEqual(first.monthCols.map((m) => m.index), [1, 2]);
+    assert.equal(out.map.kind, 'pdf');
+    assert.equal(out.map.v, 1);
+    // Bands are FRACTIONS of the page width, so another page size still matches.
+    assert.ok(first.monthCols.every((m) => m.x > 0 && m.x < 1 && m.xEnd <= 1.01));
+    assert.ok(first.descX < first.monthCols[0].x, 'the desc band sits left of month 1');
+    // The block must be the Excel slice's shape, or the desk cannot render it.
+    assert.match(out.block.split('\n')[0], /^COLUMNS: A,B,C,D \|/);
+    assert.match(out.block, /^R\d+ \[HEADER\]: ITEM NO\.,DESCRIPTION,SEGMENT 1,SEGMENT 2$/m);
+    assert.match(out.block, /^R\d+ \[DATA\]: 1,Mobilization Works,50000,0$/m);
+});
+
+// The roof family labels every month identically ("30 days" x6) and its cells are
+// percentages, so months are positional and values are not pesos.
+test('derivePdfLayout reads positional months from repeated labels', () => {
+    const items = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30days', 380, 42], ['30 days', 460, 45]]],
+        [760, [['A', 45, 8], ['FACILITIES FOR ENGINEER', 120, 95],
+            ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20], ['16%', 470, 20]]],
+    ]);
+
+    const out = derivePdfLayout([items]);
+    assert.ok(out, 'repeated labels must still propose a grid');
+    assert.deepEqual(out.map.pages[0].monthCols.map((m) => m.index), [1, 2, 3, 4]);
+    // Percent-valued activity rows are DATA — judging a row by its numeric cells
+    // tagged every one of them SUMMARY, because isSummaryLabel matches a bare "%".
+    assert.match(out.block, /^R\d+ \[DATA\]: A,FACILITIES FOR ENGINEER,16%,/m);
+});
+
+// Permissive detection is paid for here: a repeated word with nothing numeric
+// beneath it is not a schedule, and must never propose one.
+test('derivePdfLayout refuses a grid with no numbers under it', () => {
+    const items = page([
+        [800, [['Prepared by', 40, 60], ['Note', 220, 30], ['Note', 300, 30], ['Note', 380, 30]]],
+        [760, [['Engineer', 45, 50], ['approved', 220, 50], ['approved', 300, 50], ['approved', 380, 50]]],
+    ]);
+
+    assert.equal(derivePdfLayout([items]), null);
+    assert.equal(derivePdfLayout([]), null);
+});
+
+// The roof's last column reads "7 days" where the rest read "30 days" (6x30 + 7
+// = the 187 days printed on the page). Keying on identical TEXT made that tail
+// month invisible, capturing 6 months for a 7-month schedule.
+test('positional grouping unites duration labels of different lengths', () => {
+    const items = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30days', 380, 42], ['7 days', 460, 40]]],
+        [760, [['A', 45, 8], ['ROOFING WORKS', 120, 95],
+            ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20], ['2%', 470, 18]]],
+    ]);
+
+    const out = derivePdfLayout([items]);
+    assert.ok(out, 'expected a capture candidate');
+    assert.equal(out.map.pages[0].monthCols.length, 4, 'the short tail column is a month too');
+});
+
+// Column-split tables are the norm: the roof spreads 7 months over 2 pages and
+// SEGMENT spreads 5. A one-page map would teach a short schedule.
+test('derivePdfLayout carries every table page of a split layout', () => {
+    const first = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['50000', 310, 30], ['0', 410, 10]]],
+    ]);
+    // The overflow page carries value columns only — no description column, which
+    // is exactly why it must be allowed to have none.
+    const second = page([
+        [800, [['SEGMENT 3', 50, 55], ['SEGMENT 4', 150, 55], ['SEGMENT 5', 250, 55]]],
+        [760, [['200000', 60, 30], ['250000', 160, 30], ['350000', 260, 30]]],
+    ]);
+
+    const out = derivePdfLayout([first, second]);
+    assert.ok(out, 'expected a capture candidate');
+    assert.equal(out.ambiguous, false, 'indexed labels number themselves');
+    assert.equal(out.map.pages.length, 2);
+    assert.deepEqual(out.map.pages[0].monthCols.map((m) => m.index), [1, 2]);
+    // Page 2's labels carry their OWN indices, so the split merges without a guess.
+    assert.deepEqual(out.map.pages[1].monthCols.map((m) => m.index), [3, 4, 5]);
+});
+
+// Positional wording restarts at 1 on every page, and the roof's page 2 even
+// repeats its last column — nothing in the bytes says which month that is. The
+// capture is still offered, but with NO map: a reviewer supplies the numbering
+// rather than the machine guessing a schedule into existence.
+test('a positional split is captured WITHOUT a map instead of guessed', () => {
+    const first = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60], ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20]]],
+    ]);
+    const second = page([
+        [800, [['30 days', 40, 45], ['7 days', 120, 40]]],
+        [760, [['16%', 50, 20], ['2%', 130, 18]]],
+    ]);
+
+    const out = derivePdfLayout([first, second]);
+    assert.ok(out, 'the capture must still reach the desk for review');
+    assert.equal(out.ambiguous, true);
+    assert.equal(out.map, null, 'an unknowable numbering must not be invented');
+    assert.match(out.block, /^COLUMNS: /, 'the slice is still shown for teaching');
 });

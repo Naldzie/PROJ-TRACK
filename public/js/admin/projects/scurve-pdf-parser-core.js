@@ -228,7 +228,46 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
     const sorted = [...tokens].sort((a, b) => a.x - b.x);
 
     const descTokens = sorted.filter((t) => isDescriptionLabel(t.str));
-    const descX = descTokens.length ? Math.min(...descTokens.map((t) => t.x)) : null;
+    let descX = descTokens.length ? Math.min(...descTokens.map((t) => t.x)) : null;
+
+    // E1-PDF capture only (opts.relaxed): accept ANY repeated "WORD N" wording as
+    // months, not just the vocabulary the reader knows. Geometry below is shared
+    // verbatim so the two paths can never drift; only the wording is loosened, and
+    // only here — a relaxed read is a CAPTURE CANDIDATE that a human must approve
+    // before it can ever fill a baseline (exactly the Excel deal).
+    if (opts.relaxed) {
+        // Indexed wording first ("SEGMENT 1..5"), then positional columns — the
+        // roof family labels every month by duration ("30 days" ×6 + "7 days"),
+        // so there is no index to read and only the repeated SHAPE identifies the
+        // grid. A continuation page needs only 2 columns: the family was already
+        // established, and tail pages carry few (the same relaxation the strict
+        // detector makes for continuation pages).
+        const indexed = relaxedMonthColumns(sorted);
+        const relaxed = indexed.length >= 2
+            ? indexed
+            : positionalMonthColumns(sorted, opts.continuation ? 2 : 3);
+        if (relaxed.length >= 2) {
+            // Desc anchor: a known label if present, else the leftmost wordy token
+            // left of the first month — what a reader would point at.
+            if (descX === null) {
+                const firstMonthX = relaxed[0].x;
+                const wordy = sorted.filter((t) => t.x < firstMonthX
+                    && /[A-Za-z]{2,}/.test(String(t.str || '')));
+                if (wordy.length) descX = Math.min(...wordy.map((t) => t.x));
+            }
+            // No description column is normal on the OVERFLOW page of a split
+            // table — the names were printed on page 1 and only value columns
+            // continue here. Same allowance the strict detector makes, with the
+            // same thresholds, so the two cannot diverge.
+            if (descX === null) {
+                const minNoDesc = opts.continuation ? 2 : 3;
+                if (!(lineIndex < 8 && relaxed.length >= minNoDesc)) return null;
+            }
+
+            return finalizeHeaderBands(relaxed, sorted, descX, pageMaxX);
+        }
+        return null;
+    }
 
     const explicit = [];
     const labelOnly = [];
@@ -284,7 +323,18 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
     if ((descTokens.length === 0 && !allowNoDesc) || months.length < 2) return null;
     if (descTokens.length === 0 && opts.continuation && explicit.length < 1) return null;
 
-    months.sort((a, b) => a.index - b.index);
+    return finalizeHeaderBands(months, sorted, descX, pageMaxX);
+}
+
+/**
+ * Turn located month labels into column BANDS plus the description window.
+ *
+ * Shared by the strict reader and the relaxed capture detector so the geometry
+ * has exactly one definition — the wording is the only thing that differs
+ * between them, and this is what keeps that true.
+ */
+function finalizeHeaderBands(monthTokens, sorted, descX, pageMaxX) {
+    let months = [...monthTokens].sort((a, b) => a.index - b.index);
     months = months.map((m, i) => ({
         index: m.index,
         x: m.x,
@@ -316,6 +366,98 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
         descRight: descRight !== null ? descRight : months[0].x,
         monthCols: months,
     };
+}
+
+/**
+ * E1-PDF — month columns from ANY repeated "WORD N" wording (capture only).
+ *
+ * The reader knows a fixed vocabulary (Month/M/P/STAGE/Period/Phase, plus taught
+ * words). A capture must recognise wording nobody has taught yet — that is the
+ * whole point — so this groups tokens by their WORD STEM and keeps the stem with
+ * the most ascending indices. Requiring a shared stem is what stops a header line
+ * of unrelated numbers ("ITEM 1 … QTY 2") from posing as months.
+ *
+ * Pure. Returns [{index, x, xEnd}] (≥2) or [].
+ */
+function relaxedMonthColumns(sorted) {
+    const byStem = {};
+    for (const t of sorted) {
+        const hit = relaxedMonthLabel(t.str);
+        if (!hit) continue;
+        const bucket = byStem[hit.stem] || (byStem[hit.stem] = {});
+        // First occurrence of an index wins: reprinted headers keep the leftmost.
+        if (!bucket[hit.index]) bucket[hit.index] = { index: hit.index, x: t.x, xEnd: t.xEnd };
+    }
+
+    let best = [];
+    for (const stem of Object.keys(byStem)) {
+        const cols = Object.values(byStem[stem]).sort((a, b) => a.index - b.index);
+        // Left-to-right order must agree with the numbering, or these are not
+        // month columns — they are numbers that happen to share a word.
+        let ordered = true;
+        for (let i = 1; i < cols.length; i++) {
+            if (cols[i].x <= cols[i - 1].x) { ordered = false; break; }
+        }
+        if (ordered && cols.length > best.length) best = cols;
+    }
+
+    return best.length >= 2 ? best : [];
+}
+
+/**
+ * E1-PDF — month columns identified by REPETITION rather than by an index.
+ *
+ * The roof family prints the same label over every month ("30 days" six times,
+ * one of them "30days"), so month identity is purely positional: the Nth
+ * repetition is month N. Whitespace is normalized away precisely because these
+ * labels are typed inconsistently.
+ *
+ * Deliberately stricter than the indexed path — THREE repetitions minimum, since
+ * two identical words prove far less than an ascending 1,2,3 does, and a wrong
+ * grid here would invent a schedule. The caller additionally refuses any
+ * candidate whose bands hold no numbers in the rows beneath.
+ *
+ * Pure. Returns [{index, x, xEnd}] in left-to-right order, or [].
+ */
+function positionalMonthColumns(sorted, minColumns = 3) {
+    const byShape = {};
+    for (const t of sorted) {
+        const raw = String(t.str || '').trim();
+        if (raw === '' || !/[A-Za-z]/.test(raw)) continue;
+        // Group by SHAPE, not by identical text: the roof's final column reads
+        // "7 days" where the rest read "30 days", and keying on the exact string
+        // made that tail month invisible — a 7-month schedule captured as 6.
+        // Masking digit runs unites them ("#days"); whitespace is normalized away
+        // because these labels are typed inconsistently ("30days").
+        const key = raw.toLowerCase().replace(/\s+/g, '').replace(/\d+/g, '#');
+        (byShape[key] = byShape[key] || []).push(t);
+    }
+
+    let best = [];
+    for (const key of Object.keys(byShape)) {
+        const group = byShape[key].slice().sort((a, b) => a.x - b.x);
+        if (group.length >= minColumns && group.length <= 12 && group.length > best.length) {
+            best = group;
+        }
+    }
+
+    return best.map((t, i) => ({ index: i + 1, x: t.x, xEnd: t.xEnd }));
+}
+
+/**
+ * "SEGMENT 1" → {stem: 'segment', index: 1}; "P3" → {stem: 'p', index: 3}.
+ * Null for anything that is not a word followed by a 1..12 index.
+ */
+export function relaxedMonthLabel(str) {
+    const s = String(str || '').trim();
+    const m = s.match(/^([A-Za-z][A-Za-z.\- ]{0,20}?)\s*[-#]?\s*(\d{1,2})$/);
+    if (!m) return null;
+    const index = parseInt(m[2], 10);
+    if (!(index >= 1 && index <= 12)) return null;
+    const stem = m[1].trim().toLowerCase().replace(/\s+/g, ' ');
+    if (stem === '') return null;
+
+    return { stem, index };
 }
 
 /* ─── Row assembly ────────────────────────────────────────────────────────── */
@@ -920,6 +1062,232 @@ export function isWeakPdfCurve(parsed) {
     return { weak: reasons.length > 0, reasons };
 }
 
+/* ─── E1-PDF capture: derive a layout candidate from an unread PDF ────────── */
+
+export const PDF_MAP_VERSION = 1;
+
+// Cells are stored as CSV so the desk and teachColumns can parse them with the
+// very same reader the Excel slice uses (str_getcsv / schSplitCsv).
+function csvCell(value) {
+    const s = String(value == null ? '' : value).trim();
+
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function columnLetter(i) {
+    let n = i;
+    let out = '';
+    do {
+        out = String.fromCharCode(65 + (n % 26)) + out;
+        n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+
+    return out;
+}
+
+/**
+ * E1-PDF / PDF-1 — propose a layout for a PDF the reader could not parse.
+ *
+ * Mirrors the Excel capture deal: when the rules find nothing, look again with
+ * the wording loosened, and offer what you see for a human to approve. Nothing
+ * here can reach a baseline on its own.
+ *
+ * Returns { map, block } or null:
+ *  - map   stores FRACTIONS of the page width (never points), so the same layout
+ *          still matches at a different page size or DPI, plus a pseudo-column
+ *          legend so the desk's existing teach grid can address it by letter.
+ *  - block is the byte-compatible twin of serializeForAi's output
+ *          ("COLUMNS: A,B,… | …" then "R<n> [ROLE]: csv"), which is what lets the
+ *          review desk render and teach a PDF row with no new UI.
+ *
+ * Pure and read-only: callers post it, they do not act on it.
+ */
+export function derivePdfLayout(itemsByPage, maxRows = 15) {
+    const pages = Array.isArray(itemsByPage) ? itemsByPage : [];
+    const found = [];
+    let block = null;
+
+    for (let p = 0; p < Math.min(pages.length, 20); p++) {
+        const tokenLines = linesToTokenLines(groupItemsIntoLines(pages[p] || []));
+        const pageMaxX = Math.max(0, ...tokenLines.flatMap((l) => l.tokens.map((t) => t.xEnd)));
+        if (!(pageMaxX > 0)) continue;
+
+        for (let i = 0; i < Math.min(tokenLines.length, 8); i++) {
+            const header = detectHeaderColumns(tokenLines[i].tokens, null, {
+                pageMaxX,
+                lineIndex: i,
+                relaxed: true,
+                continuation: found.length > 0,
+            });
+            if (!header) continue;
+
+            // A grid is only a schedule if numbers actually live under it. Without
+            // this, a repeated word anywhere on a page could propose a layout and
+            // invent months out of nothing — the relaxed detector is permissive by
+            // design, so this is where that permissiveness is paid for.
+            if (!bandsHoldNumbers(tokenLines, i, header.monthCols)) continue;
+
+            // Pseudo-columns: the header's own printed tokens, in reading order.
+            // Each owns the strip from its x to the next one's — the same banding
+            // the month columns use, so a taught letter converts back to a band.
+            const anchors = tokenLines[i].tokens
+                .filter((t) => String(t.str || '').trim() !== '')
+                .sort((a, b) => a.x - b.x);
+            if (anchors.length < 2) continue;
+            const pseudoCols = anchors.map((t, k) => ({
+                letter: columnLetter(k),
+                x: t.x / pageMaxX,
+                xEnd: (anchors[k + 1] ? anchors[k + 1].x : pageMaxX + 1) / pageMaxX,
+            }));
+
+            const sig = anchors
+                .map((t) => String(t.str || '').trim().toLowerCase())
+                .filter((s) => s !== '');
+
+            found.push({
+                pageHint: p,
+                lineHint: i,
+                sig,
+                indexed: relaxedMonthColumns([...tokenLines[i].tokens].sort((a, b) => a.x - b.x)).length >= 2,
+                descX: header.descX / pageMaxX,
+                descRight: header.descRight / pageMaxX,
+                monthCols: header.monthCols.map((mc) => ({
+                    index: mc.index,
+                    x: mc.x / pageMaxX,
+                    xEnd: mc.xEnd / pageMaxX,
+                })),
+                pseudoCols,
+                headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
+            });
+
+            // The desk shows the FIRST table page — where the names and labels are.
+            if (block === null) {
+                block = buildPdfSliceBlock(tokenLines, i, anchors, header.monthCols, maxRows);
+            }
+            break;
+        }
+    }
+
+    if (found.length === 0) return null;
+
+    // Column-split tables are the norm here, not the exception: the roof spreads
+    // 7 months over 2 pages and SEGMENT spreads 5. A one-page map would teach a
+    // short schedule, so every page that yielded a header rides in the map.
+    //
+    // Numbering is only trustworthy when the LABELS carry it. Indexed wording
+    // ("SEGMENT 3,4,5") is self-describing, so a split merges unambiguously.
+    // Positional wording restarts at 1 on every page and the roof's page 2 even
+    // REPEATS its last column — nothing in the bytes says which month that is.
+    // Rather than guess, such a capture is offered with NO map: the row still
+    // reaches the desk, and a reviewer supplies the numbering (the same
+    // null-map-then-teach path Excel captures already use).
+    const ambiguous = found.length > 1 && found.some((f) => !f.indexed);
+
+    return {
+        map: ambiguous ? null : {
+            v: PDF_MAP_VERSION,
+            kind: 'pdf',
+            pages: found.map(({ indexed, ...page }) => page),
+        },
+        block,
+        ambiguous,
+    };
+}
+
+/**
+ * Do the proposed month bands actually hold values in the rows below?
+ *
+ * The PDF twin of the Excel mapSpansHoldNumbers gate: proof against real tokens
+ * that this grid carries a schedule. Requires at least two DIFFERENT bands with
+ * a numeric or percent value (percent matters — the roof family's cells are
+ * "16%", not pesos), so one stray figure cannot vouch for a whole layout.
+ *
+ * Called by: derivePdfLayout().
+ */
+function bandsHoldNumbers(tokenLines, headerIndex, monthCols) {
+    const filled = {};
+    for (let i = headerIndex + 1; i < Math.min(tokenLines.length, headerIndex + 16); i++) {
+        for (const t of tokenLines[i].tokens) {
+            const s = String(t.str || '').trim();
+            if (s === '' || !(isNumericToken(s) || isNumericPct(s) || /^\d[\d,]*(\.\d+)?\s*%$/.test(s))) {
+                continue;
+            }
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            const centre = (t.x + xEnd) / 2;
+            for (const mc of monthCols) {
+                if (centre >= mc.x && centre < mc.xEnd) { filled[mc.index] = true; break; }
+            }
+        }
+        if (Object.keys(filled).length >= 2) return true;
+    }
+
+    return Object.keys(filled).length >= 2;
+}
+
+/**
+ * Serialize the table's neighbourhood in the Excel slice's exact shape.
+ *
+ * Roles follow the same meaning the AI slice uses: lines above the header are
+ * META, the header line is HEADER, the rest are DATA, and an author's summary
+ * line is SUMMARY. Tokens are assigned to the pseudo-column whose band holds
+ * their CENTRE — the same single-assignment rule buildRows uses, so a value
+ * straddling a boundary cannot land in two cells.
+ *
+ * Called by: derivePdfLayout().
+ */
+function buildPdfSliceBlock(tokenLines, headerIndex, anchors, monthCols, maxRows) {
+    const letters = anchors.map((t, k) => columnLetter(k));
+    const bands = anchors.map((t, k) => ({
+        x: t.x,
+        xEnd: anchors[k + 1] ? anchors[k + 1].x : Infinity,
+    }));
+    // Which pseudo-columns are VALUE columns (they overlap a month band)? Role
+    // detection must ignore them: isSummaryLabel matches a bare "%", so judging a
+    // row by its numeric cells tagged every percent-valued activity as SUMMARY.
+    // Labels decide a row's role; values never do.
+    const isValueBand = bands.map((b) => (monthCols || []).some(
+        (mc) => b.x < mc.xEnd && mc.x < b.xEnd
+    ));
+
+    const lines = ['COLUMNS: ' + letters.join(',')
+        + ' | META: title block | HEADER: column labels'
+        + ' | DATA: activity rows — compute months from these ONLY'
+        + ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months'];
+
+    const start = Math.max(0, headerIndex - 2);
+    let kept = 0;
+    for (let i = start; i < tokenLines.length && kept < maxRows; i++) {
+        const cells = new Array(letters.length).fill('');
+        let any = false;
+        for (const t of tokenLines[i].tokens) {
+            const text = String(t.str || '').trim();
+            if (text === '') continue;
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            const centre = (t.x + xEnd) / 2;
+            let slot = -1;
+            for (let k = 0; k < bands.length; k++) {
+                if (centre >= bands[k].x && centre < bands[k].xEnd) { slot = k; break; }
+            }
+            if (slot === -1) slot = centre < bands[0].x ? 0 : bands.length - 1;
+            cells[slot] = cells[slot] ? cells[slot] + ' ' + text : text;
+            any = true;
+        }
+        if (!any) continue;
+
+        let role = 'DATA';
+        if (i === headerIndex) role = 'HEADER';
+        else if (i < headerIndex) role = 'META';
+        else if (cells.some((c, k) => !isValueBand[k] && (isSummaryLabel(c) || isTotalLabel(c)))) {
+            role = 'SUMMARY';
+        }
+
+        kept++;
+        lines.push('R' + kept + ' [' + role + ']: ' + cells.map(csvCell).join(','));
+    }
+
+    return lines.join('\n');
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -937,5 +1305,8 @@ if (typeof window !== 'undefined') {
         parseSCurvePdf,
         parseWeeklySchedulePdf,
         isWeakPdfCurve,
+        relaxedMonthLabel,
+        derivePdfLayout,
+        PDF_MAP_VERSION,
     };
 }

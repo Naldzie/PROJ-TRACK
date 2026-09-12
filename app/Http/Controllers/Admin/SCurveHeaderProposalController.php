@@ -40,42 +40,75 @@ class ScurveHeaderProposalController extends Controller
             'contractor_id' => 'nullable|integer|exists:contractors,id',
             'project_id' => 'nullable|integer|exists:projects,id',
             'source_type' => 'sometimes|string|in:excel,pdf',
+            // E1-PDF: the PDF path supplies what it read, because the server owns
+            // no PDF reader (see the branch below).
+            'header_rows_text' => 'sometimes|string|max:8000',
+            'column_map' => 'sometimes|string|max:20000',
         ]);
 
+        $isPdf = ($validated['source_type'] ?? 'excel') === 'pdf';
         $hasFile = $request->hasFile('file');
         $documentId = $request->input('document_id');
 
-        if (($hasFile ? 1 : 0) + (!empty($documentId) ? 1 : 0) !== 1) {
+        if (!$isPdf && ($hasFile ? 1 : 0) + (!empty($documentId) ? 1 : 0) !== 1) {
             return response()->json([
                 'success' => false,
                 'message' => 'Provide either an uploaded file or a document_id.',
             ], 422);
         }
 
-        try {
-            $path = $this->resolveSource($request, $hasFile, $documentId);
+        if ($isPdf) {
+            // PDF captures arrive pre-read: serializeForAi and deriveAutoColumnMap
+            // both need a workbook, and no PDF extractor exists server-side, so the
+            // browser's pdf.js pass is the only reader there is. Trust is unchanged
+            // — a capture is a PROPOSAL either way, and approval is still the gate.
+            $text = trim((string) ($validated['header_rows_text'] ?? ''));
+            if ($text === '' || !str_starts_with($text, 'COLUMNS:')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'A PDF capture must carry the slice it read.',
+                ], 422);
+            }
+            $columnMap = null;
+            if (!empty($validated['column_map'])) {
+                $decoded = json_decode($validated['column_map'], true);
+                // Only a PDF-shaped map may ride in, so an Excel map can never be
+                // stored against a PDF row (the readers key off exactly this).
+                if (is_array($decoded) && ($decoded['kind'] ?? null) === 'pdf') {
+                    $columnMap = $decoded;
+                }
+            }
             $contractorId = $this->resolveContractor($validated, $documentId);
-            $text = $this->sCurveImportService->serializeForAi($path, 15);
-        } catch (RuntimeException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 422);
+        } else {
+            try {
+                $path = $this->resolveSource($request, $hasFile, $documentId);
+                $contractorId = $this->resolveContractor($validated, $documentId);
+                $text = $this->sCurveImportService->serializeForAi($path, 15);
+            } catch (RuntimeException $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            // E1-3: auto-derive a versioned layout map from the failed bytes (user
+            // choice: auto, not reviewer-assigned). Best-effort — null when nothing
+            // derivable exists; the capture still stores (reviewable, never consulted).
+            $columnMap = null;
+            try {
+                $columnMap = $this->sCurveImportService->deriveAutoColumnMap($path);
+            } catch (\Throwable $e) {
+                $columnMap = null;
+            }
         }
 
+        // One identity rule for both kinds: the slice text, normalized.
         $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
 
-        // E1-3: auto-derive a versioned layout map from the failed bytes (user
-        // choice: auto, not reviewer-assigned). Best-effort — null when nothing
-        // derivable exists; the capture still stores (reviewable, never consulted).
-        $columnMap = null;
-        try {
-            $columnMap = $this->sCurveImportService->deriveAutoColumnMap($path);
-        } catch (\Throwable $e) {
-            $columnMap = null;
-        }
-
-        $query = ScurveHeaderProposal::where('header_hash', $hash);
+        // Scoped by TYPE as well as hash: an Excel row and a PDF row must never
+        // merge into each other, since every reader keys off source_type.
+        $query = ScurveHeaderProposal::where('header_hash', $hash)
+            ->where('source_type', $isPdf ? 'pdf' : 'excel');
         if ($contractorId === null) {
             $query->whereNull('contractor_id');
         } else {

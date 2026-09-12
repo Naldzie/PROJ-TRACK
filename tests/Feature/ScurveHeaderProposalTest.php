@@ -1053,6 +1053,92 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+    // E1-PDF / PDF-1 — a PDF capture arrives PRE-READ, because the server owns no
+    // PDF extractor: the browser's pdf.js pass is the only reader there is. The
+    // file/document_id XOR therefore does not apply to it.
+    // Called by: scurveCaptureHeaders('pdf', …) → collect().
+    public function test_pdf_capture_stores_a_client_read_slice(): void
+    {
+        $admin = $this->makeUser('admin');
+        $block = "COLUMNS: A,B,C,D | META: title block | HEADER: column labels\n"
+            . "R1 [HEADER]: ITEM NO.,DESCRIPTION,SEGMENT 1,SEGMENT 2\n"
+            . "R2 [DATA]: 1,Mobilization Works,50000,0";
+        // The real client shape: one entry per table page, because these tables
+        // are column-split (SEGMENT spreads 5 months over 2 pages).
+        $map = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['item no.', 'description'],
+                'descX' => 0.1, 'descRight' => 0.3,
+                'monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.9]]],
+            ['pageHint' => 1, 'sig' => ['segment 3', 'segment 4'],
+                'descX' => 0.0, 'descRight' => 0.2,
+                'monthCols' => [['index' => 3, 'x' => 0.2, 'xEnd' => 0.5], ['index' => 4, 'x' => 0.5, 'xEnd' => 0.8]]],
+        ]];
+
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf',
+            'header_rows_text' => $block,
+            'column_map' => json_encode($map),
+        ])->assertStatus(201)->assertJsonPath('success', true);
+
+        $row = ScurveHeaderProposal::where('source_type', 'pdf')->first();
+        $this->assertNotNull($row);
+        $this->assertSame('proposed', $row->status, 'a capture is never live on arrival');
+        $this->assertSame('pdf', $row->column_map['kind']);
+        $this->assertCount(2, $row->column_map['pages'], 'both table pages must survive the round trip');
+        $this->assertCount(2, $row->column_map['pages'][1]['monthCols']);
+        $this->assertStringContainsString('SEGMENT 1', $row->header_rows_text);
+
+        // A repeat of the same layout counts rather than duplicating.
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf',
+            'header_rows_text' => $block,
+            'column_map' => json_encode($map),
+        ])->assertStatus(201);
+        $this->assertSame(1, ScurveHeaderProposal::where('source_type', 'pdf')->count());
+        $this->assertSame(2, ScurveHeaderProposal::where('source_type', 'pdf')->first()->occurrences);
+    }
+
+    // Discipline on that branch: a capture with no slice teaches nothing, and an
+    // Excel-shaped map must never be stored against a PDF row — every reader keys
+    // off source_type, so a crossed map would be read by the wrong engine.
+    // Called by: collect() PDF branch.
+    public function test_pdf_capture_refuses_junk_and_foreign_maps(): void
+    {
+        $admin = $this->makeUser('admin');
+
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf',
+            'header_rows_text' => 'not a slice at all',
+        ])->assertStatus(422)->assertJsonPath('success', false);
+
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf',
+        ])->assertStatus(422);
+
+        $this->assertSame(0, ScurveHeaderProposal::count());
+
+        // Valid slice, but the map is an Excel one — stored WITHOUT the map.
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf',
+            'header_rows_text' => "COLUMNS: A,B\nR1 [HEADER]: DESCRIPTION,MONTH 1",
+            'column_map' => json_encode(['v' => 1, 'descCol' => 2, 'monthSpans' => [1 => [3]]]),
+        ])->assertStatus(201);
+
+        $row = ScurveHeaderProposal::where('source_type', 'pdf')->first();
+        $this->assertNotNull($row);
+        $this->assertNull($row->column_map, 'a non-PDF map must not ride on a PDF row');
+    }
+
+    // Excel captures are untouched by the PDF branch: still XOR-gated.
+    // Called by: collect() Excel path.
+    public function test_excel_capture_still_requires_a_source(): void
+    {
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', ['source_type' => 'excel'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Provide either an uploaded file or a document_id.');
+    }
+
     // GAP 2 (2026-09-12) — an absent headerRow no longer kills derivation.
     // When our detector cannot find the table, serializeForAi tags every row
     // [DATA], the model sees no HEADER line and omits the key — exactly the files
