@@ -3,7 +3,7 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026
-# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ BROWSER-PROVEN · PDF-2 ✅ built (consult NOT browser-proven — see the corrected proof entry) · PDF-3/4 ⬜
+# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated) · PDF-3/4 ⬜
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -25,11 +25,11 @@
       with real names, and the long-standing "19.99 dust" is gone.
     - PDF-1 (capture) BUILT and BROWSER-PROVEN 2026-09-12: rules miss → silent
       capture → the desk row renders with its PDF/Mapped badges and grid.
-    - PDF-2 (consult) BUILT, core proven on the real file by node probe, but NOT
-      browser-proven: the live run that looked like proof was actually served by
-      LIVE MONTH WORDS (SEGMENT 1..5 auto-promoted at seen=3), so the map pass
-      never ran. To prove it: reject those words, keep the layout live, re-import
-      — and expect the "learned layout" note. See the corrected proof entry.
+    - PDF-2 (consult) BUILT and BROWSER-PROVEN 2026-09-12 with the channels
+      isolated (all month words left "proposed", only the layout live): the map
+      fired, announced itself, and its SECOND page supplied months 3,4,5 — the
+      column-split case. An earlier run that looked like proof was retracted; see
+      both entries in the session log.
     - PDF-3 (learn-from-AI) and PDF-4 (teach) NOT started.
 
   ORDER OF WORK: PDF-3 → PDF-4 (P3, PDF-1 and PDF-2 are done), each proved
@@ -494,6 +494,26 @@
       same 7 pre-existing; all 16 sample-PDF rule reads byte-IDENTICAL.
     - NOT browser-proven yet: capture POST, desk PDF badge, and the approve →
       re-import round trip. The core path is proven on the real file above.
+
+2026-09-12 — PDF-2 CONSULT BROWSER-PROVEN, channels isolated (user).
+    The re-test asked for above, run properly this time: both tables cleared, the
+    capture redone, ONLY the layout approved. Database state at the moment of the
+    import — checked, not assumed:
+      scurveMonth words : 5 rows, ALL "proposed" (the loader fetches ?status=live,
+                          so the word channel could not contribute a thing)
+      pdf layout id=58  : LIVE, 2 pages — page 0 months 1,2 · page 1 months 3,4,5
+    Result: the import carried "Heads-up: this PDF was read with a learned layout
+    for this contractor…" and the TRUE curve 5 / 20 / 40 / 65 / 100 with the real
+    names (Finishing spanning M4+M5).
+    ⇒ Four things are proven at once, with the other channel provably out of play:
+      1. consult fires when, and only when, the rules find nothing;
+      2. the MULTI-PAGE map reads a COLUMN-SPLIT table — months 3,4,5 came from
+         the map's second page entry, which is exactly the defect the user caught
+         when the roof's "7 days" column exposed single-page capture;
+      3. a map-built curve announces itself;
+      4. approval is the gate: the same rows sat "proposed" and changed nothing.
+    E1-PDF PDF-1 + PDF-2 are now BROWSER-PROVEN end to end, this time on evidence
+    that identifies WHICH channel did the reading.
 
   2026-09-12 — E1-PDF LIVE RUN + A CORRECTED PROOF CLAIM (user, SEGMENT PDF).
     WHAT IS PROVEN (browser, tables wiped first so nothing was inherited):
