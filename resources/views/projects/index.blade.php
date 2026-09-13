@@ -44,6 +44,25 @@
 
 @section('content')
 
+{{-- Critical first-paint styles (inline so refresh never flashes unstyled).
+     Full styling still lives in public/css/admin/projects/projects.css. --}}
+<style>
+.pm-header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;margin-bottom:18px}
+.pm-title-block h1{font-size:26px;font-weight:700;letter-spacing:-.02em;color:#0B1F4B;margin:0}
+.pm-subtitle{margin:4px 0 0;font-size:13px;color:#64748B;font-weight:500}
+.pm-header-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pm-toolbar-card{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;margin-bottom:18px}
+.pm-filters{display:flex;gap:15px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.projects-table-card{background:#fff;border:1px solid #E2E8F0;border-radius:14px;overflow:hidden;margin-bottom:24px}
+.projects-table-wrap{overflow-x:auto;border-bottom:1px solid #E2E8F0}
+#projectsTable{display:none;width:100%;border-collapse:collapse;background:#fff}
+#projectsTable.show{display:table}
+#projectsTable thead th{position:sticky;top:0;background:#1e40af;color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;padding:12px 14px;text-align:left;white-space:nowrap}
+#projectsTable td{padding:14px;font-size:13px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:25px;margin-bottom:40px}
+.project-card{background:#fff;border:1px solid #E2E8F0;border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+</style>
+
 @php
     // Sort URL builder — preserves existing query params (status, filter, year, per_page)
     // and toggles sort direction on repeated clicks.
@@ -70,51 +89,72 @@
     </div>
 @endif
 
-<div class="page-header">
-    
-    <h1>Project Monitor</h1>
+<div class="pm-header">
+    <div class="pm-title-block">
+        <h1>Project Monitor</h1>
+        <p class="pm-subtitle">Track schedules, progress, and health across all projects</p>
+    </div>
+    <div class="pm-header-actions">
     @if(in_array(auth()->user()->role, ['admin', 'staff']))
-        <a href="{{ route($archivedRoute) }}" class="btn-secondary" style="text-decoration: none; margin-right: 8px;">
+        <a href="{{ route($archivedRoute) }}" class="btn-secondary pm-btn-archived" style="text-decoration: none;">
             <i class="bi bi-archive"></i> Archived Projects
         </a>
     @endif
     @can('create', App\Models\Project::class)
-        <button class="btn-primary" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+        <button class="btn-primary pm-btn-new" data-bs-toggle="modal" data-bs-target="#addProjectModal">
             <i class="bi bi-plus-circle"></i> New Project
         </button>
     @endcan
+    </div>
 </div>
 
-<div class="filters-section">
-    <div class="filters-buttons" style="display: flex; gap: 12px; align-items: center; flex: 1;">
-        <button class="filter-btn active" onclick="filterProjects('all')">All</button>
-        <button class="filter-btn" onclick="filterProjects('ongoing')"><i class="bi bi-arrow-repeat"></i> Ongoing</button>
-        <button class="filter-btn" onclick="filterProjects('planned')"><i class="bi bi-clipboard-check"></i> Planned</button>
-        <button class="filter-btn" onclick="filterProjects('completed')"><i class="bi bi-check-circle"></i> Completed</button>
+<div class="pm-toolbar-card">
+<div class="filters-section pm-filters">
+    <div class="filters-buttons pm-segmented" role="tablist" aria-label="Project status filter" style="display: flex; gap: 0; align-items: center; flex: 1;">
+        <button class="filter-btn active" onclick="filterProjects('all')" role="tab">All</button>
+        <button class="filter-btn" onclick="filterProjects('ongoing')" role="tab"><i class="bi bi-arrow-repeat"></i> Ongoing</button>
+        <button class="filter-btn" onclick="filterProjects('planned')" role="tab"><i class="bi bi-clipboard-check"></i> Planned</button>
+        <button class="filter-btn" onclick="filterProjects('completed')" role="tab"><i class="bi bi-check-circle"></i> Completed</button>
     </div>
-    
-    <div class="filters-actions" style="display: flex; gap: 12px; align-items: center;">
-        <select id="filterStartYear" onchange="applyFilters()" style="padding: 8px 12px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer;">
+
+    <div class="filters-actions pm-toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <select id="filterStartYear" class="pm-select" onchange="applyFilters()" aria-label="Filter by start year">
             <option value="">Start Year — All</option>
             @foreach($startYears as $y)
                 <option value="{{ $y }}" {{ (string)$y === (string)($selectedStartYear ?? '') ? 'selected' : '' }}>{{ $y }}</option>
             @endforeach
         </select>
-        <select id="filterDeadlineYear" onchange="applyFilters()" style="padding: 8px 12px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; font-size: 13px; font-weight: 500; color: #374151; cursor: pointer;">
+        <select id="filterDeadlineYear" class="pm-select" onchange="applyFilters()" aria-label="Filter by deadline year">
             <option value="">Deadline Year — All</option>
             @foreach($deadlineYears as $y)
                 <option value="{{ $y }}" {{ (string)$y === (string)($selectedDeadlineYear ?? '') ? 'selected' : '' }}>{{ $y }}</option>
             @endforeach
         </select>
-        <div class="project-search" style="position: relative;">
-            <input type="text" id="projectSearch" class="project-search-input" placeholder="Search by code, title, or contractor" 
-                   style="padding: 10px 14px 10px 40px; border: 2px solid var(--primary); background: rgba(37,99,235,0.05); border-radius: 8px; width: 280px; font-size: 13px; transition: 0.3s; font-weight: 500;" 
-                   oninput="performSearch(this.value)"
-                   onfocus="this.style.background='rgba(37,99,235,0.08)'; this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 3px rgba(37,99,235,0.1)';"
-                   onblur="this.style.background='rgba(37,99,235,0.05)'; this.style.borderColor='var(--primary)'; this.style.boxShadow='none';">
-            <i class="bi bi-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--primary); font-size: 16px; pointer-events: none; font-weight: 700;"></i>
+        <div class="project-search pm-search" style="position: relative;">
+            <input type="text" id="projectSearch" class="project-search-input" placeholder="Search by code, title, or contractor"
+                   oninput="performSearch(this.value)">
+            <i class="bi bi-search pm-search-icon"></i>
         </div>
-        <div class="view-toggle-group">
+        {{-- Column visibility control (frontend only — no backend change) --}}
+        <div class="pm-columns-wrap">
+            <button type="button" class="pm-columns-btn" id="pmColumnsBtn" aria-haspopup="true" aria-expanded="false" title="Show / hide table columns">
+                <i class="bi bi-gear"></i> Columns <i class="bi bi-chevron-down pm-caret"></i>
+            </button>
+            <div class="pm-columns-pop" id="pmColumnsPop" role="menu" aria-label="Column visibility" hidden>
+                <div class="pm-columns-head">Columns</div>
+                <div class="pm-columns-list" id="pmColumnsList">
+                    {{-- Checkboxes injected by project-monitor-columns.js from table headers --}}
+                </div>
+                <div class="pm-columns-foot">
+                    <button type="button" id="pmColumnsShowAll">Show all</button>
+                    <span class="pm-columns-sep">·</span>
+                    <button type="button" id="pmColumnsHideAll">Hide all</button>
+                    <span class="pm-columns-sep">·</span>
+                    <button type="button" id="pmColumnsReset">Reset</button>
+                </div>
+            </div>
+        </div>
+        <div class="view-toggle-group pm-view-toggle">
             <button class="view-toggle-btn active" id="gridViewBtn" onclick="toggleViewMode('grid')">
                 <i class="bi bi-grid-3x3-gap"></i> Grid
             </button>
@@ -123,6 +163,7 @@
             </button>
         </div>
     </div>
+</div>
 </div>
 
 <div class="projects-grid" id="projectsGrid">
@@ -149,8 +190,8 @@
                  data-id="{{ $project->id }}"
                  data-start-year="{{ $project->planned_start_date ? $project->planned_start_date->format('Y') : '' }}"
                  data-deadline-year="{{ $project->planned_end_date ? $project->planned_end_date->format('Y') : '' }}">
-                
-                <div class="project-header">
+
+                <div class="project-header has-cover-bg" style="background: linear-gradient(rgba(11,31,75,0.62), rgba(20,43,99,0.62)), url('{{ asset('images/login-image.png') }}') center/cover no-repeat;">
                     <div class="project-header-left">
                         @if(($unreadByProject->get($project->id, 0) ?? 0) > 0)
                             <span style="position:absolute;top:10px;right:10px;width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 2px rgba(255,255,255,0.8);" title="Unread notifications"></span>
@@ -466,23 +507,24 @@
 @endif
 
 <!-- TABLE VIEW -->
+<div class="projects-table-card">
 <div class="projects-table-wrap">
     <table class="projects-table" id="projectsTable">
     <thead>
         <tr>
-            <th><a href="{{ $sortUrl('code') }}" class="sortable-th">Code {!! $currentSort === 'code' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th><a href="{{ $sortUrl('title') }}" class="sortable-th">Title {!! $currentSort === 'title' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th><a href="{{ $sortUrl('category') }}" class="sortable-th">Category {!! $currentSort === 'category' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th><a href="{{ $sortUrl('status') }}" class="sortable-th">Status {!! $currentSort === 'status' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th>Health</th>
-            <th>Progress</th>
-            <th><a href="{{ $sortUrl('planned_start_date') }}" class="sortable-th">Start Date {!! $currentSort === 'planned_start_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th>Duration</th>
-            <th><a href="{{ $sortUrl('planned_end_date') }}" class="sortable-th">Deadline {!! $currentSort === 'planned_end_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th>Days Left</th>
-            <th>Manager</th>
-            <th><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Contract Price {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
-            <th>Actions</th>
+            <th data-col="code"><a href="{{ $sortUrl('code') }}" class="sortable-th">Code {!! $currentSort === 'code' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="title"><a href="{{ $sortUrl('title') }}" class="sortable-th">Title {!! $currentSort === 'title' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="category"><a href="{{ $sortUrl('category') }}" class="sortable-th">Category {!! $currentSort === 'category' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="status"><a href="{{ $sortUrl('status') }}" class="sortable-th">Status {!! $currentSort === 'status' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="health">Health</th>
+            <th data-col="progress">Progress</th>
+            <th data-col="start"><a href="{{ $sortUrl('planned_start_date') }}" class="sortable-th">Start Date {!! $currentSort === 'planned_start_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="duration">Duration</th>
+            <th data-col="deadline"><a href="{{ $sortUrl('planned_end_date') }}" class="sortable-th">Deadline {!! $currentSort === 'planned_end_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="days">Days Left</th>
+            <th data-col="manager">Manager</th>
+            <th data-col="cost"><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Contract Price {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="actions" data-locked="1">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -502,15 +544,15 @@
                 <tr data-status="{{ strtolower($project->status) }}" data-id="{{ $project->id }}"
                     data-start-year="{{ $project->planned_start_date ? $project->planned_start_date->format('Y') : '' }}"
                     data-deadline-year="{{ $project->planned_end_date ? $project->planned_end_date->format('Y') : '' }}">
-                    <td>
+                    <td data-col="code">
                         <span class="table-project-code">{{ $project->code }}</span>
                         @if(($unreadByProject->get($project->id, 0) ?? 0) > 0)
                             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-left:4px;vertical-align:middle;" title="Unread notifications"></span>
                         @endif
                     </td>
-                    <td><span class="table-project-title" title="{{ $project->title }}">{{ $project->title }}</span></td>
-                    <td><span class="table-category">{{ $project->category?->name ?? 'N/A' }}</span></td>
-                    <td>
+                    <td data-col="title"><span class="table-project-title" title="{{ $project->title }}">{{ $project->title }}</span></td>
+                    <td data-col="category"><span class="table-category">{{ $project->category?->name ?? 'N/A' }}</span></td>
+                    <td data-col="status">
                         <span class="table-status-badge {{ strtolower($project->status) }}" title="{{ $isCompleted && isset($completionDelay) ? ($completionDelay === 0 ? 'On Time' : ($completionDelay > 0 ? 'Late' : 'Early')) : $project->status }}">
                             @if($project->status === 'Ongoing')
                                 <i class="bi bi-play-circle-fill"></i>
@@ -533,7 +575,7 @@
                             <span class="status-text">{{ $project->status }}</span>
                         </span>
                     </td>
-                    <td>
+                    <td data-col="health">
                         <span class="table-health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : ($healthLevel === 'no_data' || $healthLevel === 'neutral' ? 'no-data' : 'on-track')) }}"
                               @if(!empty($health['tooltip'])) title="{{ $health['tooltip'] }}" @endif>
                             @if($isOverdue)
@@ -554,7 +596,7 @@
                         </span>
                         @endif
                     </td>
-                    <td>
+                    <td data-col="progress">
                         <div class="table-progress-cell">
                             <div class="table-progress-bar">
                                 <div class="table-progress-fill {{ $progressHealth }}" style="width: {{ $progress }}%"></div>
@@ -562,9 +604,9 @@
                             <div class="table-progress-text">{{ $progress }}%</div>
                         </div>
                     </td>
-                    <td><span class="table-start-date">{{ $project->planned_start_date ? $project->planned_start_date->format('M d, Y') : 'TBD' }}</span></td>
-                    <td><span class="table-duration">{{ $project->planned_duration_days ? $project->planned_duration_days . ' days' : 'N/A' }}</span></td>
-                    <td>
+                    <td data-col="start"><span class="table-start-date">{{ $project->planned_start_date ? $project->planned_start_date->format('M d, Y') : 'TBD' }}</span></td>
+                    <td data-col="duration"><span class="table-duration">{{ $project->planned_duration_days ? $project->planned_duration_days . ' days' : 'N/A' }}</span></td>
+                    <td data-col="deadline">
                         @if(!$isCompleted)
                             <span class="table-deadline {{ $riskStatus }}">
                                 {{ $project->planned_end_date ? $project->planned_end_date->format('M d, Y') : 'TBD' }}
@@ -575,7 +617,7 @@
                             </span>
                         @endif
                     </td>
-                    <td>
+                    <td data-col="days">
                         @if(!$isCompleted)
                             @if($daysRemaining !== null)
                                 <span class="table-days-remaining {{ $riskStatus }}">
@@ -592,30 +634,21 @@
                             <span class="table-days-remaining">—</span>
                         @endif
                     </td>
-                    <td>
+                    <td data-col="manager">
                         @if($project->assigned_project_manager)
                             <span class="table-manager">{{ $project->getProjectManagerName() }}</span>
                         @else
                             <span class="table-manager-empty">Unassigned</span>
                         @endif
                     </td>
-                    <td><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span></td>
-                    <td>
-                        <div class="table-actions">
-                            <a href="{{ route($showRoute, $project->id) }}" class="table-action-btn table-action-view" title="View">
-                                <i class="bi bi-eye"></i>
-                            </a>
-                            @can('update', $project)
-                                <a href="#" class="table-action-btn" data-bs-toggle="modal" data-bs-target="#addProjectModal" data-project-id="{{ $project->id }}" title="Edit">
-                                    <i class="bi bi-pencil-square"></i>
-                                </a>
-                            @endcan
-                            @can('archive', $project)
-                                <button class="table-action-btn" onclick="archiveProject('{{ route($archiveRouteName, $project->id) }}', '{{ $project->title }}')" title="Archive">
-                                    <i class="bi bi-archive"></i>
-                                </button>
-                            @endcan
-                        </div>
+                    <td data-col="cost"><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span></td>
+                    <td data-col="actions">
+                        <button type="button" class="pm-kebab" aria-haspopup="true" aria-expanded="false" title="Row actions"
+                            data-view-url="{{ route($showRoute, $project->id) }}"
+                            @can('update', $project) data-edit-id="{{ $project->id }}" @endcan
+                            @can('archive', $project) data-archive-url="{{ route($archiveRouteName, $project->id) }}" data-archive-title="{{ $project->title }}" @endcan>
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
                     </td>
                 </tr>
             @endforeach
@@ -631,6 +664,7 @@
 </div>
 
 {{-- PAGINATION CONTROLS + INFO BAR --}}
+<div class="pm-card-foot">
 <div class="dt-info-bar">
     <div class="dt-info-text">
         @if($projects->total() > 0)
@@ -655,6 +689,50 @@
         {{ $projects->links('vendor.pagination.bootstrap-5') }}
     </div>
 @endif
+</div>
+</div>
+
+{{-- Single floating row-action menu (body-level, positioned via JS so it is
+     never clipped by the table scroll container or covered by other rows) --}}
+<div class="pm-row-menu-pop pm-row-menu-floating" id="pmRowMenu" hidden>
+    <a href="#" class="pm-row-menu-item" id="pmRowMenuView">
+        <i class="bi bi-eye"></i> View Project
+    </a>
+    <a href="#" class="pm-row-menu-item" id="pmRowMenuEdit" data-bs-toggle="modal" data-bs-target="#addProjectModal">
+        <i class="bi bi-pencil-square"></i> Edit Project
+    </a>
+    <button type="button" class="pm-row-menu-item pm-row-menu-danger" id="pmRowMenuArchive">
+        <i class="bi bi-archive"></i> Archive
+    </button>
+</div>
+
+{{-- Apply the saved Grid/Table mode synchronously (before first paint) so a
+     refresh never flashes the wrong view while waiting for the main script. --}}
+<script>
+(function(){try{
+var mode=localStorage.getItem('pmu_projects_view_mode')||'grid';
+var grid=document.getElementById('projectsGrid');
+var tbl=document.getElementById('projectsTable');
+var card=document.querySelector('.projects-table-card');
+var gb=document.getElementById('gridViewBtn'),tb=document.getElementById('tableViewBtn');
+var gp=document.querySelectorAll('.grid-pagination');
+var feet=document.querySelectorAll('.pm-card-foot');
+if(mode==='table'){
+if(grid)grid.style.display='none';
+if(tbl)tbl.classList.add('show');
+if(card)card.style.display='block';
+if(gb)gb.classList.remove('active');if(tb)tb.classList.add('active');
+gp.forEach(function(e){e.style.display='none';});
+feet.forEach(function(e){e.style.display='';});
+}else{
+if(grid)grid.style.display='grid';
+if(tbl)tbl.classList.remove('show');
+if(card)card.style.display='none';
+if(gb)gb.classList.add('active');if(tb)tb.classList.remove('active');
+gp.forEach(function(e){e.style.display='';});
+feet.forEach(function(e){e.style.display='none';});
+}}catch(e){}})();
+</script>
 
 @include('components.delete-confirmation-modal')
 @include('components.warning-confirm-modal')
@@ -734,6 +812,8 @@ function archiveProject(url, projectTitle) {
 {{-- Set Up Baseline modal logic (filemtime cache-bust: same $jsv convention as _create_project_modal) --}}
 @php $jsvSetupModal = fn($p) => asset($p) . '?v=' . filemtime(public_path($p)); @endphp
 <script src="{{ $jsvSetupModal('js/admin/projects/baseline-schedule-setup-modal.js') }}"></script>
+{{-- Project Monitor UI: column visibility + row menus (frontend only, no backend change) --}}
+<script src="{{ asset('js/admin/projects/project-monitor-columns.js') }}"></script>
 
 <script>
 let currentSearchTerm = '';
@@ -747,9 +827,13 @@ function changePerPage(value) {
 }
 
 function filterProjects(status) {
+    // Use closest() so clicks on icons inside the button still activate the right tab.
+    const btn = (typeof event !== 'undefined' && event.target)
+        ? (event.target.closest ? (event.target.closest('.filter-btn') || event.target) : event.target)
+        : null;
     const buttons = document.querySelectorAll('.filter-btn');
-    buttons.forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    buttons.forEach(b => b.classList.remove('active'));
+    if (btn && btn.classList) btn.classList.add('active');
     currentStatusFilter = status;
     applyFilters();
 }
@@ -809,14 +893,16 @@ function toggleExpand(header) {
 function toggleViewMode(mode) {
     const grid = document.getElementById('projectsGrid');
     const table = document.getElementById('projectsTable');
+    const card = document.querySelector('.projects-table-card');
     const gridBtn = document.getElementById('gridViewBtn');
     const tableBtn = document.getElementById('tableViewBtn');
     const gridPaginations = document.querySelectorAll('.grid-pagination');
-    const tablePaginations = document.querySelectorAll('.dt-info-bar:not(.grid-pagination), .dt-pagination-wrap:not(.grid-pagination)');
+    const tablePaginations = document.querySelectorAll('.projects-table-card .dt-info-bar, .projects-table-card .dt-pagination-wrap, .pm-card-foot');
 
     if (mode === 'grid') {
         grid.style.setProperty('display', 'grid', 'important');
         table.classList.remove('show');
+        if (card) card.style.setProperty('display', 'none', 'important');
         gridBtn.classList.add('active');
         tableBtn.classList.remove('active');
         gridPaginations.forEach(el => el.style.display = '');
@@ -824,6 +910,7 @@ function toggleViewMode(mode) {
     } else if (mode === 'table') {
         grid.style.setProperty('display', 'none', 'important');
         table.classList.add('show');
+        if (card) card.style.setProperty('display', 'block', 'important');
         gridBtn.classList.remove('active');
         tableBtn.classList.add('active');
         gridPaginations.forEach(el => el.style.display = 'none');

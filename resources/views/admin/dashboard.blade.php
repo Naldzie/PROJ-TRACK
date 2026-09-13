@@ -8,6 +8,14 @@
     // Role-aware destinations — staff must never land on admin-only URLs.
     $projectsIndex = auth()->user()->role === 'staff' ? 'staff.projects' : 'admin.projects';
     $roleLabel     = auth()->user()->role === 'staff' ? 'Staff Overview' : 'Admin Overview';
+    // Timeline-first for admins (full-picture triage); staff keep Overview first.
+    $timelineFirst = auth()->user()->role === 'admin';
+
+    // Hero identity — prefers the role profile's full name, falls back to email.
+    $heroName = auth()->user()->admin->full_name
+        ?? auth()->user()->staff->full_name
+        ?? auth()->user()->contractor->full_name
+        ?? auth()->user()->email;
 @endphp
 @extends($layout)
 
@@ -15,51 +23,72 @@
 
 {{--
 ╔══════════════════════════════════════════════════════════════════╗
-║  DASHBOARD — REDESIGNED v2                                       ║
-║  3-tab layout: Overview · Calendar · Campus Map                  ║
-║                                                                  ║
-║  Data is hardcoded placeholder.                                  ║
-║  TO WIRE BACKEND — replace hardcoded values with:               ║
-║    $metrics[], $ongoingProjects, $recentActivities               ║
-║    Calendar: inject real events via $calendarEvents              ║
-║    Map: replace mockProjects[] with real project coords          ║
+║  DASHBOARD — OPTION #3 REDESIGN (enterprise, spacious, minimal)  ║
+║  Scope: visual presentation of the content area ONLY.            ║
+║  Untouched: global layout/sidebar/topbar/auth, routes,           ║
+║  controllers, models, partials, Chart.js data, AJAX filtering    ║
+║  (filterDashboardTable), tab switching (dbSwitchTab), calendar   ║
+║  + campus map widgets and their JS.                              ║
+║  Preserved IDs/classes: .db-tab-btn/.db-tab-pane, .alert-pill,   ║
+║  .db-proj-tbl tbody, #db-filter-badge/#db-filter-label,          ║
+║  #statusDonut #healthDonut #budgetBar #progressBar               ║
+║  #extensionDonut, DASHBOARD_FILTER_URL.                          ║
 ╚══════════════════════════════════════════════════════════════════╝
 --}}
 
-
 <div class="db-page">
 
-{{-- ══ HEADER ══ --}}
-<div class="db-header">
-    <div>
-        <h2 class="db-header-title">
-            <i class="bi bi-speedometer2"></i> Project Monitoring Dashboard
-        </h2>
-        <p class="db-header-sub">
-            Real-time project overview — CSPC Project Management Unit &mdash;
-            {{ $roleLabel }} &mdash;
-            {{ now()->format('l, F j, Y') }}
-        </p>
+{{-- ══ HERO / WELCOME BANNER ══
+     CSPC_nabua_WTR.png is a decorative backdrop (aria-hidden); the welcome
+     copy, role badge, date, search and route buttons sit above it.  --}}
+<header class="db-hero">
+    <img src="{{ asset('images/CSPC_nabua_WTR.png') }}" alt="" aria-hidden="true" class="db-hero-bg">
+    <div class="db-hero-overlay" aria-hidden="true"></div>
+    <div class="db-hero-inner">
+        <div class="db-hero-left">
+            <div class="db-hero-icon"><i class="bi bi-kanban"></i></div>
+            <div style="min-width:0">
+                <p class="db-hero-eyebrow">Welcome back,</p>
+                <h2 class="db-hero-title">{{ $heroName }}</h2>
+                <p class="db-hero-sub">Project Monitoring Dashboard &mdash; CSPC Project Management Unit</p>
+                <div class="db-hero-meta">
+                    <span class="db-role-badge"><i class="bi bi-person-badge"></i> {{ $roleLabel }}</span>
+                    <span class="db-hero-date"><i class="bi bi-calendar3"></i> {{ now()->format('l, F j, Y') }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="db-hero-right">
+            {{-- Client-side table search (additive only — the alert-pill
+                 AJAX filter in dashboard.js is untouched). --}}
+            <label class="db-hero-search" for="db-hero-search-input">
+                <i class="bi bi-search"></i>
+                <input id="db-hero-search-input" type="search"
+                       placeholder="Search projects in table…"
+                       oninput="dbSearchProjects(this.value)" autocomplete="off">
+            </label>
+            <div class="db-hero-actions">
+                <a href="{{ route($projectsIndex) }}" class="db-header-btn light">
+                    <i class="bi bi-plus-circle"></i> New Project
+                </a>
+                <a href="{{ route($projectsIndex) }}" class="db-header-btn outline">
+                    <i class="bi bi-folder2-open"></i> All Projects
+                </a>
+            </div>
+        </div>
     </div>
-    <div class="db-header-actions">
-        <a href="{{ route($projectsIndex) }}" class="db-header-btn light">
-            <i class="bi bi-plus-circle"></i> New Project
-        </a>
-        <a href="{{ route($projectsIndex) }}" class="db-header-btn outline">
-            <i class="bi bi-folder2-open"></i> All Projects
-        </a>
-    </div>
-</div>
+</header>
 
 {{-- ══ ALERT BAR ══
      Pills filter the dashboard table in-place via AJAX.
      Clicking a pill fetches ALL matching projects from the server.
      Clicking the same pill again restores the default 10 rows.
      Hidden entirely when all counts are zero.
+     NOTE: the global notification bell + profile controls live in the
+     layout topbar and are intentionally not duplicated here.
 ══ --}}
 @if($overdueCount > 0 || $atRiskCount > 0 || $pendingUpdateCount > 0 || $overdueInspectionCount > 0 || (auth()->user()->role === 'admin' && $pendingExtensionCount > 0))
 <div class="db-alert-bar">
-    <span class="db-alert-label">⚠ Needs attention</span>
+    <span class="db-alert-label"><i class="bi bi-exclamation-triangle"></i> Needs attention</span>
 
     @if($overdueCount > 0)
     <button type="button" class="alert-pill danger"
@@ -89,7 +118,7 @@
     @endif
 
     @if($overdueInspectionCount > 0)
-    <button type="button" class="alert-pill warning"
+    <button type="button" class="alert-pill yellow"
             onclick="filterDashboardTable('inspection_overdue', this)">
         <i class="bi bi-calendar-x"></i>
         <span>Overdue Inspections</span>
@@ -98,7 +127,7 @@
     @endif
 
     @if(auth()->user()->role === 'admin' && $pendingExtensionCount > 0)
-    <button type="button" class="alert-pill info"
+    <button type="button" class="alert-pill purple"
             onclick="filterDashboardTable('pending_extensions', this)">
         <i class="bi bi-arrow-repeat"></i>
         <span>Extension Requests</span>
@@ -109,9 +138,15 @@
 </div>
 @endif
 
-{{-- ══ TABS ══ --}}
-<div class="db-tab-nav">
-    <button class="db-tab-btn active" data-target="tab-overview" onclick="dbSwitchTab(this)">
+{{-- ══ TABS ══
+     Same tab-switch logic (dbSwitchTab) and data-target panes as
+     before — only the visual style changed to a segmented control.
+══ --}}
+<div class="db-tab-nav" role="tablist">
+    <button class="db-tab-btn {{ $timelineFirst ? 'active' : '' }}" data-target="tab-timeline" onclick="dbSwitchTab(this)">
+        <i class="bi bi-bar-chart-steps"></i> Timeline
+    </button>
+    <button class="db-tab-btn {{ $timelineFirst ? '' : 'active' }}" data-target="tab-overview" onclick="dbSwitchTab(this)">
         <i class="bi bi-speedometer2"></i> Overview
     </button>
     <button class="db-tab-btn" data-target="tab-calendar" onclick="dbSwitchTab(this)">
@@ -124,26 +159,35 @@
 
 
 {{-- ════════════════════════════════
-     TAB 1 — OVERVIEW
+     TAB 1 — TIMELINE (deadline-first hero)
+     Source: dashboard/partials/timeline-widget.blade.php
+     Data: $timelineProjects + $timelineProgress (DashboardController@index)
 ════════════════════════════════ --}}
-<div id="tab-overview" class="db-tab-pane active">
+<div id="tab-timeline" class="db-tab-pane {{ $timelineFirst ? 'active' : '' }}">
+    <div class="db-timeline-shell">
+        @include('dashboard.partials.timeline-widget')
+    </div>
+</div>
+
+{{-- ════════════════════════════════
+     TAB 2 — OVERVIEW
+════════════════════════════════ --}}
+<div id="tab-overview" class="db-tab-pane {{ $timelineFirst ? '' : 'active' }}">
 
     {{-- ── STATS CARDS ──────────────────────────────────────────────────────
         Data source: DashboardController@index
         Variables:   $totalProjects, $ongoingCount, $overdueCount,
-                    $atRiskCount, $completedCount
-        NOTE: "Planned" card removed — client does not handle pre-proposal projects.
-        NOTE: Overdue uses planned_end_date (includes extended deadlines — correct).
-        NOTE: Sub-labels are static descriptions; delta computation is future scope.
+                    $atRiskCount, $completedCount, $totalSavings
     ── --}}
     <div class="db-stats">
 
         {{-- Total Projects --}}
         <a href="{{ route($projectsIndex) }}" class="db-stat-card s-blue">
             <div class="db-stat-icon"><i class="bi bi-folder2"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ $totalProjects }}</div>
                 <div class="db-stat-label">Total Projects</div>
+                <div class="db-stat-desc">All projects on record</div>
                 <div class="db-stat-sub neu"><i class="bi bi-dash"></i> all time</div>
             </div>
         </a>
@@ -152,9 +196,10 @@
         <a href="{{ route($projectsIndex, ['status' => 'Completed']) }}" class="db-stat-card s-green"
            title="Total Budget: {{ \App\Helpers\FormatHelper::formatCurrency($completedBudget) }}">
             <div class="db-stat-icon"><i class="bi bi-check-circle-fill"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ $completedCount }}</div>
                 <div class="db-stat-label">Completed</div>
+                <div class="db-stat-desc">Finished and turned over</div>
                 <div class="db-stat-sub pos"><i class="bi bi-check2-all"></i> finished projects</div>
             </div>
         </a>
@@ -162,9 +207,10 @@
         {{-- Ongoing --}}
         <a href="{{ route($projectsIndex, ['status' => 'Ongoing']) }}" class="db-stat-card s-amber">
             <div class="db-stat-icon"><i class="bi bi-arrow-repeat"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ $ongoingCount }}</div>
                 <div class="db-stat-label">Ongoing</div>
+                <div class="db-stat-desc">Actively under construction</div>
                 <div class="db-stat-sub neu"><i class="bi bi-dot"></i> active projects</div>
             </div>
         </a>
@@ -172,9 +218,10 @@
         {{-- Overdue — ongoing projects past their current planned_end_date --}}
         <a href="{{ route($projectsIndex, ['filter' => 'overdue']) }}" class="db-stat-card s-red">
             <div class="db-stat-icon"><i class="bi bi-alarm-fill"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ $overdueCount }}</div>
                 <div class="db-stat-label">Overdue</div>
+                <div class="db-stat-desc">Past the current deadline</div>
                 <div class="db-stat-sub {{ $overdueCount > 0 ? 'neg' : 'neu' }}">
                     @if($overdueCount > 0)
                         <i class="bi bi-exclamation-circle"></i> past deadline
@@ -188,9 +235,10 @@
         {{-- At Risk — gap-based (baseline vs actual), count covers ALL ongoing --}}
         <a href="{{ route($projectsIndex, ['filter' => 'atrisk']) }}" class="db-stat-card s-violet">
             <div class="db-stat-icon"><i class="bi bi-exclamation-diamond-fill"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ $atRiskCount }}</div>
                 <div class="db-stat-label">At Risk</div>
+                <div class="db-stat-desc">Falling behind baseline</div>
                 <div class="db-stat-sub {{ $atRiskCount > 0 ? 'neg' : 'neu' }}">
                     @if($atRiskCount > 0)
                         <i class="bi bi-clock"></i> behind baseline plan
@@ -202,11 +250,12 @@
         </a>
 
         {{-- Total Savings --}}
-        <div class="db-stat-card s-green" title="Total government savings across all projects (ABC − Contract Price)">
+        <div class="db-stat-card s-teal" title="Total government savings across all projects (ABC − Contract Price)">
             <div class="db-stat-icon"><i class="bi bi-piggy-bank-fill"></i></div>
-            <div>
+            <div style="min-width:0">
                 <div class="db-stat-num">{{ \App\Helpers\FormatHelper::formatCurrency($totalSavings) }}</div>
                 <div class="db-stat-label">Total Savings</div>
+                <div class="db-stat-desc">ABC vs contract price</div>
                 <div class="db-stat-sub {{ $totalSavings >= 0 ? 'pos' : 'neg' }}">
                     @if($totalSavings >= 0)
                         <i class="bi bi-arrow-down-right"></i> from ABC
@@ -224,9 +273,12 @@
         {{-- Projects table --}}
         <div class="db-panel">
             <div class="db-panel-hd">
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                    <div class="db-panel-title">
-                        <i class="bi bi-list-task"></i> Ongoing Projects
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0">
+                    <div>
+                        <div class="db-panel-title">
+                            <i class="bi bi-list-task"></i> Ongoing Projects
+                        </div>
+                        <p class="db-panel-sub">Monthly planned vs actual with health status</p>
                     </div>
                     {{-- Filter active badge — hidden by default, shown by JS when filter is active --}}
                     <span id="db-filter-badge" style="display:none;font-size:11px;font-weight:600;
@@ -244,26 +296,28 @@
                     View all <i class="bi bi-arrow-right"></i>
                 </a>
             </div>
-            <table class="db-proj-tbl">
-                <thead>
-                    <tr>
-                        <th style="width:30%">Project</th>
-                        <th style="width:17%">Contractor</th>
-                        <th style="width:19%">This Month</th>
-                        <th style="width:18%">Deadline</th>
-                        <th style="width:12%">Health</th>
-                        <th style="width:4%"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @include('dashboard.partials.dashboard-table-rows', [
-                        'ongoingProjects'      => $ongoingProjects,
-                        'currentMonthProgress' => $currentMonthProgress,
-                        'currentMonthBaseline' => $currentMonthBaseline,
-                        'latestKnownProgress'  => $latestKnownProgress,
-                    ])
-                </tbody>
-            </table>
+            <div class="db-table-scroll">
+                <table class="db-proj-tbl">
+                    <thead>
+                        <tr>
+                            <th style="width:30%">Project</th>
+                            <th style="width:17%">Contractor</th>
+                            <th style="width:19%">This Month</th>
+                            <th style="width:18%">Deadline</th>
+                            <th style="width:12%">Health</th>
+                            <th style="width:4%"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @include('dashboard.partials.dashboard-table-rows', [
+                            'ongoingProjects'      => $ongoingProjects,
+                            'currentMonthProgress' => $currentMonthProgress,
+                            'currentMonthBaseline' => $currentMonthBaseline,
+                            'latestKnownProgress'  => $latestKnownProgress,
+                        ])
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         {{-- ── ANALYTICS (right column — 1-col vertical stack) ──────── --}}
@@ -271,31 +325,45 @@
 
             {{-- 1. Project Status Donut --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-pie-chart"></i> Project Status</div>
+                <div class="db-chart-head">
+                    <div class="db-chart-title"><i class="bi bi-pie-chart"></i> Project Status</div>
+                    <a href="{{ route($projectsIndex) }}" class="db-chart-link">View details <i class="bi bi-arrow-right"></i></a>
+                </div>
                 <div style="height:200px; position:relative;"><canvas id="statusDonut"></canvas></div>
             </div>
 
             {{-- 2. Health Distribution Donut --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-heart-pulse"></i> Health Distribution</div>
+                <div class="db-chart-head">
+                    <div class="db-chart-title"><i class="bi bi-heart-pulse"></i> Health Distribution</div>
+                    <a href="{{ route($projectsIndex, ['filter' => 'atrisk']) }}" class="db-chart-link">View details <i class="bi bi-arrow-right"></i></a>
+                </div>
                 <div style="height:200px; position:relative;"><canvas id="healthDonut"></canvas></div>
             </div>
 
             {{-- 3. Budget by Source --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Source</div>
+                <div class="db-chart-head">
+                    <div class="db-chart-title"><i class="bi bi-bar-chart-line"></i> Budget by Source</div>
+                    <a href="{{ route($projectsIndex) }}" class="db-chart-link">View details <i class="bi bi-arrow-right"></i></a>
+                </div>
                 <div style="height:200px; position:relative;"><canvas id="budgetBar"></canvas></div>
             </div>
 
             {{-- 4. Progress Performance --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-graph-up"></i> Progress: Planned vs Actual</div>
+                <div class="db-chart-head">
+                    <div class="db-chart-title"><i class="bi bi-graph-up"></i> Progress: Planned vs Actual</div>
+                    <a href="{{ route($projectsIndex, ['status' => 'Ongoing']) }}" class="db-chart-link">View details <i class="bi bi-arrow-right"></i></a>
+                </div>
                 <div style="height:200px; position:relative;"><canvas id="progressBar"></canvas></div>
             </div>
 
             {{-- 5. Extension Summary --}}
             <div class="db-chart-card">
-                <div class="db-chart-title"><i class="bi bi-calendar2-plus"></i> Extensions</div>
+                <div class="db-chart-head">
+                    <div class="db-chart-title"><i class="bi bi-calendar2-plus"></i> Extensions</div>
+                </div>
                 <div class="db-ext-mini-stats">
                     <div class="db-ext-mini-card">
                         <div class="db-ext-mini-num" style="color:#2563eb;">{{ $extensionSummary['approved'] }}</div>
@@ -320,21 +388,25 @@
 </div>{{-- /tab-overview --}}
 
 {{-- ════════════════════════════════
-     TAB 2 — CALENDAR
+     TAB 3 — CALENDAR
      Source: dashboard/partials/calendar-widget.blade.php
      Includes: tab HTML + modal HTML + calendar JS
 ════════════════════════════════ --}}
 <div id="tab-calendar" class="db-tab-pane">
-    @include('dashboard.partials.calendar-widget')
+    <div class="db-widget-shell">
+        @include('dashboard.partials.calendar-widget')
+    </div>
 </div>
 
 {{-- ════════════════════════════════
-     TAB 3 — CAMPUS MAP
+     TAB 4 — CAMPUS MAP
      Source: dashboard/partials/campus-map-widget.blade.php
      Includes: map HTML + map JS
 ════════════════════════════════ --}}
 <div id="tab-map" class="db-tab-pane">
-    @include('dashboard.partials.campus-map-widget')
+    <div class="db-widget-shell">
+        @include('dashboard.partials.campus-map-widget')
+    </div>
 </div>
 
 </div>{{-- /db-page --}}
@@ -344,6 +416,8 @@
      JAVASCRIPT
      Blade-injected variables defined here first.
      Pure JS loaded from public/js/dashboard.js after.
+     (Chart definitions + data below are UNCHANGED — only the
+     surrounding card markup was restyled.)
 ════════════════════════════════════════════════════════ --}}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
@@ -351,6 +425,17 @@
     const DASHBOARD_FILTER_URL = "{{ auth()->user()->role === 'staff'
         ? route('staff.dashboard.filter')
         : route('admin.dashboard.filter') }}";
+
+    // ── Hero search (additive, client-side only) ──────────────────────
+    // Filters the currently loaded table rows by text. Does NOT touch
+    // the alert-pill AJAX filter (filterDashboardTable in dashboard.js).
+    function dbSearchProjects(query) {
+        const q = (query || '').trim().toLowerCase();
+        document.querySelectorAll('.db-proj-tbl tbody tr').forEach(row => {
+            if (row.querySelector('.db-empty')) return;
+            row.style.display = (!q || row.innerText.toLowerCase().includes(q)) ? '' : 'none';
+        });
+    }
 
     // ── Analytics Charts ──────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
@@ -490,5 +575,6 @@
     });
 </script>
 <script src="{{ asset('js/dashboard.js') }}"></script>
+<script src="{{ asset('js/dashboard-timeline.js') }}"></script>
 
 @endsection

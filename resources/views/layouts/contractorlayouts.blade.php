@@ -4,7 +4,7 @@
     <title>Contractor</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <link rel="icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=3">
+    <link rel="icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=5">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     {{--  DIRECT CSS--}}
@@ -14,7 +14,12 @@
     {{-- PRELOADER --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    {{-- Non-blocking font load: keeps Google Fonts from delaying first paint (no more unstyled flash on refresh) --}}
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'" data-pm-font>
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"></noscript>
+    {{-- Fallback: if the async font stylesheet's onload never fires (e.g. served from cache), force it on. No visual change otherwise. --}}
+    <script>setTimeout(function(){try{var l=document.querySelector('link[data-pm-font]');if(l&&l.media!=='all'){l.media='all';}}catch(e){}},2500);</script>
     <link rel="stylesheet" href="{{ asset('css/components/preloader.css') }}">
 
     <style>
@@ -288,12 +293,12 @@
             <span class="role-badge">{{ ucfirst(auth()->user()->role) }}</span>
         </div>
         <div class="profiless-avatar"
-             style="background-image: url('{{ 
-                auth()->user()->profile_photo 
-                    ? (Str::startsWith(auth()->user()->profile_photo, 'http') 
-                        ? auth()->user()->profile_photo 
-                        : asset('storage/' . auth()->user()->profile_photo)) 
-                    : asset('images/default-profile.png') 
+             style="background-image: url('{{
+                auth()->user()->profile_photo
+                    ? (Str::startsWith(auth()->user()->profile_photo, 'http')
+                        ? auth()->user()->profile_photo
+                        : asset('storage/' . auth()->user()->profile_photo))
+                    : asset('images/default-profile.png')
              }}');">
         </div>
     </div>
@@ -333,7 +338,7 @@
 
 @php
     $contractor = auth()->user()->contractor ?? null;
-    $isIncomplete = 
+    $isIncomplete =
         !$contractor ||
         !$contractor->company_name ||
         !$contractor->contractor_name ||

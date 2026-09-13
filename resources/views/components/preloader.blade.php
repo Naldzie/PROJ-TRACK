@@ -1,8 +1,10 @@
 {{--
     Full-screen PROJ-TRACK preloader.
 
-    Shows over the viewport while the page loads, then fades out after the
-    window `load` event fires and a minimum display time (~600ms) has elapsed.
+    Shows over the viewport while the page loads, then fades out once the
+    document is ready (DOMContentLoaded + minimum display time) — it does
+    NOT wait for slow images/fonts/CDN (window `load`), so refreshes never
+    feel stuck or flash raw HTML first.
 
     Signaling "ready" manually (e.g. when an isLoading state flips to false):
         window.ProjTrackPreloader.hide();
@@ -11,6 +13,22 @@
         public/css/components/preloader.css
         public/js/components/preloader.js
 --}}
+{{-- First-paint cover: :where() keeps specificity at zero, so the full
+     preloader.css overrides seamlessly once loaded — but even if external
+     CSS is still downloading, first paint is this fully-styled branded
+     loader (inner content included), never unstyled HTML or bare text. --}}
+<style>
+:where(#pt-preloader){position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:#071120;opacity:1;visibility:visible;transition:opacity 400ms ease-in-out,visibility 0s linear 0s;}
+:where(#pt-preloader .pt-preloader__inner){display:flex;flex-direction:column;align-items:center;gap:20px;padding:24px;text-align:center;max-width:320px;}
+:where(#pt-preloader .pt-preloader__brand){display:flex;align-items:center;gap:12px;}
+:where(#pt-preloader .pt-preloader__mark){width:44px;height:44px;border-radius:10px;flex-shrink:0;}
+:where(#pt-preloader .pt-preloader__name){font-family:'Space Grotesk','Segoe UI',sans-serif;font-size:17px;font-weight:600;letter-spacing:3.5px;text-transform:uppercase;color:#ffffff;}
+:where(#pt-preloader .pt-preloader__chart){width:200px;height:auto;display:block;}
+:where(#pt-preloader .pt-preloader__crane){fill:none;stroke:rgba(255,255,255,0.3);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+:where(#pt-preloader .pt-preloader__bar){fill:#f2a93b;opacity:0.85;}
+:where(#pt-preloader .pt-preloader__label){font-family:'JetBrains Mono',Consolas,monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,0.55);}
+:where(#pt-preloader.pt-preloader--hidden){opacity:0;visibility:hidden;pointer-events:none;transition:opacity 400ms ease-in-out,visibility 0s linear 400ms;}
+</style>
 <div id="pt-preloader" class="pt-preloader" role="status" aria-label="Loading PROJ-TRACK">
     <div class="pt-preloader__inner">
         <div class="pt-preloader__brand">

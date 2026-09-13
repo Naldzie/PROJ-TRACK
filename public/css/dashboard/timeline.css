@@ -1,0 +1,333 @@
+/* ══════════════════════════════════════════════════════════════
+   TIMELINE WIDGET — deadline-first hero strip
+   Used by: resources/views/dashboard/partials/timeline-widget.blade.php
+   Design: flat surfaces, hairline borders only (no shadows, no gradients).
+   Palette: navy/royal blue + teal to match the PMU logo.
+   Type: inherits the app sans-serif; sentence case, numbers carry weight.
+   Sibling to Overview / Calendar / Campus Map — same spacing + radius.
+   ══════════════════════════════════════════════════════════════ */
+
+.tl-wrap {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 18px 20px;
+}
+
+/* ── Header ── */
+.tl-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.tl-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1e3a8a;
+}
+.tl-sub {
+    margin: 3px 0 0;
+    font-size: 12.5px;
+    color: #6b7280;
+}
+.tl-sub-sep { margin: 0 4px; color: #d1d5db; }
+.tl-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Range toggle — flat segmented control */
+.tl-toggle {
+    display: inline-flex;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.tl-toggle-btn {
+    border: none;
+    background: #fff;
+    color: #374151;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 12px;
+    cursor: pointer;
+}
+.tl-toggle-btn + .tl-toggle-btn { border-left: 1px solid #e5e7eb; }
+.tl-toggle-btn.active { background: #1e3a8a; color: #fff; }
+
+/* Header buttons — flat navy solid + hairline outline */
+.tl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 7px 13px;
+    border-radius: 8px;
+    text-decoration: none;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #1e3a8a;
+}
+.tl-btn:hover { background: #f8fafc; text-decoration: none; color: #1e3a8a; }
+.tl-btn.primary { background: #1e3a8a; border-color: #1e3a8a; color: #fff; }
+.tl-btn.primary:hover { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+/* ── Legend ── */
+.tl-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.tl-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #6b7280;
+}
+.tl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.tl-dot.is-ontrack { background: #16a34a; }
+.tl-dot.is-atrisk { background: #d97706; }
+.tl-dot.is-overdue { background: #dc2626; }
+.tl-dot.is-ext { background: #fff; border: 2px solid #d97706; width: 7px; height: 7px; }
+
+/* ── Chart grid: name | track | deadline ── */
+.tl-months,
+.tl-row {
+    display: grid;
+    grid-template-columns: 220px 1fr 110px;
+    gap: 12px;
+    align-items: center;
+}
+.tl-months { margin-bottom: 0; }
+.tl-months-track {
+    display: flex;
+    padding: 6px 0;
+}
+.tl-month {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6b7280;
+    padding-left: 6px;
+    border-left: 1px solid #e5e7eb;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.tl-month:first-child { border-left: none; padding-left: 0; }
+.tl-chart {
+    border-bottom: 1px solid #e5e7eb;
+}
+.tl-months { border-bottom: 1px solid #e5e7eb; }
+
+/* ── Rows (whole row links to project detail) ── */
+.tl-rows { display: flex; flex-direction: column; }
+.tl-row {
+    padding: 9px 0;
+    border-bottom: 1px solid #f3f4f6;
+    text-decoration: none;
+}
+.tl-row:last-child { border-bottom: none; }
+.tl-row:hover { background: #f8fafc; text-decoration: none; }
+.tl-row.is-hidden { display: none; }
+
+.tl-name {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    column-gap: 6px;
+}
+.tl-proj {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tl-code {
+    font-size: 11px;
+    color: #9ca3af;
+    font-family: Consolas, 'Courier New', monospace;
+}
+.tl-ext-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+.tl-name .tl-code { flex-basis: 100%; }
+
+/* Track + bar */
+.tl-track {
+    position: relative;
+    height: 26px;
+    background: #f3f4f6;
+    border-radius: 6px;
+}
+.tl-gridline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #e5e7eb;
+}
+.tl-today {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: #0f766e;
+    opacity: 0.55;
+    border-radius: 1px;
+}
+.tl-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 10px;
+    border-radius: 5px;
+    min-width: 8px;
+}
+.tl-bar.is-ontrack { background: #16a34a; }
+.tl-bar.is-atrisk { background: #d97706; }
+.tl-bar.is-overdue { background: #dc2626; }
+.tl-bar.is-nodata { background: #9ca3af; }
+
+/* Deadline — colour follows health (grey when on track) */
+.tl-deadline { font-size: 12px; text-align: right; white-space: nowrap; }
+.tl-deadline.is-overdue { color: #dc2626; font-weight: 700; }
+.tl-deadline.is-atrisk { color: #d97706; font-weight: 700; }
+.tl-deadline.is-neutral { color: #6b7280; }
+
+/* Empty state */
+.tl-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: #9ca3af;
+    font-size: 13px;
+}
+.tl-empty i { display: block; font-size: 24px; margin-bottom: 8px; color: #d1d5db; }
+.tl-empty-title { font-weight: 700; color: #6b7280; margin-bottom: 2px; }
+
+/* ── KPI strip — tinted blocks, no borders ── */
+.tl-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+}
+.tl-kpi {
+    border: none;
+    border-radius: 8px;
+    padding: 12px 14px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    cursor: default;
+    font-family: inherit;
+}
+a.tl-kpi { cursor: pointer; text-decoration: none; }
+a.tl-kpi:hover { text-decoration: none; filter: brightness(0.97); }
+button.tl-kpi { cursor: pointer; }
+button.tl-kpi.active { outline: 2px solid #0f766e; outline-offset: 1px; }
+.tl-kpi-label { font-size: 11px; color: #64748b; }
+.tl-kpi-num { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.tl-kpi.k-total { background: #eff6ff; }
+.tl-kpi.k-total .tl-kpi-num { color: #1e3a8a; }
+.tl-kpi.k-ongoing { background: #f0fdfa; }
+.tl-kpi.k-ongoing .tl-kpi-num { color: #115e59; }
+.tl-kpi.k-overdue { background: #fef2f2; }
+.tl-kpi.k-overdue .tl-kpi-num { color: #b91c1c; }
+.tl-kpi.k-ext { background: #fffbeb; }
+.tl-kpi.k-ext .tl-kpi-num { color: #92400e; }
+
+/* ── Floating tooltip (planned vs actual) ── */
+.tl-tip {
+    position: fixed;
+    z-index: 1200;
+    background: #1e3a8a;
+    color: #fff;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.tl-tip strong { font-weight: 700; }
+
+/* ── Entrance motion (subtle, professional) ──
+   Rows fade/slide in with a per-row stagger (delay set from JS, capped
+   so long lists don't feel sluggish). Bars grow from the left edge.
+   Re-triggered on range toggle via dashboard-timeline.js, which resets
+   the inline animation. Disabled under prefers-reduced-motion. */
+.tl-rows .tl-row {
+    animation: tlRowIn 0.45s cubic-bezier(0.21, 0.9, 0.35, 1) both;
+}
+@keyframes tlRowIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.tl-bar {
+    transform-origin: left center;
+    animation: tlBarGrow 0.55s ease-out 0.12s both;
+}
+@keyframes tlBarGrow {
+    from { transform: translateY(-50%) scaleX(0); }
+    to   { transform: translateY(-50%) scaleX(1); }
+}
+.tl-months-track .tl-month { animation: tlFadeIn 0.4s ease both; }
+@keyframes tlFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+/* Today marker — slow, soft pulse so it reads as "now" at a glance. */
+.tl-today { animation: tlTodayPulse 2.6s ease-in-out infinite; }
+@keyframes tlTodayPulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.28; }
+}
+/* KPI strip — gentle rise on load (CSS-only stagger, 4 items). */
+.tl-kpis .tl-kpi { animation: tlRowIn 0.45s cubic-bezier(0.21, 0.9, 0.35, 1) both; }
+.tl-kpis .tl-kpi:nth-child(2) { animation-delay: 0.06s; }
+.tl-kpis .tl-kpi:nth-child(3) { animation-delay: 0.12s; }
+.tl-kpis .tl-kpi:nth-child(4) { animation-delay: 0.18s; }
+/* Toggle buttons — smooth active-state crossfade. */
+.tl-toggle-btn { transition: background-color 0.18s, color 0.18s; }
+
+/* ── Reduced motion — static presentation, no exceptions ── */
+@media (prefers-reduced-motion: reduce) {
+    .tl-rows .tl-row,
+    .tl-bar,
+    .tl-months-track .tl-month,
+    .tl-kpis .tl-kpi { animation: none; }
+    .tl-today { animation: none; opacity: 0.55; }
+    .tl-toggle-btn { transition: none; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+    .tl-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 720px) {
+    .tl-months { display: none; }
+    .tl-row { grid-template-columns: 1fr; gap: 6px; padding: 12px 0; }
+    .tl-deadline { text-align: left; }
+}

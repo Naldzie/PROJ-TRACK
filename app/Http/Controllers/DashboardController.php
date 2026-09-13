@@ -180,6 +180,34 @@ class DashboardController extends Controller
             'total_days' => \App\Models\ProjectExtension::where('status', 'approved')->sum('duration_days'),
         ];
 
+        // ── TIMELINE DATASET (hero Gantt strip — all active projects) ─────
+        // Timeline-first admin view: every ongoing, non-archived project the
+        // user can see, sorted by deadline soonest-first. No 10-row cap here
+        // (the cap above is only for the Overview table). Reuses the shared
+        // getProgressData() helper so planned-vs-actual tooltips and health
+        // badges match the table exactly (same ProjectHealthService input).
+        $timelineQuery = Project::where('status', 'Ongoing')
+            ->where('is_archived', false)
+            ->with(['contractor', 'category', 'progressHistory', 'baselineSchedules']);
+        $this->scopeToAssigned($timelineQuery);
+        $timelineProjects = $timelineQuery
+            ->orderBy('planned_end_date', 'asc')
+            ->get();
+        $timelineProgress = $this->getProgressData($timelineProjects);
+
+        // ── TIMELINE RANGES (quarter / year toggle targets) ───────────────
+        // Quarter: calendar quarter containing today. Year: Jan 1 – Dec 31.
+        // Passed as Y-m-d strings so Blade + JS share one source of truth.
+        $now = now();
+        $timelineQuarter = [
+            'start' => $now->copy()->firstOfQuarter()->startOfDay()->toDateString(),
+            'end'   => $now->copy()->lastOfQuarter()->endOfDay()->toDateString(),
+        ];
+        $timelineYear = [
+            'start' => $now->copy()->startOfYear()->toDateString(),
+            'end'   => $now->copy()->endOfYear()->toDateString(),
+        ];
+
         return view('admin.dashboard', compact(
             'ongoingProjects',
             'currentMonthProgress',
@@ -205,6 +233,10 @@ class DashboardController extends Controller
             'cancelledCount',
             'budgetBySource',
             'extensionSummary',
+            'timelineProjects',
+            'timelineProgress',
+            'timelineQuarter',
+            'timelineYear',
         ));
     }
 

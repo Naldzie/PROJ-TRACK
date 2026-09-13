@@ -1,9 +1,11 @@
 /* ============================================================
    PROJ-TRACK Preloader
-   Hides the full-screen overlay after the page has loaded
-   (window `load` + minimum display time of 600ms), then fades
+   Hides the full-screen overlay once the document is ready
+   (DOMContentLoaded + minimum display time of 600ms), then fades
    the overlay out over 400ms and unmounts it so it never
-   blocks clicks afterwards.
+   blocks clicks afterwards. It intentionally does NOT wait for
+   window `load` (slow images/fonts/CDN must not hold the page
+   hostage or make refreshes flash unstyled content first).
    ============================================================ */
 
 (function () {
@@ -76,7 +78,9 @@
         },
     };
 
-    window.addEventListener('load', function () {
+    // Reveal once the document is styled and parsed — never wait for
+    // slow images/fonts/CDN (window `load`).
+    function onReady() {
         loadDone = true;
 
         // Enforce the minimum display time so the preloader never flashes
@@ -84,12 +88,18 @@
         var elapsed = Date.now() - startedAt;
         var remaining = Math.max(0, MIN_DISPLAY_MS - elapsed);
         window.setTimeout(hide, remaining);
-    });
+    }
 
-    // Safety net: if `load` already fired before this script ran (e.g. the
-    // element was injected late), hide immediately after the minimum time.
-    if (document.readyState === 'complete') {
-        loadDone = true;
-        window.setTimeout(hide, MIN_DISPLAY_MS);
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', onReady);
+        // Backup: if anything odd happens, window `load` still reveals.
+        // hide() is guarded, so a double call is a harmless no-op.
+        window.addEventListener('load', function () {
+            window.setTimeout(hide, 0);
+        });
+    } else {
+        // Safety net: script ran after parsing (late injection) — reveal
+        // after the minimum display time.
+        onReady();
     }
 })();

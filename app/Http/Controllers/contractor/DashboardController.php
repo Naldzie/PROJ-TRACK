@@ -185,6 +185,7 @@ class DashboardController extends Controller
             'totalBudget',
             'budgetProjects',
             'deadlineProjects',
+            'recentActivities',
             'suspendedCount',
             'cancelledCount',
             'budgetBySource',

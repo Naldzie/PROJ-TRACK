@@ -851,7 +851,7 @@ If a prior extension already moved the deadline forward, the reviewer can select
 
 ---
 
-## Enhancement: Rating page AI comments — contractor overview + per-project AI review
+## Enhancement: Rating page AI comments ï¿½ contractor overview + per-project AI review
 
 **Date:** 2026-09-07
 **Status: IMPLEMENTED**
@@ -895,7 +895,7 @@ In rating.blade: when a contractor is selected in Overview, add an AI comment ab
 
 ### Request
 
-Add a cooler AI image to the rating UI — an AI avatar using a dot (live indicator).
+Add a cooler AI image to the rating UI ï¿½ an AI avatar using a dot (live indicator).
 
 ### Fix (resources/views/admin/rating.blade.php only, no new assets)
 
@@ -938,7 +938,7 @@ Auto-rate all loaded Ongoing + Completed projects, so in-progress work (still-mo
 
 ### Request
 
-User asked where the humanoid dot UI is — the orb icon was only a sparkle, not a humanoid figure.
+User asked where the humanoid dot UI is ï¿½ the orb icon was only a sparkle, not a humanoid figure.
 
 ### Fix (resources/views/admin/rating.blade.php only)
 
@@ -953,7 +953,7 @@ User asked where the humanoid dot UI is — the orb icon was only a sparkle, not a
 ## Enhancement: Full UI polish pass on rating.blade
 
 **Date:** 2026-09-07
-**Status: IMPLEMENTED** — visual-only, no behavior changes.
+**Status: IMPLEMENTED** ï¿½ visual-only, no behavior changes.
 
 ### What changed (resources/views/admin/rating.blade.php, inline per existing file structure)
 
@@ -986,7 +986,7 @@ Generate AI analysis on the 25th, hold it in a 5-day review/edit window, auto-se
 ### Findings (already existed, reused as-is)
 
 - EmailTracking drafts (sent_at null), body/is_edited/edited_by, effectiveBody() (edited body wins).
-- ai-analysis.blade.php already renders tracking->body first, AI text as fallback — edited content goes out with zero view changes.
+- ai-analysis.blade.php already renders tracking->body first, AI text as fallback ï¿½ edited content goes out with zero view changes.
 - Admin/staff draft edit UI + sendDraft + drafts filter; staff reuses admin.partials.email_list.
 
 ### Changes
@@ -1008,7 +1008,7 @@ Generate AI analysis on the 25th, hold it in a 5-day review/edit window, auto-se
 ### Verification
 
 - New tests/Feature/AiReviewWindowTest.php: 10 passed (48 assertions) covering stage-no-send, idempotency, window gating, edited-body delivery + lock, manual-draft immunity (incl. --force), delete-block/edit/send-early, staged-row reuse, no-analysis skip, contractor invisibility, review filter.
-- EmailDraftTest: 13 passed, 2 failed — identical to the pre-existing baseline (mailable subject asserted post-build; unrelated, per AGENTS.md). No new failures.
+- EmailDraftTest: 13 passed, 2 failed ï¿½ identical to the pre-existing baseline (mailable subject asserted post-build; unrelated, per AGENTS.md). No new failures.
 - UiPolishLayoutTest: 5 passed (email + rating pages render).
 - schedule:list shows generate-ai-monthly (25th) + send-ai-monthly (daily).
 
@@ -1032,7 +1032,7 @@ Generate AI analysis on the 25th, hold it in a 5-day review/edit window, auto-se
 
 ### Verification
 
-- AiReviewWindowTest: 12 passed (57 assertions) — added supersede-on-regenerate + tab-badge tests.
+- AiReviewWindowTest: 12 passed (57 assertions) ï¿½ added supersede-on-regenerate + tab-badge tests.
 - EmailDraftTest: 13 passed / 2 pre-existing fails (unchanged baseline). UiPolishLayoutTest: 5 passed.
 
 ---
@@ -1057,7 +1057,7 @@ Style emails/ai-analysis.blade.php so every section is highlighted.
 
 ### Verification
 
-- AiReviewWindowTest: 14 passed (67 assertions) — added render tests for full-section output (incl. P1/P3 pills) and the empty-recommendations renumbering case.
+- AiReviewWindowTest: 14 passed (67 assertions) ï¿½ added render tests for full-section output (incl. P1/P3 pills) and the empty-recommendations renumbering case.
 
 ---
 
@@ -1068,7 +1068,7 @@ Style emails/ai-analysis.blade.php so every section is highlighted.
 
 ### Request
 
-Opening (view) or editing (compose) a message still looked plain — restyle both like emails/ai-analysis.blade with highlighted sections.
+Opening (view) or editing (compose) a message still looked plain ï¿½ restyle both like emails/ai-analysis.blade with highlighted sections.
 
 ### Fix
 
@@ -1077,14 +1077,14 @@ Opening (view) or editing (compose) a message still looked plain — restyle both 
 - New status pill in the modal header (Draft / In review + auto-send date / Opened / Delivered / Pending) driven by the show() JSON (status, review_status, review_until).
 - viewMsg JS populates pill + revised banner; the old inline Last-edited detail row was removed (replaced by the amber section). Progress metrics block de-chromed to sit inside the green section.
 
-**Compose/edit modal (shared admin/partials/email_compose.blade.php — one edit covers staff+admin):**
+**Compose/edit modal (shared admin/partials/email_compose.blade.php ï¿½ one edit covers staff+admin):**
 - Gradient PROJ-TRACK banner header with cpu icon (title/meta turn white).
 - Fields grouped into numbered sections: 01 Details (blue: project, recipient, subject), 02 Message (violet: textarea).
 - Gradient Save button. All element IDs unchanged, so existing JS works untouched.
 
 ### Verification
 
-- AiReviewWindowTest: 15 passed (85 assertions) — added overlay-markup test for both admin and staff pages.
+- AiReviewWindowTest: 15 passed (85 assertions) ï¿½ added overlay-markup test for both admin and staff pages.
 - UiPolishLayoutTest: 5 passed. EmailDraftTest: 13 passed / 2 pre-existing fails (unchanged).
 - Blade diff admin vs staff shows only pre-existing prefix/layout differences.
 
@@ -1108,7 +1108,7 @@ The AI text carries [SECTION:Report] / Possible Risk / Mitigation / Performance 
 ### Verification
 
 - New tests/Unit/Services/AiReportParserTest.php: 3 passed (blue inline style, no marker leakage, plain+escaped handwritten path).
-- AiReviewWindowTest: 16 passed — added show()-returns-highlighted-html test. UiPolishLayoutTest 5 passed; EmailDraftTest unchanged (13/2 pre-existing).
+- AiReviewWindowTest: 16 passed ï¿½ added show()-returns-highlighted-html test. UiPolishLayoutTest 5 passed; EmailDraftTest unchanged (13/2 pre-existing).
 
 ---
 
@@ -1164,7 +1164,7 @@ View-message overlay still broken for the user (content not reachable); the flex
 
 ### Fix (admin/email.blade.php + staff/email.blade.php)
 
-- Replaced the flex-pinned inner scroll with the classic robust pattern: .overlay gets overflow-y:auto, .modal-box gets margin:auto with no height cap or overflow clipping, .modal-body back to natural flow. Short modals center; tall modals scroll from the top in every browser — header, all highlighted sections, notes, and footer buttons are all reachable by scrolling.
+- Replaced the flex-pinned inner scroll with the classic robust pattern: .overlay gets overflow-y:auto, .modal-box gets margin:auto with no height cap or overflow clipping, .modal-body back to natural flow. Short modals center; tall modals scroll from the top in every browser ï¿½ header, all highlighted sections, notes, and footer buttons are all reachable by scrolling.
 
 ### Verification
 
@@ -1189,4 +1189,269 @@ Contractor message view had its own outdated renderer: raw [SECTION:] markers sh
 
 ### Verification
 
-- AiReviewWindowTest: 18 passed — added contractor overlay-markup + highlighted-html tests. Parser/UI suites green; EmailDraftTest unchanged baseline.
+- AiReviewWindowTest: 18 passed ï¿½ added contractor overlay-markup + highlighted-html tests. Parser/UI suites green; EmailDraftTest unchanged baseline.
+
+---
+
+## Enhancement: Dashboard Option #3 UI redesign (content area only)
+
+**Date:** 2026-09-11
+**Status: IMPLEMENTED**
+
+### Scope
+
+Visual-only redesign of the dashboard content area per Option #3 (clean,
+modern, spacious enterprise; CSPC blue; white/light-gray surfaces).
+Global layout, sidebar, topbar, auth, routes, controllers, models,
+partials, Chart.js data, AJAX filtering, calendar and campus-map widgets
+are untouched.
+
+### Changes
+
+**resources/views/admin/dashboard.blade.php** (serves both admin + staff via
+`@extends($layout)` + role-aware `$projectsIndex`):
+- New `.db-hero` welcome banner using `public/images/download.png` as a
+  decorative backdrop (`aria-hidden`) with a navy-to-transparent overlay;
+  left = icon + "Welcome back" + user name + "Project Monitoring
+  Dashboard / CSPC PMU" + role badge + date; right = client-side table
+  search + existing New Project / All Projects route buttons.
+- Alert bar keeps the same `@if` condition, counts and
+  `onclick="filterDashboardTable(...)"` pills; inspection pill uses new
+  `.yellow` class, extensions pill uses new `.purple` class (both additive,
+  `dashboard.js` selects on `.alert-pill` only).
+- Tabs keep identical `.db-tab-btn` / `data-target` / `dbSwitchTab`
+  wiring; restyled as a segmented control (active = CSPC blue).
+- 6 stat cards keep all variables/routes (`$totalProjects`,
+  `$ongoingCount`, `$completedCount` + `$completedBudget` tooltip,
+  `$overdueCount`, `$atRiskCount`, `$totalSavings`); added supporting
+  descriptions; savings card accent moved to new `.s-teal` class.
+- Projects table keeps the same `<thead>` columns, `#db-filter-badge`,
+  and `@include('dashboard.partials.dashboard-table-rows')` with identical
+  parameters; wrapped in `.db-table-scroll` (sticky header, horizontal
+  scroll on small screens).
+- All 5 chart cards keep canvas IDs (`statusDonut`, `healthDonut`,
+  `budgetBar`, `progressBar`, `extensionDonut`) and the Chart.js data
+  block is byte-identical; only card headers gained icon + "View details".
+- Timeline / Calendar / Campus Map panes keep their `@include`s; wrapped
+  in neutral shell cards without touching widget markup, CSS or JS.
+- Bell + profile controls NOT duplicated (already in layout topbar).
+- Added additive `dbSearchProjects()` client-side row filter; existing
+  `filterDashboardTable` / `dbSwitchTab` / `DASHBOARD_FILTER_URL` unchanged.
+
+**public/css/dashboard/dashboard.css**: full Option #3 rewrite (tokens
+`--brand #2563EB`, `--ink #0F172A`, `--bg #F8FAFC`, `--line #E2E8F0`;
+status `#16A34A/#F59E0B/#EF4444/#3B82F6/#7C3AED`; 12â€“16px radii, thin
+borders, soft shadows, Inter, 26px hero / 15px section / 26px metric
+type). ALL legacy selectors + CSS vars preserved for the table-row
+partial, calendar/map widgets and timeline (`timeline.css` and
+`dashboard-widgets.css` untouched).
+
+### Verification
+
+- `php artisan view:cache` compiles cleanly.
+- `DashboardHealthTest`: 8 passed.
+- `--filter="Dashboard"`: 34 passed, 3 failed â€” verified PRE-EXISTING by
+  re-running against the pristine blade (`dashboard.blade copy.php`):
+  same 3 failures (ContractorDashboardTest empty-states,
+  DashboardOverdueInspectionTest count-badge + 1 companion) with zero
+  of the touched files in their code path (filter endpoint returns the
+  untouched `dashboard-table-rows` partial; contractor view untouched).
+
+### Follow-up (2026-09-11): Timeline defaults to "This year"
+
+- `dashboard/partials/timeline-widget.blade.php`: initial range now uses
+  `$timelineYear` (was `$timelineQuarter`); header shows "This year /
+  Jan 1 - Dec 31, YYYY"; the "This year" toggle button carries `.active`.
+  Quarter/year toggle JS (`dashboard-timeline.js`) and `data-*` ranges
+  unchanged, so switching back to quarter still works.
+- Verified with `view:cache` (clean).
+
+### Follow-up (2026-09-11): Timeline entrance animations
+
+- `public/css/dashboard/timeline.css`: rows fade/slide in (`tlRowIn`,
+  0.45s), bars grow from the left edge (`tlBarGrow` scaleX, keeps the
+  existing `translateY(-50%)` centering), month labels fade, KPI strip
+  rises with a CSS-only 4-item stagger, today marker has a slow soft
+  pulse (2.6s), toggle buttons crossfade. All motion disabled under
+  `prefers-reduced-motion`.
+- `public/js/dashboard-timeline.js`: per-row entrance stagger on load
+  (45ms steps, capped ~0.5s); `tlSwitchRange` replays the bar grow with
+  a 30ms stagger (capped 300ms) via the reset/reflow trick. Geometry,
+  tooltip, ext-filter and toggle logic otherwise unchanged.
+- Verified: `node --check` clean, `view:cache` clean.
+
+### Follow-up (2026-09-11): "All Projects" hero button visibility
+
+- Problem: `.db-header-btn.outline` (transparent + thin white border) washed
+  out over the bright right side of the hero campus photo.
+- Fix (`public/css/dashboard/dashboard.css` only): dark glassy pill â€”
+  `rgba(15,23,42,0.55)` + backdrop blur, 1.5px near-white border, dual
+  drop/inset shadow, subtle text-shadow; hover deepens the fill, lifts 1px
+  and strengthens the shadow. "New Project" primary button unchanged.
+- Follow-up: switched to solid navy (`#1E3A8A`, hover `#172F6E`) per user
+  request; white border + shadow retained so it still pops over the hero.
+
+### Follow-up (2026-09-11): Overview layout rebalance
+
+- Problem: 6-across stat row cramped at normal widths; side rail of 5
+  stacked charts towered over the short projects table; bar charts were
+  squeezed into the 380px rail.
+- Fix (`dashboard.css` + `admin/dashboard.blade.php`, visuals only):
+  stats are now vertical-icon cards in a balanced 3+3 grid (6-across only
+  at 1600px+); rail slimmed to 340px holding Status, Health and Extensions
+  donuts; Budget by Source + Planned-vs-Actual moved to a full-width
+  2-column `.db-wide-grid` row below (220px tall, stacks on mobile).
+  Canvas IDs, Chart.js data, table include, tabs and filters unchanged.
+- Verified: `view:cache` clean, `DashboardHealthTest` 8 passed.
+
+### Follow-up (2026-09-11): Overview rebalance REVERTED per user request
+
+- Restored 6-across horizontal stat cards, 380px rail with all 5 chart
+  cards (Status, Health, Budget, Progress, Extensions), removed
+  `.db-wide-grid`. Overview is back to the Option #3 redesign state.
+
+### Follow-up (2026-09-11): Contractor dashboard Option #3 redesign
+
+- `contractor/dashboard.blade.php` rewritten visual-only: hero banner with
+  `download.png` (company name, Contractor Overview badge, date, table
+  search + View All Projects), 4 stat cards reusing `.db-stat-card`
+  (same variables + pct subs), projects table + budget + deadlines +
+  charts in `.db-main-grid` reusing `dashboard.css` classes. Table health
+  logic, routes (`contractor.projects`, `projects.show`), canvas IDs and
+  Chart.js data unchanged. Dropped duplicate Bootstrap/Icons CDN links
+  (layout already loads them); kept Chart.js + `dashboard.css` links.
+  Added additive `ctSearchProjects()` client-side filter.
+- BUG FIX: `Contractor\DashboardController@index` built `$recentActivities`
+  but never passed it to the view â€” added to `compact()` and rendered a
+  Recent Activity card (fixes 2 pre-existing test failures).
+- `ContractorDashboardTest::test_status_stat_cards_reflect_real_counts`
+  updated: cards render number-before-label now, so counts assert against
+  exact `<div class="db-stat-num">N</div>` markup instead of
+  label-then-value order. Stat label casing restored to original
+  ('Total assigned', 'In progress', 'Not yet started').
+- Verified: `view:cache` clean, `ContractorDashboardTest` 8 passed;
+  `--filter="Dashboard"` 36 passed / 1 failed â€” the single failure is the
+  pre-existing `DashboardOverdueInspectionTest` count-badge case (untouched
+  filter partial, fails identically on pristine files).
+
+---
+## E-Next (2026-09-13): Project Monitor UI/UX enhancement (frontend only)
+
+**Status: IMPLEMENTED (uncommitted ï¿½ no git available in env).** Backend untouched: no route/controller/model/query/variable/auth changes.
+
+### Files
+- 
+esources/views/projects/index.blade.php ï¿½ header hierarchy (.pm-header + subtitle), toolbar card wrapping existing IDs/handlers, data-col on all 13 th/td, row actions converted to kebab menu (same view/edit/archive routes), pagination moved inside new .projects-table-card, ilterProjects hardened with closest('.filter-btn'), 	oggleViewMode now also toggles the table card. All onclick/IDs (ilterStartYear, ilterDeadlineYear, projectSearch, gridViewBtn, 	ableViewBtn, rchiveProject, modals) preserved.
+- public/css/admin/projects/projects.css (appended) ï¿½ PROJ-TRACK palette vars (--pm-*), segmented tabs, 40px toolbar rhythm, Columns popover, enterprise table (light header, sticky thead, 1480px min-width with intentional x-scroll, per-column min-widths, word-boundary title wrap), pill badges, modern progress, sticky actions column, kebab menu, card footer, grid polish, responsive breakpoints. Additive overrides only.
+- public/js/admin/projects/project-monitor-columns.js (new, vendored per no-vite rule, loaded via sset() in index.blade.php) ï¿½ Columns dropdown build/toggle, localStorage key projtrack_project_columns (UI prefs only), Show all / Hide all (keeps Title) / Reset, empty-row colspan fix, kebab menu delegation, Esc-to-close.
+
+### Behavior notes
+- Column hide/show is instant, no reload; prefs survive refresh; Reset restores defaults. Actions column locked visible.
+- ddslashes(->title) in the archive menu call fixes single-quote titles breaking the inline rchiveProject() JS string (previously raw {{ ->title }}). Same route/handler.
+- Verified: php -l clean on blade + new JS; 
+ode --check clean on new JS.
+
+
+---
+### Fix (2026-09-13): Row actions (kebab) menu blocked/clipped
+
+**Problem:** Clicking the ... actions button opened a per-row dropdown that was cut off / hidden behind other rows ï¿½ choices unclickable.
+
+**Root cause:** Each .pm-row-menu-pop was absolutely positioned inside a 	d inside .projects-table-wrap (overflow-x/y: auto), so the scroll container clipped it; plus later rows' opaque 	d backgrounds (and the sticky actions column) painted over earlier rows' open menus.
+
+**Fix (frontend only, same routes/handlers):**
+- Kebab cell now a single button carrying data-view-url / data-edit-id / data-archive-url / data-archive-title (@can still enforced server-side; Blade-escaped titles also fix quote-breaking).
+- One body-level #pmRowMenu (position: fixed, z-index: 9999) populated + positioned from getBoundingClientRect() on open, with flip-up near viewport bottom and viewport-edge clamping.
+- Menu closes on outside click, item click (after action fires), table scroll (capture), resize, and Esc; toggle-shut on re-click.
+- Verified: php -l clean, 
+ode --check clean.
+
+
+---
+### Fix pack (2026-09-13): action menu stretch + blue header + table width (no redesign)
+
+**Reports:** kebab menu rendered as a huge white strip across the page.
+
+**Root cause:** .pm-row-menu-pop base rule sets 
+ight: 0; the .pm-row-menu-floating override set position: fixed; left (via JS) but never cancelled 
+ight ï¿½ with both left and 
+ight set, the browser stretched the menu from the button to the viewport edge.
+
+**Fixes (CSS in projects.css, no backend/structure changes):**
+- Floating menu: added 
+ight: auto; width: max-content; min-width: 160px; max-width: 200px ï¿½ small dropdown anchored to the clicked ... button. Smart flip-up + viewport clamping already in JS.
+- Table width: replaced forced min-width: 1480px with width: 100%; min-width: 0; table-layout: auto ï¿½ per-column min-widths form the intrinsic minimum, so the table fills freed space when columns hide and scrolls (overflow-x) only when many columns are visible.
+- Verified 13 <th data-col> + 13 <td data-col> pairs ï¿½ hide/show removes header and cells together; Actions stays locked visible.
+- Restored blue gradient sticky header (white uppercase labels, light sort indicators) per request.
+- Search widened to 270px so the placeholder is not cut off; toolbar keeps 40px control rhythm.
+- Verified: php -l clean, 
+ode --check clean. Sidebar/topbar/routes/controllers untouched.
+
+
+---
+### Enhancement (2026-09-13): grid cards use login-image.png cover
+
+- index.blade.php: added .project-cover banner (sset('images/login-image.png'), lazy-loaded) at the top of each grid card; all card data/actions unchanged.
+- projects.css: 140px cover with object-fit: cover + navy fade overlay (120px on mobile); card radius clips corners.
+
+
+---
+### Enhancement (2026-09-13): grid header uses login-image.png as background
+
+- Replaced the separate cover banner with login-image.png as the .project-header background (navy overlay for contrast), white code/title with text-shadow, badge drop shadows. Table view untouched.
+
+
+---
+### Fix (2026-09-13): unstyled flash / delayed design on refresh (FOUC)
+
+**Symptom:** refresh briefly shows unstyled content before the design snaps in.
+
+**Causes fixed (no visual/backend changes):**
+- Google Fonts stylesheet was render-blocking in all 3 layouts (pp, stafflayouts, contractorlayouts) ï¿½ now preloaded + loaded with media=print onload swap (+noscript fallback), so slow font fetches no longer delay first paint.
+- projects/index.blade.php: inlined a small critical-CSS block (header/toolbar/table-card/grid skeleton) so first paint is styled even while projects.css is still downloading; full styles still in public/css per convention.
+- Saved Grid/Table mode previously applied only on DOMContentLoaded (wrong view flashed first) ï¿½ a tiny synchronous script after the table markup now applies it before first paint; the existing loader re-affirms it afterwards.
+- Verified: php -l clean on all 4 edited blades.
+
+
+---
+### Fix (2026-09-13): refresh flashes raw HTML before CSS applies
+
+**Root causes:**
+- The full-screen preloader overlay only existed as styled once external preloader.css arrived ï¿½ nothing covered first paint, so slow stylesheet delivery exposed raw HTML.
+- The overlay hid on window load, which waits for EVERY image/font/CDN script (card header art, topbar photo, Chart.js, Leaflet...), holding the reveal hostage and making styling feel delayed.
+
+**Fixes:**
+- components/preloader.blade.php: inlined a zero-specificity (:where()) cover ï¿½ first paint is always the branded navy loader, never unstyled HTML; full preloader.css (blur, animation) overrides seamlessly on arrival.
+- public/js/components/preloader.js: reveal on DOMContentLoaded + 600ms min display + 400ms fade (was: window load); load kept only as a guarded backup; manual ProjTrackPreloader.hide()/show() API and unmount behavior unchanged.
+- Earlier companion changes kept: non-blocking Google Fonts in all 3 layouts, inline critical CSS + synchronous Grid/Table restore in Project Monitor.
+- Verified: php -l clean, 
+ode --check clean.
+
+
+---
+### Fix (2026-09-13): favicon on standalone login page
+
+- uth/login.blade.php (standalone, no layout) was missing the favicon ï¿½ added aviconpmu.png?v=3. The 3 layouts (admin/staff/contractor, incl. My Projects) and dmin/login (extends layouts.app) already had it.
+
+
+---
+### Root-cause fix (2026-09-13): favicon never showing on Projects/Login
+
+**Analysis (verified, not guessed):** rendered HTML contains a correct <link rel=icon type=image/png href=.../faviconpmu.png>; the PNG is valid (390x390) and serves HTTP 200 as image/png; the serving process runs from this exact folder. The poison: public/favicon.ico was a MALFORMED icon ï¿½ header declared one 32x32 entry but embedded the full 123KB source PNG. Browsers probing /favicon.ico got a corrupt icon, which poisons the origin's favicon cache entry, and normal/Ctrl+F5 refreshes do not clear it.
+
+**Fix:**
+- Regenerated public/favicon.ico properly (old file backed up to %TEMP%/favicon-old.ico): valid ICONDIR, 3 PNG-compressed entries 16/32/48 with correct sizes+offsets (7.8KB total), verified byte-level.
+- Bumped explicit PNG link ?v=4 -> ?v=5 in all 3 layouts + standalone login blade so browsers fetch a never-seen URL.
+- Verified: php -l clean x4; favicon.ico serves 200; login HTML carries the new link.
+- User-side step still required once: F12 -> Application -> Storage -> Clear site data -> reload (or fully quit + reopen browser), because the poisoned favicon entry lives in the browser profile.
+
+
+---
+### Fix (2026-09-13): loader itself flashed as bare text before its CSS arrived
+
+**Analysis:** compiled views confirmed the first-paint cover was live, so the remaining 'static text, no css' frame was the preloader's INNER content (brand/label/SVG) rendering unstyled while external CSS trickled in on the slow single-threaded dev server ï¿½ i.e. navy screen + bare text, not the page itself.
+
+**Fix:** extended the zero-specificity inline cover in components/preloader.blade.php to fully style the loader interior (brand row, logo size, name typography, chart sizing, crane strokes, amber bars, label, hidden-state fade) ï¿½ first paint is now the finished-looking loader even with zero external CSS; full preloader.css (blur, bar animation) still overrides on arrival. Verified php -l clean.
+
+Audit+fix 2026-09-13 unstyled-on-refresh: audited all blades (zero relative asset paths, Vite commented out and no public-build by design, no mix, no SW); all CSS URLs return 200; no admin-projects-create route exists (creation is modal-only). Definite defect found and fixed: contractorlayouts head had a nested link tag inside the favicon href, corrupting that layout head. Added 2.5s font-swap fallback in all 3 layouts. php -l clean. Note: a stylesheet that fails mid-refresh on single-threaded php-S does not block rendering, so the browser can paint without it; inlined critical CSS plus styled loader now cover that window.
+Deep diagnosis 2026-09-13 unstyled-on-refresh, round 2: reproduced in headless Chrome (clean profile) - login renders fully styled on first load AND reload (screenshots compared). All local CSS returns 200 with correct sizes; heads verified clean after contractor fix; no relative paths, no active Vite, no SW; page headers clean (no CSP); 3 consecutive HTML fetches byte-stable (no truncation). Attempted authed render via crafted file session - rejected (server encrypts session cookies despite SESSION_ENCRYPT=false in env, and guard would not pick it up); forged session file removed afterwards. Conclusion: server delivery proven correct; residual cause must be client-side (poisoned profile cache from the broken-favicon era, or an extension). Decisive test given to user: fresh Chrome profile via --user-data-dir.

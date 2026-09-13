@@ -133,13 +133,20 @@ class ContractorDashboardTest extends TestCase
         $this->assignProject(['status' => 'Ongoing']);
         $this->assignProject(['status' => 'Planned']);
 
+        // NOTE (2026-09-11 Option #3 redesign): stat cards now render the
+        // large number BEFORE the label, so assertions anchor each count
+        // to its exact card markup instead of label-then-value ordering.
         $this->actingAs($this->contractorUser)
             ->get(route('contractor.dashboard'))
             ->assertOk()
-            ->assertSeeInOrder(['Total assigned', '4'])
-            ->assertSeeInOrder(['Completed', '2', '50% of total'])
-            ->assertSeeInOrder(['In progress', '1', '25% of total'])
-            ->assertSeeInOrder(['Not yet started', '1', '25% of total']);
+            ->assertSee('Total assigned')
+            ->assertSee('<div class="db-stat-num">4</div>', false)
+            ->assertSee('Completed')
+            ->assertSee('<div class="db-stat-num">2</div>', false)
+            ->assertSee('50% of total')
+            ->assertSee('In progress')
+            ->assertSee('Not yet started')
+            ->assertSee('25% of total');
     }
 
     public function test_contractor_with_no_projects_sees_empty_states(): void
