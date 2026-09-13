@@ -44,6 +44,8 @@ class ScurveHeaderProposalController extends Controller
             // no PDF reader (see the branch below).
             'header_rows_text' => 'sometimes|string|max:8000',
             'column_map' => 'sometimes|string|max:20000',
+            // PDF-3: a layout learned FROM a verified AI read, never auto-live.
+            'source' => 'sometimes|string|in:auto-capture,ai-derived',
         ]);
 
         $isPdf = ($validated['source_type'] ?? 'excel') === 'pdf';
@@ -100,6 +102,32 @@ class ScurveHeaderProposalController extends Controller
             } catch (\Throwable $e) {
                 $columnMap = null;
             }
+        }
+
+        // PDF-3 — a layout learned from a verified AI read takes the SAME route the
+        // Excel learn-from-AI path uses: storeAiDerived backfills a map-less row or
+        // creates a proposed one, never touches occurrences (repeats must not
+        // manufacture corroboration for a machine-made map) and can never
+        // auto-live. Approval stays the only way a layout becomes readable.
+        if ($isPdf && ($validated['source'] ?? 'auto-capture') === 'ai-derived') {
+            if ($columnMap === null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'An AI-derived layout must carry its map.',
+                ], 422);
+            }
+            $aiHash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
+            $row = ScurveHeaderProposal::storeAiDerived(
+                $contractorId,
+                $aiHash,
+                mb_substr($text, 0, 4000),
+                $columnMap
+            );
+            if ($row->source_type !== 'pdf') {
+                $row->update(['source_type' => 'pdf']);
+            }
+
+            return response()->json(['success' => true, 'stored' => 1], 201);
         }
 
         // One identity rule for both kinds: the slice text, normalized.

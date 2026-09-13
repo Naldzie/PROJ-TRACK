@@ -1053,6 +1053,61 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+// PDF-3 — a layout learned from a verified AI read follows the Excel
+    // learn-from-AI rules exactly: proposed, ai-derived, and NEVER auto-live,
+    // because a machine-made map must not self-trust into baselines.
+    // Called by: scurveHarvestPdfLayout() → collect().
+    public function test_ai_derived_pdf_layout_is_stored_but_never_live(): void
+    {
+        $admin = $this->makeUser('admin');
+        $block = "COLUMNS: A,B,C,D | META: title block | HEADER: column labels\n"
+            . "R1 [HEADER]: NO.,Amount,30 days,30 days\n"
+            . "R2 [DATA]: A,ROOFING,4000,4000";
+        $map = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['no.', 'amount', '30 days'],
+                'descX' => 0.05, 'descRight' => 0.3,
+                'monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.9]]],
+        ]];
+
+        $payload = [
+            'source_type' => 'pdf',
+            'source' => 'ai-derived',
+            'header_rows_text' => $block,
+            'column_map' => json_encode($map),
+        ];
+
+        // Three identical posts: occurrences must NOT accumulate into auto-live.
+        foreach (range(1, 3) as $ignored) {
+            $this->actingAs($admin)
+                ->post('/admin/scurve-header-proposals/collect', $payload)
+                ->assertStatus(201)
+                ->assertJsonPath('success', true);
+        }
+
+        $rows = ScurveHeaderProposal::where('source_type', 'pdf')->get();
+        $this->assertCount(1, $rows, 'repeats must not multiply rows');
+        $this->assertSame('ai-derived', $rows[0]->source);
+        $this->assertSame('proposed', $rows[0]->status, 'a machine-made map must never auto-live');
+        $this->assertSame('pdf', $rows[0]->column_map['kind']);
+    }
+
+    // The map is the whole point of an AI-derived row, so one without it is
+    // refused rather than stored as an empty promise.
+    // Called by: collect() ai-derived branch.
+    public function test_ai_derived_pdf_layout_requires_its_map(): void
+    {
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', [
+                'source_type' => 'pdf',
+                'source' => 'ai-derived',
+                'header_rows_text' => "COLUMNS: A,B\nR1 [HEADER]: DESCRIPTION,MONTH 1",
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertSame(0, ScurveHeaderProposal::count());
+    }
+
     // E1-PDF / PDF-1 — a PDF capture arrives PRE-READ, because the server owns no
     // PDF extractor: the browser's pdf.js pass is the only reader there is. The
     // file/document_id XOR therefore does not apply to it.

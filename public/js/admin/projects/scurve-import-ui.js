@@ -627,6 +627,7 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         scurveStashWarnings(data, months);
         // F-D: the verified answer teaches novel month words (approval-gated).
         scurveHarvestPdfMonthLabels(data);
+        scurveHarvestPdfLayout(data);
         if (ctx.flow === 'detail') {
             window.__setupModalContext = { mode: 'save-immediately', existingMonths: months };
             if (typeof openSetupBaselineModal === 'function') openSetupBaselineModal();
@@ -647,6 +648,59 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
 };
 
 /* ─── F-D vocabulary harvest (AI month-header words → review desk) ────────── */
+// PDF-3 — a verified AI answer teaches a LAYOUT, not just wording.
+//
+// The AI states WHICH month each header is; the stashed page tokens say WHERE it
+// sits. That combination reaches what capture alone cannot: the roof family
+// labels every month identically, so capture must refuse to number them, while
+// an AI answer numbers them outright.
+//
+// Everything here is proposal-only. The derivation self-checks by replaying the
+// file through the map it just built and requiring the AI's own curve back, so a
+// layout that finds the columns but misreads the table (roof: per-activity
+// percentages needing cost weighting) teaches nothing at all.
+//
+// Fire-and-forget, contractors excluded, values never leave the browser.
+// Called by: _trySCurvePdfAiAssist() on every successful AI merge.
+function scurveHarvestPdfLayout(data) {
+    try {
+        var path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
+        if (path.indexOf('/contractor/') !== -1) return;
+
+        var core = window.scurvePdfParserCore || null;
+        var tokens = window._scurvePdfPageTokens || null;
+        var labels = (data && data.monthLabels) || null;
+        if (!core || typeof core.derivePdfLayoutFromAi !== 'function') return;
+        if (!Array.isArray(tokens) || !tokens.length || !labels) return;
+
+        var derived = core.derivePdfLayoutFromAi(tokens, labels, (data && data.months) || null);
+        if (!derived || !derived.map || !derived.block) return;
+
+        var base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
+        var fd = new FormData();
+        fd.append('source_type', 'pdf');
+        fd.append('source', 'ai-derived');
+        fd.append('header_rows_text', derived.block);
+        fd.append('column_map', JSON.stringify(derived.map));
+        try {
+            var sel = document.getElementById('contractorSelect');
+            if (sel && sel.value) fd.append('contractor_id', sel.value);
+        } catch (e) {}
+        try {
+            if (window.projectId) fd.append('project_id', window.projectId);
+        } catch (e) {}
+
+        var token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
+            (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
+        fetch(base + '/scurve-header-proposals/collect', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
+            body: fd,
+            keepalive: true,
+        }).catch(function () {});
+    } catch (e) { /* learning never blocks a merge */ }
+}
+
 // Verified AI answers teach wording (Option 1): month-header labels the rules
 // never knew become scurveMonth proposals (AI-assisted source, approval still
 // required — same trust rule as the loop: ≥3 repeats or one click). Labels the

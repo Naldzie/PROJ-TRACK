@@ -47,6 +47,30 @@ window.parseSCurvePdfFile = async function (file) {
         window._scurvePdfPageTexts = itemsByPage.map((items) =>
             (items || []).map((it) => (it && it.str) || '').join(' ')
         );
+        // PDF-3 — the same words WITH their positions. The AI answers later (the
+        // user clicks), by which time this parse is long gone, and a label can
+        // only become a column band if we still know where it sat. Compact by
+        // design: {str,x,y,width} per token, capped with the same 20-page budget.
+        //
+        // THESE FOUR KEYS ARE A CONTRACT, not a convenience. The core's own
+        // helpers fall back to exactly them when an item carries no pdf.js
+        // transform — groupItemsIntoLines reads item.y and linesToTokenLines
+        // reads item.x/item.width — so a token in this shape flows through the
+        // whole core unchanged. Both omissions fail SILENTLY, and they fail
+        // DIFFERENTLY: drop y and every token collapses onto one line at y=0, so
+        // the derivation refuses outright (this is how the first cut of this
+        // stash shipped dead); drop width and it still SUCCEEDS, with every band
+        // drifted, which would teach a skewed layout instead of teaching
+        // nothing. See the plan file's §9 entry for 2026-09-13 before changing
+        // the shape; tests/js/scurve-pdf-parser.test.mjs pins both.
+        window._scurvePdfPageTokens = itemsByPage.map((items) =>
+            (items || []).map((it) => ({
+                str: (it && it.str) || '',
+                x: it && it.transform ? it.transform[4] : ((it && it.x) || 0),
+                y: it && it.transform ? it.transform[5] : ((it && it.y) || 0),
+                width: (it && it.width) || 0,
+            }))
+        );
     } catch (e) { /* stash is best-effort */ }
 
     // F-D — learned month-header words (approved scurveMonth rows) ride as the

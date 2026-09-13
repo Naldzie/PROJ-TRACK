@@ -2,8 +2,9 @@
 # Parent refs: textfiles/document_parser_pdf_ai_fallback_plan.md (F-A..F-D + B — the PDF AI track)
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
-# Date: September 12, 2026
-# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated) · PDF-3/4 ⬜
+# Date: September 12, 2026 (last updated September 13, 2026 — §6 roof diagnosis + §9 PDF-3 stash defect)
+# Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
+#         PDF-3 🔄 stash defect FIXED 2026-09-13 (suites + real files green); browser proof BLOCKED ON §6 · PDF-4 ⬜
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -30,10 +31,27 @@
       fired, announced itself, and its SECOND page supplied months 3,4,5 — the
       column-split case. An earlier run that looked like proof was retracted; see
       both entries in the session log.
-    - PDF-3 (learn-from-AI) and PDF-4 (teach) NOT started.
+    - PDF-3 (learn-from-AI) BUILT, and its browser-fatal stash defect FIXED
+      2026-09-13 (uncommitted): the stash shape had no y and no width, so the
+      derivation returned null on every file and the harvest could never have run.
+      Now byte-identical to raw pdf.js items on the real SEGMENT PDF. Forensics,
+      fix and fixtures: §9 (2026-09-13).
+      NOT browser-proven, and it CANNOT be until §6 lands — SEGMENT no-ops by
+      design and the roof self-check refuses. Do not go hunting for a bug there.
+    - PDF-4 (teach) NOT started.
+    - The ROOF family is now fully diagnosed (§6). Short version: the roof Excel
+      already parses to the exact truth curve because it reads the workbook's
+      HIDDEN columns AJ:AS; printing to PDF drops those columns, so the PDF keeps
+      only per-activity time fractions that cannot be summed. The printed
+      cumulative row still holds the true curve, and PDF-3's own AI-derived map
+      lands on it exactly — so the roof has a zero-AI path after all. It needs one
+      ported rule, not a new idea.
 
-  ORDER OF WORK: PDF-3 → PDF-4 (P3, PDF-1 and PDF-2 are done), each proved
-  before the next, each needing an explicit user order (Rule 10).
+  ORDER OF WORK: ~~fix the PDF-3 stash~~ DONE 2026-09-13 → summary-row fallback
+  (§6) → browser-prove PDF-3 on the ROOF, which the fallback makes possible →
+  PDF-4. Each proved before the next, each needing an explicit user order
+  (Rule 10). The fallback moved AHEAD of the PDF-3 proof because it is what
+  unblocks it, not merely what improves it.
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -48,8 +66,8 @@
       @vite, never resources/ for new feature scripts.
 
   VERIFY COMMANDS
-    npm run test:js          → expect 131 passed + 2 intended blinding fails
-    php artisan test         → expect 1156 passed / 7 pre-existing failures
+    npm run test:js          → expect 136 tests, 134 passed + 2 intended blinding fails
+    php artisan test         → expect 1158 passed / 7 pre-existing failures
                                (2 ContractorDashboard, 1 DashboardOverdueInspection,
                                 2 EmailDraft, 2 default-baseline)
     php artisan view:clear   → after ANY Blade edit
@@ -146,7 +164,7 @@
   3. P3 — MERGE BY Y, NOT BY ROW POSITION  ✅ BUILT 2026-09-12
 ===============================================================================
 
-  BUILT: three pure-core changes (see the §8 session log for the full account and
+  BUILT: three pure-core changes (see the §9 session log for the full account and
   the measured before/after on every sample PDF). The section below is the
   original spec, kept as the record of what was diagnosed and why.
 
@@ -214,7 +232,8 @@
     Layout memory (Stage 2) does not address positional merge drift at all.
 
 ===============================================================================
-  4. STAGE 2 — E1-PDF LAYOUT LEARNING  ⬜ NOT STARTED
+  4. STAGE 2 — E1-PDF LAYOUT LEARNING
+     PDF-1 ✅ · PDF-2 ✅ · PDF-3 ⚠️ BUILT, DEAD IN BROWSER (§9) · PDF-4 ⬜
 ===============================================================================
 
   User-ordered scope 2026-09-12: capture+consult, learn-from-AI, and
@@ -275,7 +294,10 @@
     - Proof: captured-then-approved layout re-imports natively with the FYI note
       and zero AI, on both flows.
 
-  PDF-3 — LEARN-FROM-AI (PDF twin of E1-B)
+  PDF-3 — LEARN-FROM-AI (PDF twin of E1-B)  🔄 BUILT (uncommitted); the stash defect
+          that made it return null on every file is FIXED 2026-09-13 and covered by
+          two fixtures. Browser proof is blocked on §6, not on the code. The spec
+          below is unchanged and still accurate.
     Nearly free: the PDF AI path ALREADY returns monthLabels (F-A
     sanitizeMonthLabels → F-B returns them → F-D harvests them). No prompt
     change, and no asking the model for pixel coordinates it cannot give.
@@ -336,7 +358,116 @@
     a valid novel-layout probe. Keep it that way — do not hardcode SEGMENT.
 
 ===============================================================================
-  6. DECISION LOG
+  6. THE ROOF FAMILY — WHY EXCEL READS IT AND PDF CANNOT  (diagnosed 2026-09-13)
+===============================================================================
+
+  Read this before spending another hour on "why is the roof wrong". The answer
+  is not in the parser. It is in the file. Everything below is a read-only probe
+  on the real specimens; scripts in C:\temp\opencode.
+
+  THE ROOF EXCEL IS ALREADY PERFECT, TODAY
+    sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE.xlsx
+    through the real SCurveImportService::parse():
+      curve         6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100  <- the TRUTH
+      curveSource   activities        contractAmount  2,239,599.72
+      activityCount 5                 summaryReference gap = 0.00 on ALL 7 months
+    Per-month activity MEMBERSHIP is right too (M5 = 3 activities, M7 = 3, matching
+    exactly the non-zero cells of the AQ and AS columns), which is only possible if
+    the real numbers were read. Nothing about the roof is broken on the Excel side.
+
+  WHY — IT READS THE WORKBOOK'S HIDDEN COLUMNS
+    The workbook hides columns AJ:AS (verified via column dimensions). They hold
+    the ONLY correct arithmetic in the file:
+      AM19 = "1st."   AN19 = "2nd."  ...  AS19 = "7th"  <- proper ordinal month headers
+      AM21 = J21 * F22    <- the month's time fraction x THAT ACTIVITY's contract
+                             amount, which sits on the row BELOW the fractions
+      AM31 = SUM(AM21:AM30) = 141,466.26   ->   G32 = AM31/F31 = 6.32%
+      G33  = G32 ;  K33 = K32+G33 ;  ...                <- the cumulative curve
+    SCurveImportService already targets exactly this — see the comment at
+    SCurveImportService.php:1273 ("ordinal month labels ... roof family AM:AS") and
+    the roof-family contract placement rule at :1412 (a labelled section row carries
+    the month formulas while its subtotal sits on the FOLLOWING desc-less row).
+
+  WHAT THE VISIBLE GRID ACTUALLY CONTAINS (and why summing it is meaningless)
+    The cells a human sees — and the ONLY ones the print carries — are per-activity
+    TIME FRACTIONS over DIFFERENT denominators:
+      A  FACILITIES FOR ENGINEER   =30/187 =31/187 =31/187 =30/187 =31/187 =30/187
+      C  EARTHWORK                 =23/115 =31/115 =31/115 =30/115 =0/115  =0/4
+      H  OTHER WORKS               =0/4    =0/4    =0/4    =0/4    =0/4    =30/34
+    Each activity's own row sums to 1 (hidden AL21 = AG21+AD21+Z21+V21+R21+N21+J21
+    -> 1). They are NOT percentages of the project and NOT on a common scale, so
+    "16% + 16% + 20% + 6% + 0%" is arithmetic on incompatible units. That is the
+    8.21 / 39.77 / 100 / 100 read from the PDF-3 probe, fully explained.
+
+  THEREFORE: THE PDF EXPORT IS LOSSY, NOT MISREAD  (user's read, confirmed)
+    Printing to PDF keeps the visible area only, so AJ:AS never reach the page. The
+    export drops the ordinal month headers AND the cost-weighted amounts in one
+    step, and keeps only the fractions. No amount of column-map learning recovers a
+    column that was never printed. This is why the roof is the one family where
+    "find the columns" and "read the table" come apart.
+
+  BUT THE ANSWER IS STILL PRINTED — ON THE SUMMARY ROW
+    The export DOES carry rows 32/33. Measured on page 1 of the PDF:
+      y=281.8  [%]  6.32 17.99 17.99 17.41 17.31 22.11   ascending=false  (row 32)
+      y=272.8  [%]  6.32 24.31 42.30 59.71 77.03 99.14   ascending=TRUE   (row 33)
+    and page 2 continues 99.14 -> 100.00 under the "7 days" tail column.
+    isSummaryLabel already matches the bare "%" token sitting at x=294.9 on that
+    same line, and cumulative separates from per-month by monotonicity alone.
+    (The word "Commulative" is NOT usable as the handle: it sits at y=268.3 while
+    its values sit at y=272.9, and Y_TOLERANCE is 2. Use the "%" token.)
+
+    PROVEN 2026-09-13 (read-only, real file, real core): feed PDF-3's AI-derived
+    map to the page and the printed cumulative row lands EXACTLY on the bands —
+      page 0  bands M1[338-421] M2[421-505] M3[505-588] M4[588-672] M5[672-755] M6[755-796]
+              row y=272.8 -> M1=6.32  M2=24.31  M3=42.30  M4=59.71  M5=77.03  M6=99.14
+      page 1  band  M7[116-188]
+              row y=272.9 -> M7=100.00
+    => AI-derived map + a summary-row fallback = the exact truth curve, ZERO AI at
+       read time. The roof does NOT have to stay AI-only.
+
+  THE MISSING PIECE IS A PORT, NOT AN INVENTION
+    The Excel reader has three rules. The PDF core has only the first two:
+      1. activity math WINS while it exists       Excel OK   PDF OK   (core :813)
+      2. summary = reference + warn past 1.0      Excel OK   PDF OK   (core :818)
+      3. summary ADOPTED as the curve when        Excel OK   PDF MISSING  <- the gap
+         activity math is ABSENT — flagged,      (SCurveImportService.php:1606)
+         never silent, monotonic-clamped,
+         jumble-guarded, curveSource='summary'
+    Excel rule 3 fires only on lastNonZero === 0 with >= 2 reference points. It is
+    explicitly NOT triggered by disagreement ("Disagreement never triggers this",
+    :1601). Porting rule 3 to the PDF core is the cheapest correct fix and reuses a
+    design already browser-proven on the Excel side.
+
+  KNOWN WRINKLE FOR WHOEVER BUILDS IT
+    The CONTINUATION page's summary row has NO label — page 2 y=272.9 is a bare
+    "99.14%  100.00%", because the label column was printed on page 1 only. It must
+    be paired by Y, exactly as P3's matchRowsByY already pairs activity rows. Do NOT
+    require a label on every page, or the 7th month is lost again — the same defect
+    class the user caught when the roof's "7 days" column exposed single-page capture.
+
+  CONSEQUENCE FOR PDF-3 (this is the part that changes the plan)
+    PDF-3's self-check currently REFUSES the roof, and that refusal is CORRECT:
+    today's reader genuinely cannot reproduce the AI curve from that map. But it is
+    not permanent. Add rule 3 and the SAME AI-derived map reproduces the AI's curve,
+    the self-check passes, and the roof teaches itself. Order matters:
+      summary-row fallback FIRST, then the roof becomes teachable for free.
+    Building PDF-4 teach for the roof BEFORE the fallback would produce an approved
+    layout that still reads the table wrong — exactly what the self-check exists to
+    prevent.
+
+  IS SUMMARY-vs-CALCULATION DISAGREEMENT RARE?  MEASURED 2026-09-13
+    ROOF  gap 0.00 on all 7 months                        -> perfect agreement
+    BUHI  gaps 0.21 / 0.63 / 1.49 / 3.00 (M3/M6/M9/M12)   -> the documented exception:
+          its summary tracks ACCOMPLISHED % against the PRE-DISCOUNT bid, i.e. a
+          different divisor, so the two can never agree
+    Both facts are needed, and they point in opposite directions on purpose:
+    agreement is common enough that the summary is a SAFE FALLBACK when there is no
+    activity math, and disagreement is real enough (BUHI) that the summary must
+    never REPLACE activity math that exists. That is precisely rules 1-3 above, and
+    it is the user's stated model of the system — confirmed correct 2026-09-13.
+
+===============================================================================
+  7. DECISION LOG
 ===============================================================================
 
   Decision 1 — Delivery fixes before layout learning (user, 2026-09-12).
@@ -367,9 +498,16 @@
       column-split prints, so its captures are cleaner.
 
 ===============================================================================
-  7. FLAGGED FOR FUTURE (unordered — each needs an explicit user order)
+  8. FLAGGED FOR FUTURE (unordered — each needs an explicit user order)
 ===============================================================================
 
+  - PDF SUMMARY-ROW FALLBACK — port the Excel rule 3 (SCurveImportService.php:1606)
+    to the PDF core so a PDF with no usable activity math adopts the author’s printed
+    cumulative row, flagged and jumble-guarded, exactly as Excel does. This is the
+    roof family’s only offline path; full evidence, the exact bands it lands on, and
+    the unlabelled-continuation-page wrinkle are in §6. Needs an explicit user order:
+    it is a NEW READER BEHAVIOUR, not a bug fix, and it must land BEFORE any attempt
+    to teach the roof a layout.
   - F-PDF2 full answer-fingerprint reuse (store a verified AI reading keyed by a
     file-shape hash for zero-AI repeat imports of the SAME file). Build only if
     words + layouts prove insufficient.
@@ -380,12 +518,123 @@
   - Time-budget hardening (PHP 60s overflow → honest 422; sender-only).
   - Clipped display names verdict (check edit/manage for full names first).
   - Blinding lift — a tracked pre-merge-to-main prerequisite, NOT a routine step.
-  - Parked: Tier-2 OCR for S-curve PDFs, rule family A (Roof-style), 2c,
-    P1/P2 passive mining + lifetime counting.
+  - Parked: Tier-2 OCR for S-curve PDFs, 2c, P1/P2 passive mining + lifetime counting.
+    (“Rule family A (Roof-style)” is RETIRED as a park — §6 shows the roof needs the
+    summary fallback above, not a bespoke geometry family.)
 
 ===============================================================================
-  8. SESSION LOGS
+  9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — PDF-3 STASH DEFECT FIXED (code, uncommitted). One line of behaviour,
+  two fixtures, no core change. Diagnosis entry below; this is the fix.
+    THE CHANGE — scurve-pdf-parser.js:54 now stashes {str, x, y, width} instead of
+    {str, x, xEnd}. Nothing else moved. The core's own fallbacks were already there:
+    groupItemsIntoLines reads item.y when an item has no pdf.js transform, and
+    linesToTokenLines reads item.x / item.width. Matching those two fallbacks is the
+    whole fix, which is why no guard had to be loosened and no signature changed.
+    The comment above the stash now states the four keys as a CONTRACT and points
+    here, because the failure mode is silent in both directions.
+    VERIFIED ON THE REAL FILES (probe_stash_fixed.mjs, real core, real pdfs):
+      SEGMENT  raw items -> map, months 1,2,3,4,5
+               stash     -> map, months 1,2,3,4,5     IDENTICAL (deep-equal)
+      ROOF     raw items -> NULL
+               stash     -> NULL                      IDENTICAL
+    The roof still refuses, and that is still correct — its self-check cannot pass
+    until the summary fallback exists (§6). The point of this run is that the stash
+    no longer CHANGES the answer; before it, every answer was null.
+    FIXTURES ADDED (+2 JS, at the end of scurve-pdf-parser.test.mjs):
+      1. "the stashed token shape derives exactly what raw pdf.js items do" —
+         asserts deep-equality of map, months AND block between the two shapes, not
+         merely that both are truthy. It carries a stashToken() helper that MUST be
+         kept byte-for-byte in step with the wrapper; the comment says so.
+      2. "dropping y or width from the stash breaks the derivation" — pins the two
+         failure modes separately, because they are NOT the same failure:
+           no y     -> derivePdfLayoutFromAi returns null (refuses outright)
+           no width -> it SUCCEEDS, with every band drifted (measured: month 1 moved
+                       from 0.6593 to 0.7317 of page width)
+         The second is the dangerous one and was nearly mis-asserted as a refusal in
+         the first draft of this fixture — the run corrected it. A stash that half
+         works would teach a SKEWED layout rather than teach nothing, so the test
+         asserts the geometry rather than the truthiness. Lesson banked: assert what
+         a wrong shape PRODUCES, not that it fails.
+    SUITES: JS 138 tests, 136 passed + the 2 intended blinding fails (F-B1 conditional
+    and L3 hardcoded-ABC — both the documented pair, unchanged). PHP 1158 passed /
+    the same 7 pre-existing failures. No core file touched, so sample-PDF rule reads
+    are unchanged by construction.
+    STILL NOT BROWSER-PROVEN, and it cannot be yet — read this before trying:
+      - SEGMENT will show NOTHING, by design (the no-op documented below).
+      - ROOF will show nothing either, because its self-check refuses until the
+        summary fallback lands (§6).
+      So PDF-3's browser proof is BLOCKED ON §6, not on this fix. Either build the
+      summary fallback and prove both together on the roof, or find a third PDF whose
+      rules miss and whose capture yields no map.
+
+  2026-09-13 — PDF-3 IS DEAD IN THE BROWSER (one-line stash defect). Diagnosed
+  read-only. NOTHING FIXED YET — this is the first thing to do next session.
+    SYMPTOM (user): the SEGMENT PDF's first failed import auto-captures as designed,
+    but clicking "Try AI assist" afterwards banks NO layout row at all.
+    ROOT CAUSE: scurve-pdf-parser.js:54 stashes window._scurvePdfPageTokens as
+    {str, x, xEnd}. The core reads NEITHER of those two spellings:
+      groupItemsIntoLines uses item.transform[5] ?? item.y      (core :176) -> no y
+      linesToTokenLines recomputes xEnd = x + (item.width || 0) (core :205) -> xEnd dropped
+    With no y, EVERY token on a page collapses into ONE line at y=0. bandsHoldNumbers
+    then has no rows beneath the header, refuses, and derivePdfLayoutFromAi returns
+    null on every file, always. The POST is never reached.
+    MEASURED on the real SEGMENT PDF (probe_stash.mjs):
+      raw pdf.js items (what last session's node probe fed) : map, months 1,2,3,4,5
+      _scurvePdfPageTokens shape (what the browser feeds)   : NULL
+      lines on page 1 : raw 9  vs  stash 1
+      xEnd round-trip : {"str":"CONSTRUCTION SCHEDULE AND S-CURVE","x":52.8,"xEnd":52.8}
+    WHY NO TEST CAUGHT IT: tests/js/scurve-pdf-parser.test.mjs builds items through
+    item(str,x,y,w) -> {str, transform, width}, i.e. the RAW shape, and last session's
+    node probe fed raw pdf.js items too. NOTHING has ever fed derivePdfLayoutFromAi
+    the shape the browser actually hands it. Same lesson class as P3: when a rule
+    refuses, suspect the data feeding it before you touch the rule.
+    THE FIX (one line, NO core change): stash {str, x, y, width} instead of
+    {str, x, xEnd}. Both core helpers ALREADY have item.y / item.width fallbacks, so
+    the compact stash then flows through unchanged — no signature churn, no relaxing
+    of any guard.
+    ADD WITH IT: a fixture that feeds derivePdfLayoutFromAi the STASH shape rather
+    than raw items, or this exact defect returns the next time the stash is touched.
+
+  2026-09-13 — SECOND, QUIETER REASON THE DESK LOOKED EMPTY (SEGMENT only).
+    Even with the stash fixed, SEGMENT will show no new row, and that is by design.
+    VERIFIED (probe_dedupe.mjs): the AI-derived block is BYTE-IDENTICAL to the
+    auto-capture block — same normalized sha256, 23e7504edc68... — so storeAiDerived
+    finds the existing capture row, and because that row already holds a column_map
+    the `if ($row->column_map === null)` branch (ScurveHeaderProposal.php:86) is
+    skipped entirely. No new row, no status change, not even an occurrences bump.
+    Defensible (the capture already learned the same 2-page map, months 1-5, so there
+    is genuinely nothing to add) but INVISIBLE, so the feature reads as broken even
+    once it works. The family PDF-3 exists for is the roof, whose capture stores
+    column_map = NULL and WOULD be backfilled — see §6 for why its self-check refuses
+    today and what makes that refusal go away.
+    OPEN UX QUESTION (needs a user decision, no code yet): should an ai-derived post
+    that lands on an already-mapped row say anything — a desk note, an occurrences
+    bump, or nothing? Silence is correct behaviour but poor feedback, and it cost
+    this session's confusion.
+    PROOF DISCIPLINE NOTE: SEGMENT is now the WRONG specimen for proving PDF-3,
+    because its capture already supplies the same map. Prove PDF-3 on the ROOF (or a
+    file whose capture is ambiguous), where the ai-derived row has something to add.
+
+  2026-09-13 — ROOF FULLY DIAGNOSED (user's hunch about the source workbook, correct).
+    New §6 holds the whole account with measurements. Headlines:
+      - the roof EXCEL already parses to the exact truth curve (curveSource
+        'activities', gap 0.00 on all 7 months) because it reads the workbook's
+        HIDDEN columns AJ:AS, which hold ordinal month headers and cost-weighted
+        peso amounts;
+      - printing to PDF keeps only the visible area, so those columns never reach the
+        page — the PDF is a LOSSY EXPORT, not a misread, and no column map can undo it;
+      - the visible cells are per-activity TIME FRACTIONS over different denominators
+        (=30/187, =23/115), which is why summing them gave 8.21 / 39.77 / 100 / 100;
+      - but the printed cumulative row still carries the TRUE curve, and PDF-3's own
+        AI-derived bands land on it exactly (M1..M6 on page 1, M7 on page 2);
+      - so the roof has a zero-AI path after all: port the Excel's rule-3 summary
+        fallback (SCurveImportService.php:1606) to the PDF core.
+    This retires the earlier conclusion that "the roof family stays AI-only". It also
+    REORDERS the remaining work: the fallback must come BEFORE any attempt to teach
+    the roof, or PDF-4 would approve a layout that still reads the table wrong.
 
   2026-09-12 — RESTUDY before building (read-only). Findings that changed scope:
     (a) PDF-2 needs NO new route — getAllForManagement already returns column_map
@@ -713,10 +962,11 @@
     names and the M4+M5 span. This file created for handoff.
 
 ===============================================================================
-  9. CONVERSATION CONTINUATION GUIDE
+  10. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  1. Read §0, then §3 (P3) — that is the next buildable item.
+  1. Read §0, then the 2026-09-13 entries in §9 — the PDF-3 stash defect is the next
+     buildable item and it is one line. §6 (the roof) is the next DECISION.
   2. Ask the user for an explicit order before building anything (Rule 10).
   3. Keep Excel and PDF paths separate: never let a PDF map reach the Excel
      reader or vice versa (source_type / kind gates).

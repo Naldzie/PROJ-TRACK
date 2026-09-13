@@ -1327,7 +1327,7 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
  *
  * Called by: derivePdfLayout().
  */
-function bandsHoldNumbers(tokenLines, headerIndex, monthCols) {
+function bandsHoldNumbers(tokenLines, headerIndex, monthCols, minFilled = 2) {
     const filled = {};
     for (let i = headerIndex + 1; i < Math.min(tokenLines.length, headerIndex + 16); i++) {
         for (const t of tokenLines[i].tokens) {
@@ -1341,10 +1341,10 @@ function bandsHoldNumbers(tokenLines, headerIndex, monthCols) {
                 if (centre >= mc.x && centre < mc.xEnd) { filled[mc.index] = true; break; }
             }
         }
-        if (Object.keys(filled).length >= 2) return true;
+        if (Object.keys(filled).length >= minFilled) return true;
     }
 
-    return Object.keys(filled).length >= 2;
+    return Object.keys(filled).length >= minFilled;
 }
 
 /**
@@ -1411,6 +1411,170 @@ function buildPdfSliceBlock(tokenLines, headerIndex, anchors, monthCols, maxRows
     return lines.join('\n');
 }
 
+/**
+ * PDF-3 — locate month columns using the labels the AI reported.
+ *
+ * The AI already names each month's header ("month 1 is headed 30 days"), so the
+ * columns can be found by matching those words against the printed tokens. Two
+ * properties make this the strongest of the three strategies: the INDEX comes
+ * from the AI rather than from position, and the POSITION comes from the page
+ * rather than from the AI — neither side is trusted for what it cannot know.
+ *
+ * Duplicates resolve by order, which is what the roof family needs: its months
+ * are all labelled "30 days", so month 1 takes the leftmost, month 2 the next,
+ * and so on. Labels not printed on this page are skipped, not forced.
+ *
+ * Pure. Returns [{index, x, xEnd}] ascending in x, or [].
+ */
+function aiLabelMonthColumns(sorted, labels, wanted) {
+    const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
+    const used = {};
+    const cols = [];
+
+    for (const idx of wanted) {
+        const want = norm(labels[idx]);
+        if (want === '') continue;
+        for (let i = 0; i < sorted.length; i++) {
+            if (used[i]) continue;
+            if (norm(sorted[i].str) !== want) continue;
+            used[i] = true;
+            cols.push({ index: idx, x: sorted[i].x, xEnd: sorted[i].xEnd });
+            break;
+        }
+    }
+
+    // Reading order must agree with the numbering, or these are not the columns
+    // the AI meant.
+    for (let i = 1; i < cols.length; i++) {
+        if (cols[i].x <= cols[i - 1].x) return [];
+    }
+
+    return cols;
+}
+
+/**
+ * PDF-3 — propose a layout from a verified AI read.
+ *
+ * This is what reaches the roof family: its months carry no index at all, so
+ * capture alone must refuse to number them (see derivePdfLayout's ambiguity
+ * rule), but an AI answer states the numbering outright. The AI supplies WHICH
+ * month each header is; the page supplies WHERE it sits. Nothing is invented —
+ * a label the page does not print simply yields no column.
+ *
+ * A continuation page may contribute a SINGLE month here, unlike the capture
+ * path: the index is stated rather than inferred, so one matched label is honest
+ * evidence and the roof's lone "7 days" tail column can finally be placed.
+ *
+ * Returns { map, block } or null. Callers store it as ai-derived, never live.
+ */
+export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 15) {
+    const pages = Array.isArray(itemsByPage) ? itemsByPage : [];
+    const known = Object.keys(labels || {})
+        .map(Number)
+        .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12)
+        .sort((a, b) => a - b);
+    if (known.length < 2) return null;
+
+    const found = [];
+    const assigned = {};
+    let block = null;
+
+    for (let p = 0; p < Math.min(pages.length, 20); p++) {
+        const tokenLines = linesToTokenLines(groupItemsIntoLines(pages[p] || []));
+        const pageMaxX = Math.max(0, ...tokenLines.flatMap((l) => l.tokens.map((t) => t.xEnd)));
+        if (!(pageMaxX > 0)) continue;
+
+        // Each page places only months no earlier page has placed, so a repeated
+        // header on an overflow page cannot re-claim month 1.
+        const wanted = known.filter((n) => !assigned[n]);
+        if (wanted.length === 0) break;
+        const minCols = found.length > 0 ? 1 : 2;
+
+        for (let i = 0; i < Math.min(tokenLines.length, 10); i++) {
+            const sorted = [...tokenLines[i].tokens].sort((a, b) => a.x - b.x);
+            const cols = aiLabelMonthColumns(sorted, labels, wanted);
+            if (cols.length < minCols) continue;
+
+            const descTokens = sorted.filter((t) => isDescriptionLabel(t.str));
+            let descX = descTokens.length ? Math.min(...descTokens.map((t) => t.x)) : null;
+            if (descX === null) {
+                const wordy = sorted.filter((t) => t.x < cols[0].x
+                    && /[A-Za-z]{2,}/.test(String(t.str || '')));
+                if (wordy.length) descX = Math.min(...wordy.map((t) => t.x));
+            }
+
+            const header = finalizeHeaderBands(cols, sorted, descX, pageMaxX);
+            if (!bandsHoldNumbers(tokenLines, i, header.monthCols, Math.min(2, header.monthCols.length))) continue;
+
+            const anchors = sorted.filter((t) => String(t.str || '').trim() !== '');
+            if (anchors.length < 2) continue;
+
+            found.push({
+                pageHint: p,
+                lineHint: i,
+                sig: anchors.map((t) => String(t.str || '').trim().toLowerCase()).filter((s) => s !== ''),
+                descX: header.descX / pageMaxX,
+                descRight: header.descRight / pageMaxX,
+                monthCols: header.monthCols.map((mc) => ({
+                    index: mc.index,
+                    x: mc.x / pageMaxX,
+                    xEnd: mc.xEnd / pageMaxX,
+                })),
+                pseudoCols: anchors.map((t, k) => ({
+                    letter: columnLetter(k),
+                    x: t.x / pageMaxX,
+                    xEnd: (anchors[k + 1] ? anchors[k + 1].x : pageMaxX + 1) / pageMaxX,
+                })),
+                headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
+            });
+            cols.forEach((c) => { assigned[c.index] = true; });
+            if (block === null) {
+                block = buildPdfSliceBlock(tokenLines, i, anchors, header.monthCols, maxRows);
+            }
+            break;
+        }
+    }
+
+    if (found.length === 0) return null;
+    // Fewer than two months placed in total is not a schedule worth teaching.
+    if (Object.keys(assigned).length < 2) return null;
+
+    const map = { v: PDF_MAP_VERSION, kind: 'pdf', pages: found };
+
+    // SELF-CHECK — read the file back with the very map about to be taught, and
+    // require it to reproduce the curve the AI just produced.
+    //
+    // Finding the columns is not the same as reading the table. The roof family
+    // proves it: its cells are PER-ACTIVITY PERCENTAGES, so a month total needs
+    // each activity's cost weighting it, while this reader sums raw cell values.
+    // Its bands can be located perfectly and the resulting curve is still wrong.
+    // A map that cannot reproduce the answer must never be offered for approval,
+    // because approval is what makes it fill baselines unattended.
+    if (Array.isArray(aiMonths) && aiMonths.length > 0) {
+        let replay = null;
+        try {
+            replay = parseSCurvePdf(itemsByPage, { liveMaps: [{ id: 0, map }] });
+        } catch (e) { replay = null; }
+        if (!replay || !replay.meta || replay.meta.mapUsed !== true) return null;
+
+        const got = {};
+        (replay.months || []).forEach((m) => { got[m.month_index] = m.planned_progress_percent; });
+        for (const m of aiMonths) {
+            const idx = Number(m && m.month_index);
+            const want = Number(m && m.planned_progress_percent);
+            if (!Number.isFinite(idx) || !Number.isFinite(want)) continue;
+            if (!(idx in got)) return null;
+            if (Math.abs(got[idx] - want) > 1.0) return null;
+        }
+    }
+
+    return {
+        map,
+        block,
+        months: Object.keys(assigned).map(Number).sort((a, b) => a - b),
+    };
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -1430,6 +1594,7 @@ if (typeof window !== 'undefined') {
         isWeakPdfCurve,
         relaxedMonthLabel,
         derivePdfLayout,
+        derivePdfLayoutFromAi,
         PDF_MAP_VERSION,
     };
 }

@@ -12,6 +12,7 @@ import {
     isWeakPdfCurve,
     relaxedMonthLabel,
     derivePdfLayout,
+    derivePdfLayoutFromAi,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
 
 /* ─── Fixture helpers ─────────────────────────────────────────────────────── */
@@ -848,4 +849,160 @@ test('a matching signature over empty bands does not apply', () => {
     ]);
 
     assert.equal(parseSCurvePdf([wordsOnly], { liveMaps: [{ id: 3, map }] }), null);
+});
+
+/* ─── E1-PDF learn-from-AI (PDF-3) ────────────────────────────────────────── */
+
+// The AI states WHICH month each header is; the page says WHERE it sits. That
+// reaches what capture alone cannot — identically labelled months, which capture
+// must refuse to number.
+test('an AI answer places identically labelled months by order', () => {
+    const items = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60], ['4000', 230, 30], ['4000', 310, 30], ['2000', 390, 30]]],
+    ]);
+    const labels = { 1: '30 days', 2: '30 days', 3: '30 days' };
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 40 },
+        { month_index: 2, planned_progress_percent: 80 },
+        { month_index: 3, planned_progress_percent: 100 },
+    ];
+
+    const out = derivePdfLayoutFromAi([items], labels, aiMonths);
+    assert.ok(out, 'the AI numbering must place the columns');
+    assert.deepEqual(out.months, [1, 2, 3]);
+    // Month N takes the Nth occurrence, left to right.
+    const cols = out.map.pages[0].monthCols;
+    assert.ok(cols[0].x < cols[1].x && cols[1].x < cols[2].x);
+});
+
+// THE GUARD THAT MATTERS: finding the columns is not the same as reading the
+// table. The roof's cells are per-activity PERCENTAGES needing cost weighting,
+// so its bands can be perfect while the curve comes out wrong — and a layout
+// that cannot reproduce the AI's own answer must never be offered for approval.
+test('a layout that cannot reproduce the AI curve teaches nothing', () => {
+    const items = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60], ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20]]],
+    ]);
+    const labels = { 1: '30 days', 2: '30 days', 3: '30 days' };
+    // The real answer for a percent table; the reader sums raw cells and cannot
+    // get here, so the self-check must refuse.
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 6.32 },
+        { month_index: 2, planned_progress_percent: 24.31 },
+        { month_index: 3, planned_progress_percent: 42.3 },
+    ];
+
+    assert.equal(derivePdfLayoutFromAi([items], labels, aiMonths), null);
+});
+
+// A label the page never prints yields no column — the AI cannot conjure one.
+test('AI labels absent from the page place nothing', () => {
+    const items = page([
+        [800, [['DESCRIPTION', 50, 90], ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['Works', 70, 80], ['30000', 310, 30], ['10000', 410, 30]]],
+    ]);
+
+    // Only two of the four claimed months exist on the page.
+    const out = derivePdfLayoutFromAi([items],
+        { 1: 'SEGMENT 1', 2: 'SEGMENT 2', 3: 'SEGMENT 3', 4: 'SEGMENT 4' },
+        [{ month_index: 1, planned_progress_percent: 75 }, { month_index: 2, planned_progress_percent: 100 }]);
+
+    assert.ok(out);
+    assert.deepEqual(out.months, [1, 2], 'unprinted labels must not become columns');
+    // Too few labels to be a schedule at all.
+    assert.equal(derivePdfLayoutFromAi([items], { 1: 'SEGMENT 1' }, []), null);
+    assert.equal(derivePdfLayoutFromAi([], { 1: 'A', 2: 'B' }, []), null);
+});
+
+// THE SHAPE THE BROWSER ACTUALLY HANDS derivePdfLayoutFromAi.
+//
+// Every other fixture here feeds RAW pdf.js items ({str, transform, width}),
+// because that is what the reader receives during a parse. But PDF-3 runs LATER
+// — the user clicks "Try AI assist" long after the parse — so it reads a compact
+// stash instead, built by parseSCurvePdfFile in scurve-pdf-parser.js.
+//
+// The first cut of that stash emitted {str, x, xEnd} and shipped completely dead:
+// with no `y` every token on a page collapsed onto one line, bandsHoldNumbers
+// found no rows beneath the header, and the derivation returned null on EVERY
+// file — silently, because a refusal is a legitimate answer. No fixture caught it
+// because no fixture had ever fed this shape.
+//
+// KEEP stashToken() BYTE-FOR-BYTE IN STEP WITH scurve-pdf-parser.js. It exists to
+// make the stash contract executable, and it is worth nothing if the two drift.
+function stashToken(it) {
+    return {
+        str: (it && it.str) || '',
+        x: it && it.transform ? it.transform[4] : ((it && it.x) || 0),
+        y: it && it.transform ? it.transform[5] : ((it && it.y) || 0),
+        width: (it && it.width) || 0,
+    };
+}
+
+const asStashed = (byPage) => byPage.map((items) => (items || []).map(stashToken));
+
+test('the stashed token shape derives exactly what raw pdf.js items do', () => {
+    const items = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80],
+            ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['30000', 310, 30]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['10000', 410, 30]]],
+    ]);
+    const labels = { 1: 'SEGMENT 1', 2: 'SEGMENT 2' };
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 75 },
+        { month_index: 2, planned_progress_percent: 100 },
+    ];
+
+    const fromRaw = derivePdfLayoutFromAi([items], labels, aiMonths);
+    const fromStash = derivePdfLayoutFromAi(asStashed([items]), labels, aiMonths);
+
+    assert.ok(fromRaw, 'the raw-item baseline must derive a layout');
+    assert.ok(fromStash, 'the browser feeds the stash shape — it must derive one too');
+    // Not merely "both truthy": the stash must lose NOTHING. Bands are stored as
+    // fractions of the page width, so an identical map means identical geometry.
+    assert.deepEqual(fromStash.months, fromRaw.months);
+    assert.deepEqual(fromStash.map, fromRaw.map);
+    assert.equal(fromStash.block, fromRaw.block);
+});
+
+// Guard the two keys whose absence fails SILENTLY, each on its own, so a future
+// edit to the stash is told exactly which half it broke. They fail DIFFERENTLY,
+// and the quieter one is the dangerous one: losing y refuses outright, while
+// losing width still produces a map — just a skewed one, which would teach a
+// wrong layout rather than teach nothing.
+test('dropping y or width from the stash breaks the derivation', () => {
+    const items = page([
+        [800, [['ITEM NO.', 40, 50], ['DESCRIPTION', 120, 80],
+            ['SEGMENT 1', 300, 55], ['SEGMENT 2', 400, 55]]],
+        [760, [['1', 45, 8], ['Mobilization Works', 120, 100], ['30000', 310, 30]]],
+        [720, [['2', 45, 8], ['Earthworks', 120, 70], ['10000', 410, 30]]],
+    ]);
+    const labels = { 1: 'SEGMENT 1', 2: 'SEGMENT 2' };
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 75 },
+        { month_index: 2, planned_progress_percent: 100 },
+    ];
+    const stashed = asStashed([items]);
+    const truth = derivePdfLayoutFromAi([items], labels, aiMonths);
+
+    // No y: groupItemsIntoLines puts every token on one line at y=0, so no row
+    // ever sits beneath the header and bandsHoldNumbers refuses.
+    const noY = [stashed[0].map(({ str, x, width }) => ({ str, x, width }))];
+    assert.equal(derivePdfLayoutFromAi(noY, labels, aiMonths), null,
+        'a stash without y must not silently half-work');
+
+    // No width: linesToTokenLines gives every token xEnd === x. The derivation
+    // still SUCCEEDS, which is the trap — but every band has drifted, because the
+    // page width and the band edges are both measured from token extents. A
+    // skewed map that reaches approval is worse than no map at all, so assert the
+    // geometry, never merely that something came back.
+    const noW = [stashed[0].map(({ str, x, y }) => ({ str, x, y }))];
+    const skewed = derivePdfLayoutFromAi(noW, labels, aiMonths);
+    assert.ok(skewed, 'width loss is silent — it does not refuse');
+    assert.notDeepEqual(skewed.map.pages[0].monthCols, truth.map.pages[0].monthCols,
+        'a stash without width must not be mistaken for lossless');
 });
