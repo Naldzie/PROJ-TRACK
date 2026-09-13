@@ -69,6 +69,28 @@ class GeminiDocumentParserService
     private const MAX_IMAGES = 3;
 
     /**
+     * E5 (2026-09-13): seconds allowed for ONE HTTP attempt. Also the size of the
+     * slot the time budget must see free before it will start another attempt —
+     * an attempt that cannot finish inside the budget is not worth beginning.
+     */
+    private const REQUEST_TIMEOUT = 30;
+
+    /**
+     * E5: wall-clock instant after which no NEW attempt may start, or null when
+     * no call is in flight. Per-call state, set by the senders exactly where
+     * lastFallbackModel is reset, for the same reason: it must describe THIS call.
+     *
+     * Why it exists (measured live 2026-09-13): PHP kills a request at
+     * max_execution_time — 60s on the dev server — and a FATAL cannot be caught.
+     * A ladder walk ran 74s, died mid-rung, and the client received an HTML error
+     * page instead of JSON, so the mapped "the AI service is busy" message was
+     * replaced by the generic "could not read an S-curve from these pages". The
+     * user was told the FILE was unreadable when the truth was that the service
+     * was overloaded — the same class of lie the Lite rescue was reverted for.
+     */
+    private ?float $deadline = null;
+
+    /**
      * Normal-doc Lite fallback marker (user-approved 2026-09-10: images sender
      * only, Excel never). Holds the backup model id when the last call was
      * answered by Lite, else null. Reset at the start of every images call so
@@ -157,6 +179,52 @@ class GeminiDocumentParserService
     }
 
     /**
+     * E5: open the wall-clock window for one AI call.
+     *
+     * The budget is the SMALLER of the configured value and what PHP will
+     * actually allow, so a tighter server limit narrows it automatically and a
+     * generous config value can never make it unsafe. max_execution_time is 0
+     * (unlimited) under CLI, which is why tests are unaffected by it.
+     * Ten seconds of headroom are left for everything either side of the AI
+     * call — receiving the uploaded slices, validating, rendering the response.
+     *
+     * Called by: callGeminiText(), callGeminiWithImages().
+     */
+    private function startTimeBudget(): void
+    {
+        $budget = (float) config('services.gemini.parser_time_budget', 50);
+        if (!is_finite($budget) || $budget <= 0) {
+            $budget = 50.0;
+        }
+
+        $phpLimit = (float) ini_get('max_execution_time');
+        if ($phpLimit > 0) {
+            $budget = min($budget, max(5.0, $phpLimit - 10.0));
+        }
+
+        $this->deadline = microtime(true) + $budget;
+    }
+
+    /**
+     * E5: is there room for another full attempt before the deadline?
+     *
+     * Deliberately asks for a WHOLE REQUEST_TIMEOUT slot rather than shrinking
+     * the timeout to fit (user decision 2026-09-13). A squeezed timeout can cut
+     * off a model that was about to answer, turning a slow success into a
+     * failure; stopping early and saying so is the honest trade.
+     *
+     * Called by: postGemini() before a retry, climbFallbackLadder() before a rung.
+     */
+    private function canAffordAttempt(): bool
+    {
+        if ($this->deadline === null) {
+            return true;
+        }
+
+        return ($this->deadline - microtime(true)) >= self::REQUEST_TIMEOUT;
+    }
+
+    /**
      * E3: one-line failure breadcrumb so a dead model ID (404) or revoked key
      * (4xx) is diagnosable from logs instead of looking like "AI found nothing".
      * Carries the quota reason when the body names one (per-day vs per-minute
@@ -205,7 +273,7 @@ class GeminiDocumentParserService
         while ($attempts < $maxAttempts) {
             $attempts++;
             try {
-                $response = Http::timeout(30)->post($url, $payload);
+                $response = Http::timeout(self::REQUEST_TIMEOUT)->post($url, $payload);
                 $status = $response->status();
                 if ($response->successful()) {
                     return ['status' => $status, 'payload' => $response->json()];
@@ -220,6 +288,12 @@ class GeminiDocumentParserService
                     break;
                 }
                 if (!$this->isRetryableStatus($status) || $attempts >= $maxAttempts) {
+                    break;
+                }
+                // E5 — a retry that cannot finish inside the budget is worse than
+                // no retry: it burns the window a fallback rung could have used and
+                // risks the uncatchable PHP fatal.
+                if (!$this->canAffordAttempt()) {
                     break;
                 }
                 $this->backoff($response);
@@ -1585,6 +1659,7 @@ class GeminiDocumentParserService
         // during an earlier PDF call on the same instance would be reported as the
         // provenance of THIS answer.
         $this->lastFallbackModel = null;
+        $this->startTimeBudget();
         $apiKey = $this->parserKey();
         $model = $this->parserModel();
 
@@ -1751,6 +1826,7 @@ class GeminiDocumentParserService
     private function callGeminiWithImages(string $prompt, array $images, array $fallbackModels = []): string
     {
         $this->lastFallbackModel = null;
+        $this->startTimeBudget();
         $apiKey = $this->parserKey();
         $model = $this->parserModel();
 
@@ -1832,6 +1908,22 @@ class GeminiDocumentParserService
 
         foreach ($fallbackModels as $rung) {
             if (!$this->isFallbackEligible($error->status)) {
+                break;
+            }
+            // E5 — stop the walk while there is still time to ANSWER. Starting a
+            // rung that cannot finish inside the budget is how the request reached
+            // PHP's uncatchable fatal and the user was told the file was
+            // unreadable. Said out loud so a short ladder is diagnosable rather
+            // than looking like a chain that was never configured.
+            if (!$this->canAffordAttempt()) {
+                try {
+                    Log::info('E5 parser ladder stopped — time budget spent', [
+                        'where' => $where,
+                        'from' => $primaryModel,
+                        'skipped' => $rung,
+                    ]);
+                } catch (\Throwable $ignored) {
+                }
                 break;
             }
             try {

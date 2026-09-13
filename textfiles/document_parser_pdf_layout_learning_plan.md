@@ -9,9 +9,10 @@
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
 #         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
 #         M7 5→3) — the roof's last known offline defect is closed
-#         E4 PARSER FALLBACK LADDER ✅ BUILT 2026-09-13 (committed 015f8fe) · E4b ✅
-#         extends it to the EXCEL S-curve + ahead of Lite on normal-doc (uncommitted)
-#         — opt-in via AI_PARSER_FALLBACK_MODELS, never Lite; not browser-proven, see §9
+#         E4 + E4b PARSER FALLBACK LADDER ✅ BROWSER-PROVEN 2026-09-13 by the user's
+#         own laravel.log (3.7 answered after latest 503d twice) — committed 015f8fe/fe3d8a6
+#         E5 TIME BUDGET ✅ BUILT (uncommitted) — the same log showed a 74s ladder walk
+#         killed by PHP's uncatchable 60s fatal, which hid the real error; see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -94,9 +95,10 @@
 
   COMMITTED 2026-09-13 (pushed): 7c6044b = P5 cross-check + P6 chart-axis fix +
   the AGENTS.md handoff rewrite + proof-file Script 6. 015f8fe = E4 parser ladder.
-  UNCOMMITTED IN THE TREE RIGHT NOW: E4b (climbFallbackLadder extracted and shared,
-  Excel sender laddered, normal-doc ladder-then-Lite, Excel endpoint reports
-  fallbackModel, +5 net tests, proof-file sender table corrected).
+  COMMITTED: 015f8fe = E4 ladder · fe3d8a6 = E4b (all parser paths).
+  UNCOMMITTED IN THE TREE RIGHT NOW: E5 time budget (config + .env.example,
+  REQUEST_TIMEOUT const, startTimeBudget/canAffordAttempt, checks in postGemini and
+  climbFallbackLadder, phpunit.xml env pins, +2 tests).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -567,6 +569,108 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — E4/E4b LADDER ✅ BROWSER-PROVEN BY THE USER'S OWN LOG, and the same
+  log exposed a 60-SECOND FATAL. E5 (time budget) ✅ BUILT in response (uncommitted).
+
+    THE LADDER WORKS LIVE. From storage/logs/laravel.log, the run at 14:44 is the
+    proof E4/E4b was missing:
+      14:44:09  E3 gemini parser call failed  model=gemini-flash-latest  status=503
+      14:44:18  E3 gemini parser call failed  model=gemini-flash-latest  status=503
+      14:44:18  E4 parser fallback  from=gemini-flash-latest  to=gemini-3.7-flash
+      14:44:28  F-A pdf slice response keys ... months:7
+    Primary exhausted its two attempts, the ladder fired, gemini-3.7-flash answered
+    and the import got its seven months. The ladder is no longer theory.
+    User confirmed separately that gemini-flash 3.5 through 3.8/latest are all live
+    IDs on the parser key (the K3 list-call check), so the chain is real.
+
+    AND THE SAME LOG SHOWS THE REQUEST DYING. The 14:41 run:
+      14:41:14  latest  503
+      14:41:22  latest  503        (its retry, +8s)
+      14:41:31  3.7     503        (+9s)
+      14:42:01  3.6     throwable  (+30s — the Http timeout)
+      14:42:28  FATAL: Maximum execution time of 60 seconds exceeded
+    74 seconds against PHP's 60. A FATAL IS NOT CATCHABLE, so the controller never
+    returned its mapped 422 — the client received an HTML error page, res.json()
+    fell back to {}, and the in-modal error showed the GENERIC "The AI assistant
+    could not read an S-curve from these pages."
+    The user was told the FILE was unreadable when the truth was that the service
+    was overloaded. That is precisely the class of lie the Lite rescue was reverted
+    for, arriving through a different door.
+
+    THE ARITHMETIC SAYS IT WAS NOT BAD LUCK
+      primary alone:  30 (timeout) + up to 20 (Retry-After cap) + 30  =  80s
+      with 3 rungs:   80 + 3x30                                       = 170s
+      PHP ceiling:                                                       60s
+    Note the primary ALONE already exceeds 60, so the overflow predates the ladder
+    — this is the "time-budget hardening" item that sat queued and unordered. The
+    ladder simply made it likely enough to hit on the second real test.
+
+    E5 AS BUILT (user decisions 2026-09-13: budget first, revisit later; and stop
+    early rather than shrink attempts)
+      - config 'parser_time_budget' (env AI_PARSER_TIME_BUDGET, default 50s).
+        The effective budget is min(config, max_execution_time - 10) whenever PHP
+        declares a limit, so a tighter server narrows it automatically and a
+        generous config value can never make it unsafe. CLI reports 0 (unlimited),
+        which is why the suite is unaffected.
+      - REQUEST_TIMEOUT const (30) replaces the literal in postGemini and doubles
+        as the slot canAffordAttempt() must see free.
+      - canAffordAttempt() demands a WHOLE slot rather than shrinking the timeout
+        to fit (user decision). A squeezed timeout can cut off a model that was
+        about to answer, turning a slow success into a failure; stopping early and
+        saying why is the honest trade.
+      - Checked in two places: postGemini before a RETRY, and climbFallbackLadder
+        before each RUNG. The primary's FIRST attempt is always allowed, or a tight
+        budget would mean nothing happens at all.
+      - A budget-stopped walk logs "E5 parser ladder stopped — time budget spent"
+        with the rung it skipped, so a short ladder is diagnosable rather than
+        looking like a chain nobody configured.
+
+    WHAT THE USER WILL SEE NOW on a 14:41-style outage: roughly 27 seconds instead
+    of a 74-second death, ending in "The AI service is busy (overloaded). Please
+    wait a minute and try again." — the true reason, in the mapped voice.
+
+    HONEST LIMITATION, FLAGGED NOT HIDDEN: reserving a full 30s slot while real
+    attempts complete in ~10s (measured: successes ≈10s, 503s ≈8-9s; only a hung
+    connection reaches 30) makes the ladder SHALLOWER than it needs to be. With a
+    50s budget the practical depth is primary x2 + ONE rung. The 14:44 success
+    still works (3.7 was rung 1); the 14:41 run would stop after 3.7 instead of
+    walking to 3.6 and 3.5. The lever for more depth is REQUEST_TIMEOUT, not the
+    budget — the budget is capped by PHP. Lowering it to ~20s would buy a second
+    rung inside the same window. NOT DONE: it is beyond the approved scope and
+    wants its own measurement of how long a real answer takes.
+
+    CAUGHT WHILE TESTING — AND IT IS THE IMPORTANT FIND OF THIS ENTRY.
+    Three unrelated tests suddenly failed: "images fallback to lite on quota"
+    expected lastFallbackModel 'lite-model' and got 'gemini-3.7-flash'. Nothing was
+    wrong with the code. The user had configured AI_PARSER_FALLBACK_MODELS in the
+    real .env, and every test that did not explicitly override
+    services.gemini.parser_fallback_models INHERITED IT — so the suite result
+    depended on the developer's machine. Anyone with a chain set ran a different
+    suite from anyone without one.
+    FIX: phpunit.xml pins AI_PARSER_FALLBACK_MODELS="" and AI_PARSER_TIME_BUDGET=50
+    for the whole suite. Ladder tests set their own chain through config(), which
+    wins over the env.
+    LESSON BANKED, and it is the same one as the 2026-09-10 "null BOTH keys"
+    incident, one config key further along: A CONFIG A TEST DOES NOT EXPLICITLY
+    OVERRIDE IS A CONFIG THE ENVIRONMENT GETS TO CHOOSE. Any new env-backed knob
+    that changes behaviour belongs in phpunit.xml the day it is added — not after
+    it silently reshapes somebody else's suite.
+
+    TESTS +2: a spent budget refuses the primary's retry AND both rungs while still
+    throwing the mapped "busy" voice (one request sent, lastFallbackModel null);
+    and a normal budget leaves the ladder completely alone, so the guard cannot
+    quietly disable the thing it exists to protect.
+
+    SUITES: PHP 1171 passed (+2) / the same 7 pre-existing failures BY NAME.
+    JS 152 tests, 150 passed + the 2 intended blinding fails — unchanged; no JS
+    touched, and the PDF reader core is untouched since P6.
+
+    NOT YET RE-PROVEN LIVE. The budget path needs the same treatment the ladder
+    just got: run AI assist during an outage (or with a misspelled AI_PARSER_MODEL)
+    and confirm the modal now shows the BUSY message within ~30s instead of the
+    generic "could not read" after 60. The log should carry "E5 parser ladder
+    stopped — time budget spent" when a rung is skipped.
 
   2026-09-13 — E4b PARSER LADDER EXTENDED TO EVERY PARSER PATH ✅ BUILT (code,
   uncommitted). User catch, same day as E4: "is this only for the pdf scurve? it

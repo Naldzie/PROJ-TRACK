@@ -1,8 +1,10 @@
 # PDF AI LOOP PROOF TESTS (B / F-D / F-E) — SESSION RECORD
 # Parent: textfiles/document_parser_pdf_ai_fallback_plan.md (Phases F-A..F-D, B)
-# Date: September 11, 2026 (last updated September 13, 2026 — Script 6)
-# Status: SCRIPTS 1-6 ALL PROVEN. Script 3 was blocked by delivery bugs (not learning
-#         bugs) and CLOSED 2026-09-12; Script 6 closes the roof family offline.
+# Date: September 11, 2026 (last updated September 13, 2026 — Script 7)
+# Status: SCRIPTS 1-7 ALL PROVEN. Script 3 was blocked by delivery bugs (not learning
+#         bugs) and CLOSED 2026-09-12; Script 6 closes the roof family offline;
+#         Script 7 proves the model fallback ladder live AND records the 60s fatal
+#         it exposed (fixed same day by the E5 time budget).
 # Specimen: sampledocs/SCurve-Test-Segment-Novel-Specimen.xlsx → user-printed PDF
 #   (5 single months SEGMENT 1..5, 4 activities, TRUE curve 5/20/40/65/100)
 
@@ -392,6 +394,64 @@
   REGRESSION: 8 sample PDFs x plain/taught = 16 reads, 0 CHANGED against the
   committed core. JS 152 tests / 150 passed + the 2 intended blinding fails.
   PHP 1158 passed / the same 7 pre-existing.
+===============================================================================
+  SCRIPT 7 — PARSER FALLBACK LADDER PROVEN LIVE, AND THE 60s FATAL IT EXPOSED
+  (user, Sept 13; evidence is storage/logs/laravel.log, not a probe)
+===============================================================================
+
+  Not a scripted run — the user was testing AI assist during a genuine free-tier
+  503 spell and pasted the log. That makes it better evidence than a rehearsal.
+
+  THE LADDER FIRED AND ANSWERED (14:44)
+    14:44:09  E3 gemini parser call failed  model=gemini-flash-latest  status=503
+    14:44:18  E3 gemini parser call failed  model=gemini-flash-latest  status=503
+    14:44:18  E4 parser fallback  from=gemini-flash-latest  to=gemini-3.7-flash
+    14:44:28  F-A pdf slice response keys ... months:7 summary:7 amounts:7
+  Primary spent both its attempts, the ladder took over, gemini-3.7-flash answered
+  and the import got its seven months. E4 + E4b BROWSER-PROVEN.
+  Model IDs verified separately by the user against the K3 list-call: gemini-flash
+  3.5 through 3.8/latest are all live on the parser key.
+
+  THE SAME LOG KILLED A REQUEST (14:41)
+    14:41:14  latest  503
+    14:41:22  latest  503        (its retry,  +8s)
+    14:41:31  3.7     503        (+9s)
+    14:42:01  3.6     throwable  (+30s — the Http timeout)
+    14:42:28  FATAL: Maximum execution time of 60 seconds exceeded
+  74 seconds against a 60-second ceiling. A FATAL CANNOT BE CAUGHT, so the
+  controller never returned its mapped 422; the client's res.json() hit an HTML
+  error page and fell back to {}, so data.message was empty and the modal printed
+  the generic "The AI assistant could not read an S-curve from these pages."
+  THE USER WAS TOLD THE FILE WAS UNREADABLE WHEN THE SERVICE WAS OVERLOADED.
+  Same class of lie as the Lite rescue, through a different door.
+
+  IT WAS NOT BAD LUCK — the arithmetic:
+    primary alone   30 (timeout) + up to 20 (Retry-After cap) + 30  =  80s
+    with 3 rungs    80 + 3x30                                       = 170s
+    PHP ceiling                                                        60s
+  The primary ALONE already exceeds 60, so the overflow predates the ladder; the
+  ladder only made it likely enough to hit on the second real test.
+
+  ANSWERED: E5 time budget (see the PDF layout plan's §9 entry of the same date).
+  Stops the walk before an attempt that cannot finish, so the mapped "busy" voice
+  survives. Expect ~27s and an honest message where this run took 74s and lied.
+
+  MEASURED ATTEMPT DURATIONS, worth keeping for whoever tunes REQUEST_TIMEOUT:
+    successful answer  ~10s   (14:44:18 -> 14:44:28)
+    503 refusal        ~8-9s
+    hung connection     30s   (the timeout itself; the 3.6 "throwable")
+  Only a hung connection ever reaches 30s, which is why reserving a full 30s slot
+  per attempt makes the ladder shallower than it needs to be.
+
+  A USER IDEA RECORDED, NOT BUILT: on a 503 (transient, load-dependent — unlike a
+  429 quota, which will not heal), revisit the HIGHER model again before descending
+  further, e.g. latest -> 3.7 -> latest -> 3.6. Sound instinct, and deferred on
+  purpose: it multiplies attempts against a budget that was already being blown,
+  and NEITHER observed run shows a case where the primary would have succeeded on a
+  third try (at 14:41 everything was sick; at 14:44 rung 1 answered). Revisit it if
+  evidence for it ever appears — with the budget in place it can be added safely as
+  a time-aware rule (only go back if enough seconds have passed for an overload to
+  plausibly have cleared).
 ===============================================================================
   MODEL PROVENANCE (asked + answered 2026-09-12 — read before blaming code)
 ===============================================================================

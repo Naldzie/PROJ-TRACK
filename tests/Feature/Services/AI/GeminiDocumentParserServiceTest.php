@@ -1608,6 +1608,56 @@ class GeminiDocumentParserServiceTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    // E5: the ladder stops while there is still time to ANSWER. Measured live
+    // 2026-09-13 — a walk ran 74s against PHP's 60s ceiling and was killed by an
+    // UNCATCHABLE fatal, so the client got an HTML error page instead of JSON and
+    // the user read "could not read an S-curve from these pages" when the truth
+    // was that the service was overloaded. A budget of zero proves the guard:
+    // the primary still gets its first attempt (otherwise nothing happens at all),
+    // and everything after it is refused.
+    // Called by: canAffordAttempt() from postGemini() and climbFallbackLadder().
+    public function test_time_budget_stops_the_walk_and_keeps_the_honest_message(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+        config(['services.gemini.parser_time_budget' => 0.001]);
+
+        Http::fake(['*generativelanguage*' => Http::response('overloaded', 503, ['Retry-After' => 0])]);
+
+        $service = new GeminiDocumentParserService();
+
+        try {
+            $service->parseSCurvePdfSlice($this->sliceImages(1));
+            $this->fail('A spent budget must still throw the mapped voice.');
+        } catch (GeminiTransportException $e) {
+            // The whole point: the user hears WHY, instead of a fatal swallowing it.
+            $this->assertStringContainsString('busy (overloaded)', $e->getMessage());
+        }
+
+        // One attempt only: the primary's retry and both rungs are all refused.
+        Http::assertSentCount(1);
+        $this->assertNull($service->lastFallbackModel);
+    }
+
+    // The budget must not fire when there is room — otherwise it would quietly
+    // disable the ladder it was built to protect.
+    // Called by: canAffordAttempt() with a normal budget.
+    public function test_a_normal_budget_leaves_the_ladder_alone(): void
+    {
+        $this->configureLadder('older-flash');
+        config(['services.gemini.parser_time_budget' => 50]);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $this->assertNotNull($service->parseSCurvePdfSlice($this->sliceImages(1)));
+        $this->assertSame('older-flash', $service->lastFallbackModel);
+        Http::assertSentCount(3);
+    }
+
     // Auth failures never walk the ladder: the key is broken, so every rung would
     // fail identically and each attempt is pure latency.
     // Called by: isFallbackEligible() exclusion inside the ladder loop.

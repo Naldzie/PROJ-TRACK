@@ -60,6 +60,16 @@ return [
         // Empty by default: with nothing configured every path behaves exactly as
         // it did before, including the PDF path's Flash-or-nothing rule.
         'parser_fallback_models' => env('AI_PARSER_FALLBACK_MODELS', ''),
+
+        // E5 (2026-09-13): wall-clock seconds the whole AI call may spend, across
+        // the primary's attempts AND every fallback rung. PHP kills the request at
+        // max_execution_time (60s on the dev server) and a FATAL cannot be caught,
+        // so the mapped "the AI service is busy" message never reaches the client
+        // and the user is told the file could not be read instead. Measured live
+        // 2026-09-13: a ladder walk took 74s and died mid-rung.
+        // The effective budget is capped against PHP's own limit at runtime, so
+        // this number only ever makes the window SMALLER, never unsafe.
+        'parser_time_budget' => env('AI_PARSER_TIME_BUDGET', 50),
     ],
 
 ];

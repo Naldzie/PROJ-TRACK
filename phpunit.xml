@@ -28,6 +28,16 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <!-- E5 (2026-09-13): the suite must not inherit a developer's local AI
+             fallback chain. Without these, a machine with AI_PARSER_FALLBACK_MODELS
+             set in .env runs a DIFFERENT suite: tests that assert "Lite answered"
+             see a version rung answer first and fail, on code that is perfectly
+             correct. Found the hard way. Same class as the banked lesson that a
+             live .env leaks its real key into parser_key — a config a test does not
+             explicitly override is a config the environment gets to choose.
+             Ladder tests set their own chain through config(), which wins. -->
+        <env name="AI_PARSER_FALLBACK_MODELS" value=""/>
+        <env name="AI_PARSER_TIME_BUDGET" value="50"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
