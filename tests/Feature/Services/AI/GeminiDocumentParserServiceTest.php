@@ -1493,4 +1493,181 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertSame(50.0, $out['months'][0]['planned_progress_percent'], 'a dropped name must not move the curve');
         $this->assertSame(100.0, $out['months'][1]['planned_progress_percent']);
     }
+    /* ─── E4 parser fallback ladder (2026-09-13) ─────────────────────────── */
+
+    // The minimum reply the PDF validator accepts, for the ladder tests below.
+    // Two months following their own stated amounts against a real contract.
+    private function pdfLadderReply(): string
+    {
+        return json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 40],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'monthlyAmounts' => [
+                ['month_index' => 1, 'pesos' => 400000],
+                ['month_index' => 2, 'pesos' => 600000],
+            ],
+            'hasSummaryRow' => false,
+            'contractAmount' => 1000000,
+        ]);
+    }
+
+    private function configureLadder(string $chain): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+            'services.gemini.parser_fallback_models' => $chain,
+        ]);
+    }
+
+    // A per-model quota is exactly what a VERSION rung survives: meters are per
+    // model, so the next version answers where the primary cannot.
+    // Called by: parseSCurvePdfSlice() via callGeminiWithImages() + parserFallbackModels().
+    public function test_pdf_slice_falls_back_down_the_parser_ladder(): void
+    {
+        $this->configureLadder('older-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNotNull($out, 'the rung answer must flow through the same validation');
+        $this->assertCount(2, $out['months']);
+        $this->assertSame('older-flash', $service->lastFallbackModel, 'provenance names the rung that answered');
+
+        $sent = Http::recorded();
+        $this->assertCount(3, $sent, 'primary + its one retry, then ONE shot at the rung');
+        $this->assertStringContainsString('flash-model', $sent[0][0]->url());
+        $this->assertStringContainsString('older-flash', $sent[2][0]->url());
+        // The whole point of a parser-specific chain: Lite is never reached.
+        foreach ($sent as $pair) {
+            $this->assertStringNotContainsString('lite-model', $pair[0]->url());
+        }
+    }
+
+    // A rung that also fails hands off to the next one rather than ending the run.
+    // Called by: callGeminiWithImages() ladder loop.
+    public function test_parser_ladder_walks_past_a_failing_rung(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('overloaded', 503, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNotNull($out);
+        $this->assertSame('oldest-flash', $service->lastFallbackModel);
+        // One shot per rung — a ladder that retried every rung would keep the
+        // user waiting minutes for an answer that is not coming.
+        Http::assertSentCount(4);
+    }
+
+    // The lesson the Lite revert was really about: when the whole ladder fails,
+    // the ORIGINAL transport failure must still speak. Masking a quota as "the AI
+    // found nothing" is what sent the user looking for a parser bug.
+    // Called by: callGeminiWithImages() — the final throw.
+    public function test_exhausted_parser_ladder_surfaces_the_original_failure(): void
+    {
+        $this->configureLadder('older-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push(json_encode(['error' => ['code' => 429, 'status' => 'RESOURCE_EXHAUSTED', 'details' => [[
+                '@type' => 'type.googleapis.com/google.rpc.QuotaFailure',
+                'violations' => [['quotaId' => 'GenerateRequestsPerDayPerProjectPerModel-FreeTier']],
+            ]]]]), 429, ['Retry-After' => 0])
+            ->push('overloaded', 503, ['Retry-After' => 0]),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+
+        try {
+            $service->parseSCurvePdfSlice($this->sliceImages(1));
+            $this->fail('An exhausted ladder must throw, never decline silently.');
+        } catch (GeminiTransportException $e) {
+            // The PRIMARY's voice (per-day quota), not the rung's "busy".
+            $this->assertStringContainsString('try again tomorrow', $e->getMessage());
+        }
+
+        $this->assertNull($service->lastFallbackModel);
+        // Per-day quota fails fast (no retry burned), then one shot at the rung.
+        Http::assertSentCount(2);
+    }
+
+    // Auth failures never walk the ladder: the key is broken, so every rung would
+    // fail identically and each attempt is pure latency.
+    // Called by: isFallbackEligible() exclusion inside the ladder loop.
+    public function test_parser_ladder_is_skipped_on_auth_failure(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+
+        Http::fake(['*generativelanguage*' => Http::response('bad key', 401)]);
+
+        try {
+            (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+            $this->fail('Auth failures must speak, never ladder.');
+        } catch (GeminiTransportException $e) {
+            $this->assertSame(401, $e->status);
+        }
+
+        Http::assertSentCount(1);
+    }
+
+    // Configuration hygiene: a chain that repeats the parser model (easy to do by
+    // copy-paste) must not make the same model answer twice, and blanks are noise.
+    // Called by: parserFallbackModels().
+    public function test_parser_ladder_ignores_blanks_and_the_primary_model(): void
+    {
+        $this->configureLadder(' , flash-model ,, older-flash , older-flash ');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $this->assertNotNull($service->parseSCurvePdfSlice($this->sliceImages(1)));
+        $this->assertSame('older-flash', $service->lastFallbackModel);
+
+        // Exactly one rung existed after cleaning: primary + retry + that rung.
+        Http::assertSentCount(3);
+    }
+
+    // The Excel path has no fallback code at all and must stay that way — a Lite
+    // or otherwise-weaker S-curve answer in a baseline is the failure class this
+    // whole track was built around.
+    // Called by: callGeminiText() — no ladder branch by design.
+    public function test_excel_path_never_uses_the_parser_ladder(): void
+    {
+        $this->configureLadder('older-flash');
+
+        Http::fake(['*generativelanguage*' => Http::response('slow down', 429, ['Retry-After' => 0])]);
+
+        try {
+            (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('Excel quota failures must speak, never ladder.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('quota', $e->getMessage());
+        }
+
+        foreach (Http::recorded() as $pair) {
+            $this->assertStringNotContainsString('older-flash', $pair[0]->url());
+        }
+    }
+
 }

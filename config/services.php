@@ -50,6 +50,16 @@ return [
         // services keep reading key/model above (Lite stays).
         'parser_key' => env('AI_PARSER_API_KEY', env('AI_API_KEY')),
         'parser_model' => env('AI_PARSER_MODEL', env('AI_MODEL', 'gemini-1.5-flash')),
+
+        // E4 (2026-09-13): a PARSER-SPECIFIC fallback ladder, comma-separated, tried
+        // in order when the parser model fails a transport check (per-model 429,
+        // 503, dead id). It is deliberately NOT backupModel(): that resolves to
+        // AI_MODEL, which is Lite, and Lite is excluded from the S-curve paths
+        // because it copies author summaries instead of computing (E3 verdict).
+        // Gemini meters are per MODEL, so a version ladder is real headroom.
+        // Empty by default: with nothing configured every path behaves exactly as
+        // it did before, including the PDF path's Flash-or-nothing rule.
+        'parser_fallback_models' => env('AI_PARSER_FALLBACK_MODELS', ''),
     ],
 
 ];

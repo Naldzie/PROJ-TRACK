@@ -146,9 +146,17 @@ function scurveStashWarnings(data, months) {
         if (data && data.meta && data.meta.aiAssisted) {
             list.push('AI-assisted curve — verify before locking the baseline.');
         }
-        // F-C: backup-model provenance rides the notes (null unless Lite answered).
+        // F-C/E4: backup-model provenance rides the notes (null unless a fallback
+        // answered). E4 gave the parser a version LADDER, so the note now NAMES the
+        // rung — "a backup answered" is not actionable, "3.5 answered" tells a
+        // reviewer which model's habits to look for. Weaker models on this track
+        // fail systematically, not randomly (they compute cost-weighted arithmetic
+        // over printed whole-number percentages), so knowing the model is a real
+        // review aid rather than trivia.
         if (data && data.fallbackModel) {
-            list.push('Answered by backup model — verify carefully.');
+            list.push('The usual AI model was unavailable, so "' + String(data.fallbackModel)
+                + '" answered instead. Treat these months as weaker evidence and check them'
+                + ' against the file before locking.');
         }
         // Clamped months (2026-09-12): when the file carries more months than the
         // project's dates allow, normalizeSCurveMonths pins the overflow onto the

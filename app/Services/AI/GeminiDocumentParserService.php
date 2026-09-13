@@ -118,6 +118,45 @@ class GeminiDocumentParserService
     }
 
     /**
+     * E4 (2026-09-13): the parser's own fallback ladder, in order.
+     *
+     * Reads AI_PARSER_FALLBACK_MODELS (comma-separated) and returns the rungs to
+     * try after the parser model fails a transport check. Empty by default, so an
+     * unconfigured install behaves exactly as it did before this existed.
+     *
+     * WHY NOT backupModel(): that resolves to config('services.gemini.model') =
+     * AI_MODEL, which is the Lite family, and the S-curve paths exclude Lite by
+     * user decision (2026-09-11) because it copies author summaries instead of
+     * computing. A version ladder is a different thing entirely — 3.5/3.6 DO
+     * compute — and Gemini meters per MODEL, so each rung carries its own quota.
+     *
+     * The parser model itself is dropped if it is listed, so a copy-pasted env
+     * cannot make the same model answer twice.
+     *
+     * Called by: parseProjectSlice(), parseSCurvePdfSlice().
+     */
+    private function parserFallbackModels(): array
+    {
+        $raw = config('services.gemini.parser_fallback_models');
+
+        if (!is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        $primary = $this->parserModel();
+        $models = [];
+        foreach (explode(',', $raw) as $model) {
+            $model = trim($model);
+            if ($model === '' || $model === $primary || in_array($model, $models, true)) {
+                continue;
+            }
+            $models[] = $model;
+        }
+
+        return $models;
+    }
+
+    /**
      * E3: one-line failure breadcrumb so a dead model ID (404) or revoked key
      * (4xx) is diagnosable from logs instead of looking like "AI found nothing".
      * Carries the quota reason when the body names one (per-day vs per-minute
@@ -148,11 +187,17 @@ class GeminiDocumentParserService
      * fails — validation misses still return null downstream (unchanged), so
      * only transport gets a voice, never silent nulls for dead models/keys.
      *
+     * $maxAttempts caps the tries (E4): a FALLBACK rung passes 1, because the
+     * parser model has already spent the retry budget and a ladder that retried
+     * every rung would keep the user waiting minutes. Routing rungs through here
+     * rather than a bare Http::post is what keeps them diagnosable — status log,
+     * quota meter and mapped voice all come from this one place.
+     *
      * Called by: callGeminiText(), callGeminiWithImages().
      */
-    private function postGemini(string $url, array $payload, string $model, string $where): array
+    private function postGemini(string $url, array $payload, string $model, string $where, int $maxAttempts = 2): array
     {
-        $maxAttempts = 2;
+        $maxAttempts = max(1, $maxAttempts);
         $attempts = 0;
         $lastStatus = 0;
         $lastQuotaId = null;
@@ -315,7 +360,10 @@ class GeminiDocumentParserService
 
         $images = array_slice($images, 0, self::MAX_IMAGES);
 
-        $raw = $this->callGeminiWithImages($this->buildPrompt(), $images);
+        // Normal-doc keeps its one-shot Lite rescue (user-approved 2026-09-10):
+        // autofill is a convenience and a Lite answer there is reviewed field by
+        // field, unlike an S-curve baseline.
+        $raw = $this->callGeminiWithImages($this->buildPrompt(), $images, [$this->backupModel()]);
 
         if ($raw === '') {
             return null;
@@ -451,11 +499,15 @@ class GeminiDocumentParserService
             return is_string($w) ? $w : '';
         }, $pageWords)));
 
-        // Flash-or-nothing (user decision 2026-09-11): the PDF path never
-        // falls back to Lite — Lite copies author summaries instead of
-        // computing (E3 verdict), the exact failure Excel excluded it for.
-        // Transport failures throw their mapped voices instead.
-        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images, false);
+        // NEVER Lite (user decision 2026-09-11): Lite copies author summaries
+        // instead of computing (E3 verdict), the exact failure Excel excluded it
+        // for, and a copied summary in a BASELINE is not a reviewable convenience.
+        // E4 (2026-09-13) adds a VERSION ladder instead — 3.5/3.6 do compute, and
+        // their one observed error on this family (cost-weighted arithmetic over
+        // printed whole-number percentages) is caught and corrected by the
+        // AI-vs-file cross-check. Empty unless configured, so the default is still
+        // Flash-or-nothing; a ladder that also fails surfaces the real error.
+        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images, $this->parserFallbackModels());
 
         if ($raw === '') {
             return null;
@@ -1636,18 +1688,34 @@ class GeminiDocumentParserService
      * Send prompt + image slices to Gemini and return the raw text.
      *
      * Same shape as AIRecommendationService::callGemini(), plus inline_data image
-     * parts (base64 + mimeType) after the text part. Normal-doc Lite fallback
-     * (user-approved 2026-09-10, images sender ONLY): when the parser-model call
-     * fails eligible (404/429/502/503/504 + throws — never 400/401/403 where the
-     * key itself is broken), ONE attempt goes to Lite, whose answer flows through
-     * the same validation. lastFallbackModel records the rescue for provenance.
-     * $allowFallback=false disables the rescue (PDF S-curve: Flash-or-nothing
-     * per user 2026-09-11 — Lite copies summaries instead of computing).
+     * parts (base64 + mimeType) after the text part.
+     *
+     * FALLBACK IS A LIST, NOT A FLAG (E4, 2026-09-13). $fallbackModels names the
+     * models to try, in order, when the parser-model call fails ELIGIBLE
+     * (404/429/502/503/504 + throws — never 400/401/403, where the key itself is
+     * broken and every rung would fail identically). Each rung gets ONE attempt;
+     * the parser model has already spent the retry budget. The first rung to
+     * answer wins and its answer flows through the same validation as any other.
+     *
+     * Callers choose their own policy, which is the point of the list:
+     *   - parseProjectSlice()    -> [backupModel()], the Lite rescue as before.
+     *   - parseSCurvePdfSlice()  -> parserFallbackModels(), a VERSION ladder that
+     *     never includes Lite. Empty unless AI_PARSER_FALLBACK_MODELS is set, so
+     *     an unconfigured install keeps Flash-or-nothing exactly as before.
+     * Passing [] disables fallback entirely.
+     *
+     * THE TRANSPORT-FAILURE DISCIPLINE IS PRESERVED (this is the lesson the
+     * 2026-09-11 Lite revert was really about): when every rung fails, the
+     * ORIGINAL exception is rethrown, so a quota or overload still reaches the
+     * user in its own words instead of being masked as "the AI found nothing".
+     *
+     * lastFallbackModel records WHICH rung answered, for the provenance note.
      *
      * Called by: parseProjectSlice(), parseSCurvePdfSlice()
-     * Uses: config/services.php (gemini parser key/model + main model for backup)
+     * Uses: config/services.php (gemini parser key/model, parser fallback list,
+     *       and the main model when a caller asks for the Lite rescue)
      */
-    private function callGeminiWithImages(string $prompt, array $images, bool $allowFallback = true): string
+    private function callGeminiWithImages(string $prompt, array $images, array $fallbackModels = []): string
     {
         $this->lastFallbackModel = null;
         $apiKey = $this->parserKey();
@@ -1681,36 +1749,41 @@ class GeminiDocumentParserService
         try {
             $result = $this->postGemini($url, $payload, $model, 'images');
         } catch (GeminiTransportException $e) {
-            if (!$allowFallback || !$this->isFallbackEligible($e->status)) {
-                throw $e;
-            }
-            // One Lite attempt, no retry loop (the parser model already spent it).
-            $liteModel = $this->backupModel();
-            try {
-                Log::info('E3 parser fallback to Lite', ['where' => 'images', 'from' => $model]);
-            } catch (\Throwable $ignored) {
-            }
-            $liteUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$liteModel}:generateContent?key={$apiKey}";
-            try {
-                $response = Http::timeout(30)->post($liteUrl, $payload);
-                if (!$response->successful()) {
-                    throw $e;
+            // Walk the ladder while the failure is one another MODEL could survive.
+            // Meters are per model, so a per-day 429 on the parser model is exactly
+            // the case a version rung answers; an auth failure never is.
+            foreach ($fallbackModels as $rung) {
+                if (!$this->isFallbackEligible($e->status)) {
+                    break;
                 }
-                $liteData = $response->json();
-                $text = is_array($liteData)
-                    ? ($liteData['candidates'][0]['content']['parts'][0]['text'] ?? '')
-                    : '';
+                try {
+                    Log::info('E4 parser fallback', ['where' => 'images', 'from' => $model, 'to' => $rung]);
+                } catch (\Throwable $ignored) {
+                }
+                $rungUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$rung}:generateContent?key={$apiKey}";
+                try {
+                    // One shot per rung, but through postGemini so the status, the
+                    // quota meter and the mapped voice are all recorded the same way.
+                    $rungResult = $this->postGemini($rungUrl, $payload, $rung, 'images-fallback', 1);
+                } catch (GeminiTransportException $rungError) {
+                    // This rung's own failure decides whether the NEXT one is worth
+                    // trying, but the answer the user eventually sees stays $e.
+                    $e = new GeminiTransportException($e->getMessage(), $rungError->status, $rungError->quotaId, $e);
+                    continue;
+                }
+                $text = $rungResult['payload']['candidates'][0]['content']['parts'][0]['text'] ?? '';
                 if (!is_string($text) || trim($text) === '') {
-                    throw $e;
+                    continue;
                 }
-                $this->lastFallbackModel = $liteModel;
+                $this->lastFallbackModel = $rung;
 
                 return $text;
-            } catch (GeminiTransportException $liteError) {
-                throw $e;
-            } catch (\Exception $liteError) {
-                throw $e;
             }
+
+            // Every rung failed, or none was eligible: the original transport
+            // failure speaks. Masking it as an empty read is the exact mistake the
+            // Lite rescue made before it was reverted.
+            throw $e;
         }
 
         $data = $result['payload'];

@@ -7,8 +7,10 @@
 #         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
 #         (roof reads its TRUE curve offline, zero AI) · PDF-4 ⬜
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
-#         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (uncommitted; M7 5→3,
-#         16 sample reads unchanged) — the roof's last known offline defect is closed
+#         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
+#         M7 5→3) — the roof's last known offline defect is closed
+#         E4 PARSER FALLBACK LADDER ✅ BUILT 2026-09-13 (uncommitted; opt-in via
+#         AI_PARSER_FALLBACK_MODELS, never Lite) — not browser-proven, see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -60,7 +62,11 @@
        (uncommitted). M7 reads 3 activities matching the AI; curve, curveSource,
        months 1-6 and all 16 sample reads unchanged; JS 152/150 + the 2 intended
        blinding fails; PHP 1158 / same 7.
-    2. Parser FALLBACK CHAIN (own order needed). Restudy finding to carry in:
+    2. ~~Parser FALLBACK CHAIN~~ ✅ BUILT 2026-09-13 as E4 (see §9). Opt-in via
+       AI_PARSER_FALLBACK_MODELS, empty by default, Lite never reachable; the
+       provenance note now names the rung that answered. PHP 1164 / same 7.
+       NOT browser-proven — it only fires on a real per-model quota/overload.
+       The restudy findings that shaped it, kept for the record:
        backupModel() resolves to config('services.gemini.model') = AI_MODEL = Lite,
        so callGeminiWithImages(..., true) on the PDF path would fall straight back
        to the model the E3 verdict excluded. Needs a PARSER-specific chain
@@ -83,15 +89,10 @@
        for exactly this reason.
   Each proved before the next, each needing an explicit user order (Rule 10).
 
-  UNCOMMITTED IN THE TREE RIGHT NOW — two pieces of work, both logged in §9:
-    P5 cross-check (BROWSER-PROVEN): scurve-pdf-parser-core.js
-      (crossCheckPdfAgainstFile, pdfCurvesDisagree) · scurve-import-ui.js
-      (scurveCrossCheckPdfAnswer) · tests +4.
-    P6 chart-axis fix (BROWSER-PROVEN): scurve-pdf-parser-core.js
-      (chartScaleTokens + the buildRows skip + the finalizeHeaderBands band bound)
-      · tests +5.
-    They touch the same core file. Committing them — together or separately — is
-    the user's call; nothing here has been committed or pushed.
+  COMMITTED 2026-09-13 as 7c6044b (pushed): P5 cross-check + P6 chart-axis fix,
+  with the AGENTS.md handoff rewrite and pdf_ai_loop_proof_tests.md Script 6.
+  UNCOMMITTED IN THE TREE RIGHT NOW: E4 (config/services.php, .env.example,
+  GeminiDocumentParserService, scurve-import-ui.js note wording, +6 service tests).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -562,6 +563,92 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — E4 PARSER MODEL FALLBACK LADDER ✅ BUILT (code, uncommitted).
+  User-ordered after P6. The parser path can now fall back down a VERSION ladder
+  when its model hits a per-model quota or overload — without ever reaching Lite.
+
+    THE BLOCKER, CONFIRMED IN CODE BEFORE BUILDING: backupModel() reads
+    config('services.gemini.model') = AI_MODEL, and the live .env sets that to
+    gemini-flash-lite-latest. So flipping callGeminiWithImages(..., true) on the
+    PDF path would have fallen straight back to the model the E3 verdict excluded
+    (Lite copies author summaries instead of computing). The fallback machinery was
+    never the problem; the BACKUP MODEL was. That is why this is a parser-specific
+    ladder and not a flag flip.
+
+    WHAT SHIPPED
+      config/services.php — 'parser_fallback_models' => env('AI_PARSER_FALLBACK_MODELS', '').
+        Comma-separated, EMPTY BY DEFAULT.
+      .env.example — the placeholder plus an explicit "NEVER list a Lite model here"
+        with the reason, so the exclusion survives whoever edits the env next.
+      GeminiDocumentParserService:
+        - parserFallbackModels(): parses the list, drops blanks, duplicates and the
+          parser model itself (a copy-pasted env must not make one model answer twice).
+        - postGemini() gained a $maxAttempts cap (default 2). A ladder rung passes 1:
+          the parser model already spent the retry budget, and retrying every rung
+          would keep the user waiting minutes for an answer that is not coming.
+          Rungs go through postGemini rather than a bare Http::post precisely so the
+          status log, the quota-meter read and the mapped voice all still happen —
+          the old Lite rescue bypassed all three.
+        - callGeminiWithImages() third parameter changed from `bool $allowFallback`
+          to `array $fallbackModels`. Callers now choose their own policy:
+            parseProjectSlice()   -> [backupModel()]  (normal-doc Lite rescue, EXACTLY
+                                     as before — autofill is reviewed field by field)
+            parseSCurvePdfSlice() -> parserFallbackModels()  (version ladder, no Lite)
+          Passing [] disables fallback entirely.
+      scurve-import-ui.js — the provenance note now NAMES the model that answered
+        ("The usual AI model was unavailable, so \"X\" answered instead. Treat these
+        months as weaker evidence…") instead of the anonymous "Answered by backup
+        model". Weak models on this track fail SYSTEMATICALLY, not randomly, so
+        knowing which one answered is a real review aid.
+
+    THE TRANSPORT-FAILURE DISCIPLINE IS PRESERVED, AND PINNED BY A TEST. When every
+    rung fails, the ORIGINAL exception is rethrown — a per-day quota still says "try
+    again tomorrow" rather than being masked as "the AI found nothing". That masking
+    is the actual lesson of the 2026-09-11 Lite revert, and it is the one thing a
+    ladder could easily undo. Each rung's own status still decides whether the NEXT
+    rung is worth trying; only the MESSAGE the user sees stays the primary's.
+    Auth failures (400/401/403) never enter the ladder at all — the key is broken,
+    so every rung would fail identically and each attempt is pure latency.
+
+    A CORRECTION TO THE RESTUDY RECORDED IN SECTION 0. That note said two tests
+    "will need flipping": test_pdf_slice_never_falls_back_to_lite and
+    test_no_lite_rescue_on_sustained_overload. THEY DID NOT. Because the ladder is
+    EMPTY unless AI_PARSER_FALLBACK_MODELS is set, an unconfigured install — which
+    is what the tests configure — still makes exactly two requests and throws the
+    mapped voice. Both tests pass untouched and go on pinning Flash-or-nothing as
+    the default. That is a better outcome than the design I sketched: the new
+    behaviour is opt-in, and the old guarantee is still under test.
+
+    TESTS +6 (all green), each pinning one decision rather than the happy path:
+      - the ladder answers a per-model 429 and Lite is asserted ABSENT from every
+        URL (the whole point of a parser-specific chain);
+      - a failing rung hands off to the next, with exactly one shot per rung;
+      - an exhausted ladder surfaces the PRIMARY's per-day voice, not the rung's
+        "busy" — the revert lesson, under test;
+      - a 401 never ladders (one request);
+      - blanks and the primary model are cleaned out of the configured chain;
+      - the Excel path never ladders (callGeminiText has no fallback branch at all,
+        and a weak S-curve answer in a baseline is the failure this track exists for).
+
+    SUITES: PHP 1164 passed (+6) / the same 7 pre-existing failures BY NAME.
+    JS 152 tests, 150 passed + the 2 intended blinding fails — unchanged, and the
+    PDF reader core was NOT touched by this work, so the 16-read sample regression
+    from P6 still stands as measured.
+
+    NOT BROWSER-PROVEN, and it cannot be forced cheaply: the ladder only fires on a
+    real per-model quota or overload. To prove it live, set
+    AI_PARSER_FALLBACK_MODELS to a working older version, exhaust or misname the
+    primary (AI_PARSER_MODEL), then run AI assist on a PDF. Expect the import note
+    to NAME the rung that answered, and the log to carry "E4 parser fallback".
+    A deliberately dead primary (a misspelled model id -> 404) is the cheapest
+    trigger, since 404 is ladder-eligible.
+
+    STILL OPEN, UNCHANGED BY THIS WORK: the cross-check only rescues files where a
+    trustworthy file reading exists (a printed cumulative row, full coverage, a
+    workable AI-derived map). On a file with no printed summary, a weak model's
+    wrong curve still passes on the homework and presence warnings alone. That is
+    what the early-100 guard is for, and it stays the next queued item.
 
   2026-09-13 — P6 MONTH-7 CHART-AXIS FIX ✅ BUILT (code, UNCOMMITTED).
   Root cause, chosen rule and the measurements that picked it are below; the BUILD
