@@ -512,6 +512,41 @@ class ScurveHeaderProposalController extends Controller
             $byPage[$onPage][] = ['index' => $mi, 'x' => $x, 'xEnd' => $xEnd];
         }
 
+        // WIDEN THE TAUGHT DESCRIPTION TO A BAND, the way a DERIVED map computes it.
+        //
+        // A reviewer points at where the work names sit — one column. But descRight
+        // does not mean "where the names end", it means "where the numbers begin":
+        // derivePdfLayout takes it from the header boundary before the first
+        // numbered column, so on the roof it spans ITEM NO. | DESCRIPTION | UNIT |
+        // QTY (A–D) and NOT the DESCRIPTION strip alone. Measured on the real file:
+        // any band reaching the first numbered column reads the true curve
+        // (6.32/24.31/…), while A-alone AND B-alone both read 2.48/10.8/… — so a
+        // single pseudo-column is wrong even when the reviewer picks the RIGHT one.
+        //
+        // This only became possible to get wrong when §2 split that left block into
+        // separate columns; before it, one letter WAS the whole band. So extend to
+        // the left edge of the nearest thing the reviewer assigned to something
+        // else on this page — their own answers bound it, nothing is guessed.
+        $stops = [];
+        foreach (['contract', 'weight', 'code'] as $field) {
+            $letter = $validated[$field] ?? null;
+            if ($letter === null || trim((string) $letter) === '') {
+                continue;
+            }
+            $b = $bandFor((string) $letter, $field);
+            if ($b['page'] === $desc['page'] && $b['x'] > $desc['x'] + 1e-9) {
+                $stops[] = $b['x'];
+            }
+        }
+        foreach (($byPage[$desc['page']] ?? []) as $mc) {
+            if ($mc['x'] > $desc['x'] + 1e-9) {
+                $stops[] = $mc['x'];
+            }
+        }
+        if (count($stops) > 0) {
+            $desc['xEnd'] = max($desc['xEnd'], min($stops));
+        }
+
         $allMonths = array_merge(...array_values($byPage));
         if (count($allMonths) < 2) {
             throw new RuntimeException('A layout needs at least two month columns to describe a schedule.');

@@ -343,9 +343,27 @@ async function loadScurveHeadersForManagement() {
                         return 'page ' + (i + 1) + ': M' + months[0]
                             + (months.length > 1 ? '–M' + months[months.length - 1] : '');
                     });
-                    if (bits.length) {
+                    // An AMBIGUOUS capture (positional wording — the roof prints "30
+                    // days" six times, so nothing in the bytes says which month a
+                    // column is) keeps its geometry with the months left UNNUMBERED.
+                    // The reader refuses a month-less page, so APPROVING such a row
+                    // changes nothing: the next import still answers "could not read
+                    // the S-curve". That is correct, and until now it was also
+                    // SILENT — the desk offered Approve like any other row and never
+                    // said the click was a no-op (2026-09-14 acceptance run).
+                    const unnumbered = pages.length > 0 && pages.every(
+                        (p) => p.unnumbered === true || !(p.monthCols || []).some(mc => mc.index >= 1)
+                    );
+                    if (unnumbered) {
+                        mapSummary = '<div style="font-size:10px;color:#b45309;font-weight:600;"'
+                            + ' title="This layout records where the columns sit but not which month each one is,'
+                            + ' because the page labels them all the same way. Approving it will not make the file'
+                            + ' readable — teach the months first, then approve.">'
+                            + '⚠ Months not numbered — approving alone will not read this file. Teach it first.'
+                            + '</div>';
+                    } else if (bits.length) {
                         const title = pages.length > 1
-                            ? 'Printed across ' + pages.length + ' pages — teaching is refused until the grid can show them all'
+                            ? 'Printed across ' + pages.length + ' pages, shown here as one grid'
                             : 'Learned column bands — what approval would trust';
                         mapSummary = '<div class="text-muted" style="font-size:10px;" title="' + schEscapeHtml(title) + '">'
                             + schEscapeHtml(bits.join(' · ')) + '</div>';

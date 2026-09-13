@@ -2288,7 +2288,7 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
 
     const found = [];
     const assigned = {};
-    let block = null;
+    const sheets = [];
 
     for (let p = 0; p < Math.min(pages.length, 20); p++) {
         const tokenLines = linesToTokenLines(groupItemsIntoLines(pages[p] || []));
@@ -2377,9 +2377,7 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
                 headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
             });
             cols.forEach((c) => { assigned[c.index] = true; });
-            if (block === null) {
-                block = buildPdfSliceBlock(tokenLines, i, columns, header.monthCols, maxRows, scaleTokens);
-            }
+            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens });
             break;
         }
     }
@@ -2387,6 +2385,28 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
     if (found.length === 0) return null;
     // Fewer than two months placed in total is not a schedule worth teaching.
     if (Object.keys(assigned).length < 2) return null;
+
+    // ONE GRID AND ONE LEGEND, exactly as the capture path builds them.
+    //
+    // §2/§3 gave derivePdfLayout table-wide columns and a merged, letter-continuous
+    // grid and left this twin behind, which made every ai-derived row un-teachable:
+    // its block was page ONE only (roof: A…K, six month labels, no month 7) while
+    // its MAP spanned both pages, and its page-2 pseudoCols restarted their letters
+    // at A,B. In the teach modal month 6 therefore landed on letter A — the same
+    // letter as the description column — which is what the 2026-09-14 acceptance
+    // run reported as a "duplicate month 1 label".
+    //
+    // Two derivations of the same table must not disagree about what a letter means.
+    const block = buildMergedSliceBlock(sheets, maxRows);
+    let letterAt = 0;
+    for (let k = 0; k < found.length; k++) {
+        const own = (sheets[k] ? sheets[k].columns.length : found[k].pseudoCols.length);
+        found[k].pseudoCols = found[k].pseudoCols.map((pc, j) => ({
+            ...pc,
+            letter: columnLetter(letterAt + j),
+        }));
+        letterAt += own;
+    }
 
     const map = { v: PDF_MAP_VERSION, kind: 'pdf', pages: found };
 

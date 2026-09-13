@@ -906,10 +906,18 @@
 }
 
 /* ========== RIGHT COLUMN ========== */
-.right-col { 
-    display: flex; 
-    flex-direction: column; 
-    gap: 0; 
+/* Both columns are grid items of .content-grid (1fr 380px). Without min-width:0
+   their min-content width wins over the track, so one long unbreakable string
+   anywhere inside widens the whole page instead of being truncated. */
+.left-col {
+    min-width: 0;
+}
+
+.right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
 }
 
 /* ========== INFO CARD ========== */
@@ -1075,6 +1083,10 @@
     margin-bottom: 8px;
     cursor: pointer;
     transition: all 0.15s;
+    /* As a grid item of .doc-list this defaults to min-width:auto, which is its
+       CONTENT width — so a long unbroken filename pushed the row past the card's
+       right border instead of letting .doc-name ellipsis do its job. */
+    min-width: 0;
 }
 
 .doc-item:hover { 
@@ -1089,6 +1101,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Never let the icon be squeezed to buy room for a long name. */
+    flex-shrink: 0;
 }
 
 .doc-icon svg { 
@@ -1109,9 +1123,12 @@
     text-overflow: ellipsis; 
 }
 
-.doc-meta { 
-    font-size: 11px; 
-    color: var(--text-muted); 
+.doc-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ========== ACTIVITY ========== */

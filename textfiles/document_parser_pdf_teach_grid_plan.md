@@ -26,27 +26,17 @@
     trust a layout, and it was why the roof could not be taught at all.
 
   ⚠️ WHERE IT STANDS RIGHT NOW — READ BEFORE TOUCHING ANYTHING
-    §2–§7 are BUILT and the suites are green, but NOTHING IS COMMITTED (user's
-    instruction: "no commit for now"). If this session ended, the work is sitting in
-    the working tree of branch phase-5-parser-accuracy. ELEVEN files — check with
-    `git status --short`, and if it disagrees with this list, trust git and fix this:
+    §2–§7 are BUILT and COMMITTED as 23abd20, on branch
+    wip/phase-5-parser-accuracy-premerge (NOT on phase-5-parser-accuracy, which is
+    still clean at 959f0ec). That branch also carries 06d89cf, an unrelated merge of
+    a teammate's dashboard work — so it mixes two bodies of work and is not a clean
+    thing to PR. The old "ELEVEN uncommitted files, check with git status" note that
+    stood here was true on 2026-09-13 and is now wrong; `git show --stat 23abd20`
+    is the list.
 
-      public/js/admin/projects/scurve-pdf-parser-core.js     detectPseudoColumns,
-          buildMergedSliceBlock, isCumulativeShapedRow, summary-aware budget,
-          chart-token exclusion, ambiguous captures keep their geometry
-      app/Http/Controllers/Admin/SCurveHeaderProposalController.php
-          taught letters grouped by page -> multi-page map; refusal lifted
-      resources/views/admin/_manage_scurve_headers_modal.blade.php
-          full-width grid, collapsed header picker, on-demand month buttons,
-          CUMULATIVE badge, PDF-shaped prefill
-      resources/views/components/delete-confirmation-modal.blade.php   @once guard
-      resources/views/layouts/app.blade.php                            include it
-      resources/views/layouts/stafflayouts.blade.php                   include it
-      tests/js/scurve-pdf-parser.test.mjs                              +5, 1 rewritten
-      tests/Feature/ScurveHeaderProposalTest.php                       +1 net, 1 flipped
-      textfiles/document_parser_pdf_teach_grid_plan.md                 this file
-      textfiles/document_parser_pdf_layout_learning_plan.md            parent status
-      AGENTS.md                                                        handoff + queue
+    §10 HAS BEEN RUN (2026-09-14). The grid passed; THREE defects surfaced, one of
+    them a regression §2 introduced. Read the 2026-09-14 entry in §13 before
+    touching the teach path — it carries the measurements, not just the verdicts.
 
     The delete-confirmation change is NOT part of this plan — it is a separate
     blocking bug found while testing it (§13, round two) and it rides in the same
@@ -485,6 +475,148 @@
     SUITES AFTER THIS ROUND: PHP 1185 passed / the same 7 pre-existing BY NAME.
     JS 157 tests, 155 passed + the 2 intended blinding fails.
     READER REGRESSION: 16 sample reads, 0 changed.
+
+
+  2026-09-14 — §10 BROWSER ACCEPTANCE RUN (user, roof PDF). THE TEST DID ITS JOB:
+  the grid renders correctly and THREE REAL DEFECTS SURFACED, one of them a
+  regression this very plan introduced. Evidence is the live DB (rows 76-79) plus a
+  read-only probe against the real file (C:\temp\opencode\probe_teach78.mjs,
+  probe_variants.mjs). Nothing below is inferred.
+
+    WHAT PASSED, and it is the substance of §2-§5
+      The auto-capture block (row 76) reads exactly as designed:
+        COLUMNS: A..M  (11 on page 1 + 2 on page 2, letters running on)
+        R3 [HEADER]: NO. | Amount | 30 days x7 | 7 days     <- all SEVEN months
+        R16 [CUMULATIVE]: % | 6.32% | 24.31% | ... | 99.14% | 100.00%
+      ITEM NO. / DESCRITPION / UNIT / QTY. / Amount are SEPARATE columns, both
+      printed pages are one table, the summary block survives the budget and the
+      cumulative row carries its own badge. §2, §3, §4 and §5 are browser-proven.
+      The user also spotted, unaided, that column K is a PHANTOM "30 days" — the
+      grid made a defect in the DOCUMENT visible, which is what it is for.
+
+    DEFECT 1 — TEACHING CANNOT EXPRESS A MULTI-COLUMN DESCRIPTION BAND.
+    THIS IS A REGRESSION INTRODUCED BY §2, and it is the blocker.
+      The user taught Description=A, Contract amount=E, M1..M7 = F,G,H,I,J,L,M —
+      the months EXACTLY right, K correctly skipped. The read came back
+      2.48/10.8/22.65/37.81/56.35/80.18/100 (curveSource 'activities', contract
+      11,396,769.88, ten "Activity N" rows) against the truth
+      6.32/24.31/42.30/59.71/77.03/99.14/100.
+      MEASURED, three maps through the real core on the real file:
+        map 77 ai-derived      6.32/24.31/42.3/59.71/77.03/99.14/100  summary
+        map 78 as taught       2.48/10.8/22.65/37.81/56.35/80.18/100  activities
+        map 78 + desc=B only   2.48/10.8/22.65/37.81/56.35/80.18/100  activities
+        map 78 + desc from 77  6.32/24.31/42.3/59.71/77.03/99.14/100  summary
+      The DESCRIPTION BAND IS THE SOLE DRIVER. Every other band the user taught is
+      fine; swapping in the derived desc band alone restores the exact truth curve.
+      ROOT CAUSE: buildTaughtPdfMap sets descX/descRight to ONE pseudo-column
+      ($desc['x'] / $desc['xEnd']). Every DERIVED map computes descRight from header
+      geometry instead — the boundary before the Amount column — which on the roof
+      spans A through D (0.0445 -> 0.3296), FOUR pseudo-columns. A single letter
+      cannot express that, and the desk offers no way to say "A through D".
+      WHY IT IS OURS: before §2 the old rule collapsed that whole left block into
+      ONE 227pt band, so one letter WAS the description column. Splitting it into
+      ITEM NO./DESCRIPTION/UNIT/QTY is right for the reviewer and silently broke the
+      single-letter teach contract. The lesson is general and worth keeping: CHANGING
+      WHAT A LETTER MEANS CHANGES EVERY CONTRACT THAT SPEAKS IN LETTERS.
+
+    DEFECT 2 — derivePdfLayoutFromAi NEVER GOT §2/§3.
+      Row 77's MAP is correct (2 pages, M1-M5 / M6-M7) but its BLOCK is page-one
+      only (COLUMNS A..K, six month labels, no month 7) and its page-2 pseudoCols
+      restart their letters at A,B instead of continuing L,M. In the teach modal M6
+      therefore lands on letter A — the same letter as the description column, which
+      is exactly the "duplicate month 1 label" the user reported.
+      CAUSE: core :2373 uses columnLetter(k) with k restarting per page, and :2381
+      calls buildPdfSliceBlock for the FIRST page only. The auto-capture twin at
+      :1773/:1767 uses columnLetter(letterAt + j) and buildMergedSliceBlock. §2/§3
+      updated derivePdfLayout and left its AI-derived sibling behind.
+      CONSEQUENCE: an ai-derived row is effectively un-teachable — the reviewer
+      cannot see or point at the months that live on page 2.
+
+    DEFECT 3 — AN UNNUMBERED CAPTURE CAN BE APPROVED, AND NOTHING SAYS IT IS A NO-OP.
+      Row 76 is the §7 ambiguous capture: geometry kept, monthCols [], unnumbered
+      true. The desk rendered it like any other row, the user approved it, and the
+      re-import answered "could not read the S-curve" — usableLayoutMap correctly
+      refuses a month-less page. The READER is right; the DESK is silent. Grepped:
+      'unnumbered' appears at core :1757 and once in the controller, and NOWHERE in
+      _manage_scurve_headers_modal.blade.php.
+
+    ALSO FOUND, NOT PART OF THIS PLAN (latent, no live symptom): storeAiDerived
+    matches on (header_hash, contractor_id) with NO source_type scope, while the
+    auto-capture path 30 lines below it scopes by source_type precisely so "an Excel
+    row and a PDF row must never merge". The controller patches source_type after
+    the fact. A colliding hash could hijack an Excel row into a PDF one.
+
+    WHAT THE USER'S OWN QUESTION EXPOSED, answered from the code: AI assist does not
+    "overwrite when the layout differs" — storeAiDerived NEVER overwrites an existing
+    map. It backfills a NULL map, or creates a SEPARATE row when the hash differs. It
+    never compares layouts at all. The two rows here have different hashes precisely
+    BECAUSE of Defect 2 (the AI block is page-one-only), so they could never have
+    merged.
+
+
+  2026-09-14 — ALL THREE DEFECTS FIXED (code; browser re-proof is the user's step).
+
+    FIX 1 — A TAUGHT DESCRIPTION IS A BAND, NOT A COLUMN.
+    buildTaughtPdfMap now widens descRight to the left edge of the NEAREST thing the
+    reviewer assigned to something else on that page — contract, weight, code, or the
+    first month. Their own answers bound it, so nothing is guessed, and the widening
+    can never reach a month band (the existing overlap guard still runs after it).
+      MEASURED — the user's EXACT teaching (desc=A, contract=E, M1..M7 = F,G,H,I,J,L,M)
+      replayed through the real builder and the real core on the real roof PDF:
+        before   desc 0.038 -> 0.0676   2.48 / 10.8 / 22.65 / 37.81 / 56.35 / 80.18 / 100
+        after    desc 0.038 -> 0.3235   6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100
+                                        curveSource 'summary', counts 4,4,4,4,3,4,3
+      The reviewer changes NOTHING. The clicks they already made now read the truth.
+      A FIXTURE HAD TO CHANGE, and it is worth saying why rather than hiding it: the
+      PDF teach fixture taught no contract column, so its desc widened over the
+      untaught AMOUNT column and its pinned descRight moved 0.30 -> 0.38. The fixture
+      now teaches contract='B', which is what a reviewer looking at
+      DESCRIPTION | AMOUNT | STINT 1 | STINT 2 would actually say, and the original
+      0.30 assertion stands. The widening is pinned by three NEW tests instead.
+
+    FIX 2 — derivePdfLayoutFromAi GETS §2/§3.
+    It now collects `sheets` like its twin, calls buildMergedSliceBlock, and re-letters
+    pseudoCols with a RUNNING offset. On the real roof PDF the AI-derived row now
+    produces exactly what the auto-capture produces:
+        page[0] letters A..K  months M1-M5      page[1] letters L,M  months M6,M7
+        COLUMNS: A,B,C,D,E,F,G,H,I,J,K,L,M
+        R3  [HEADER]     NO. | Amount | 30 days x7 | 7 days
+        R16 [CUMULATIVE] % | 6.32% | ... | 99.14% | 100.00%
+      Was: COLUMNS A..K, six month labels, no month 7, page-2 letters restarting at A,B.
+
+    FIX 3 — THE DESK SAYS SO WHEN APPROVAL IS A NO-OP.
+    An unnumbered capture (every page month-less, or unnumbered:true) now renders an
+    amber "Months not numbered — approving alone will not read this file. Teach it
+    first." in place of the "page 1: no months" line. Also corrected a stale tooltip
+    that still claimed multi-page teaching was refused — §3 lifted that refusal.
+
+    TESTS  +3 PHP (widen-to-contract, widen-to-first-month-when-no-contract, widening
+    never overlaps a month) -> ScurveHeaderProposalTest 60 passed.
+    +1 JS (an AI-derived layout merges its pages and never reuses a letter) -> 158
+    tests, 156 passed + the 2 intended blinding fails.
+      FAILING-THEN-PASSING CONFIRMED on the JS one: stashing only the core file makes
+      it fail with "no letter may name a column on both pages".
+      CAUGHT WHILE WRITING IT (mine, twice): the first three fixture attempts returned
+      null and I blamed the change — they were malformed, and the CLEAN tree returned
+      null too. The cause was the SELF-CHECK: it replays the file through the map it is
+      about to teach and demands the AI's curve back, so an invented aiMonths that the
+      invented cells do not produce is rejected. Supplying the curve the cells actually
+      yield (4000/8000/10000/11500/12000 over 12,000) made it derive. The plan's own
+      standing lesson applied to me: when a rule refuses, suspect the data feeding it.
+
+    READER REGRESSION: 16 sample reads, 0 CHANGED against the committed core.
+    PHP: 1190 passed / 5 failed — all pre-existing BY NAME (1 DashboardOverdueInspection
+    + 2 EmailDraft + 2 default-baseline). The baseline is 5 now, not 7: the two
+    ContractorDashboard failures were fixed by the teammate's work merged in 06d89cf
+    (ContractorDashboardTest now 8/8), not by anything here.
+
+    NOT BROWSER-PROVEN. The re-run is the user's: re-import the roof so a fresh
+    auto-capture and a fresh ai-derived row are stored, check the ai-derived row's grid
+    now shows A..M with all seven months, check the unnumbered auto-capture carries the
+    amber warning, then teach it exactly as before and confirm 6.32 / 24.31 / 42.30 /
+    59.71 / 77.03 / 99.14 / 100 with counts 4,4,4,4,3,4,3. EXPECT ONE MORE RE-CAPTURE
+    WAVE: fix 2 changes the ai-derived block text, so its header_hash changes and the
+    old row (77/79) cannot retro-fit. Approve the new one, reject the stale ones.
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

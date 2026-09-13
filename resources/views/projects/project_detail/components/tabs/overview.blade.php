@@ -317,7 +317,8 @@
                         @forelse($latestDocuments as $document)
                         <div class="doc-item" style="cursor: default;">
                             <div class="doc-icon" style="background:rgba(59,130,246,0.10)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-                            <div class="doc-info"><div class="doc-name">{{ $document->document_name }}</div><div class="doc-meta">{{ number_format($document->file_size, 1) }} KB · {{ $document->created_at?->format('M d, Y') }}</div></div>
+                            {{-- title= so the full name is still reachable once the card truncates it --}}
+                            <div class="doc-info"><div class="doc-name" title="{{ $document->document_name }}">{{ $document->document_name }}</div><div class="doc-meta">{{ number_format($document->file_size, 1) }} KB · {{ $document->created_at?->format('M d, Y') }}</div></div>
                         </div>
                         @empty
                         <div style="font-size: 13px; color: var(--text-muted); padding: 8px 0;">No documents uploaded yet.</div>

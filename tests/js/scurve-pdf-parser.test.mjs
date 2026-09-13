@@ -1451,3 +1451,53 @@ test('both printed pages render as one grid with letters running on', () => {
         'page one and page two both contribute to one row:\n' + roofRow);
     assert.match(roofRow, /2%/, 'including the tail month printed on page two');
 });
+
+// 2026-09-14 — THE AI-DERIVED TWIN NEVER GOT §2/§3.
+//
+// derivePdfLayout learned to merge the printed pages into one grid with letters
+// running on across the seam; derivePdfLayoutFromAi kept building a block from
+// the FIRST page only and restarting its letters at A on every page. On the roof
+// that meant an ai-derived row whose MAP spanned both pages but whose BLOCK
+// stopped at month 6, with page two's columns wearing the same letters as the
+// description column — so month 6 rendered on top of month 1 in the teach modal
+// and the row could not be taught at all. Two derivations of one table must not
+// disagree about what a letter means.
+test('an AI-derived layout merges its pages and never reuses a letter', () => {
+    const first = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60],
+            ['4000', 230, 30], ['4000', 310, 30], ['2000', 390, 30]]],
+    ]);
+    // The overflow sheet at the SAME row heights, carrying the tail columns.
+    const second = page([
+        [800, [['30 days', 40, 45], ['7 days', 130, 40]]],
+        [760, [['1500', 50, 25], ['500', 140, 20]]],
+    ]);
+    const labels = { 1: '30 days', 2: '30 days', 3: '30 days', 4: '30 days', 5: '7 days' };
+    // The self-check replays the file through the map it is about to teach, so the
+    // AI's curve has to be the one these cells actually produce (12,000 total).
+    const aiMonths = [4000, 8000, 10000, 11500, 12000]
+        .map((v, i) => ({ month_index: i + 1, planned_progress_percent: +(v / 12000 * 100).toFixed(2) }));
+
+    const out = derivePdfLayoutFromAi([first, second], labels, aiMonths);
+    assert.ok(out && out.block, 'the AI derivation must produce a slice');
+    assert.equal(out.map.pages.length, 2, 'both printed pages ride in the map');
+
+    const letters = out.block.split('\n')[0].replace('COLUMNS: ', '').split(' |')[0].split(',');
+    assert.equal(new Set(letters).size, letters.length,
+        'letters must be unique across the seam, not restart at A: ' + letters.join(','));
+
+    const pageOne = out.map.pages[0].pseudoCols.map((c) => c.letter);
+    const pageTwo = out.map.pages[1].pseudoCols.map((c) => c.letter);
+    assert.equal(pageOne.filter((l) => pageTwo.includes(l)).length, 0,
+        'no letter may name a column on both pages — that is what put month 6 on top '
+        + 'of the description column in the teach modal');
+
+    // The grid is the whole table, not its first sheet: the tail months printed on
+    // page two must be visible to the reviewer who has to point at them.
+    const roofRow = out.block.split('\n').find((l) => l.includes('ROOFING'));
+    assert.ok(roofRow, 'the activity row is present');
+    assert.match(roofRow, /1500/, 'page-two values reach the grid:\n' + roofRow);
+    assert.match(roofRow, /500/, 'including the final tail month');
+});

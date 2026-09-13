@@ -1802,8 +1802,14 @@ class ScurveHeaderProposalTest extends TestCase
 
     private function pdfTeachPayload(array $overrides = []): array
     {
+        // The contract column is taught because a reviewer looking at
+        // DESCRIPTION | AMOUNT | STINT 1 | STINT 2 would say AMOUNT is the peso
+        // column — and because it BOUNDS the description band (2026-09-14): a
+        // taught desc now runs to the nearest column the reviewer gave to
+        // something else, so leaving AMOUNT unassigned would widen desc over it.
         return array_merge([
             'desc' => 'A',
+            'contract' => 'B',
             'months' => [1 => ['C'], 2 => ['D']],
             'header_rows' => [1],
         ], $overrides);
@@ -1846,6 +1852,91 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertNotEmpty($page['pseudoCols'], 'pseudoCols must survive so the row can be re-taught');
     }
 
+    // THE 2026-09-14 REGRESSION, under test.
+    //
+    // §2 split the roof's left block into ITEM NO. | DESCRIPTION | UNIT | QTY,
+    // where the old rule had collapsed all four into ONE band. A taught desc was
+    // still exactly one pseudo-column wide, so it no longer reached the numbers —
+    // and descRight does not mean "where the names end", it means "where the
+    // figures begin". Measured on the real roof PDF: a one-column desc read
+    // 2.48/10.8/… whichever column the reviewer picked, while any band reaching
+    // the first numbered column read the true 6.32/24.31/….
+    // Called by: buildTaughtPdfMap() description widening.
+    public function test_a_taught_description_widens_to_the_first_numbered_column(): void
+    {
+        $staff = $this->makeUser('staff');
+        // Roof-shaped: four narrow label columns, then the peso column, then months.
+        $row = $this->makePdfRow([[
+            'pageHint' => 0,
+            'lineHint' => 2,
+            'sig' => ['no.', 'amount', '30 days', '30 days'],
+            'descX' => 0.04,
+            'descRight' => 0.33,
+            'monthCols' => [],
+            'unnumbered' => true,
+            'pseudoCols' => [
+                ['letter' => 'A', 'x' => 0.04, 'xEnd' => 0.07],   // ITEM NO.
+                ['letter' => 'B', 'x' => 0.07, 'xEnd' => 0.23],   // DESCRIPTION
+                ['letter' => 'C', 'x' => 0.23, 'xEnd' => 0.27],   // UNIT
+                ['letter' => 'D', 'x' => 0.27, 'xEnd' => 0.32],   // QTY
+                ['letter' => 'E', 'x' => 0.32, 'xEnd' => 0.42],   // Amount
+                ['letter' => 'F', 'x' => 0.42, 'xEnd' => 0.52],   // month 1
+                ['letter' => 'G', 'x' => 0.52, 'xEnd' => 0.63],   // month 2
+            ],
+            'headerLine' => 'NO. Amount 30 days 30 days',
+        ]]);
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", [
+                'desc' => 'A', 'contract' => 'E',
+                'months' => [1 => ['F'], 2 => ['G']],
+                'header_rows' => [1],
+            ])->assertOk();
+
+        $page = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map['pages'][0];
+        $this->assertSame(0.04, $page['descX'], 'the band still starts where the reviewer pointed');
+        $this->assertSame(0.32, $page['descRight'], 'and runs to the peso column they identified');
+    }
+
+    // The same widening with NO contract taught: the first MONTH bounds it, which
+    // is the only other thing the reviewer told us about where numbers start.
+    // Called by: buildTaughtPdfMap() description widening.
+    public function test_a_taught_description_stops_at_the_first_month_when_no_contract_is_given(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['contract' => null]))
+            ->assertOk();
+
+        $page = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map['pages'][0];
+        $this->assertSame(0.38, $page['descRight'], 'widened to where month 1 begins, never past it');
+    }
+
+    // Widening must never REACH a month band — that would let one printed cell be
+    // read as both a work name and a monthly figure.
+    // Called by: buildTaughtPdfMap() description widening + overlap guard.
+    public function test_widening_never_overlaps_a_month(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['contract' => null]))
+            ->assertOk();
+
+        $page = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map['pages'][0];
+        foreach ($page['monthCols'] as $mc) {
+            $this->assertTrue(
+                $page['descRight'] <= $mc['x'] + 1e-9,
+                "description runs into month {$mc['index']}"
+            );
+        }
+    }
+
     // Two letters on one month widen that month's band to span both.
     // Called by: buildTaughtPdfMap() month span merging.
     public function test_a_month_taught_two_columns_spans_both(): void
@@ -1855,7 +1946,7 @@ class ScurveHeaderProposalTest extends TestCase
 
         $this->actingAs($staff)
             ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
-                $this->pdfTeachPayload(['months' => [1 => ['B', 'C'], 2 => ['D']]]))
+                $this->pdfTeachPayload(['contract' => null, 'months' => [1 => ['B', 'C'], 2 => ['D']]]))
             ->assertOk();
 
         $page = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map['pages'][0];
