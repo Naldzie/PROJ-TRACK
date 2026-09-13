@@ -1,6 +1,8 @@
 # PDF AI LOOP PROOF TESTS (B / F-D / F-E) — SESSION RECORD
 # Parent: textfiles/document_parser_pdf_ai_fallback_plan.md (Phases F-A..F-D, B)
-# Date: September 11, 2026 — Status: SCRIPTS 1–2 PROVEN, SCRIPT 3 BLOCKED (delivery bugs, not learning bugs)
+# Date: September 11, 2026 (last updated September 13, 2026 — Script 6)
+# Status: SCRIPTS 1-6 ALL PROVEN. Script 3 was blocked by delivery bugs (not learning
+#         bugs) and CLOSED 2026-09-12; Script 6 closes the roof family offline.
 # Specimen: sampledocs/SCurve-Test-Segment-Novel-Specimen.xlsx → user-printed PDF
 #   (5 single months SEGMENT 1..5, 4 activities, TRUE curve 5/20/40/65/100)
 
@@ -311,6 +313,85 @@
     re-import a 10-month file into a project ending March 2026 and the note must
     appear; with April it must not.
 
+
+===============================================================================
+  SCRIPT 6 — ROOF FAMILY SOLVED OFFLINE (user, Sept 13): P5 CROSS-CHECK + P6
+  CHART-SCALE EXCLUSION
+===============================================================================
+
+  File: sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE-pdf.pdf
+  TRUE curve (from the Excel twin's hidden AJ:AS columns):
+    6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100
+
+  P5 — AI-vs-FILE CROSS-CHECK  ✅ BROWSER-PROVEN (gemini-flash 3.6)
+    The wrong answer was caught and replaced LIVE. Import notes carried "the AI's
+    monthly numbers did not match the figures printed in this PDF, so the baseline
+    below was read from the file itself using the columns the AI identified", and
+    the curve came back as the TRUE one above. The SAME file under
+    gemini-flash-latest carried NO such note, because the two agree.
+    ⇒ Both halves proven: it fires when it should and stays silent when it should not.
+    THRESHOLD NOTE (matters, and it is not the Excel one): the comparison runs at
+    DISPLAY PRECISION (0.05), not the 1.0 used elsewhere. Against the real wrong
+    answer EVERY gap is under one point —
+      AI (3.5) 6.69 / 24.60 / 42.51 / 60.32 / 77.55 / 100   / 100
+      file     6.32 / 24.31 / 42.30 / 59.71 / 77.03 /  99.14 / 100
+      gaps     0.37   0.29    0.21    0.61    0.52     0.86    0
+    — so a 1.0 tolerance would have waved through the very answer the check exists
+    to catch, one that finishes a month early and shows no work in its final month.
+    1.0 answers "is this the same LAYOUT"; whether to REPLACE numbers is a
+    different question.
+
+  P6 — CHART-SCALE EXCLUSION  ✅ BROWSER-PROVEN (detail Baseline tab, approved
+  layout live, ZERO AI)
+    THE DEFECT: the roof's page 2 carries the table's overflow columns AND the
+    S-curve picture, whose scale (100% / 75 / 50% / 25% / 0%) is printed INSIDE
+    month 7's band — the last band ran to the raw page edge. Month 7 listed FIVE
+    activities where the truth is THREE.
+    NOT an AI-path problem: a plain learned-layout read showed the same five.
+    THE READ AFTER THE FIX, exactly as predicted offline:
+      Jul 2025   6.32%  A · B · C EARTHWORK · E FINISHING          4 activities
+      Aug 2025  24.31%  A · B · C EARTHWORK · E FINISHING          4
+      Sep 2025  42.30%  A · B · C EARTHWORK · E FINISHING          4
+      Oct 2025  59.71%  A · B · C EARTHWORK · E FINISHING          4
+      Nov 2025  77.03%  A · B · E FINISHING                        3
+      Dec 2025  99.14%  A · B · E FINISHING · H OTHER WORKS        4
+      Jan 2026 100.00%  A · B · H OTHER WORKS                      3   <- WAS 5
+    "C EARTHWORK" is gone from January and "LOT 1.00 1,890,436.78" never appears,
+    while C correctly KEEPS its July-October months. That distinction is the whole
+    point: a blunter rule (drop rows whose percent cells overshoot 100, which DOES
+    separate the contaminated rows cleanly — 150 and 25 against 100/101 for the real
+    ones) would have deleted C from all four of those months too.
+    Import notes carried the learned-layout note, the adoption note, and "2 unnamed
+    value rows" — DOWN FROM 3. That drop is the visible proof the skip fired rather
+    than some other change masking the symptom; expect it on any re-run.
+
+  WHAT THE TWO MODELS SHOWED (worth more than this file)
+    gemini-flash-latest (3.8): returned the TRUE curve, note read "these months
+      match the file's own summary exactly — they could not be independently
+      verified from the activity rows."
+    gemini-flash 3.5/3.6: returned 6.69 / 24.60 / 42.51 / 60.32 / 77.55 / 100 / 100
+      — to rounding, EXACTLY the cost-weighted arithmetic over the printed
+      WHOLE-NUMBER percentages. The models did not differ randomly; they used
+      different METHODS, and the source's rounding makes the weighted method
+      structurally unable to land on the truth.
+    ⇒ The weak-model failure here is SYSTEMATIC, not random, which is why it is
+      guardable — and why the parser fallback chain is a reasonable next step.
+
+  MEASUREMENT THAT PICKED P6's RULE (read before proposing an alternative)
+    Clustering percent-written AND bare numeric tokens by x across ALL 8 sample
+    PDFs: 71 vertical stacks, EXACTLY ONE runs strictly downward — the roof's chart
+    scale, which also starts at exactly 100, ends at exactly 0, and is evenly spaced
+    (10.5% gap spread against a 25% limit). Zero false positives at every strictness
+    level tested. Both earlier candidates were REJECTED BY MEASUREMENT: bounding the
+    last band lands at x=192.5, still past the chart at 172; and tightening
+    matchRowsByY cannot touch the EARTHWORK case at all, because there the scale
+    rung shares a TEXT LINE with a real row (no merging is involved).
+    NOTE: the "75" rung is a BARE number — pdf.js splits it from its "%". A
+    percent-only predicate sees 4 rungs and the spacing test then fails.
+
+  REGRESSION: 8 sample PDFs x plain/taught = 16 reads, 0 CHANGED against the
+  committed core. JS 152 tests / 150 passed + the 2 intended blinding fails.
+  PHP 1158 passed / the same 7 pre-existing.
 ===============================================================================
   MODEL PROVENANCE (asked + answered 2026-09-12 — read before blaming code)
 ===============================================================================

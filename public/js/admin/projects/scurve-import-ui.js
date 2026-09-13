@@ -616,6 +616,11 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         }
         var core = window.scurveImportCore;
         if (!core) throw new Error('Import helpers not loaded.');
+        // P5 — check the answer against the document before using it. The Excel
+        // path does this server-side (applyDerivedLayout); PDFs must do it here,
+        // because the server owns no PDF reader. On disagreement the FILE wins,
+        // and the swap is said out loud in the import notes.
+        scurveCrossCheckPdfAnswer(data);
         var months = core.normalizeSCurveMonths(data.months, ctx.startDate || '', ctx.endDate || '');
         if (!months.length) throw new Error('The AI response held no usable months.');
         try {
@@ -646,6 +651,65 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         window._scurvePdfAiBusy = false;
     }
 };
+
+/* ─── P5 AI-vs-file cross-check (PDF twin of the Excel derived-math rule) ──── */
+// Read the PDF ourselves with the layout the AI just described, and let the FILE
+// win when the two disagree.
+//
+// The Excel path settled this already: applyDerivedLayout re-reads the sheet with
+// the columns the model reported and recomputes the baseline when the model's
+// numbers do not match the file. PDFs could not follow because the server has no
+// PDF reader — but pdf.js is right here, and PDF-3's self-check was ALREADY
+// replaying the file through the AI-derived map and discarding the result
+// whenever it disagreed, which is precisely when it mattered.
+//
+// Proven on the roof: one model answered with cost-weighted arithmetic over the
+// printed whole-number percentages (6.69 / 24.60 / … / 100 / 100, reaching 100 a
+// month early) while the file's own cumulative row says 6.32 / 24.31 / … / 100.
+// The correct reading had already been computed and thrown away.
+//
+// Mutates `data` in place when the file wins. Never throws: a cross-check that
+// cannot run leaves the AI answer exactly as it was.
+// Called by: _trySCurvePdfAiAssist(), before the months are normalized.
+function scurveCrossCheckPdfAnswer(data) {
+    try {
+        var core = window.scurvePdfParserCore || null;
+        var tokens = window._scurvePdfPageTokens || null;
+        var labels = (data && data.monthLabels) || null;
+        var aiMonths = (data && data.months) || null;
+        if (!core || typeof core.crossCheckPdfAgainstFile !== 'function') return false;
+        if (!Array.isArray(tokens) || !tokens.length || !labels || !aiMonths) return false;
+
+        var fileRead = core.crossCheckPdfAgainstFile(tokens, labels, aiMonths);
+        if (!fileRead) return false;
+        if (!core.pdfCurvesDisagree(fileRead.months, aiMonths)) return false;
+
+        data.months = fileRead.months.map(function (m) {
+            return {
+                month_index: m.month_index,
+                planned_progress_percent: m.planned_progress_percent,
+                activities: (m.activities || []).map(function (a) { return a.activity_name; }),
+            };
+        });
+        // The AI's own verdicts described ITS arithmetic, which has just been set
+        // aside; keeping them would describe numbers no longer on screen. Same
+        // reasoning as the Excel twin.
+        var notes = ['Heads-up: the AI’s monthly numbers did not match the figures printed'
+            + ' in this PDF, so the baseline below was read from the file itself using the'
+            + ' columns the AI identified. Please review before locking.'];
+        (fileRead.meta.warnings || []).forEach(function (w) {
+            // No approved layout was used, so its note would be untrue here.
+            if (String(w).indexOf('learned layout') !== -1) return;
+            notes.push(w);
+        });
+        data.meta = data.meta || {};
+        data.meta.warnings = notes;
+        if (fileRead.meta.contractAmount) data.meta.contractAmount = fileRead.meta.contractAmount;
+        return true;
+    } catch (e) {
+        return false; // a second opinion must never break an import
+    }
+}
 
 /* ─── F-D vocabulary harvest (AI month-header words → review desk) ────────── */
 // PDF-3 — a verified AI answer teaches a LAYOUT, not just wording.

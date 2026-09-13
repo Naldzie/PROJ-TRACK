@@ -335,10 +335,24 @@ function detectHeaderColumns(tokens, nextLineTokens, opts) {
  */
 function finalizeHeaderBands(monthTokens, sorted, descX, pageMaxX) {
     let months = [...monthTokens].sort((a, b) => a.index - b.index);
+    // P6 — how wide the columns of this header actually are, so the LAST one need
+    // not run to the raw page edge. Every band but the last is bounded by the next
+    // month's start; the last had nothing to its right and swallowed whatever the
+    // print put there (on the roof, the S-curve chart). Measured across every
+    // sample PDF, that open tail holds NO tokens, so bounding it changes no read —
+    // it just closes the hole. It is defence in depth, not the roof's cure: on that
+    // page the bound computes past the chart and clamps back to the edge anyway;
+    // chartScaleTokens is what actually keeps the picture out of the table.
+    const labelGaps = [];
+    for (let i = 1; i < months.length; i++) labelGaps.push(months[i].x - months[i - 1].x);
+    labelGaps.sort((a, b) => a - b);
+    const typicalWidth = labelGaps.length ? labelGaps[Math.floor(labelGaps.length / 2)] : 0;
     months = months.map((m, i) => ({
         index: m.index,
         x: m.x,
-        xEnd: months[i + 1] ? months[i + 1].x : (pageMaxX + 1),
+        xEnd: months[i + 1]
+            ? months[i + 1].x
+            : (typicalWidth > 0 ? Math.min(m.x + typicalWidth, pageMaxX + 1) : (pageMaxX + 1)),
     }));
 
     // P2-b — description right edge: the x of the first header token right of
@@ -568,6 +582,81 @@ function cumulativeRowValues(monthVals, monthPct, monthCols, y, priorCumulativeY
     return values;
 }
 
+/**
+ * P6 — find the S-curve CHART's own scale, so its numbers are never read as cells.
+ *
+ * An S-curve document prints a picture as well as a table, and the picture has a
+ * scale down its side (100% / 75 / 50% / 25% / 0%). Those labels are ordinary text
+ * items, so when one lands inside a month band the reader takes them for that
+ * month's data. It bit the roof because the LAST band runs to the page edge
+ * (finalizeHeaderBands) and the chart sits inside it — see §9 of
+ * textfiles/document_parser_pdf_layout_learning_plan.md for the full measurement.
+ *
+ * THE TELL IS THAT A SCALE COUNTS DOWN. A month's column read down the page is
+ * activity values in whatever order the activities sit, and cumulative figures
+ * count up; nothing in these tables descends 100 -> 0 on a fixed x. Measured over
+ * every sample PDF: 71 vertical numeric stacks, exactly ONE descends — the roof's
+ * axis — and it also starts at 100, ends at 0, and is evenly spaced. All four
+ * conditions are required (user decision 2026-09-13): the zero-false-positive
+ * reading was measurable, and a clipped or 80/60/40/20 axis can be revisited on
+ * evidence rather than guessed at now.
+ *
+ * BOTH TOKEN SHAPES COUNT. pdf.js splits "75%" into "75" and "%", so a
+ * percent-only predicate sees four rungs and the spacing test then fails (the
+ * 100->50 gap doubles). Bare numerics are accepted for that reason.
+ *
+ * Works on the page's own tokenLines — the same geometry the reader uses, so there
+ * is one definition of where things are, the rule finalizeHeaderBands already
+ * follows for the strict and relaxed detectors.
+ *
+ * Pure. Called by: buildRows(), once per page.
+ * @returns {Set} the token objects belonging to a chart scale (empty when none).
+ */
+export function chartScaleTokens(tokenLines) {
+    const PCT = /^\d[\d,]*(\.\d+)?\s*%$/;
+    const BARE = /^\d[\d,]*(\.\d+)?$/;
+    const CLUSTER_X = 3;      // same-column tolerance, in points
+    const EVENNESS = 0.25;    // max allowed spread between rung gaps
+
+    const points = [];
+    for (const line of tokenLines || []) {
+        for (const t of line.tokens || []) {
+            const s = String(t.str || '').trim();
+            if (!PCT.test(s) && !BARE.test(s)) continue;
+            const v = parseFloat(s.replace(/[%,]/g, ''));
+            if (!Number.isFinite(v)) continue;
+            points.push({ value: v, x: t.x, y: line.y, token: t });
+        }
+    }
+
+    // Group into vertical columns by x.
+    points.sort((a, b) => a.x - b.x);
+    const columns = [];
+    for (const p of points) {
+        const hit = columns.find((c) => Math.abs(c.x - p.x) <= CLUSTER_X);
+        if (hit) hit.points.push(p);
+        else columns.push({ x: p.x, points: [p] });
+    }
+
+    const scale = new Set();
+    for (const col of columns) {
+        if (col.points.length < 3) continue;
+        const down = col.points.slice().sort((a, b) => b.y - a.y);   // top -> bottom
+        // Strictly descending, from exactly 100 to exactly 0: a scale, not a column.
+        if (!down.every((p, i) => i === 0 || p.value < down[i - 1].value)) continue;
+        if (down[0].value !== 100 || down[down.length - 1].value !== 0) continue;
+        // Evenly spaced — a drawn axis is; a run of table rows need not be.
+        const gaps = [];
+        for (let i = 1; i < down.length; i++) gaps.push(down[i - 1].y - down[i].y);
+        const widest = Math.max(...gaps);
+        const tightest = Math.min(...gaps);
+        if (!(widest > 0) || (widest - tightest) / widest > EVENNESS) continue;
+        down.forEach((p) => scale.add(p.token));
+    }
+
+    return scale;
+}
+
 function buildRows(tokenLines, header, startIndex, ctx) {
     const rows = [];
     const summaryCandidates = [];
@@ -584,6 +673,9 @@ function buildRows(tokenLines, header, startIndex, ctx) {
     // value on a continuation page can be tied to the row it continues.
     const priorCumulativeYs = context.priorCumulativeYs || [];
     const cumulativeYs = [];
+    // P6 — the chart's own scale, found once for the page. Its numbers sit in the
+    // table's column space but belong to the picture, not the table.
+    const scaleTokens = chartScaleTokens(tokenLines);
 
     for (let i = startIndex; i < tokenLines.length; i++) {
         const tokens = tokenLines[i].tokens;
@@ -616,6 +708,13 @@ function buildRows(tokenLines, header, startIndex, ctx) {
                 if (cx >= c.x && (isLast ? cx <= c.xEnd : cx < c.xEnd)) { mc = c; break; }
             }
             if (!mc) continue;
+            // P6 — a chart scale label is not a cell, however squarely it lands in
+            // a band. Skipping it here (rather than repairing the damage later)
+            // fixes both ways it hurt on the roof at once: the scale rung printed
+            // on the SAME LINE as a real row no longer inflates that row's month,
+            // and a rung on its own line no longer becomes a row that mergePages
+            // can glue onto a neighbour by height.
+            if (scaleTokens.has(t)) continue;
             const s = t.str.trim();
             if (isNumericToken(s)) {
                 monthVals[mc.index] = (monthVals[mc.index] || 0) + (parseNumeric(s) || 0);
@@ -1985,6 +2084,94 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
     };
 }
 
+/**
+ * P5 — read the file ourselves with the layout the AI just described, so its
+ * answer can be checked against the document instead of taken on trust.
+ *
+ * The PDF twin of the Excel rule at SCurveImportController::applyDerivedLayout.
+ * There the server re-reads the sheet with the columns the model reported and
+ * lets the FILE win on disagreement; here the same idea has to run in the
+ * browser, because the server owns no PDF reader — pdf.js in the page is the
+ * only reader there is.
+ *
+ * The computation is not new. PDF-3's self-check already replays the file
+ * through the AI-derived map; it simply throws the result away on disagreement,
+ * which is exactly when it is worth the most. On the roof, a model that answered
+ * with cost-weighted arithmetic over the printed whole-number percentages
+ * (6.69 / 24.60 / … / 100 / 100) was contradicted by the file's own cumulative
+ * row (6.32 / 24.31 / … / 100) — and the correct reading had already been
+ * computed and discarded.
+ *
+ * TRUST GATE — deliberately narrower than the Excel one. The map is built from
+ * the AI's OWN labels, so a mislabelled month poisons the replay as well; the
+ * reading is only allowed to overrule the model when it comes from the AUTHOR'S
+ * PRINTED CUMULATIVE ROW (curveSource 'summary'), which is the document stating
+ * its own curve rather than us recomputing one. A replay resting on activity
+ * math shares too much of its reasoning with the answer it would be judging, so
+ * it stays advisory and this returns null.
+ *
+ * Pure. Returns the file's own {months, meta} or null when it cannot be trusted.
+ */
+export function crossCheckPdfAgainstFile(itemsByPage, labels, aiMonths) {
+    if (!Array.isArray(aiMonths) || aiMonths.length === 0) return null;
+
+    // aiMonths is NOT passed through: that parameter runs the teaching
+    // self-check, which returns null precisely when the two disagree.
+    const derived = derivePdfLayoutFromAi(itemsByPage, labels, null);
+    if (!derived || !derived.map) return null;
+
+    let replay = null;
+    try {
+        replay = parseSCurvePdf(itemsByPage, { liveMaps: [{ id: 0, map: derived.map }] });
+    } catch (e) {
+        return null;
+    }
+    if (!replay || !replay.meta || replay.meta.mapUsed !== true) return null;
+    if (replay.meta.curveSource !== 'summary') return null;
+
+    // Full coverage or nothing: a reading that is missing months cannot stand in
+    // for an answer that has them all.
+    const got = {};
+    (replay.months || []).forEach((m) => { got[m.month_index] = m.planned_progress_percent; });
+    for (const m of aiMonths) {
+        const idx = Number(m && m.month_index);
+        if (!Number.isFinite(idx) || !(idx in got)) return null;
+    }
+    if ((replay.months || []).length < 2) return null;
+
+    return replay;
+}
+
+/**
+ * P5 — do the file's own months differ from the AI's by more than the tolerance?
+ *
+ * Deliberately NOT the 1.0 used by the Excel path and PDF-3's self-check. That
+ * threshold asks "is this the same LAYOUT"; this asks "are these the same
+ * NUMBERS", and the roof proves the difference matters. A model answering with
+ * cost-weighted arithmetic over the printed whole-number percentages returned
+ * 6.69 / 24.60 / 42.51 / 60.32 / 77.55 / 100 / 100 against a true
+ * 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 — every gap UNDER one point,
+ * the largest 0.86 — yet that curve reaches completion a month early and shows no
+ * work at all in its final month. A 1.0 tolerance calls it agreement.
+ *
+ * So the comparison runs at display precision: if the reviewer would read
+ * different numbers on screen, they are different. Months the AI did not report
+ * are ignored — this asks whether the model contradicts the file, not whether the
+ * two cover the same ground.
+ */
+export function pdfCurvesDisagree(fileMonths, aiMonths, tolerance = 0.05) {
+    const got = {};
+    (fileMonths || []).forEach((m) => { got[m.month_index] = m.planned_progress_percent; });
+    for (const m of (aiMonths || [])) {
+        const idx = Number(m && m.month_index);
+        const want = Number(m && m.planned_progress_percent);
+        if (!Number.isFinite(idx) || !Number.isFinite(want)) continue;
+        if (!(idx in got)) continue;
+        if (Math.abs(got[idx] - want) > tolerance) return true;
+    }
+    return false;
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -2005,6 +2192,8 @@ if (typeof window !== 'undefined') {
         relaxedMonthLabel,
         derivePdfLayout,
         derivePdfLayoutFromAi,
+        crossCheckPdfAgainstFile,
+        pdfCurvesDisagree,
         PDF_MAP_VERSION,
     };
 }

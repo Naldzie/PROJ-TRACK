@@ -2,11 +2,13 @@
 # Parent refs: textfiles/document_parser_pdf_ai_fallback_plan.md (F-A..F-D + B — the PDF AI track)
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
-# Date: September 12, 2026 (last updated September 13, 2026 — §6 roof diagnosis + §9 PDF-3 stash defect)
+# Date: September 12, 2026 (last updated September 13, 2026 — §9 month-7 chart-axis root cause + chosen fix)
 # Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
 #         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
 #         (roof reads its TRUE curve offline, zero AI) · PDF-4 ⬜
-#         NEXT ORDERED: AI-vs-file cross-check for PDFs (Excel parity) — see §9
+#         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
+#         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (uncommitted; M7 5→3,
+#         16 sample reads unchanged) — the roof's last known offline defect is closed
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -51,10 +53,45 @@
       lands on it exactly — so the roof has a zero-AI path after all. It needs one
       ported rule, not a new idea.
 
-  ORDER OF WORK: ~~PDF-3 stash~~ DONE · ~~summary-row fallback (§6)~~ BUILT
-  2026-09-13 → BROWSER-PROVE both on the ROOF (import on each flow: true curve,
-  adoption warning, no AI call; then the PDF-3 harvest) → PDF-4. Each proved
-  before the next, each needing an explicit user order (Rule 10).
+  ORDER OF WORK: ~~PDF-3 stash~~ DONE · ~~summary-row fallback (§6)~~ BUILT and
+  BROWSER-PROVEN 2026-09-13 · ~~P5 cross-check~~ BUILT + BROWSER-PROVEN 2026-09-13
+  (UNCOMMITTED — see below) →
+    1. ~~P6 MONTH-7 CHART-AXIS FIX~~ ✅ BUILT **and BROWSER-PROVEN** 2026-09-13
+       (uncommitted). M7 reads 3 activities matching the AI; curve, curveSource,
+       months 1-6 and all 16 sample reads unchanged; JS 152/150 + the 2 intended
+       blinding fails; PHP 1158 / same 7.
+    2. Parser FALLBACK CHAIN (own order needed). Restudy finding to carry in:
+       backupModel() resolves to config('services.gemini.model') = AI_MODEL = Lite,
+       so callGeminiWithImages(..., true) on the PDF path would fall straight back
+       to the model the E3 verdict excluded. Needs a PARSER-specific chain
+       (AI_PARSER_FALLBACK_MODELS), not the shared backup. Two structural notes:
+       the existing rescue bypasses postGemini (raw Http::post — no status log, no
+       quota-id, no retry), and every backup failure rethrows the ORIGINAL
+       exception (:1697/:1704/:1710) — that IS the transport-failure discipline the
+       Lite revert was about, and a chain must preserve it. Flipping it also flips
+       two tests that pin today's behaviour: GeminiDocumentParserServiceTest
+       ::test_pdf_slice_never_falls_back_to_lite (:1241) and SCurvePdfGeminiTest
+       ::test_no_lite_rescue_on_sustained_overload (:187).
+    3. EARLY-100 GUARD (own order needed). Restudy finding that changes its design:
+       a server-side refusal in validatePdfCurve would PREEMPT the P5 cross-check,
+       which runs CLIENT-side after a 200 — so on the roof the exact 3.5 answer P5
+       now corrects would become "could not read", strictly worse than today. It
+       must either live client-side after the cross-check has had its chance, or be
+       a server-side WARNING the cross-check can supersede. Second finding:
+       sanitizeCurvePoints force-last-100 (:1176) MANUFACTURES repeats, so the guard
+       must read pre-sanitizer values — the extractRawPoints idiom at :582 exists
+       for exactly this reason.
+  Each proved before the next, each needing an explicit user order (Rule 10).
+
+  UNCOMMITTED IN THE TREE RIGHT NOW — two pieces of work, both logged in §9:
+    P5 cross-check (BROWSER-PROVEN): scurve-pdf-parser-core.js
+      (crossCheckPdfAgainstFile, pdfCurvesDisagree) · scurve-import-ui.js
+      (scurveCrossCheckPdfAnswer) · tests +4.
+    P6 chart-axis fix (BROWSER-PROVEN): scurve-pdf-parser-core.js
+      (chartScaleTokens + the buildRows skip + the finalizeHeaderBands band bound)
+      · tests +5.
+    They touch the same core file. Committing them — together or separately — is
+    the user's call; nothing here has been committed or pushed.
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -504,13 +541,10 @@
   8. FLAGGED FOR FUTURE (unordered — each needs an explicit user order)
 ===============================================================================
 
-  - PDF SUMMARY-ROW FALLBACK — port the Excel rule 3 (SCurveImportService.php:1606)
-    to the PDF core so a PDF with no usable activity math adopts the author’s printed
-    cumulative row, flagged and jumble-guarded, exactly as Excel does. This is the
-    roof family’s only offline path; full evidence, the exact bands it lands on, and
-    the unlabelled-continuation-page wrinkle are in §6. Needs an explicit user order:
-    it is a NEW READER BEHAVIOUR, not a bug fix, and it must land BEFORE any attempt
-    to teach the roof a layout.
+  - ~~PDF SUMMARY-ROW FALLBACK~~ ✅ BUILT + BROWSER-PROVEN 2026-09-13 on both models
+    (§9). The roof reads its TRUE curve offline, zero AI, curveSource 'summary'.
+    Kept here only as a pointer: the design rationale, the three upstream defects it
+    exposed, and the rejected alternatives are in the §9 entry of that date.
   - F-PDF2 full answer-fingerprint reuse (store a verified AI reading keyed by a
     file-shape hash for zero-AI repeat imports of the SAME file). Build only if
     words + layouts prove insufficient.
@@ -529,6 +563,287 @@
   9. SESSION LOGS
 ===============================================================================
 
+  2026-09-13 — P6 MONTH-7 CHART-AXIS FIX ✅ BUILT (code, UNCOMMITTED).
+  Root cause, chosen rule and the measurements that picked it are below; the BUILD
+  RESULT block at the end of this entry records what shipped and what it measured.
+  Probes in C:\temp\opencode (probe_m7*.mjs, probe_axis.mjs, probe_ladder2.mjs,
+  probe_strict.mjs, verify_fix.mjs, verify_p6.mjs, patch.mjs + helper/lane.txt).
+  NOT BROWSER-PROVEN — that step is the user's, and it is named at the end.
+
+    THE MECHANISM (measured, not inferred). Roof page 2 carries the table's
+    overflow tail (months 6 and 7) AND the S-curve CHART, whose scale runs down
+    its left side: 100% / 75 / 50% / 25% / 0%. finalizeHeaderBands ends the LAST
+    month band at the raw page edge (core :341, `xEnd: pageMaxX + 1`), so on that
+    page month 7's band is x=116.4 -> 187.6. The chart's scale is printed at
+    x≈170.7-173.5 — INSIDE it. The picture's axis is therefore read as month-7
+    cells. ONE cause, TWO symptoms:
+      (1) the axis "50%" (y=353.59) sits on the SAME TEXT LINE as C EARTHWORK's
+          genuine month-7 value of 0% -> monthVals[7] = 0 + 50 = 50, monthPct set,
+          so it clears the adopted-path filter (:1052-1063) and C is listed under
+          a month in which it has no work;
+      (2) the axis "25%" (y=326.33) sits 3.34pt from the peso subtotal row
+          "LOT 1.00 1,890,436.78" (y=322.99). matchRowsByY's tolerance on this page
+          is ≈5.1 (runner-up 6.86), so it pairs cleanly and glues the chart value
+          onto that peso line, which then reads as an activity.
+    Result: M7 lists FIVE where the truth is THREE (A, B, H). The CURVE is
+    untouched — it is adopted from the printed cumulative row, which the chart
+    never reaches. Only the NAMES are wrong.
+
+    TWO CORRECTIONS TO WHAT THIS FILE PREVIOUSLY RECORDED
+    (a) "when the cross-check fires we inherit the SYSTEM's activity lists" framed
+        this as a cross-check-path problem. It is NOT. A plain LEARNED-LAYOUT read,
+        zero AI, produces the same wrong month-7 list — so the candidate refinement
+        "keep the AI's activity names for months present in both readings" would
+        have fixed one of two paths and left COMMITTED P4 behaviour wrong.
+    (b) The two candidate fixes recorded above are not interchangeable, and
+        MEASUREMENT killed the preferred one:
+          - "tighten matchRowsByY for the column-split case" fixes symptom (2) but
+            CANNOT fix symptom (1) — there the axis token shares a text line with a
+            real row before any merging happens, so no pairing is involved;
+          - "bound the LAST month band rather than letting it run to the page edge"
+            computes to x=192.5 on roof page 2 (label 116.4 + median neighbour width
+            76.1), still PAST the chart at 172. It does not fix the roof on its own.
+        Measured separately: the open tail holds ZERO tokens on every rule-readable
+        sample, so bounding it is safe — it is just not the cure.
+
+    THE RULE THAT DOES REACH BOTH: A CHART SCALE COUNTS DOWN. A month's column
+    read down the page is activity values in arbitrary order; cumulative figures
+    count up. Nothing in a table descends 100 -> 0 on a fixed x.
+      MEASURED over all 8 sample PDFs, clustering percent-written AND bare numeric
+      tokens by x (±3pt):
+        71 vertical stacks (>=3 tokens)      examined
+         1 strictly descending                <- the roof's axis, and nothing else
+         1 also starts at exactly 100, ends at exactly 0
+         1 also evenly spaced (10.5% gap spread against a 25% limit)
+      The single match is [100%, 75, 50%, 25%, 0%] at x≈170.7, roof page 2,
+      y = 412.25 / 381.70 / 354.36 / 326.33 / 298.15, gaps 30.55 / 27.34 / 28.03 /
+      28.18. ZERO false positives at every strictness level tested.
+      NOTE FOR WHOEVER BUILDS IT: the "75" rung is a BARE NUMBER — pdf.js splits it
+      from its "%". A percent-only predicate sees 4 rungs and the spacing test then
+      fails (the 100->50 gap doubles to 57.9). Accept both token shapes or the rule
+      silently weakens.
+
+    DECISIONS BANKED (user, 2026-09-13)
+      - STRICTNESS: all four conditions — >=3 rungs, strictly descending, first
+        rung exactly 100 and last exactly 0, evenly spaced within 25%. Chosen over
+        looser variants because zero-false-positive was measurable and a clipped or
+        80/60/40/20 axis can be revisited on evidence rather than guessed at now.
+      - SCOPE: anywhere on the page, not just the open last band — a chart scale is
+        never table data wherever it lands, and this also covers a chart printed
+        beside the MIDDLE of a table.
+      - The last-band bound ships WITH it as defence in depth (a no-op today, but it
+        closes the structural hole that let a chart into a month band at all).
+
+    VERIFIED IN SIMULATION (real roof PDF, real core patched in C:\temp\opencode,
+    repo untouched — verify_fix.mjs):
+      M7   BEFORE [5] A | B | C EARTHWORK | LOT 1.00 1,890,436.78 | H
+           AFTER  [3] A | B | H                 <- matches the AI's own list exactly
+      curve      6.32 / 24.31 / 42.3 / 59.71 / 77.03 / 99.14 / 100   UNCHANGED
+      curveSource 'summary'                                          UNCHANGED
+      M1-M6 counts 4,4,4,4,3,4                                       UNCHANGED
+      PDF-3 self-check PASSES, months 1..7                           UNCHANGED
+      orphan warning "3 unnamed value rows" -> "2"  (one axis row stops becoming a
+        row at all — expected, and the acceptance check that the skip really fired)
+      REGRESSION: 8 sample PDFs x plain/taught = 16 reads, 0 CHANGED (curve, names,
+      contract, warning count and curveSource all compared).
+
+    WHAT SHIPS (pure core only — no UI, no endpoint, no AI, no learning)
+      1. chartScaleTokens(tokenLines) — new pure helper beside buildRows, EXPORTED
+         for fixtures (the file already exports internals). Clusters over the page's
+         own tokenLines, so geometry has ONE definition — the same principle that
+         keeps finalizeHeaderBands shared between the strict and relaxed detectors.
+         Returns a Set of token objects.
+      2. buildRows computes it once per page beside cumulativeYs (:586) and the
+         token->band loop skips members immediately after `if (!mc) continue;`
+         (:618). Every read path — rules, learned map, AI cross-check replay —
+         funnels through that one loop, so all three are fixed by the one change.
+      3. finalizeHeaderBands :341 — last band ends a MEDIAN NEIGHBOUR-WIDTH past its
+         own label, clamped to pageMaxX + 1.
+      4. +5 fixtures in tests/js/scurve-pdf-parser.test.mjs, transcribed from the
+         geometry above: ladder in the last band is not read as cells and the row
+         sharing its line keeps its own value (symptom 1); a rung near a real row's
+         y does not become an activity (symptom 2); a descending column that does
+         NOT start at 100 / end at 0 IS still read (the guard that keeps this from
+         eating data); an unevenly spaced 3-rung stack is not claimed; the last band
+         ends a neighbour-width past its label.
+
+    NO RE-CAPTURE WAVE: the fix is at READ time and the band bound is a no-op on
+    this file (192.5 clamps back to the page edge), so the APPROVED ROOF MAP ALREADY
+    LIVE IN THE DB STAYS VALID. No PHP, no Blade, no routes — no route:clear or
+    view:clear needed.
+
+    EXPECT AFTER BUILDING
+      npm run test:js   -> 152 tests, 150 passed + the 2 intended blinding fails
+      php artisan test  -> 1158 passed / the same 7 pre-existing (no PHP touched;
+                           clean-tree confirmation only)
+      16-read regression -> byte-identical
+      BROWSER PROOF (still the standing rule for this path): import the roof PDF on
+      the detail Baseline tab with the approved layout live — month 7 must list
+      THREE activities, the curve must still read 6.32 / 24.31 / 42.30 / 59.71 /
+      77.03 / 99.14 / 100, and the adoption warning must still appear.
+
+    LESSON BANKED (cost me one false negative this session): the first simulation
+    reported "fix changes nothing", which looked like evidence against the rule. It
+    was the HARNESS — the patch script built the helper inside a shell-quoted
+    node -e string and the regex backslashes were eaten, so PCT/NUM matched nothing
+    and the skip never fired. Same class as the P3 and PDF-3 lessons, one level out:
+    when a rule refuses, suspect the data feeding it — and when a probe reports
+    "no change", verify the probe actually applied its own change before believing
+    it. patch.mjs now asserts every anchor matched AND that the regexes survived.
+
+    ── BUILD RESULT (same day; code in the working tree, NOT committed) ─────────
+    WHAT SHIPPED, all in public/js/admin/projects/scurve-pdf-parser-core.js:
+      1. chartScaleTokens(tokenLines) — new pure helper above buildRows, EXPORTED
+         for fixtures. Clusters percent-written AND bare numeric tokens by x (±3pt)
+         over the page's own tokenLines, and claims a cluster only when all four
+         hold: >=3 rungs, strictly descending, first rung exactly 100 and last
+         exactly 0, gaps even within 25%. Returns a Set of token objects.
+      2. buildRows computes it once per page beside cumulativeYs and the
+         token->band loop skips members right after `if (!mc) continue;`. Every
+         read path — rules, learned map, AI cross-check replay — funnels through
+         that one loop, so all three are fixed by the single change.
+      3. finalizeHeaderBands — the last band now ends a MEDIAN NEIGHBOUR-WIDTH past
+         its own label, clamped to pageMaxX + 1, instead of running to the raw page
+         edge. Defence in depth: measured as a no-op on every sample, and on roof
+         page 2 the bound computes past the chart and clamps back anyway. It closes
+         the structural hole; chartScaleTokens is what actually cures the roof.
+      4. tests/js/scurve-pdf-parser.test.mjs +5 fixtures (section "P6 the chart's
+         own scale is not table data"), transcribed from the real page-2 geometry
+         including the split '75' + '%' rung.
+
+    MEASURED ON THE REAL FILE (verify_p6.mjs — working tree vs the COMMITTED core
+    at HEAD, both run against the real PDFs):
+      M7   BEFORE [5] A | B | C EARTHWORK | LOT 1.00 1,890,436.78 | H
+           AFTER  [3] A | B | H                  <- matches the AI's own list exactly
+      curve       6.32 / 24.31 / 42.3 / 59.71 / 77.03 / 99.14 / 100   UNCHANGED
+      curveSource 'summary'  ·  contract 1,725,080.17                 UNCHANGED
+      M1-M6 counts 4,4,4,4,3,4                                        UNCHANGED
+      PDF-3 self-check PASSES, months 1..7                            UNCHANGED
+      orphan warning "3 unnamed value rows" -> "2"  — one axis rung stops becoming a
+        row at all, which is the visible proof the skip fired
+      REGRESSION: 8 sample PDFs x plain/taught = 16 reads, 0 CHANGED against HEAD
+      (curve, per-month names, contract, warning count and curveSource compared).
+
+    CAUGHT PRE-GREEN (1, mine, fixture-side): 'a chart scale rung on its own line
+    never becomes a row' asserted deepEqual(names, ['Roofing']) across BOTH months,
+    but Roofing is scheduled in both and is correctly listed twice. The expectation
+    was wrong, not the code; the assert now compares the DISTINCT set, which is what
+    the test was actually about. (Also fixed pre-green: a stray non-English word had
+    landed in the new helper's docblock.)
+
+    SUITES
+      JS  152 tests, 150 passed + the 2 intended blinding fails (F-B1 conditional
+          and L3 hardcoded-ABC — the documented pair, unchanged). Was 147/145.
+      PHP 1158 passed / 7 failed = the same 7 pre-existing BY NAME (2 Contractor-
+          Dashboard + 1 DashboardOverdueInspection + 2 EmailDraft + 2 default-
+          baseline in IssueLifecycle/RiskRegister). No PHP, Blade or route was
+          touched, so no route:clear / view:clear and no re-capture wave — the
+          APPROVED ROOF MAP ALREADY LIVE IN THE DB STAYS VALID.
+
+    ✅ BROWSER-PROVEN SAME DAY (user, roof PDF, detail Baseline tab, approved layout
+    live, zero AI). Every predicted value landed, including the side effect:
+      Jul 2025   6.32%  A · B · C EARTHWORK · E FINISHING            4 activities
+      Aug 2025  24.31%  A · B · C EARTHWORK · E FINISHING            4
+      Sep 2025  42.30%  A · B · C EARTHWORK · E FINISHING            4
+      Oct 2025  59.71%  A · B · C EARTHWORK · E FINISHING            4
+      Nov 2025  77.03%  A · B · E FINISHING                          3
+      Dec 2025  99.14%  A · B · E FINISHING · H OTHER WORKS          4
+      Jan 2026 100.00%  A · B · H OTHER WORKS                        3  <- WAS 5
+    "C EARTHWORK" is gone from January and "LOT 1.00 1,890,436.78" never appears,
+    while C correctly KEEPS its July-October months — the fix removed the chart's
+    contamination without touching the activity's real schedule. Import notes
+    carried the learned-layout note, the adoption note, and "2 unnamed value rows"
+    (was 3): that drop is the visible proof the skip fired rather than some other
+    change masking the symptom.
+    ⇒ P6 CLOSED. The last known defect in the roof family's offline read is gone;
+      the system's own reading now matches the AI's activity lists on all 7 months.
+
+  2026-09-13 — P5 CROSS-CHECK BROWSER-PROVEN (user, gemini-flash 3.6 on the roof).
+    The wrong answer was caught and replaced LIVE. Import notes carried "the AI's
+    monthly numbers did not match the figures printed in this PDF, so the baseline
+    below was read from the file itself using the columns the AI identified", and
+    the curve came back 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 — the
+    truth. The same file under gemini-flash-latest carried NO such note, because
+    the two agree. Both halves proven: it fires when it should and stays silent
+    when it should not. THIRD model family to converge on the correct curve.
+    [RESOLVED 2026-09-13 by P6 — and the framing below was wrong in a way worth
+    keeping: this was NOT a cross-check-path problem. A plain learned-layout read
+    showed the same five entries, so "keep the AI's names on the cross-check path"
+    would have fixed one path and left committed behaviour broken. See the top
+    entry of this section.]
+    NOTED WHILE PROVING: when the cross-check fires we inherit the SYSTEM's
+    activity lists, so month 7 shows the chart-axis residual (5 entries including
+    "LOT 1.00 1,890,436.78") where the AI's own list is correct at 3. Overriding
+    the NUMBERS does not require overriding the NAMES — the AI reads printed names
+    directly and our attribution has a known defect. Candidate refinement, not yet
+    ordered: keep the AI's activity names for months present in both readings.
+  2026-09-13 — P5 AI-vs-FILE CROSS-CHECK BUILT for PDFs (user-ordered, Excel
+  parity). The file now overrules a contradicting AI answer, as the Excel path
+  has done since GAP 1.
+    WHERE IT LIVES, AND WHY NOT WHERE ITS TWIN DOES: the Excel cross-check is
+    SERVER-side (SCurveImportController::applyDerivedLayout re-reads the sheet
+    with PhpSpreadsheet). PDFs cannot copy that — the server owns no PDF reader;
+    pdf.js in the browser is the only reader there is. So the PDF twin runs
+    CLIENT-side in scurve-import-ui.js, on the AI success path, before the months
+    are normalized.
+    THE COMPUTATION WAS ALREADY RUNNING. PDF-3's self-check replays the file
+    through the AI-derived map and compares it to the AI's curve; it discarded
+    that reading on disagreement — exactly when it is worth the most. On the
+    user's 3.5 run the true curve had been computed and thrown away.
+
+    THE APPROVED RULE DID NOT WORK, AND THE MEASUREMENT SAID SO BEFORE SHIPPING
+    The order was "Excel parity — the file wins on any >1% gap". Against the real
+    wrong answer, EVERY GAP IS UNDER ONE POINT:
+      AI (3.5) 6.69 / 24.60 / 42.51 / 60.32 / 77.55 / 100   / 100
+      file     6.32 / 24.31 / 42.30 / 59.71 / 77.03 /  99.14 / 100
+      gaps     0.37 / 0.29  / 0.21  / 0.61  / 0.52  /   0.86 / 0
+    A 1.0 tolerance calls that AGREEMENT, so the cross-check would have passed the
+    very answer it was built to catch — while that curve reaches completion a
+    month early and shows no work at all in its final month.
+    CORRECTED: 1.0 answers "is this the same LAYOUT" (its use in the Excel path
+    and in PDF-3's self-check is right there). Whether to REPLACE numbers is a
+    different question, so pdfCurvesDisagree compares at DISPLAY PRECISION (0.05):
+    if the reviewer would read different numbers on screen, they are different.
+    This also retires the need for a separate early-100 guard ON THIS PATH — the
+    file's own row simply wins. The guard is still worth having where no replay is
+    possible; see the earlier entry.
+
+    THE CIRCULARITY GATE (narrower than Excel's, deliberately). The map is derived
+    from the AI's OWN labels, so a mislabelled month poisons the replay too. The
+    file may overrule the model ONLY when its reading comes from the author's
+    printed cumulative row (curveSource 'summary') — the document stating its own
+    curve rather than us recomputing one. A replay resting on activity math shares
+    too much reasoning with the answer it would be judging, so it returns null and
+    stays advisory. Plus full month coverage: a reading missing months cannot
+    stand in for an answer that has them all.
+
+    WHEN IT FIRES the AI's own verdicts are dropped (they described arithmetic no
+    longer on screen — the same reasoning as the Excel twin at :514), the file's
+    warnings ride along minus any learned-layout note (no approved layout was
+    used), and a plain note leads: "the AI's monthly numbers did not match the
+    figures printed in this PDF, so the baseline below was read from the file
+    itself using the columns the AI identified."
+
+    MEASURED ON THE REAL FILE (stash shape, as the browser feeds it):
+      wrong answer (3.5) -> file reading 6.32 / 24.31 / 42.30 / 59.71 / 77.03 /
+                            99.14 / 100, disagrees TRUE  => file wins
+      right answer (3.8) -> identical reading, disagrees FALSE => AI kept, no swap,
+                            no false alarm
+      SEGMENT (activity-math replay) -> null, correctly refuses to overrule
+
+    FILES: scurve-pdf-parser-core.js (crossCheckPdfAgainstFile, pdfCurvesDisagree,
+    both exported and attached to window), scurve-import-ui.js
+    (scurveCrossCheckPdfAnswer, called in _trySCurvePdfAiAssist).
+    TESTS +4 JS. JS 147 tests, 145 passed + the 2 intended blinding fails. PHP 1158
+    passed / same 7 pre-existing. All 16 sample PDFs BYTE-IDENTICAL (the reader is
+    untouched — this path only runs after an AI answer).
+
+    NOT BROWSER-PROVEN. To prove it: clear the approved layout so the rules miss,
+    run AI assist with gemini-flash 3.5 on the roof, and confirm the import notes
+    carry the "did not match the figures printed in this PDF" line and the curve
+    reads 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100. The same run under
+    gemini-flash-latest must show NO such note, since the two agree.
+
   2026-09-13 — P4 BROWSER-PROVEN by the user, on BOTH models. The strongest form
   of proof this track has produced: two different AI answers, one right and one
   wrong, converge on the SAME correct system read once the layout is approved.
@@ -540,6 +855,7 @@
       activities M1-M4 = 4, M5 = 3, M6 = 4 — matching the AI exactly
     ⇒ P4 adoption, the phantom-column fix, the multi-page candidate merge, the
       Y-tie and the adopted-path activity filter are all BROWSER-PROVEN.
+    [RESOLVED 2026-09-13 by P6 — see the top entry of this section.]
     ONLY REMAINING DEFECT: month 7 lists 5 activities instead of 3 (the S-curve
     chart's Y-axis labels at x ~= 172 falling inside month 7's band). Unchanged
     from the analysis above; still not fixed, still needs an order.
@@ -638,6 +954,11 @@
     EXACTLY for months 1-6 (4,4,4,4,3,4). PDF-3's self-check still passes, months
     1..7.
 
+    [RESOLVED 2026-09-13 by P6 — see the top entry of this section. Of the two
+    candidate fixes floated below, MEASUREMENT rejected both: bounding the last
+    band lands past the chart on this page, and tightening matchRowsByY cannot
+    touch the EARTHWORK case at all, because there the axis rung shares a text
+    line with a real row. The cure was to recognise the chart scale itself.]
     RESIDUAL, NOT FIXED, CAUSE KNOWN: month 7 lists FIVE activities where the AI
     says three — an extra "C EARTHWORK" and a junk "LOT 1.00 1,890,436.78". Both
     trace to ONE thing: the S-CURVE CHART's Y-axis labels (100% / 75% / 50% / 25%
@@ -1216,8 +1537,11 @@
   10. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  1. Read §0, then the 2026-09-13 entries in §9 — the PDF-3 stash defect is the next
-     buildable item and it is one line. §6 (the roof) is the next DECISION.
+  1. Read §0 (status + ORDER OF WORK), then the TOP entry in §9 dated 2026-09-13
+     ("MONTH-7 CHART-AXIS RESIDUAL"). That entry is the build sheet for the next
+     item: mechanism, the user's three banked decisions, the exact edits, the
+     fixtures, the expected suite counts and the browser proof. Nothing is in the
+     repo for it yet.
   2. Ask the user for an explicit order before building anything (Rule 10).
   3. Keep Excel and PDF paths separate: never let a PDF map reach the Excel
      reader or vice versa (source_type / kind gates).

@@ -13,6 +13,11 @@ import {
     relaxedMonthLabel,
     derivePdfLayout,
     derivePdfLayoutFromAi,
+    crossCheckPdfAgainstFile,
+    pdfCurvesDisagree,
+    chartScaleTokens,
+    groupItemsIntoLines,
+    linesToTokenLines,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
 
 /* ─── Fixture helpers ─────────────────────────────────────────────────────── */
@@ -1119,4 +1124,191 @@ test('a stray tail percentage is not mistaken for a cumulative row', () => {
     assert.ok(result);
     assert.equal(result.meta.curveSource, 'activities',
         'one number at an unrelated height must not become the curve');
+});
+
+/* ─── P5 AI-vs-file cross-check ───────────────────────────────────────────── */
+
+// Unknown header wording keeps the RULES out, which is what puts the AI-derived
+// map in play — the same situation a real AI assist runs in.
+function crossCheckPage() {
+    return page([
+        [800, [['DESCRIPTION', 50, 90], ['STINT 1', 200, 55], ['STINT 2', 300, 55], ['STINT 3', 400, 55]]],
+        [760, [['Roofing', 60, 70], ['50%', 210, 25], ['30%', 310, 25], ['20%', 410, 25]]],
+        [720, [['Walls', 60, 60], ['40%', 210, 25], ['40%', 310, 25], ['20%', 410, 25]]],
+        [680, [['TOTAL', 55, 45], ['100', 210, 25]]],
+        [640, [['30.00%', 210, 30], ['65.00%', 310, 30], ['100.00%', 410, 32]]],
+    ]);
+}
+const CROSS_LABELS = { 1: 'STINT 1', 2: 'STINT 2', 3: 'STINT 3' };
+
+test('a contradicting AI answer is replaced by the file’s printed curve', () => {
+    // Shaped like the real failure: every gap is UNDER a point, so the 1.0
+    // layout tolerance would call this agreement — yet the curve completes early.
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 30.4 },
+        { month_index: 2, planned_progress_percent: 65.6 },
+        { month_index: 3, planned_progress_percent: 100 },
+    ];
+
+    const fileRead = crossCheckPdfAgainstFile([crossCheckPage()], CROSS_LABELS, aiMonths);
+
+    assert.ok(fileRead, 'the file must be readable through the AI’s own layout');
+    assert.equal(fileRead.meta.curveSource, 'summary');
+    assert.deepEqual(fileRead.months.map((m) => m.planned_progress_percent), [30, 65, 100]);
+    assert.equal(pdfCurvesDisagree(fileRead.months, aiMonths), true,
+        'sub-1% differences still count — the reviewer would read different numbers');
+});
+
+test('an AI answer that matches the file is left alone', () => {
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 30 },
+        { month_index: 2, planned_progress_percent: 65 },
+        { month_index: 3, planned_progress_percent: 100 },
+    ];
+    const fileRead = crossCheckPdfAgainstFile([crossCheckPage()], CROSS_LABELS, aiMonths);
+
+    assert.ok(fileRead);
+    assert.equal(pdfCurvesDisagree(fileRead.months, aiMonths), false,
+        'agreement must not trigger a swap, or every import gains a false alarm');
+});
+
+// THE CIRCULARITY GATE. The map comes from the AI's own labels, so a replay built
+// on activity math shares its reasoning with the answer it would be judging. Only
+// the author's printed cumulative row — the document stating its own curve — is
+// allowed to overrule the model.
+test('a replay resting on activity math never overrules the AI', () => {
+    const wellFormed = page([
+        [800, [['DESCRIPTION', 50, 90], ['STINT 1', 200, 55], ['STINT 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['1000', 210, 30], ['1000', 310, 30]]],
+        [720, [['Walls', 60, 60], ['1000', 210, 30], ['1000', 310, 30]]],
+    ]);
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 12 },
+        { month_index: 2, planned_progress_percent: 100 },
+    ];
+
+    assert.equal(crossCheckPdfAgainstFile([wellFormed], { 1: 'STINT 1', 2: 'STINT 2' }, aiMonths), null,
+        'activity math must stay advisory, never authoritative');
+});
+
+test('a partial file reading cannot stand in for a complete answer', () => {
+    const aiMonths = [
+        { month_index: 1, planned_progress_percent: 30 },
+        { month_index: 2, planned_progress_percent: 65 },
+        { month_index: 3, planned_progress_percent: 100 },
+        { month_index: 4, planned_progress_percent: 100 },
+    ];
+    // Month 4 exists in the answer but nowhere in the document.
+    assert.equal(crossCheckPdfAgainstFile([crossCheckPage()], CROSS_LABELS, aiMonths), null,
+        'missing months must refuse the override, not silently drop them');
+});
+
+/* ─── P6 the chart's own scale is not table data ──────────────────────────── */
+
+// Transcribed from the roof's page 2, where the S-curve picture is printed beside
+// the table's overflow columns and its scale (100% / 75 / 50% / 25% / 0%) lands
+// inside the LAST month band. Geometry kept in proportion to the real file: the
+// scale sits right of the last month's values, evenly spaced down the page.
+//
+// Note the '75' rung is a BARE number with its '%' as a separate token — that is
+// how pdf.js emits it on the real file, and a percent-only rule would see four
+// rungs and misjudge the spacing.
+function chartPage(extraLines = []) {
+    return page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['50%', 210, 25], ['30%', 310, 25]]],
+        // The chart's scale: strictly down, 100 -> 0, evenly spaced, on its own x.
+        [780, [['100%', 430, 28]]],
+        [740, [['75', 432, 14], ['%', 446, 8]]],
+        [700, [['50%', 430, 28]]],
+        [660, [['25%', 430, 28]]],
+        [620, [['0%', 433, 22]]],
+        ...extraLines,
+    ]);
+}
+
+// Symptom 1 on the roof: the scale rung printed on the SAME LINE as a real row
+// was added to that row's month, pushing a month with no work above zero. No
+// merging is involved here — the two tokens share a text line — which is why
+// tightening the page-merge tolerance could never have fixed it.
+test('a chart scale rung on a real row’s line is not added to that row', () => {
+    // 'Walls' has 20% in month 2, and the scale's 50% sits on the same line.
+    const withRow = chartPage([[700, [['Walls', 60, 60], ['30%', 210, 25], ['20%', 310, 25]]]]);
+    const result = parseSCurvePdf([withRow]);
+
+    assert.ok(result, 'the file must still read');
+    const wallsMonth2 = result.months[1].activities.map((a) => a.activity_name);
+    assert.ok(wallsMonth2.includes('Walls'), 'the real row keeps its own month');
+    // 20 + 50 would have been counted had the scale been read as a cell; the
+    // curve is built from cells, so the month totals prove the skip fired.
+    assert.ok(result.meta.contractAmount < 200,
+        'the scale must contribute nothing to the month totals');
+});
+
+// Symptom 2 on the roof: a rung on its own line became a nameless row, which
+// mergePages then glued onto a page-1 row sitting 3.3pt away — inside its
+// tolerance — so a peso subtotal line surfaced as an activity.
+test('a chart scale rung on its own line never becomes a row', () => {
+    const result = parseSCurvePdf([chartPage()]);
+
+    assert.ok(result);
+    const everyName = result.months.flatMap((m) => m.activities.map((a) => a.activity_name));
+    assert.ok(!everyName.some((n) => /^Activity \d+$/.test(n)),
+        'scale rungs must not survive as nameless activities');
+    // Roofing is scheduled in both months, so it is listed twice — the point is
+    // that NOTHING ELSE is listed.
+    assert.deepEqual([...new Set(everyName)], ['Roofing'],
+        'only the real row is an activity');
+});
+
+// The guard that keeps this from eating data. A genuine column may descend; it
+// is the 100 -> 0 span that marks a drawn scale. Without both endpoints the
+// numbers stay cells.
+test('a descending column that is not a 100-to-0 scale is still read', () => {
+    const descending = page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['600', 210, 30], ['90', 310, 25]]],
+        [720, [['Walls', 60, 60], ['300', 210, 30], ['60', 310, 25]]],
+        [680, [['Finishing', 60, 80], ['100', 210, 30], ['30', 310, 25]]],
+    ]);
+    const result = parseSCurvePdf([descending]);
+
+    assert.ok(result, 'a descending column is ordinary data');
+    // Month 2's column runs 90 / 60 / 30 — strictly down and evenly spaced, but it
+    // neither starts at 100 nor ends at 0, so every cell must still count.
+    assert.equal(result.meta.contractAmount, 1180,
+        'all three rows must contribute to both months');
+});
+
+// The spacing condition earns its place: a drawn axis is evenly divided, a run of
+// table rows need not be. Values that hit 100 and 0 but sit at irregular heights
+// are not claimed.
+test('an unevenly spaced 100-to-0 run is not claimed as a chart scale', () => {
+    const uneven = page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['1000', 210, 30], ['100%', 430, 28]]],
+        [600, [['Walls', 60, 60], ['1000', 210, 30], ['50%', 430, 28]]],
+        [570, [['Finishing', 60, 80], ['1000', 210, 30], ['0%', 433, 22]]],
+    ]);
+    const scale = chartScaleTokens(linesToTokenLines(groupItemsIntoLines(uneven)));
+
+    assert.equal(scale.size, 0, 'gaps of 160 then 30 are not an axis');
+});
+
+// The last month band used to run to the raw page edge, which is what let the
+// chart into the table's column space at all. It now stops a neighbour's width
+// past its own label. Measured as a no-op on every sample PDF — this fixture is
+// what keeps it that way.
+test('the last month band stops a neighbour-width past its label', () => {
+    // Months at x=200 and x=300 → 100pt columns, so month 2 must end at 400,
+    // not at the page edge. The 700pt token is beyond it and must not be read.
+    const wideStray = page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['1000', 210, 30], ['1000', 310, 30], ['5000', 700, 35]]],
+    ]);
+    const result = parseSCurvePdf([wideStray]);
+
+    assert.ok(result);
+    assert.equal(result.meta.contractAmount, 2000,
+        'a value past the last band must not be swept into it');
 });
