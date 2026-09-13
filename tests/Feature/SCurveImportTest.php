@@ -913,6 +913,81 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * E4b endpoint: when the parser ladder rescues an Excel read, the response
+     * SAYS SO. Without this field the client cannot warn, and an answer from a
+     * weaker model would land in a baseline silently — the one thing this whole
+     * track refuses to do. Mirrors the PDF endpoint's fallbackModel.
+     */
+    public function test_parse_gemini_reports_the_fallback_model(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+            'services.gemini.parser_fallback_models' => 'older-flash',
+        ]);
+
+        // One fake for the whole test: primary + retry fail, the rung answers.
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::sequence()
+                ->push('slow down', 429, ['Retry-After' => 0])
+                ->push('slow down', 429, ['Retry-After' => 0])
+                ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'months' => [
+                        ['month_index' => 1, 'planned_progress_percent' => 40],
+                        ['month_index' => 2, 'planned_progress_percent' => 90],
+                    ],
+                    'hasSummaryRow' => false,
+                    'contractAmount' => 60000,
+                ])]]]]]], 200),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('fallbackModel', 'older-flash');
+
+        unlink($path);
+    }
+
+    /**
+     * E4b endpoint: a normal Excel read reports NO fallback, so the client's
+     * warning stays silent when nothing went wrong.
+     */
+    public function test_parse_gemini_reports_no_fallback_on_a_clean_read(): void
+    {
+        config(['services.gemini.key' => 'test-key']);
+        \Illuminate\Support\Facades\Http::fake([
+            '*generativelanguage*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'months' => [
+                        ['month_index' => 1, 'planned_progress_percent' => 40],
+                        ['month_index' => 2, 'planned_progress_percent' => 90],
+                    ],
+                    'contractAmount' => 60000,
+                ])]]]]],
+            ], 200),
+        ]);
+
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeFixtureWorkbook($path);
+        $upload = new \Illuminate\Http\UploadedFile($path, 'curve.xlsx', null, null, true);
+
+        $this->actingAs($this->createAdminUser())
+            ->postJson(route('admin.projects.s-curve.parse-gemini'), ['file' => $upload])
+            ->assertOk()
+            ->assertJsonPath('fallbackModel', null);
+
+        unlink($path);
+    }
+
+    /**
      * E2 endpoint: AI miss, missing source, PDFs, and contractors all decline.
      */
     public function test_parse_gemini_decline_paths(): void

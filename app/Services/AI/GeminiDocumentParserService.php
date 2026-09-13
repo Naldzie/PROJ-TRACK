@@ -360,10 +360,17 @@ class GeminiDocumentParserService
 
         $images = array_slice($images, 0, self::MAX_IMAGES);
 
-        // Normal-doc keeps its one-shot Lite rescue (user-approved 2026-09-10):
-        // autofill is a convenience and a Lite answer there is reviewed field by
-        // field, unlike an S-curve baseline.
-        $raw = $this->callGeminiWithImages($this->buildPrompt(), $images, [$this->backupModel()]);
+        // Normal-doc tries the version ladder FIRST, then keeps its one-shot Lite
+        // rescue as the last rung (user decision 2026-09-13). Autofill is reviewed
+        // field by field, so a rough fill still beats no fill — but there is no
+        // reason to reach for the weakest model while a computing one is available.
+        // With no ladder configured this is byte-identical to the 2026-09-10
+        // behaviour: Lite, once.
+        $raw = $this->callGeminiWithImages(
+            $this->buildPrompt(),
+            $images,
+            [...$this->parserFallbackModels(), $this->backupModel()]
+        );
 
         if ($raw === '') {
             return null;
@@ -1556,11 +1563,28 @@ class GeminiDocumentParserService
      * (same tokens). This sender serves ONLY the Excel slice path — the 11-field
      * project slice keeps its own sender below.
      *
+     * FALLBACK LADDER (E4b, 2026-09-13): this path now climbs the SAME parser
+     * ladder the PDF path uses. It never did before, which meant an Excel import
+     * died on a per-model quota that a PDF import survived — one feature failing
+     * differently depending on which file the contractor happened to send.
+     * Lite is still unreachable here: the ladder is a VERSION list and Lite is
+     * excluded from it by configuration and by documentation. The E3 verdict this
+     * path was protected by was about Lite COPYING author summaries, not about
+     * older Flash versions, which compute.
+     * Worth knowing: this path is the best-guarded of the three — the controller
+     * re-reads the sheet with the AI's own reported columns and lets the FILE win
+     * (applyDerivedLayout), the presence audit DECLINES rather than warns, and the
+     * response schema is enforced at the protocol level.
+     *
      * Called by: parseExcelSlice()
-     * Uses: config/services.php (gemini key & model)
+     * Uses: config/services.php (gemini parser key/model + parser fallback list)
      */
     private function callGeminiText(string $prompt, ?array $filePart = null): string
     {
+        // Reset here as well as in the images sender: without it a rescue recorded
+        // during an earlier PDF call on the same instance would be reported as the
+        // provenance of THIS answer.
+        $this->lastFallbackModel = null;
         $apiKey = $this->parserKey();
         $model = $this->parserModel();
 
@@ -1580,7 +1604,7 @@ class GeminiDocumentParserService
             ];
         }
 
-        $result = $this->postGemini($url, [
+        $payload = [
             'contents' => [
                 [
                     'parts' => $parts,
@@ -1591,7 +1615,16 @@ class GeminiDocumentParserService
                 'responseMimeType' => 'application/json',
                 'responseSchema' => $this->scurveResponseSchema(),
             ],
-        ], $model, 'text');
+        ];
+
+        try {
+            $result = $this->postGemini($url, $payload, $model, 'text');
+        } catch (GeminiTransportException $e) {
+            // A rung that cannot honour the responseSchema answers 400, which is not
+            // ladder-eligible — the walk stops there and the primary's voice speaks,
+            // rather than trying every remaining version against the same refusal.
+            return $this->climbFallbackLadder($payload, $apiKey, $this->parserFallbackModels(), $e, $model, 'text');
+        }
 
         $data = $result['payload'];
 
@@ -1749,41 +1782,7 @@ class GeminiDocumentParserService
         try {
             $result = $this->postGemini($url, $payload, $model, 'images');
         } catch (GeminiTransportException $e) {
-            // Walk the ladder while the failure is one another MODEL could survive.
-            // Meters are per model, so a per-day 429 on the parser model is exactly
-            // the case a version rung answers; an auth failure never is.
-            foreach ($fallbackModels as $rung) {
-                if (!$this->isFallbackEligible($e->status)) {
-                    break;
-                }
-                try {
-                    Log::info('E4 parser fallback', ['where' => 'images', 'from' => $model, 'to' => $rung]);
-                } catch (\Throwable $ignored) {
-                }
-                $rungUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$rung}:generateContent?key={$apiKey}";
-                try {
-                    // One shot per rung, but through postGemini so the status, the
-                    // quota meter and the mapped voice are all recorded the same way.
-                    $rungResult = $this->postGemini($rungUrl, $payload, $rung, 'images-fallback', 1);
-                } catch (GeminiTransportException $rungError) {
-                    // This rung's own failure decides whether the NEXT one is worth
-                    // trying, but the answer the user eventually sees stays $e.
-                    $e = new GeminiTransportException($e->getMessage(), $rungError->status, $rungError->quotaId, $e);
-                    continue;
-                }
-                $text = $rungResult['payload']['candidates'][0]['content']['parts'][0]['text'] ?? '';
-                if (!is_string($text) || trim($text) === '') {
-                    continue;
-                }
-                $this->lastFallbackModel = $rung;
-
-                return $text;
-            }
-
-            // Every rung failed, or none was eligible: the original transport
-            // failure speaks. Masking it as an empty read is the exact mistake the
-            // Lite rescue made before it was reverted.
-            throw $e;
+            return $this->climbFallbackLadder($payload, $apiKey, $fallbackModels, $e, $model, 'images');
         }
 
         $data = $result['payload'];
@@ -1792,11 +1791,85 @@ class GeminiDocumentParserService
     }
 
     /**
-     * Lite fallback eligibility (normal-doc only): overload/quota/dead-model/
-     * gateway failures and throws. Auth/key failures (400/401/403) are excluded —
-     * Lite shares the project and would fail identically.
+     * E4b (2026-09-13): walk the fallback ladder after a primary-model failure.
      *
-     * Called by: callGeminiWithImages().
+     * Extracted from callGeminiWithImages so BOTH senders share one copy. The
+     * Excel S-curve rides callGeminiText and had no fallback at all, which meant
+     * an Excel import still died on a quota a PDF import now survives — the same
+     * feature failing differently depending on the file the contractor sent. One
+     * copy is also what stops the transport-failure discipline drifting between
+     * the two paths, the same reason finalizeHeaderBands is shared by the strict
+     * and relaxed PDF detectors.
+     *
+     * The rules, all load-bearing:
+     *  - a rung is tried only while the failure in hand is one another MODEL could
+     *    survive (meters are per model, so a per-day 429 is exactly that case;
+     *    400/401/403 never are — the key is broken and every rung fails alike);
+     *  - ONE attempt per rung: the primary already spent the retry budget, and a
+     *    ladder that retried every rung would keep the user waiting minutes;
+     *  - rungs go through postGemini, not a bare Http::post, so each keeps its
+     *    status log, quota-meter read and mapped voice (the reverted Lite rescue
+     *    had none of the three);
+     *  - a rung's own status decides whether the NEXT rung is worth trying, but
+     *    the MESSAGE the user finally sees stays the primary's;
+     *  - when the ladder is exhausted, the ORIGINAL exception is rethrown. Masking
+     *    a quota as "the AI found nothing" is the actual lesson of the 2026-09-11
+     *    Lite revert, and it is the one thing a ladder could easily undo.
+     *
+     * Never returns null: it either returns a rung's answer or throws.
+     *
+     * Called by: callGeminiWithImages(), callGeminiText().
+     */
+    private function climbFallbackLadder(
+        array $payload,
+        string $apiKey,
+        array $fallbackModels,
+        GeminiTransportException $primaryError,
+        string $primaryModel,
+        string $where
+    ): string {
+        $error = $primaryError;
+
+        foreach ($fallbackModels as $rung) {
+            if (!$this->isFallbackEligible($error->status)) {
+                break;
+            }
+            try {
+                Log::info('E4 parser fallback', ['where' => $where, 'from' => $primaryModel, 'to' => $rung]);
+            } catch (\Throwable $ignored) {
+            }
+            $rungUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$rung}:generateContent?key={$apiKey}";
+            try {
+                $rungResult = $this->postGemini($rungUrl, $payload, $rung, $where . '-fallback', 1);
+            } catch (GeminiTransportException $rungError) {
+                $error = new GeminiTransportException(
+                    $primaryError->getMessage(),
+                    $rungError->status,
+                    $rungError->quotaId,
+                    $primaryError
+                );
+                continue;
+            }
+            $text = $rungResult['payload']['candidates'][0]['content']['parts'][0]['text'] ?? '';
+            if (!is_string($text) || trim($text) === '') {
+                continue;
+            }
+            $this->lastFallbackModel = $rung;
+
+            return $text;
+        }
+
+        throw $error;
+    }
+
+    /**
+     * Fallback eligibility: overload/quota/dead-model/gateway failures and throws.
+     * Auth/key failures (400/401/403) are excluded — the credential is the problem,
+     * so every rung would fail identically and each attempt is pure latency. A
+     * rung that rejects the request itself (400, e.g. a model that cannot honour
+     * the Excel responseSchema) therefore ends the walk rather than continuing.
+     *
+     * Called by: climbFallbackLadder().
      */
     private function isFallbackEligible(int $status): bool
     {

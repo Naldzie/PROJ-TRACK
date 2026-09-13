@@ -128,6 +128,12 @@ class SCurveImportController extends Controller
                 'success' => true,
                 'months' => $result['months'],
                 'meta' => $meta,
+                // E4b (2026-09-13): the Excel path can now climb the parser fallback
+                // ladder, so it must say when a rung answered. Null on the normal
+                // path. Without this an answer from a weaker model would arrive
+                // SILENTLY, which is exactly what this track refuses to do — the
+                // client's shared warning stash renders the note by name.
+                'fallbackModel' => $this->geminiParser->lastFallbackModel,
             ]);
         } catch (RuntimeException $e) {
             return response()->json([

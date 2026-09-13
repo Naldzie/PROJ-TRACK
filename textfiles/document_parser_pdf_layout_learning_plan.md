@@ -9,8 +9,9 @@
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
 #         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
 #         M7 5→3) — the roof's last known offline defect is closed
-#         E4 PARSER FALLBACK LADDER ✅ BUILT 2026-09-13 (uncommitted; opt-in via
-#         AI_PARSER_FALLBACK_MODELS, never Lite) — not browser-proven, see §9
+#         E4 PARSER FALLBACK LADDER ✅ BUILT 2026-09-13 (committed 015f8fe) · E4b ✅
+#         extends it to the EXCEL S-curve + ahead of Lite on normal-doc (uncommitted)
+#         — opt-in via AI_PARSER_FALLBACK_MODELS, never Lite; not browser-proven, see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -62,7 +63,9 @@
        (uncommitted). M7 reads 3 activities matching the AI; curve, curveSource,
        months 1-6 and all 16 sample reads unchanged; JS 152/150 + the 2 intended
        blinding fails; PHP 1158 / same 7.
-    2. ~~Parser FALLBACK CHAIN~~ ✅ BUILT 2026-09-13 as E4 (see §9). Opt-in via
+    2. ~~Parser FALLBACK CHAIN~~ ✅ BUILT 2026-09-13 as E4, EXTENDED the same day
+       by E4b to the Excel S-curve path and to normal-doc ahead of its Lite rescue
+       (see §9 — E4 alone reached only the PDF path). Opt-in via
        AI_PARSER_FALLBACK_MODELS, empty by default, Lite never reachable; the
        provenance note now names the rung that answered. PHP 1164 / same 7.
        NOT browser-proven — it only fires on a real per-model quota/overload.
@@ -89,10 +92,11 @@
        for exactly this reason.
   Each proved before the next, each needing an explicit user order (Rule 10).
 
-  COMMITTED 2026-09-13 as 7c6044b (pushed): P5 cross-check + P6 chart-axis fix,
-  with the AGENTS.md handoff rewrite and pdf_ai_loop_proof_tests.md Script 6.
-  UNCOMMITTED IN THE TREE RIGHT NOW: E4 (config/services.php, .env.example,
-  GeminiDocumentParserService, scurve-import-ui.js note wording, +6 service tests).
+  COMMITTED 2026-09-13 (pushed): 7c6044b = P5 cross-check + P6 chart-axis fix +
+  the AGENTS.md handoff rewrite + proof-file Script 6. 015f8fe = E4 parser ladder.
+  UNCOMMITTED IN THE TREE RIGHT NOW: E4b (climbFallbackLadder extracted and shared,
+  Excel sender laddered, normal-doc ladder-then-Lite, Excel endpoint reports
+  fallbackModel, +5 net tests, proof-file sender table corrected).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -563,6 +567,106 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — E4b PARSER LADDER EXTENDED TO EVERY PARSER PATH ✅ BUILT (code,
+  uncommitted). User catch, same day as E4: "is this only for the pdf scurve? it
+  should be for the s curve parsing itself (which means both excel and pdf)."
+  Correct, and the gap was mine.
+
+    THE GAP. The three AI paths ride TWO senders, and E4 added the ladder to one:
+      normal-doc autofill   callGeminiWithImages()   one-shot Lite rescue
+      PDF S-curve           callGeminiWithImages()   the E4 ladder
+      Excel S-curve         callGeminiText()         NOTHING AT ALL
+    So an Excel import still died on a per-model quota that a PDF import now
+    survived — the same feature failing differently depending on which file the
+    contractor happened to send. S-curve parsing is ONE feature to the user.
+
+    HONESTLY LOGGED: I scoped E4 to PDF and wrote a test,
+    test_excel_path_never_uses_the_parser_ladder, pinning that scope as if it were
+    a guarantee. It was pinning MY decision, not a user decision and not a measured
+    failure, and it is flipped here. Lesson worth carrying: a test that pins a
+    scoping choice reads, later, exactly like a test that pins a safety property.
+    Say which one it is in the test's own comment.
+
+    WHY EXCEL IS THE SAFEST PLACE FOR THIS, not the riskiest. That path carries the
+    MOST verification of the three:
+      - SCurveImportController::applyDerivedLayout re-reads the sheet with the
+        columns the model itself reported and lets the FILE win past 1.0;
+      - amountsPresentInSheet DECLINES a claimed peso printed nowhere (the PDF twin
+        only WARNS);
+      - scurveResponseSchema is enforced at the protocol level.
+    And the E3 verdict Excel was protected by was about LITE COPYING AUTHOR
+    SUMMARIES — not about older Flash versions, which compute. The ladder is a
+    VERSION list and Lite is excluded from it by configuration and documentation.
+
+    WHAT SHIPPED
+      - climbFallbackLadder() EXTRACTED from callGeminiWithImages so both senders
+        share one copy. One copy is what stops the transport-failure discipline,
+        the one-shot-per-rung rule and the eligibility gate drifting between paths
+        — the same reasoning that keeps finalizeHeaderBands shared between the
+        strict and relaxed PDF detectors.
+      - callGeminiText (Excel) climbs the same ladder, and now RESETS
+        lastFallbackModel at the top. Only the images sender reset it before, so a
+        rescue recorded during a PDF call could have been reported as the
+        provenance of a later Excel answer on the same instance. Pinned by a test.
+      - parseProjectSlice (normal-doc) passes [...ladder, backupModel()] — the
+        version ladder FIRST, Lite as the LAST rung (user decision 2026-09-13).
+        Autofill is reviewed field by field so a rough fill still beats no fill,
+        but there is no reason to reach for the weakest model while a computing one
+        is available. With no ladder configured this is byte-identical to the
+        2026-09-10 behaviour, which is why the existing Lite tests pass untouched.
+      - SCurveImportController::parseWithGemini returns 'fallbackModel'. The Excel
+        endpoint never did; without it a rung's answer would reach a baseline
+        SILENTLY, which is the one thing this track refuses. No client change was
+        needed — scurveStashWarnings is shared by all four call sites and already
+        renders the E4 note naming the model that answered.
+
+    A RUNG THAT REFUSES THE REQUEST ENDS THE WALK. A model that cannot honour the
+    Excel responseSchema answers 400, which is not ladder-eligible, so the ladder
+    stops there rather than offering every remaining version the same refusal — and
+    the PRIMARY's voice still speaks. That fell out of the existing eligibility gate
+    rather than needing new code; it has a test so it stays true.
+
+    CAUGHT PRE-GREEN (1, mine, and it was the project's OWN banked lesson catching
+    me): the provenance-leak test called Http::fake() twice, and a re-called fake
+    keeps serving the FIRST stub (banked 2026-09-10, proven then via recorded()).
+    The second call drained the exhausted first sequence and threw. Rewritten as ONE
+    fake with a four-response sequence covering both calls. The rule is absolute:
+    one fake per test.
+
+    TESTS +5 net (one flipped, five added):
+      - excel slice falls back down the parser ladder — and 'lite-model' is asserted
+        ABSENT from every URL, which is the half of the old guarantee that matters;
+      - a rung rejecting the request (400) ends the ladder, second rung never tried;
+      - normal-doc tries the ladder BEFORE Lite, asserted by URL ORDER, and still
+        reaches Lite when the rung fails;
+      - fallback provenance does not leak between calls on one service instance;
+      - the Excel ENDPOINT reports fallbackModel, and reports null on a clean read.
+    Untouched and still green, which is the point of the empty default chain:
+      test_excel_never_falls_back_to_lite, test_pdf_slice_never_falls_back_to_lite,
+      test_no_lite_rescue_on_sustained_overload, test_images_fallback_to_lite_on_quota,
+      test_images_no_fallback_on_auth_failure.
+
+    SUITES: PHP 1169 passed (+5) / the same 7 pre-existing failures BY NAME.
+    JS 152 tests, 150 passed + the 2 intended blinding fails — unchanged; no JS was
+    touched, and the PDF reader core is untouched since P6, so that 16-read sample
+    regression still stands as measured.
+
+    STILL NOT BROWSER-PROVEN (E4 and E4b together). The ladder only fires on a real
+    per-model failure. Cheapest live trigger: set AI_PARSER_FALLBACK_MODELS to a
+    working older version, MISSPELL AI_PARSER_MODEL so the primary 404s (404 is
+    ladder-eligible), php artisan config:clear, then run AI assist on an EXCEL
+    S-curve and on a PDF. Both should succeed, both import notes should NAME the
+    rung that answered, and the log should carry "E4 parser fallback". Restoring
+    AI_PARSER_MODEL must return both to no-note behaviour.
+
+    ENV: the variable belongs in the real .env (not .env.example, which is the
+    committed blank template), beside the other AI_PARSER_* lines:
+      AI_PARSER_FALLBACK_MODELS=gemini-3.6-flash,gemini-3.5-flash
+    followed by php artisan config:clear. Never list a Lite model. The local .env
+    carries several commented-out AI_PARSER_MODEL lines and the LAST UNCOMMENTED
+    ONE WINS; parserFallbackModels() drops the primary and duplicates from the
+    chain, so a mismatch there is harmless.
 
   2026-09-13 — E4 PARSER MODEL FALLBACK LADDER ✅ BUILT (code, uncommitted).
   User-ordered after P6. The parser path can now fall back down a VERSION ladder

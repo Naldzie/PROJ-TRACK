@@ -74,6 +74,7 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 
 ### What is done and proven (all on phase-5-parser-accuracy unless noted)
 - **Normal-doc parser + L1/L2/L3 learning loop** (miss → teach → approve → fills free), ABC pooling/words-rule, weak-find guard. Browser-proven. JS suite shows 2 intended blinding fails (see constraints).
+- **AI fallback (E4/E4b, 2026-09-13):** all three AI paths share one ladder walk (`climbFallbackLadder`). Lite is unreachable from both S-curve paths by construction; normal-doc keeps it as a last rung. Empty unless configured, so the default behaviour is unchanged.
 - **S-curve Excel end-to-end:** 2a/R2a (BUHI + roof families)/2b reference+warn/fallback/GRID/UX-2b, all browser-proven. Plus **E1 header learning** (E1-1 capture, E1-2 desk, E1-3 reader consult, Phase-A point-and-teach, E1-B learn-from-AI) and **E2 Excel AI** (`parseExcelSlice`, homework/presence-gate validation, prefer-math, derived-map cross-check, salvage). **E3 key/model split** live (parser = own Flash key; predictions untouched).
 - **PDF S-curve rules (P1/P2/P3):** detection batch, merge hardening, and **P3 merge-by-Y** — column-split prints now pair rows by height, not order. The long-documented "19.99-style dust" is gone. 6-stage and 10-month PDFs read exactly on first upload with real names.
 - **PDF AI (F-A..F-D + B):** image-slice service with printed-words name guard (**Flash-or-nothing** — Lite rescue reverted after it masked transport failures as summary copies), `parse-pdf-gemini` endpoint, beside-button offer + in-modal cross-check link, merge with provenance, month-word learning (`scurveMonth`).
@@ -83,7 +84,9 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 
 ### NEXT WORK — early-100 guard (the last piece of AI-answer safety)
 
-The **parser fallback ladder (E4) landed 2026-09-13**: `AI_PARSER_FALLBACK_MODELS` (comma-separated) gives the parser path a version ladder — never Lite, empty by default, one shot per rung, and an exhausted ladder rethrows the ORIGINAL transport failure so a quota still says "try again tomorrow". The provenance note names the rung that answered. It is **not browser-proven** (it only fires on a real per-model quota/overload; a misspelled `AI_PARSER_MODEL` giving a 404 is the cheapest way to trigger it).
+The **parser fallback ladder (E4 + E4b) landed 2026-09-13**: `AI_PARSER_FALLBACK_MODELS` (comma-separated, in your real `.env`, then `php artisan config:clear`) gives EVERY parser path a version ladder — **never Lite on either S-curve path**, empty by default, one shot per rung, and an exhausted ladder rethrows the ORIGINAL transport failure so a quota still says "try again tomorrow". Normal-doc autofill climbs the ladder first and keeps Lite as its LAST rung. Both S-curve endpoints report `fallbackModel`, and the import note names the model that answered. The walk stops on 400/401/403 — a credential or a request the rung refuses is not something another version fixes.
+
+It is **not browser-proven**: the ladder only fires on a real per-model failure. Cheapest live trigger — set the chain to a working older version, misspell `AI_PARSER_MODEL` so the primary 404s (404 is ladder-eligible), `config:clear`, then run AI assist on an Excel S-curve AND a PDF; both should succeed and name the rung.
 
 **Next:** the early-100 guard, for files the AI-vs-file cross-check cannot rescue. A weak model that finishes the curve a month early passes today on the homework/presence warnings alone whenever the file carries no printed cumulative row. Two constraints are already established and must shape the design:
 

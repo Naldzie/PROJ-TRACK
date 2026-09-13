@@ -1648,26 +1648,137 @@ class GeminiDocumentParserServiceTest extends TestCase
         Http::assertSentCount(3);
     }
 
-    // The Excel path has no fallback code at all and must stay that way — a Lite
-    // or otherwise-weaker S-curve answer in a baseline is the failure class this
-    // whole track was built around.
-    // Called by: callGeminiText() — no ladder branch by design.
-    public function test_excel_path_never_uses_the_parser_ladder(): void
+    // E4b: the Excel S-curve climbs the SAME ladder as the PDF path. It did not
+    // before, so an Excel import died on a per-model quota that a PDF import
+    // survived — one feature failing differently depending on the file sent.
+    // What must NOT change is the Lite exclusion: the ladder is a VERSION list,
+    // and Lite copying author summaries is the failure this track was built around.
+    // Called by: parseExcelSlice() via callGeminiText() + climbFallbackLadder().
+    public function test_excel_slice_falls_back_down_the_parser_ladder(): void
     {
         $this->configureLadder('older-flash');
 
-        Http::fake(['*generativelanguage*' => Http::response('slow down', 429, ['Retry-After' => 0])]);
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'months' => [
+                    ['month_index' => 1, 'planned_progress_percent' => 40],
+                    ['month_index' => 2, 'planned_progress_percent' => 100],
+                ],
+                'hasSummaryRow' => false,
+                'contractAmount' => 1000000,
+            ])]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseExcelSlice("DESCRIPTION,Month 1,Month 2\nWorks,400000,600000");
+
+        $this->assertNotNull($out, 'the rung answer flows through the same validation');
+        $this->assertSame('older-flash', $service->lastFallbackModel);
+
+        $sent = Http::recorded();
+        $this->assertCount(3, $sent, 'primary + its one retry, then ONE shot at the rung');
+        $this->assertStringContainsString('older-flash', $sent[2][0]->url());
+        // The half of the old guarantee that still matters, and always will.
+        foreach ($sent as $pair) {
+            $this->assertStringNotContainsString('lite-model', $pair[0]->url());
+        }
+    }
+
+    // A rung that refuses the REQUEST (400 — e.g. a model that cannot honour the
+    // Excel responseSchema) is not a transport hiccup: every remaining rung would
+    // refuse it too. The walk stops and the primary's voice speaks.
+    // Called by: climbFallbackLadder() via isFallbackEligible().
+    public function test_a_rung_rejecting_the_request_ends_the_ladder(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('schema not supported', 400),
+        ]);
+
+        $service = new GeminiDocumentParserService();
 
         try {
-            (new GeminiDocumentParserService())->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
-            $this->fail('Excel quota failures must speak, never ladder.');
-        } catch (\RuntimeException $e) {
+            $service->parseExcelSlice("DESCRIPTION,Month 1\nWorks,30000");
+            $this->fail('A refused ladder must throw, never decline silently.');
+        } catch (GeminiTransportException $e) {
+            // The PRIMARY's quota voice, not the rung's request refusal.
             $this->assertStringContainsString('quota', $e->getMessage());
         }
 
-        foreach (Http::recorded() as $pair) {
-            $this->assertStringNotContainsString('older-flash', $pair[0]->url());
-        }
+        // The SECOND rung is never tried: 400 is not something a version change fixes.
+        Http::assertSentCount(3);
+        $this->assertNull($service->lastFallbackModel);
+    }
+
+    // Normal-doc keeps Lite, but only as the LAST rung: there is no reason to reach
+    // for the weakest model while a computing one is available (user 2026-09-13).
+    // Called by: parseProjectSlice() — [...ladder, backupModel()].
+    public function test_normal_doc_tries_the_ladder_before_lite(): void
+    {
+        $this->configureLadder('older-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])   // the ladder rung also fails
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'title' => 'Canteen Works Project Title Here',
+            ])]]]]]], 200),                                  // ... so Lite still rescues
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseProjectSlice($this->sliceImages());
+
+        $this->assertNotNull($out);
+        $this->assertSame('lite-model', $service->lastFallbackModel, 'Lite remains the last resort');
+
+        $sent = Http::recorded();
+        $this->assertCount(4, $sent);
+        // ORDER is the assertion: the computing model is asked before the weakest one.
+        $this->assertStringContainsString('older-flash', $sent[2][0]->url());
+        $this->assertStringContainsString('lite-model', $sent[3][0]->url());
+    }
+
+    // Provenance must describe THIS answer. lastFallbackModel is public and the
+    // service can be reused, so a rescue recorded during a PDF call must not be
+    // reported as the provenance of a later Excel one.
+    // Called by: callGeminiText() — the reset at the top.
+    public function test_fallback_provenance_does_not_leak_between_calls(): void
+    {
+        $this->configureLadder('older-flash');
+        $service = new GeminiDocumentParserService();
+
+        $cleanExcel = json_encode([
+            'months' => [
+                ['month_index' => 1, 'planned_progress_percent' => 40],
+                ['month_index' => 2, 'planned_progress_percent' => 100],
+            ],
+            'hasSummaryRow' => false,
+            'contractAmount' => 1000000,
+        ]);
+
+        // ONE fake for BOTH calls — re-calling Http::fake() keeps serving the first
+        // stub (lesson banked 2026-09-10, proven via recorded()). The sequence runs:
+        // the PDF call's primary + retry fail, its ladder rung answers; then the
+        // Excel call succeeds outright.
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200)
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $cleanExcel]]]]]], 200),
+        ]);
+
+        $this->assertNotNull($service->parseSCurvePdfSlice($this->sliceImages(1)));
+        $this->assertSame('older-flash', $service->lastFallbackModel, 'the PDF call really was rescued');
+
+        // The clean Excel call on the SAME instance must report no fallback at all.
+        $this->assertNotNull($service->parseExcelSlice("DESCRIPTION,Month 1,Month 2\nWorks,400000,600000"));
+        $this->assertNull($service->lastFallbackModel, 'a stale rescue must not describe a clean answer');
     }
 
 }

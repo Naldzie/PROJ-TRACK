@@ -455,6 +455,26 @@
     PDF S-curve              callGeminiWithImages(,f)  NO (reverted) none
     Excel S-curve            callGeminiText()          NONE AT ALL   YES (enforced)
 
+  ⚠️ THE LITE COLUMN ABOVE STILL HOLDS; THE "no fallback at all" READING DOES NOT.
+  E4 (2026-09-13) added a parser-specific VERSION ladder, and E4b extended it to
+  every parser path the same day. Lite is still unreachable from both S-curve
+  paths — the ladder is a list of model VERSIONS and Lite is excluded from it by
+  configuration and by documentation — but "Excel cannot fall back" is no longer
+  true, and a future session reading only the table would draw the wrong
+  conclusion. Current shape:
+
+    path                     fallback (E4b)                       Lite reachable?
+    ----------------------------------------------------------------------------
+    normal-doc autofill      ladder, THEN Lite as the last rung   yes (by design)
+    PDF S-curve              ladder only                          no
+    Excel S-curve            ladder only                          no
+
+  The ladder is EMPTY unless AI_PARSER_FALLBACK_MODELS is set, so an unconfigured
+  install behaves exactly as the first table describes. When every rung fails the
+  ORIGINAL transport failure is rethrown, so a quota still says "try again
+  tomorrow" instead of being masked as "the AI found nothing" — the actual lesson
+  of the 2026-09-11 Lite revert, now pinned by a test.
+
   VERIFICATION PER PATH (what the server checks about the AI's own figures):
 
     check                                  Excel              PDF
@@ -472,7 +492,11 @@
 
   Two consequences worth remembering:
   - The Lite-copies-the-summary failure class (proven on PDFs, Sept 11) CANNOT
-    reach the Excel path: callGeminiText has no fallback code whatsoever.
+    reach the Excel path. The reason CHANGED on 2026-09-13 and the guarantee did
+    not: it used to be "callGeminiText has no fallback code whatsoever"; it is now
+    "the ladder Excel climbs contains model VERSIONS, never Lite". Still pinned by
+    test_excel_slice_falls_back_down_the_parser_ladder, which asserts the Lite
+    model is absent from every URL the ladder touches.
   - The Excel path is the only schema-constrained one, so it is the only path
     where a prompt can ask for something the reply is structurally forbidden to
     contain. That is what GAP 1 turned out to be.
