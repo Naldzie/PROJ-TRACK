@@ -2,10 +2,13 @@
 # Parent refs: textfiles/document_parser_pdf_ai_fallback_plan.md (F-A..F-D + B — the PDF AI track)
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
-# Date: September 12, 2026 (last updated September 13, 2026 — §9 month-7 chart-axis root cause + chosen fix)
+# Date: September 12, 2026 (last updated September 13, 2026 — E6 per-path timeout + rung promotion)
 # Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
 #         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
-#         (roof reads its TRUE curve offline, zero AI) · PDF-4 ⬜
+#         (roof reads its TRUE curve offline, zero AI)
+#         PDF-4 ⚠️ RESTUDIED 2026-09-13 — teaching a PDF row is WIRED AND BROKEN
+#         (writes an Excel map onto a pdf row; replace DESTROYS a working one).
+#         Bug fix ORDERED; full point-and-teach PARKED — see §4 and §9.
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
 #         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
 #         M7 5→3) — the roof's last known offline defect is closed
@@ -13,7 +16,7 @@
 #         own laravel.log (3.7 answered after latest 503d twice) — committed 015f8fe/fe3d8a6
 #         E5 TIME BUDGET ✅ BROWSER-PROVEN 2026-09-13 (committed 3a77917) — 39s and an
 #         honest stop where the previous run died at 74s on PHP's uncatchable fatal
-#         E6 PER-PATH TIMEOUT + RUNG PROMOTION ✅ BUILT (uncommitted) — 15s images /
+#         E6 PER-PATH TIMEOUT + RUNG PROMOTION ✅ BUILT (committed 1b23422) — 15s images /
 #         30s text (Excel uploads a 15MB workbook), and the first rung inherits the
 #         primary's attempts when the primary is out for the DAY; see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
@@ -94,14 +97,21 @@
        sanitizeCurvePoints force-last-100 (:1176) MANUFACTURES repeats, so the guard
        must read pre-sanitizer values — the extractRawPoints idiom at :582 exists
        for exactly this reason.
+    4. PDF-4 TEACH-PATH BUG FIX (ordered 2026-09-13). Gate teachColumns by
+       source_type: on a pdf row build a genuine PDF-shaped map from the stored
+       pseudoCols or refuse honestly — never write an Excel map the reader will
+       ignore. Stop mode=replace destroying a working PDF map. Stop the desk
+       prefilling and summarising from the Excel shape. The FULL point-and-teach
+       (ambiguous-capture geometry, null-map builder, multi-page grid) stays
+       PARKED — §9 2026-09-13 is its build sheet.
   Each proved before the next, each needing an explicit user order (Rule 10).
 
   COMMITTED 2026-09-13 (pushed): 7c6044b = P5 cross-check + P6 chart-axis fix +
   the AGENTS.md handoff rewrite + proof-file Script 6. 015f8fe = E4 parser ladder.
   COMMITTED: 015f8fe = E4 ladder · fe3d8a6 = E4b (all parser paths).
-  COMMITTED: 015f8fe = E4 ladder · fe3d8a6 = E4b (all parser paths) · 3a77917 = E5
-  time budget. UNCOMMITTED: E6 (per-path requestTimeout + promotion, config +
-  .env.example + phpunit pins, +6 tests).
+  ALL COMMITTED AND PUSHED: 7c6044b = P5 + P6 · 015f8fe = E4 ladder · fe3d8a6 =
+  E4b (all parser paths) · 3a77917 = E5 time budget · 1b23422 = E6 per-path
+  timeout + rung promotion. Nothing in this track is waiting in the tree.
 
   CONFIG ACTION RECOMMENDED, NO CODE: set AI_PARSER_MODEL=gemini-3.7-flash and
   demote/drop the gemini-flash-latest ALIAS. Measured over four live runs, latest
@@ -369,6 +379,26 @@
       family A".
 
   PDF-4 — POINT-AND-TEACH (+ the minimum desk rendering it requires)
+    ⚠️ RESTUDIED 2026-09-13 — READ THE §9 ENTRY OF THAT DATE BEFORE THIS SECTION.
+    The spec below is still structurally sound, but it did not know three things,
+    and they change both the scope and the order:
+      (a) teaching a PDF row is NOT unbuilt — it is WIRED AND BROKEN. The Teach
+          button renders on PDF rows and teachColumns has no source_type branch, so
+          it writes an EXCEL-shaped map onto a pdf row, which the reader then
+          ignores silently; mode=replace destroys a working PDF map on the way.
+          That bug is the ONLY part the user ordered built (2026-09-13).
+      (b) an AMBIGUOUS capture stores NO pseudoCols (core :1736-1746 discards them
+          with the null map), so the rows this section exists to teach carry no
+          coordinates at all. Retaining that geometry is a PREREQUISITE, not a
+          detail.
+      (c) measured across every sample PDF, the only file in the PDF-4 class is the
+          ROOF — and the roof now reads its true curve OFFLINE with zero AI (§6).
+          The unreadable files produce no capture row at all. On today's evidence
+          full point-and-teach has no file to serve and would need a purpose-built
+          specimen for acceptance.
+    STATUS: the bug fix is ordered; the rest is PARKED with the §9 restudy as its
+    build sheet.
+
     RECOMMENDED: pseudo-columns reusing the proven Phase-A UI, NOT a click
     surface over a rendered page image (which needs re-rendering, zoom/scroll
     math and a second teach endpoint).
@@ -577,6 +607,88 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — PDF-4 RESTUDY (read-only, no code). User ordered PDF-4, then
+  narrowed it to the bug fix on the findings below. THREE things the spec in §4
+  did not know, and one of them is a live destructive bug.
+
+    (1) TEACHING A PDF ROW IS NOT BLOCKED — IT IS BROKEN, AND 'replace' DESTROYS.
+      The desk renders the Teach button unconditionally
+      (_manage_scurve_headers_modal.blade.php:335 — no source_type check), and
+      teachColumns (SCurveHeaderProposalController:262) has no source_type branch
+      either. On a PDF row it therefore:
+        - parses the block fine (the PDF block is byte-compatible with the Excel
+          one, which is the good news below), then
+        - converts letters to 0-based COLUMN INDICES, then
+        - calls buildTaughtMap() — the EXCEL builder — and writes an Excel-shaped
+          {v, sig, cols:{...}} map onto a source_type='pdf' row.
+      usableLayoutMap() gates on kind === 'pdf' (core :1351), so the PDF reader
+      then IGNORES that map silently: the reviewer teaches, sees "saved", and
+      nothing ever changes. Worse, mode=replace overwrites column_map on the row
+      FIRST, so teaching a row that already held a working PDF map DESTROYS it and
+      drops the row to proposed. Nothing warns.
+      The desk's prefill has the mirror of the same defect: schTeachColumns reads
+      cm.descCol / cm.monthSpans (:487-493), which a PDF map does not have — it
+      carries pages[].descX / pages[].monthCols — so the prefill silently yields
+      nothing inside a best-effort try/catch. The LIST's inline map summary
+      (:312-322) reads the same Excel keys, which is why PDF rows show no summary.
+
+    (2) THE CASE PDF-4 TARGETS HAS ALREADY THROWN AWAY WHAT IT NEEDS.
+      A teach branch converts a taught LETTER back into an x-band, and the lookup
+      table for that is pseudoCols — [{letter, x, xEnd}] as fractions of pageMaxX,
+      built at core :1689. It is stored INSIDE the map.
+      But an AMBIGUOUS capture (positional wording — the roof's repeated "30 days",
+      where nothing in the bytes says which month a column is) returns map: null
+      and DISCARDS the whole `found` array, pseudoCols with it (core :1736-1746).
+      Only the text block reaches the database.
+      So the rows PDF-4 exists to teach are exactly the rows that carry letters and
+      cell text but NO COORDINATES AT ALL. Confirmed against the live DB: the two
+      pdf rows present (#69 auto-capture live, #70 ai-derived proposed) both HAVE
+      maps and pseudoCols — neither is a teachable null-map row.
+      ⇒ Retaining geometry on the ambiguous path is a PREREQUISITE the §4 spec does
+        not mention. Full PDF-4 cannot start without it.
+
+    (3) MEASURED: PDF-4 CURRENTLY HELPS NO FILE IN THE CORPUS.
+      Every sample PDF through the real capture path (probe_pdf4.mjs):
+        CONSCHEDSAVINGS x2   rules READ   capture: map, 30 pseudoCols
+        10-month             rules READ   capture: map, 2 pages
+        6-stage              rules READ   capture: map, 2 pages
+        SEGMENT              rules MISS   capture: map, 2 pages  -> PDF-2 consult
+                                          handles it after approval; no teaching
+        ROOF                 rules MISS   capture: AMBIGUOUS -> map NULL  <- the
+                                          ONLY PDF-4 case in the corpus
+        scurvepdfsample2     rules MISS   capture: NO CANDIDATE AT ALL
+        test_page_6          rules MISS   capture: NO CANDIDATE AT ALL
+      The one file in the PDF-4 class is the roof — and the roof no longer needs
+      teaching, because §6's summary-row adoption reads its TRUE curve offline with
+      zero AI. The two files that genuinely cannot be read produce no capture row,
+      so teaching cannot reach them either; they need Tier-2 OCR, which is parked.
+      This is a further narrowing than §0 already recorded ("value has narrowed").
+      It is not "narrow" — on today's evidence it is EMPTY, and full PDF-4 would
+      have to be accepted against a specimen built for the purpose.
+
+    ALSO FOUND, carried for whoever builds the full version: the desk grid is
+    PAGE-1 ONLY, while PDF maps are routinely multi-page (roof 2, SEGMENT 2,
+    10-month 2, 6-stage 2). A reviewer could never assign a month that lives on
+    page 2, so multi-page grid rendering is load-bearing for real teaching, not
+    cosmetic. Already noted in the 2026-09-12 session log; restated here because it
+    belongs with the rest of the scope.
+
+    THE GOOD NEWS, unchanged from the spec: buildPdfSliceBlock emits the SAME
+    "COLUMNS: A,B,C | ..." + "R<n> [ROLE]: csv" shape the Excel slice uses, so
+    schParseHeaderBlock, the mini-grid, the palette, the readout, validation and
+    the variant/replace semantics all already work on PDF rows. The missing pieces
+    are the map BUILDER and the geometry to feed it — not the UI.
+
+    USER DECISION 2026-09-13: build the BUG FIX ONLY for now.
+      Gate teachColumns by source_type. On a PDF row either build a genuine
+      PDF-shaped map from the stored pseudoCols, or refuse with an honest message —
+      never write an Excel map the reader will ignore. Stop 'replace' from
+      destroying a working PDF map. Stop the desk prefilling (and summarising) from
+      the wrong shape.
+      Full point-and-teach — the ambiguous-capture geometry prerequisite, the PDF
+      map builder for null-map rows, multi-page grid rendering — stays PARKED with
+      this restudy as its build sheet, to be revived if a real file ever needs it.
 
   2026-09-13 — E5 ✅ BROWSER-PROVEN, and E6 BUILT on what its log measured
   (per-path request timeout + rung promotion; code, uncommitted).
@@ -1953,11 +2065,13 @@
   10. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 
-  1. Read §0 (status + ORDER OF WORK), then the TOP entry in §9 dated 2026-09-13
-     ("MONTH-7 CHART-AXIS RESIDUAL"). That entry is the build sheet for the next
-     item: mechanism, the user's three banked decisions, the exact edits, the
-     fixtures, the expected suite counts and the browser proof. Nothing is in the
-     repo for it yet.
+  1. Read §0 (status + ORDER OF WORK) first, then the §9 entries from the top —
+     they run newest-first and the top few are all 2026-09-13. Everything in §0 is
+     BUILT and COMMITTED as of 1b23422: P5, P6, and the AI-resilience run
+     E4 → E4b → E5 → E6. NOTHING in this file is waiting to be written.
+     NEXT ITEM: PDF-4 point-and-teach (§4), the last unbuilt phase of Stage 2 —
+     but read §6 first, because the roof was the family PDF-4 existed for and the
+     roof now reads correctly OFFLINE with zero AI, so its value has narrowed.
   2. Ask the user for an explicit order before building anything (Rule 10).
   3. Keep Excel and PDF paths separate: never let a PDF map reach the Excel
      reader or vice versa (source_type / kind gates).
