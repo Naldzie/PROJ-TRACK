@@ -69,11 +69,30 @@ class GeminiDocumentParserService
     private const MAX_IMAGES = 3;
 
     /**
-     * E5 (2026-09-13): seconds allowed for ONE HTTP attempt. Also the size of the
-     * slot the time budget must see free before it will start another attempt —
-     * an attempt that cannot finish inside the budget is not worth beginning.
+     * E6 (2026-09-13): seconds allowed for ONE HTTP attempt, PER PATH. Also the
+     * size of the slot the time budget must see free before starting an attempt —
+     * one that cannot finish inside the budget is not worth beginning.
+     *
+     * The two senders carry categorically different payloads, so one number would
+     * be wrong for one of them:
+     *  - IMAGES: up to 3 small PNG page slices. Measured live across four runs —
+     *    real answers arrived in 8s and 10s, refusals in 3-9s, and only a HUNG
+     *    connection ever reached the old 30s. That hang was costing 77% of a
+     *    ladder walk and starving the rungs behind it (the 15:12 run never reached
+     *    gemini-3.5-flash). 15s keeps 50% headroom over anything that has actually
+     *    worked while halving what a hang can steal.
+     *  - TEXT: the Excel path uploads the NATIVE WORKBOOK inline, up to 15MB
+     *    (SCurveImportController::FILE_INLINE_MAX_BYTES). Guzzle's timeout covers
+     *    the upload, so a large .xlsx on a slow connection can spend 15s on
+     *    transfer alone. It keeps 30s — none of the evidence above came from this
+     *    path, and cutting it would risk breaking imports that work today.
      */
-    private const REQUEST_TIMEOUT = 30;
+    private const DEFAULT_IMAGE_TIMEOUT = 15;
+    private const DEFAULT_TEXT_TIMEOUT = 30;
+
+    /** Sanity rails for the configured values — a typo must not disable the guard. */
+    private const MIN_TIMEOUT = 5;
+    private const MAX_TIMEOUT = 120;
 
     /**
      * E5: wall-clock instant after which no NEW attempt may start, or null when
@@ -206,22 +225,52 @@ class GeminiDocumentParserService
     }
 
     /**
+     * E6: seconds one attempt on THIS path may take.
+     *
+     * Selected from $where, which the senders already tag 'images'/'text' (and
+     * '-fallback' for a rung), so no extra per-call state is needed. Configurable
+     * because the right number depends on the file: the Excel path's ceiling is
+     * dominated by UPLOAD time for a workbook that may be 15MB, which nothing
+     * measured so far describes.
+     *
+     * Called by: postGemini(), canAffordAttempt().
+     */
+    private function requestTimeout(string $where): int
+    {
+        $isImages = str_starts_with($where, 'images');
+        $configured = $isImages
+            ? config('services.gemini.parser_image_timeout', self::DEFAULT_IMAGE_TIMEOUT)
+            : config('services.gemini.parser_text_timeout', self::DEFAULT_TEXT_TIMEOUT);
+
+        $seconds = is_numeric($configured)
+            ? (int) $configured
+            : ($isImages ? self::DEFAULT_IMAGE_TIMEOUT : self::DEFAULT_TEXT_TIMEOUT);
+
+        return max(self::MIN_TIMEOUT, min(self::MAX_TIMEOUT, $seconds));
+    }
+
+    /**
      * E5: is there room for another full attempt before the deadline?
      *
-     * Deliberately asks for a WHOLE REQUEST_TIMEOUT slot rather than shrinking
+     * Deliberately asks for a WHOLE attempt's worth of time rather than shrinking
      * the timeout to fit (user decision 2026-09-13). A squeezed timeout can cut
      * off a model that was about to answer, turning a slow success into a
      * failure; stopping early and saying so is the honest trade.
      *
+     * E6: the slot is the SAME per-path value the attempt would actually use.
+     * These two must move together — a reservation that does not match what an
+     * attempt costs either starves the ladder (too large) or lets it overrun
+     * (too small), and the overrun is the uncatchable PHP fatal.
+     *
      * Called by: postGemini() before a retry, climbFallbackLadder() before a rung.
      */
-    private function canAffordAttempt(): bool
+    private function canAffordAttempt(string $where): bool
     {
         if ($this->deadline === null) {
             return true;
         }
 
-        return ($this->deadline - microtime(true)) >= self::REQUEST_TIMEOUT;
+        return ($this->deadline - microtime(true)) >= $this->requestTimeout($where);
     }
 
     /**
@@ -273,7 +322,7 @@ class GeminiDocumentParserService
         while ($attempts < $maxAttempts) {
             $attempts++;
             try {
-                $response = Http::timeout(self::REQUEST_TIMEOUT)->post($url, $payload);
+                $response = Http::timeout($this->requestTimeout($where))->post($url, $payload);
                 $status = $response->status();
                 if ($response->successful()) {
                     return ['status' => $status, 'payload' => $response->json()];
@@ -293,7 +342,7 @@ class GeminiDocumentParserService
                 // E5 — a retry that cannot finish inside the budget is worse than
                 // no retry: it burns the window a fallback rung could have used and
                 // risks the uncatchable PHP fatal.
-                if (!$this->canAffordAttempt()) {
+                if (!$this->canAffordAttempt($where)) {
                     break;
                 }
                 $this->backoff($response);
@@ -1905,17 +1954,48 @@ class GeminiDocumentParserService
         string $where
     ): string {
         $error = $primaryError;
+        // E6 — is the primary gone for the DAY, or merely busy? The distinction
+        // decides how hard to try the rung behind it, and the code already knows
+        // how to tell them apart.
+        $primaryIsSpent = $this->primaryIsSpentForToday($primaryError);
+        $promotionAvailable = $primaryIsSpent;
 
         foreach ($fallbackModels as $rung) {
             if (!$this->isFallbackEligible($error->status)) {
                 break;
+            }
+            // E6 — PROMOTE THE FIRST RUNG when the primary will not be back today
+            // (per-day quota, or a dead model id). It is no longer a detour on the
+            // way back to the primary; it IS the model this install is using for
+            // the rest of the day, so it earns the primary's attempt budget.
+            // Only the FIRST rung: the ones behind it are still detours.
+            // Affordable exactly when it applies — a per-day 429 fails fast with no
+            // retry, so most of the time budget is still unspent — and every
+            // attempt still passes canAffordAttempt(), so promotion can never
+            // reintroduce the overrun E5 was built to stop.
+            // A 503 promotes nothing: the primary may recover, and the measured
+            // record says retrying a model that just refused is the worst use of
+            // the budget (0 successes in 8 attempts across four live runs).
+            $attempts = 1;
+            if ($promotionAvailable) {
+                $attempts = 2;
+                $promotionAvailable = false;
+                try {
+                    Log::info('E6 parser rung promoted — primary is out for the day', [
+                        'where' => $where,
+                        'from' => $primaryModel,
+                        'to' => $rung,
+                        'reason' => $primaryError->status === 404 ? 'dead-model' : 'per-day-quota',
+                    ]);
+                } catch (\Throwable $ignored) {
+                }
             }
             // E5 — stop the walk while there is still time to ANSWER. Starting a
             // rung that cannot finish inside the budget is how the request reached
             // PHP's uncatchable fatal and the user was told the file was
             // unreadable. Said out loud so a short ladder is diagnosable rather
             // than looking like a chain that was never configured.
-            if (!$this->canAffordAttempt()) {
+            if (!$this->canAffordAttempt($where . '-fallback')) {
                 try {
                     Log::info('E5 parser ladder stopped — time budget spent', [
                         'where' => $where,
@@ -1932,7 +2012,7 @@ class GeminiDocumentParserService
             }
             $rungUrl = "https://generativelanguage.googleapis.com/v1beta/models/{$rung}:generateContent?key={$apiKey}";
             try {
-                $rungResult = $this->postGemini($rungUrl, $payload, $rung, $where . '-fallback', 1);
+                $rungResult = $this->postGemini($rungUrl, $payload, $rung, $where . '-fallback', $attempts);
             } catch (GeminiTransportException $rungError) {
                 $error = new GeminiTransportException(
                     $primaryError->getMessage(),
@@ -1952,6 +2032,28 @@ class GeminiDocumentParserService
         }
 
         throw $error;
+    }
+
+    /**
+     * E6: will the primary model be unavailable for the rest of the day?
+     *
+     * TRUE for a per-day quota (the meter refills at midnight Pacific at best)
+     * and for a 404 (a retired or misspelled model id never becomes valid on its
+     * own — the E3 saga with the pinned gemini-2.5-flash is the precedent).
+     * FALSE for 503/502/504 and connection throws, which are capacity problems
+     * that clear on their own.
+     *
+     * Called by: climbFallbackLadder(), to decide whether to promote a rung.
+     */
+    private function primaryIsSpentForToday(GeminiTransportException $error): bool
+    {
+        if ($error->status === 404) {
+            return true;
+        }
+
+        return $error->status === 429
+            && $error->quotaId !== null
+            && $this->isPerDayQuota($error->quotaId);
     }
 
     /**

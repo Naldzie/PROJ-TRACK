@@ -1831,4 +1831,161 @@ class GeminiDocumentParserServiceTest extends TestCase
         $this->assertNull($service->lastFallbackModel, 'a stale rescue must not describe a clean answer');
     }
 
+    /* ─── E6 per-path timeout + rung promotion (2026-09-13) ──────────────── */
+
+    // The two senders carry different payloads, so one timeout would be wrong for
+    // one of them: image slices are small (real answers measured at 8-10s), while
+    // the Excel path uploads the workbook itself at up to 15MB and its ceiling is
+    // mostly transfer time. A FALLBACK rung inherits its path's value — a rung on
+    // the Excel path is still uploading that workbook.
+    // Called by: requestTimeout() from postGemini() and canAffordAttempt().
+    public function test_each_path_asks_for_its_own_request_timeout(): void
+    {
+        config([
+            'services.gemini.parser_image_timeout' => 15,
+            'services.gemini.parser_text_timeout' => 30,
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $timeout = new \ReflectionMethod($service, 'requestTimeout');
+        $timeout->setAccessible(true);
+
+        $this->assertSame(15, $timeout->invoke($service, 'images'));
+        $this->assertSame(15, $timeout->invoke($service, 'images-fallback'));
+        $this->assertSame(30, $timeout->invoke($service, 'text'));
+        $this->assertSame(30, $timeout->invoke($service, 'text-fallback'));
+    }
+
+    // A typo in the env must not disable the guard by making the slot absurd.
+    // Called by: requestTimeout() clamping.
+    public function test_request_timeout_is_configurable_and_clamped(): void
+    {
+        $service = new GeminiDocumentParserService();
+        $reflection = new \ReflectionMethod($service, 'requestTimeout');
+        $reflection->setAccessible(true);
+
+        config(['services.gemini.parser_image_timeout' => 12]);
+        $this->assertSame(12, $reflection->invoke($service, 'images'), 'a sane value is honoured');
+
+        config(['services.gemini.parser_image_timeout' => 0]);
+        $this->assertSame(5, $reflection->invoke($service, 'images'), 'clamped up to the floor');
+
+        config(['services.gemini.parser_image_timeout' => 99999]);
+        $this->assertSame(120, $reflection->invoke($service, 'images'), 'clamped down to the ceiling');
+
+        config(['services.gemini.parser_image_timeout' => 'soon']);
+        $this->assertSame(15, $reflection->invoke($service, 'images'), 'nonsense falls back to the default');
+    }
+
+    // The budget reserves a slot of exactly the value the attempt will use. With a
+    // window between the two, an image rung is affordable and a text rung is not —
+    // which is the whole reason the timeout and the reservation must move together.
+    // Called by: canAffordAttempt() via requestTimeout().
+    public function test_the_budget_slot_follows_the_per_path_timeout(): void
+    {
+        config([
+            'services.gemini.parser_image_timeout' => 15,
+            'services.gemini.parser_text_timeout' => 30,
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $deadline = new \ReflectionProperty($service, 'deadline');
+        $deadline->setAccessible(true);
+        // ~20 seconds left: room for a 15s attempt, not for a 30s one.
+        $deadline->setValue($service, microtime(true) + 20);
+
+        $afford = new \ReflectionMethod($service, 'canAffordAttempt');
+        $afford->setAccessible(true);
+
+        $this->assertTrue($afford->invoke($service, 'images'), '20s left fits a 15s image attempt');
+        $this->assertFalse($afford->invoke($service, 'text'), '20s left cannot fit a 30s text attempt');
+    }
+
+    // E6 promotion: a per-day quota means the primary is gone until midnight, so
+    // the first rung is not a detour — it is the model in use for the rest of the
+    // day, and it earns the primary's attempt budget. The primary itself still
+    // gets ONE attempt (per-day fails fast, no retry), so the count is 1 + 2.
+    // Called by: primaryIsSpentForToday() inside climbFallbackLadder().
+    public function test_a_per_day_quota_promotes_the_first_rung(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+
+        $perDay = json_encode(['error' => ['code' => 429, 'status' => 'RESOURCE_EXHAUSTED', 'details' => [[
+            '@type' => 'type.googleapis.com/google.rpc.QuotaFailure',
+            'violations' => [['quotaId' => 'GenerateRequestsPerDayPerProjectPerModel-FreeTier']],
+        ]]]]);
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push($perDay, 429, ['Retry-After' => 0])          // primary, fails fast
+            ->push('overloaded', 503, ['Retry-After' => 0])     // promoted rung, try 1
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $out = $service->parseSCurvePdfSlice($this->sliceImages(1));
+
+        $this->assertNotNull($out);
+        $this->assertSame('older-flash', $service->lastFallbackModel, 'the promoted rung answered on its SECOND try');
+
+        $sent = Http::recorded();
+        $this->assertCount(3, $sent, 'primary once (per-day fails fast) + the promoted rung twice');
+        $this->assertStringContainsString('flash-model', $sent[0][0]->url());
+        $this->assertStringContainsString('older-flash', $sent[1][0]->url());
+        $this->assertStringContainsString('older-flash', $sent[2][0]->url());
+    }
+
+    // Only the FIRST rung is promoted — the ones behind it are still detours, and
+    // promoting every rung is the blanket-retry idea the measured record rates
+    // worst (same-model retries went 0 for 8 across four live runs).
+    // Called by: the one-shot $promotionAvailable flag.
+    public function test_only_the_first_rung_is_promoted(): void
+    {
+        $this->configureLadder('older-flash, oldest-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('gone', 404)                                  // primary: dead id, also permanent
+            ->push('overloaded', 503, ['Retry-After' => 0])      // rung 1, try 1
+            ->push('overloaded', 503, ['Retry-After' => 0])      // rung 1, try 2 (promoted)
+            ->push(['candidates' => [['content' => ['parts' => [['text' => $this->pdfLadderReply()]]]]]], 200),
+        ]);
+
+        $service = new GeminiDocumentParserService();
+        $this->assertNotNull($service->parseSCurvePdfSlice($this->sliceImages(1)));
+        $this->assertSame('oldest-flash', $service->lastFallbackModel);
+
+        $sent = Http::recorded();
+        // 1 primary + 2 promoted + 1 for the second rung: it gets no second try.
+        $this->assertCount(4, $sent);
+        $this->assertStringContainsString('oldest-flash', $sent[3][0]->url());
+    }
+
+    // A 503 promotes NOTHING. The primary may recover, so the ladder is a
+    // temporary detour and one attempt per rung stands — which is also what the
+    // live evidence supports, since retrying a model that just refused has never
+    // once worked here.
+    // Called by: primaryIsSpentForToday() returning false for capacity failures.
+    public function test_an_overload_does_not_promote_any_rung(): void
+    {
+        $this->configureLadder('older-flash');
+
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('overloaded', 503, ['Retry-After' => 0])   // primary try 1
+            ->push('overloaded', 503, ['Retry-After' => 0])   // primary try 2
+            ->push('overloaded', 503, ['Retry-After' => 0]),  // the single rung try
+        ]);
+
+        $service = new GeminiDocumentParserService();
+
+        try {
+            $service->parseSCurvePdfSlice($this->sliceImages(1));
+            $this->fail('An exhausted ladder must throw.');
+        } catch (GeminiTransportException $e) {
+            $this->assertStringContainsString('busy (overloaded)', $e->getMessage());
+        }
+
+        // 2 primary + 1 rung. A promoted rung would make it 4.
+        Http::assertSentCount(3);
+        $this->assertNull($service->lastFallbackModel);
+    }
+
 }

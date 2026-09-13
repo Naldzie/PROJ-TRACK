@@ -11,8 +11,11 @@
 #         M7 5→3) — the roof's last known offline defect is closed
 #         E4 + E4b PARSER FALLBACK LADDER ✅ BROWSER-PROVEN 2026-09-13 by the user's
 #         own laravel.log (3.7 answered after latest 503d twice) — committed 015f8fe/fe3d8a6
-#         E5 TIME BUDGET ✅ BUILT (uncommitted) — the same log showed a 74s ladder walk
-#         killed by PHP's uncatchable 60s fatal, which hid the real error; see §9
+#         E5 TIME BUDGET ✅ BROWSER-PROVEN 2026-09-13 (committed 3a77917) — 39s and an
+#         honest stop where the previous run died at 74s on PHP's uncatchable fatal
+#         E6 PER-PATH TIMEOUT + RUNG PROMOTION ✅ BUILT (uncommitted) — 15s images /
+#         30s text (Excel uploads a 15MB workbook), and the first rung inherits the
+#         primary's attempts when the primary is out for the DAY; see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -96,9 +99,14 @@
   COMMITTED 2026-09-13 (pushed): 7c6044b = P5 cross-check + P6 chart-axis fix +
   the AGENTS.md handoff rewrite + proof-file Script 6. 015f8fe = E4 parser ladder.
   COMMITTED: 015f8fe = E4 ladder · fe3d8a6 = E4b (all parser paths).
-  UNCOMMITTED IN THE TREE RIGHT NOW: E5 time budget (config + .env.example,
-  REQUEST_TIMEOUT const, startTimeBudget/canAffordAttempt, checks in postGemini and
-  climbFallbackLadder, phpunit.xml env pins, +2 tests).
+  COMMITTED: 015f8fe = E4 ladder · fe3d8a6 = E4b (all parser paths) · 3a77917 = E5
+  time budget. UNCOMMITTED: E6 (per-path requestTimeout + promotion, config +
+  .env.example + phpunit pins, +6 tests).
+
+  CONFIG ACTION RECOMMENDED, NO CODE: set AI_PARSER_MODEL=gemini-3.7-flash and
+  demote/drop the gemini-flash-latest ALIAS. Measured over four live runs, latest
+  answered 0 of 8 attempts while 3.7 answered 2 of 4 — an alias carries every
+  caller who did not pin a version, so it saturates first.
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -569,6 +577,119 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — E5 ✅ BROWSER-PROVEN, and E6 BUILT on what its log measured
+  (per-path request timeout + rung promotion; code, uncommitted).
+
+    E5 PROVEN BY THE USER'S LOG. The same shape that died at 74s the run before:
+      15:12:44  latest  503
+      15:12:49  latest  503        (its retry)
+      15:12:53  3.7     503
+      15:13:23  3.6     throwable  (30s timeout)
+      15:13:23  E5 parser ladder stopped — time budget spent, skipped gemini-3.5-flash
+    39 seconds, NO fatal, stopped deliberately and said which rung it skipped. The
+    15:14 run then completed end to end: 3.7 answered in 8s and the import notes
+    carried the E4b provenance line naming it. E4 / E4b / E5 all browser-proven.
+
+    WHAT THE SAME LOG MEASURED, which is why E6 exists
+      primary + its retry   ~5s
+      3.7                   ~4s
+      3.6 (hung)             30s   <- 77% of the walk, on a model that never answered
+    One hung connection ate the budget three other models could have used. Across
+    four live runs the real answers arrived in 8s and 10s and refusals in 3-9s;
+    only a HANG has ever reached 30. And because canAffordAttempt() reserves a slot
+    of exactly the timeout, an oversized timeout shrinks the ladder twice over —
+    once by what it spends, once by what it reserves.
+
+    THE QUESTION THAT PROMPTED IT, AND WHY THE ANSWER WAS "NOT RETRIES"
+    Asked: the primary gets 2 attempts and each rung gets 1 — should rungs get 2?
+    Measured over all four runs:
+      primary's retry   0 of 4 succeeded   (0 of 8 attempts, counting both tries)
+      first rung (3.7)  2 of 4 succeeded
+    Retrying the SAME model asks a backend that just refused, seconds later, under
+    the same load; a different model has independent quota and load. For identical
+    budget the rung is the better bet — and blanket rung retries would REDUCE reach,
+    since the budget is already the binding constraint. Decisions (user): lower the
+    timeout instead, and KEEP the primary's own retry (all four samples come from
+    sustained outages, which is exactly when no retry helps — that is not evidence
+    it is useless during a blip).
+
+    "IS THE 503 REALLY A RATE LIMIT GOOGLE IS NOT REPORTING?" — NO, and the log
+    settles it: every failure line carries "quota":null. extractQuotaId() parses the
+    body for a QuotaFailure block and a genuine quota refusal populates it (seen
+    live 2026-09-11 as GenerateRequestsPerDayPerProjectPerModel-FreeTier). 429 means
+    YOUR allowance is spent; 503 means the model's serving capacity is saturated for
+    everyone. Different questions, both answered honestly.
+      BUT THE HUNCH ABOUT gemini-flash-latest HOLDS, for another reason: it is an
+      ALIAS, so every caller who does not pin a version lands on it and it saturates
+      first. Across the four runs: latest 0 of 8 attempts, gemini-3.7-flash 2 of 4.
+      RECOMMENDED CONFIG ACTION (no code): set AI_PARSER_MODEL=gemini-3.7-flash and
+      demote or drop latest. Three of the four runs would then have succeeded on the
+      first call. E3 already banked the alias as suspect #1 for odd behaviour.
+
+    WHAT SHIPPED — (1) PER-PATH REQUEST TIMEOUT
+      DEFAULT_IMAGE_TIMEOUT 15 / DEFAULT_TEXT_TIMEOUT 30, both configurable
+      (AI_PARSER_IMAGE_TIMEOUT / AI_PARSER_TEXT_TIMEOUT), clamped 5..120 so a typo
+      cannot disable the guard. requestTimeout($where) selects on the tag the
+      senders already pass ('images'/'text', plus '-fallback' for a rung), so no new
+      per-call state was needed. Used by BOTH Http::timeout() and canAffordAttempt()
+      — they must move together or the reservation stops matching the cost.
+      NOT ONE NUMBER, and this is the part worth remembering: the Excel path uploads
+      the NATIVE WORKBOOK inline at up to 15MB
+      (SCurveImportController::FILE_INLINE_MAX_BYTES) and Guzzle's timeout covers
+      the UPLOAD, so a large .xlsx on a slow connection can spend 15s on transfer
+      alone. All the 8-10s evidence came from PDF image slices. Applying it to Excel
+      would have risked breaking imports that work today, so text keeps 30s.
+      Effect on the 15:12 run: ~5 + 4 + 15 = 24s, leaving room to actually try 3.5.
+
+    WHAT SHIPPED — (2) RUNG PROMOTION
+      Asked: once the primary is rate-limited, does the next model get the primary's
+      2 attempts? It did not — postGemini(..., 1) was hardcoded for every rung. And
+      on a PER-DAY 429 the primary does not get its two either: postGemini breaks at
+      the isPerDayQuota check, because a day-long quota will not heal in seconds.
+      The code was not distinguishing two very different situations:
+        503 / 502 / 504 / throw  -> the primary may recover; the ladder is a
+                                    temporary detour, one attempt per rung is right
+        429 per-day, or 404      -> the primary is GONE FOR THE DAY. The first
+                                    working rung is not a detour; it is the model
+                                    this install is using until midnight.
+      primaryIsSpentForToday() now makes that call, and the FIRST rung under it gets
+      the primary's attempt budget (2). Later rungs stay at 1 — promoting all of
+      them is the blanket-retry idea the measurements rate worst. Every attempt
+      still passes canAffordAttempt(), so promotion cannot reintroduce the overrun
+      E5 exists to stop, and it is affordable exactly when it applies: a per-day 429
+      fails fast in ~3-5s, leaving most of the budget. Logged as "E6 parser rung
+      promoted — primary is out for the day" with the reason.
+
+    CAUGHT WHILE WRITING THE TESTS (mine): the first timeout fixture carried a
+    leftover Http::fake closure and a $seen array it never asserted on — scaffolding
+    from an approach I abandoned mid-write. Removed rather than left in; a test that
+    sets up evidence it does not examine reads like a missing assertion.
+
+    TESTS +6: each path asks for its own timeout and a rung inherits its path's;
+    the value is configurable and clamped at both ends, with nonsense falling back
+    to the default; the budget slot follows the same per-path value (a ~20s window
+    admits an image attempt and refuses a text one); a per-day quota promotes the
+    first rung (1 primary + 2 promoted); ONLY the first rung is promoted; and a 503
+    promotes nothing.
+    Untouched and still green: the E5 budget pair and
+    test_per_day_quota_fails_fast_with_tomorrow_message.
+
+    phpunit.xml gains AI_PARSER_IMAGE_TIMEOUT / AI_PARSER_TEXT_TIMEOUT, per the
+    lesson banked one commit ago — every env-backed knob is pinned the day it is
+    added, or somebody's local .env silently reshapes the suite.
+
+    SUITES: PHP 1177 passed (+6) / the same 7 pre-existing failures BY NAME.
+    JS 152 tests, 150 passed + the 2 intended blinding fails — unchanged; no JS
+    touched, PDF core untouched since P6.
+
+    NOT BROWSER-PROVEN. Two live checks, neither forceable on demand:
+      - during the next 503 spell the walk should REACH gemini-3.5-flash — expect
+        "E4 parser fallback ... to=gemini-3.5-flash" where 15:12 logged "E5 parser
+        ladder stopped", and a hung rung costing ~15s rather than 30;
+      - import a real Excel workbook through AI assist and confirm NO new timeout:
+        that path deliberately keeps 30s, so this check exists to prove the split
+        did not touch it.
 
   2026-09-13 — E4/E4b LADDER ✅ BROWSER-PROVEN BY THE USER'S OWN LOG, and the same
   log exposed a 60-SECOND FATAL. E5 (time budget) ✅ BUILT in response (uncommitted).

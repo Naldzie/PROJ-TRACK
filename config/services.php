@@ -70,6 +70,19 @@ return [
         // The effective budget is capped against PHP's own limit at runtime, so
         // this number only ever makes the window SMALLER, never unsafe.
         'parser_time_budget' => env('AI_PARSER_TIME_BUDGET', 50),
+
+        // E6 (2026-09-13): seconds ONE attempt may take, per path. Not one number,
+        // because the two senders carry different payloads: the image path sends a
+        // few small PNG page slices (measured live — real answers in 8-10s, and
+        // only a HUNG connection ever reached 30s, which was starving the fallback
+        // rungs behind it), while the Excel path uploads the NATIVE WORKBOOK inline
+        // at up to 15MB and its ceiling is dominated by transfer time. Cutting the
+        // Excel value on evidence gathered from PDFs would risk breaking imports
+        // that work today, so it keeps the old 30s.
+        // These also size the slot the time budget reserves before starting an
+        // attempt, so the two always move together.
+        'parser_image_timeout' => env('AI_PARSER_IMAGE_TIMEOUT', 15),
+        'parser_text_timeout' => env('AI_PARSER_TEXT_TIMEOUT', 30),
     ],
 
 ];
