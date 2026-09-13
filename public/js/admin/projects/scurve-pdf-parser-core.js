@@ -462,6 +462,112 @@ export function relaxedMonthLabel(str) {
 
 /* ─── Row assembly ────────────────────────────────────────────────────────── */
 
+/**
+ * P4 — collect every page's summary candidates into one set.
+ *
+ * Single-page reads behave exactly as before. For a column-split file, each page
+ * numbered its months through its OWN header, so the indices are absolute and can
+ * be unioned directly — this is the one place a multi-page merge needs no
+ * positional guessing, which is why the old "single page only" rule was stricter
+ * than it had to be.
+ *
+ * Printed candidates (found by shape) are kept apart from labelled ones so a file
+ * carrying both does not interleave two different authors' rows. A month claimed
+ * twice with conflicting values refuses the whole set: a disagreeing reference is
+ * worse than none.
+ *
+ * Called by: parseSCurvePdf().
+ */
+function mergeSummaryCandidates(pageResults) {
+    if (pageResults.length === 1) return pageResults[0].summaryCandidates || [];
+
+    const groups = { printed: {}, labelled: {} };
+    let conflict = false;
+    for (const pr of pageResults) {
+        for (const cand of (pr.summaryCandidates || [])) {
+            const bucket = groups[cand.printed ? 'printed' : 'labelled'];
+            for (const k of Object.keys(cand.values || {})) {
+                if (bucket[k] !== undefined && bucket[k] !== cand.values[k]) { conflict = true; }
+                bucket[k] = cand.values[k];
+            }
+        }
+    }
+    if (conflict) return [];
+
+    const out = [];
+    for (const kind of ['printed', 'labelled']) {
+        if (Object.keys(groups[kind]).length > 0) {
+            out.push({ values: groups[kind], printed: kind === 'printed' });
+        }
+    }
+    return out;
+}
+
+/**
+ * P4 — is this UNLABELLED row the author's printed cumulative curve?
+ *
+ * The roof family exposed why a label cannot be the handle. Its cumulative row
+ * prints "Commulative" 4.6pt below its own values (Y_TOLERANCE is 2, so they are
+ * different lines) and the only token left on the values' line — a bare "%" —
+ * falls between the description limit and the first month band, so it reaches
+ * neither. The row therefore arrives here nameless and, before this, was summed
+ * as if it were an activity: that is where the roof's 403%-of-contract total
+ * came from.
+ *
+ * So the row is identified by SHAPE, the same way findCumulativeRow does it for
+ * the weekly path: percent-written cells, strictly ascending, topping out near
+ * completion. Each guard earns its place on this file —
+ *   - percent-shaped  rejects the peso TOTAL and Cash Flow rows, which ascend too
+ *   - strictly ascending rejects the per-month row (6.32/17.99/17.99/… repeats)
+ *   - max >= 50       rejects that same row a second way, and any small weight run
+ *
+ * A continuation page prints the curve's tail with no neighbours to compare
+ * against (the roof's page 2 carries a lone "100.00%"), so ascension cannot be
+ * tested there. A single value is trusted ONLY when it sits at the SAME HEIGHT as
+ * a cumulative row already found on an earlier page — column-split prints share
+ * row Y positions exactly, which is the property P3's matchRowsByY is built on.
+ * Without that tie the roof's page 2 offered three rival tails (100%, 50%, 100%)
+ * and the conflicting set had to be thrown away. One number on its own is never
+ * evidence of a curve.
+ *
+ * Called by: buildRows(). Returns {monthIndex: percent} or null.
+ */
+function cumulativeRowValues(monthVals, monthPct, monthCols, y, priorCumulativeYs) {
+    const present = [];
+    for (const mc of monthCols) {
+        const v = monthVals[mc.index];
+        if (v === undefined) continue;
+        // One peso cell is enough to prove this is not a printed percent curve.
+        if (!monthPct[mc.index]) return null;
+        present.push({ index: mc.index, value: v });
+    }
+    if (present.length === 0) return null;
+    if (Math.max(...present.map((p) => p.value)) < 50) return null;
+
+    const ys = priorCumulativeYs || [];
+    if (ys.length > 0) {
+        // Once the file has shown WHERE its cumulative row sits, every later page
+        // must agree: column-split prints share row Y positions exactly, the
+        // property P3's matchRowsByY is built on. Ascension cannot be re-tested on
+        // an overflow page (it may carry one cell, and its values continue a run
+        // that started elsewhere), so height is the only honest tie. Without it the
+        // roof's page 2 offered three rival tails — 100%, then 0%/50%, then the
+        // real 99.14%/100% — and the contradictory set had to be discarded whole.
+        if (!Number.isFinite(y)) return null;
+        if (!ys.some((py) => Math.abs(py - y) <= 2)) return null;
+    } else {
+        // The first cumulative row in the file has to earn it on shape alone.
+        if (present.length < 2) return null;
+        for (let i = 1; i < present.length; i++) {
+            if (present[i].value <= present[i - 1].value) return null;
+        }
+    }
+
+    const values = {};
+    present.forEach((p) => { values[p.index] = p.value; });
+    return values;
+}
+
 function buildRows(tokenLines, header, startIndex, ctx) {
     const rows = [];
     const summaryCandidates = [];
@@ -474,6 +580,10 @@ function buildRows(tokenLines, header, startIndex, ctx) {
     const descLimit = header.descRight != null ? Math.min(header.descRight, firstMonthX) : firstMonthX;
     const context = ctx || {};
     const priorSummary = !!context.priorSummary;
+    // P4 — heights of cumulative rows found on EARLIER pages, so a lone tail
+    // value on a continuation page can be tied to the row it continues.
+    const priorCumulativeYs = context.priorCumulativeYs || [];
+    const cumulativeYs = [];
 
     for (let i = startIndex; i < tokenLines.length; i++) {
         const tokens = tokenLines[i].tokens;
@@ -491,6 +601,10 @@ function buildRows(tokenLines, header, startIndex, ctx) {
         // never width — center from xEnd, not t.width (which is undefined here).
         const monthVals = {};
         const monthPresence = {};
+        // P4 — which cells were written as percentages. The author's printed
+        // cumulative row is always percent-shaped, so this is what separates it
+        // from a peso row carrying the same ascending shape.
+        const monthPct = {};
         let hasMonthValue = false;
         for (const t of tokens) {
             const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
@@ -517,6 +631,7 @@ function buildRows(tokenLines, header, startIndex, ctx) {
                 // activity weight, parsed as a number (Decision 10).
                 monthVals[mc.index] = (monthVals[mc.index] || 0) + (parseFloat(s.replace('%', '').replace(/,/g, '')) || 0);
                 monthPresence[mc.index] = true;
+                monthPct[mc.index] = true;
                 hasMonthValue = true;
             }
         }
@@ -536,6 +651,22 @@ function buildRows(tokenLines, header, startIndex, ctx) {
             }
             if (any) summaryCandidates.push({ values: vals });
             continue;
+        }
+        // P4 — the author's printed cumulative row, found by shape because this
+        // file family gives it no reachable label (see cumulativeRowValues).
+        // Captured as a reference candidate AND excluded from the activity rows:
+        // leaving it in is what inflated the roof's totals to 403% of contract.
+        // Labelled summaries never reach here — isSummaryLabel above claims them.
+        if (descText === '') {
+            const cumVals = cumulativeRowValues(monthVals, monthPct, header.monthCols,
+                tokenLines[i].y, priorCumulativeYs.concat(cumulativeYs));
+            if (cumVals) {
+                sawSummary = true;
+                cumulativeYs.push(tokenLines[i].y);
+                summaryCandidates.push({ values: cumVals, y: tokenLines[i].y, printed: true });
+                if (context.debug) context.debug.push({ t: 'printedCumulative', y: tokenLines[i].y, values: cumVals });
+                continue;
+            }
         }
         // P2-c — continuation-page summary exclusion: a desc-less row on a page
         // whose prior pages showed an EXPLICIT summary, carrying small strictly
@@ -585,10 +716,11 @@ function buildRows(tokenLines, header, startIndex, ctx) {
             // height is page furniture (a reprinted cumulative/total line), not an
             // activity — mergePages drops those instead of inventing a row.
             named: descText !== '',
+            pct: monthPct,
         });
     }
 
-    return { rows, totalRowSum, summaryCandidates, sawSummary };
+    return { rows, totalRowSum, summaryCandidates, sawSummary, cumulativeYs };
 }
 
 /* ─── Page merging ────────────────────────────────────────────────────────── */
@@ -685,6 +817,16 @@ function mergePages(pageResults) {
                 for (const key of Object.keys(srcPresence)) {
                     target.presence[Number(key)] = srcPresence[key];
                 }
+                // P4 — carry the percent-shape flags across the page seam too. An
+                // overflow page has no description column, so its rows are nameless
+                // and only survive by merging into their page-1 twin; without this
+                // the merged activity looked as though it had no cells in the
+                // continued months, and the roof's last two months listed nothing.
+                const srcPct = src.pct || {};
+                if (!target.pct) target.pct = {};
+                for (const key of Object.keys(srcPct)) {
+                    target.pct[Number(key)] = srcPct[key];
+                }
             };
 
             if (byY) {
@@ -738,6 +880,56 @@ function mergePages(pageResults) {
 
 /* ─── Cumulative months ───────────────────────────────────────────────────── */
 
+/**
+ * P4 — turn a summary candidate into a curve, or refuse.
+ *
+ * Mirrors the Excel adoption at SCurveImportService.php:1606-1650. A candidate
+ * only becomes a baseline if it reads like a cumulative curve on its own terms:
+ * at least two months, non-decreasing, and finishing near completion. The
+ * PRINTED candidate (found by row shape) is preferred over a labelled one,
+ * because the labelled bucket is whatever isSummaryLabel happened to claim —
+ * that predicate matches a bare "%" and the word "cost", so it is the looser of
+ * the two.
+ *
+ * Percent-shaped blocks are taken as written; peso blocks scale through the
+ * contract, the same rule the reference comparison uses.
+ *
+ * Called by: buildMonthsFromRows(). Returns {values, jumbled} or null.
+ */
+function adoptPrintedCurve(candidates, monthIndices, contract) {
+    const ordered = (candidates || []).slice().sort((a, b) => (b.printed ? 1 : 0) - (a.printed ? 1 : 0));
+
+    for (const cand of ordered) {
+        const keys = Object.keys(cand.values || {}).map(Number)
+            .filter((k) => monthIndices.indexOf(k) !== -1)
+            .sort((a, b) => a - b);
+        if (keys.length < 2) continue;
+
+        const raw = keys.map((k) => cand.values[k]);
+        const maxVal = Math.max(...raw);
+        const asPercent = maxVal <= 100;
+        const values = {};
+        let jumbled = false;
+        let prev = -1;
+        for (const k of keys) {
+            const v = asPercent
+                ? cand.values[k]
+                : (contract > 0 ? (cand.values[k] / contract) * 100 : 0);
+            if (v < prev) jumbled = true;
+            prev = v;
+            values[k] = v;
+        }
+
+        // A curve that never approaches completion is not the author's summary —
+        // more likely a per-month block or a stray percent column.
+        if (Math.max(...Object.values(values)) < 50) continue;
+
+        return { values, jumbled };
+    }
+
+    return null;
+}
+
 export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
     const opts = extra || {};
     const warnings = [];
@@ -780,8 +972,10 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
         if (totals[idx] > 0) lastNonZero = idx;
     }
 
+    let rawRunning = 0;
     for (const idx of monthIndices) {
         const pct = (totals[idx] / contract) * 100;
+        rawRunning += pct;
         running += pct;
         let cum = running;
         if (cum < prev) {
@@ -809,6 +1003,108 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
         running = 100;
     }
 
+    // ─── P4: adopt the author's printed curve when the activity math cannot be
+    // trusted ────────────────────────────────────────────────────────────────
+    //
+    // Rule 1 (activity math wins) and rule 2 (summary = reference + warn) are
+    // unchanged below. This is rule 3, the PDF twin of
+    // SCurveImportService.php:1606, and it fires on two conditions only:
+    //
+    //   (a) there is no activity math at all (lastNonZero === 0) — Excel parity;
+    //   (b) the activity values do not share the contract's denominator, proved
+    //       by the RAW cumulative overshooting 100 by a wide margin.
+    //
+    // (b) exists because of the roof family, whose printed cells are each
+    // activity's own TIME FRACTION over its own duration (=30/187, =23/115), not
+    // a share of the contract. The workbook multiplies them by cost in hidden
+    // columns AJ:AS; the PDF export keeps only the visible grid, so those columns
+    // never reach the page. Summing what is left totals 403% of contract. A
+    // well-formed weighted table lands on exactly 100, so 100 here is the
+    // definitional endpoint rather than a tuned threshold.
+    //
+    // The test needs an INDEPENDENT contract figure. When no TOTAL row was found,
+    // `contract` is the sum of the month totals, making the ratio 1.0 by
+    // construction and the overshoot undetectable — so (b) is gated on
+    // totalContract and only (a) applies to such files.
+    const candidates = (opts && opts.summaryCandidates) || [];
+    const hasIndependentContract = !!(totalContract && totalContract > 0);
+    const denominatorMismatch = hasIndependentContract && rawRunning > 105;
+    const activityMathUnusable = lastNonZero === 0 || denominatorMismatch;
+
+    let curveSource = 'activities';
+    if (activityMathUnusable) {
+        const adopted = adoptPrintedCurve(candidates, monthIndices, contract);
+        if (!adopted) {
+            // Refuse rather than hand back a curve known to be wrong. The caller
+            // treats this exactly like an unrecognised layout: the "upload the
+            // .xlsx" notice plus the AI assist offer.
+            return null;
+        }
+        curveSource = 'summary';
+        // P4 — the activity LISTS have to be rebuilt too. They were assembled from
+        // the same cells this branch has just declared unusable, so they carried
+        // every row that happened to hold a number in a band: "Project Duration"
+        // (a days row), the Cash Flow pesos, and the nameless leftovers that show
+        // up as "Activity 11". Keep only rows that are NAMED and whose cell in
+        // this month is written as a percentage — on a file of per-activity
+        // fractions that is exactly the set of activities scheduled that month,
+        // and it is the same set the AI reports.
+        for (const m of months) {
+            const names = [];
+            for (const row of rows) {
+                if (!row.named) continue;
+                if (!row.pct || !row.pct[m.month_index]) continue;
+                if (!(row.months[m.month_index] > 0)) continue;
+                if (names.indexOf(row.description) === -1) names.push(row.description);
+            }
+            const joined = names.join(', ');
+            m.description = joined.length > 200 ? joined.slice(0, 200) + '…' : joined;
+            m.activities = names.map((name) => ({ activity_name: name, description: null }));
+        }
+        let run = 0;
+        for (const m of months) {
+            let v = adopted.values[m.month_index];
+            if (v === undefined) v = run;
+            if (v < run) v = run;
+            v = Math.min(v, 100);
+            run = v;
+            m.planned_progress_percent = Math.round(v * 100) / 100;
+        }
+        const lastM = months[months.length - 1];
+        if (lastM) lastM.planned_progress_percent = 100;
+
+        warnings.push(denominatorMismatch
+            ? 'Heads-up: this file’s monthly cells are percentages of each activity’s own'
+              + ' duration, not shares of the contract, so they cannot be added up. The baseline'
+              + ' below is built from the file’s own cumulative row instead. Please verify'
+              + ' carefully before locking.'
+            : 'Heads-up: no usable activity values were found, so the baseline below is built'
+              + ' from the file’s own cumulative row. Please verify carefully before locking.');
+        if (adopted.jumbled) {
+            warnings.push('Heads-up: the summary values were not in cumulative order — review carefully.');
+        }
+        // Comparing the adopted curve against the activity math it replaced would
+        // be comparing it against itself, so the reference is reported without gaps.
+        const ref = Object.keys(adopted.values).map(Number).sort((a, b) => a - b).map((m) => ({
+            month: m,
+            summary_percent: Math.round(adopted.values[m] * 100) / 100,
+            activity_percent: null,
+            gap: null,
+        }));
+        return {
+            months,
+            meta: {
+                contractAmount: Math.round(contract * 100) / 100,
+                weightSum: 0,
+                monthCount: monthIndices.length,
+                activityCount: rows.length,
+                warnings,
+                summaryReference: ref,
+                curveSource,
+            },
+        };
+    }
+
     // P2-e — author-block reference + warn (mirrors the Excel 2b redesign): the
     // plan curve above NEVER moves while activity math exists. Each summary value
     // sitting in a month span is compared against our cumulative at that month;
@@ -816,7 +1112,6 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
     // compare directly; peso blocks scale through the contract. Weekly path has no
     // activity math to compare against and never reaches this branch.
     const summaryReference = [];
-    const candidates = (opts && opts.summaryCandidates) || [];
     if (lastNonZero > 0 && candidates.length > 0) {
         const byMonth = {};
         months.forEach((m) => { byMonth[m.month_index] = m.planned_progress_percent; });
@@ -849,6 +1144,7 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
             activityCount: rows.length,
             warnings,
             summaryReference,
+            curveSource,
         },
     };
 }
@@ -995,7 +1291,7 @@ export function parseWeeklySchedulePdf(itemsByPage) {
  *
  * Called by: collectPdfPages() on the map pass.
  */
-function matchMapPage(tokenLines, pageMaxX, mapPage) {
+function matchMapPage(tokenLines, pageMaxX, mapPage, allowSingleMonth) {
     const sig = (mapPage.sig || [])
         .map((s) => String(s || '').trim().toLowerCase())
         .filter((s) => s !== '');
@@ -1006,7 +1302,13 @@ function matchMapPage(tokenLines, pageMaxX, mapPage) {
         x: mc.x * pageMaxX,
         xEnd: mc.xEnd * pageMaxX,
     }));
-    if (monthCols.length < 2) return null;
+    // P4 — "two months or it is not a schedule" is right for a map that owns the
+    // whole table, and wrong for a CONTINUATION page: the roof's overflow page
+    // carries exactly one column ("7 days"), and rejecting it here is what kept
+    // month 7 unreadable. A lone month is admitted only when the map has other
+    // pages to be a continuation OF; a single-page map still needs two.
+    if (monthCols.length < 1) return null;
+    if (monthCols.length < 2 && !allowSingleMonth) return null;
 
     for (let i = 0; i < Math.min(tokenLines.length, 12); i++) {
         const words = tokenLines[i].tokens
@@ -1019,7 +1321,11 @@ function matchMapPage(tokenLines, pageMaxX, mapPage) {
             if (words.some((w) => w === s || headerFuzzyMatch(w, [s]))) hits++;
         }
         if (hits < 2 || hits < Math.ceil(sig.length / 2)) continue;
-        if (!bandsHoldNumbers(tokenLines, i, monthCols)) continue;
+        // P4 — arity-aware, for the same reason the derivation had to become so:
+        // a column-overflow page can carry a SINGLE month (the roof's "7 days"
+        // tail), and demanding two filled bands is a test it can never pass. The
+        // guard still refuses a page whose one band holds nothing.
+        if (!bandsHoldNumbers(tokenLines, i, monthCols, Math.min(2, monthCols.length))) continue;
 
         return {
             header: {
@@ -1061,8 +1367,10 @@ function usableLayoutMap(map) {
 function collectPdfPages(itemsByPage, options, liveMaps) {
     const pageResults = [];
     let priorSummary = false;
+    let priorCumulativeYs = [];
     let priorHeader = null;
     let mapId = null;
+    const usedMapPages = new Set();
 
     for (let p = 0; p < itemsByPage.length; p++) {
         const lines = groupItemsIntoLines(itemsByPage[p] || []);
@@ -1084,12 +1392,21 @@ function collectPdfPages(itemsByPage, options, liveMaps) {
             for (const entry of liveMaps) {
                 if (mapId !== null && entry.id !== mapId) continue;
                 if (!usableLayoutMap(entry.map)) continue;
-                for (const mapPage of entry.map.pages) {
-                    const hit = matchMapPage(tokenLines, pageMaxX, mapPage);
+                for (let mp = 0; mp < entry.map.pages.length; mp++) {
+                    // P4 — a stored page describes ONE physical page, so it may be
+                    // consumed once. Without this the roof's page-0 entry (six
+                    // "30 days") also matched the overflow page, whose only new
+                    // column is the "7 days" tail — month 7 was never read and the
+                    // overflow page was re-read as months 1-6, manufacturing a
+                    // summary row that contradicted the real one. Same spirit as
+                    // "one map owns a file", one level down.
+                    if (usedMapPages.has(entry.id + ':' + mp)) continue;
+                    const hit = matchMapPage(tokenLines, pageMaxX, entry.map.pages[mp], entry.map.pages.length > 1);
                     if (!hit) continue;
                     header = hit.header;
                     headerIndex = hit.headerIndex;
                     mapId = entry.id;
+                    usedMapPages.add(entry.id + ':' + mp);
                     break;
                 }
                 if (header) break;
@@ -1101,8 +1418,11 @@ function collectPdfPages(itemsByPage, options, liveMaps) {
         if (options.debug) options.debug.push({ t: 'header', page: p, months: header.monthCols.map((mc) => mc.index), descX: header.descX, viaMap: !!liveMaps });
         // P2-c — continuation pages inherit the summary context (not the geometry):
         // a desc-less page following an explicit summary gets the stricter reading.
-        const parsed = buildRows(tokenLines, header, headerIndex + 1, { priorSummary, debug: options.debug });
+        const parsed = buildRows(tokenLines, header, headerIndex + 1, { priorSummary, priorCumulativeYs, debug: options.debug });
         if (parsed.sawSummary) priorSummary = true;
+        if (parsed.cumulativeYs && parsed.cumulativeYs.length) {
+            priorCumulativeYs = priorCumulativeYs.concat(parsed.cumulativeYs);
+        }
         pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum, summaryCandidates: parsed.summaryCandidates });
     }
 
@@ -1129,10 +1449,20 @@ export function parseSCurvePdf(itemsByPage, opts) {
     if (pageResults.length > 0) {
         const merged = mergePages(pageResults);
         if (merged.rows.length > 0 && merged.months.length > 0) {
-            // Summary candidates survive only single-page reads for now: positional
-            // merging across different x-grids cannot attribute reference values.
-            const summaryCandidates = pageResults.length === 1 ? pageResults[0].summaryCandidates : [];
+            // P4 — candidates now survive a MULTI-PAGE read. The old rule dropped
+            // them outright, which is why a column-split file reported no reference
+            // at all (the roof: summaryReference []). Each page numbers its own
+            // months through its own header, so a candidate's month indices are
+            // already absolute — they are unioned, never positionally guessed.
+            // A month claimed twice with DIFFERENT values is a genuine conflict and
+            // the whole candidate set is refused rather than half-trusted.
+            const summaryCandidates = mergeSummaryCandidates(pageResults);
             const out = buildMonthsFromRows(merged.rows, merged.months, merged.totalContract, { summaryCandidates, debug: options.debug });
+            // P4 — a null here is a deliberate REFUSAL: the activity math was
+            // unusable and no printed curve could stand in for it. Fall through to
+            // the weekly reader and, failing that, to the honest "not recognised"
+            // answer, rather than return a curve known to be wrong.
+            if (!out) return parseWeeklySchedulePdf(itemsByPage);
             (merged.warnings || []).forEach((w) => out.meta.warnings.unshift(w));
             if (mapId !== null) {
                 out.meta.mapUsed = true;
@@ -1327,6 +1657,55 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
  *
  * Called by: derivePdfLayout().
  */
+/**
+ * P4 — how far right do this page's ACTIVITY rows actually reach?
+ *
+ * Returns the highest month index carrying a percent cell in a named row, or
+ * null when the page has no such rows (peso tables, summary-only pages) — in
+ * which case the caller must not trim anything.
+ *
+ * The narrowness is the point. A phantom column's band is not empty: on the roof
+ * the TOTAL pesos, the cumulative percentages and the duration row all reach into
+ * it, so "does anything sit here" answers yes and proves nothing. Requiring a
+ * NAMED row (a word left of the first month band) with two or more PERCENT cells
+ * isolates the activity rows from every kind of author total.
+ *
+ * Called by: derivePdfLayoutFromAi().
+ */
+function activityBandReach(tokenLines, headerIndex, monthCols) {
+    if (!monthCols.length) return null;
+    const firstX = monthCols[0].x;
+    let reach = null;
+
+    for (let i = headerIndex + 1; i < Math.min(tokenLines.length, headerIndex + 16); i++) {
+        const toks = tokenLines[i].tokens;
+        const named = toks.some((t) => t.x < firstX && /[A-Za-z]{2,}/.test(String(t.str || '')));
+        if (!named) continue;
+
+        let highest = null;
+        let count = 0;
+        for (const t of toks) {
+            const s = String(t.str || '').trim();
+            if (!/^\d[\d,]*(\.\d+)?\s*%$/.test(s)) continue;
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            const centre = (t.x + xEnd) / 2;
+            for (const mc of monthCols) {
+                if (centre >= mc.x && centre < mc.xEnd) {
+                    count++;
+                    if (highest === null || mc.index > highest) highest = mc.index;
+                    break;
+                }
+            }
+        }
+        // One cell is not a row's reach — a stray percentage proves nothing.
+        if (count >= 2 && highest !== null && (reach === null || highest > reach)) {
+            reach = highest;
+        }
+    }
+
+    return reach;
+}
+
 function bandsHoldNumbers(tokenLines, headerIndex, monthCols, minFilled = 2) {
     const filled = {};
     for (let i = headerIndex + 1; i < Math.min(tokenLines.length, headerIndex + 16); i++) {
@@ -1492,7 +1871,7 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
 
         for (let i = 0; i < Math.min(tokenLines.length, 10); i++) {
             const sorted = [...tokenLines[i].tokens].sort((a, b) => a.x - b.x);
-            const cols = aiLabelMonthColumns(sorted, labels, wanted);
+            let cols = aiLabelMonthColumns(sorted, labels, wanted);
             if (cols.length < minCols) continue;
 
             const descTokens = sorted.filter((t) => isDescriptionLabel(t.str));
@@ -1503,7 +1882,38 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
                 if (wordy.length) descX = Math.min(...wordy.map((t) => t.x));
             }
 
-            const header = finalizeHeaderBands(cols, sorted, descX, pageMaxX);
+            // P4 — a label whose column carries no ACTIVITY data on this page is a
+            // CONTINUATION STUB, not a column: its figures were printed on the NEXT
+            // page under a reprint of the same label. The roof prints six "30 days"
+            // on page 1 but its activity rows hold only five values; claiming the
+            // sixth stranded month 6 on an empty band and left its real data on
+            // page 2 unmapped, so December listed nothing but page furniture.
+            //
+            // "Activity data" has to be judged narrowly, because the band is NOT
+            // empty — the TOTAL pesos, the cumulative row and the duration row all
+            // reach into it. Only rows that are NAMED (a word left of the first
+            // month band) and carry two or more PERCENT-written cells count, which
+            // on this family is exactly the activity rows. Peso-valued tables yield
+            // no such rows, so nothing is dropped there and the rule stays inert.
+            let header = finalizeHeaderBands(cols, sorted, descX, pageMaxX);
+            const reach = activityBandReach(tokenLines, i, header.monthCols);
+            if (reach !== null) {
+                const trimmed = cols.filter((c) => c.index <= reach);
+                if (trimmed.length >= minCols && trimmed.length < cols.length) {
+                    // The dropped label still marks where its column BEGAN, and the
+                    // new last band would otherwise run to the page edge and swallow
+                    // the stub column’s values (the roof summed 77.03 + 99.14 into
+                    // month 5). Stop the band at the stub instead.
+                    const stubX = cols.filter((c) => c.index > reach).map((c) => c.x).sort((a, b) => a - b)[0];
+                    cols = trimmed;
+                    header = finalizeHeaderBands(cols, sorted, descX, pageMaxX);
+                    const lastBand = header.monthCols[header.monthCols.length - 1];
+                    if (lastBand && stubX !== undefined && stubX > lastBand.x) {
+                        lastBand.xEnd = Math.min(lastBand.xEnd, stubX);
+                    }
+                }
+            }
+
             if (!bandsHoldNumbers(tokenLines, i, header.monthCols, Math.min(2, header.monthCols.length))) continue;
 
             const anchors = sorted.filter((t) => String(t.str || '').trim() !== '');

@@ -1006,3 +1006,117 @@ test('dropping y or width from the stash breaks the derivation', () => {
     assert.notDeepEqual(skewed.map.pages[0].monthCols, truth.map.pages[0].monthCols,
         'a stash without width must not be mistaken for lossless');
 });
+
+/* ─── P4 summary-row adoption ─────────────────────────────────────────────── */
+
+// The roof shape, reduced to a fixture: each activity's cells are percentages of
+// ITS OWN duration, so every row sums to ~100 and the rows together total far
+// more than the contract. Summing them is meaningless; the author's printed
+// cumulative row is the only honest curve on the page.
+function roofShapedPage(cumulativeTokens) {
+    return page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55], ['MONTH 3', 400, 55]]],
+        [760, [['Roofing', 60, 70], ['50%', 210, 25], ['30%', 310, 25], ['20%', 410, 25]]],
+        [720, [['Walls', 60, 60], ['40%', 210, 25], ['40%', 310, 25], ['20%', 410, 25]]],
+        [680, [['TOTAL', 55, 45], ['100', 210, 25]]],
+        [640, cumulativeTokens],
+    ]);
+}
+
+const CUMULATIVE_ROW = [['30.00%', 210, 30], ['65.00%', 310, 30], ['100.00%', 410, 32]];
+
+test('a file whose cells cannot be added adopts its printed cumulative row', () => {
+    const result = parseSCurvePdf([roofShapedPage(CUMULATIVE_ROW)]);
+
+    assert.ok(result, 'the file must still read');
+    assert.equal(result.meta.curveSource, 'summary');
+    assert.deepEqual(result.months.map((m) => m.planned_progress_percent), [30, 65, 100],
+        'the curve must be the author’s, not the sum of incompatible cells');
+    // The activity sum here is 200% of the contract — that overshoot IS the proof
+    // the cells do not share the contract's denominator, and it must be spoken.
+    assert.ok(result.meta.warnings.some((w) => /cannot be added up/i.test(w)),
+        'adoption is never silent');
+    // Comparing the adopted curve against the math it replaced compares it with
+    // itself, so gaps are reported as absent rather than as zero.
+    assert.ok(result.meta.summaryReference.length >= 2);
+    assert.equal(result.meta.summaryReference[0].gap, null);
+});
+
+// The guard that protects every other file: adoption must be unreachable while
+// the activity math is sound. BUHI is the standing reminder — its summary
+// disagrees by up to 3 points and the activity math still, correctly, wins.
+test('a well-formed weighted file never adopts its summary', () => {
+    const result = parseSCurvePdf([page([...HEADER, ...ROW1, ...ROW2, ...TOTAL])]);
+
+    assert.ok(result);
+    assert.equal(result.meta.curveSource, 'activities');
+    assert.ok(!result.meta.warnings.some((w) => /cumulative row/i.test(w)));
+});
+
+// Refuse rather than hand back a curve known to be wrong: the cells cannot be
+// added and the author printed no cumulative row to stand in for them.
+test('unusable cells with no printed curve refuse the file outright', () => {
+    // Same shape, but the cumulative row is a per-month block: it repeats rather
+    // than ascending, so it is not a curve and must not be adopted.
+    const notACurve = [['30.00%', 210, 30], ['30.00%', 310, 30], ['40.00%', 410, 30]];
+
+    assert.equal(parseSCurvePdf([roofShapedPage(notACurve)]), null,
+        'a wrong curve is worse than no curve');
+});
+
+// A column-split print puts the tail of the cumulative row on the overflow page,
+// where it has no neighbours to prove it ascends. It is tied to the row it
+// continues BY HEIGHT — the same shared-Y property P3's matchRowsByY relies on.
+test('a continuation page supplies the cumulative tail by row height', () => {
+    // A single-month overflow page is invisible to the RULES detector, so this is
+    // reached the way the roof reaches it: through a learned layout. Unknown
+    // header wording ('STINT n') keeps the rules out, which is what puts the map
+    // pass in play.
+    const first = page([
+        [800, [['DESCRIPTION', 50, 90], ['STINT 1', 200, 55], ['STINT 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['60%', 210, 25], ['40%', 310, 25]]],
+        [720, [['Walls', 60, 60], ['70%', 210, 25], ['30%', 310, 25]]],
+        [680, [['TOTAL', 55, 45], ['100', 210, 25]]],
+        [640, [['40.00%', 210, 30], ['80.00%', 310, 30]]],
+    ]);
+    // The overflow page REPEATS the last column and adds the new one, exactly as
+    // the roof's does ('30 days' then '7 days'). A header line needs two anchors to
+    // be identifiable at all, and the repeat is already-claimed so it takes no month.
+    const second = page([
+        [800, [['STINT 2', 200, 55], ['STINT 3', 300, 55]]],
+        [760, [['30%', 210, 25], ['25%', 310, 25]]],
+        // The tail of the cumulative row, at the SAME height as its head on page 1.
+        [640, [['80.00%', 210, 30], ['100.00%', 310, 32]]],
+    ]);
+    const labels = { 1: 'STINT 1', 2: 'STINT 2', 3: 'STINT 3' };
+    const derived = derivePdfLayoutFromAi([first, second], labels, null);
+    assert.ok(derived, 'the fixture must yield a two-page map');
+
+    const result = parseSCurvePdf([first, second], { liveMaps: [{ id: 1, map: derived.map }] });
+
+    assert.ok(result);
+    assert.equal(result.meta.curveSource, 'summary');
+    assert.deepEqual(result.months.map((m) => m.planned_progress_percent), [40, 80, 100],
+        'the overflow page must supply month 3');
+});
+
+// A lone percentage on a continuation page proves nothing on its own. Without a
+// cumulative row at the same height on an earlier page it is just a number, and
+// the roof's overflow page offers three rival candidates (100%, 50%, 100%) to
+// prove the point.
+test('a stray tail percentage is not mistaken for a cumulative row', () => {
+    const first = page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['1000', 210, 30], ['1000', 310, 30]]],
+    ]);
+    const second = page([
+        [800, [['MONTH 3', 200, 55]]],
+        // Same height as nothing on page 1 that was a cumulative row.
+        [500, [['90.00%', 210, 30]]],
+    ]);
+
+    const result = parseSCurvePdf([first, second]);
+    assert.ok(result);
+    assert.equal(result.meta.curveSource, 'activities',
+        'one number at an unrelated height must not become the curve');
+});

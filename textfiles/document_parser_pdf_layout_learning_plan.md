@@ -4,7 +4,9 @@
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
 # Date: September 12, 2026 (last updated September 13, 2026 — §6 roof diagnosis + §9 PDF-3 stash defect)
 # Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
-#         PDF-3 🔄 stash defect FIXED 2026-09-13 (suites + real files green); browser proof BLOCKED ON §6 · PDF-4 ⬜
+#         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
+#         (roof reads its TRUE curve offline, zero AI) · PDF-4 ⬜
+#         NEXT ORDERED: AI-vs-file cross-check for PDFs (Excel parity) — see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
 
 ===============================================================================
@@ -36,8 +38,10 @@
       derivation returned null on every file and the harvest could never have run.
       Now byte-identical to raw pdf.js items on the real SEGMENT PDF. Forensics,
       fix and fixtures: §9 (2026-09-13).
-      NOT browser-proven, and it CANNOT be until §6 lands — SEGMENT no-ops by
-      design and the roof self-check refuses. Do not go hunting for a bug there.
+      §6 has since landed, so PDF-3 is now provable: its self-check PASSES on the
+      roof and places all 7 months. Prove it on the ROOF, never on SEGMENT
+      (SEGMENT no-ops by design — its ai-derived block hashes identical to its
+      auto-capture row, which already holds a map).
     - PDF-4 (teach) NOT started.
     - The ROOF family is now fully diagnosed (§6). Short version: the roof Excel
       already parses to the exact truth curve because it reads the workbook's
@@ -47,11 +51,10 @@
       lands on it exactly — so the roof has a zero-AI path after all. It needs one
       ported rule, not a new idea.
 
-  ORDER OF WORK: ~~fix the PDF-3 stash~~ DONE 2026-09-13 → summary-row fallback
-  (§6) → browser-prove PDF-3 on the ROOF, which the fallback makes possible →
-  PDF-4. Each proved before the next, each needing an explicit user order
-  (Rule 10). The fallback moved AHEAD of the PDF-3 proof because it is what
-  unblocks it, not merely what improves it.
+  ORDER OF WORK: ~~PDF-3 stash~~ DONE · ~~summary-row fallback (§6)~~ BUILT
+  2026-09-13 → BROWSER-PROVE both on the ROOF (import on each flow: true curve,
+  adoption warning, no AI call; then the PDF-3 harvest) → PDF-4. Each proved
+  before the next, each needing an explicit user order (Rule 10).
 
   HARD RULES FOR WHOEVER PICKS THIS UP
     - Blinding stays ON (L3_TEST_BLIND_ABC = true in document-parser-core.js).
@@ -525,6 +528,254 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — P4 BROWSER-PROVEN by the user, on BOTH models. The strongest form
+  of proof this track has produced: two different AI answers, one right and one
+  wrong, converge on the SAME correct system read once the layout is approved.
+    STORED MAP (from the live DB, confirming the phantom-column fix in production):
+      page 0 → months 1,2,3,4,5      page 1 → months 6,7
+    Previously page 0 claimed 1-6 and page 1 only 7, stranding month 6.
+    SYSTEM READ AFTER APPROVAL, identical under both models:
+      6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100
+      activities M1-M4 = 4, M5 = 3, M6 = 4 — matching the AI exactly
+    ⇒ P4 adoption, the phantom-column fix, the multi-page candidate merge, the
+      Y-tie and the adopted-path activity filter are all BROWSER-PROVEN.
+    ONLY REMAINING DEFECT: month 7 lists 5 activities instead of 3 (the S-curve
+    chart's Y-axis labels at x ~= 172 falling inside month 7's band). Unchanged
+    from the analysis above; still not fixed, still needs an order.
+
+    WHAT THE TWO MODELS SHOWED (and why it matters beyond this file)
+      gemini-flash-latest (3.8): returned the TRUE curve, and its import note read
+        "these months match the file's own summary exactly — they could not be
+        independently verified from the activity rows."
+      gemini-flash 3.5: returned 6.69 / 24.60 / 42.51 / 60.32 / 77.55 / 100 / 100
+        — to rounding, EXACTLY the cost-weighted arithmetic over the printed
+        whole-number percentages measured earlier this session. Its import note
+        read "the monthly figures for Month 1, Month 2, Month 3 (and others) could
+        not be found printed on the page, so they may have been inferred rather
+        than read."
+    So the presence gate ALREADY identified the wrong answer as not-printed, and
+    the right answer as matching the file's summary. The discriminating signal
+    exists today and is simply not acted upon — which is the opening for the next
+    item.
+
+  2026-09-13 — NEXT ORDERED ITEM: AI-vs-FILE CROSS-CHECK FOR PDFs (user decision,
+  Excel parity). NOT BUILT YET — recorded here so the reasoning is not lost.
+    THE GAP: the Excel path already re-reads the sheet with the layout the AI
+    itself reported and lets the FILE win on disagreement
+    (SCurveImportController::applyDerivedLayout, :420, warning at :518). The PDF
+    path has no equivalent — a validated AI answer is used as-is.
+    THE MACHINERY IS ALREADY RUNNING: PDF-3's self-check replays the file through
+    the AI-derived map and compares it to the AI's curve within 1%. That result is
+    used ONLY to decide whether to teach the layout, and is DISCARDED on
+    disagreement — which is exactly when it is most valuable. On the 3.5 run it had
+    computed the true curve and thrown it away.
+    DECISION (user, 2026-09-13): Excel parity — when the replay yields a
+    full-coverage curve from a trustworthy source and differs from the AI by more
+    than 1%, the FILE wins, with a plain-language note in the same voice as the
+    Excel one.
+    CAVEAT TO CARRY INTO THE BUILD: the map is derived from the AI's own labels, so
+    a mislabelled month poisons the replay too. Gate on full month coverage plus a
+    trustworthy source; the adopted printed cumulative row is the strongest source
+    (the author's own statement), activity math the weaker one. The Excel path
+    carries the same circularity and handles it with coverage/denominator gates.
+    The early-100 guard (see the previous entry) stays as a SEPARATE backstop for
+    files where no replay is possible at all.
+
+  2026-09-13 — ACTIVITY-PER-MONTH FIXED on the adopted path (user-reported).
+    USER REPORT: the roof's curve was right but its activity lists were nonsense —
+    every month showing 8 entries including "Activity 11", "Activity 12" and
+    "Project Duration"; December showing only 2; January showing 10 including
+    "LOT 1.00 1,890,436.78". Correct report. TWO INDEPENDENT CAUSES, both fixed.
+
+    CAUSE 1 — A PHANTOM HEADER COLUMN. Page 1 prints SIX "30 days" labels but its
+    activity rows hold only FIVE values: the sixth column's figures overflowed to
+    page 2, where the label is reprinted. derivePdfLayoutFromAi matched labels
+    greedily, so page 1 claimed months 1-6 and page 2 was left only month 7 —
+    stranding month 6 on a band with no activity data AND leaving month 6's real
+    figures on page 2 unmapped. That is why December listed nothing but page
+    furniture. The true split is months 1-5 / 6-7.
+      FIX: activityBandReach() — a label whose column carries no ACTIVITY data on
+      this page is a continuation stub and is dropped. "Activity data" is judged
+      narrowly on purpose: the band is NOT empty (the TOTAL pesos, the cumulative
+      row and the duration row all reach into it), so only rows that are NAMED (a
+      word left of the first month band) AND carry >= 2 PERCENT-written cells
+      count. Peso tables produce no such rows, so the rule stays inert there —
+      which is why all 16 sample reads are unchanged.
+      SIDE EFFECT CAUGHT BY MEASUREMENT: trimming let the new last band run to the
+      page edge and swallow the stub column's values (month 5 came back as
+      77.03 + 99.14 = 176.17). The dropped label still marks where its column
+      began, so the surviving band is now clamped there.
+
+    CAUSE 2 — JUNK ROWS WERE ACTIVITIES. The lists were assembled from the very
+    cells the adoption branch had just declared unusable, so every row holding a
+    number in a band became an "activity": the duration row, the Cash Flow pesos,
+    and nameless leftovers rendered as "Activity N".
+      FIX: on the adopted path only, rebuild each month's list from rows that are
+      NAMED and whose cell in THAT month is written as a percentage. On a file of
+      per-activity fractions that is exactly the set scheduled that month. Scoped
+      to the adopted path so no other file's attribution moves.
+
+    TWO MORE DEFECTS SURFACED WHILE FIXING THOSE
+    (a) P2-c consumed the roof's page-2 cumulative row BEFORE the P4 detector saw
+        it (desc-less, ascending, last === 100 — it matches) and dropped it
+        silently. P4 capture now runs first; P2-c remains for rows P4 declines.
+    (b) mergePages' copyInto merged `months` and `presence` but not the new `pct`
+        flags, so a page-2 row's percent evidence never reached its page-1 twin and
+        the continued months looked cell-less. Now merged with the rest.
+
+    THE Y-TIE IS NOW UNCONDITIONAL ON LATER PAGES. It was applied only to
+    single-value candidates; page 2 then offered THREE rival tails (100%, then
+    0%/50%, then the real 99.14%/100%) and the contradictory set was discarded
+    whole, refusing the file. Once a file has shown WHERE its cumulative row sits,
+    every later page must agree — column-split prints share row Y positions
+    exactly (the P3 property). Ascension cannot be re-tested on an overflow page,
+    so height is the only honest tie. The first cumulative row in a file still has
+    to earn it on shape alone.
+
+    RESULT (real file, real core): curve 6.32 / 24.31 / 42.30 / 59.71 / 77.03 /
+    99.14 / 100, curveSource 'summary'. Activities per month now MATCH THE AI
+    EXACTLY for months 1-6 (4,4,4,4,3,4). PDF-3's self-check still passes, months
+    1..7.
+
+    RESIDUAL, NOT FIXED, CAUSE KNOWN: month 7 lists FIVE activities where the AI
+    says three — an extra "C EARTHWORK" and a junk "LOT 1.00 1,890,436.78". Both
+    trace to ONE thing: the S-CURVE CHART's Y-axis labels (100% / 75% / 50% / 25%
+    / 0% printed at x ~= 172 on page 2) fall INSIDE month 7's band, which runs to
+    the page edge. EARTHWORK's real month-7 value is 0%, but the axis "50%" lands
+    in the same band and sums to 50; and a page-1 row at y=322.8 merged with the
+    axis row at y=326.3, inheriting a percent cell in month 7. This is a chart
+    bleeding into the table's column space, not a summary or layout defect. Two
+    candidate fixes, neither taken without an order: bound the LAST month band
+    rather than letting it run to the page edge, or tighten matchRowsByY for the
+    column-split case (genuine split rows share y EXACTLY — 394.4 vs 394.4 —
+    whereas the axis rows are 3.5pt off).
+
+    MODEL-METHOD FINDING (user, live): gemini-flash-latest (3.8) returned the true
+    curve; gemini-flash 3.5 returned 6.69 / 24.60 / 42.50 / 60.32 / 77.54 / 100 /
+    100. Those 3.5 numbers are, to rounding, EXACTLY the cost-weighted arithmetic
+    computed from the printed whole-number percentages and measured earlier this
+    session (6.69 / 24.6 / 42.51 / 60.32 / 77.55 / 100.05 / 100.91, tail clamped).
+    The models did not differ randomly — they used different METHODS, and the
+    source's rounding makes the weighted method structurally unable to land on the
+    truth. Independent confirmation of the decision to adopt the printed row.
+
+    SUITES: JS 143 tests, 141 passed + the 2 intended blinding fails. PHP 1158
+    passed / same 7 pre-existing. All 16 sample PDFs BYTE-IDENTICAL against 017afeb.
+
+    OPEN DESIGN QUESTION (user raised, answer proposed, NOT built): a guard on
+    repeated cumulative values. Resolution offered — strictness should follow the
+    curve's SOURCE, not its shape: an AI answer hard-refuses on a repeated interior
+    value (untrusted by design, refusal costs only a retry); the file's own printed
+    row or activity math only WARNS (refusing the author's own numbers is
+    overreach); and "100% reached with work still scheduled after it" hard-refuses
+    either way, being a contradiction regardless of source. NOTE the user corrected
+    an earlier argument of mine: per-activity 0% months are NOT evidence that a
+    whole flat month is normal, and shutdown/rain examples describe ACTUAL progress
+    while these files carry PLANNED baselines only — verified, the roof workbook
+    contains no actual-progress data anywhere (no 'actual'/'accomplished'/'as of'
+    wording; rows 49-82 empty; row 33 is purely derived from the plan).
+
+  2026-09-13 — P4 SUMMARY-ROW ADOPTION BUILT (code, uncommitted). The roof now
+  reads its TRUE curve offline, with zero AI, and PDF-3's self-check passes on it.
+    RESULT ON THE REAL FILE (roof PDF + its AI-derived map, real core in node):
+      curve       6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100  = the TRUTH
+      curveSource 'summary'  ·  all SEVEN months  ·  adoption warning present
+      PDF-3 self-check on the roof: PASSES (was: refused) — months 1..7 placed
+    That last line is the point of the work: PDF-3 was unprovable in a browser
+    because SEGMENT no-ops and the roof refused. The roof is now its proof file.
+
+    WHAT THE PLAN GOT WRONG, AND WHAT THE MEASUREMENTS SAID INSTEAD
+    (a) "A straight port of the Excel rule." It is not. The Excel trigger is
+        lastNonZero === 0, but the roof's cells DO parse as numbers — 6 non-zero
+        months — so that trigger never fires. A second trigger was needed.
+    (b) First candidate trigger, "every activity row's percent cells sum to ~100",
+        was REJECTED BY MEASUREMENT: the roof's read yields the 5 real names plus
+        15 spurious "Activity N" rows, so no clean per-row test survives.
+    (c) A large-gap threshold was rejected as a tuned guess that contradicts BUHI,
+        where a 3-point disagreement correctly leaves activity math winning.
+    (d) The trigger that works is RAW CUMULATIVE OVERSHOOT. A well-formed weighted
+        table's activity values sum to exactly the contract; measured:
+          roof (via map)  8.21 / 39.77 / 225.67 / 303.2 / 403.22 / 403.24
+          SEGMENT         5 / 20 / 40 / 65 / 100
+          6-stage         5 / 20 / 40 / 60 / 80 / 100
+          10-month        5 / 10 / 20 / 30 / 50 / 70 / 80 / 90 / 95 / 100
+        100 is the definitional endpoint, not a tuned constant. Gated on an
+        INDEPENDENT contract figure: with no TOTAL row, contract is the sum of the
+        month totals, the ratio is 1.0 by construction and overshoot is
+        undetectable — such files get the parity trigger only.
+    (e) Cost-weighted math from the printed figures was evaluated as an
+        alternative source and REJECTED ON ACCURACY: it recovers the contract
+        exactly (2,239,599.72) but drifts to 100.05 / 100.91, overshooting 100,
+        because the PDF prints whole-number percentages. The printed cumulative
+        row is exact. The summary is both the cheaper AND the more accurate source.
+
+    THREE UPSTREAM DEFECTS FOUND WHILE BUILDING (each blocked the one after it)
+    1. isSummaryLabel could never claim the roof's cumulative row. The word
+       "Commulative" sits 4.6pt below its own values (Y_TOLERANCE is 2) and the
+       only token left on the values' line — a bare "%" — falls between the
+       description limit and the first month band, reaching neither. The row
+       arrived NAMELESS and was summed as an activity: that is the origin of the
+       403%. Detection is now by SHAPE (cumulativeRowValues), never by label:
+       percent-written cells, strictly ascending, max >= 50. Each guard earns its
+       place on this file — percent-shape rejects the peso TOTAL and Cash Flow
+       rows, ascension rejects the per-month row (6.32/17.99/17.99 repeats), and
+       max >= 50 rejects it a second way.
+    2. ONE STORED MAP PAGE COULD CLAIM SEVERAL PDF PAGES. The roof's page-0 entry
+       (six "30 days") also matched the overflow page, so month 7 was never read
+       AND the overflow page was re-read as months 1-6, manufacturing a summary
+       row that contradicted the real one. A stored page now describes one
+       physical page and is consumed once — the same spirit as "one map owns a
+       file", one level down.
+    3. TWO ARITY ASSUMPTIONS blocked the single-month tail, the same class the
+       previous session fixed inside the derivation: matchMapPage called
+       bandsHoldNumbers with the default minFilled = 2 (a one-column page can
+       never fill two bands) and rejected any stored page with < 2 months
+       outright. "Two months or it is not a schedule" is right for a map that owns
+       the whole table and wrong for a CONTINUATION page; a lone month is now
+       admitted only when the map has other pages to be a continuation OF.
+
+    THE CONTINUATION TAIL IS TIED BY HEIGHT, NOT TRUSTED ON ITS OWN
+    A lone percentage on an overflow page cannot be tested for ascension. The
+    roof's page 2 offered THREE rival tails (100%, 50%, 100%) and the conflicting
+    set was correctly thrown away. A single value is now accepted only when it
+    sits at the same height as a cumulative row already found on an earlier page
+    — column-split prints share row Y positions exactly, the property P3's
+    matchRowsByY is built on. That reduced the roof's page 2 to exactly one
+    candidate, {7: 100}, at y=272.93 against the head at y=272.81.
+
+    ALSO: summary candidates now survive a MULTI-PAGE read (they were discarded
+    outright, which is why the roof reported summaryReference []). Each page
+    numbers its months through its own header, so indices are absolute and are
+    unioned — no positional guessing. A month claimed twice with different values
+    refuses the whole set; a disagreeing reference is worse than none.
+
+    REFUSAL, NOT A WRONG CURVE (user decision): when the trigger fires and no
+    printed curve validates, buildMonthsFromRows returns null and the reader falls
+    through to the honest "not recognised" answer plus the AI offer.
+
+    PROVENANCE: meta.curveSource ('activities' | 'summary') now exists on the PDF
+    side, matching the Excel service (SCurveImportService.php:1691).
+
+    SUITES / REGRESSION
+      JS 143 tests, 141 passed + the 2 intended blinding fails (+5 fixtures:
+        adoption; a well-formed file never adopts; unusable cells with no printed
+        curve refuse outright; the continuation tail by row height; a stray tail
+        percentage is not mistaken for a curve).
+      PHP 1158 passed / the same 7 pre-existing failures.
+      ALL 16 SAMPLE PDFs BYTE-IDENTICAL against the committed core (017afeb) —
+      including both CONSCHEDSAVINGS copies, SEGMENT, 6-stage and 10-month, which
+      all stay curveSource 'activities'.
+
+    KNOWN RESIDUAL (not a blocker, not new): the roof's contractAmount still reads
+    1,725,080.17 against a true 2,239,599.72 — it picks up a cash-flow cumulative
+    figure. The curve is unaffected because percentages are adopted as written, but
+    anything that reasons about the contract on this file is still wrong.
+
+    NOT BROWSER-PROVEN. Next step is the browser run: import the roof PDF on BOTH
+    flows, confirm the true curve, the adoption warning and no AI call — then
+    browser-prove PDF-3 on the roof, which this work makes possible for the first
+    time.
 
   2026-09-13 — PDF-3 STASH DEFECT FIXED (code, uncommitted). One line of behaviour,
   two fixtures, no core change. Diagnosis entry below; this is the fix.
