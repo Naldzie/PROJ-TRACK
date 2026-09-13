@@ -310,7 +310,27 @@ async function loadScurveHeadersForManagement() {
             let mapSummary = '';
             try {
                 const cm = row.column_map || null;
-                if (row.has_map && cm && typeof cm === 'object') {
+                if (row.has_map && cm && cm.kind === 'pdf') {
+                    // PDF-4 (2026-09-13): a PDF map is GEOMETRY (page-width fractions),
+                    // not column letters, so the Excel reader below finds none of its
+                    // keys and PDF rows showed no summary at all. Describe what a PDF
+                    // map actually says: how many printed pages it covers and which
+                    // months each one carries.
+                    const pages = Array.isArray(cm.pages) ? cm.pages : [];
+                    const bits = pages.map((p, i) => {
+                        const months = (p.monthCols || []).map(mc => mc.index).filter(n => n >= 1);
+                        if (!months.length) return 'page ' + (i + 1) + ': no months';
+                        return 'page ' + (i + 1) + ': M' + months[0]
+                            + (months.length > 1 ? '–M' + months[months.length - 1] : '');
+                    });
+                    if (bits.length) {
+                        const title = pages.length > 1
+                            ? 'Printed across ' + pages.length + ' pages — teaching is refused until the grid can show them all'
+                            : 'Learned column bands — what approval would trust';
+                        mapSummary = '<div class="text-muted" style="font-size:10px;" title="' + schEscapeHtml(title) + '">'
+                            + schEscapeHtml(bits.join(' · ')) + '</div>';
+                    }
+                } else if (row.has_map && cm && typeof cm === 'object') {
                     const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
                     const bits = [];
                     const dc = L(cm.descCol);
@@ -482,7 +502,28 @@ function schTeachColumns(id) {
         // Prefill from an attached map (indices → letters).
         try {
             const cm = row.column_map || null;
-            if (cm && typeof cm === 'object') {
+            if (cm && cm.kind === 'pdf') {
+                // PDF-4 (2026-09-13): a PDF map stores BANDS as page-width
+                // fractions, not column letters, so reading cm.descCol here found
+                // nothing and PDF rows opened with an empty palette. Walk the
+                // recorded pseudoCols back to letters instead — the same bridge the
+                // server uses to turn a taught letter into a band.
+                const page = (Array.isArray(cm.pages) && cm.pages[0]) ? cm.pages[0] : null;
+                const pseudo = page ? (page.pseudoCols || []) : [];
+                // A band belongs to a letter when their strips overlap at all; the
+                // stored desc/month bands are built FROM these, so this round-trips.
+                const lettersIn = (x, xEnd) => pseudo
+                    .filter(pc => pc.x < xEnd - 1e-9 && x < pc.xEnd - 1e-9)
+                    .map(pc => String(pc.letter || '').toUpperCase())
+                    .filter(Boolean);
+                if (page) {
+                    _schTeach.assigns.desc = lettersIn(page.descX, page.descRight)[0] || null;
+                    (page.monthCols || []).forEach(mc => {
+                        const cols = lettersIn(mc.x, mc.xEnd);
+                        if (cols.length) _schTeach.assigns.months[mc.index] = cols;
+                    });
+                }
+            } else if (cm && typeof cm === 'object') {
                 const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
                 _schTeach.assigns.desc = L(cm.descCol);
                 _schTeach.assigns.code = L(cm.codeCol);
@@ -494,6 +535,18 @@ function schTeachColumns(id) {
                 });
             }
         } catch (e) { /* prefill is best-effort */ }
+        // PDF-4: say up front when this row cannot be taught, instead of letting the
+        // reviewer assign every column and only then meet a refusal on Save.
+        _schTeach.blocked = null;
+        if (row.source_type === 'pdf') {
+            const cm = row.column_map || null;
+            if (!cm || cm.kind !== 'pdf' || !Array.isArray(cm.pages) || !cm.pages.length) {
+                _schTeach.blocked = 'This capture did not record where its columns sit on the page, so there is nothing to point at yet. Re-import the PDF to capture it again.';
+            } else if (cm.pages.length > 1) {
+                _schTeach.blocked = 'This layout is printed across ' + cm.pages.length
+                    + ' pages and the grid below shows only the first, so teaching it would drop the months on the later pages. Saving is disabled for now.';
+            }
+        }
         const ctx = document.getElementById('teachContextLine');
         if (ctx) ctx.textContent = '— ' + _schTeach.contractor + ' · seen ' + _schTeach.occurrences + '× · ' + _schTeach.status;
         schRenderTeachPalette();
@@ -660,10 +713,15 @@ function schRenderTeachReadout() {
     host.textContent = parts.length
         ? 'Headers R' + _schTeach.headerRows.join('+R') + ' · ' + parts.join(' · ')
         : 'Nothing assigned yet.';
-    let problem = '';
-    if (!a.desc) problem = 'Pick the Description column first.';
-    else if (months.length < 2) problem = 'Assign at least two months.';
-    else if (!_schTeach.headerRows.length) problem = 'Pick at least one header row.';
+    // PDF-4: a row the server will refuse says so FIRST, before the reviewer
+    // spends time assigning columns. The server refuses independently — this only
+    // saves the wasted effort.
+    let problem = _schTeach.blocked || '';
+    if (problem === '') {
+        if (!a.desc) problem = 'Pick the Description column first.';
+        else if (months.length < 2) problem = 'Assign at least two months.';
+        else if (!_schTeach.headerRows.length) problem = 'Pick at least one header row.';
+    }
     if (hint) hint.textContent = problem;
     if (save) save.disabled = problem !== '';
 }

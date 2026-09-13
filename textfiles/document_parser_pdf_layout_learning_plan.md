@@ -6,9 +6,9 @@
 # Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
 #         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
 #         (roof reads its TRUE curve offline, zero AI)
-#         PDF-4 ⚠️ RESTUDIED 2026-09-13 — teaching a PDF row is WIRED AND BROKEN
-#         (writes an Excel map onto a pdf row; replace DESTROYS a working one).
-#         Bug fix ORDERED; full point-and-teach PARKED — see §4 and §9.
+#         PDF-4 ⚠️ teach-path BUG FIX ✅ BUILT 2026-09-13 — taught PDF
+#         rows now get a PDF-shaped map or an honest refusal, and a refusal can no
+#         longer destroy a working map. Full point-and-teach PARKED — see §4 and §9.
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
 #         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
 #         M7 5→3) — the roof's last known offline defect is closed
@@ -16,7 +16,9 @@
 #         own laravel.log (3.7 answered after latest 503d twice) — committed 015f8fe/fe3d8a6
 #         E5 TIME BUDGET ✅ BROWSER-PROVEN 2026-09-13 (committed 3a77917) — 39s and an
 #         honest stop where the previous run died at 74s on PHP's uncatchable fatal
-#         E6 PER-PATH TIMEOUT + RUNG PROMOTION ✅ BUILT (committed 1b23422) — 15s images /
+#         E6 PER-PATH TIMEOUT + RUNG PROMOTION ✅ BROWSER-PROVEN 2026-09-13 (1b23422) —
+#         promotion gave 3.7 two attempts on a per-day 429, 15s rungs, FULL ladder reached
+#         · next work = textfiles/document_parser_pdf_teach_grid_plan.md · 15s images /
 #         30s text (Excel uploads a 15MB workbook), and the first rung inherits the
 #         primary's attempts when the primary is out for the DAY; see §9
 # Branch: phase-5-parser-accuracy (Stage 2 may branch phase-6-pdf-layout-learning off it; Rule 12)
@@ -607,6 +609,132 @@
 ===============================================================================
   9. SESSION LOGS
 ===============================================================================
+
+  2026-09-13 — E6 ✅ BROWSER-PROVEN by the user's log, BOTH halves at once, on a real
+  per-day quota. The strongest single run this track has produced for the AI ladder.
+    19:13:00  latest  429  quota=GenerateRequestsPerDayPerProjectPerModel-FreeTier
+    19:13:00  E6 parser rung promoted — primary is out for the day  to=3.7  reason=per-day-quota
+    19:13:00  E4 parser fallback  to=gemini-3.7-flash
+    19:13:05  3.7  503     <- promoted attempt 1
+    19:13:16  3.7  503     <- promoted attempt 2  (PROMOTION, working)
+    19:13:16  E4 parser fallback  to=gemini-3.6-flash
+    19:13:31  3.6  throwable      <- 15s exactly  (PER-PATH TIMEOUT, working)
+    19:13:31  E4 parser fallback  to=gemini-3.5-flash
+    19:13:46  3.5  throwable      <- 15s exactly
+    THREE things proven in one run:
+      - PROMOTION fired on a genuine per-day 429 and gave the first rung TWO attempts,
+        exactly as designed — and only the first rung, as the later ones took one each;
+      - the 15s image timeout is live: 3.6 and 3.5 each cost 15s where they cost 30
+        before, and the log timestamps are exact;
+      - THE FULL LADDER WAS REACHED (3.7, 3.6, 3.5). The 15:12 run under E5 alone
+        stopped after 3.6 with "time budget spent, skipped gemini-3.5-flash". Buying
+        that depth is precisely what E6 was for.
+    Total 19:13:00 -> 19:13:46 = 46s of a 50s budget, no PHP fatal.
+
+    USER QUESTION, ANSWERED AND DECIDED: "when it reaches the last model and still has
+    the time budget, it does not repeat." Correct, and correct behaviour — ~4s
+    remained against a 15s slot, so nothing could start. More generally a SECOND PASS
+    CANNOT FIT: a full walk costs ~46s, the budget is capped at min(config,
+    max_execution_time - 10) = 50s, and PHP's ceiling is 60s. Looping would require
+    raising max_execution_time and would leave a user watching a spinner for two
+    minutes for an answer four models have already declined. NOT BUILT, by decision.
+
+  2026-09-13 — NEXT WORK MOVES TO ITS OWN FILE:
+    textfiles/document_parser_pdf_teach_grid_plan.md (PDF-4 Stage 2 — make the teach
+    grid an accurate picture of the table, merge the printed pages into one grid, keep
+    the summary rows and the chart furniture out, and redesign the modal layout).
+    Approved by the user 2026-09-13. The measurement that justifies it — the roof's
+    real column x-positions versus the single-line bands we draw — is in that file's
+    §1, with the probe at C:\temp\opencode\probe_gridfidelity.mjs.
+
+  2026-09-13 — PDF-4 TEACH-PATH BUG FIX ✅ BUILT (code, UNCOMMITTED per user).
+  The narrowed scope from the restudy entry below. Nothing speculative was added:
+  the parked full point-and-teach is untouched.
+
+    WHAT WAS BROKEN (see the restudy entry for how it was found)
+      The desk offers Teach on every row and teachColumns had no source_type
+      branch, so a taught PDF row was handed an EXCEL map ({v, sig, cols}). The PDF
+      reader ignores it outright — usableLayoutMap gates on kind === 'pdf' — so the
+      reviewer saw "saved" and nothing ever changed. mode=replace wrote FIRST, so
+      teaching a row that already held a working PDF map DESTROYED it and dropped
+      the row to proposed, unwarned.
+
+    WHAT SHIPPED
+      SCurveHeaderProposalController:
+        - teachColumns branches on source_type. The PDF branch runs BEFORE any
+          write, so a refusal can no longer cost a good map.
+        - storeTaughtMap() extracted, shared by both branches. Variant-creates-a-
+          sibling, replace-drops-to-proposed and approval-is-the-only-live-flip now
+          have ONE definition and cannot drift between Excel and PDF.
+        - buildTaughtPdfMap(): letters -> bands via the capture's own pseudoCols
+          ([{letter, x, xEnd}] as page-width fractions). Two letters on one month
+          widen that month to span both. The page's identity (sig, pageHint,
+          lineHint, pseudoCols, headerLine) is KEPT and only descX/descRight/
+          monthCols are replaced, so the taught map still matches its own page.
+          The version is INHERITED from the capture rather than invented — the
+          reader gates on an exact match, so a taught map must age with its source.
+
+      REFUSES, each before any write, each with a reviewer-facing reason:
+        - no recorded geometry (an AMBIGUOUS capture stores column_map NULL and
+          pseudoCols goes with it — letters without coordinates cannot become bands);
+        - MULTI-PAGE layouts: the grid renders the first table page only, so a
+          reviewer cannot see the months on later pages and saving what they CAN
+          see would teach a SHORT schedule. Refused until the grid can show them
+          all — that grid work is the parked half of PDF-4;
+        - geometry that is not a table: fewer than two months, months not running
+          left to right without overlap, or a description column sitting inside a
+          month band. Same spirit as buildTaughtMap's gates on the Excel side.
+
+      DESK (_manage_scurve_headers_modal.blade.php):
+        - the teach-modal PREFILL reads the PDF shape. It was reading cm.descCol /
+          cm.monthSpans, which a PDF map does not have, so PDF rows opened with an
+          empty palette inside a best-effort try/catch. It now walks the recorded
+          pseudoCols back to letters — the same bridge the server uses, in reverse.
+        - the list's inline MAP SUMMARY had the same blindness and showed nothing
+          for PDF rows. It now describes what a PDF map actually says: how many
+          printed pages it covers and which months each carries.
+        - a row the server will refuse says so UP FRONT and disables Save, instead
+          of letting the reviewer assign every column and only then meet a refusal.
+          The server refuses independently — this only saves the wasted effort.
+
+    A DELIBERATE NON-CHANGE, because it looks like an omission: the header-row
+    picker does NOT re-key a PDF map. sig is matched against individual pdf.js
+    TOKENS, and a token may CONTAIN A SPACE — the roof's "30 days" is one token.
+    Rebuilding sig by splitting the stored cell text would shatter such tokens and
+    the map would stop matching its own page. The capture already recorded which
+    printed line is the header and its exact tokens, so the taught map keeps them.
+    Written down because the next person to look will wonder why the picker seems
+    ignored on PDFs.
+
+    TESTS +7 (ScurveHeaderProposalTest 49 -> 56), each pinning a decision:
+      - teaching a PDF row produces a PDF-SHAPED map, with the exact bands the
+        capture recorded, sig and pseudoCols preserved, and NO Excel 'cols' key —
+        this is the bug, under test;
+      - a month taught two columns spans both;
+      - a multi-page layout refuses AND the original map is byte-identical
+        afterwards, with no variant created — the destructive half, under test;
+      - a row with no recorded positions refuses honestly;
+      - overlapping months and a description inside a month band are both refused,
+        and neither saves anything;
+      - an unknown letter is refused;
+      - EXCEL teaching still produces an Excel map — the new branch is gated and
+        the majority path is untouched.
+
+    SUITES: PHP 1184 passed (+7) / the same 7 pre-existing failures BY NAME.
+    JS 152 tests, 150 passed + the 2 intended blinding fails — unchanged; no JS
+    file was touched (the desk edit is Blade-inline, extracted and node --check'd
+    clean, and view:cache rebuilt).
+
+    NOT BROWSER-PROVEN, and the live data makes both paths reachable: row #69 is a
+    SINGLE-page pdf capture (9 pseudoCols) and should now teach into a PDF-shaped
+    map; row #70 is TWO pages and should refuse with the multi-page message while
+    leaving its map untouched. Check the desk also shows a map summary on both
+    ("page 1: M1–M7" / "page 1: … · page 2: …"), where PDF rows previously showed
+    none.
+
+    STILL PARKED, unchanged: retaining pseudoCols on ambiguous captures, a builder
+    for null-map rows, and multi-page grid rendering. The restudy entry below is
+    their build sheet.
 
   2026-09-13 — PDF-4 RESTUDY (read-only, no code). User ordered PDF-4, then
   narrowed it to the bug fix on the findings below. THREE things the spec in §4

@@ -286,6 +286,27 @@ class ScurveHeaderProposalController extends Controller
         }
         [$letters, $rlines] = $parsed;
 
+        // PDF-4 (2026-09-13): a PDF row is a different KIND of layout and must not
+        // go down the Excel path. It used to: the desk offers Teach on every row,
+        // nothing here branched on source_type, so a taught PDF row was handed an
+        // EXCEL map ({v, sig, cols}) which the PDF reader then ignored outright
+        // (usableLayoutMap gates on kind === 'pdf'). The reviewer saw "saved" and
+        // nothing ever changed — and in replace mode the write had already
+        // destroyed whatever working map the row held. collect() has refused a
+        // non-PDF map on a pdf row since PDF-1; this is the same guard, one
+        // endpoint later.
+        if (($proposal->source_type ?? 'excel') === 'pdf') {
+            try {
+                $map = $this->buildTaughtPdfMap($proposal, $validated);
+            } catch (RuntimeException $e) {
+                // Refused BEFORE any write, which is what stops replace destroying
+                // a good map on the way to a bad one.
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+            }
+
+            return $this->storeTaughtMap($proposal, $map, $validated['mode'] ?? 'variant');
+        }
+
         $toIndex = function (?string $letter, string $field) use ($letters): ?int {
             if ($letter === null || trim($letter) === '') {
                 return null;
@@ -355,9 +376,23 @@ class ScurveHeaderProposalController extends Controller
             ], 422);
         }
 
-        // Merged cells are keyed by position — reindex to 0-based for the builder.
-        $mode = $validated['mode'] ?? 'variant';
+        return $this->storeTaughtMap($proposal, $map, $validated['mode'] ?? 'variant');
+    }
+
+    /**
+     * Save a taught map as a variant (default) or over the row it came from.
+     *
+     * Extracted 2026-09-13 so the Excel and PDF branches cannot drift on the part
+     * that matters most: approval stays the only path to live either way, a
+     * variant is a SIBLING row so alternating contractor formats are never
+     * forgotten, and an explicit replace drops the row back to proposed.
+     *
+     * Called by: teachColumns(), both branches.
+     */
+    protected function storeTaughtMap(ScurveHeaderProposal $proposal, array $map, string $mode)
+    {
         $sourceId = $proposal->id;
+
         if ($mode === 'replace') {
             $proposal->update(['column_map' => $map, 'status' => 'proposed']);
             $this->logActivity('Teach S-Curve Columns', "Re-taught header capture #{$sourceId} (re-review required)");
@@ -381,6 +416,130 @@ class ScurveHeaderProposalController extends Controller
             'mode' => $mode,
             'proposal' => $proposal->fresh(),
         ]);
+    }
+
+    /**
+     * PDF-4: turn reviewer-picked letters into a PDF-shaped layout map.
+     *
+     * A PDF map is geometry, not column letters: bands expressed as FRACTIONS of
+     * the page width, so the same layout still fits a different page size or DPI.
+     * The bridge between the two is pseudoCols — [{letter, x, xEnd}] recorded by
+     * the capture — so a taught letter converts straight back into the band it
+     * was drawn from.
+     *
+     * REFUSES rather than guesses, in three cases, and each refusal happens BEFORE
+     * anything is written:
+     *  - no recorded geometry. An AMBIGUOUS capture (positional wording like the
+     *    roof's repeated "30 days", where nothing in the bytes says which month a
+     *    column is) is stored with column_map NULL, and pseudoCols goes with it.
+     *    Letters without coordinates cannot become bands.
+     *  - MULTI-PAGE layouts. The desk grid renders the first table page only, so a
+     *    reviewer literally cannot see the months printed on later pages. Saving
+     *    what they can see would teach a SHORT schedule — the exact defect that
+     *    made single-page capture unsafe in the first place — so it is refused
+     *    until the grid can show every page.
+     *  - geometry that is not a table: fewer than two months, overlapping month
+     *    bands, or a description column sitting inside one. Same spirit as
+     *    buildTaughtMap's gates on the Excel side.
+     *
+     * The header-row picker does NOT re-key a PDF map, and that is deliberate:
+     * sig is matched against individual pdf.js TOKENS, and a token may contain a
+     * space ("30 days" is one token). Rebuilding sig by splitting the stored cell
+     * text would shatter such tokens and the map would stop matching its own page.
+     * The capture already recorded which printed line is the header, and its exact
+     * tokens, so that is what the taught map keeps.
+     *
+     * Called by: teachColumns() for source_type 'pdf'.
+     * @throws RuntimeException with a reviewer-facing reason.
+     */
+    protected function buildTaughtPdfMap(ScurveHeaderProposal $proposal, array $validated): array
+    {
+        $map = $proposal->column_map;
+
+        if (!is_array($map) || ($map['kind'] ?? null) !== 'pdf' || empty($map['pages']) || !is_array($map['pages'])) {
+            throw new RuntimeException('This capture did not record where its columns sit on the page, so there is nothing to point at yet. Re-import the PDF to capture it again.');
+        }
+
+        if (count($map['pages']) > 1) {
+            throw new RuntimeException('This layout is printed across ' . count($map['pages'])
+                . ' pages, but the grid below shows only the first. Teaching from it would drop the months printed on the later pages, so nothing was saved.');
+        }
+
+        $page = $map['pages'][0];
+        $bands = [];
+        foreach (($page['pseudoCols'] ?? []) as $pc) {
+            if (!is_array($pc) || !isset($pc['letter'], $pc['x'], $pc['xEnd'])) {
+                continue;
+            }
+            $bands[strtoupper(trim((string) $pc['letter']))] = [
+                'x' => (float) $pc['x'],
+                'xEnd' => (float) $pc['xEnd'],
+            ];
+        }
+
+        if (count($bands) === 0) {
+            throw new RuntimeException('This capture recorded no column positions, so its letters cannot be turned into a layout. Re-import the PDF to capture it again.');
+        }
+
+        $bandFor = function (string $letter, string $field) use ($bands): array {
+            $key = strtoupper(trim($letter));
+            if (!isset($bands[$key])) {
+                throw new RuntimeException("Column \"{$letter}\" has no recorded position on the page — pick a letter from the grid for {$field}.");
+            }
+
+            return $bands[$key];
+        };
+
+        $desc = $bandFor($validated['desc'], 'the description');
+
+        $monthCols = [];
+        foreach ($validated['months'] as $m => $cols) {
+            $mi = (int) $m;
+            $x = null;
+            $xEnd = null;
+            foreach ((array) $cols as $letter) {
+                $b = $bandFor((string) $letter, "month {$mi}");
+                $x = $x === null ? $b['x'] : min($x, $b['x']);
+                $xEnd = $xEnd === null ? $b['xEnd'] : max($xEnd, $b['xEnd']);
+            }
+            $monthCols[] = ['index' => $mi, 'x' => $x, 'xEnd' => $xEnd];
+        }
+
+        usort($monthCols, fn ($a, $b) => $a['index'] <=> $b['index']);
+
+        if (count($monthCols) < 2) {
+            throw new RuntimeException('A layout needs at least two month columns to describe a schedule.');
+        }
+
+        // Ascending month numbers must run left to right across the page, and no
+        // two may claim the same strip — a band that overlaps its neighbour would
+        // count the same printed cell into two different months.
+        for ($i = 1; $i < count($monthCols); $i++) {
+            if ($monthCols[$i]['x'] < $monthCols[$i - 1]['xEnd'] - 1e-9) {
+                throw new RuntimeException("Month {$monthCols[$i]['index']} starts left of where month {$monthCols[$i - 1]['index']} ends — months must run left to right without overlapping.");
+            }
+        }
+
+        foreach ($monthCols as $mc) {
+            if ($desc['x'] < $mc['xEnd'] - 1e-9 && $mc['x'] < $desc['xEnd'] - 1e-9) {
+                throw new RuntimeException("The description column overlaps month {$mc['index']} — the work names and the monthly figures cannot share a column.");
+            }
+        }
+
+        // Keep everything that identifies the PAGE (sig, hints, pseudoCols, the
+        // header line) and replace only what the reviewer actually taught.
+        $taught = $page;
+        $taught['descX'] = $desc['x'];
+        $taught['descRight'] = $desc['xEnd'];
+        $taught['monthCols'] = $monthCols;
+
+        return [
+            // Inherit the capture's version rather than inventing one: the reader
+            // gates on an exact match, so a taught map must age with its source.
+            'v' => $map['v'] ?? 1,
+            'kind' => 'pdf',
+            'pages' => [$taught],
+        ];
     }
 
     /**

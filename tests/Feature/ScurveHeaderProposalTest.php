@@ -1760,4 +1760,211 @@ class ScurveHeaderProposalTest extends TestCase
 
         unlink($path);
     }
+    /* ─── PDF-4 teach-path gating (2026-09-13) ───────────────────────────── */
+
+    // A PDF capture as the browser stores it: the COLUMNS block plus a PDF-shaped
+    // map whose pseudoCols are the bridge from letters back to page bands.
+    private function makePdfRow(array $pages = null): ScurveHeaderProposal
+    {
+        $pseudo = [
+            ['letter' => 'A', 'x' => 0.05, 'xEnd' => 0.30],
+            ['letter' => 'B', 'x' => 0.30, 'xEnd' => 0.38],
+            ['letter' => 'C', 'x' => 0.38, 'xEnd' => 0.60],
+            ['letter' => 'D', 'x' => 0.60, 'xEnd' => 0.82],
+        ];
+        $page = [
+            'pageHint' => 0,
+            'lineHint' => 2,
+            'sig' => ['description', 'amount', 'stint 1', 'stint 2'],
+            'descX' => 0.05,
+            'descRight' => 0.30,
+            'monthCols' => [
+                ['index' => 1, 'x' => 0.38, 'xEnd' => 0.60],
+                ['index' => 2, 'x' => 0.60, 'xEnd' => 0.82],
+            ],
+            'pseudoCols' => $pseudo,
+            'headerLine' => 'DESCRIPTION AMOUNT STINT 1 STINT 2',
+        ];
+
+        return ScurveHeaderProposal::create([
+            'contractor_id' => null,
+            'source_type' => 'pdf',
+            'header_rows_text' => "COLUMNS: A,B,C,D | HEADER: column labels\n"
+                . "R1 [HEADER]: DESCRIPTION,AMOUNT,STINT 1,STINT 2\n"
+                . "R2 [DATA]: Roofing,1000,60%,40%",
+            'header_hash' => hash('sha256', 'pdf-teach-fixture-' . ($pages === null ? 'single' : 'multi')),
+            'column_map' => ['v' => 1, 'kind' => 'pdf', 'pages' => $pages ?? [$page]],
+            'occurrences' => 1,
+            'status' => 'proposed',
+            'source' => 'auto-capture',
+        ]);
+    }
+
+    private function pdfTeachPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'desc' => 'A',
+            'months' => [1 => ['C'], 2 => ['D']],
+            'header_rows' => [1],
+        ], $overrides);
+    }
+
+    // The bug this whole item exists for: a taught PDF row used to be handed an
+    // EXCEL map ({v, sig, cols}), which the PDF reader ignores outright because
+    // usableLayoutMap gates on kind === 'pdf'. The reviewer saw "saved" and
+    // nothing ever changed. The taught map must now be PDF-shaped: bands as
+    // page-width fractions, recovered from the capture's own pseudoCols.
+    // Called by: teachColumns() -> buildTaughtPdfMap().
+    public function test_teaching_a_pdf_row_produces_a_pdf_shaped_map(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->pdfTeachPayload())
+            ->assertOk()->assertJsonPath('success', true)->assertJsonPath('mode', 'variant');
+
+        $variant = ScurveHeaderProposal::where('source', 'manual-teach')->first();
+        $this->assertNotNull($variant);
+        $this->assertSame('pdf', $variant->source_type, 'a taught PDF row stays a PDF row');
+
+        $map = $variant->column_map;
+        $this->assertSame('pdf', $map['kind'] ?? null, 'an Excel map here is the defect being fixed');
+        $this->assertArrayNotHasKey('cols', $map, 'no Excel column indices may ride on a PDF map');
+        $this->assertCount(1, $map['pages']);
+
+        $page = $map['pages'][0];
+        // Letters converted back into the exact bands the capture recorded.
+        $this->assertSame(0.05, $page['descX']);
+        $this->assertSame(0.30, $page['descRight']);
+        $this->assertSame([
+            ['index' => 1, 'x' => 0.38, 'xEnd' => 0.60],
+            ['index' => 2, 'x' => 0.60, 'xEnd' => 0.82],
+        ], $page['monthCols']);
+        // What identifies the PAGE survives, so the taught map still matches it.
+        $this->assertSame(['description', 'amount', 'stint 1', 'stint 2'], $page['sig']);
+        $this->assertNotEmpty($page['pseudoCols'], 'pseudoCols must survive so the row can be re-taught');
+    }
+
+    // Two letters on one month widen that month's band to span both.
+    // Called by: buildTaughtPdfMap() month span merging.
+    public function test_a_month_taught_two_columns_spans_both(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['months' => [1 => ['B', 'C'], 2 => ['D']]]))
+            ->assertOk();
+
+        $page = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map['pages'][0];
+        $this->assertSame(['index' => 1, 'x' => 0.30, 'xEnd' => 0.60], $page['monthCols'][0]);
+    }
+
+    // The grid renders the FIRST printed page only, so a reviewer cannot see the
+    // months on later pages. Saving what they can see would teach a SHORT
+    // schedule — the same defect that made single-page capture unsafe — so it is
+    // refused. Crucially the refusal happens BEFORE any write.
+    // Called by: buildTaughtPdfMap() multi-page guard.
+    public function test_a_multi_page_pdf_layout_refuses_teaching_without_writing(): void
+    {
+        $staff = $this->makeUser('staff');
+        $pageOne = $this->makePdfRow()->column_map['pages'][0];
+        $pageTwo = array_merge($pageOne, [
+            'pageHint' => 1,
+            'monthCols' => [['index' => 3, 'x' => 0.38, 'xEnd' => 0.60]],
+        ]);
+        ScurveHeaderProposal::query()->delete();
+        $row = $this->makePdfRow([$pageOne, $pageTwo]);
+        $before = $row->column_map;
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['mode' => 'replace']))
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        // REPLACE used to overwrite first and refuse later — the destructive half
+        // of the bug. The original map must be untouched and still live-able.
+        $this->assertSame($before, $row->fresh()->column_map, 'a refusal must not destroy the map');
+        $this->assertSame('proposed', $row->fresh()->status);
+        $this->assertSame(1, ScurveHeaderProposal::count(), 'no variant is created either');
+    }
+
+    // An AMBIGUOUS capture (positional wording — nothing in the bytes says which
+    // month a column is) stores column_map NULL, and pseudoCols goes with it. Its
+    // letters have no coordinates, so there is nothing to convert; say so rather
+    // than invent geometry.
+    // Called by: buildTaughtPdfMap() no-geometry guard.
+    public function test_a_pdf_row_without_recorded_positions_refuses_honestly(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+        $row->update(['column_map' => null]);
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->pdfTeachPayload())
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertNull($row->fresh()->column_map);
+        $this->assertSame(1, ScurveHeaderProposal::count());
+    }
+
+    // Geometry that is not a table is refused on the PDF side too — the same
+    // spirit as buildTaughtMap's gates on the Excel side.
+    // Called by: buildTaughtPdfMap() overlap + disjoint guards.
+    public function test_overlapping_or_swallowed_columns_are_refused(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        // Month 2 assigned LEFT of month 1 — months must run left to right.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['months' => [1 => ['D'], 2 => ['C']]]))
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        // The description column cannot also be a month column.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['desc' => 'C']))
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        $this->assertSame(1, ScurveHeaderProposal::count(), 'nothing was saved by either refusal');
+    }
+
+    // A letter the capture never recorded cannot become a band.
+    // Called by: buildTaughtPdfMap() bandFor().
+    public function test_an_unknown_letter_is_refused_on_the_pdf_path(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = $this->makePdfRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['months' => [1 => ['C'], 2 => ['Z']]]))
+            ->assertStatus(422)->assertJsonPath('success', false);
+
+        $this->assertSame(1, ScurveHeaderProposal::count());
+    }
+
+    // The Excel path must be entirely unaffected by the new branch — it is gated
+    // on source_type, and Excel rows are the overwhelming majority.
+    // Called by: teachColumns() excel branch (unchanged).
+    public function test_excel_teaching_still_produces_an_excel_map(): void
+    {
+        $staff = $this->makeUser('staff');
+        $original = $this->makeTeachableRow();
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$original->id}/columns", $this->teachPayload())
+            ->assertOk();
+
+        $map = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map;
+        $this->assertArrayNotHasKey('kind', $map, 'an Excel map carries no PDF kind');
+        $this->assertSame(2, $map['descCol']);
+        $this->assertNotEmpty($map['monthSpans']);
+    }
+
 }
