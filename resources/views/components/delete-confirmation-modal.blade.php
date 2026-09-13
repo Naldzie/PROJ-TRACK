@@ -1,5 +1,13 @@
 <!-- Reusable Delete Confirmation Modal -->
 {{-- NOTE: z-index ensures this modal appears above any stacked modals (e.g. setup baseline modal). --}}
+{{-- Idempotence (2026-09-13): this component declares showDeleteConfirmation and a
+     module-level callback at the top level of its <script>, so including it twice on
+     one page threw "Identifier already declared" and killed the whole block. It is
+     now included by the LAYOUTS as well, because the Learned Keywords and S-Curve
+     Layouts desks live in the layout and call it from any page — on the dashboard it
+     was simply absent, and Reject threw "showDeleteConfirmation is not defined".
+     Pages that include it directly still work; the guard below renders it exactly once. --}}
+@once
 <div class="modal fade" id="deleteConfirmationModal" tabindex="-1" aria-hidden="true" style="z-index: 1080;">
     <div class="modal-dialog">
         <div class="modal-content" style="border: none; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
@@ -101,3 +109,5 @@ function closeDeleteConfirmationModal() {
     }
 }
 </script>
+
+@endonce

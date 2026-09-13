@@ -16,6 +16,7 @@ import {
     crossCheckPdfAgainstFile,
     pdfCurvesDisagree,
     chartScaleTokens,
+    detectPseudoColumns,
     groupItemsIntoLines,
     linesToTokenLines,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
@@ -758,8 +759,27 @@ test('a positional split is captured WITHOUT a map instead of guessed', () => {
     const out = derivePdfLayout([first, second]);
     assert.ok(out, 'the capture must still reach the desk for review');
     assert.equal(out.ambiguous, true);
-    assert.equal(out.map, null, 'an unknowable numbering must not be invented');
     assert.match(out.block, /^COLUMNS: /, 'the slice is still shown for teaching');
+
+    // PDF-4 Stage 2: an ambiguous capture keeps its GEOMETRY and loses only its
+    // NUMBERING. It used to lose both — the map went null and pseudoCols went with
+    // it — so the rows this path exists to hand a reviewer arrived with letters and
+    // cell text but not one coordinate, and teaching them was impossible.
+    assert.ok(out.map, 'the geometry survives so the capture can be taught');
+    assert.equal(out.map.kind, 'pdf');
+    out.map.pages.forEach((p) => {
+        assert.equal(p.unnumbered, true, 'every page is marked as awaiting numbering');
+        assert.deepEqual(p.monthCols, [], 'an unknowable numbering must not be invented');
+        assert.ok(p.pseudoCols.length >= 2, 'but its columns are recorded, ready to teach');
+    });
+    // Letters run on across the seam, so one legend describes the whole table.
+    const letters = out.map.pages.flatMap((p) => p.pseudoCols.map((c) => c.letter));
+    assert.equal(new Set(letters).size, letters.length, 'letters are unique across pages');
+
+    // And it still cannot be READ from until someone teaches it — geometry alone
+    // is an offer to the reviewer, never a layout the importer may trust.
+    assert.equal(parseSCurvePdf([first, second], { liveMaps: [{ id: 1, map: out.map }] }), null,
+        'an untaught capture must not become a baseline');
 });
 
 /* ─── E1-PDF consult (PDF-2) ──────────────────────────────────────────────── */
@@ -1311,4 +1331,123 @@ test('the last month band stops a neighbour-width past its label', () => {
     assert.ok(result);
     assert.equal(result.meta.contractAmount, 2000,
         'a value past the last band must not be swept into it');
+});
+/* ─── PDF-4 Stage 2: the teach grid must picture the real table ───────────── */
+
+// The defect this whole stage exists for. A contractor header prints its labels
+// across two lines and skips columns entirely — the roof's prints "NO." then jumps
+// to "Amount" — so reading columns off the HEADER LINE alone produced one enormous
+// band that swallowed DESCRIPTION, UNIT and QTY together. The reviewer was shown a
+// table the document does not contain.
+test('columns come from the whole table, not the header line alone', () => {
+    const sheet = page([
+        // Header line names only two of the five columns, exactly like the roof.
+        [800, [['NO.', 40, 22], ['Amount', 250, 45], ['Month 1', 340, 50], ['Month 2', 430, 50]]],
+        // ... but the body prints all of them, aligned.
+        [760, [['A', 42, 8], ['ROOFING WORKS', 70, 110], ['LOT', 190, 22], ['1.00', 220, 24],
+            ['14,306.44', 255, 44], ['16%', 350, 20], ['17%', 440, 20]]],
+        [720, [['B', 42, 8], ['EARTHWORKS', 70, 90], ['LOT', 190, 22], ['1.00', 220, 24],
+            ['142,417.00', 251, 48], ['20%', 350, 20], ['27%', 440, 20]]],
+    ]);
+    const lines = linesToTokenLines(groupItemsIntoLines(sheet));
+    const cols = detectPseudoColumns(lines, 0, lines.length, null);
+
+    // item code | description | unit | qty | amount | month 1 | month 2
+    assert.ok(cols.length >= 6,
+        'the header line names 4 columns; the table has at least 6 — got ' + cols.length);
+
+    const cellOf = (x) => cols.findIndex((c, k) => x >= c.x && x < (cols[k + 1] ? cols[k + 1].x : Infinity));
+    assert.notEqual(cellOf(70), cellOf(190), 'DESCRIPTION and UNIT are different columns');
+    assert.notEqual(cellOf(190), cellOf(220), 'UNIT and QTY are different columns');
+    assert.notEqual(cellOf(220), cellOf(255), 'QTY and the amount are different columns');
+});
+
+// A right-aligned money column drifts left as its figures get wider — 14,306.44
+// starts at 255 while 142,417.00 starts at 251 — yet it is ONE column. The strips
+// sit almost exactly on top of each other, which is what says so.
+test('a right-aligned money column stays one column', () => {
+    const sheet = page([
+        [800, [['Amount', 250, 45], ['Month 1', 340, 50], ['Month 2', 430, 50]]],
+        [760, [['14,306.44', 255, 44], ['16%', 350, 20], ['17%', 440, 20]]],
+        [720, [['142,417.00', 251, 48], ['20%', 350, 20], ['27%', 440, 20]]],
+        [680, [['1,890,436.78', 247, 52], ['6%', 350, 20], ['19%', 440, 20]]],
+    ]);
+    const lines = linesToTokenLines(groupItemsIntoLines(sheet));
+    const cols = detectPseudoColumns(lines, 0, lines.length, null);
+    const cellOf = (x) => cols.findIndex((c, k) => x >= c.x && x < (cols[k + 1] ? cols[k + 1].x : Infinity));
+
+    assert.equal(cellOf(255), cellOf(251), 'the widest and narrowest figures share a column');
+    assert.equal(cellOf(255), cellOf(247), 'and so does the widest of all');
+    assert.notEqual(cellOf(255), cellOf(350), 'but the months remain separate');
+});
+
+// The S-curve picture's own scale is not data. Left in, it drew phantom rows
+// holding nothing but "100%" or "25%", and put a stray "50%" in the same cell as a
+// real value. Same detector the reader already uses (P6).
+test('the chart scale never reaches the teaching grid', () => {
+    const sheet = page([
+        [800, [['DESCRIPTION', 40, 80], ['Month 1', 200, 50], ['Month 2', 300, 50]]],
+        [770, [['100%', 430, 28]]],
+        [760, [['Roofing', 45, 55], ['60%', 210, 22], ['40%', 310, 22]]],
+        [730, [['75%', 430, 28]]],
+        [720, [['Walls', 45, 45], ['70%', 210, 22], ['30%', 310, 22]]],
+        [690, [['50%', 430, 28]]],
+        [650, [['25%', 430, 28]]],
+        [610, [['0%', 433, 22]]],
+    ]);
+    const out = derivePdfLayout([sheet]);
+    assert.ok(out && out.block, 'the capture still produces a slice');
+    assert.ok(!/100%|75%|25%/.test(out.block),
+        'no scale rung may appear as a cell:\n' + out.block);
+    assert.match(out.block, /Roofing/, 'while the real rows are untouched');
+});
+
+// The 15-row window used to stop one row before the CUMULATIVE line — the very
+// figure a baseline is adopted from — so a reviewer decided whether to trust a
+// layout with the evidence for it just below the fold.
+test('summary rows survive past the row budget', () => {
+    const rows = [
+        [800, [['DESCRIPTION', 40, 80], ['Month 1', 200, 50], ['Month 2', 300, 50]]],
+    ];
+    // Twelve activity rows: more than enough to spend a small budget.
+    for (let i = 0; i < 12; i++) {
+        rows.push([760 - i * 20, [['Task ' + i, 45, 50], ['5%', 210, 18], ['5%', 310, 18]]]);
+    }
+    rows.push([500, [['CUMULATIVE %', 40, 90], ['40.00%', 205, 32], ['100.00%', 303, 36]]]);
+    const out = derivePdfLayout([page(rows)], 6);
+
+    assert.match(out.block, /\[SUMMARY\]/, 'the summary block is shown');
+    assert.match(out.block, /100\.00%/, 'including the cumulative row past the budget');
+});
+
+// A column-split print is ONE table cut down the middle. Showing only the first
+// half meant the months on the second could never be pointed at, which is why
+// teaching the roof was impossible rather than merely wrong.
+test('both printed pages render as one grid with letters running on', () => {
+    const first = page([
+        [800, [['DESCRIPTION', 40, 80], ['Month 1', 200, 50], ['Month 2', 300, 50]]],
+        [760, [['ROOFING', 45, 60], ['16%', 210, 20], ['17%', 310, 20]]],
+        [720, [['WALLS', 45, 45], ['20%', 210, 20], ['27%', 310, 20]]],
+    ]);
+    // The overflow sheet: the same rows at the same heights, carrying the columns
+    // that did not fit. Indexed wording numbers itself, so the seam is unambiguous.
+    const second = page([
+        [800, [['Month 3', 40, 50], ['Month 4', 130, 50]]],
+        [760, [['16%', 50, 20], ['2%', 140, 18]]],
+        [720, [['30%', 50, 20], ['4%', 140, 18]]],
+    ]);
+
+    const out = derivePdfLayout([first, second]);
+    assert.ok(out && out.block, 'the capture must produce a slice');
+    const legend = out.block.split('\n')[0];
+    const letters = legend.replace('COLUMNS: ', '').split(' |')[0].split(',');
+    assert.equal(new Set(letters).size, letters.length, 'letters are unique across the seam');
+
+    // The page-two values must appear on the SAME row as their page-one twins —
+    // the rows share their height, which is what makes the pairing deterministic.
+    const roofRow = out.block.split('\n').find((l) => l.includes('ROOFING'));
+    assert.ok(roofRow, 'the activity row is present');
+    assert.equal((roofRow.match(/16%/g) || []).length, 2,
+        'page one and page two both contribute to one row:\n' + roofRow);
+    assert.match(roofRow, /2%/, 'including the tail month printed on page two');
 });

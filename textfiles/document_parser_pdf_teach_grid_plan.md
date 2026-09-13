@@ -5,39 +5,96 @@
 #              textfiles/document_parser_excel_learning_loop_plan.md (Phase-A — the teach
 #              UI being reused)
 # Date: September 13, 2026
-# Status: ⬜ PLANNED — approved by the user 2026-09-13, no code yet.
-#         The PDF-4 teach-path BUG FIX is separate and already BUILT (see the parent's §9).
+# Status: ✅ BUILT 2026-09-13 (code, UNCOMMITTED per user) — §2 through §7 all done.
+#         Reader output unchanged (16-read regression byte-identical). NOT browser-proven:
+#         the acceptance run is §10, and expect the one-time re-capture wave of §8.
+#         Build record + the three measured attempts at the column rule: §13.
 # Branch: phase-5-parser-accuracy (Rule 12 — no merge to main without explicit confirmation)
 
 ===============================================================================
   0. READ THIS FIRST (handoff in 60 seconds)
 ===============================================================================
 
-  WHAT THIS IS
+  WHAT THIS WAS
     The teach desk shows a reviewer a reconstructed table and asks them to point at
-    its columns. That reconstruction is currently NOT an accurate picture of the
-    document: whole columns are missing, one label is split across two rows, the
-    summary block is cut off, only the first printed page is drawn, and the S-curve
-    chart's own numbers appear as if they were cells.
-    None of this affects an IMPORT — the reader parses the real file, and the roof
-    imports correctly today. It affects the human who has to decide whether to trust
-    a layout, and it is why the roof cannot be taught at all.
+    its columns. That reconstruction was NOT an accurate picture of the document:
+    whole columns collapsed into one, a label was split across two rows, the summary
+    block was cut off before the cumulative row, only the first printed page was
+    drawn, and the S-curve chart's own scale appeared as if it were cells.
+    None of that ever affected an IMPORT — the reader parses the real file, and the
+    roof has imported correctly throughout. It affected the human deciding whether to
+    trust a layout, and it was why the roof could not be taught at all.
 
-  WHY IT MATTERS NOW
+  ⚠️ WHERE IT STANDS RIGHT NOW — READ BEFORE TOUCHING ANYTHING
+    §2–§7 are BUILT and the suites are green, but NOTHING IS COMMITTED (user's
+    instruction: "no commit for now"). If this session ended, the work is sitting in
+    the working tree of branch phase-5-parser-accuracy. ELEVEN files — check with
+    `git status --short`, and if it disagrees with this list, trust git and fix this:
+
+      public/js/admin/projects/scurve-pdf-parser-core.js     detectPseudoColumns,
+          buildMergedSliceBlock, isCumulativeShapedRow, summary-aware budget,
+          chart-token exclusion, ambiguous captures keep their geometry
+      app/Http/Controllers/Admin/SCurveHeaderProposalController.php
+          taught letters grouped by page -> multi-page map; refusal lifted
+      resources/views/admin/_manage_scurve_headers_modal.blade.php
+          full-width grid, collapsed header picker, on-demand month buttons,
+          CUMULATIVE badge, PDF-shaped prefill
+      resources/views/components/delete-confirmation-modal.blade.php   @once guard
+      resources/views/layouts/app.blade.php                            include it
+      resources/views/layouts/stafflayouts.blade.php                   include it
+      tests/js/scurve-pdf-parser.test.mjs                              +5, 1 rewritten
+      tests/Feature/ScurveHeaderProposalTest.php                       +1 net, 1 flipped
+      textfiles/document_parser_pdf_teach_grid_plan.md                 this file
+      textfiles/document_parser_pdf_layout_learning_plan.md            parent status
+      AGENTS.md                                                        handoff + queue
+
+    The delete-confirmation change is NOT part of this plan — it is a separate
+    blocking bug found while testing it (§13, round two) and it rides in the same
+    uncommitted batch. Say so if the work is split into two commits.
+
+  STATE OF PROOF
+    Suites green: PHP 1185 / the same 7 pre-existing BY NAME; JS 157 tests, 155
+    passed + the 2 intended blinding fails. Reader regression 16 reads, 0 changed.
+    NOT BROWSER-PROVEN — the user will run the detailed test. The script is §10.
+
+  THE ONE THING THAT WILL LOOK LIKE A BUG AND IS NOT
+    A capture stored BEFORE this work still renders the old way: 15 rows, 2 summary
+    rows, page one only, no month 7. The block text feeds header_hash, so a stored
+    row cannot retro-fit itself. RE-IMPORT the file to replace it — that is the
+    one-time re-capture wave of §8, and it will produce a second proposed row.
+    Approve one, reject the other. (This is exactly what the user hit on first look;
+    the live row #73 was captured pre-change and had maxMonth=7 in its MAP but only
+    eight columns in its BLOCK, which is why the palette stopped at M5.)
+
+  WHY IT MATTERS
     Only TWO real contractor files exist for testing (the roof and BUHI). The roof is
     the only multi-page PDF specimen, so making it teachable is also what makes the
     teach path testable end to end.
 
-  ORDER OF WORK: §2 column detection → §3 page merge → §4 summary rows → §5 chart
-  exclusion → §6 modal layout → §7 ambiguous geometry. Each provable on the roof.
-  Rule 10 applies: inform the user at each step.
+  ORDER OF WORK: ~~§2 column detection → §3 page merge → §4 summary rows → §5 chart
+  exclusion → §6 modal layout → §7 ambiguous geometry~~ ALL BUILT 2026-09-13 — see
+  §13 for what shipped, for the two column rules that were tried and rejected first,
+  and for the three self-inflicted bugs worth not repeating.
+  REMAINING: the browser acceptance run in §10. Rule 10 applies before anything new.
 
   HARD RULES
     - Blinding stays ON (L3_TEST_BLIND_ABC = true). JS showing 2 failures is green.
     - NOTHING here may change what the READER extracts. The 16-read sample regression
-      (C:\temp\opencode\verify_p6.mjs) must stay byte-identical.
+      (C:\temp\opencode\verify_p6.mjs) must stay byte-identical — re-run it after any
+      touch to scurve-pdf-parser-core.js.
+    - NEVER build source containing a REGEX through a shell-quoted string. It ate the
+      backslashes three separate times in this track; write it with the file editor
+      or from a heredoc'd file, then grep the emitted pattern before trusting a run.
     - Sample files live in git-ignored sampledocs/ — reference by name, never commit.
+    - One-off probes go in C:\temp\opencode, outside the repo.
     - Log behavioural changes here before committing (Rule 11).
+
+  VERIFY COMMANDS
+    npm run test:js        -> 157 tests, 155 passed + 2 intended blinding fails
+    php artisan test       -> 1185 passed / the same 7 pre-existing failures
+    node C:\temp\opencode\verify_p6.mjs   -> "16 reads compared … 0 changed"
+    node C:\temp\opencode\probe_block.mjs -> the roof's grid as the desk will draw it
+    php artisan view:clear && php artisan view:cache   after ANY Blade edit
 
 ===============================================================================
   1. THE PROBLEM, MEASURED (roof PDF, read-only probe)
@@ -92,7 +149,7 @@
         builder does not consult it.
 
 ===============================================================================
-  2. COLUMN DETECTION FROM THE WHOLE BLOCK  ⬜
+  2. COLUMN DETECTION FROM THE WHOLE BLOCK  ✅ BUILT (corrected — see §13)
 ===============================================================================
 
   Cluster token x-positions across EVERY row in the block, not just the header line.
@@ -101,16 +158,22 @@
   The amount column above appears at 257.1 / 262.0 / 263.3 / 267.5 — the same logical
   column, four x values. Clustering on x alone over-splits it.
 
-  RULE: cluster on x with a small tolerance, then MERGE adjacent clusters whenever
-  merging puts no two tokens FROM THE SAME ROW into one cell. That is checkable
-  against the data rather than tuned, and it correctly keeps the "₱" symbol as its
-  own narrow column, because ₱ and its amount DO co-occur on the TOTAL row.
+  RULE AS PLANNED: cluster on x, then merge adjacent clusters whenever merging puts
+  no two tokens FROM THE SAME ROW into one cell.
+  ⚠️ THAT RULE ALONE WAS NOT ENOUGH — see §13 for the two corrections measurement
+  forced. In short: a lone "₱" needed excluding (it shares the TOTAL row with its own
+  amount, so it could never merge and split the months in half), the metadata lines
+  above the header needed excluding (their label/value pairs tore real columns
+  apart), and no-collision had to be joined by OVERLAP — two neighbours are one
+  column when their strips substantially cover each other. That last part is what
+  rejoins a right-aligned money column while keeping DESCRIPTION and UNIT apart,
+  which no-collision alone could not do because they never share a row either.
 
   pseudoCols keeps its {letter, x, xEnd} shape, so buildTaughtPdfMap (already built)
   needs no change. columnLetter() keeps naming them.
 
 ===============================================================================
-  3. MERGE THE PAGES INTO ONE GRID  ⬜
+  3. MERGE THE PAGES INTO ONE GRID  ✅ BUILT
 ===============================================================================
 
   PROVEN FEASIBLE 2026-09-13 (probe_merge_grid.mjs). Pairing the roof's two pages by
@@ -138,7 +201,7 @@
   show later pages, and that stops being true here.
 
 ===============================================================================
-  4. SUMMARY-AWARE ROW BUDGET  ⬜
+  4. SUMMARY-AWARE ROW BUDGET  ✅ BUILT
 ===============================================================================
 
   Fill the budget with header and activity rows as now, then ALWAYS append rows
@@ -155,7 +218,7 @@
   neither is bounded by the capture window.
 
 ===============================================================================
-  5. KEEP CHART FURNITURE OUT OF THE GRID  ⬜
+  5. KEEP CHART FURNITURE OUT OF THE GRID  ✅ BUILT
 ===============================================================================
 
   Reuse P6's chartScaleTokens in buildPdfSliceBlock. Measured at ZERO false positives
@@ -164,7 +227,7 @@
   picture, not a cell", rather than two that can drift.
 
 ===============================================================================
-  6. TEACH MODAL LAYOUT  ⬜  (user-selected pain points, 2026-09-13)
+  6. TEACH MODAL LAYOUT  ✅ BUILT  (user-selected pain points, 2026-09-13)
 ===============================================================================
 
   resources/views/admin/_manage_scurve_headers_modal.blade.php
@@ -179,7 +242,7 @@
     screen; today it sits in a narrow column scrolling both ways.
 
 ===============================================================================
-  7. AMBIGUOUS CAPTURES KEEP THEIR GEOMETRY  ⬜
+  7. AMBIGUOUS CAPTURES KEEP THEIR GEOMETRY  ✅ BUILT
 ===============================================================================
 
   derivePdfLayout returns map: null for positional wording and DISCARDS the whole
@@ -253,6 +316,175 @@
     capped by PHP's 60s ceiling, so a second pass cannot fit without raising
     max_execution_time — which would leave a user watching a spinner for two minutes
     for an answer four models have already declined.
+
+===============================================================================
+  13. BUILD LOG
+===============================================================================
+
+  2026-09-13 — §2, §3, §4, §5, §6, §7 ✅ BUILT (code, UNCOMMITTED per user).
+  Everything in this plan except the re-capture wave, which happens by itself on
+  the next import. Nothing here changed what the reader extracts — the 16-read
+  sample regression is byte-identical against the committed core, checked after
+  every step.
+
+    §2 COLUMN DETECTION FROM THE WHOLE TABLE — detectPseudoColumns(), exported.
+    Reaching the right rule took three measured attempts, and the failures are
+    worth keeping because each one looked correct on paper:
+      (a) cluster every token, merge neighbours that never share a row. Gave the
+          roof its ITEM NO. / DESCRIPTION / UNIT / QTY / Amount columns — but grew
+          SEVEN spurious columns, because the TOTAL row prints "₱" before every
+          figure and a mark and its own amount share that row, so each ₱ claimed a
+          strip and split the months in half. FIX: a token with no letter or digit
+          is decoration and gets no vote. It still renders.
+      (b) the metadata lines above the header then tore real columns apart — the
+          SEGMENT specimen's ITEM NO. header separated from its own 1/2/3 values,
+          because a "CONTRACT NAME: …" label above happened to share their rows.
+          FIX: detection starts AT the header line, never above it. A multi-line
+          header loses nothing: the roof's UNIT and QTY. labels sit on a metadata
+          line, but the same columns reprint as "LOT" and "1.00" on every activity
+          row.
+      (c) requiring shared alignment (same left or right edge) to merge was too
+          strict and split every centred header from its right-aligned values.
+          REJECTED. What works is OVERLAP: two neighbours are one column when their
+          strips substantially cover each other. A right-aligned money column drifts
+          left as figures widen (257 / 262 / 267) but all of it ends at ~305, so the
+          strips coincide; the roof's DESCRIPTION and UNIT never co-occur either —
+          each activity prints its name on one line and "LOT 1.00 amount" on the
+          next — but their strips barely touch, so they stay apart.
+    MEASURED, roof page 1: the old rule gave 8 columns with one 227pt band holding
+    four of them; the new rule gives ITEM NO. | DESCRIPTION | UNIT | QTY | Amount |
+    six months. SEGMENT and the 6-stage specimen both improved as well.
+
+    §3 ONE GRID FOR THE WHOLE TABLE — buildMergedSliceBlock(). Pages are paired by
+    each row's offset from its OWN page's header (the roof's two headers sit 1.44pt
+    apart, so a shared origin drifts). Letters run on across the seam — page 1 = A…K,
+    page 2 = L…M — which is what keeps ONE legend and ONE R-numbering, so
+    schParseHeaderBlock, parseStoredSlice and the whole Phase-A teach UI work
+    untouched. The multi-page teach refusal built earlier the same day is therefore
+    LIFTED, and buildTaughtPdfMap now groups taught letters by the page they belong
+    to and emits a multi-page map. A month given columns from two different pages is
+    refused: a month lives on one sheet.
+
+    §4 SUMMARY ROWS SURVIVE THE BUDGET. The block is scanned whole, then the budget
+    buys the head of the table and every [SUMMARY] row is appended wherever it fell.
+    On the roof that is the difference between stopping at the per-month "%" line and
+    showing R16 — 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100.00, the row the
+    baseline is actually adopted from.
+
+    §5 CHART FURNITURE EXCLUDED, reusing P6's chartScaleTokens in both block
+    builders. The phantom rows holding only "100%" or "25%" are gone, and so is the
+    stray "50%" that shared a cell with a real value.
+
+    §6 MODAL LAYOUT. The grid is the click surface, so it now spans the full width
+    with the palette in a band above it. The header-row picker collapses to one line
+    naming the detected row with a "change" toggle, instead of a fifteen-checkbox
+    column. Month buttons are built on demand from what the capture suggests, with a
+    "+ month" control, rather than a fixed wall of twelve pushing the grid off screen.
+
+    §7 AMBIGUOUS CAPTURES KEEP THEIR GEOMETRY. They used to lose the map AND the
+    pseudoCols with it, so the rows this path exists to hand a reviewer arrived with
+    letters and cell text but not one coordinate. Now the geometry is stored with
+    monthCols emptied and unnumbered: true — the numbering is the reviewer's to
+    supply. VERIFIED that it is still unreadable until taught: usableLayoutMap
+    refuses a month-less page, so an untaught capture is an offer, never a baseline.
+
+    RESULT ON THE ROOF (real file, real core): the block the desk renders is now
+      COLUMNS: A…M
+      R3  [HEADER]  NO. | Amount | 30 days ×6 | 7 days      <- all SEVEN months
+      R4  [DATA]    A | FACILITIES FOR ENGINEER | … | 16% | 2%
+      R5  [DATA]    LOT | 1.00 | 14,306.44
+      R16 [SUMMARY] % | 6.32% | 24.31% | … | 99.14% | 100.00%
+    ITEM NO., DESCRIPTION, UNIT, QTY and Amount are separate columns; both printed
+    pages are one table; the cumulative row is visible.
+
+    CAUGHT WHILE TESTING (mine): the first merged-grid fixture used two repeated
+    "30 days" labels and the capture refused it — positional wording needs THREE
+    repetitions before it will be believed, which is the guard working. Rewritten
+    with indexed labels, which number themselves.
+
+    TESTS +5 JS (157 total): columns come from the whole table not the header line;
+    a right-aligned money column stays one column; the chart scale never reaches the
+    grid; summary rows survive past the budget; both pages render as one grid with
+    unique letters. +1 PHP net — the multi-page REFUSAL fixture became a multi-page
+    TEACHES fixture, and a new one pins that a month spanning two pages is refused
+    without writing. The old "positional split has NO map" fixture now pins the new
+    contract: geometry kept, numbering absent, still unreadable until taught.
+
+    SUITES: PHP 1185 passed / the same 7 pre-existing failures BY NAME.
+    JS 157 tests, 155 passed + the 2 intended blinding fails.
+    READER REGRESSION: 16 sample reads, 0 changed.
+
+    NOT BROWSER-PROVEN. The acceptance run is §10: set the roof's live layout back
+    to proposed so the rules miss, re-import, and the capture's grid should show the
+    five left-hand columns separately, all seven months, and the cumulative row —
+    then teach all seven, save (no refusal), approve, and re-import to
+    6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 with counts 4,4,4,4,3,4,3.
+    EXPECT A ONE-TIME RE-CAPTURE WAVE (§8): the block text feeds header_hash, so the
+    existing rows re-capture once as a second proposed row. Approve one, reject the
+    other.
+
+  2026-09-13 (same day, second round) — THREE THINGS FROM THE USER'S FIRST REAL
+  LOOK AT THE NEW GRID. Code, still UNCOMMITTED.
+
+    (1) A BLOCKING BUG, NOT OURS BUT IN OUR WAY: "showDeleteConfirmation is not
+    defined" on the dashboard, so a captured layout could not be rejected at all.
+    CAUSE: the Learned Keywords and S-Curve Layouts desks are included by the
+    LAYOUTS (app.blade.php, stafflayouts.blade.php) and can therefore be opened from
+    any page — but the component that defines showDeleteConfirmation was included
+    PER PAGE (projects, archived, index, baseline-schedule). On the dashboard it was
+    simply absent. A layout-wide feature depending on a page-level include.
+    FIX: include components/delete-confirmation-modal in both layouts beside the
+    desks. It could not simply be added, because four pages already include it and
+    the component declares showDeleteConfirmation and a module-level callback at the
+    top level of its <script> — a second copy throws "Identifier already declared"
+    and kills the whole block. So the component is wrapped in @once first, which
+    renders it exactly once however many times it is included. Verified in the
+    compiled views: one guard, one render.
+    LESSON: when a feature moves into the layout, its dependencies have to move with
+    it. This one sat undetected because every page that had been TESTED with the desk
+    happened to include the component for its own reasons.
+
+    (2) TWO ROWS BOTH LABELLED "%" — the user's point, and a real trap. A schedule
+    prints the per-month share and the running total one above the other, both
+    labelled "%", and only the second is what a baseline is adopted from. In the grid
+    they were indistinguishable, and this family gives the cumulative row no reachable
+    label at all (the word "Commulative" prints 4.6pt below its own figures and lands
+    on a line of its own — the same Y_TOLERANCE quirk §6 of the parent plan documents).
+    FIX: isCumulativeShapedRow() tags it by SHAPE, exactly as the reader identifies it
+    — percent cells, rising, finishing near completion — and the desk renders a green
+    CUMULATIVE badge distinct from the amber SUMMARY.
+    NON-DECREASING, not strictly ascending, and the reason is the merge: the seam
+    repeats month 6 (printed as page one's last column and page two's first), so the
+    row reads "… 99.14, 99.14, 100.00". A rise overall still separates it from the
+    per-month row, which FALLS (17.99 -> 17.41) and fails whatever the seam does.
+
+    (3) THE USER'S GRID STILL SHOWED 15 ROWS, 2 SUMMARY ROWS AND NO MONTH 7 —
+    and that is STALE STORED DATA, not the new code. Checked against the live row:
+      #73 ai-derived proposed  rows=15  summaryRows=2  maxMonth=7  COLUMNS: A..H
+    captured before this work. Its MAP already spans two pages (months to 7) while
+    its BLOCK is page-one-only with eight columns, which is exactly why the palette
+    could reach M1-M5 and no further. A fresh capture of the same file now yields
+    COLUMNS A..M, all seven month labels on the header row, and the cumulative row.
+    ⇒ This is the re-capture wave of §8 arriving. Re-import to replace the row.
+
+    CAUGHT PRE-GREEN (2, both mine, and the first is a repeat offence)
+    (a) THE REGEX LOST ITS BACKSLASHES AGAIN. Building the helper through a shell
+        -quoted node -e turned /^\d[\d,]*(\.\d+)?\s*%$/ into /^d[d,]*(.d+)?s*%$/, so
+        the predicate matched nothing and the row stayed SUMMARY. THIRD time this
+        class has bitten in this track (E4b tests, the P6 simulation, now this).
+        STANDING RULE, adopt it: never build source containing a regex through a
+        shell-quoted string — write it with the file editor, or from a heredoc'd
+        file. After any such edit, grep the emitted regex before trusting a result.
+        An audit of every file touched this session found no other mangled pattern.
+    (b) TAGGING THE ROW THEN DELETED IT. The keep-past-budget filter was
+        `k < maxRows || role === 'SUMMARY'`, so renaming the role to CUMULATIVE
+        dropped the very row the rename existed to highlight — it vanished from the
+        block entirely. Caught by re-running the probe rather than by reasoning.
+        Both builders now keep SUMMARY and CUMULATIVE alike.
+
+    SUITES AFTER THIS ROUND: PHP 1185 passed / the same 7 pre-existing BY NAME.
+    JS 157 tests, 155 passed + the 2 intended blinding fails.
+    READER REGRESSION: 16 sample reads, 0 changed.
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

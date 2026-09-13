@@ -2,13 +2,16 @@
 # Parent refs: textfiles/document_parser_pdf_ai_fallback_plan.md (F-A..F-D + B — the PDF AI track)
 #              textfiles/document_parser_excel_learning_loop_plan.md (E1/E1-3/Phase-A — the loop being mirrored)
 #              textfiles/pdf_ai_loop_proof_tests.md (all live proof results)
-# Date: September 12, 2026 (last updated September 13, 2026 — E6 per-path timeout + rung promotion)
+# Date: September 12, 2026 (last updated September 13, 2026 — PDF-4 Stage 2 built, uncommitted)
 # Status: STAGE 1 ✅ · P3 ✅ · PDF-1 ✅ · PDF-2 ✅ — capture AND consult BROWSER-PROVEN 2026-09-12 (channels isolated)
 #         PDF-3 ✅ · §6 SUMMARY-ROW ADOPTION ✅ BROWSER-PROVEN 2026-09-13 on both models
 #         (roof reads its TRUE curve offline, zero AI)
-#         PDF-4 ⚠️ teach-path BUG FIX ✅ BUILT 2026-09-13 — taught PDF
-#         rows now get a PDF-shaped map or an honest refusal, and a refusal can no
-#         longer destroy a working map. Full point-and-teach PARKED — see §4 and §9.
+#         PDF-4 ✅ teach-path BUG FIX (committed 959f0ec) + ✅ STAGE 2 BUILT 2026-09-13
+#         but UNCOMMITTED — the teach grid now pictures the real table, merges the
+#         printed pages into one, keeps the summary rows and badges the CUMULATIVE
+#         one, and multi-page teaching works. Own file, read it before this one:
+#         textfiles/document_parser_pdf_teach_grid_plan.md  (its §0 lists every
+#         uncommitted file). NOT browser-proven — the user runs that test.
 #         P5 AI-vs-file cross-check ✅ BROWSER-PROVEN 2026-09-13 (caught gemini 3.6 live) — §9
 #         P6 MONTH-7 CHART-AXIS FIX ✅ BROWSER-PROVEN 2026-09-13 (committed 7c6044b;
 #         M7 5→3) — the roof's last known offline defect is closed

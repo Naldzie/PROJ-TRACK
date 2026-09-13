@@ -1867,13 +1867,57 @@ class ScurveHeaderProposalTest extends TestCase
     // schedule — the same defect that made single-page capture unsafe — so it is
     // refused. Crucially the refusal happens BEFORE any write.
     // Called by: buildTaughtPdfMap() multi-page guard.
-    public function test_a_multi_page_pdf_layout_refuses_teaching_without_writing(): void
+    // A column-split print is ONE table cut down the middle, and the desk now renders
+    // both halves as one grid with the letters running on across the seam. Teaching
+    // it must therefore produce a MULTI-PAGE map: the reviewer points at one table,
+    // and the months land on whichever printed page their columns belong to.
+    // Refusing this was correct only while the grid could show page one alone.
+    // Called by: buildTaughtPdfMap() page grouping.
+    public function test_a_multi_page_layout_teaches_into_a_multi_page_map(): void
+    {
+        $staff = $this->makeUser('staff');
+        $pageOne = $this->makePdfRow()->column_map['pages'][0];
+        // Letters continue across the seam, exactly as derivePdfLayout numbers them.
+        $pageTwo = array_merge($pageOne, [
+            'pageHint' => 1,
+            'monthCols' => [],
+            'pseudoCols' => [
+                ['letter' => 'E', 'x' => 0.20, 'xEnd' => 0.60],
+                ['letter' => 'F', 'x' => 0.60, 'xEnd' => 1.00],
+            ],
+        ]);
+        ScurveHeaderProposal::query()->delete();
+        $row = $this->makePdfRow([$pageOne, $pageTwo]);
+
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->pdfTeachPayload(['months' => [1 => ['C'], 2 => ['D'], 3 => ['E'], 4 => ['F']]]))
+            ->assertOk()->assertJsonPath('success', true);
+
+        $map = ScurveHeaderProposal::where('source', 'manual-teach')->first()->column_map;
+        $this->assertCount(2, $map['pages'], 'the seam is preserved — one page per printed sheet');
+        $this->assertSame([1, 2], array_column($map['pages'][0]['monthCols'], 'index'));
+        $this->assertSame([3, 4], array_column($map['pages'][1]['monthCols'], 'index'),
+            'months taught from page-two letters land on page two');
+        // The description was pointed at on page one, so only page one carries it —
+        // a continuation page legitimately has no names, as its capture does not.
+        $this->assertSame(0.05, $map['pages'][0]['descX']);
+        $this->assertArrayNotHasKey('unnumbered', $map['pages'][1],
+            'teaching is exactly what removes the unnumbered mark');
+    }
+
+    // A month cannot be spread across two printed pages: its columns live on one
+    // sheet, and accepting letters from both would produce a band that exists
+    // nowhere. Refused before anything is written.
+    // Called by: buildTaughtPdfMap() page grouping.
+    public function test_a_month_spanning_two_pages_is_refused_without_writing(): void
     {
         $staff = $this->makeUser('staff');
         $pageOne = $this->makePdfRow()->column_map['pages'][0];
         $pageTwo = array_merge($pageOne, [
             'pageHint' => 1,
-            'monthCols' => [['index' => 3, 'x' => 0.38, 'xEnd' => 0.60]],
+            'monthCols' => [],
+            'pseudoCols' => [['letter' => 'E', 'x' => 0.20, 'xEnd' => 0.60]],
         ]);
         ScurveHeaderProposal::query()->delete();
         $row = $this->makePdfRow([$pageOne, $pageTwo]);
@@ -1881,11 +1925,11 @@ class ScurveHeaderProposalTest extends TestCase
 
         $this->actingAs($staff)
             ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
-                $this->pdfTeachPayload(['mode' => 'replace']))
+                $this->pdfTeachPayload(['mode' => 'replace', 'months' => [1 => ['C'], 2 => ['D', 'E']]]))
             ->assertStatus(422)->assertJsonPath('success', false);
 
-        // REPLACE used to overwrite first and refuse later — the destructive half
-        // of the bug. The original map must be untouched and still live-able.
+        // REPLACE used to overwrite first and refuse later — the destructive half of
+        // the original bug. A refusal must still leave the map exactly as it was.
         $this->assertSame($before, $row->fresh()->column_map, 'a refusal must not destroy the map');
         $this->assertSame('proposed', $row->fresh()->status);
         $this->assertSame(1, ScurveHeaderProposal::count(), 'no variant is created either');

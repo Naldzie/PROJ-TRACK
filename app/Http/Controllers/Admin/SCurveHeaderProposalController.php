@@ -460,21 +460,22 @@ class ScurveHeaderProposalController extends Controller
             throw new RuntimeException('This capture did not record where its columns sit on the page, so there is nothing to point at yet. Re-import the PDF to capture it again.');
         }
 
-        if (count($map['pages']) > 1) {
-            throw new RuntimeException('This layout is printed across ' . count($map['pages'])
-                . ' pages, but the grid below shows only the first. Teaching from it would drop the months printed on the later pages, so nothing was saved.');
-        }
-
-        $page = $map['pages'][0];
+        // Letters run on across the printed pages (page 1 = A…K, page 2 = L…M), so a
+        // letter identifies BOTH a page and a band on it. That is what lets the desk
+        // render a column-split table as one grid and still teach it: the reviewer
+        // points at one table, and the map it produces keeps the pages separate.
         $bands = [];
-        foreach (($page['pseudoCols'] ?? []) as $pc) {
-            if (!is_array($pc) || !isset($pc['letter'], $pc['x'], $pc['xEnd'])) {
-                continue;
+        foreach ($map['pages'] as $pageIndex => $page) {
+            foreach (($page['pseudoCols'] ?? []) as $pc) {
+                if (!is_array($pc) || !isset($pc['letter'], $pc['x'], $pc['xEnd'])) {
+                    continue;
+                }
+                $bands[strtoupper(trim((string) $pc['letter']))] = [
+                    'page' => $pageIndex,
+                    'x' => (float) $pc['x'],
+                    'xEnd' => (float) $pc['xEnd'],
+                ];
             }
-            $bands[strtoupper(trim((string) $pc['letter']))] = [
-                'x' => (float) $pc['x'],
-                'xEnd' => (float) $pc['xEnd'],
-            ];
         }
 
         if (count($bands) === 0) {
@@ -492,53 +493,82 @@ class ScurveHeaderProposalController extends Controller
 
         $desc = $bandFor($validated['desc'], 'the description');
 
-        $monthCols = [];
+        // Group the taught months by the page their columns live on.
+        $byPage = [];
         foreach ($validated['months'] as $m => $cols) {
             $mi = (int) $m;
             $x = null;
             $xEnd = null;
+            $onPage = null;
             foreach ((array) $cols as $letter) {
                 $b = $bandFor((string) $letter, "month {$mi}");
+                if ($onPage !== null && $onPage !== $b['page']) {
+                    throw new RuntimeException("Month {$mi} was given columns from two different printed pages — a month lives on one page.");
+                }
+                $onPage = $b['page'];
                 $x = $x === null ? $b['x'] : min($x, $b['x']);
                 $xEnd = $xEnd === null ? $b['xEnd'] : max($xEnd, $b['xEnd']);
             }
-            $monthCols[] = ['index' => $mi, 'x' => $x, 'xEnd' => $xEnd];
+            $byPage[$onPage][] = ['index' => $mi, 'x' => $x, 'xEnd' => $xEnd];
         }
 
-        usort($monthCols, fn ($a, $b) => $a['index'] <=> $b['index']);
-
-        if (count($monthCols) < 2) {
+        $allMonths = array_merge(...array_values($byPage));
+        if (count($allMonths) < 2) {
             throw new RuntimeException('A layout needs at least two month columns to describe a schedule.');
         }
 
-        // Ascending month numbers must run left to right across the page, and no
-        // two may claim the same strip — a band that overlaps its neighbour would
-        // count the same printed cell into two different months.
-        for ($i = 1; $i < count($monthCols); $i++) {
-            if ($monthCols[$i]['x'] < $monthCols[$i - 1]['xEnd'] - 1e-9) {
-                throw new RuntimeException("Month {$monthCols[$i]['index']} starts left of where month {$monthCols[$i - 1]['index']} ends — months must run left to right without overlapping.");
+        $seen = [];
+        foreach ($allMonths as $mc) {
+            if (isset($seen[$mc['index']])) {
+                throw new RuntimeException("Month {$mc['index']} was assigned twice — each month belongs to one set of columns.");
             }
+            $seen[$mc['index']] = true;
         }
 
-        foreach ($monthCols as $mc) {
-            if ($desc['x'] < $mc['xEnd'] - 1e-9 && $mc['x'] < $desc['xEnd'] - 1e-9) {
-                throw new RuntimeException("The description column overlaps month {$mc['index']} — the work names and the monthly figures cannot share a column.");
+        $taughtPages = [];
+        foreach ($map['pages'] as $pageIndex => $page) {
+            $monthCols = $byPage[$pageIndex] ?? [];
+            usort($monthCols, fn ($a, $b) => $a['index'] <=> $b['index']);
+
+            // Within a page, ascending month numbers must run left to right and no
+            // two may claim the same strip — a band overlapping its neighbour would
+            // count one printed cell into two different months.
+            for ($i = 1; $i < count($monthCols); $i++) {
+                if ($monthCols[$i]['x'] < $monthCols[$i - 1]['xEnd'] - 1e-9) {
+                    throw new RuntimeException("Month {$monthCols[$i]['index']} starts left of where month {$monthCols[$i - 1]['index']} ends — months must run left to right without overlapping.");
+                }
+            }
+
+            $taught = $page;
+            unset($taught['unnumbered']);
+            $taught['monthCols'] = array_values($monthCols);
+
+            // The description belongs to the page it was pointed at; a continuation
+            // page legitimately has none, exactly as a capture of one does.
+            if ($desc['page'] === $pageIndex) {
+                foreach ($monthCols as $mc) {
+                    if ($desc['x'] < $mc['xEnd'] - 1e-9 && $mc['x'] < $desc['xEnd'] - 1e-9) {
+                        throw new RuntimeException("The description column overlaps month {$mc['index']} — the work names and the monthly figures cannot share a column.");
+                    }
+                }
+                $taught['descX'] = $desc['x'];
+                $taught['descRight'] = $desc['xEnd'];
+            }
+
+            // A page the reviewer gave no months to is dropped rather than stored
+            // empty: usableLayoutMap refuses a month-less page anyway, and keeping
+            // it would leave a half-taught layout looking complete.
+            if (count($monthCols) > 0) {
+                $taughtPages[] = $taught;
             }
         }
-
-        // Keep everything that identifies the PAGE (sig, hints, pseudoCols, the
-        // header line) and replace only what the reviewer actually taught.
-        $taught = $page;
-        $taught['descX'] = $desc['x'];
-        $taught['descRight'] = $desc['xEnd'];
-        $taught['monthCols'] = $monthCols;
 
         return [
             // Inherit the capture's version rather than inventing one: the reader
             // gates on an exact match, so a taught map must age with its source.
             'v' => $map['v'] ?? 1,
             'kind' => 'pdf',
-            'pages' => [$taught],
+            'pages' => $taughtPages,
         ];
     }
 

@@ -404,6 +404,10 @@ Swal.fire({
 
 {{-- S-CURVE LAYOUTS REVIEW MODAL (E1-2 — staff role layout; admin has its own include) --}}
 @include('admin._manage_scurve_headers_modal')
+    {{-- The two desks above call showDeleteConfirmation from any page, so its
+         component must be present wherever they are. Guarded by @once, so pages
+         that already include it are unaffected. --}}
+    @include('components.delete-confirmation-modal')
 
 {{-- DEV DATE SIMULATOR + NOTIFICATION SCAN (non-production only) --}}
 @if (app()->environment() !== 'production')

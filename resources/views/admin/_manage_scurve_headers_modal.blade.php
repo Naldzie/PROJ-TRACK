@@ -74,32 +74,49 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-2">
-                    Click a field on the left, then click its column letter(s) on the grid.
+                    Click a field, then click its column letter(s) on the grid.
                     Rows tagged <span class="badge bg-primary">HEADER</span> hold the labels;
-                    <span class="badge bg-warning text-dark">SUMMARY</span> rows are reference only.
+                    <span class="badge bg-warning text-dark">SUMMARY</span> rows are reference only, and
+                    <span class="badge bg-success">CUMULATIVE</span> marks the running-total row a baseline is read from.
                     R-numbers are kept order, not Excel rows. Hover any button for what it needs.
                 </p>
-                <div class="row">
-                    <div class="col-md-3">
-                        <div class="mb-2" title="Tick the line(s) holding the column labels — usually exactly 1; tick a 2nd only if labels print across two lines."><strong>1. Header row(s)</strong> <small class="text-muted">(1–2)</small></div>
-                        <div id="teachHeaderRows" class="mb-3"></div>
-                        <div class="mb-2" title="Arm a field, then click its column letter(s) on the grid. Assigned columns show badges; clicking a taken letter moves it."><strong>2. Click a field, then its column(s)</strong></div>
-                        <div id="teachFieldPalette" class="d-flex flex-wrap gap-1 mb-3"></div>
-                        <div class="mb-2"><strong>3. Save as</strong></div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="teachMode" id="teachModeVariant" value="variant" checked>
-                            <label class="form-check-label" for="teachModeVariant">New variant <small class="text-muted">(keeps the old map — alternating formats both keep working)</small></label>
-                        </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="radio" name="teachMode" id="teachModeReplace" value="replace">
-                            <label class="form-check-label" for="teachModeReplace">Replace this map <small class="text-muted">(drops back to Proposed for re-review)</small></label>
-                        </div>
-                        <div class="mb-2"><strong>Your teaching</strong></div>
-                        <div id="teachReadout" class="small text-muted mb-2">Nothing assigned yet.</div>
+                {{-- PDF-4 Stage 2 layout: the grid is the click surface and the whole
+                     point of the screen, so it gets the full width. The palette sits
+                     ABOVE it as a single band, and the header-row picker — auto-detected
+                     and rarely changed — collapses to one line instead of a tall
+                     checkbox column that used to push the grid off the screen. --}}
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <span class="text-muted small" title="The line holding the column labels. Detected automatically; change it only if the labels print on a different line.">
+                        <strong>Header row</strong>
+                    </span>
+                    <span id="teachHeaderSummary" class="small"></span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="teachHeaderToggle"
+                            title="Pick a different line as the one holding the column labels."
+                            onclick="schToggleHeaderPicker()">change</button>
+                </div>
+                <div id="teachHeaderRows" class="mb-2 d-flex flex-wrap gap-2" style="display:none !important;"></div>
+
+                <div class="mb-1" title="Arm a field, then click its column letter(s) on the grid. Assigned columns show badges; clicking a taken letter moves it."><strong>Click a field, then its column(s) on the grid</strong></div>
+                <div id="teachFieldPalette" class="d-flex flex-wrap gap-1 mb-2"></div>
+
+                <div id="teachGrid" class="mb-2" title="Click a column letter to assign it to the armed field." style="overflow:auto;max-height:430px;border:1px solid #dee2e6;border-radius:8px;"></div>
+
+                <div class="row g-3">
+                    <div class="col-md-7">
+                        <div class="mb-1"><strong>Your teaching</strong></div>
+                        <div id="teachReadout" class="small text-muted mb-1">Nothing assigned yet.</div>
                         <div id="teachHint" class="small text-danger"></div>
                     </div>
-                    <div class="col-md-9">
-                        <div id="teachGrid" title="Click a column letter to assign it to the armed field." style="overflow:auto;max-height:420px;border:1px solid #dee2e6;border-radius:8px;"></div>
+                    <div class="col-md-5">
+                        <div class="mb-1"><strong>Save as</strong></div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="teachMode" id="teachModeVariant" value="variant" checked>
+                            <label class="form-check-label small" for="teachModeVariant">New variant <small class="text-muted">(keeps the old map — alternating formats both keep working)</small></label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="teachMode" id="teachModeReplace" value="replace">
+                            <label class="form-check-label small" for="teachModeReplace">Replace this map <small class="text-muted">(drops back to Proposed for re-review)</small></label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -205,7 +222,10 @@ function schParseHeaderBlock(text) {
     return { letters, rows };
 }
 
-const SCH_ROLE_BADGE = { META: 'secondary', HEADER: 'primary', DATA: 'light text-dark border', SUMMARY: 'warning text-dark' };
+// CUMULATIVE is called out separately from SUMMARY on purpose: a schedule prints
+// two rows that both label themselves '%', and only one of them is the running total
+// a baseline is adopted from. They looked identical in the grid.
+const SCH_ROLE_BADGE = { META: 'secondary', HEADER: 'primary', DATA: 'light text-dark border', SUMMARY: 'warning text-dark', CUMULATIVE: 'success' };
 
 // Compact grid for the list cell (first 8 rows × 16 cols, scrollable).
 function schMiniGrid(text) {
@@ -492,6 +512,26 @@ function schTeachColumns(id) {
             field: 'desc',
             assigns: { desc: null, code: null, weight: null, contract: null, months: {} },
             headerRows: [],
+            // How many months this layout looks like it has, so the palette offers
+            // that many buttons instead of a fixed wall of twelve.
+            suggestedMonths: (function () {
+                try {
+                    const cm = row.column_map;
+                    if (cm && Array.isArray(cm.pages)) {
+                        let n = 0;
+                        cm.pages.forEach(pg => { (pg.monthCols || []).forEach(mc => { n = Math.max(n, mc.index); }); });
+                        if (n) return n;
+                        // An UNNUMBERED capture has the columns but not the numbering —
+                        // offer one button per column that is not the description.
+                        const cols = cm.pages.reduce((a, pg) => a + (pg.pseudoCols || []).length, 0);
+                        if (cols > 2) return Math.min(12, cols - 2);
+                    }
+                    const spans = (cm && cm.monthSpans) || {};
+                    const keys = Object.keys(spans).map(Number).filter(k => k >= 1);
+                    if (keys.length) return Math.max.apply(null, keys);
+                } catch (e) { /* best-effort sizing */ }
+                return 0;
+            })(),
         };
         // Default header rows: tagged HEADER lines (max 2). When NOTHING is tagged
         // (unknown files), default to EMPTY and force an explicit pick — defaulting
@@ -542,10 +582,10 @@ function schTeachColumns(id) {
             const cm = row.column_map || null;
             if (!cm || cm.kind !== 'pdf' || !Array.isArray(cm.pages) || !cm.pages.length) {
                 _schTeach.blocked = 'This capture did not record where its columns sit on the page, so there is nothing to point at yet. Re-import the PDF to capture it again.';
-            } else if (cm.pages.length > 1) {
-                _schTeach.blocked = 'This layout is printed across ' + cm.pages.length
-                    + ' pages and the grid below shows only the first, so teaching it would drop the months on the later pages. Saving is disabled for now.';
             }
+            // Multi-page layouts are no longer blocked: the grid renders every
+            // printed page as one table with the letters running on across the seam,
+            // so the months on later pages can be pointed at like any other.
         }
         const ctx = document.getElementById('teachContextLine');
         if (ctx) ctx.textContent = '— ' + _schTeach.contractor + ' · seen ' + _schTeach.occurrences + '× · ' + _schTeach.status;
@@ -566,7 +606,23 @@ const SCH_TEACH_FIELDS = [
     { key: 'weight', label: 'Weight', tip: 'Percent-weight column (e.g. % WEIGHT). Optional.' },
     { key: 'code', label: 'Item code', tip: 'Row numbering column (e.g. ITEM). Optional.' },
 ];
-for (let m = 1; m <= 12; m++) SCH_TEACH_FIELDS.push({ key: 'm' + m, label: 'Month ' + m, tip: 'Monthly peso columns for Month ' + m + ' — click 1 letter for single-column months (P1), 2 for paired months (value written twice).' });
+// PDF-4 Stage 2 — months are built on demand. A fixed wall of twelve buttons
+// pushed the grid off the screen on every layout, however few months it had.
+// SCH_TEACH_MAX is the ceiling the server also enforces (months max:12).
+const SCH_TEACH_MAX_MONTHS = 12;
+function schMonthField(m) {
+    return { key: 'm' + m, label: 'Month ' + m, tip: 'Monthly peso columns for Month ' + m + ' — click 1 letter for single-column months (P1), 2 for paired months (value written twice).' };
+}
+// How many month buttons to offer: what the capture suggests, what is already
+// assigned, and one spare to grow into — never fewer than two, since a layout
+// needs two months to be a schedule at all.
+function schMonthsToShow() {
+    if (!_schTeach) return 2;
+    const assigned = Object.keys(_schTeach.assigns.months || {}).map(Number).filter(n => n >= 1);
+    const suggested = _schTeach.suggestedMonths || 0;
+    const highest = Math.max(2, suggested, assigned.length ? Math.max.apply(null, assigned) : 0);
+    return Math.min(SCH_TEACH_MAX_MONTHS, highest + (highest < SCH_TEACH_MAX_MONTHS ? 1 : 0));
+}
 
 function schTeachFieldLabel(key) {
     if (key === 'desc') return 'DESC';
@@ -581,7 +637,10 @@ function schRenderTeachPalette() {
     const host = document.getElementById('teachFieldPalette');
     if (!host || !_schTeach) return;
     host.innerHTML = '';
-    SCH_TEACH_FIELDS.forEach(f => {
+    const shown = SCH_TEACH_FIELDS.slice();
+    const upto = schMonthsToShow();
+    for (let m = 1; m <= upto; m++) shown.push(schMonthField(m));
+    shown.forEach(f => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'btn btn-sm ' + (_schTeach.field === f.key ? 'btn-primary' : 'btn-outline-secondary');
@@ -590,11 +649,39 @@ function schRenderTeachPalette() {
         b.onclick = function () { _schTeach.field = f.key; schRenderTeachPalette(); };
         host.appendChild(b);
     });
+    if (upto < SCH_TEACH_MAX_MONTHS) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'btn btn-sm btn-outline-primary';
+        more.textContent = '+ month';
+        more.title = 'Offer another month button — for schedules longer than this layout appears to be.';
+        more.onclick = function () {
+            _schTeach.suggestedMonths = schMonthsToShow() + 1;
+            schRenderTeachPalette();
+        };
+        host.appendChild(more);
+    }
+}
+
+// The header-row picker is collapsed by default — it is detected correctly almost
+// always, and expanded it cost more vertical space than the grid it sat beside.
+function schToggleHeaderPicker() {
+    const host = document.getElementById('teachHeaderRows');
+    if (!host) return;
+    const hidden = host.style.display === 'none';
+    host.style.setProperty('display', hidden ? 'flex' : 'none', 'important');
 }
 
 function schRenderTeachHeaderRows() {
     const host = document.getElementById('teachHeaderRows');
     if (!host || !_schTeach) return;
+    const summary = document.getElementById('teachHeaderSummary');
+    if (summary) {
+        summary.textContent = _schTeach.headerRows.length
+            ? _schTeach.headerRows.map(n => 'R' + n).join(' + ')
+            : 'none picked yet';
+        summary.className = 'small ' + (_schTeach.headerRows.length ? 'text-success' : 'text-danger');
+    }
     host.innerHTML = '';
     _schTeach.rows.forEach(r => {
         const label = document.createElement('label');
@@ -615,6 +702,7 @@ function schRenderTeachHeaderRows() {
             } else if (!cb.checked && at !== -1) {
                 _schTeach.headerRows.splice(at, 1);
             }
+            schRenderTeachHeaderRows();
             schRenderTeachReadout();
         };
         label.appendChild(cb);

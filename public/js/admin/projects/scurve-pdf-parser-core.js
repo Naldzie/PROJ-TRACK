@@ -1657,7 +1657,7 @@ function columnLetter(i) {
 export function derivePdfLayout(itemsByPage, maxRows = 15) {
     const pages = Array.isArray(itemsByPage) ? itemsByPage : [];
     const found = [];
-    let block = null;
+    const sheets = [];
 
     for (let p = 0; p < Math.min(pages.length, 20); p++) {
         const tokenLines = linesToTokenLines(groupItemsIntoLines(pages[p] || []));
@@ -1679,19 +1679,30 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
             // design, so this is where that permissiveness is paid for.
             if (!bandsHoldNumbers(tokenLines, i, header.monthCols)) continue;
 
-            // Pseudo-columns: the header's own printed tokens, in reading order.
-            // Each owns the strip from its x to the next one's — the same banding
-            // the month columns use, so a taught letter converts back to a band.
             const anchors = tokenLines[i].tokens
                 .filter((t) => String(t.str || '').trim() !== '')
                 .sort((a, b) => a.x - b.x);
             if (anchors.length < 2) continue;
-            const pseudoCols = anchors.map((t, k) => ({
+
+            // Pseudo-columns come from the TABLE, not from this one line. Reading
+            // them off the header alone collapsed whole columns into each other —
+            // the roof's header prints "NO." then jumps to "Amount", so DESCRIPTION,
+            // UNIT and QTY. all landed in one 227pt band and the reviewer was shown
+            // a table the document does not contain. See detectPseudoColumns.
+            // Chart-scale labels are excluded here for the same reason the reader
+            // excludes them (P6): a picture must not invent a column.
+            const scaleTokens = chartScaleTokens(tokenLines);
+            const columns = detectPseudoColumns(tokenLines, i, tokenLines.length, scaleTokens);
+            if (columns.length < 2) continue;
+            const pseudoCols = columns.map((c, k) => ({
                 letter: columnLetter(k),
-                x: t.x / pageMaxX,
-                xEnd: (anchors[k + 1] ? anchors[k + 1].x : pageMaxX + 1) / pageMaxX,
+                x: c.x / pageMaxX,
+                xEnd: (columns[k + 1] ? columns[k + 1].x : pageMaxX + 1) / pageMaxX,
             }));
 
+            // The signature still comes from the header LINE — it is what matchMapPage
+            // compares against the tokens of a page, and it must keep describing the
+            // line this map was read from.
             const sig = anchors
                 .map((t) => String(t.str || '').trim().toLowerCase())
                 .filter((s) => s !== '');
@@ -1712,10 +1723,9 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
                 headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
             });
 
-            // The desk shows the FIRST table page — where the names and labels are.
-            if (block === null) {
-                block = buildPdfSliceBlock(tokenLines, i, anchors, header.monthCols, maxRows);
-            }
+            // Every page that yielded a header is kept, so the desk can render the
+            // WHOLE table rather than just the sheet the names happen to be on.
+            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens });
             break;
         }
     }
@@ -1735,15 +1745,156 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
     // null-map-then-teach path Excel captures already use).
     const ambiguous = found.length > 1 && found.some((f) => !f.indexed);
 
+    // An ambiguous capture keeps its GEOMETRY and loses only its NUMBERING.
+    // It used to lose both: the map went null and the whole `found` array went with
+    // it, pseudoCols included — so the rows this path exists to hand a reviewer
+    // arrived carrying letters and cell text but not one coordinate, and teaching
+    // them was impossible. The months are emptied because nothing in the bytes says
+    // which month a repeated "30 days" column is; that is the reviewer's to supply.
+    // usableLayoutMap() refuses a page with no months, so an untaught capture still
+    // cannot be read from — it is offered for teaching, not trusted.
+    const mapPages = found.map(({ indexed, ...page }) => (
+        ambiguous ? { ...page, monthCols: [], unnumbered: true } : page
+    ));
+
+    // The desk renders ONE table for the whole schedule, not one sheet of it. A
+    // column-split print is a single table cut down the middle, and showing only the
+    // first half meant a reviewer could never point at the months printed on the
+    // second — on the roof they could reach M1–M5 of a 7-month file, so teaching it
+    // was impossible by construction. Letters run on across the seam (page 1 = A…K,
+    // page 2 = L…M), which is what keeps ONE legend and ONE R-numbering, so the desk
+    // grid, schParseHeaderBlock and parseStoredSlice all work unchanged.
+    const block = buildMergedSliceBlock(sheets, maxRows);
+    let letterAt = 0;
+    for (let k = 0; k < mapPages.length; k++) {
+        const own = (sheets[k] ? sheets[k].columns.length : mapPages[k].pseudoCols.length);
+        mapPages[k].pseudoCols = mapPages[k].pseudoCols.map((pc, j) => ({
+            ...pc,
+            letter: columnLetter(letterAt + j),
+        }));
+        letterAt += own;
+    }
+
     return {
-        map: ambiguous ? null : {
+        map: {
             v: PDF_MAP_VERSION,
             kind: 'pdf',
-            pages: found.map(({ indexed, ...page }) => page),
+            pages: mapPages,
         },
         block,
         ambiguous,
     };
+}
+
+/**
+ * PDF-4 Stage 2 — render every printed page of one table as a single grid.
+ *
+ * A column-split export is one table cut down the middle, and the two halves share
+ * their row heights exactly (the P3 property the reader already relies on to merge
+ * them). So the rows can be paired and laid side by side, giving the reviewer the
+ * whole schedule at once — including the summary block, whose cumulative row is the
+ * figure a baseline is adopted from.
+ *
+ * Rows are aligned by their offset from their OWN page's header line, because the
+ * two headers do not sit at the same height (the roof's are 1.44pt apart), so a
+ * shared origin would drift. A row present on one page and absent on the other
+ * simply leaves those cells empty, which is what the print looks like.
+ *
+ * Pure. Called by: derivePdfLayout().
+ */
+function buildMergedSliceBlock(sheets, maxRows) {
+    if (!sheets.length) return '';
+    if (sheets.length === 1) {
+        const s = sheets[0];
+        return buildPdfSliceBlock(s.tokenLines, s.headerIndex, s.columns, s.monthCols, maxRows, s.scaleTokens);
+    }
+
+    const Y_TOL = 3;
+    const lead = sheets[0];
+    const letters = [];
+    let offset = 0;
+    const spans = sheets.map((s) => {
+        const span = { from: offset, count: s.columns.length };
+        for (let k = 0; k < s.columns.length; k++) letters.push(columnLetter(offset + k));
+        offset += s.columns.length;
+        return span;
+    });
+
+    const cellsFor = (sheet, lineIndex, into, span) => {
+        if (lineIndex < 0 || lineIndex >= sheet.tokenLines.length) return false;
+        const bands = sheet.columns;
+        let any = false;
+        for (const t of sheet.tokenLines[lineIndex].tokens) {
+            const text = String(t.str || '').trim();
+            if (text === '') continue;
+            if (sheet.scaleTokens && sheet.scaleTokens.has(t)) continue;
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            const centre = (t.x + xEnd) / 2;
+            let slot = -1;
+            for (let k = 0; k < bands.length; k++) {
+                const end = bands[k + 1] ? bands[k + 1].x : Infinity;
+                if (centre >= bands[k].x && centre < end) { slot = k; break; }
+            }
+            if (slot === -1) slot = centre < bands[0].x ? 0 : bands.length - 1;
+            const at = span.from + slot;
+            into[at] = into[at] ? into[at] + ' ' + text : text;
+            any = true;
+        }
+        return any;
+    };
+
+    const isValueBand = [];
+    sheets.forEach((s, si) => {
+        s.columns.forEach((c, k) => {
+            const end = s.columns[k + 1] ? s.columns[k + 1].x : Infinity;
+            isValueBand[spans[si].from + k] = (s.monthCols || []).some(
+                (mc) => c.x < mc.xEnd && mc.x < end
+            );
+        });
+    });
+
+    const scanned = [];
+    for (let i = Math.max(0, lead.headerIndex - 2); i < lead.tokenLines.length; i++) {
+        const cells = new Array(letters.length).fill('');
+        let any = cellsFor(lead, i, cells, spans[0]);
+
+        // Pair each later page by the row's offset from its own header.
+        const wanted = lead.tokenLines[i].y;
+        for (let si = 1; si < sheets.length; si++) {
+            const s = sheets[si];
+            const shift = lead.tokenLines[lead.headerIndex].y - s.tokenLines[s.headerIndex].y;
+            let bestIndex = -1;
+            let bestDist = Infinity;
+            for (let j = 0; j < s.tokenLines.length; j++) {
+                const d = Math.abs((s.tokenLines[j].y + shift) - wanted);
+                if (d < bestDist) { bestDist = d; bestIndex = j; }
+            }
+            if (bestIndex >= 0 && bestDist <= Y_TOL) {
+                any = cellsFor(s, bestIndex, cells, spans[si]) || any;
+            }
+        }
+        if (!any) continue;
+
+        let role = 'DATA';
+        if (i === lead.headerIndex) role = 'HEADER';
+        else if (i < lead.headerIndex) role = 'META';
+        else if (cells.some((c, k) => !isValueBand[k] && (isSummaryLabel(c) || isTotalLabel(c)))) {
+            role = 'SUMMARY';
+        }
+        if (isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
+        scanned.push({ role, cells });
+    }
+
+    const shown = scanned.filter((r, k) => k < maxRows || r.role === 'SUMMARY' || r.role === 'CUMULATIVE');
+    const lines = ['COLUMNS: ' + letters.join(',')
+        + ' | META: title block | HEADER: column labels'
+        + ' | DATA: activity rows — compute months from these ONLY'
+        + ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months'];
+    shown.forEach((row, k) => {
+        lines.push('R' + (k + 1) + ' [' + row.role + ']: ' + row.cells.map(csvCell).join(','));
+    });
+
+    return lines.join('\n');
 }
 
 /**
@@ -1826,6 +1977,167 @@ function bandsHoldNumbers(tokenLines, headerIndex, monthCols, minFilled = 2) {
 }
 
 /**
+ * PDF-4 Stage 2 — find the table's REAL columns, using every row it prints.
+ *
+ * The desk grid used to take its columns from the HEADER LINE's tokens alone, and
+ * on a real contractor sheet that is not where the columns are. Measured on the
+ * roof: its header line prints "NO." then jumps straight to "Amount", so one band
+ * ran 35.4 -> 262.0 and swallowed four separate columns — the reviewer saw
+ * "DESCRITPION UNIT QTY." in a single cell, and "ITEM NO." split across two rows
+ * because ITEM is printed one line above NO.. The columns were never missing from
+ * the document; they were missing from the line we happened to look at.
+ *
+ * So: cluster the x-positions of EVERY token in the block, then merge neighbouring
+ * clusters back together where the data says they are one column.
+ *
+ * THE MERGE RULE, and it is checkable rather than tuned: two adjacent clusters are
+ * the same column only if NO ROW holds a token in both. A right-aligned money
+ * column drifts across several x values (the roof's amounts sit at 257/262/263/267
+ * depending on how wide the number is) and no row carries two of them, so they
+ * rejoin. The item letter at 38.6 and the work name at 53.9 appear TOGETHER on
+ * every activity row, so they stay apart — correctly, since one is ITEM NO. and the
+ * other is DESCRIPTION. Merging runs closest-gap-first so the nearest columns claim
+ * each other before a distant pair can.
+ *
+ * SCOPE — start at the HEADER line, never above it. The lines above carry document
+ * metadata ("CONTRACT NAME: …", "LOCATION: …", a centred title) whose label/value
+ * pairs follow the page, not the table, and letting them vote tore real columns
+ * apart: the SEGMENT specimen's ITEM NO. header separated from its own 1/2 values
+ * because a metadata label above happened to share their rows. Those lines still
+ * RENDER — they simply do not define where columns are. A multi-line header loses
+ * nothing by this: the roof's UNIT and QTY. labels sit on a metadata line, but the
+ * same columns are printed again as "LOT" and "1.00" on every activity row.
+ *
+ * Pure. Returns [{x, xEnd}] left to right, or [] when there is nothing to read.
+ * Called by: buildPdfSliceBlock(), derivePdfLayout(), derivePdfLayoutFromAi().
+ */
+export function detectPseudoColumns(tokenLines, startIndex, endIndex, skipTokens) {
+    const CLUSTER_X = 4;      // same-column tolerance for identical alignment
+    const skip = skipTokens || null;
+
+    const points = [];
+    for (let i = Math.max(0, startIndex); i < Math.min(tokenLines.length, endIndex); i++) {
+        for (const t of tokenLines[i].tokens || []) {
+            const text = String(t.str || '').trim();
+            if (text === '') continue;
+            if (skip && skip.has(t)) continue;
+            // A lone currency mark or punctuation is DECORATION, not a column. It
+            // still renders — it just does not get a vote on where columns are.
+            // Without this the roof grew SEVEN spurious columns: its TOTAL row
+            // prints "₱" before every figure, and because the mark and its amount
+            // share that row they can never merge, so each ₱ claimed a strip of its
+            // own and split the month columns in half.
+            if (!/[\p{L}\p{N}]/u.test(text)) continue;
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            points.push({ x: t.x, xEnd: Math.max(xEnd, t.x), row: i });
+        }
+    }
+    if (points.length === 0) return [];
+
+    // Seed: tokens sharing an x are unarguably the same column.
+    points.sort((a, b) => a.x - b.x);
+    let cols = [];
+    for (const p of points) {
+        const last = cols[cols.length - 1];
+        if (last && Math.abs(last.x - p.x) <= CLUSTER_X) {
+            last.xs.push(p.x);
+            last.xEnds.push(p.xEnd);
+            last.rows.add(p.row);
+            continue;
+        }
+        cols.push({ xs: [p.x], xEnds: [p.xEnd], rows: new Set([p.row]) });
+    }
+
+    // Two seeds are one column when they never share a row AND they occupy the same
+    // strip of the page. Overlap is what tells a right-aligned money column from two
+    // genuinely different columns that merely never co-occur:
+    //   the roof's amounts sit at 257/262/267 but all END at ~305, so their strips
+    //   lie almost exactly on top of one another — one column, drifting left as the
+    //   figures get wider;
+    //   its DESCRIPTION (53.9, running to ~189 on the longest name) and UNIT (187.8)
+    //   never co-occur either, because each activity prints its name on one line and
+    //   "LOT 1.00 amount" on the next — but their strips barely touch, so they stay
+    //   apart, which is what the reviewer needs to see.
+    const OVERLAP_MIN = 0.5;
+    const overlapFraction = (a, b) => {
+        const aX = Math.min(...a.xs), aEnd = Math.max(...a.xEnds);
+        const bX = Math.min(...b.xs), bEnd = Math.max(...b.xEnds);
+        const shared = Math.min(aEnd, bEnd) - Math.max(aX, bX);
+        const narrower = Math.min(aEnd - aX, bEnd - bX);
+        if (!(narrower > 0)) return shared >= 0 ? 1 : 0;
+        return shared / narrower;
+    };
+
+    for (;;) {
+        let best = -1;
+        let bestOverlap = OVERLAP_MIN;
+        for (let k = 0; k + 1 < cols.length; k++) {
+            let collides = false;
+            for (const r of cols[k + 1].rows) {
+                if (cols[k].rows.has(r)) { collides = true; break; }
+            }
+            if (collides) continue;
+            const ov = overlapFraction(cols[k], cols[k + 1]);
+            if (ov <= bestOverlap) continue;
+            bestOverlap = ov;
+            best = k;
+        }
+        if (best === -1) break;
+        const merged = cols[best + 1];
+        cols[best].xs.push(...merged.xs);
+        cols[best].xEnds.push(...merged.xEnds);
+        merged.rows.forEach((r) => cols[best].rows.add(r));
+        cols.splice(best + 1, 1);
+    }
+
+    cols = cols.map((c) => ({ x: Math.min(...c.xs), xEnd: Math.max(...c.xEnds) }));
+
+    // Bands run from each column's start to the next one's, so every token on the
+    // page lands somewhere — the same left-to-right banding the reader uses.
+    return cols.map((c, k) => ({
+        x: c.x,
+        xEnd: cols[k + 1] ? cols[k + 1].x : (c.xEnd + 1),
+    }));
+}
+
+/**
+ * PDF-4 Stage 2 — is this summary line the CUMULATIVE curve?
+ *
+ * A schedule prints two rows that both label themselves "%": the per-month share
+ * and the running total. In the grid they looked identical, and the running total
+ * is the one a baseline is actually adopted from — so a reviewer could not tell the
+ * decisive row from the one beside it. Worse, this family gives the cumulative row
+ * no reachable label at all: the word "Commulative" is printed 4.6pt below its own
+ * figures and lands on a line of its own.
+ *
+ * Identified by SHAPE, exactly as the reader identifies it (cumulativeRowValues):
+ * percent-written cells, strictly ascending, finishing near completion. Display
+ * only — it changes a role tag in the block, never a number.
+ *
+ * Called by: buildPdfSliceBlock(), buildMergedSliceBlock().
+ */
+function isCumulativeShapedRow(cells, isValueBand) {
+    const values = [];
+    for (let k = 0; k < cells.length; k++) {
+        if (!isValueBand[k]) continue;
+        const text = String(cells[k] || '').trim();
+        if (text === '') continue;
+        if (!/^\d[\d,]*(\.\d+)?\s*%$/.test(text)) return false;
+        values.push(parseFloat(text.replace(/[%,]/g, '')));
+    }
+    if (values.length < 3) return false;
+    // NON-DECREASING, not strictly ascending — the reader can demand strict because
+    // it reads one page at a time, but this grid shows the pages MERGED, and the
+    // seam repeats a value: the roof's month 6 is printed as the last column of
+    // page one and again as the first of page two, so the row reads
+    // "… 99.14, 99.14, 100.00". Requiring a rise overall is what still separates it
+    // from the per-month row beside it, which falls (17.99 -> 17.41) and so fails
+    // here whatever the seam does.
+    for (let i = 1; i < values.length; i++) if (values[i] < values[i - 1]) return false;
+    return values[values.length - 1] >= 50 && values[values.length - 1] > values[0];
+}
+
+/**
  * Serialize the table's neighbourhood in the Excel slice's exact shape.
  *
  * Roles follow the same meaning the AI slice uses: lines above the header are
@@ -1836,11 +2148,11 @@ function bandsHoldNumbers(tokenLines, headerIndex, monthCols, minFilled = 2) {
  *
  * Called by: derivePdfLayout().
  */
-function buildPdfSliceBlock(tokenLines, headerIndex, anchors, monthCols, maxRows) {
-    const letters = anchors.map((t, k) => columnLetter(k));
-    const bands = anchors.map((t, k) => ({
-        x: t.x,
-        xEnd: anchors[k + 1] ? anchors[k + 1].x : Infinity,
+function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows, skipTokens) {
+    const letters = columns.map((c, k) => columnLetter(k));
+    const bands = columns.map((c, k) => ({
+        x: c.x,
+        xEnd: columns[k + 1] ? columns[k + 1].x : Infinity,
     }));
     // Which pseudo-columns are VALUE columns (they overlap a month band)? Role
     // detection must ignore them: isSummaryLabel matches a bare "%", so judging a
@@ -1856,13 +2168,23 @@ function buildPdfSliceBlock(tokenLines, headerIndex, anchors, monthCols, maxRows
         + ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months'];
 
     const start = Math.max(0, headerIndex - 2);
-    let kept = 0;
-    for (let i = start; i < tokenLines.length && kept < maxRows; i++) {
+    // Read the whole neighbourhood first, then choose what to show. The old loop
+    // stopped dead at maxRows, and on a real sheet that is one row too early: the
+    // roof spends ten rows on activity/"LOT 1.00 amount" pairs, so the window closed
+    // on its per-month "%" line and the CUMULATIVE row — the row the baseline is
+    // actually adopted from — never reached the desk. A reviewer was being asked to
+    // trust a layout while the evidence for it sat just below the fold.
+    const scanned = [];
+    for (let i = start; i < tokenLines.length; i++) {
         const cells = new Array(letters.length).fill('');
         let any = false;
         for (const t of tokenLines[i].tokens) {
             const text = String(t.str || '').trim();
             if (text === '') continue;
+            // P6 — the S-curve picture's own scale is not a cell. Drawing it made
+            // phantom rows holding only "100%" or "25%", and put a stray "50%"
+            // beside a real value in the same cell.
+            if (skipTokens && skipTokens.has(t)) continue;
             const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
             const centre = (t.x + xEnd) / 2;
             let slot = -1;
@@ -1881,9 +2203,20 @@ function buildPdfSliceBlock(tokenLines, headerIndex, anchors, monthCols, maxRows
         else if (cells.some((c, k) => !isValueBand[k] && (isSummaryLabel(c) || isTotalLabel(c)))) {
             role = 'SUMMARY';
         }
+        if (isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
 
+        scanned.push({ role, cells });
+    }
+
+    // The budget buys the head of the table; SUMMARY rows are then always added,
+    // wherever they fell. They cost little (a handful of rows at most) and they are
+    // the part a reviewer most needs to see.
+    const shown = scanned.filter((r, k) => k < maxRows || r.role === 'SUMMARY' || r.role === 'CUMULATIVE');
+
+    let kept = 0;
+    for (const row of shown) {
         kept++;
-        lines.push('R' + kept + ' [' + role + ']: ' + cells.map(csvCell).join(','));
+        lines.push('R' + kept + ' [' + row.role + ']: ' + row.cells.map(csvCell).join(','));
     }
 
     return lines.join('\n');
@@ -2018,6 +2351,13 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
             const anchors = sorted.filter((t) => String(t.str || '').trim() !== '');
             if (anchors.length < 2) continue;
 
+            // Same table-wide column detection the capture path uses, so a row
+            // learned from an AI answer renders and teaches exactly like one the
+            // rules captured — two derivations of the same thing must not disagree.
+            const scaleTokens = chartScaleTokens(tokenLines);
+            const columns = detectPseudoColumns(tokenLines, i, tokenLines.length, scaleTokens);
+            if (columns.length < 2) continue;
+
             found.push({
                 pageHint: p,
                 lineHint: i,
@@ -2029,16 +2369,16 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
                     x: mc.x / pageMaxX,
                     xEnd: mc.xEnd / pageMaxX,
                 })),
-                pseudoCols: anchors.map((t, k) => ({
+                pseudoCols: columns.map((c, k) => ({
                     letter: columnLetter(k),
-                    x: t.x / pageMaxX,
-                    xEnd: (anchors[k + 1] ? anchors[k + 1].x : pageMaxX + 1) / pageMaxX,
+                    x: c.x / pageMaxX,
+                    xEnd: (columns[k + 1] ? columns[k + 1].x : pageMaxX + 1) / pageMaxX,
                 })),
                 headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
             });
             cols.forEach((c) => { assigned[c.index] = true; });
             if (block === null) {
-                block = buildPdfSliceBlock(tokenLines, i, anchors, header.monthCols, maxRows);
+                block = buildPdfSliceBlock(tokenLines, i, columns, header.monthCols, maxRows, scaleTokens);
             }
             break;
         }
