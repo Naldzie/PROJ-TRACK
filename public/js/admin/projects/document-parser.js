@@ -36,8 +36,10 @@ function cancelDocumentAutofill() {
     _ocrPagesDone = 0;
     // The photo-read cache is per modal session, like the rotations it is keyed
     // against — a reopened popup must never serve text read from a file that is
-    // no longer the one attached.
+    // no longer the one attached. The preview's open documents go with it, or a
+    // session that previewed several files holds them all until reload.
     try { _ocrTextCache = new Map(); } catch (e) { /* best-effort */ }
+    try { releaseOcrPreviewDocs(); } catch (e) { /* best-effort */ }
     // S3: fresh-popup-fresh-state — clear saved vote/disagreement/scan state AND remove
     // the dynamically built banner/note boxes, so no previous run can linger on screen
     // (stale-banner bug: old red banner survived modal close/reopen into single-file runs).
@@ -1109,6 +1111,63 @@ function stashOcrRotateTargets(reports) {
     } catch (e) { /* best-effort */ }
 }
 
+// Pages whose CURRENT angle has never been photo-read — i.e. what a re-read would
+// actually cost. Derived from the cache rather than tracked in a dirty set, so it
+// cannot drift out of step with what the reader would really do.
+// Called by: the preview panel's Re-read button label.
+function ocrPendingRereadPages(report) {
+    if (!report) return [];
+    let size = 0;
+    try {
+        const files = window._autofillPdfFiles || [];
+        for (const f of files) { if (f && f.fileName === report.fileName) { size = (f.file && f.file.size) || 0; break; } }
+    } catch (e) { /* best-effort */ }
+    return ocrRotatablePagesOf(report).filter((pn) => {
+        const rot = ocrRotationOf(report.fileName, pn);
+        return !_ocrTextCache.has(report.fileName + '#' + size + '#' + pn + '@' + rot);
+    });
+}
+
+// ── LIVE PAGE PREVIEW (2026-09-14) ───────────────────────────────────────────
+// The reviewer used to be asked to straighten pages they could not see — the only
+// way to look was to download a snapshot per page. This renders the page itself,
+// at its current angle, beside the controls that turn it.
+//
+// It does NOT reuse the document viewer modal, for two reasons: that modal renders
+// PDFs in an iframe so the rotate control there is Chrome's own and unreachable
+// from our JS, and more decisively the file has not been uploaded yet, so there is
+// no URL to give it. See the plan's §3.1.
+//
+// Open documents are kept per file for the modal session — reopening the PDF on
+// every click is the slow part — and released in cancelDocumentAutofill().
+const _ocrPreviewDocs = new Map();
+let _ocrPreview = null;      // { reportIdx, pageNum }
+let _ocrPreviewToken = 0;    // supersedes an in-flight render, like the run id
+
+// Resolve (and memoise) the pdf.js document for a stashed file.
+async function ocrPreviewDocFor(fileName) {
+    if (_ocrPreviewDocs.has(fileName)) return _ocrPreviewDocs.get(fileName);
+    const files = window._autofillPdfFiles || [];
+    let entry = null;
+    for (const f of files) { if (f && f.fileName === fileName) { entry = f; break; } }
+    if (!entry || !entry.file || typeof entry.file.arrayBuffer !== 'function') return null;
+    const pdfjs = await getPdfJs();
+    const buf = await entry.file.arrayBuffer();
+    const doc = await pdfjs.getDocument({ data: buf }).promise;
+    _ocrPreviewDocs.set(fileName, doc);
+    return doc;
+}
+
+// Release every open document. Called by cancelDocumentAutofill() — without this
+// a modal session that previewed several files holds them all until reload.
+function releaseOcrPreviewDocs() {
+    try {
+        _ocrPreviewDocs.forEach((doc) => { try { doc.destroy(); } catch (e) {} });
+        _ocrPreviewDocs.clear();
+    } catch (e) { /* best-effort */ }
+    _ocrPreview = null;
+}
+
 // Snapshots (2026-09-07 diagnostic, queue item 2): re-render one scanned page as a
 // downscaled PNG and download it, so pixels can be pasted in chat instead of inferred
 // from soup dumps. Reads the stashed original File (no server), applies the page's live
@@ -1204,17 +1263,24 @@ window._rotateAllScanned = function (reportIdx) {
             window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
         }
     } catch (e) { /* rotation bookkeeping is best-effort */ }
-    try { closeAutofillPreview(); } catch (e) { /* no preview on empty-warning path */ }
-    hideAutofillBanner();
-    runDocumentAutofill();
+    // 2026-09-14: turning is now INSTANT. It used to re-run the whole pipeline over
+    // every uploaded PDF — ~20s for one click on a ten-page scan — which is why the
+    // preview panel exists at all: you could not see what you were turning, and you
+    // paid twenty seconds to find out. Re-reading is the Re-read button now, and the
+    // photo-read cache makes it cost only the pages actually turned.
+    refreshOcrRotateLabels();
+    renderOcrPagePreview();
 };
 
-// R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page, then
-// re-run the whole preview (rotation persists in window._ocrRotations and applies at
-// render time inside extractTextFromPDF). Full re-read cost (~2s/page) — the button is
-// per tilted page, so routine pages are never re-read needlessly... (whole-run re-read
-// is accepted: rotation is a rare manual rescue, correctness first).
-// Called by: inline onclick on the per-page ⟳ buttons (index-indirected, quote-safe).
+// R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page.
+// 2026-09-14 — THIS NO LONGER RE-READS. It used to close the preview and re-run the
+// whole pipeline over every uploaded PDF, ~2s per scanned page, so one nudge on a
+// ten-page scan cost about twenty seconds AND the reviewer could not see the page
+// they were nudging. Now it turns the page, updates the labels, redraws the preview,
+// and stops. Re-reading is the Re-read button, and the photo-read cache means it
+// costs only the pages whose angle actually changed.
+// Called by: inline onclick on the per-page ⟳ buttons (index-indirected, quote-safe)
+// and by the preview panel.
 window._rotateOcrPage = function (reportIdx, pageNum) {
     try {
         const targets = window._ocrRotateTargets || [];
@@ -1224,9 +1290,197 @@ window._rotateOcrPage = function (reportIdx, pageNum) {
         const key = fileName + '#' + pageNum;
         window._ocrRotations[key] = ((window._ocrRotations[key] || 0) + 90) % 360;
     } catch (e) { /* rotation bookkeeping is best-effort */ }
-    closeAutofillPreview();
+    // Show what was just turned, so the button and the picture agree.
+    try {
+        if (!_ocrPreview || _ocrPreview.reportIdx !== reportIdx) _ocrPreview = { reportIdx: reportIdx, pageNum: pageNum };
+        else _ocrPreview.pageNum = pageNum;
+    } catch (e) { /* best-effort */ }
+    refreshOcrRotateLabels();
+    renderOcrPagePreview();
+};
+
+// The panel shell. Rendered empty by whichever surface hosts it; filled by
+// renderOcrPagePreview(). One id, so only one panel can ever exist on screen.
+function ocrPagePreviewShellHtml() {
+    return '<div id="ocrPagePreview" class="mt-2 p-2 border rounded bg-white" style="display:none;">'
+        + '<div id="ocrPreviewCaption" class="d-flex align-items-center gap-2 flex-wrap mb-1" style="font-size:0.85em;"></div>'
+        + '<div id="ocrPreviewStage" class="d-flex justify-content-center align-items-center bg-light border rounded" style="min-height:180px;overflow:auto;max-height:420px;">'
+        + '<span class="text-muted" style="font-size:0.85em;">Pick a page to see it.</span></div>'
+        + '<div id="ocrPreviewControls" class="d-flex gap-1 flex-wrap mt-2"></div>'
+        + '<div id="ocrPreviewStrip" class="d-flex gap-1 flex-wrap mt-2"></div>'
+        + '</div>';
+}
+
+// Draw the selected page at its current angle, plus the caption, controls and the
+// page strip. Every failure degrades to a message — a preview must never be able
+// to break the autofill flow it sits inside.
+// Called by: _ocrPreviewShow/_ocrPreviewStep/_ocrPreviewRotate*, and after a rotate.
+async function renderOcrPagePreview() {
+    const host = document.getElementById('ocrPagePreview');
+    if (!host) return;
+    const reports = window._autofillScanReports || [];
+    if (!_ocrPreview || !reports[_ocrPreview.reportIdx]) { host.style.display = 'none'; return; }
+    const r = reports[_ocrPreview.reportIdx];
+    const pages = ocrRotatablePagesOf(r);
+    if (!pages.length) { host.style.display = 'none'; return; }
+    if (pages.indexOf(_ocrPreview.pageNum) === -1) _ocrPreview.pageNum = pages[0];
+    host.style.display = '';
+
+    const pn = _ocrPreview.pageNum;
+    const deg = ocrRotationOf(r.fileName, pn);
+    const unread = ocrPageIsUnread(r, pn);
+    const at = pages.indexOf(pn);
+
+    // Caption — what page this is, and whether the reader got anything from it.
+    const cap = document.getElementById('ocrPreviewCaption');
+    if (cap) {
+        cap.innerHTML = '<strong>' + escapeHtml(r.fileName) + '</strong>'
+            + '<span class="text-muted">page ' + pn + ' of ' + (r.numPages || pages.length) + '</span>'
+            + (deg ? '<span class="badge bg-secondary">turned ' + deg + '°</span>' : '')
+            + (unread
+                ? '<span class="badge bg-warning text-dark">no text read yet</span>'
+                : '<span class="badge bg-success">text read</span>');
+    }
+
+    // Controls. Rotate is INSTANT here — it turns the picture and nothing else.
+    const ctl = document.getElementById('ocrPreviewControls');
+    if (ctl) {
+        const pending = ocrPendingRereadPages(r).length;
+        ctl.innerHTML =
+            '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at <= 0 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(-1)">‹ prev</button>'
+            + '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at >= pages.length - 1 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(1)">next ›</button>'
+            + '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewRotate()" title="Turn this page 90°. Nothing is re-read until you press Re-read.">⟳ turn this page</button>'
+            + '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._ocrPreviewRotateFile()" title="Turn every scanned page of this file 90°">⟳ turn whole file</button>'
+            + (pending > 0
+                ? '<button type="button" class="btn btn-sm btn-primary ms-auto" onclick="window._ocrPreviewReread()" title="Read the turned pages again — only these are re-read">Re-read ' + pending + ' page' + (pending === 1 ? '' : 's') + '</button>'
+                : '<span class="ms-auto text-muted" style="font-size:0.85em;">Nothing turned since the last read.</span>');
+    }
+
+    // Page strip — which pages the reader managed, and which it did not.
+    const strip = document.getElementById('ocrPreviewStrip');
+    if (strip) {
+        strip.innerHTML = '<span class="text-muted me-1" style="font-size:0.8em;">Pages:</span>' + ocrPageFactsOf(r).map((f) => {
+            const cls = f.pageNum === pn ? 'btn-dark' : (f.read ? 'btn-outline-success' : 'btn-outline-warning');
+            return '<button type="button" class="btn btn-sm ' + cls + '" style="padding:1px 6px;font-size:0.75em;"'
+                + ' onclick="window._ocrPreviewShow(' + _ocrPreview.reportIdx + ',' + f.pageNum + ')"'
+                + ' title="Page ' + f.pageNum + (f.read ? ' — text read' : ' — no text read') + (f.rotation ? ', turned ' + f.rotation + '°' : '') + '">'
+                + f.pageNum + (f.read ? '' : '*') + '</button>';
+        }).join('');
+    }
+
+    // The page itself. Token-guarded so a fast prev/next cannot paint out of order.
+    const stage = document.getElementById('ocrPreviewStage');
+    if (!stage) return;
+    const token = ++_ocrPreviewToken;
+    stage.innerHTML = '<span class="text-muted" style="font-size:0.85em;">Rendering page ' + pn + '…</span>';
+    try {
+        const doc = await ocrPreviewDocFor(r.fileName);
+        if (token !== _ocrPreviewToken) return;
+        if (!doc || pn < 1 || pn > doc.numPages) {
+            stage.innerHTML = '<span class="text-muted" style="font-size:0.85em;">Original file no longer available — re-upload to preview.</span>';
+            return;
+        }
+        const page = await doc.getPage(pn);
+        if (token !== _ocrPreviewToken) return;
+        // Screen scale, deliberately independent of the OCR render (which uses 3).
+        const base = page.getViewport({ scale: 1, rotation: deg || 0 });
+        const wrapW = Math.max(240, Math.min(stage.clientWidth || 560, 720));
+        const scale = Math.max(0.2, Math.min(2, wrapW / (base.width || wrapW)));
+        const viewport = page.getViewport({ scale, rotation: deg || 0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.maxWidth = '100%';
+        canvas.style.height = 'auto';
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        if (token !== _ocrPreviewToken) return;
+        stage.innerHTML = '';
+        stage.appendChild(canvas);
+    } catch (e) {
+        if (token !== _ocrPreviewToken) return;
+        stage.innerHTML = '<span class="text-muted" style="font-size:0.85em;">Could not draw this page.</span>';
+    }
+}
+
+// Show a page. Called by: the "see pages" button and every strip chip.
+window._ocrPreviewShow = function (reportIdx, pageNum) {
+    _ocrPreview = { reportIdx: reportIdx, pageNum: pageNum };
+    renderOcrPagePreview();
+};
+
+// Step through the pages this file offers.
+window._ocrPreviewStep = function (delta) {
+    try {
+        const reports = window._autofillScanReports || [];
+        const r = reports[_ocrPreview && _ocrPreview.reportIdx];
+        if (!r) return;
+        const pages = ocrRotatablePagesOf(r);
+        const at = pages.indexOf(_ocrPreview.pageNum);
+        const next = pages[at + delta];
+        if (next === undefined) return;
+        _ocrPreview.pageNum = next;
+        renderOcrPagePreview();
+    } catch (e) { /* best-effort */ }
+};
+
+// Turn the shown page. INSTANT: updates the angle and redraws, and re-reads
+// nothing — that is the whole point of the change. The Re-read button then costs
+// only the pages actually turned, because the photo-read cache is keyed by angle.
+window._ocrPreviewRotate = function () {
+    try {
+        const reports = window._autofillScanReports || [];
+        const r = reports[_ocrPreview && _ocrPreview.reportIdx];
+        if (!r) return;
+        const key = r.fileName + '#' + _ocrPreview.pageNum;
+        window._ocrRotations = window._ocrRotations || {};
+        window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
+    } catch (e) { /* rotation bookkeeping is best-effort */ }
+    refreshOcrRotateLabels();
+    renderOcrPagePreview();
+};
+
+// Turn every scanned page of the shown file, same instant semantics.
+window._ocrPreviewRotateFile = function () {
+    try {
+        const reports = window._autofillScanReports || [];
+        const r = reports[_ocrPreview && _ocrPreview.reportIdx];
+        if (!r) return;
+        window._ocrRotations = window._ocrRotations || {};
+        for (const pn of ocrRotatablePagesOf(r)) {
+            const key = r.fileName + '#' + pn;
+            window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
+        }
+    } catch (e) { /* rotation bookkeeping is best-effort */ }
+    refreshOcrRotateLabels();
+    renderOcrPagePreview();
+};
+
+// Read the turned pages again. This runs the normal pipeline — every ledger is
+// recomputed from the same walk as always — but the photo-read cache means only
+// pages whose angle changed actually cost a recognition.
+window._ocrPreviewReread = function () {
+    try { closeAutofillPreview(); } catch (e) { /* no preview on the empty-warning path */ }
+    hideAutofillBanner();
     runDocumentAutofill();
 };
+
+// Rewrite just the degree suffix on every rotate button, so the labels stay true
+// after an instant rotate without rebuilding either surface. The suffix lives in
+// its own span precisely so this can be surgical.
+function refreshOcrRotateLabels() {
+    try {
+        const reports = window._autofillScanReports || [];
+        document.querySelectorAll('[data-rot-file][data-rot-page]').forEach((el) => {
+            const r = reports[Number(el.getAttribute('data-rot-file'))];
+            const pn = Number(el.getAttribute('data-rot-page'));
+            if (!r || !isFinite(pn)) return;
+            const slot = el.querySelector('[data-rot-deg]');
+            if (!slot) return;
+            const deg = ocrRotationOf(r.fileName, pn);
+            slot.textContent = deg ? ' @' + deg + '°' : '';
+        });
+    } catch (e) { /* label refresh is cosmetic */ }
+}
 
 // Adjustable scan depth, N4: re-scan at the selector's chosen pages-per-file.
 // Reads #ocrPageSelect (10/25/40/50, default 10), stores it for this session, closes the
@@ -1676,10 +1930,11 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             let rotBtns = '';
             try {
                 rotBtns = ocrPageFactsOf(r).map((f) => {
-                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Rotate page ' + f.pageNum + ' 90° and re-read' + (f.read ? '' : ' (no text yet)') + '">⟳ p.' + f.pageNum + (f.rotation ? ' @' + f.rotation + '°' : '') + (f.read ? '' : '*') + '</button>';
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Turn page ' + f.pageNum + ' 90° and show it' + (f.read ? '' : ' (no text yet)') + '">⟳ p.' + f.pageNum + '<span data-rot-deg>' + (f.rotation ? ' @' + f.rotation + '°' : '') + '</span>' + (f.read ? '' : '*') + '</button>';
                 }).join(' ');
                 if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page (* = no text yet):</span>' + rotBtns +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of this file 90° and re-read">⟳ all</button></div>';
+                    '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rotateAllScanned(' + ri + ')" title="Turn ALL scanned pages of this file 90°">⟳ all</button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewShow(' + ri + ',' + (ocrRotatablePagesOf(r)[0] || 1) + ')" title="Show these pages so you can see what you are straightening">👁 see pages</button></div>';
             } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
             // Stash this report's identity for the rotate handler (quote-safe indirection).
             stashOcrRotateTargets(reports);
@@ -1700,10 +1955,13 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         }
         const opts = [10, 25, 40, 50].map(n => '<option value="' + n + '"' + (n === limit ? ' selected' : '') + '>' + n + ' pages per file</option>').join('');
         truncEl.innerHTML = '<i class="bi bi-info-circle"></i> <span>' + (lines.join('<br>') || 'Scanned pages were read.') + '</span>' +
+            ocrPagePreviewShellHtml() +
             '<div class="d-flex align-items-center gap-2 flex-wrap"><label class="mb-0" style="font-size:0.85em;" for="ocrPageSelect">Read depth (≈2s per page):</label>' +
             '<select id="ocrPageSelect" class="form-select form-select-sm" style="width:auto;">' + opts + '</select>' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rescanWithSelection()">Re-scan</button></div>';
+            '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rescanWithSelection()" title="Read every page again from scratch, ignoring what was already read">Re-scan</button></div>';
         truncEl.style.display = '';
+        // Keep the panel open across a re-render if it already was (a re-read lands here).
+        try { if (_ocrPreview) renderOcrPagePreview(); } catch (e) { /* best-effort */ }
     }
 
     // Mismatch (mis-upload 2 different projects) — red banner, let user pick, do NOT block Apply
@@ -2232,9 +2490,12 @@ function showAutofillWarning(message, opts) {
             if (!r) return;
             const facts = ocrPageFactsOf(r);
             facts.forEach((f) => {
-                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Rotate page ' + f.pageNum + ' of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ ' + escapeHtml(r.fileName) + ' p.' + f.pageNum + (f.rotation ? ' @' + f.rotation + '°' : '') + '</button>');
+                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Turn page ' + f.pageNum + ' of ' + escapeHtml(r.fileName) + ' 90° and show it">⟳ ' + escapeHtml(r.fileName) + ' p.' + f.pageNum + '<span data-rot-deg>' + (f.rotation ? ' @' + f.rotation + '°' : '') + '</span></button>');
             });
-            if (facts.length) btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
+            if (facts.length) {
+                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Turn ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90°">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
+                btns.push('<button type="button" class="btn btn-sm btn-outline-primary mt-2 me-1" onclick="window._ocrPreviewShow(' + ri + ',' + (ocrRotatablePagesOf(r)[0] || 1) + ')" title="Show the pages of ' + escapeHtml(r.fileName) + ' so you can see what you are straightening">👁 see ' + escapeHtml(r.fileName) + '</button>');
+            }
         });
         if (btns.length) rotBtns = '<div>' + btns.join('') + '</div>';
     } catch (e) { rotBtns = ''; /* rotate affordance is best-effort */ }
@@ -2258,12 +2519,17 @@ function showAutofillWarning(message, opts) {
             ${copyBtn}
             ${straightenBtn}
             ${rotBtns}
+            ${ocrPagePreviewShellHtml()}
             ${snapBtns}
             ${aiBtn}
         </div>
         <button type="button" class="btn-close ms-auto flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
     `;
     banner.style.display = 'flex';
+    // A Re-read lands back here with the panel rebuilt empty, so redraw it if the
+    // reviewer had one open — otherwise pressing Re-read appears to close the page
+    // they were working on.
+    try { if (_ocrPreview) renderOcrPagePreview(); } catch (e) { /* best-effort */ }
 }
 
 function hideAutofillBanner() {

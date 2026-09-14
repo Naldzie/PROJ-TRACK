@@ -317,7 +317,58 @@
       O2(b) (full re-run behind the button) and say so — a slow honest button
       beats a fast wrong ledger.
 
-  STEP 3 — The preview panel  ⬜ NOT STARTED
+  STEP 3 — The preview panel  ✅ BUILT 2026-09-14 (with step 2's remainder folded in)
+    WHAT SHIPPED
+      - ocrPagePreviewShellHtml() — one panel, one set of ids, injected by BOTH
+        surfaces (the preview's gray note and the amber notice). Hidden until asked
+        for by a "👁 see pages" button added beside the rotate controls.
+      - renderOcrPagePreview() — draws the selected page at its CURRENT angle onto
+        a canvas, with a caption (file, page N of M, turned D°, and whether the
+        reader got text), prev/next, the two rotate buttons, a page strip, and the
+        Re-read button. Screen scale is fitted to the panel width and is
+        deliberately independent of the OCR render (which uses scale 3).
+      - Per-file pdf.js documents are MEMOISED (_ocrPreviewDocs) — reopening the
+        PDF on every click is the slow part — and released in
+        cancelDocumentAutofill() via releaseOcrPreviewDocs(). The plan flagged
+        _saveOcrPageImage's missing destroy() (§3.6b); this path does not repeat it.
+      - Renders are token-guarded (_ocrPreviewToken), the same idea as the run id,
+        so a fast prev/next cannot paint out of order.
+
+    STEP 2'S REMAINDER, FOLDED IN AS AGREED: _rotateOcrPage and _rotateAllScanned
+    NO LONGER RE-RUN THE PIPELINE. They turn the page, refresh the labels, redraw
+    the picture, and stop. Re-reading is now the explicit Re-read button, whose
+    label names the cost — "Re-read 2 pages" — computed by ocrPendingRereadPages(),
+    which asks the photo-read cache which pages have never been read at their
+    current angle. DERIVED, not a tracked dirty set, so it cannot drift from what
+    the reader would really do.
+      _straightenAllAndRescan is deliberately LEFT rescanning: it is the one-shot
+      rescue on an empty run and its label has always said "& re-read". Verified
+      its tooltip is still accurate rather than stale.
+      The per-page rotate also SELECTS the page it just turned, so the button and
+      the picture always agree.
+
+    LABEL HONESTY: every rotate tooltip that used to promise "90° and re-read" now
+    says "turn ... and show it", because that is what it does. The degree suffix
+    moved into its own <span data-rot-deg> so refreshOcrRotateLabels() can rewrite
+    it surgically after an instant rotate — no surface rebuild, no flicker.
+
+    THE PANEL SURVIVES A RE-READ. Both surfaces redraw it after rebuilding, so
+    pressing Re-read does not appear to close the page being worked on.
+
+    VERIFIED (structural, since this is DOM code the suite does not reach):
+      every id renderOcrPagePreview asks for exists in the shell (5/5);
+      neither per-page nor per-file rotate calls runDocumentAutofill, and both
+      redraw; _ocrPreviewReread does re-run the pipeline; the only surviving
+      "and re-read" tooltip belongs to _straightenAllAndRescan, which still does.
+      node --check clean; JS suite 158/156 + the 2 intended blinding fails
+      (unchanged — the pure core is untouched); the step-2 cache probe still shows
+      ledgers preserved.
+    NOT BROWSER-PROVEN — that is §7.4, on sampledocs/pdfdocstest4.pdf.
+
+    KNOWN, NOT FIXED: the panel shows pages from ocrRotatablePagesOf(), i.e. the
+    SCANNED pages. A text-layer page in the same file cannot be previewed. That is
+    the right default (only scanned pages are rotatable and only they fail), but it
+    means "page 3 of 10" can skip numbers. The caption says the true page number.
     - A canvas in the notice showing one page at its current angle, with prev/next
       and a page strip. Reuse the _saveOcrPageImage render body; ADD pdf.destroy()
       (§3.6b); keep one PDFDocumentProxy per file rather than reopening per click.
