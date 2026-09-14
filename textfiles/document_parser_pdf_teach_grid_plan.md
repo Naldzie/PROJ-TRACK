@@ -4,15 +4,22 @@
 #              2026-09-13 §9 entries first)
 #              textfiles/document_parser_excel_learning_loop_plan.md (Phase-A — the teach
 #              UI being reused)
-# Date: September 13, 2026 (closed September 14, 2026)
-# Status: ✅ CLOSED — §2 through §7 built 2026-09-13, and the §10 acceptance run is
-#         BROWSER-PROVEN 2026-09-14 after three rounds that found SEVEN defects, all
-#         fixed and all re-proven in the browser. The roof now reads
-#         6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 (counts 4,4,4,4,3,4,3)
-#         through BOTH paths: an approved AI-derived layout, and a hand-taught one.
-#         Reader output never moved — 16-read regression byte-identical throughout.
-#         Commits: 23abd20 (build) · 22edd71 (defects 1-3) · 63862dd (4-6) · 4ffbcc0 (7).
-#         The seven defects and their measurements: §13, the four 2026-09-14 entries.
+# Date: September 13, 2026 (PDF closed September 14; Excel sweep continuing)
+# Status: ✅ THE PDF SIDE IS CLOSED — §2 through §7 built 2026-09-13, §10 BROWSER-PROVEN
+#         2026-09-14 after four rounds that found SEVEN defects, all fixed and all
+#         re-proven. The roof reads 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100
+#         (counts 4,4,4,4,3,4,3) through BOTH an approved AI-derived layout and a
+#         hand-taught one. Reader output never moved — 16-read regression byte-identical.
+#         Commits: 23abd20 (build) · 22edd71 (1-3) · 63862dd (4-6) · 4ffbcc0 (7) ·
+#         7741341 (close).
+#
+#         🔄 THE SAME SWEEP ON THE EXCEL PATH IS STILL OPEN. Rounds five and six found
+#         three more defects there, fixed in 293b302 and 3ce2f92. Round seven
+#         (2026-09-14) is a RESTUDY ONLY, no code: the Excel path never emits
+#         [CUMULATIVE], the auto-tagger is wrong on real files three different ways, and
+#         what is worth teaching is "not an activity" + "the curve", never "this is a
+#         data row". Plan and measurements: §13, the 2026-09-14 (seventh round) entry.
+#         NOTHING FROM IT IS BUILT — the build is a separate order (Rule 10).
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -920,6 +927,129 @@
     picker opens with nothing ticked and says "none picked yet" in small text. The
     user got past it this round by ticking R4, but a blocked Save should still say
     "pick the header row first" rather than leaving them to find it.
+
+  2026-09-14 (seventh round) — RESTUDY ONLY, NO CODE. The user moved to the 6-STAGE
+  Excel specimen, asked for a CUMULATIVE badge and for reviewer-assignable row roles,
+  and asked for a codebase restudy before anything was built. This entry is that
+  restudy. Nothing below is implemented; the build is a separate order (Rule 10).
+  Sources: the real workbooks, the real serializer, and three read-only sweeps of the
+  role-tagging, teach-modal and authorization paths.
+
+    THE USER'S THREE CLAIMS — ALL THREE CHECK OUT.
+      "SEGMENT has no cumulative row, only a total"   CORRECT (sheet row 16 = TOTAL)
+      "6-stage HAS a real cumulative row"             CORRECT (row 8, CUMULATIVE %
+                                                       ACHIEVED 5/20/40/60/80/100)
+      "so it should be badged cumulative"             CORRECT, AND IT IS NOT.
+    serializeForAi() on the three specimens, verbatim:
+      6-STAGE  R7 [SUMMARY]: ,TOTAL,,,1200000
+               R8 [SUMMARY]: ,"CUMULATIVE % ACHIEVED",,,,5,20,40,60,80,100   <- wrong
+      SEGMENT  R4 [DATA]:    "ITEM NO.",,DESCRIPTION,...
+      BUHI     R9 [DATA]:    NO.,,,"(IN PESOS)",,AMOUNT,,DAYS,15,15,...
+
+    THE EXCEL PATH NEVER EMITS [CUMULATIVE] AT ALL. labelSliceRows()
+    (SCurveImportService.php:190-200) folds a cumulative row into SUMMARY via
+    isCumulativeRow(); its role vocabulary is META/HEADER/DATA/SUMMARY, full stop. The
+    PDF path has emitted a green CUMULATIVE since the roof work
+    (scurve-pdf-parser-core.js:1884 and :2206, via isCumulativeShapedRow). The two
+    paths have disagreed about the same idea since that day and nobody was looking at
+    both at once. SAME CLASS AS THE SIX DEFECTS OF THE FOURTH ROUND.
+      Two more mismatches ride with it: BOTH paths emit a FOUR-role legend
+      (SCurveImportService.php:135-141, scurve-pdf-parser-core.js:1889-1892 / :2165-2168),
+      so the PDF path emits a fifth tag its own legend never defines; and the Gemini
+      prompt (GeminiDocumentParserService.php:1012-1034) teaches the model the same four
+      and branches on them ("DO NOT copy SUMMARY values into months"), so a PDF slice's
+      cumulative row reaches the model as a tag nothing has explained.
+
+    THE AUTO-TAGGER IS WRONG ON REAL FILES IN THREE DISTINCT WAYS — this is the
+    evidence behind the user's instinct to let reviewers correct roles, and it is
+    stronger than the request that prompted it:
+      6-stage  cumulative row  -> SUMMARY   (no CUMULATIVE exists on this path)
+      SEGMENT  header row      -> DATA      (GAP 2: rules cannot find the header)
+      BUHI     2nd header line -> DATA      (two-row header, only the first tagged)
+
+    WHAT IS ACTUALLY WORTH TEACHING — TWO LEVELS, NOT THREE.
+      Read SCurveImportService.php:1490-1545 before designing anything here. THERE IS
+      NO POSITIVE "THIS IS A DATA ROW" DECISION. A row becomes an activity by residue:
+        $isActivity = $weight !== null
+            || ($hasMonthValue && $description !== '')
+            || ($contractAmt !== null && $description !== '');
+      Everything not skipped and carrying enough signal IS data. So a reviewer would
+      never teach "this is a data row"; they teach the opposite. The two controls that
+      mean anything are:
+        NOT AN ACTIVITY (summary)  — do not sum this row. Protects the numbers.
+        THE CURVE (cumulative)     — a summary row that ALSO supplies the baseline.
+      And the user's own observation is right: THE CUMULATIVE ROW LIVES INSIDE THE
+      SUMMARY BLOCK. The skip list lumps them together —
+        /%?\s*(accomplished|complete)|cumulat\w*|commulat\w*|cost\b|cash\s*flow|
+         project\s*duration|^%\s*$/i
+      so marking a row cumulative should IMPLY excluding it. One click, coherent model.
+
+    WHICH HALF IS URGENT AND WHICH IS INSURANCE — measured, because the answer is not
+    the one the request implies. isCumulativeRow() against real and invented labels:
+      6-stage CUMULATIVE % ACHIEVED  FOUND     roof    Commulative (typo)  FOUND
+      BUHI    CUMULATIVE % ACCOMPL.  FOUND     SEGMENT TOTAL               missed (right)
+      novel   RUNNING TOTAL %        missed    novel   PROGRESS TO DATE    missed
+      unlabelled bare % row          missed
+      ⇒ NO FILE IN THE CURRENT CORPUS NEEDS A TAUGHT CUMULATIVE ROW. Every real one is
+        already found. That half is insurance against novel wordings — the same class
+        the loop already serves for novel MONTH wordings (SEGMENT, STAGE N).
+      ⇒ THE SUMMARY HALF IS THE HIGHER-STAKES ONE, and it fails SILENTLY: a row wrongly
+        summed inflates the contract denominator AND every month total, with no
+        warning. The skip regex above is accumulated scar tissue — the roof comment at
+        :1493 says the Cash Flow row "absorbs as an activity and distorts the curve
+        (diagnosis-proven)". A novel summary label ("Cash Position", "S-Curve Value")
+        slips straight through today.
+      Recorded because it inverts the priority: the badge has a file TODAY, the summary
+      control prevents silent corruption, and the cumulative binding is the speculative
+      third. If this is ever split, ship it in that order.
+
+    THE PREVIEW CONSTRAINT, AND THE PROPERTY THAT RESCUES IT. The user asked to see the
+    before/after before saving an exclusion. THE CAPTURE STORES NO FILE — only
+    header_rows_text (text-only was the deliberate Phase-A decision: "approval IS the
+    trust event"), so the server cannot re-parse to compute one. Measured what the block
+    alone supports:
+      6-STAGE  block rows=8    carries a TOTAL row: yes    <- complete, previewable
+      SEGMENT  block rows=9    carries a TOTAL row: yes    <- complete, previewable
+      BUHI     block rows=15   carries a TOTAL row: NO     <- hit the 15-row cap
+      ROOF     block rows=15   carries a TOTAL row: NO     <- hit the cap
+    THE FILES THAT NEED TEACHING ARE THE SMALL NOVEL ONES WHOSE BLOCKS ARE COMPLETE.
+    BUHI already parses; the roof reads through the PDF path. So a layered preview never
+    lies: always show the row's own contribution (exact, from its cells); show the full
+    recomputed curve ONLY when the block's activity amounts reconcile to its TOTAL row
+    (self-validating, needs no new field); otherwise say the table is truncated.
+
+    APPROVE PARITY — VERIFIED EQUAL, NO WORK NEEDED (user asked to confirm, not change).
+    Admin and staff match at every layer: ScurveHeaderProposalPolicy, all 7 abilities
+    in_array($user->role, ['admin','staff']), registered at AppServiceProvider.php:28;
+    ensureReviewer() (controller :751-756) called by every endpoint; routes mirrored
+    exactly (staff :291-306, admin :776-791 — 5 each, same verbs/paths/methods);
+    one shared modal included by both layouts with no role branching inside it.
+    Contractors excluded at five independent layers, with a test already pinning it.
+
+    FOUND WHILE LOOKING, NOT IN SCOPE, WRITTEN DOWN SO IT IS NOT RE-DISCOVERED:
+      (a) PSR-4 CASE MISMATCH, A REAL LINUX DEPLOYMENT BUG.
+          app/Http/Controllers/Admin/SCurveHeaderProposalController.php (capital C)
+          declares `class ScurveHeaderProposalController` (lowercase c, :25). It resolves
+          today only because routes/web.php:32 imports the FILENAME's spelling. Any
+          reference to the declared name fails to autoload on a case-sensitive
+          filesystem. The sibling keyword controller is consistent; this one is not.
+      (b) THE PDF CUMULATIVE TEST CAN STEAL A HEADER TAG. In both PDF builders it is an
+          unconditional `if`, not `else if` (:1884, :2206), so it overwrites HEADER and
+          META. A header line satisfying the shape test would lose its tag and the teach
+          picker would open empty — the exact symptom of the fifth-round Excel bug,
+          reachable on the PDF side by a different route. No sample triggers it yet.
+      (c) isCumulativeLabel() (SCurveImportService.php:1210) IS DEAD CODE — zero callers.
+          Its docblock describes work isCumulativeRow() actually does.
+      (d) The policies are registered but NEVER INVOKED — no authorize(), no Gate::allows,
+          no @can for either desk. Enforcement is route middleware + ensureReviewer().
+          Fail-safe, not fail-open, but a future reader may trust the wrong thing.
+      (e) collect() duplicates the reviewer gate inline instead of calling
+          ensureReviewer(), on BOTH desks — identical today, free to drift.
+
+    ⚠️ WHEN THE BADGE FIX IS BUILT IT CHANGES THE BLOCK TEXT, hence header_hash, hence
+    ONE MORE RE-CAPTURE WAVE. Same drill: re-import, approve the new row, reject the
+    stale one. Third time this has been the cost of improving the block; it is the
+    standing price of header_hash being content-derived, not a defect.
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
