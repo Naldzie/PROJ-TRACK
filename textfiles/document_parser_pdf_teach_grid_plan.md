@@ -4,12 +4,17 @@
 #              2026-09-13 §9 entries first)
 #              textfiles/document_parser_excel_learning_loop_plan.md (Phase-A — the teach
 #              UI being reused)
-# Date: September 13, 2026
-# Status: ✅ BUILT 2026-09-13 (code, UNCOMMITTED per user) — §2 through §7 all done.
-#         Reader output unchanged (16-read regression byte-identical). NOT browser-proven:
-#         the acceptance run is §10, and expect the one-time re-capture wave of §8.
-#         Build record + the three measured attempts at the column rule: §13.
-# Branch: phase-5-parser-accuracy (Rule 12 — no merge to main without explicit confirmation)
+# Date: September 13, 2026 (closed September 14, 2026)
+# Status: ✅ CLOSED — §2 through §7 built 2026-09-13, and the §10 acceptance run is
+#         BROWSER-PROVEN 2026-09-14 after three rounds that found SEVEN defects, all
+#         fixed and all re-proven in the browser. The roof now reads
+#         6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 (counts 4,4,4,4,3,4,3)
+#         through BOTH paths: an approved AI-derived layout, and a hand-taught one.
+#         Reader output never moved — 16-read regression byte-identical throughout.
+#         Commits: 23abd20 (build) · 22edd71 (defects 1-3) · 63862dd (4-6) · 4ffbcc0 (7).
+#         The seven defects and their measurements: §13, the four 2026-09-14 entries.
+# Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
+#         explicit confirmation; this branch also carries an unrelated teammate merge)
 
 ===============================================================================
   0. READ THIS FIRST (handoff in 60 seconds)
@@ -34,18 +39,23 @@
     stood here was true on 2026-09-13 and is now wrong; `git show --stat 23abd20`
     is the list.
 
-    §10 HAS BEEN RUN (2026-09-14). The grid passed; THREE defects surfaced, one of
-    them a regression §2 introduced. Read the 2026-09-14 entry in §13 before
-    touching the teach path — it carries the measurements, not just the verdicts.
+    §10 IS DONE AND PASSED (2026-09-14, after four rounds). The grid itself passed on
+    the first run; SEVEN defects surfaced across the rounds, all fixed and all
+    re-proven in the browser — commits 22edd71, 63862dd, 4ffbcc0. Six of the seven
+    were NOT in the code §2–§7 wrote but in the code that spoke to it and was not
+    updated with it. Read the four 2026-09-14 entries in §13 before touching the
+    teach path — they carry the measurements, not just the verdicts.
 
     The delete-confirmation change is NOT part of this plan — it is a separate
-    blocking bug found while testing it (§13, round two) and it rides in the same
-    uncommitted batch. Say so if the work is split into two commits.
+    blocking bug found while testing it (§13, round two) and it rides in 23abd20.
 
-  STATE OF PROOF
-    Suites green: PHP 1185 / the same 7 pre-existing BY NAME; JS 157 tests, 155
-    passed + the 2 intended blinding fails. Reader regression 16 reads, 0 changed.
-    NOT BROWSER-PROVEN — the user will run the detailed test. The script is §10.
+  STATE OF PROOF  ✅ BROWSER-PROVEN 2026-09-14
+    The roof reads 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 with counts
+    4,4,4,4,3,4,3 through BOTH an approved AI-derived layout and a hand-taught one.
+    Suites: PHP 1194 passed / the same 5 pre-existing BY NAME (the 2 Contractor-
+    Dashboard failures were fixed by the teammate merge in 06d89cf, not here);
+    JS 158 tests, 156 passed + the 2 intended blinding fails.
+    Reader regression: 16 reads, 0 changed — the reader never moved throughout.
 
   THE ONE THING THAT WILL LOOK LIKE A BUG AND IS NOT
     A capture stored BEFORE this work still renders the old way: 15 rows, 2 summary
@@ -65,7 +75,8 @@
   exclusion → §6 modal layout → §7 ambiguous geometry~~ ALL BUILT 2026-09-13 — see
   §13 for what shipped, for the two column rules that were tried and rejected first,
   and for the three self-inflicted bugs worth not repeating.
-  REMAINING: the browser acceptance run in §10. Rule 10 applies before anything new.
+  REMAINING: nothing. §10 passed 2026-09-14; the seven defects it found are fixed and
+  browser-proven. Rule 10 applies before anything new.
 
   HARD RULES
     - Blinding stays ON (L3_TEST_BLIND_ABC = true). JS showing 2 failures is green.
@@ -80,8 +91,8 @@
     - Log behavioural changes here before committing (Rule 11).
 
   VERIFY COMMANDS
-    npm run test:js        -> 157 tests, 155 passed + 2 intended blinding fails
-    php artisan test       -> 1185 passed / the same 7 pre-existing failures
+    npm run test:js        -> 158 tests, 156 passed + 2 intended blinding fails
+    php artisan test       -> 1194 passed / the same 5 pre-existing failures
     node C:\temp\opencode\verify_p6.mjs   -> "16 reads compared … 0 changed"
     node C:\temp\opencode\probe_block.mjs -> the roof's grid as the desk will draw it
     php artisan view:clear && php artisan view:cache   after ANY Blade edit
@@ -736,6 +747,49 @@
     intended blinding fails. Reader regression 16 reads, 0 changed. Blade-inline JS
     has no unit harness (the standing convention for this file), so the rule was
     replayed against the REAL stored map in node instead of a synthetic fixture.
+
+
+  2026-09-14 (fourth round) — ✅ §10 BROWSER-PROVEN. PDF-4 STAGE 2 IS CLOSED.
+    The user re-ran the acceptance script and every defect stayed fixed at once:
+      - the teach modal prefills ONE letter per month — Headers R3 · Description=A ·
+        M1=F · M2=G · M3=H · M4=I · M5=J · M6=L · M7=M — with the phantom column K
+        correctly unassigned and months 6 and 7 (printed page two) present;
+      - the desk row reads ai-derived, seen 1x, "page 1: M1-M5 · page 2: M6-M7",
+        and did NOT auto-live;
+      - approving it reads 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 with
+        counts 4,4,4,4,3,4,3 and the real activity names, carrying the learned-layout
+        note, the adoption note and the "2 unnamed value rows" note.
+    Both routes to a readable roof layout are now proven: APPROVE THE AI-DERIVED ONE,
+    or TEACH IT BY HAND. Either lands on the same curve.
+
+    WHAT THE SEVEN DEFECTS HAD IN COMMON, worth carrying forward. Six of the seven
+    were not in the code §2-§7 wrote — they were in the code that SPOKE TO it and was
+    not updated with it:
+      derivePdfLayoutFromAi still built a page-one block with restarting letters;
+      buildTaughtPdfMap still read one pseudo-column as the description;
+      the teach prefill still read pages[0], then still claimed every column a band
+      grazed; storeAiDerived and the auto-live rule still tested `map === null` when
+      the meaningful state had become `unnumbered`.
+    §2 changed what a LETTER means and §3 changed what a PAGE means. Every consumer
+    of those two ideas needed revisiting, and finding them one browser round at a
+    time is what four rounds cost. THE LESSON, stated plainly for whoever changes a
+    shared representation next: list the readers of a representation before changing
+    it, not after the acceptance run fails.
+
+    ALSO CLOSED HERE: the Overview tab's Documents card let a long filename escape
+    the card. .left-col/.right-col/.doc-item are grid items defaulting to
+    min-width:auto, so content width beat the 380px track and .doc-name's existing
+    ellipsis never applied. Unrelated to the parser; it rode with 22edd71.
+
+    STILL OPEN, and deliberately not built: defect 7's fix lives in Blade-inline JS,
+    which has no unit harness in this file, so it is pinned only by a replay against
+    the real stored map. If a test harness for the desk's inline JS ever exists, that
+    rule is the first thing to move into it.
+    ALSO NOTED, LATENT, NOT FIXED: storeAiDerived matches on (header_hash,
+    contractor_id) with NO source_type scope, while the auto-capture path below it
+    scopes by source_type precisely so an Excel row and a PDF row can never merge.
+    The controller patches source_type afterwards. No live symptom; a colliding hash
+    could hijack an Excel row into a PDF one.
 
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
