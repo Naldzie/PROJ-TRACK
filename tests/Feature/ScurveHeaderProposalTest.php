@@ -1091,6 +1091,132 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame('pdf', $rows[0]->column_map['kind']);
     }
 
+    // 2026-09-14 — SEEING AN AMBIGUOUS LAYOUT AGAIN CANNOT NUMBER IT.
+    //
+    // The >=3 rule corroborates WHERE a layout's columns sit. It cannot corroborate
+    // WHICH month each one is, because the roof prints "30 days" six times however
+    // many times you import it. Promoting one produced a row badged live and Mapped
+    // that usableLayoutMap still refuses, so the reviewer approved nothing and got
+    // "could not read the S-curve" anyway.
+    // Called by: collect() auto-live rule.
+    public function test_an_unnumbered_capture_never_auto_lives(): void
+    {
+        $admin = $this->makeUser('admin');
+        $block = "COLUMNS: A,B,C,D | META: title block | HEADER: column labels\n"
+            . "R1 [HEADER]: NO.,Amount,30 days,30 days\n"
+            . "R2 [DATA]: A,ROOFING,16%,17%";
+        // Geometry kept, months unnumbered — exactly what an ambiguous capture stores.
+        $map = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['no.', 'amount', '30 days'],
+                'descX' => 0.05, 'descRight' => 0.3, 'monthCols' => [], 'unnumbered' => true,
+                'pseudoCols' => [['letter' => 'A', 'x' => 0.05, 'xEnd' => 0.3]]],
+        ]];
+        $payload = [
+            'source_type' => 'pdf', 'source' => 'auto-capture',
+            'header_rows_text' => $block, 'column_map' => json_encode($map),
+        ];
+
+        foreach (range(1, 4) as $ignored) {
+            $this->actingAs($admin)
+                ->post('/admin/scurve-header-proposals/collect', $payload)
+                ->assertStatus(201);
+        }
+
+        $row = ScurveHeaderProposal::where('source_type', 'pdf')->firstOrFail();
+        $this->assertSame(4, $row->occurrences, 'repeats still count');
+        $this->assertSame('proposed', $row->status,
+            'an unnumbered layout must stay proposed however often it is seen');
+    }
+
+    // A NUMBERED capture still promotes — the guard must not disable the rule it
+    // narrows.
+    // Called by: collect() auto-live rule.
+    public function test_a_numbered_capture_still_auto_lives_at_three(): void
+    {
+        $admin = $this->makeUser('admin');
+        $block = "COLUMNS: A,B,C,D | META: title block | HEADER: column labels\n"
+            . "R1 [HEADER]: NO.,Amount,Month 1,Month 2\n"
+            . "R2 [DATA]: A,ROOFING,4000,4000";
+        $map = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['no.', 'amount', 'month 1'],
+                'descX' => 0.05, 'descRight' => 0.3,
+                'monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.9]]],
+        ]];
+        $payload = [
+            'source_type' => 'pdf', 'source' => 'auto-capture',
+            'header_rows_text' => $block, 'column_map' => json_encode($map),
+        ];
+
+        foreach (range(1, 3) as $ignored) {
+            $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', $payload)->assertStatus(201);
+        }
+
+        $this->assertSame('live', ScurveHeaderProposal::where('source_type', 'pdf')->firstOrFail()->status);
+    }
+
+    // 2026-09-14 — THE AI'S NUMBERING MUST REACH AN UNNUMBERED CAPTURE.
+    //
+    // Once the ai-derived block became the same merged grid the capture builds, the
+    // two hash IDENTICALLY, so storeAiDerived started landing on the roof's own
+    // auto-capture row. Under the old `column_map === null` test it returned that row
+    // untouched and the AI's month numbers — the ONE thing the capture cannot derive
+    // — were discarded in silence. Backfilling drops the row to proposed, because a
+    // machine-made numbering still needs a person to approve it.
+    // Called by: ScurveHeaderProposal::storeAiDerived().
+    public function test_an_ai_numbering_backfills_an_unnumbered_capture(): void
+    {
+        $hash = hash('sha256', 'roof-shaped-block');
+        $unnumbered = ScurveHeaderProposal::create([
+            'contractor_id' => null, 'source_type' => 'pdf',
+            'header_rows_text' => 'COLUMNS: A,B | HEADER: column labels',
+            'header_hash' => $hash,
+            'column_map' => ['v' => 1, 'kind' => 'pdf', 'pages' => [
+                ['monthCols' => [], 'unnumbered' => true,
+                    'pseudoCols' => [['letter' => 'A', 'x' => 0.0, 'xEnd' => 0.5]]],
+            ]],
+            'occurrences' => 3, 'status' => 'live', 'source' => 'auto-capture',
+        ]);
+
+        $numbered = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['monthCols' => [['index' => 1, 'x' => 0.5, 'xEnd' => 0.7], ['index' => 2, 'x' => 0.7, 'xEnd' => 0.9]]],
+        ]];
+        ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored text', $numbered);
+
+        $this->assertSame(1, ScurveHeaderProposal::where('header_hash', $hash)->count(),
+            'the AI numbering joins the existing row rather than forking it');
+        $row = $unnumbered->fresh();
+        $this->assertCount(2, $row->column_map['pages'][0]['monthCols'], 'the months arrived');
+        $this->assertSame('ai-derived', $row->source);
+        $this->assertSame('proposed', $row->status, 'a machine numbering must be re-approved');
+    }
+
+    // A capture whose months ARE numbered is still left alone — the AI has nothing
+    // to add, and overwriting a working map with a machine guess is the failure the
+    // never-overwrite rule exists to prevent.
+    // Called by: ScurveHeaderProposal::storeAiDerived().
+    public function test_a_numbered_capture_is_not_overwritten_by_the_ai(): void
+    {
+        $hash = hash('sha256', 'already-numbered');
+        $original = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.8]]],
+        ]];
+        $row = ScurveHeaderProposal::create([
+            'contractor_id' => null, 'source_type' => 'pdf',
+            'header_rows_text' => 'COLUMNS: A,B | HEADER: column labels',
+            'header_hash' => $hash, 'column_map' => $original,
+            'occurrences' => 3, 'status' => 'live', 'source' => 'auto-capture',
+        ]);
+
+        ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored', ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['monthCols' => [['index' => 1, 'x' => 0.1, 'xEnd' => 0.2]]],
+        ]]);
+
+        $fresh = $row->fresh();
+        $this->assertSame($original, $fresh->column_map, 'a working map is never replaced');
+        $this->assertSame('live', $fresh->status);
+        $this->assertSame('auto-capture', $fresh->source);
+    }
+
     // The map is the whole point of an AI-derived row, so one without it is
     // refused rather than stored as an empty promise.
     // Called by: collect() ai-derived branch.

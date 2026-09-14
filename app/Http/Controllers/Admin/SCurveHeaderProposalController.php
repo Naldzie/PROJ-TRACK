@@ -148,7 +148,17 @@ class ScurveHeaderProposalController extends Controller
             $row->increment('occurrences');
             // Phase-B absolute: ai-derived rows NEVER auto-live (a hallucinated layout
             // must not self-trust into baselines) — only human approval flips them.
-            if ($row->occurrences >= 3 && $row->status === 'proposed' && $row->source !== 'ai-derived') {
+            //
+            // Nor may an UNNUMBERED capture (2026-09-14). Seeing the same ambiguous
+            // layout three times corroborates WHERE its columns sit, never WHICH
+            // month each one is — the roof prints "30 days" six times however often
+            // you import it. Promoting one produced a row badged live and Mapped that
+            // the reader still refuses, so the user approved nothing and got "could
+            // not read the S-curve" anyway. Repetition cannot supply what the bytes
+            // do not contain; only teaching or an AI numbering can.
+            $unnumbered = ScurveHeaderProposal::pdfMapIsUnnumbered($row->column_map);
+            if ($row->occurrences >= 3 && $row->status === 'proposed'
+                && $row->source !== 'ai-derived' && !$unnumbered) {
                 $row->update(['status' => 'live']);
             }
             // Backfill pre-E1-3 rows captured when maps were always null.

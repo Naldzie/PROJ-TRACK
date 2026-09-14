@@ -65,7 +65,7 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 - Feature tests use `RefreshDatabase` and factories; model factories must stay valid (see `tests/Feature/Infrastructure/FactoryVerificationTest.php`).
 - `Tests\Helpers\CreatesProjectWithHistory` trait builds regression datasets for AI tests, including the known "Project 7" dataset (slope ≈ 5.115, R² ≈ 0.954) — don't change those expected values.
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
-- Full suite (2026-09-14): **1190 passed / 4380 assertions, 5 pre-existing failures** — 1 DashboardOverdueInspection, 2 EmailDraft, 2 default-baseline (IssueLifecycle/RiskRegister). The 2 ContractorDashboard failures were fixed by the teammate work merged in 06d89cf. All reproduce on the clean tree; re-verify by stash before claiming a regression.
+- Full suite (2026-09-14): **1194 passed / 4397 assertions, 5 pre-existing failures** — 1 DashboardOverdueInspection, 2 EmailDraft, 2 default-baseline (IssueLifecycle/RiskRegister). The 2 ContractorDashboard failures were fixed by the teammate work merged in 06d89cf. All reproduce on the clean tree; re-verify by stash before claiming a regression.
 - JS suite: `npm run test:js` — **158 tests, 156 passed + 2 INTENDED blinding failures** (F-B1 conditional, L3 hardcoded-ABC). Two failures is green while blinding is on.
 
 ## Session Handoff (rewritten 2026-09-13 — read this first in a new session)
@@ -88,7 +88,7 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 
 **What it does:** the teach desk used to draw a table the document does not contain — whole columns collapsed into one (pseudo-columns were read off the header LINE alone), the summary block was cut off before the cumulative row, only the first printed page was drawn, and the S-curve chart's own scale appeared as cells. Now columns come from the whole table, the printed pages merge into one grid with letters running on across the seam, summary rows always survive the row budget, the running-total row is badged `CUMULATIVE` so it cannot be confused with the per-month `%` beside it, and multi-page teaching works. None of this changed what the reader extracts — the 16-read sample regression is byte-identical.
 
-**The three defects — ALL FIXED 2026-09-14 (code; browser re-proof outstanding):**
+**SIX defects, all fixed 2026-09-14 (code; browser re-proof outstanding).** The first three came from the acceptance run; re-running it on a wiped table found three more, one of them caused by fix 2. Detail + measurements: teach-grid plan §13, both 2026-09-14 entries.
 1. **Teaching cannot express a multi-column description band** (the blocker, and a §2 regression). `buildTaughtPdfMap` sets `descX/descRight` to ONE pseudo-column, but every derived map spans the whole left block (roof: A–D). Measured: the desc band alone decides the curve — swapping the derived band into the user's otherwise-correct taught map turns 2.48/10.8/… back into 6.32/24.31/…
 2. **`derivePdfLayoutFromAi` never got §2/§3** — its block is page-one-only and its page-2 letters restart at A,B, so ai-derived rows are un-teachable.
 3. **An unnumbered capture can be approved and nothing says it is a no-op** — the desk has zero `unnumbered` handling.

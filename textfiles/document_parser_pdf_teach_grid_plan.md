@@ -618,6 +618,74 @@
     WAVE: fix 2 changes the ai-derived block text, so its header_hash changes and the
     old row (77/79) cannot retro-fit. Approve the new one, reject the stale ones.
 
+
+  2026-09-14 (second round) — THE USER RE-RAN §10 ON A WIPED TABLE. FIX 1 HELD IN
+  THE BROWSER — the manual teach now reads 6.32 / 24.31 / 42.30 / 59.71 / 77.03 /
+  99.14 / 100 with counts 4,4,4,4,3,4,3 and the real activity names. THREE MORE
+  DEFECTS, and the first is a consequence of Fix 2 that I did not anticipate.
+
+    DEFECT 4 — FIX 2 MADE THE AI'S NUMBERING UNREACHABLE. The worst of the three,
+    and caused by the previous round.
+      Once derivePdfLayoutFromAi built the same MERGED block the capture builds,
+      the two stopped differing — measured on the real roof PDF, both normalize to
+      sha256 75b8b1b9239c6f1d, IDENTICAL. storeAiDerived matches on that hash, found
+      the auto-capture row, saw column_map !== null and returned it untouched. So a
+      successful AI read banked NOTHING: no ai-derived row appeared at all, and the
+      month numbering — the ONE thing an ambiguous capture cannot derive and the AI
+      can — was discarded in silence. This is exactly the SEGMENT no-op documented on
+      2026-09-13, arriving at the roof through a door the previous fix opened.
+      FIX: storeAiDerived backfills when the stored map is null OR UNNUMBERED. New
+      shared predicate ScurveHeaderProposal::pdfMapIsUnnumbered() — true only for a
+      pdf map whose every page carries no month index; Excel maps, nulls and
+      unrecognised shapes answer false, so a guard can never block a layout that
+      works. The backfill still drops the row to proposed: a machine-made numbering
+      needs a person before it reads a baseline. A NUMBERED map is still never
+      overwritten — that rule is untouched and now under test.
+
+    DEFECT 5 — AN UNNUMBERED CAPTURE AUTO-WENT LIVE AT THREE.
+      Live row, seen=5, both pages month-less. The >=3 rule corroborates WHERE the
+      columns sit; it cannot corroborate WHICH month each one is, because the roof
+      prints "30 days" six times however many times you import it. The result was a
+      row badged live and Mapped that usableLayoutMap still refuses — the user
+      approved nothing and got "could not read the S-curve" anyway, which is the
+      same confusion Defect 3 was about, arriving automatically.
+      FIX: the auto-live rule now excludes unnumbered captures, using the same
+      predicate. Numbered captures still promote at three (pinned).
+
+    DEFECT 6 — THE TEACH PREFILL READ PAGE ONE ONLY, so reopening a taught roof
+    layout showed "Description=A · M1=F · M2=G · M3=H · M4=I · M5=J" and silently
+    dropped M6/M7. The user's read of it was exactly right: "it might be because m6
+    and m7 is on page two and this only show page 1". The SAVE was correct
+    throughout — the live map holds M6=L and M7=M — so this was display only, but it
+    shows a reviewer their own saved work coming back incomplete, which is worse
+    than showing nothing.
+      CAUSE: the prefill took cm.pages[0]. §3 made the grid one table with letters
+      running on, and this was not updated with it. FIX: walk every page; letters are
+      globally unique so each page resolves against its own pseudoCols and the
+      results merge. The description is taken from the first page that yields one (a
+      continuation page legitimately has none).
+
+    NOT A DEFECT, ASKED AND ANSWERED: the duplicated "30 days" at column K is IN THE
+    DOCUMENT. R3 prints seven "30 days" plus "7 days" while the schedule is 6x30 + 7
+    = 187 days, and K is empty on every activity row. The grid is showing the file
+    faithfully; the user spotted it unaided, which is what the grid is for. And the
+    auto-capture still has no month numbering BY DESIGN (§7) — that is the ambiguous
+    path, not a failure.
+
+    TESTS +4 PHP (unnumbered never auto-lives; numbered still auto-lives at three;
+    an AI numbering backfills an unnumbered capture; a numbered capture is not
+    overwritten) -> ScurveHeaderProposalTest 64 passed.
+      FAILING-THEN-PASSING CONFIRMED: stashing the model + controller makes exactly
+      the two behavioural tests fail; the two guard tests pass either way, which is
+      what a guard should do.
+    SUITES: PHP 1194 passed / the same 5 pre-existing BY NAME. JS 158 tests, 156
+    passed + the 2 intended blinding fails (no JS touched this round).
+    READER REGRESSION: 16 sample reads, 0 changed.
+
+    THE LIVE ROW SELF-HEALS: the row that auto-went live unnumbered will be
+    backfilled and dropped to proposed by the next successful AI assist on that file
+    (Defect 4's fix), so it needs no manual cleanup — though rejecting it is faster.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

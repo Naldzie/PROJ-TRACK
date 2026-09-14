@@ -566,21 +566,33 @@ function schTeachColumns(id) {
                 // nothing and PDF rows opened with an empty palette. Walk the
                 // recorded pseudoCols back to letters instead — the same bridge the
                 // server uses to turn a taught letter into a band.
-                const page = (Array.isArray(cm.pages) && cm.pages[0]) ? cm.pages[0] : null;
-                const pseudo = page ? (page.pseudoCols || []) : [];
-                // A band belongs to a letter when their strips overlap at all; the
-                // stored desc/month bands are built FROM these, so this round-trips.
-                const lettersIn = (x, xEnd) => pseudo
-                    .filter(pc => pc.x < xEnd - 1e-9 && x < pc.xEnd - 1e-9)
-                    .map(pc => String(pc.letter || '').toUpperCase())
-                    .filter(Boolean);
-                if (page) {
-                    _schTeach.assigns.desc = lettersIn(page.descX, page.descRight)[0] || null;
+                // EVERY page, not just the first (2026-09-14). §3 made the grid one
+                // table with letters running on across the seam, but this still read
+                // cm.pages[0], so reopening a taught roof layout showed M1–M5 and
+                // silently dropped M6/M7 — the months that live on the printed page
+                // two. The reviewer saw their own saved work come back incomplete.
+                // Letters are globally unique, so each page's bands resolve against
+                // its OWN pseudoCols and the results simply merge.
+                const pages = Array.isArray(cm.pages) ? cm.pages : [];
+                pages.forEach(page => {
+                    if (!page) return;
+                    const pseudo = page.pseudoCols || [];
+                    // A band belongs to a letter when their strips overlap at all; the
+                    // stored desc/month bands are built FROM these, so this round-trips.
+                    const lettersIn = (x, xEnd) => pseudo
+                        .filter(pc => pc.x < xEnd - 1e-9 && x < pc.xEnd - 1e-9)
+                        .map(pc => String(pc.letter || '').toUpperCase())
+                        .filter(Boolean);
+                    // The description is taught on ONE page (a continuation page
+                    // legitimately has none), so the first page that yields one wins.
+                    if (!_schTeach.assigns.desc) {
+                        _schTeach.assigns.desc = lettersIn(page.descX, page.descRight)[0] || null;
+                    }
                     (page.monthCols || []).forEach(mc => {
                         const cols = lettersIn(mc.x, mc.xEnd);
                         if (cols.length) _schTeach.assigns.months[mc.index] = cols;
                     });
-                }
+                });
             } else if (cm && typeof cm === 'object') {
                 const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
                 _schTeach.assigns.desc = L(cm.descCol);

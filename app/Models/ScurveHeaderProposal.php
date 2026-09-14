@@ -58,6 +58,42 @@ class ScurveHeaderProposal extends Model
     }
 
     /**
+     * Is this PDF map geometry WITHOUT a numbering?
+     *
+     * An ambiguous capture (positional wording — the roof prints "30 days" six
+     * times, so nothing in the bytes says which month a column is) keeps its bands
+     * but leaves the months unnumbered. usableLayoutMap refuses a month-less page,
+     * so such a map is an OFFER to teach, never a readable layout — it must not
+     * auto-live, and an AI answer that CAN number those months must be allowed to
+     * replace it.
+     *
+     * Excel maps and anything unrecognised answer false: only the PDF shape has
+     * this state, and a guard that fires on shapes it does not understand would
+     * block layouts that work.
+     *
+     * Pure. Called by: storeAiDerived(), SCurveHeaderProposalController::collect().
+     */
+    public static function pdfMapIsUnnumbered($map): bool
+    {
+        if (!is_array($map) || ($map['kind'] ?? null) !== 'pdf') {
+            return false;
+        }
+        $pages = $map['pages'] ?? null;
+        if (!is_array($pages) || count($pages) === 0) {
+            return false;
+        }
+        foreach ($pages as $page) {
+            foreach ((is_array($page) ? ($page['monthCols'] ?? []) : []) as $mc) {
+                if (is_array($mc) && (int) ($mc['index'] ?? 0) >= 1) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * E1-B — store an AI-derived layout map (learn-from-AI).
      *
      * Backfills a map-less matching row (same hash + contractor scope) or creates a
@@ -83,7 +119,16 @@ class ScurveHeaderProposal extends Model
 
         $row = $query->first();
         if ($row) {
-            if ($row->column_map === null) {
+            // A map-LESS row was always backfilled. An UNNUMBERED one must be too,
+            // and 2026-09-14 is when that stopped being theoretical: once the
+            // ai-derived block became the same merged grid the capture builds, the
+            // two hash IDENTICALLY, so this branch started matching the roof's own
+            // auto-capture — whose map is bands with no month numbers. Under the old
+            // `=== null` test the AI's numbering, the ONE thing an ambiguous capture
+            // cannot derive, was thrown away in silence.
+            // Dropping to proposed is the point: a machine-made numbering has to be
+            // approved by a person before it can read a baseline.
+            if ($row->column_map === null || static::pdfMapIsUnnumbered($row->column_map)) {
                 $row->update([
                     'column_map' => $columnMap,
                     'source' => 'ai-derived',
