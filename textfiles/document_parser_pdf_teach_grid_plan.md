@@ -1353,6 +1353,95 @@
     :1766, an empty taught list must leave behaviour bit-identical. These two
     tests are now the thing that says so on the path the change lives on.
 
+  -----------------------------------------------------------------------------
+  2026-09-14 — EXCEL ROW-ROLE WORK, STEP 3 BUILT: THE CUMULATIVE TAG, AND THE
+  LEGEND THAT NEVER DEFINED IT
+  -----------------------------------------------------------------------------
+
+    WHAT SHIPPED.
+      labelSliceRows() :196 — the folded branch
+        `isCumulativeRow($row) || isSliceTotalRow($row) -> SUMMARY`
+      splits in two, CUMULATIVE tested FIRST. A row reading "CUMULATIVE TOTAL %"
+      satisfies both tests and the curve is the stronger fact. The branch sits
+      after HEADER/META, so unlike the PDF builders it can never steal a header's
+      tag (that defect stays open, see below).
+
+      ALL THREE LEGENDS now define five roles, not four. This is the quieter half
+      of the fix and the more interesting one: the PDF builders have emitted
+      [CUMULATIVE] since the roof work (:1884, :2206) while their own legends
+      listed only META/HEADER/DATA/SUMMARY. So for several rounds the AI has been
+      handed a vocabulary word the same prompt never defined. SUMMARY's gloss also
+      lied — it read "author totals (CUMULATIVE %/COST/Cash Flow)", naming the very
+      label that now belongs to the other tag. Both fixed:
+        SUMMARY:    author totals (TOTAL/COST/Cash Flow) — reference only...
+        CUMULATIVE: the printed running curve — reference only, NEVER copy...
+
+      GEMINI PROMPT — four edits, and three of them were not optional. The prompt
+      does not merely list roles, it BRANCHES on them, so retagging a row silently
+      redirects the model:
+        - "summary" was "the SUMMARY lines' values ... omit when no SUMMARY row
+          exists". After the split, a file whose only such row is the curve has NO
+          SUMMARY row, so the model would have dropped the key entirely. Now reads
+          CUMULATIVE first, SUMMARY as fallback, omit when neither.
+        - "NOT the divisor the SUMMARY row may use" and "never a SUMMARY or TOTAL
+          label" both had to grow the new tag or they would stop covering the row
+          they were written to protect.
+      This is the §2-§7 lesson again, on a smaller scale: LIST THE READERS OF A
+      REPRESENTATION BEFORE CHANGING IT. Four of the six edits in this step were in
+      code that merely SPOKE TO the tagger.
+
+    WHAT NEEDED NO CHANGE, VERIFIED RATHER THAN ASSUMED.
+      - The modal already renders it. SCH_ROLE_BADGE (:228) has carried
+        `CUMULATIVE: 'success'` since the PDF work and the legend at :79-80 already
+        explains it. Excel captures light up existing UI for free.
+      - parseStoredSlice's row regex is `[A-Z]+` (:733) — accepts the longer tag.
+      - keptRowKeys already exempts it from the row budget (step 1, :936).
+      - Prefill (:578) selects on `role === 'HEADER'`; display sites (:246, :785,
+        :848) fall back to 'secondary'. Nothing branches on SUMMARY server-side
+        outside the tagger itself.
+
+    EXISTING ASSERTIONS THAT PINNED THE OLD FOLD — inspected row by row, not
+    bulk-updated, because a fixture's assertion is a specification until proven
+    otherwise:
+      ScurveHeaderProposalTest third-family: R7 "TOTAL" stays SUMMARY,
+        R8 "CUMULATIVE % ACHIEVED" -> CUMULATIVE.
+      SCurveImportTest role placement: R8 "TOTAL" stays SUMMARY,
+        R9 "% ACCOMPLISHED" -> CUMULATIVE (isCumulativeRow matches %\s*accomplished).
+      KEEPING BOTH HALVES OF EACH PAIR IS THE POINT — they prove the branch splits
+      on the LABEL, not on position within the summary block.
+
+    NEW TEST, FALSIFIED BEFORE BEING KEPT.
+      test_cumulative_row_survives_the_row_budget — 20 activity rows so the 15-row
+      cap certainly bites, with TOTAL and the curve row last. Asserts the block is
+      truncated AND still carries both. Removing the exemption in keptRowKeys makes
+      it fail ("array contains 'CUMULATIVE'"), so it pins the thing it claims to.
+      The tag and the exemption were built in separate steps and the failure they
+      jointly prevent is invisible: a truncated block simply looks like a file with
+      no cumulative row.
+
+    VERIFICATION — all four guards green.
+      php artisan test          1201 passed, same 5 pre-existing failures by name
+      npm run test:js           158 tests, 156 pass, 2 intended blinding fails
+      verify_p6.mjs             16 reads, 0 changed
+      BUHI byte-identical       12 months, curveSource=activities, cumulativeRow=89,
+                                contract 32,588,531.43, gaps 3:0.21 6:0.63 9:1.49 12:3
+
+    ⚠ RE-CAPTURE WAVE, AND IT IS WIDER THAN THE PLAN SAID. Identity is
+    `sha256(normalized slice text)` for BOTH kinds (controller :134 for Excel,
+    :118 for the PDF ai-derived route). The legend line is part of that text, so
+    the hash moves for EVERY captured layout — not only files that have a
+    cumulative row, and not only Excel. Freshly-approved PDF layouts go stale too.
+    Done deliberately in one wave rather than two: the PDF legend was already wrong
+    and splitting the fix would cost a second wave for no gain.
+
+    STILL DEFERRED, ON PURPOSE. The PDF CUMULATIVE overwrite (:1884, :2206) is an
+    unconditional `if` that can steal HEADER/META. The naive `else if` is WRONG —
+    a real cumulative row usually matches isSummaryLabel first, so `else if` would
+    kill the working SUMMARY->CUMULATIVE upgrade. The correct guard is
+    `role !== 'HEADER' && role !== 'META' && ...`. Not applied here: it changes
+    behaviour on a path the user has just finished four rounds of acceptance
+    testing on, and it belongs in a change they retest.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

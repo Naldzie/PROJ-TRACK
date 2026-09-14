@@ -1208,6 +1208,9 @@ class ScurveHeaderProposalTest extends TestCase
     // sit on sheet row 2 — the numeric grid (0-based) was read against
     // letter-keyed roles (1-based sheet rows). Rows here: 1 title, 2 header,
     // 3-6 activities, 7 TOTAL, 8 summary — tags must match exactly.
+    // 2026-09-14: R8 reads "CUMULATIVE % ACHIEVED" and now earns its own tag. R7
+    // is a plain TOTAL and stays SUMMARY — the pair is what proves the branch
+    // splits on the label rather than on position in the summary block.
     public function test_third_family_roles_sit_on_correct_rows(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
@@ -1225,7 +1228,7 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame('HEADER', $tags['R2'] ?? null);
         $this->assertSame('DATA', $tags['R3'] ?? null);
         $this->assertSame('SUMMARY', $tags['R7'] ?? null);
-        $this->assertSame('SUMMARY', $tags['R8'] ?? null);
+        $this->assertSame('CUMULATIVE', $tags['R8'] ?? null);
 
         unlink($path);
     }

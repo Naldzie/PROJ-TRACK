@@ -136,7 +136,8 @@ class SCurveImportService
                 $lines[] = 'COLUMNS: ' . implode(',', $letters)
                     . ' | META: title block | HEADER: column labels'
                     . ' | DATA: activity rows — compute months from these ONLY'
-                    . ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months';
+                    . ' | SUMMARY: author totals (TOTAL/COST/Cash Flow) — reference only, NEVER copy into months'
+                    . ' | CUMULATIVE: the printed running curve — reference only, NEVER copy into months';
                 foreach ($keptKeys as $k) {
                     $lines[] = 'R' . $k['n'] . ' [' . ($roles[$k['key']] ?? 'DATA') . ']: ' . $k['csv'];
                 }
@@ -193,7 +194,16 @@ class SCurveImportService
                 $roles[$rowKey] = 'HEADER';
             } elseif ($firstHeader !== null && $rowKey < $firstHeader) {
                 $roles[$rowKey] = 'META';
-            } elseif ($this->isCumulativeRow($row) || $this->isSliceTotalRow($row)) {
+            } elseif ($this->isCumulativeRow($row)) {
+                // 2026-09-14: split out of the folded SUMMARY branch. The printed
+                // cumulative row is the one summary row that carries a CURVE, and
+                // both the reviewer and the AI need to tell it apart from a TOTAL.
+                // Tested BEFORE isSliceTotalRow because a row reading
+                // "CUMULATIVE TOTAL %" satisfies both and the curve is the
+                // stronger fact. Sits after HEADER/META on purpose — unlike the
+                // PDF builders, this can never steal a header's tag.
+                $roles[$rowKey] = 'CUMULATIVE';
+            } elseif ($this->isSliceTotalRow($row)) {
                 $roles[$rowKey] = 'SUMMARY';
             } else {
                 $roles[$rowKey] = 'DATA';

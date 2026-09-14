@@ -1889,7 +1889,8 @@ function buildMergedSliceBlock(sheets, maxRows) {
     const lines = ['COLUMNS: ' + letters.join(',')
         + ' | META: title block | HEADER: column labels'
         + ' | DATA: activity rows — compute months from these ONLY'
-        + ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months'];
+        + ' | SUMMARY: author totals (TOTAL/COST/Cash Flow) — reference only, NEVER copy into months'
+        + ' | CUMULATIVE: the printed running curve — reference only, NEVER copy into months'];
     shown.forEach((row, k) => {
         lines.push('R' + (k + 1) + ' [' + row.role + ']: ' + row.cells.map(csvCell).join(','));
     });
@@ -2165,7 +2166,8 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
     const lines = ['COLUMNS: ' + letters.join(',')
         + ' | META: title block | HEADER: column labels'
         + ' | DATA: activity rows — compute months from these ONLY'
-        + ' | SUMMARY: author totals (CUMULATIVE %/COST/Cash Flow) — reference only, NEVER copy into months'];
+        + ' | SUMMARY: author totals (TOTAL/COST/Cash Flow) — reference only, NEVER copy into months'
+        + ' | CUMULATIVE: the printed running curve — reference only, NEVER copy into months'];
 
     const start = Math.max(0, headerIndex - 2);
     // Read the whole neighbourhood first, then choose what to show. The old loop

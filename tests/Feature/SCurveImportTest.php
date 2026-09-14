@@ -1190,6 +1190,11 @@ class SCurveImportTest extends TestCase
         $this->assertStringContainsString('[HEADER]', $csv);
         $this->assertStringContainsString('[DATA]', $csv);
         $this->assertStringContainsString('[SUMMARY]', $csv);
+        // 2026-09-14: CUMULATIVE split out of SUMMARY. The legend must define it
+        // too — the PDF path emitted this tag for a round while its own legend
+        // still listed four roles, so the AI met an undefined vocabulary word.
+        $this->assertStringContainsString('[CUMULATIVE]', $csv);
+        $this->assertStringContainsString('CUMULATIVE: the printed running curve', $csv);
         $this->assertStringContainsString('DESCRIPTION', $csv);
 
         unlink($path);
@@ -1202,6 +1207,11 @@ class SCurveImportTest extends TestCase
      * row's role (header labeled META, first data row labeled HEADER). Fixture
      * rows: A1-A3 metadata, row 10 header, row 11 code-only, 12-13 activities,
      * 14 TOTAL, 15 summary.
+     *
+     * 2026-09-14: R9 reads "% ACCOMPLISHED", which isCumulativeRow matches, so it
+     * now tags CUMULATIVE while R8's plain TOTAL stays SUMMARY. Keeping both
+     * assertions is the point — they prove the branch splits on the label, not on
+     * position within the summary block.
      */
     public function test_serialize_for_ai_places_roles_on_correct_rows(): void
     {
@@ -1220,7 +1230,60 @@ class SCurveImportTest extends TestCase
         $this->assertSame('HEADER', $tags['R4'] ?? null);
         $this->assertSame('DATA', $tags['R6'] ?? null);
         $this->assertSame('SUMMARY', $tags['R8'] ?? null);
-        $this->assertSame('SUMMARY', $tags['R9'] ?? null);
+        $this->assertSame('CUMULATIVE', $tags['R9'] ?? null);
+
+        unlink($path);
+    }
+
+    /**
+     * 2026-09-14 — the CUMULATIVE tag must survive the row budget.
+     *
+     * The budget exemption and the tag were built in separate steps, and the
+     * failure they combine to prevent is invisible: a file long enough to hit the
+     * 15-row cap loses its trailing rows, so the one row carrying the printed
+     * curve drops out of the block and the reviewer never sees it — the block
+     * simply looks like it has no cumulative row rather than like it is truncated.
+     *
+     * 20 activity rows guarantee the cap is hit with the curve row last.
+     */
+    public function test_cumulative_row_survives_the_row_budget(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('C1', 'CONSTRUCTION SCHEDULE');
+        $sheet->setCellValue('C3', 'DESCRIPTION');
+        $sheet->setCellValue('F3', 'AMOUNT');
+        $sheet->setCellValue('G3', '% WEIGHT');
+        $sheet->setCellValue('I3', 'Month 1');
+        $sheet->setCellValue('K3', 'Month 2');
+        for ($i = 0; $i < 20; $i++) {
+            $r = 4 + $i;
+            $sheet->setCellValue('C' . $r, 'Activity Number ' . ($i + 1));
+            $sheet->setCellValue('F' . $r, 50000);
+            $sheet->setCellValue('G' . $r, 5);
+            $sheet->setCellValue('I' . $r, 50000);
+        }
+        $sheet->setCellValue('C24', 'TOTAL');
+        $sheet->setCellValue('F24', 1000000);
+        $sheet->setCellValue('C25', 'CUMULATIVE % ACHIEVED');
+        $sheet->setCellValue('I25', 50);
+        $sheet->setCellValue('K25', 100);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $csv = app(SCurveImportService::class)->serializeForAi($path, 15);
+
+        $tags = [];
+        foreach (explode("\n", $csv) as $line) {
+            if (preg_match('/^R\d+ \[([A-Z]+)\]: (.*)$/', trim($line), $m)) {
+                $tags[] = $m[1];
+            }
+        }
+        // Proof the cap really bit — otherwise the exemption is untested.
+        $this->assertLessThan(24, count($tags), 'the 15-row budget must actually truncate here');
+        $this->assertContains('CUMULATIVE', $tags, 'the printed curve must outrank the budget');
+        $this->assertContains('SUMMARY', $tags, 'so must the TOTAL row');
+        $this->assertStringContainsString('CUMULATIVE % ACHIEVED', $csv);
 
         unlink($path);
     }
