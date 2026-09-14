@@ -1852,7 +1852,8 @@ class ScurveHeaderProposalTest extends TestCase
         $numbered = ['v' => 1, 'kind' => 'pdf', 'pages' => [
             ['monthCols' => [['index' => 1, 'x' => 0.5, 'xEnd' => 0.7], ['index' => 2, 'x' => 0.7, 'xEnd' => 0.9]]],
         ]];
-        ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored text', $numbered);
+        // 'pdf': the PDF caller names its type since the 2026-09-15 scoping fix.
+        ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored text', $numbered, 'pdf');
 
         $this->assertSame(1, ScurveHeaderProposal::where('header_hash', $hash)->count(),
             'the AI numbering joins the existing row rather than forking it');
@@ -1881,12 +1882,54 @@ class ScurveHeaderProposalTest extends TestCase
 
         ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored', ['v' => 1, 'kind' => 'pdf', 'pages' => [
             ['monthCols' => [['index' => 1, 'x' => 0.1, 'xEnd' => 0.2]]],
-        ]]);
+        ]], 'pdf');
 
         $fresh = $row->fresh();
         $this->assertSame($original, $fresh->column_map, 'a working map is never replaced');
         $this->assertSame('live', $fresh->status);
         $this->assertSame('auto-capture', $fresh->source);
+    }
+
+    // 2026-09-15 — AN AI-DERIVED PDF LAYOUT MUST NEVER LAND ON AN EXCEL ROW.
+    //
+    // storeAiDerived matched on (header_hash, contractor_id) with no type, while
+    // collect() scoped by type precisely so Excel and PDF rows never merge — and the
+    // PDF branch then patched source_type onto whatever came back. A hash collision
+    // therefore backfilled a PDF map into a map-less EXCEL row and flipped it to PDF
+    // for good. The fixture forces the collision by giving the Excel row the exact
+    // hash collect() computes for the posted block.
+    // Called by: collect() ai-derived branch -> ScurveHeaderProposal::storeAiDerived().
+    public function test_an_ai_derived_pdf_layout_never_hijacks_an_excel_row(): void
+    {
+        $block = "COLUMNS: A,B,C | HEADER: column labels\n"
+            . "R1 [HEADER]: DESCRIPTION,MONTH 1,MONTH 2\n"
+            . "R2 [DATA]: Roofing,4000,4000";
+        $hash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($block))));
+        $excel = ScurveHeaderProposal::create([
+            'contractor_id' => null, 'source_type' => 'excel',
+            'header_rows_text' => $block, 'header_hash' => $hash,
+            'column_map' => null, 'occurrences' => 2, 'status' => 'proposed', 'source' => 'auto-capture',
+        ]);
+        $pdfMap = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['description', 'month 1'], 'descX' => 0.05, 'descRight' => 0.3,
+                'monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.9]]],
+        ]];
+
+        $this->actingAs($this->makeUser('admin'))
+            ->post('/admin/scurve-header-proposals/collect', [
+                'source_type' => 'pdf', 'source' => 'ai-derived',
+                'header_rows_text' => $block, 'column_map' => json_encode($pdfMap),
+            ])
+            ->assertStatus(201);
+
+        $fresh = $excel->fresh();
+        $this->assertSame('excel', $fresh->source_type, 'the Excel row must stay an Excel row');
+        $this->assertNull($fresh->column_map, 'and must not receive a PDF map');
+        $this->assertSame('auto-capture', $fresh->source);
+        $pdf = ScurveHeaderProposal::where('header_hash', $hash)->where('source_type', 'pdf')->first();
+        $this->assertNotNull($pdf, 'the PDF layout is stored as its own row');
+        $this->assertSame('ai-derived', $pdf->source);
+        $this->assertSame('pdf', $pdf->column_map['kind']);
     }
 
     // The map is the whole point of an AI-derived row, so one without it is

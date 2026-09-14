@@ -102,15 +102,25 @@ class ScurveHeaderProposal extends Model
      * must not manufacture corroboration for machine-learned maps. AI-derived rows
      * never auto-live (collect() enforces); only human approval flips them.
      *
-     * Called by: SCurveImportController LearnMap step (best-effort).
+     * Scoped by TYPE as well as hash + contractor (2026-09-15). It used to match on
+     * (header_hash, contractor_id) alone while collect() scoped by source_type
+     * precisely so "an Excel row and a PDF row must never merge" — and the PDF
+     * caller then patched source_type onto whatever row came back. A colliding hash
+     * could therefore backfill a PDF map into an Excel row and flip it to PDF for
+     * good. The type now decides the match and is stamped on create.
+     *
+     * Called by: SCurveImportController LearnMap step (excel),
+     *            SCurveHeaderProposalController::collect() ai-derived branch (pdf).
      */
     public static function storeAiDerived(
         ?int $contractorId,
         string $hash,
         string $text,
-        array $columnMap
+        array $columnMap,
+        string $sourceType = 'excel'
     ): self {
-        $query = static::where('header_hash', $hash);
+        $sourceType = in_array($sourceType, self::SOURCE_TYPES, true) ? $sourceType : 'excel';
+        $query = static::where('header_hash', $hash)->where('source_type', $sourceType);
         if ($contractorId === null) {
             $query->whereNull('contractor_id');
         } else {
@@ -141,7 +151,7 @@ class ScurveHeaderProposal extends Model
 
         return static::create([
             'contractor_id' => $contractorId,
-            'source_type' => 'excel',
+            'source_type' => $sourceType,
             'header_rows_text' => mb_substr($text, 0, 4000),
             'header_hash' => $hash,
             'column_map' => $columnMap,

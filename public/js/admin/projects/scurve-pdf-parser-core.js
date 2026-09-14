@@ -1881,7 +1881,13 @@ function buildMergedSliceBlock(sheets, maxRows) {
         else if (cells.some((c, k) => !isValueBand[k] && (isSummaryLabel(c) || isTotalLabel(c)))) {
             role = 'SUMMARY';
         }
-        if (isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
+        // Only a DATA or SUMMARY row may be promoted. This used to be unconditional,
+        // so a header or title line whose month cells happen to read as rising
+        // percentages ("10% 50% 100%" as column labels) lost its HEADER tag and the
+        // teach picker opened with no header row — the fifth-round Excel symptom by
+        // another route (2026-09-15). NOT `else if`: a real cumulative row usually
+        // matches isSummaryLabel first, and `else if` would kill that upgrade.
+        if (role !== 'HEADER' && role !== 'META' && isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
         scanned.push({ role, cells });
     }
 
@@ -2205,7 +2211,9 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
         else if (cells.some((c, k) => !isValueBand[k] && (isSummaryLabel(c) || isTotalLabel(c)))) {
             role = 'SUMMARY';
         }
-        if (isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
+        // Same guard as buildMergedSliceBlock: never promote a HEADER or META line
+        // (see the comment there for why `else if` is the wrong fix).
+        if (role !== 'HEADER' && role !== 'META' && isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
 
         scanned.push({ role, cells });
     }

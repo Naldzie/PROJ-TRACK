@@ -65,8 +65,8 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 - Feature tests use `RefreshDatabase` and factories; model factories must stay valid (see `tests/Feature/Infrastructure/FactoryVerificationTest.php`).
 - `Tests\Helpers\CreatesProjectWithHistory` trait builds regression datasets for AI tests, including the known "Project 7" dataset (slope ≈ 5.115, R² ≈ 0.954) — don't change those expected values.
 - One test file per feature area (e.g. `NotificationTest.php`, `ProgressAttachmentTest.php`).
-- Full suite (2026-09-14): **1194 passed / 4397 assertions, 5 pre-existing failures** — 1 DashboardOverdueInspection, 2 EmailDraft, 2 default-baseline (IssueLifecycle/RiskRegister). The 2 ContractorDashboard failures were fixed by the teammate work merged in 06d89cf. All reproduce on the clean tree; re-verify by stash before claiming a regression.
-- JS suite: `npm run test:js` — **158 tests, 156 passed + 2 INTENDED blinding failures** (F-B1 conditional, L3 hardcoded-ABC). Two failures is green while blinding is on.
+- Full suite (2026-09-15): **1216 passed / 4509 assertions, 5 pre-existing failures** — 1 DashboardOverdueInspection, 2 EmailDraft, 2 default-baseline (IssueLifecycle/RiskRegister). The 2 ContractorDashboard failures were fixed by the teammate work merged in 06d89cf. All reproduce on the clean tree; re-verify by stash before claiming a regression.
+- JS suite: `npm run test:js` — **159 tests, 157 passed + 2 INTENDED blinding failures** (2026-09-15) (F-B1 conditional, L3 hardcoded-ABC). Two failures is green while blinding is on.
 
 ## Session Handoff (rewritten 2026-09-14 — read this first in a new session)
 
@@ -129,7 +129,9 @@ Diagnostics (⤓ snapshots, "Copy what was read") are now behind `window._parser
 ### Future queue (needs explicit user order each)
 1. ~~**PDF-4**~~ CLOSED 2026-09-14 — teach-path bug fix (959f0ec), Stage 2 (23abd20), and the seven defects the §10 acceptance run found (22edd71, 63862dd, 4ffbcc0), all browser-proven. Nothing remaining.
 2. Months:11 count-sanity guard (needs a confirming screenshot). 3. Clipped display names verdict. 4. Desc-label learning (F-D is month-words only). 5. **Blinding lift** — a tracked pre-merge-to-main prerequisite, NOT a routine step; see the milestone note below. 6. Parked: fingerprint memory (F-PDF2), Tier-2 OCR, E1-3 follow-ups, 2c, P1/P2 passive mining.
-7. ~~**S-curve row-role teaching**~~ BUILT 2026-09-14/15 (see LATEST above). Remaining: defect 12 commit + browser check, then click-to-pick rows. Latent items logged in that plan and still unfixed: the PSR-4 case mismatch of `SCurveHeaderProposalController` (breaks on Linux), the PDF CUMULATIVE tag overwriting HEADER/META (`else if` is the WRONG fix), `storeAiDerived` matching without `source_type`, and the 4000-char block store limit (raise it together with any row-cap raise).
+7. ~~**S-curve row-role teaching**~~ CLOSED 2026-09-15 (see LATEST above).
+   **Latent-defect batch — BUILT 2026-09-15, UNCOMMITTED** (teach-grid plan, last §13 entry): controller class name now matches its file (was a Linux autoload bug), `storeAiDerived` scoped by `source_type` (a PDF AI layout could hijack an Excel row), PDF CUMULATIVE tag no longer steals HEADER/META, dead `isCumulativeLabel()` removed, both `collect()` use `ensureReviewer()`. PHP 1216 / same 5; JS 159 / 157 + 2 intended; 16 reads and 9 sample-PDF blocks unchanged. Still open: the 4000-char block store limit (raise it together with any row-cap raise) and never-invoked policies.
+   **Ordered next (user, 2026-09-15):** (2) put the teach modal's pure functions (`schApplyRowPick`, `schRowSignature`, prefill) under `npm run test:js`, replacing the `C:\temp\opencode` probes; (3) the early-100 guard.
 8. **OCR ranking by "least usable text" rather than "no text"** (from the OCR preview plan). The per-page char-count and soupiness ledger now exists but the AI ranking ignores it — a page with 40 garbled characters still ranks below one with none, though the first is likelier to be worth sending. The picker makes this optional rather than urgent.
 
 ~~Time-budget hardening (PHP 60s overflow to honest 422)~~ **DONE 2026-09-13** as E5 + E6 — it stopped being a theoretical item the day a live ladder walk hit PHP's uncatchable fatal.

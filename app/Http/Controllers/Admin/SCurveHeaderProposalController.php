@@ -15,14 +15,21 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
- * ScurveHeaderProposalController
+ * SCurveHeaderProposalController
  *
  * E1-1 silent capture: stashes header blocks from failed S-curve imports
  * ("No S-curve table found" 422s) as proposed layout rows. Collection is open to
  * admin AND staff (E1b: same trust as keywords); contractors get 403 (read-only,
  * they never upload). Captures never affect extraction until E1-2 review.
+ *
+ * 2026-09-15: the class was declared `ScurveHeaderProposalController` (lower-case
+ * "c") inside SCurveHeaderProposalController.php. PSR-4 maps a class name to a file
+ * path letter for letter, so it only resolved because routes/web.php happens to
+ * import the FILE's spelling — any reference to the declared name would fail to
+ * autoload on a case-sensitive (Linux) server. The declaration now matches the
+ * file, the routes and its sibling SCurveImportController.
  */
-class ScurveHeaderProposalController extends Controller
+class SCurveHeaderProposalController extends Controller
 {
     use LogsActivity;
 
@@ -32,9 +39,9 @@ class ScurveHeaderProposalController extends Controller
 
     public function collect(Request $request): JsonResponse
     {
-        if (!in_array(auth()->user()->role, ['admin', 'staff'], true)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Same gate as every other endpoint here. It used to be an inline copy —
+        // identical today, but free to drift the day one of them changed (2026-09-15).
+        $this->ensureReviewer();
 
         $validated = $request->validate([
             'contractor_id' => 'nullable|integer|exists:contractors,id',
@@ -117,15 +124,16 @@ class ScurveHeaderProposalController extends Controller
                 ], 422);
             }
             $aiHash = hash('sha256', mb_strtolower(preg_replace('/\s+/', ' ', trim($text))));
-            $row = ScurveHeaderProposal::storeAiDerived(
+            // The type is part of the match (2026-09-15). The old after-the-fact
+            // `update(['source_type' => 'pdf'])` is gone: it is what could turn a
+            // matching Excel row into a PDF row.
+            ScurveHeaderProposal::storeAiDerived(
                 $contractorId,
                 $aiHash,
                 mb_substr($text, 0, 4000),
-                $columnMap
+                $columnMap,
+                'pdf'
             );
-            if ($row->source_type !== 'pdf') {
-                $row->update(['source_type' => 'pdf']);
-            }
 
             return response()->json(['success' => true, 'stored' => 1], 201);
         }

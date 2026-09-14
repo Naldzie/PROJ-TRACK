@@ -470,7 +470,7 @@ class SCurveImportService
      * when nothing derivable exists — the capture then stores a map-less row
      * (reviewable, but never consulted) instead of a guess.
      *
-     * Called by: ScurveHeaderProposalController::collect() (best-effort).
+     * Called by: SCurveHeaderProposalController::collect() (best-effort).
      */
     public function deriveAutoColumnMap(string $path): ?array
     {
@@ -551,7 +551,7 @@ class SCurveImportService
      * P1/P12 teaching), and a sig the consult can actually anchor (≥2 cells
      * incl. a non-empty desc cell). Returns null when unteachable.
      *
-     * Called by: ScurveHeaderProposalController::teachColumns().
+     * Called by: SCurveHeaderProposalController::teachColumns().
      */
     /**
      * 0-based column index -> the letter the teach grid shows for it (0 = A).
@@ -601,7 +601,7 @@ class SCurveImportService
      * prevent. Returns '' for a row with no usable text; callers MUST refuse to
      * store an empty signature, since it would match every blank row in the file.
      *
-     * Pure. Called by: ScurveHeaderProposalController::teachColumns() and the
+     * Pure. Called by: SCurveHeaderProposalController::teachColumns() and the
      * activity loop / summary reader in buildMonths().
      */
     public static function rowSignature(array $cells): string
@@ -1330,31 +1330,17 @@ class SCurveImportService
     }
 
     /**
-     * Step 2a: detect author-entered cumulative summary rows ("CUMULATIVE %
-     * ACCOMPLISHED", "PLANNED CUMULATIVE %") by label.
+     * Step 2a / R2a: is this data-row a cumulative summary row ("CUMULATIVE %
+     * ACCOMPLISHED", "PLANNED CUMULATIVE %", the roof's "Commulative" typo)?
+     * Exact patterns run on the whole row text (labels may sit outside descCol,
+     * e.g. BUHI column A); the typo-tolerant match runs per cell, since whole-row
+     * Levenshtein can never match by distance. Numeric cells are skipped before
+     * fuzzing. Label-less files (e.g. the weekly outlier) simply answer false.
      *
-     * Detection ONLY in 2a — the row index is recorded in meta['cumulativeRow']
-     * for the Step 2b Validated reader; emitted months are untouched. Never
-     * required: label-less files (e.g. the weekly outlier) simply report null.
+     * 2026-09-15: absorbed the docblock of isCumulativeLabel(), a label-only twin
+     * with ZERO callers that described work this method actually does. Removed.
      *
-     * R2a: also matches the roof family's "Commulative" typo (fuzzy).
-     */
-    private function isCumulativeLabel(string $label): bool
-    {
-        if (preg_match('/cumulative.*%|planned.*cumulative|%\s*accomplished/i', $label)) {
-            return true;
-        }
-
-        return $this->headerFuzzyMatch($label, ['cumulative']);
-    }
-
-    /**
-     * R2a: is this data-row a cumulative summary row? Exact patterns run on the
-     * whole row text (labels may sit outside descCol, e.g. BUHI column A); the
-     * typo-tolerant match runs per cell, since whole-row Levenshtein can never
-     * match by distance. Numeric cells are skipped before fuzzing.
-     *
-     * Called by: buildMonths() meta detection (Step 2a; curve untouched).
+     * Called by: buildMonths() meta detection, labelSliceRows() role tagging.
      */
     private function isCumulativeRow(mixed $row): bool
     {

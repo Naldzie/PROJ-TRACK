@@ -22,8 +22,10 @@
 #         ➜ HANDOFF, 2026-09-15: jump to the LAST entry of §13. Defect 12 (role picks
 #         vanish on reopen) is fixed, browser-confirmed and committed (413f810).
 #         Click-to-pick rows is BUILT, BROWSER-CONFIRMED, COMMITTED and PUSHED — its
-#         entry is the last one in §13. The Excel row-role track is CLOSED; nothing
-#         is owed. Row roles stay Excel-only BY DECISION (see §11 Decision 4).
+#         entry is in §13. The Excel row-role track is CLOSED; nothing is owed.
+#         Row roles stay Excel-only BY DECISION (see §11 Decision 4).
+#         Then the LATENT-DEFECT BATCH (class-name case, storeAiDerived type scope,
+#         PDF CUMULATIVE tag guard, housekeeping) — BUILT, UNCOMMITTED, last §13 entry.
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -1916,6 +1918,104 @@
          disabled with the reason; month letters still assign.
       7. Capture with no HEADER-tagged row (SEGMENT): assign Description + two months
          → Header row button arms itself and flashes red once; click R4 → Save enables.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — LATENT-DEFECT BATCH ✅ BUILT (UNCOMMITTED). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Last commit:   238a77c (click-to-pick rows), pushed.
+      Uncommitted:   the four fixes below + tests + this entry + AGENTS.md.
+      Order given:   user 2026-09-15 "lets go with your suggestion" = (1) this batch,
+                     (2) move the teach modal's pure functions under npm run test:js,
+                     (3) early-100 guard. Rule 10: report after (1) before starting (2).
+      Browser check: not required — no screen changed; see "why no browser run" below.
+
+    FIX A — CONTROLLER CLASS NAME DID NOT MATCH ITS FILE (real Linux deploy bug).
+      app/Http/Controllers/Admin/SCurveHeaderProposalController.php declared
+      `class ScurveHeaderProposalController`. PSR-4 maps a name to a path letter for
+      letter; it only worked because routes/web.php imports the FILE's spelling and PHP
+      class names are case-insensitive once loaded. Any reference to the declared name
+      would fail to autoload on a case-sensitive filesystem. Declaration renamed to
+      SCurveHeaderProposalController (matches file, routes, sibling
+      SCurveImportController); three "Called by" docblocks in SCurveImportService fixed.
+      Checked: no optimized Composer classmap holds the old name; route:clear run;
+      route:list shows all 10 desk routes resolving.
+
+    FIX B — storeAiDerived COULD HIJACK AN EXCEL ROW INTO A PDF ROW.
+      It matched on (header_hash, contractor_id) with no type, while collect() scopes
+      by source_type precisely so the two never merge — and the PDF ai-derived branch
+      then ran update(['source_type' => 'pdf']) on whatever row came back. On a hash
+      collision a map-less Excel row received a PDF map and became a PDF row for good.
+      NOW: storeAiDerived(..., string $sourceType = 'excel') scopes the match by type
+      and stamps it on create; the PDF branch passes 'pdf'; the after-the-fact patch is
+      deleted. The Excel caller (SCurveImportController LearnMap) is unchanged — the
+      default is its type.
+      NEW TEST test_an_ai_derived_pdf_layout_never_hijacks_an_excel_row forces the
+      collision through the real endpoint. FALSIFIED: against the old model +
+      controller it fails "the Excel row must stay an Excel row".
+      TWO FIXTURES UPDATED, and why (not hidden): test_an_ai_numbering_backfills_an_
+      unnumbered_capture and test_a_numbered_capture_is_not_overwritten_by_the_ai call
+      storeAiDerived directly on PDF rows with four arguments. They describe the PDF
+      path, which now names its type, so they pass 'pdf'. With the old signature they
+      were silently relying on the unscoped match — the "fixture becomes a spec" lesson
+      again.
+
+    FIX C — THE PDF CUMULATIVE TAG COULD STEAL A HEADER OR META TAG.
+      scurve-pdf-parser-core.js, both block builders (buildMergedSliceBlock and
+      buildPdfSliceBlock): `if (isCumulativeShapedRow(...)) role = 'CUMULATIVE'` ran
+      unconditionally. Now `role !== 'HEADER' && role !== 'META' && ...`. NOT `else if`
+      — a real cumulative row usually matches isSummaryLabel first, and `else if` would
+      kill the SUMMARY -> CUMULATIVE upgrade (the §13 step-3 entry's warning).
+      NEW JS TEST "a META line shaped like a running total keeps its tag; the real
+      curve row is still promoted" — a title line "PLANNED 25% 60% 100%" above the
+      header stays META, the header stays HEADER, "CUMULATIVE % 25% 60% 100%" below is
+      still CUMULATIVE. FALSIFIED: with the core stashed it fails "the title-block line
+      stays META".
+      WHY NO BROWSER RUN: the block the desk renders is BYTE-IDENTICAL on all 9 sample
+      PDFs (C:\temp\opencode\block_snapshot.mjs, snapshot saved before the edit,
+      compared after: 9 compared, 0 changed — 6 produce blocks, 3 produce none). So no
+      screen changes, and no header_hash moves — NO re-capture wave. The roof's block
+      still reads R1/R2 META, R3 HEADER, R16 CUMULATIVE.
+
+    FIX D — HOUSEKEEPING.
+      - SCurveImportService::isCumulativeLabel() removed: zero callers; its docblock
+        (the Step 2a / roof-typo story) folded into isCumulativeRow(), which does the
+        work.
+      - collect() in BOTH desks (SCurveHeaderProposalController and
+        ParserKeywordProposalController) now calls ensureReviewer() instead of an
+        inline copy of the same role check. Response identical (403 JSON).
+      Still NOT done, deliberately: the policies registered in AppServiceProvider are
+      never invoked (enforcement is route middleware + ensureReviewer). Fail-safe;
+      wiring authorize() calls is a separate, testable change if ever wanted.
+
+    VERIFIED
+      php artisan test         1216 passed (+1) / the same 5 pre-existing BY NAME
+                               (DashboardOverdueInspection count badge, 2x EmailDraft,
+                               IssueLifecycle default baseline, RiskRegister default
+                               risk baseline)
+      npm run test:js          159 tests (+1), 157 pass + the 2 intended blinding fails
+      verify_p6.mjs            16 reads, 0 changed (reader untouched)
+      block_snapshot.mjs       9 sample PDFs, 0 changed (desk block untouched)
+      php -l on every touched PHP file; route:clear + route:list.
+
+    ASKED AND ANSWERED (user, 2026-09-15): "should Excel also find the cumulative row
+    by shape, like PDF?" — RECOMMENDATION: not as a reader rule; no code.
+      - The PDF check's decisive signal is that cells are WRITTEN with "%". The Excel
+        reader loads cells with formatting OFF (toArray(null, true, false, true)), so
+        "5%" arrives as 5 or 0.05 and that signal does not exist. Without it,
+        "rising and ending high" also describes cumulative-days rows (…187),
+        cumulative-cost rows (…32M) and month-index rows — the guard would lean on a
+        near-100 endpoint alone.
+      - Where it would bind is the risky part: the activity-loop skip. A wrong skip is
+        the silent failure the row-role work exists to prevent (denominator and every
+        month move, curve still ends at 100).
+      - Nothing needs it: every real cumulative row in the corpus is already found by
+        label (6-stage, BUHI, roof typo), and a novel wording can now be TAUGHT with
+        one click — which the PDF side cannot offer. Shape detection is the PDF's
+        substitute for teaching, not an extra layer on top of it.
+      - Safe variant if ever wanted: use shape only as a SUGGESTION in the teach modal
+        ("R8 looks like a running total — mark it?"), never in the reader.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

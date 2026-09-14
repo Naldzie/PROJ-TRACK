@@ -1420,6 +1420,28 @@ test('summary rows survive past the row budget', () => {
     assert.match(out.block, /100\.00%/, 'including the cumulative row past the budget');
 });
 
+// 2026-09-15 — the CUMULATIVE promotion was an unconditional `if`, so any line whose
+// month cells read as rising percentages was re-tagged — including a title-block
+// line ABOVE the header. A META or HEADER line losing its tag is how the teach
+// picker ends up with nothing to pre-select. The genuine running-total row below
+// must still be promoted: the guard excludes HEADER/META, it is not an `else if`.
+test('a META line shaped like a running total keeps its tag; the real curve row is still promoted', () => {
+    const out = derivePdfLayout([page([
+        [840, [['PLANNED', 50, 60], ['25%', 210, 20], ['60%', 310, 20], ['100%', 410, 25]]],
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55], ['MONTH 3', 400, 55]]],
+        [760, [['Mobilization', 55, 90], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [720, [['Signage', 55, 60], ['1500', 210, 30], ['1500', 310, 30], ['1000', 410, 30]]],
+        [680, [['CUMULATIVE %', 50, 90], ['25%', 210, 20], ['60%', 310, 20], ['100%', 410, 25]]],
+    ])]);
+    assert.ok(out && out.block, 'the capture must produce a slice');
+    const lines = out.block.split('\n');
+    const planned = lines.find((l) => l.includes('PLANNED'));
+    const curve = lines.find((l) => l.includes('CUMULATIVE %'));
+    assert.match(planned || '', /\[META\]/, 'the title-block line stays META:\n' + out.block);
+    assert.match(lines.find((l) => l.includes('DESCRIPTION')) || '', /\[HEADER\]/, 'the header stays HEADER');
+    assert.match(curve || '', /\[CUMULATIVE\]/, 'the running-total row is still promoted:\n' + out.block);
+});
+
 // A column-split print is ONE table cut down the middle. Showing only the first
 // half meant the months on the second could never be pointed at, which is why
 // teaching the roof was impossible rather than merely wrong.

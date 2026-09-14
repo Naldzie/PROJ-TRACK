@@ -41,9 +41,9 @@ class ParserKeywordProposalController extends Controller
      */
     public function collect(Request $request)
     {
-        if (!in_array(auth()->user()->role, ['admin', 'staff'], true)) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // Same gate as every other endpoint here. It used to be an inline copy —
+        // identical today, but free to drift the day one of them changed (2026-09-15).
+        $this->ensureReviewer();
 
         $validated = $request->validate([
             // Multi-label desk: up to 3 distinct labels per corrected box (11 fields × 3).
