@@ -1111,6 +1111,17 @@ function stashOcrRotateTargets(reports) {
     } catch (e) { /* best-effort */ }
 }
 
+// Are the diagnostic affordances wanted? The snapshot downloads and the read-text
+// dump exist to get pixels and raw OCR output into a chat window — they are for
+// whoever is debugging the parser, not for the person creating a project, and
+// before the live preview existed they were the ONLY way to see a page at all.
+// Now that the page is on screen they are noise, so they hide behind the same flag
+// the per-page yield logging already uses: window._parserDebug = true.
+// Called by: showAutofillWarning() and the preview's gray scan note.
+function ocrDebugAffordances() {
+    try { return !!(typeof window !== 'undefined' && window._parserDebug); } catch (e) { return false; }
+}
+
 // Pages whose CURRENT angle has never been photo-read — i.e. what a re-read would
 // actually cost. Derived from the cache rather than tracked in a dirty set, so it
 // cannot drift out of step with what the reader would really do.
@@ -1268,7 +1279,6 @@ window._rotateAllScanned = function (reportIdx) {
     // preview panel exists at all: you could not see what you were turning, and you
     // paid twenty seconds to find out. Re-reading is the Re-read button now, and the
     // photo-read cache makes it cost only the pages actually turned.
-    refreshOcrRotateLabels();
     renderOcrPagePreview();
 };
 
@@ -1295,7 +1305,6 @@ window._rotateOcrPage = function (reportIdx, pageNum) {
         if (!_ocrPreview || _ocrPreview.reportIdx !== reportIdx) _ocrPreview = { reportIdx: reportIdx, pageNum: pageNum };
         else _ocrPreview.pageNum = pageNum;
     } catch (e) { /* best-effort */ }
-    refreshOcrRotateLabels();
     renderOcrPagePreview();
 };
 
@@ -1423,36 +1432,19 @@ window._ocrPreviewStep = function (delta) {
     } catch (e) { /* best-effort */ }
 };
 
-// Turn the shown page. INSTANT: updates the angle and redraws, and re-reads
-// nothing — that is the whole point of the change. The Re-read button then costs
-// only the pages actually turned, because the photo-read cache is keyed by angle.
+// Turn the shown page / the whole file. Both DELEGATE to the existing handlers
+// rather than repeating the angle arithmetic — one rotation path, so the panel and
+// any debug button can never disagree about what a turn means. Both are instant:
+// they redraw and re-read nothing, and the Re-read button then costs only the
+// pages actually turned, because the photo-read cache is keyed by angle.
 window._ocrPreviewRotate = function () {
-    try {
-        const reports = window._autofillScanReports || [];
-        const r = reports[_ocrPreview && _ocrPreview.reportIdx];
-        if (!r) return;
-        const key = r.fileName + '#' + _ocrPreview.pageNum;
-        window._ocrRotations = window._ocrRotations || {};
-        window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
-    } catch (e) { /* rotation bookkeeping is best-effort */ }
-    refreshOcrRotateLabels();
-    renderOcrPagePreview();
+    if (!_ocrPreview) return;
+    window._rotateOcrPage(_ocrPreview.reportIdx, _ocrPreview.pageNum);
 };
 
-// Turn every scanned page of the shown file, same instant semantics.
 window._ocrPreviewRotateFile = function () {
-    try {
-        const reports = window._autofillScanReports || [];
-        const r = reports[_ocrPreview && _ocrPreview.reportIdx];
-        if (!r) return;
-        window._ocrRotations = window._ocrRotations || {};
-        for (const pn of ocrRotatablePagesOf(r)) {
-            const key = r.fileName + '#' + pn;
-            window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
-        }
-    } catch (e) { /* rotation bookkeeping is best-effort */ }
-    refreshOcrRotateLabels();
-    renderOcrPagePreview();
+    if (!_ocrPreview) return;
+    window._rotateAllScanned(_ocrPreview.reportIdx);
 };
 
 // Read the turned pages again. This runs the normal pipeline — every ledger is
@@ -1463,24 +1455,6 @@ window._ocrPreviewReread = function () {
     hideAutofillBanner();
     runDocumentAutofill();
 };
-
-// Rewrite just the degree suffix on every rotate button, so the labels stay true
-// after an instant rotate without rebuilding either surface. The suffix lives in
-// its own span precisely so this can be surgical.
-function refreshOcrRotateLabels() {
-    try {
-        const reports = window._autofillScanReports || [];
-        document.querySelectorAll('[data-rot-file][data-rot-page]').forEach((el) => {
-            const r = reports[Number(el.getAttribute('data-rot-file'))];
-            const pn = Number(el.getAttribute('data-rot-page'));
-            if (!r || !isFinite(pn)) return;
-            const slot = el.querySelector('[data-rot-deg]');
-            if (!slot) return;
-            const deg = ocrRotationOf(r.fileName, pn);
-            slot.textContent = deg ? ' @' + deg + '°' : '';
-        });
-    } catch (e) { /* label refresh is cosmetic */ }
-}
 
 // Adjustable scan depth, N4: re-scan at the selector's chosen pages-per-file.
 // Reads #ocrPageSelect (10/25/40/50, default 10), stores it for this session, closes the
@@ -1886,7 +1860,9 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const oldCopy = document.getElementById('autofillPreviewCopyWrap');
         if (oldCopy && oldCopy.remove) oldCopy.remove();
         const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
-        if (hasTexts) {
+        // Debug-only since 2026-09-14 (see ocrDebugAffordances) — a raw-text dump is
+        // for diagnosing the parser, not for reviewing a project.
+        if (hasTexts && ocrDebugAffordances()) {
             const copyWrap = document.createElement('div');
             copyWrap.id = 'autofillPreviewCopyWrap';
             copyWrap.className = 'd-flex justify-content-end mt-2';
@@ -1927,14 +1903,20 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             // (scannedPageNums ledger, ocrPages fallback) — unread pages were previously
             // unactionable. Failed pages carry a "no text yet" badge. Index-indirected
             // (quote-safe); label shows live degrees. Plus a bulk rotate-all for the file.
+            // One entry point, same reasoning as the amber notice: the preview panel
+            // owns page choice, turning and re-reading, so this row only opens it.
             let rotBtns = '';
             try {
-                rotBtns = ocrPageFactsOf(r).map((f) => {
-                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Turn page ' + f.pageNum + ' 90° and show it' + (f.read ? '' : ' (no text yet)') + '">⟳ p.' + f.pageNum + '<span data-rot-deg>' + (f.rotation ? ' @' + f.rotation + '°' : '') + '</span>' + (f.read ? '' : '*') + '</button>';
-                }).join(' ');
-                if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page (* = no text yet):</span>' + rotBtns +
-                    '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rotateAllScanned(' + ri + ')" title="Turn ALL scanned pages of this file 90°">⟳ all</button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewShow(' + ri + ',' + (ocrRotatablePagesOf(r)[0] || 1) + ')" title="Show these pages so you can see what you are straightening">👁 see pages</button></div>';
+                const pages = ocrRotatablePagesOf(r);
+                if (pages.length) {
+                    const unread = pages.filter((pn) => ocrPageIsUnread(r, pn)).length;
+                    rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1 align-items-center">'
+                        + '<span style="font-size:0.85em;" class="text-muted">Pages read from a photo:</span>'
+                        + '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewShow(' + ri + ',' + pages[0] + ')" title="See these pages, straighten any that are sideways, then read them again">'
+                        + '👁 See &amp; straighten'
+                        + (unread ? ' <span class="badge bg-warning text-dark">' + unread + ' unread</span>' : '')
+                        + '</button></div>';
+                }
             } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
             // Stash this report's identity for the rotate handler (quote-safe indirection).
             stashOcrRotateTargets(reports);
@@ -1943,7 +1925,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             // visible). Index-indirect like rotate; handler re-renders at ~1.5 scale PNG.
             let snapBtns = '';
             try {
-                snapBtns = ocrListedPagesOf(r).map((pn) => {
+                snapBtns = (ocrDebugAffordances() ? ocrListedPagesOf(r) : []).map((pn) => {
                     return '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' as a PNG image to paste in chat">⤓ p.' + pn + '</button>';
                 }).join(' ');
                 if (snapBtns) snapBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Save page image:</span>' + snapBtns + '</div>';
@@ -2444,7 +2426,11 @@ function showAutofillWarning(message, opts) {
     try {
         const wantCopy = !opts || opts.copy !== false;
         const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
-        if (wantCopy && hasTexts && typeof window._copyExtractedText === 'function') {
+        // DEBUG-ONLY since 2026-09-14. This dumps the raw read text for pasting into
+        // a chat — a diagnostic, not something a reviewer creating a project needs,
+        // and it crowded out the controls that do the actual job. Still one flag
+        // away: window._parserDebug = true, then re-run.
+        if (ocrDebugAffordances() && wantCopy && hasTexts && typeof window._copyExtractedText === 'function') {
             copyBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._copyExtractedText()">Copy what was read</button>';
         }
     } catch (e) { /* copy affordance is best-effort */ }
@@ -2458,9 +2444,11 @@ function showAutofillWarning(message, opts) {
     try {
         const reports = window._autofillScanReports || [];
         // Stash identities so the index-indirect snapshot handler resolves file names here too.
+        // Done unconditionally: the handlers are index-indirect whether or not the
+        // debug buttons render, and the preview's rotate path relies on the same map.
         stashOcrRotateTargets(reports);
         const btns = [];
-        reports.forEach((r, ri) => {
+        (ocrDebugAffordances() ? reports : []).forEach((r, ri) => {
             if (!r) return;
             const pages = ocrListedPagesOf(r);
             pages.forEach((pn) => {
@@ -2482,20 +2470,25 @@ function showAutofillWarning(message, opts) {
     // per file — unread pages previously had NO manual path (ABC sheets are dark AND upright,
     // so rotation is diagnostic here, not rescue). Index-indirect; identities already stashed
     // above for the snapshot handler.
+    // 2026-09-14: ONE button per file instead of a wall of them. This used to emit a
+    // ⟳ per page plus a ⟳-all — up to 12 per file, before the snapshot row did the
+    // same again — which on a ten-page scan buried the notice in twenty-odd controls
+    // that all did something the reviewer could not see the result of. The preview
+    // panel now owns page choice (its strip), turning (per page and per file) and
+    // re-reading, so the notice only has to open it.
     let rotBtns = '';
     try {
         const reports = window._autofillScanReports || [];
         const btns = [];
         reports.forEach((r, ri) => {
             if (!r) return;
-            const facts = ocrPageFactsOf(r);
-            facts.forEach((f) => {
-                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Turn page ' + f.pageNum + ' of ' + escapeHtml(r.fileName) + ' 90° and show it">⟳ ' + escapeHtml(r.fileName) + ' p.' + f.pageNum + '<span data-rot-deg>' + (f.rotation ? ' @' + f.rotation + '°' : '') + '</span></button>');
-            });
-            if (facts.length) {
-                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Turn ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90°">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
-                btns.push('<button type="button" class="btn btn-sm btn-outline-primary mt-2 me-1" onclick="window._ocrPreviewShow(' + ri + ',' + (ocrRotatablePagesOf(r)[0] || 1) + ')" title="Show the pages of ' + escapeHtml(r.fileName) + ' so you can see what you are straightening">👁 see ' + escapeHtml(r.fileName) + '</button>');
-            }
+            const pages = ocrRotatablePagesOf(r);
+            if (!pages.length) return;
+            const unread = pages.filter((pn) => ocrPageIsUnread(r, pn)).length;
+            btns.push('<button type="button" class="btn btn-sm btn-outline-primary mt-2 me-1" onclick="window._ocrPreviewShow(' + ri + ',' + pages[0] + ')" title="See the scanned pages of ' + escapeHtml(r.fileName) + ', straighten any that are sideways, then read them again">'
+                + '👁 See &amp; straighten ' + escapeHtml(r.fileName)
+                + (unread ? ' <span class="badge bg-warning text-dark">' + unread + ' unread</span>' : '')
+                + '</button>');
         });
         if (btns.length) rotBtns = '<div>' + btns.join('') + '</div>';
     } catch (e) { rotBtns = ''; /* rotate affordance is best-effort */ }

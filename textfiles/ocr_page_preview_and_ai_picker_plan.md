@@ -375,6 +375,44 @@
     - Rotate acts on the page being shown; rotate-all on the file.
     - Render scale chosen for screen (~1.0-1.5), independent of the OCR scale 3.
 
+  STEP 3b — Clear the notice of what the panel replaced  ✅ BUILT 2026-09-14
+    User, on seeing the panel working: "can you remove all the unnecessary buttons
+    now while hide the button for downloading (that is for debugging purpose same
+    for the copy what was read button)". Both halves done, and they are different
+    actions on purpose — REMOVED vs HIDDEN.
+
+    REMOVED, because the panel does the job better:
+      the per-page ⟳ wall (up to 12 per file) and the per-file "⟳ all".
+      On the ten-page test4 scan that was twenty-odd controls, each doing something
+      whose result the reviewer could not see. Both surfaces now carry ONE button
+      per file — "👁 See & straighten <file>", with an "N unread" badge when the
+      reader got nothing from some pages — and the panel owns page choice (its
+      strip), turning (per page and per file) and re-reading.
+
+    HIDDEN behind window._parserDebug (new helper ocrDebugAffordances()):
+      the ⤓ snapshot downloads and both "Copy what was read" / "Copy read text".
+      These exist to get pixels and raw OCR text into a chat for diagnosis. Before
+      the live preview they were the ONLY way to see a page at all, which is why
+      they were promoted to the front; now they are noise. Handlers are untouched,
+      so one flag brings them back.
+
+    CONSOLIDATED WHILE HERE: _ocrPreviewRotate / _ocrPreviewRotateFile now DELEGATE
+    to _rotateOcrPage / _rotateAllScanned instead of repeating the angle arithmetic.
+    Step 3 had introduced a second rotation path; two paths for one idea is the
+    exact shape of the defects that cost four rounds on the S-curve desk, so it is
+    gone while it is still one day old.
+
+    DEAD CODE REMOVED RATHER THAN LEFT: refreshOcrRotateLabels() and its
+    data-rot-deg spans existed to update the degree suffix on per-page buttons that
+    no longer exist. Deleted with its two call sites.
+
+    VERIFIED (structural, 13 assertions): no orphaned refreshOcrRotateLabels,
+    data-rot-deg or data-rot-file; no per-page or per-file rotate buttons remain;
+    both handlers still defined and reached by the panel's delegation; the debug
+    gate applied in exactly four places with both handlers intact; exactly one
+    See-and-straighten entry per surface. node --check clean; JS suite 158/156 +
+    the 2 intended blinding fails. Net −64/+57 lines.
+
   STEP 4 — Read/unread indicators on the page strip  ⬜ NOT STARTED
     - Mark each page read / not-read / landscape from the ledgers in §3.4. No new
       plumbing for this much.
