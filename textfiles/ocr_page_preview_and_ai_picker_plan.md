@@ -224,11 +224,36 @@
   5. IMPLEMENTATION STEPS (each proved before the next; Rule 10 between them)
 ===============================================================================
 
-  STEP 1 — Factor the duplicated button blocks  ⬜ NOT STARTED
-    The rotate/snapshot/page-button loops exist twice (§3.6a). Extract one builder
-    used by both showAutofillPreview and showAutofillWarning. NO behaviour change;
+  STEP 1 — Factor the duplicated button blocks  ✅ BUILT 2026-09-14
+    The rotate/snapshot/page-button loops exist twice (§3.6a). NO behaviour change;
     this exists so every later step is written once.
-    Proof: both surfaces render byte-identical button sets before and after.
+
+    WHAT SHIPPED — five helpers above _saveOcrPageImage, replacing expressions that
+    were copy-pasted between showAutofillPreview and showAutofillWarning:
+      ocrListedPagesOf(report)     the displayed page list (scanned ?? read,
+                                   capped 12) — was duplicated FOUR times
+      ocrRotatablePagesOf(report)  the rotate-all target list, UNCAPPED
+      ocrRotationOf(file, page)    the _ocrRotations lookup, with the key format
+                                   ocrPage/_saveOcrPageImage/buildAiSlices share
+      ocrPageIsUnread(report, pn)  the 10-char-bar test behind the `*` badge
+      ocrPageFactsOf(report)       {pageNum, rotation, read, landscape} per page —
+                                   THE structure steps 3-5 consume
+      stashOcrRotateTargets(reports)  the index→name map both surfaces must publish
+                                   or every button is a silent no-op
+
+    A DISTINCTION THAT WAS IMPLICIT AND IS NOW NAMED: the surfaces show at most 12
+    buttons per file, but "rotate all" has always rotated EVERY scanned page,
+    including ones with no button. That is why there are two page-list helpers
+    rather than one. Behaviour unchanged; it simply reads as deliberate now.
+
+    PROOF — 38 comparisons over 7 ledger shapes (typical, ocrPages-only fallback,
+    nothing read, 20 pages against the 12 cap, two files with live rotations, empty
+    ledgers, a filename needing HTML escaping). The OLD inline expressions and the
+    NEW helpers were transcribed side by side and run over the same fixtures:
+    ALL IDENTICAL — no rendered output changed. Probe kept in the session
+    scratchpad (step1_parity.mjs).
+    JS suite 158 tests, 156 passed + the 2 intended blinding fails — unchanged, and
+    expected to be: this file is the wrapper, not the pure core the suite covers.
 
   STEP 2 — Decouple rotate from rescan  ⬜ NOT STARTED
     - _rotateOcrPage / _rotateAllScanned / _straightenAllAndRescan stop calling

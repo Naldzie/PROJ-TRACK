@@ -990,6 +990,84 @@ window._copyExtractedText = function () {
     }
 };
 
+// ── OCR PAGE LEDGER — ONE READING, SHARED BY EVERY SURFACE ──────────────────
+// The scan report already knows which pages were photo-read, which of those
+// yielded text, which are landscape, and what angle each carries. Until now the
+// selection expression, the rotation lookup and the read/unread test were
+// copy-pasted FOUR times across two functions (the preview's gray note and the
+// amber notice) — which is exactly why those two surfaces already word the same
+// tooltip differently. These helpers are the single reading; the page preview
+// added next consumes the same structure, so a third surface cannot drift too.
+// Pure apart from reading the two window stashes. Called by: showAutofillPreview,
+// showAutofillWarning, and the page-preview panel.
+
+// Pages a file offers for rotating or snapshotting: the scanned ledger when we
+// have one, else whatever actually yielded text. The 12-per-file cap is the one
+// both surfaces have always applied — kept so this factoring changes nothing.
+function ocrListedPagesOf(report) {
+    if (!report) return [];
+    const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
+    const read = (report.ocrPages && report.ocrPages.length) ? report.ocrPages : [];
+    return (scanned || read).slice(0, 12);
+}
+
+// Every page a file can be rotated through — UNCAPPED, unlike ocrListedPagesOf.
+// The distinction is real and was previously implicit: the surfaces show at most
+// 12 buttons per file, but "rotate all" has always turned every scanned page,
+// including ones with no button. Kept that way; named so it reads as deliberate.
+function ocrRotatablePagesOf(report) {
+    if (!report) return [];
+    const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
+    return scanned || (report.ocrPages || []);
+}
+
+// Live manual rotation for one page, in degrees. The key format is load-bearing:
+// ocrPage(), _saveOcrPageImage() and buildAiSlices() all index _ocrRotations by
+// exactly `fileName#pageNum`, so this must never invent its own.
+function ocrRotationOf(fileName, pageNum) {
+    try {
+        const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
+        return rots[fileName + '#' + pageNum] || 0;
+    } catch (e) { return 0; }
+}
+
+// Did OCR get usable text out of this page? ocrPages holds the pages that cleared
+// the 10-char bar; anything else in the scanned ledger was photo-read and came
+// back empty. That distinction is what the `*` badge has always meant.
+function ocrPageIsUnread(report, pageNum) {
+    if (!report) return true;
+    const read = (report.ocrPages && report.ocrPages.length) ? report.ocrPages : [];
+    return read.indexOf(pageNum) === -1;
+}
+
+// Per-page facts for one file, in page order — the structure every page-aware
+// surface should consume rather than re-deriving. Landscape comes from the
+// per-page ledger (C1), falling back to the file-level flag for stashes captured
+// before that ledger existed.
+function ocrPageFactsOf(report) {
+    if (!report) return [];
+    const landscape = (report.landscapePages && report.landscapePages.length) ? report.landscapePages : null;
+    return ocrListedPagesOf(report).map((pn) => ({
+        pageNum: pn,
+        rotation: ocrRotationOf(report.fileName, pn),
+        read: !ocrPageIsUnread(report, pn),
+        landscape: landscape ? landscape.indexOf(pn) !== -1 : !!report.allLandscape,
+    }));
+}
+
+// The rotate and snapshot handlers resolve a file by INDEX (quote-safe — file
+// names reach inline onclick attributes otherwise), so any surface rendering
+// those buttons must publish the index→name map FIRST or every button is a
+// silent no-op. Both surfaces did this separately; now neither can forget.
+// NOTE the map is assigned by index and never truncated, so a shorter later run
+// leaves stale tail entries until cancelDocumentAutofill() clears it.
+function stashOcrRotateTargets(reports) {
+    try {
+        window._ocrRotateTargets = window._ocrRotateTargets || [];
+        (reports || []).forEach((r, ri) => { if (r && r.fileName) window._ocrRotateTargets[ri] = r.fileName; });
+    } catch (e) { /* best-effort */ }
+}
+
 // Snapshots (2026-09-07 diagnostic, queue item 2): re-render one scanned page as a
 // downscaled PNG and download it, so pixels can be pasted in chat instead of inferred
 // from soup dumps. Reads the stashed original File (no server), applies the page's live
@@ -1058,7 +1136,7 @@ window._straightenAllAndRescan = function () {
             // ledger is absent (old stashes predate it).
             const targets = (r.landscapePages && r.landscapePages.length)
                 ? r.landscapePages
-                : (r.scannedPageNums && r.scannedPageNums.length ? r.scannedPageNums : (r.ocrPages || []));
+                : ocrRotatablePagesOf(r);
             for (const pn of targets) {
                 const key = r.fileName + '#' + pn;
                 window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
@@ -1079,9 +1157,7 @@ window._rotateAllScanned = function (reportIdx) {
         const r = reports[reportIdx];
         if (!r) return;
         window._ocrRotations = window._ocrRotations || {};
-        const targets = (r.scannedPageNums && r.scannedPageNums.length)
-            ? r.scannedPageNums
-            : (r.ocrPages || []);
+        const targets = ocrRotatablePagesOf(r);
         for (const pn of targets) {
             const key = r.fileName + '#' + pn;
             window._ocrRotations[key] = (((window._ocrRotations[key] || 0) + 90) % 360);
@@ -1553,28 +1629,20 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             // (quote-safe); label shows live degrees. Plus a bulk rotate-all for the file.
             let rotBtns = '';
             try {
-                const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
-                const read = (r.ocrPages && r.ocrPages.length) ? r.ocrPages : [];
-                rotBtns = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : read).slice(0, 12).map((pn) => {
-                    const deg = rots[r.fileName + '#' + pn] || 0;
-                    const unread = read.indexOf(pn) === -1;
-                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + pn + '" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' 90° and re-read' + (unread ? ' (no text yet)' : '') + '">⟳ p.' + pn + (deg ? ' @' + deg + '°' : '') + (unread ? '*' : '') + '</button>';
+                rotBtns = ocrPageFactsOf(r).map((f) => {
+                    return '<button type="button" class="btn btn-sm btn-outline-secondary" data-rot-file="' + ri + '" data-rot-page="' + f.pageNum + '" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Rotate page ' + f.pageNum + ' 90° and re-read' + (f.read ? '' : ' (no text yet)') + '">⟳ p.' + f.pageNum + (f.rotation ? ' @' + f.rotation + '°' : '') + (f.read ? '' : '*') + '</button>';
                 }).join(' ');
                 if (rotBtns) rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Straighten a tilted page (* = no text yet):</span>' + rotBtns +
                     '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of this file 90° and re-read">⟳ all</button></div>';
             } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
             // Stash this report's identity for the rotate handler (quote-safe indirection).
-            try {
-                window._ocrRotateTargets = window._ocrRotateTargets || [];
-                window._ocrRotateTargets[ri] = r.fileName;
-            } catch (e) { /* best-effort */ }
+            stashOcrRotateTargets(reports);
             // Snapshots (2026-09-07): per-page save-image buttons for ALL scanned pages
             // (scannedPageNums ledger — approved scope; rotated-but-yielding soup must stay
             // visible). Index-indirect like rotate; handler re-renders at ~1.5 scale PNG.
             let snapBtns = '';
             try {
-                const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
-                snapBtns = pages.map((pn) => {
+                snapBtns = ocrListedPagesOf(r).map((pn) => {
                     return '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' as a PNG image to paste in chat">⤓ p.' + pn + '</button>';
                 }).join(' ');
                 if (snapBtns) snapBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Save page image:</span>' + snapBtns + '</div>';
@@ -2086,14 +2154,11 @@ function showAutofillWarning(message, opts) {
     try {
         const reports = window._autofillScanReports || [];
         // Stash identities so the index-indirect snapshot handler resolves file names here too.
-        try {
-            window._ocrRotateTargets = window._ocrRotateTargets || [];
-            reports.forEach((r, ri) => { if (r && r.fileName) window._ocrRotateTargets[ri] = r.fileName; });
-        } catch (e) { /* best-effort */ }
+        stashOcrRotateTargets(reports);
         const btns = [];
         reports.forEach((r, ri) => {
             if (!r) return;
-            const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
+            const pages = ocrListedPagesOf(r);
             pages.forEach((pn) => {
                 btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' of ' + escapeHtml(r.fileName) + ' as PNG to paste in chat">⤓ ' + escapeHtml(r.fileName) + ' p.' + pn + '</button>');
             });
@@ -2116,16 +2181,14 @@ function showAutofillWarning(message, opts) {
     let rotBtns = '';
     try {
         const reports = window._autofillScanReports || [];
-        const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
         const btns = [];
         reports.forEach((r, ri) => {
             if (!r) return;
-            const pages = ((r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : ((r.ocrPages && r.ocrPages.length) ? r.ocrPages : [])).slice(0, 12);
-            pages.forEach((pn) => {
-                const deg = rots[r.fileName + '#' + pn] || 0;
-                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateOcrPage(' + ri + ',' + pn + ')" title="Rotate page ' + pn + ' of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ ' + escapeHtml(r.fileName) + ' p.' + pn + (deg ? ' @' + deg + '°' : '') + '</button>');
+            const facts = ocrPageFactsOf(r);
+            facts.forEach((f) => {
+                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateOcrPage(' + ri + ',' + f.pageNum + ')" title="Rotate page ' + f.pageNum + ' of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ ' + escapeHtml(r.fileName) + ' p.' + f.pageNum + (f.rotation ? ' @' + f.rotation + '°' : '') + '</button>');
             });
-            if (pages.length) btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
+            if (facts.length) btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._rotateAllScanned(' + ri + ')" title="Rotate ALL scanned pages of ' + escapeHtml(r.fileName) + ' 90° and re-read">⟳ all of ' + escapeHtml(r.fileName) + '</button>');
         });
         if (btns.length) rotBtns = '<div>' + btns.join('') + '</div>';
     } catch (e) { rotBtns = ''; /* rotate affordance is best-effort */ }
