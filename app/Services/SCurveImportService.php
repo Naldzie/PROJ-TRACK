@@ -102,12 +102,17 @@ class SCurveImportService
             // labeled HEADER), silently teaching the AI wrong roles. Single source of
             // truth below: array_values() on the letter-keyed rows is positionally
             // identical to the old numeric view, so CSV output is byte-compatible.
+            // ONE WALK, NOT TWO (2026-09-14). This loop and keptRowKeys() were
+            // duplicates of the same rule, and keptRowKeys is what turns an
+            // AI-reported R# back into a sheet row — so the moment the two
+            // disagree about which rows are kept, every R# resolves to the wrong
+            // row, silently. They cannot drift now because there is one rule.
             $rows = $grid;
             $width = 0;
             $kept = 0;
             $keptKeys = [];
-            foreach ($rows as $rowKey => $row) {
-                $cells = array_slice(array_values($row ?? []), 0, 80);
+            foreach ($this->keptRowKeys($grid, $maxRows, $roles) as $rowKey) {
+                $cells = array_slice(array_values($rows[$rowKey] ?? []), 0, 80);
                 while (count($cells) > 0 && trim((string) end($cells)) === '') {
                     array_pop($cells);
                 }
@@ -115,16 +120,12 @@ class SCurveImportService
                     continue;
                 }
                 $width = max($width, count($cells));
-                $keptKeys[] = $rowKey;
                 $fp = fopen('php://memory', 'r+');
                 fputcsv($fp, array_map(fn ($c) => trim((string) ($c ?? '')), $cells));
                 rewind($fp);
                 $kept++;
-                $keptKeys[count($keptKeys) - 1] = ['key' => $rowKey, 'csv' => trim((string) stream_get_contents($fp)), 'n' => $kept];
+                $keptKeys[] = ['key' => $rowKey, 'csv' => trim((string) stream_get_contents($fp)), 'n' => $kept];
                 fclose($fp);
-                if ($kept >= $maxRows) {
-                    break;
-                }
             }
             if ($kept >= 2) {
                 // Column-letter legend + role key (one line; row tags below).
@@ -689,7 +690,12 @@ class SCurveImportService
             foreach ($spreadsheet->getAllSheets() as $sheet) {
                 $grid = $sheet->toArray(null, true, false, true);
                 $grid = $this->resolveFormulas($sheet, $grid);
-                $keptKeys = $this->keptRowKeys($grid, 40);
+                // ROLES MUST BE PASSED HERE TOO. This resolves an AI-reported R#
+                // back to a sheet row, and the slice the AI was shown came from
+                // serializeForAi — which keeps summary rows past the budget. Omit
+                // the roles and the two walks disagree about which rows exist, so
+                // every R# past the cap resolves to the wrong row without a word.
+                $keptKeys = $this->keptRowKeys($grid, 40, $this->labelSliceRows($grid, $sheet));
                 if (count($keptKeys) < 2) continue;
 
                 $toIndex = function ($letter): ?int {
@@ -888,9 +894,10 @@ class SCurveImportService
      * capped) so an AI-reported headerRow R# resolves to the same row the slice
      * showed. Must stay identical to the serialize walk by construction.
      */
-    private function keptRowKeys(array $grid, int $maxRows): array
+    private function keptRowKeys(array $grid, int $maxRows, ?array $roles = null): array
     {
         $keys = [];
+        $seen = 0;
         foreach ($grid as $rowKey => $row) {
             $cells = array_slice(array_values($row ?? []), 0, 80);
             while (count($cells) > 0 && trim((string) end($cells)) === '') {
@@ -899,9 +906,27 @@ class SCurveImportService
             if (count($cells) === 0) {
                 continue;
             }
-            $keys[] = $rowKey;
-            if (count($keys) >= $maxRows) {
-                break;
+            // SUMMARY-AWARE BUDGET (2026-09-14). The budget buys the HEAD of the
+            // table; a summary row is then kept wherever it fell, past the cap.
+            //
+            // This was claimed in the teach-grid plan's §4 as applying to "both
+            // sides" and only ever landed on the two PDF builders — the evidence
+            // was in plain sight and unread for a day: BUHI and the roof workbook
+            // both captured as "15 rows, no TOTAL row", which is not a coincidence
+            // of size, it IS this bug. Their summary blocks sit past row 15, so the
+            // reviewer never saw the cumulative row a baseline is adopted from, and
+            // the AI slice never saw the totals its prompt tells it not to copy.
+            //
+            // Mirrors the PDF rule exactly (scurve-pdf-parser-core.js :1888/:2214):
+            // index over NON-EMPTY rows, keep when under the cap OR summary-ish.
+            // Ordering is preserved and summary rows sit at the bottom, so R-numbers
+            // of earlier rows do not shift — which matters because keptRowKeys is
+            // how an AI-reported R# is resolved back to a sheet row.
+            $role = ($roles && isset($roles[$rowKey])) ? $roles[$rowKey] : null;
+            $keep = ($seen < $maxRows) || $role === 'SUMMARY' || $role === 'CUMULATIVE';
+            $seen++;
+            if ($keep) {
+                $keys[] = $rowKey;
             }
         }
 

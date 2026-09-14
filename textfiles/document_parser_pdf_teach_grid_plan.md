@@ -1177,6 +1177,71 @@
       6. Binding, exclusions never touching $contractTotal, every exclusion named in
          the import notes.
 
+  2026-09-14 (eighth round) — ROW-ROLE WORK RESUMED. STEP 1 OF THE REVISED ORDER:
+  THE EXCEL SUMMARY-AWARE ROW BUDGET. ✅ BUILT.
+
+    NO NEW RESTUDY WAS NEEDED and that was checked rather than assumed: since the
+    regression study (3ba3feb) the branch gained five commits, ALL of them in
+    public/js/admin/projects/document-parser.js (the normal-doc OCR preview track).
+    Every S-curve file is untouched — verified with `git log 3ba3feb..HEAD --` over
+    the six of them — and both findings still reproduce exactly: 6-stage's
+    cumulative row still tags SUMMARY, BUHI and the roof still capture as "15 rows,
+    no TOTAL row".
+
+    WHY THIS IS FIRST, and it is the whole point of the reordering: adding a
+    CUMULATIVE badge would have been INVISIBLE on BUHI, because BUHI's summary block
+    sits past the fifteen-row cap and was never in the block to badge.
+
+    WHAT SHIPPED
+      keptRowKeys($grid, $maxRows, ?array $roles = null) now mirrors the PDF rule
+      exactly — index over NON-EMPTY rows, keep when `$seen < $maxRows` OR the role
+      is SUMMARY/CUMULATIVE (scurve-pdf-parser-core.js :1888/:2214).
+
+      AND serializeForAi NOW CALLS IT instead of running its own copy of the same
+      walk. That duplication was the real hazard: keptRowKeys is what turns an
+      AI-reported R# back into a sheet row, so the moment the two disagreed about
+      which rows are kept, every R# past the cap would resolve to the WRONG ROW in
+      silence. One rule now; they cannot drift.
+
+      THE THIRD CALLER WAS THE TRAP, and it was nearly missed. deriveMapFromAiLayout
+      (:693) called keptRowKeys($grid, 40) with NO roles — so the slice the AI saw
+      would have contained summary rows the resolver did not know about. Fixed by
+      passing labelSliceRows there too. Worth stating as a rule: when a walk gains a
+      parameter that changes WHICH rows exist, every caller is part of the change.
+
+    MEASURED — before/after on six real workbooks, comparing the R-lines:
+      buhi  15 -> 18  gained 3   pre-existing rows changed: 0
+      roof  15 -> 18  gained 3   pre-existing rows changed: 0
+      6stg   8 ->  8  gained 0   pre-existing rows changed: 0
+      seg    9 ->  9  gained 0   pre-existing rows changed: 0
+      10mo   8 ->  8  gained 0   pre-existing rows changed: 0
+      lone   7 ->  7  gained 0   pre-existing rows changed: 0
+    PURELY ADDITIVE. Summary rows sit at the bottom, so they append as R16-R18 and
+    NO EARLIER R-NUMBER SHIFTS — which is exactly the property the R# resolver
+    depends on. BUHI now shows its TOTAL, "% ACCOMPLISHED" and "CUMULATIVE %
+    ACCOMPLISHED" rows; the roof shows TOTAL and both Commulative rows.
+
+    READER UNCHANGED on all 8 sample workbooks — parse() output compared field by
+    field (months, curve, curveSource, contract, cumulativeRow, summaryReference
+    count, warning count) against a baseline captured before the change. serializeForAi
+    feeds the AI slice and the capture, never parse(), and that is now demonstrated
+    rather than asserted.
+
+    TESTS +1 (test_summary_rows_survive_the_row_budget): a twelve-activity sheet
+    with a budget of 5 keeps exactly 5 head rows plus TOTAL and CUMULATIVE, and R1
+    and R5 still hold what they held. FAILING-THEN-PASSING CONFIRMED.
+    SUITES: PHP 1198 passed / the same 5 pre-existing BY NAME. JS 158/156 + the 2
+    intended blinding fails. PDF reader regression 16 reads, 0 changed.
+
+    ⚠️ RE-CAPTURE WAVE for BUHI-shaped files: their block text changed, so
+    header_hash changes and the next import stores a second proposed row. Files that
+    already fit under the cap (6-stage, SEGMENT, the 10-month, the lone-body
+    specimen) are byte-identical and unaffected.
+
+    NEXT: step 2 of the revised order — map-path tests for the skip logic and
+    readSummaryReference, BEFORE the badge. Nothing currently exercises either
+    through a live map, which is the path the binding work will touch.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

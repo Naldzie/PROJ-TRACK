@@ -1118,6 +1118,55 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * 2026-09-14 — A SUMMARY ROW SURVIVES THE ROW BUDGET.
+     *
+     * The budget buys the head of the table; the summary block is kept wherever it
+     * fell. Without this the reviewer never sees the cumulative row a baseline is
+     * adopted from, and the AI slice never sees the totals its own prompt tells it
+     * not to copy — on BUHI and the roof workbook the whole summary block sat past
+     * the cap and was cut off. Mirrors the PDF builders, which have done this since
+     * the teach-grid work.
+     */
+    public function test_summary_rows_survive_the_row_budget(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'DESCRIPTION');
+        $sheet->setCellValue('B1', 'Month 1');
+        $sheet->setCellValue('C1', 'Month 2');
+        // Twelve activity rows — comfortably past a budget of 5.
+        for ($i = 0; $i < 12; $i++) {
+            $r = $i + 2;
+            $sheet->setCellValue('A' . $r, 'Activity ' . ($i + 1));
+            $sheet->setCellValue('B' . $r, 1000);
+            $sheet->setCellValue('C' . $r, 2000);
+        }
+        $sheet->setCellValue('A14', 'TOTAL');
+        $sheet->setCellValue('B14', 12000);
+        $sheet->setCellValue('A15', 'CUMULATIVE % ACHIEVED');
+        $sheet->setCellValue('B15', 50);
+        $sheet->setCellValue('C15', 100);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $csv = app(SCurveImportService::class)->serializeForAi($path, 5);
+        $rows = array_values(array_filter(explode("\n", $csv), fn ($l) => preg_match('/^R\d+ \[/', $l)));
+
+        // The budget still bounds the HEAD: five rows, then the summary block.
+        $this->assertCount(7, $rows, "budget of 5 plus 2 summary rows:\n" . implode("\n", $rows));
+        $this->assertStringContainsString('TOTAL', $rows[5]);
+        $this->assertStringContainsString('CUMULATIVE % ACHIEVED', $rows[6]);
+        // Purely additive — the head is untouched and R-numbers do not shift, which
+        // matters because keptRowKeys resolves an AI-reported R# back to a sheet row.
+        $this->assertStringStartsWith('R1 ', $rows[0]);
+        $this->assertStringContainsString('DESCRIPTION', $rows[0]);
+        $this->assertStringStartsWith('R5 ', $rows[4]);
+        $this->assertStringContainsString('Activity 4', $rows[4]);
+
+        unlink($path);
+    }
+
+    /**
      * E2 serializer: missing files throw honestly.
      */
     public function test_serialize_for_ai_rejects_missing_source(): void
