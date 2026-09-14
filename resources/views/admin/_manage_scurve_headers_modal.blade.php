@@ -395,8 +395,21 @@ async function loadScurveHeadersForManagement() {
                     }
                 }
             } catch (e) { /* summary is best-effort */ }
-            const approveBtn = row.status === 'live' ? '' :
-                '<button class="btn btn-sm btn-outline-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>';
+            // A row the reader cannot use must not offer Approve as if it would do
+            // something (2026-09-14). Approving one used to flip it to live and
+            // change nothing — the next import still failed. The server refuses
+            // these independently; this only stops the wasted click.
+            const cmForApprove = row.column_map || null;
+            const unreadable = !row.has_map
+                || (cmForApprove && cmForApprove.kind === 'pdf'
+                    && Array.isArray(cmForApprove.pages) && cmForApprove.pages.length > 0
+                    && cmForApprove.pages.every(p => !(p.monthCols || []).some(mc => mc.index >= 1)));
+            const approveBtn = row.status === 'live' ? ''
+                : (unreadable
+                    ? '<button class="btn btn-sm btn-outline-secondary" disabled'
+                        + ' title="There is nothing here the reader can use yet — teach this layout\'s columns first,'
+                        + ' then approve."><i class="bi bi-check-lg"></i> Approve</button>'
+                    : '<button class="btn btn-sm btn-outline-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>');
             const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
             html += '<tr>' +
                 '<td><span' + headerTip + '>' + header + '</span>' + kindMark + mapMark + mapSummary + '</td>' +

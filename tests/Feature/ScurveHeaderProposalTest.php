@@ -438,15 +438,62 @@ class ScurveHeaderProposalTest extends TestCase
     public function test_staff_can_approve_capture(): void
     {
         $staff = $this->makeUser('staff');
+        // The map is real because this test is about WHO may approve, not about
+        // what happens to an unreadable row — that is pinned separately by
+        // test_approving_an_unreadable_capture_is_refused (2026-09-14).
         $row = ScurveHeaderProposal::create([
             'header_rows_text' => 'WEIRD DESC HEADER', 'header_hash' => hash('sha256', 'a'),
             'status' => 'proposed',
+            'column_map' => ['v' => 1, 'descCol' => 2, 'monthSpans' => [1 => [7], 2 => [8]], 'sig' => [[2, 'description']]],
         ]);
 
         $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$row->id}/approve")
             ->assertOk()->assertJson(['success' => true]);
 
         $this->assertSame('live', $row->fresh()->status);
+    }
+
+    // 2026-09-14 — APPROVING SOMETHING UNREADABLE IS A NO-OP, SO IT IS REFUSED.
+    //
+    // Two captures reach the desk with nothing the reader can use: an Excel one
+    // whose header the rules could not find (column_map null), and an ambiguous PDF
+    // one whose months carry no numbering. Both used to flip to live on a click and
+    // change nothing — the next import still answered "could not read the S-curve",
+    // so the reviewer was told the opposite of what actually happened.
+    // Called by: approve().
+    public function test_approving_an_unreadable_capture_is_refused(): void
+    {
+        $staff = $this->makeUser('staff');
+
+        $mapLess = ScurveHeaderProposal::create([
+            'header_rows_text' => 'COLUMNS: A,B | HEADER: column labels',
+            'header_hash' => hash('sha256', 'map-less'), 'status' => 'proposed',
+            'column_map' => null,
+        ]);
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$mapLess->id}/approve")
+            ->assertStatus(422)->assertJsonPath('success', false);
+        $this->assertSame('proposed', $mapLess->fresh()->status, 'refused means NOT promoted');
+
+        $unnumbered = ScurveHeaderProposal::create([
+            'source_type' => 'pdf',
+            'header_rows_text' => 'COLUMNS: A,B | HEADER: column labels',
+            'header_hash' => hash('sha256', 'unnumbered'), 'status' => 'proposed',
+            'column_map' => ['v' => 1, 'kind' => 'pdf', 'pages' => [
+                ['monthCols' => [], 'unnumbered' => true,
+                    'pseudoCols' => [['letter' => 'A', 'x' => 0.0, 'xEnd' => 0.5]]],
+            ]],
+        ]);
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$unnumbered->id}/approve")
+            ->assertStatus(422)->assertJsonPath('success', false);
+        $this->assertSame('proposed', $unnumbered->fresh()->status);
+
+        // Once taught, the SAME row approves — the guard refuses the state, not the row.
+        $unnumbered->update(['column_map' => ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['monthCols' => [['index' => 1, 'x' => 0.5, 'xEnd' => 0.7], ['index' => 2, 'x' => 0.7, 'xEnd' => 0.9]]],
+        ]]]);
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$unnumbered->id}/approve")
+            ->assertOk();
+        $this->assertSame('live', $unnumbered->fresh()->status);
     }
 
     // Reject soft-deletes (history preserved, recoverable).

@@ -866,6 +866,61 @@
     blocked this run. A blocked Save should say "pick the header row first" rather
     than leaving the reviewer to find it.
 
+
+  2026-09-14 (sixth round) — THE "NEEDS TEACHING" BADGE LANDED, AND EXPOSED THE TWO
+  THINGS IT DOES NOT DO. Specimen: SCurve-Test-Segment-Novel-Specimen.xlsx (NOT the
+  roof — a different file, noted because the two tests are easy to conflate).
+
+    FIRST, A REPORT THAT WAS A MISREADING, AND THE MISREADING IS THE DEFECT.
+      The user reported "this is my manual teaching — and it not saved", then in the
+      same breath pasted a CORRECT read (5 / 20 / 40 / 65 / 100, real names, "read
+      with a learned layout for this contractor"). Checked the table: it HAD saved —
+      row 96, manual-teach, live, descCol 2, months 1-5.
+      WHY IT LOOKED OTHERWISE: "New variant" creates a SIBLING row and leaves the row
+      the reviewer taught FROM untouched, by design (alternating contractor formats
+      must both keep working). So the row they were staring at still said "Needs
+      teaching" and still had a null map, and the toast said only "Layout variant
+      saved for review." Nothing pointed at where the work went.
+      FIX: the variant message now says "Saved as a NEW layout, waiting in Proposed —
+      approve it to use it. The row you taught from is deliberately left as it was."
+      Replace mode likewise says it dropped back to Proposed and needs approving again.
+
+    DEFECT 11 — APPROVE WAS STILL CLICKABLE ON A ROW NOTHING COULD READ.
+      The user's words: "but i can still click the approve even without teaching."
+      Correct, and the badge added in the fifth round only DESCRIBED the problem —
+      the button beside it still invited the click, still flipped the row to live,
+      and the next import still failed. Two capture states are affected: an Excel
+      capture with column_map null (the rules could not find the header), and an
+      ambiguous PDF capture whose months carry no numbering.
+      FIX, both sides, because a client gate is not a rule: approve() refuses both
+      states with a message naming teaching as the remedy and leaves the status
+      alone; the desk renders the button disabled with the same explanation rather
+      than removing it (a missing button raises "why can't I approve this?", a
+      disabled one with a tooltip answers it).
+      DELIBERATELY NOT A HARD BAN ON THE ROW: the same row approves the moment it is
+      taught. The guard refuses a STATE, not a row — pinned by a test that teaches
+      the refused row and then approves it successfully.
+
+    A SECOND TEST WAS PINNING A BUG, same class as the fifth round's.
+      test_staff_can_approve_capture built its row with no column_map, so it asserted
+      that a map-less row approves — the exact thing now refused. But that test is
+      about WHO may approve; the null map was incidental fixture laziness. It now
+      carries a real map, and the unreadable case is pinned separately. Two rounds
+      running, a test written for one property turned out to be holding another one
+      in place. Worth saying plainly: when a fixture is "whatever compiles", it
+      quietly becomes a specification.
+
+    TESTS +1 PHP (approving an unreadable capture is refused — both states, status
+    unchanged, and the same row approving once taught) and 1 fixture corrected ->
+    ScurveHeaderProposalTest 67 passed. FAILING-THEN-PASSING CONFIRMED.
+    SUITES: PHP 1197 passed / the same 5 pre-existing BY NAME. JS 158 tests, 156
+    passed + the 2 intended blinding fails. Reader regression 16 reads, 0 changed.
+
+    STILL OPEN, unchanged from the fifth round: when no row is tagged [HEADER] the
+    picker opens with nothing ticked and says "none picked yet" in small text. The
+    user got past it this round by ticking R4, but a blocked Save should still say
+    "pick the header row first" rather than leaving them to find it.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

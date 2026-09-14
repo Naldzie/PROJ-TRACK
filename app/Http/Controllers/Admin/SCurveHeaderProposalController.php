@@ -232,6 +232,29 @@ class ScurveHeaderProposalController extends Controller
     {
         $this->ensureReviewer();
 
+        // APPROVING AN UNREADABLE LAYOUT IS A NO-OP, so refuse instead of pretending
+        // (2026-09-14). Two captures reach the desk with nothing the reader can use:
+        // an Excel one whose header the rules could not find (column_map null), and
+        // an ambiguous PDF one whose months carry no numbering. Both went live on a
+        // click, showed "live", and the next import still answered "could not read
+        // the S-curve" — the reviewer was told the opposite of what happened.
+        // Teaching is what these rows need, and the message says so.
+        $map = $proposal->column_map;
+        if ($map === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This capture has no column map, so approving it would change nothing — '
+                    . 'the reader still could not use it. Teach its columns first, then approve.',
+            ], 422);
+        }
+        if (ScurveHeaderProposal::pdfMapIsUnnumbered($map)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This layout records where the columns sit but not which month each one is, '
+                    . 'so approving it would change nothing. Teach the months first, then approve.',
+            ], 422);
+        }
+
         $proposal->update(['status' => 'live']);
 
         $who = $proposal->contractor
@@ -435,7 +458,14 @@ class ScurveHeaderProposalController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $mode === 'replace' ? 'Layout updated — re-review required.' : 'Layout variant saved for review.',
+            // Variant mode creates a SIBLING and leaves the row the reviewer was
+            // looking at untouched by design — so from their side the screen does
+            // not change and the save looks like it failed (reported 2026-09-14,
+            // where the teaching had in fact saved correctly). Say where it went.
+            'message' => $mode === 'replace'
+                ? 'Layout updated — it dropped back to Proposed and needs approving again.'
+                : 'Saved as a NEW layout, waiting in Proposed — approve it to use it. '
+                    . 'The row you taught from is deliberately left as it was.',
             'mode' => $mode,
             'proposal' => $proposal->fresh(),
         ]);
