@@ -255,7 +255,55 @@
     JS suite 158 tests, 156 passed + the 2 intended blinding fails — unchanged, and
     expected to be: this file is the wrapper, not the pure core the suite covers.
 
-  STEP 2 — Decouple rotate from rescan  ⬜ NOT STARTED
+  STEP 2 — Decouple rotate from rescan  ✅ BUILT 2026-09-14, BY A DIFFERENT ROUTE
+    THE PLAN SAID: stop the rotate handlers calling runDocumentAutofill(), track a
+    dirty set, and add a button that re-OCRs only the changed pages. §6 flagged the
+    partial re-read as the highest risk in this plan, because the ledgers drive both
+    the indicators and the AI ranking and a partial path could update text without
+    them.
+
+    WHAT WAS BUILT INSTEAD: a photo-read CACHE, keyed file#size#page@rotation.
+    THE RISK THE PLAN WORRIED ABOUT IS GONE BECAUSE THE PARTIAL PATH WAS NEVER
+    BUILT. The full pipeline still runs and still recomputes every ledger from the
+    same walk it always did; the only thing that changes is that a page already
+    read at its current angle is served from memory instead of re-recognised.
+    Because the ROTATION IS IN THE KEY, a page the reviewer turns always misses and
+    is genuinely re-read, while untouched pages never are — which IS Decision O2a's
+    property ("re-OCR only the pages whose angle actually changed"), obtained by
+    construction rather than by bookkeeping.
+
+    PLACEMENT MATTERS AND IS DELIBERATE: the cache sits INSIDE ocrPage, AFTER the
+    budget gate, and a cache hit still increments _ocrPagesDone. Skipping that
+    accounting would quietly admit later pages into a budget meant to be spent, and
+    would move the truncation flag. Pages attempted, ledgers and warnings all stay
+    byte-identical to an uncached run.
+
+    EMPTY READS ARE CACHED TOO, and the tradeoff is real rather than free: a dead
+    page is the most expensive one (the PSM ladder plus the scale-2 and crop
+    fallbacks, up to ~6 recognitions) and is exactly what a rotate-heavy session
+    revisits — but photo-reading wobbles slightly run to run (learning-loop plan §6,
+    2026-09-07), so remembering an empty forgoes the chance an unchanged page reads
+    next time. The read-depth "Re-scan" button now CLEARS the cache, which is the
+    deliberate way to ask for a genuinely fresh read. Re-read (rotations) reuses the
+    cache; Re-scan does not.
+
+    MEASURED (step2_cache.mjs, transcribing the patched ocrPage gate and the
+    per-page block of extractTextFromPDF over a 10-page test4-shaped file):
+      run 1  cold                    10 recognitions   ledgers X
+      run 2  unchanged, all cached    0 recognitions   ledgers identical to run 1
+      run 3  ONE page turned 90°      1 recognition    that page now reads
+      run 4  same rotations again     0 recognitions   ledgers identical to run 3
+      run 5  after Re-scan clears    10 recognitions   ledgers identical to run 3
+    So one rotate on a ten-page scan costs ONE page of work, not ten — the ~20s
+    the plan measured becomes ~2s — and a cached run and a fresh run agree exactly.
+
+    STILL NOT DONE, and deliberately left for a decision: the rotate handlers STILL
+    call runDocumentAutofill(), so a rotate re-parses and rebuilds the preview even
+    though it now re-reads almost nothing. There is no "Re-read the N pages I
+    rotated" button. That remainder is now a UX question (batching several rotates
+    before one rebuild, and removing the preview flicker) rather than the
+    correctness-critical change it looked like — the expensive half is already
+    solved, and solved without the ledger risk.
     - _rotateOcrPage / _rotateAllScanned / _straightenAllAndRescan stop calling
       runDocumentAutofill(). They update _ocrRotations and re-render the preview.
     - Track which (fileName#page) angles changed since the last successful OCR of

@@ -34,6 +34,10 @@ let _autofillRunId = 0;
 function cancelDocumentAutofill() {
     _autofillRunId++;
     _ocrPagesDone = 0;
+    // The photo-read cache is per modal session, like the rotations it is keyed
+    // against — a reopened popup must never serve text read from a file that is
+    // no longer the one attached.
+    try { _ocrTextCache = new Map(); } catch (e) { /* best-effort */ }
     // S3: fresh-popup-fresh-state — clear saved vote/disagreement/scan state AND remove
     // the dynamically built banner/note boxes, so no previous run can linger on screen
     // (stale-banner bug: old red banner survived modal close/reopen into single-file runs).
@@ -363,6 +367,13 @@ function loadTesseract() {
 // and adjustable per run via window._ocrPageLimit (default OCR_PAGE_LIMIT = 10).
 // Each photo-read page costs ~2s on slow connections — see the re-scan control.
 let _ocrPagesDone = 0;
+// Photo-read results for this modal session, keyed file#size#page@rotation. The
+// rotation is IN the key, so a page the reviewer turns always misses and is
+// genuinely re-read; the size guards against a different file arriving under a
+// name already seen. Empty reads are cached too — see the note in ocrPage() and
+// the deliberate escape hatch in _rescanWithSelection().
+// Cleared with the rest of the session state in cancelDocumentAutofill().
+let _ocrTextCache = new Map();
 const OCR_PAGE_LIMIT = 10;
 function ocrPageLimit() {
     const custom = (typeof window !== 'undefined') ? Number(window._ocrPageLimit) : NaN;
@@ -626,9 +637,25 @@ async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFaile
     }
 }
 
-async function ocrPage(page, runId, rotationDeg = 0) {
+async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     if (_ocrPagesDone >= ocrPageLimit()) return '';
     if (runId !== _autofillRunId) return '';
+
+    // PHOTO-READ CACHE (2026-09-14). Re-reading a page at an angle it has already
+    // been read at produces the same text for ~2s of work — and every rotate used
+    // to re-read EVERY textless page of EVERY file, so a one-page nudge on a
+    // ten-page scan cost about twenty seconds. The key carries the rotation, so a
+    // page the reviewer actually turned always misses and is genuinely re-read;
+    // only untouched pages are served from memory.
+    //
+    // Placed AFTER the budget gate and counted like a real read on purpose: the
+    // set of pages attempted, the truncation flag and the ledgers must stay
+    // byte-identical to an uncached run. Skipping the accounting would quietly
+    // let later pages into a budget that was meant to be spent.
+    if (cacheKey && _ocrTextCache.has(cacheKey)) {
+        _ocrPagesDone++;
+        return _ocrTextCache.get(cacheKey);
+    }
 
     const tesseract = await loadTesseract();
     // OCR group 1: render sharper — tesseract's documented sweet spot is ~300 DPI, we rendered
@@ -802,7 +829,21 @@ async function extractTextFromPDF(file, runId) {
             // R2: per-page manual rotation (degrees stashed by the rotate control).
             const rotKey = file.name + '#' + pageNum;
             const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
-            const ocrText = await ocrPage(page, runId, rotDeg);
+            // Cache key carries the angle, so turning a page re-reads it for real
+            // while every untouched page comes back from memory (2026-09-14).
+            const cacheKey = file.name + '#' + (file.size || 0) + '#' + pageNum + '@' + rotDeg;
+            const ocrText = await ocrPage(page, runId, rotDeg, cacheKey);
+            // Cache the EMPTY result too. A dead page costs the most (the PSM
+            // ladder plus the scale-2 and crop fallbacks, up to ~6 recognitions),
+            // and those are exactly the pages a rotate-heavy session revisits.
+            // Tradeoff written down because it is real: photo-reading wobbles
+            // slightly run to run (learning-loop plan, §6 2026-09-07), so caching
+            // an empty forgoes the chance that an unchanged page reads next time.
+            // The read-depth "Re-scan" clears the cache, which is the deliberate
+            // way to ask for a genuinely fresh read.
+            if (cacheKey && runId === _autofillRunId) {
+                try { _ocrTextCache.set(cacheKey, ocrText || ''); } catch (e) { /* cache is best-effort */ }
+            }
             if (ocrText && ocrText.trim().length >= 10) {
                 pageText = ocrText;
                 ocrUsed = true;
@@ -1197,6 +1238,11 @@ window._rescanWithSelection = function () {
         const picked = sel ? Number(sel.value) : NaN;
         if (isFinite(picked) && picked >= 1 && picked <= 50) window._ocrPageLimit = Math.floor(picked);
     } catch (e) { /* keep previous depth on any failure */ }
+    // THE DELIBERATE FRESH READ. This button means "read it again properly", so it
+    // drops the photo-read cache — which is also the only way back to the old
+    // retry-a-flaky-page behaviour now that empty reads are remembered. Re-read
+    // (rotations) reuses the cache; Re-scan (this) does not.
+    try { _ocrTextCache = new Map(); } catch (e) { /* best-effort */ }
     closeAutofillPreview();
     runDocumentAutofill();
 };
