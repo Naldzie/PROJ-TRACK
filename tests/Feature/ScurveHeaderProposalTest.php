@@ -813,6 +813,129 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+    // 2026-09-14 — CLOSING A COVERAGE GAP BEFORE BUILDING ON IT.
+    //
+    // Every existing test of the activity-loop skip logic and of
+    // readSummaryReference goes through the RULE path (parse($path) with no maps).
+    // NOTHING exercised either through a LIVE MAP — which is precisely the path the
+    // row-role binding work will touch, and the map tests that do exist run on
+    // workbooks with no summary block at all. So the two behaviours that binding
+    // must not disturb were, until now, pinned by nothing on the path it changes.
+    //
+    // This fixture deliberately misses the rules (novel "TASK DESCRIPTION" header)
+    // AND carries the full summary vocabulary, so the map path has something to
+    // skip and something to compare.
+    private function makeMapPathSummaryWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', 'TASK DESCRIPTION');   // novel: rules miss
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+
+        $sheet->setCellValue('B12', '1');
+        $sheet->setCellValue('C12', 'Mobilization Works');
+        $sheet->setCellValue('F12', 100000);
+        $sheet->setCellValue('G12', 25);
+        $sheet->setCellValue('I12', 100000);
+
+        $sheet->setCellValue('B13', '2');
+        $sheet->setCellValue('C13', 'Structural Works');
+        $sheet->setCellValue('F13', 300000);
+        $sheet->setCellValue('G13', 75);
+        $sheet->setCellValue('K13', 300000);
+
+        $sheet->setCellValue('C14', 'TOTAL');
+        $sheet->setCellValue('F14', 400000);
+        $sheet->setCellValue('G14', 100);
+        // The rows the skip vocabulary exists for. Each carries numbers under the
+        // month spans, so a failure to skip shows up as an inflated denominator.
+        $sheet->setCellValue('C15', 'CUMULATIVE % ACHIEVED');
+        $sheet->setCellValue('I15', 20);
+        $sheet->setCellValue('K15', 100);
+        $sheet->setCellValue('C16', 'Cash Flow');
+        $sheet->setCellValue('I16', 100000);
+        $sheet->setCellValue('K16', 400000);
+        $sheet->setCellValue('C17', 'Project Duration');
+        $sheet->setCellValue('I17', 30);
+        $sheet->setCellValue('K17', 60);
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    // The skip vocabulary must hold on the MAP path exactly as on the rule path.
+    // If a Cash Flow or duration row were summed as an activity the contract
+    // denominator would inflate and EVERY month would read low — silently, because
+    // the curve would still be monotonic and still end at 100.
+    // Called by: parse() -> buildMonths() activity loop, reached via findHeaderViaMaps.
+    public function test_map_path_skips_summary_rows_like_the_rule_path(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeMapPathSummaryWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        try {
+            $service->parse($path);
+            $this->fail('Rules should miss this layout, or the test proves nothing about maps.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+
+        $map = $service->deriveAutoColumnMap($path);
+        $this->assertIsArray($map, 'the auto-derived map is the vehicle for this path');
+
+        $result = $service->parse($path, [['id' => 3, 'contractor_id' => null, 'column_map' => $map]]);
+
+        $this->assertTrue($result['meta']['mapUsed'], 'this must be the MAP path, not the rules');
+        // Two activities — the TOTAL, cumulative, cash-flow and duration rows are
+        // all skipped. Three would mean the vocabulary failed on this path.
+        $this->assertSame(2, $result['meta']['activityCount']);
+        // The denominator is the TOTAL row's 400,000, not 400,000 plus the
+        // cash-flow row's half-million.
+        $this->assertSame(400000.0, $result['meta']['contractAmount']);
+        $this->assertSame(25.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
+    // readSummaryReference must also work through a live map: the author's printed
+    // cumulative row is found, compared against the activity math, and reported.
+    // The binding work will pin WHICH row this reads, so its current behaviour has
+    // to be nailed down first.
+    // Called by: parse() -> buildMonths() -> readSummaryReference, via a live map.
+    public function test_map_path_still_reads_the_summary_reference(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeMapPathSummaryWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        $map = $service->deriveAutoColumnMap($path);
+        $result = $service->parse($path, [['id' => 4, 'contractor_id' => null, 'column_map' => $map]]);
+
+        $this->assertTrue($result['meta']['mapUsed']);
+        $ref = $result['meta']['summaryReference'] ?? [];
+        $this->assertNotEmpty($ref, 'the cumulative row must be found on the map path too');
+
+        // The author says 20 / 100; the activity rows say 25 / 100. The gap on
+        // month 1 is 5 points, so it is reported AND warned about, while month 2
+        // agrees exactly and stays silent.
+        $byMonth = [];
+        foreach ($ref as $e) { $byMonth[$e['month']] = $e; }
+        $this->assertArrayHasKey(1, $byMonth);
+        $this->assertSame(20.0, (float) $byMonth[1]['summary_percent']);
+        $this->assertSame(25.0, (float) $byMonth[1]['activity_percent']);
+        $this->assertEqualsWithDelta(5.0, (float) $byMonth[1]['gap'], 0.01);
+        // The curve itself is untouched by the reference — activity math wins.
+        $this->assertSame(25.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame('activities', $result['meta']['curveSource']);
+
+        unlink($path);
+    }
+
     // Typo tolerance (user choice): a re-upload with a header typo still
     // matches the stored signature and parses via the same map.
     // Called by: findSignatureRow() fuzzy per-cell matching.

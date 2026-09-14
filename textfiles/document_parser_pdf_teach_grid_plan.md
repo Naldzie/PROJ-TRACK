@@ -1242,6 +1242,117 @@
     readSummaryReference, BEFORE the badge. Nothing currently exercises either
     through a live map, which is the path the binding work will touch.
 
+  2026-09-14 — "CAN WE JUST REMOVE THE 15-ROW CAP?" — MEASURED, AND THE ANSWER IS
+  COUNTER-INTUITIVE. User question after step 1; no code, recorded so the next
+  person does not re-derive it.
+
+    REMOVING THE ROW CAP ALONE WOULD MAKE BUHI WORSE, NOT BETTER. The row cap is
+    not the binding constraint — a 4000-CHARACTER STORE TRUNCATION is
+    (SCurveHeaderProposalController :123 and :178, mb_substr($text, 0, 4000)), and
+    it cuts from the END, which is exactly where the summary rows live. Measured on
+    BUHI, simulating what actually reaches the database:
+      cap=15   built 18 rows (3 summary)  -> STORED 18 rows (3 summary)   ok
+      cap=40   built 43 rows (3 summary)  -> STORED 25 rows (0 SUMMARY)   <-- lost
+    So raising the row cap without raising the char cap would SILENTLY UNDO step 1.
+
+    BLOCK SIZE AGAINST THE 4000 LIMIT:
+      BUHI  15 rows 2,750 chars fits · 40 rows 7,363 over · uncapped 93 rows 17,074
+      ROOF  fits at every cap (27 rows, 3,466 chars)
+      6STG  fits at every cap (8 rows, 774 chars)
+    BUHI is the only file that strains either limit — ~88 activity rows across 24+
+    month columns. Display was never the blocker: the teach grid already scrolls
+    both ways and the desk already warns "Stored block hit the 4000-char cap".
+
+    USER'S SECOND QUESTION — "the block stores actual DATA, not just headers; does
+    that cause the char issue, and would not saving it help?" HALF RIGHT, and the
+    half that is wrong is the useful part.
+      DATA IS 91% OF BUHI'S BLOCK: 15,411 of 16,981 chars. Legend 279, header+meta
+      592, summary 699 — all the structure is 1,570.
+      AND DATA CELLS ARE NEVER READ FUNCTIONALLY. parseStoredSlice returns $rlines
+      keyed by R-number, and teachColumns indexes it ONLY by the reviewer's chosen
+      header_rows (:383-396) to build $merged and thence the sig. mapSpansHoldNumbers
+      validates against the REAL file bytes, not the block. So every data row in the
+      block exists for ONE purpose: letting a human look at column B and agree it is
+      the description.
+      BUT TRIMMING CELLS BARELY HELPS, because the bulk is cell COUNT not cell SIZE
+      — 93 rows x 24+ columns is ~2,200 cells, each costing a comma whatever it
+      holds. Measured on BUHI:
+        as today   16,887      cells<=20  16,083      cells<=12  14,412      cells<=8  11,593
+      and by 8 chars "Construction of Temporary Field Office" reads "Construc",
+      which destroys the only thing data rows are for while keeping most of the cost.
+
+    THEREFORE, if the full table is ever wanted, the lever is the STORAGE LIMIT, not
+    the content. The 4000 is an application choice; the column is TEXT (65,535
+    bytes) and BUHI needs ~17,000 — roughly 4x headroom. AI token cost is NOT
+    affected: the stored block is serializeForAi($path, 15) while the AI slice is a
+    SEPARATE call at 40 rows (controller :88/:686 vs SCurveImportController :91).
+
+    NOT DONE, BY AGREEMENT (user: "we can focus on making the original plan work
+    first"). Step 1 removed the symptom that prompted the question and no current
+    file is blocked. Raising both limits together (say 15->25 rows and 4000->16000
+    chars) is the safe shape when a real file needs more than head + summary; it
+    costs another re-capture wave for BUHI-shaped files.
+
+    UNRESOLVED: the user believes CONSCHEDSAVINGS' original workbook is larger than
+    BUHI's. Cannot confirm — sampledocs holds only
+    CONSTRUCTION-SCHEDULE-AND-S-CURVE_recreated.xlsx, 12 rows / 773 chars, plainly a
+    partial recreation rather than the real file. The PDF twin is also a poor
+    specimen (mixed image and text; the plan records it as a WEEKLY layout the
+    monthly path does not read).
+
+  -----------------------------------------------------------------------------
+  2026-09-14 — EXCEL ROW-ROLE WORK, STEP 2 BUILT: PINNING THE MAP PATH BEFORE
+  BUILDING ON IT
+  -----------------------------------------------------------------------------
+
+    WHY THIS CAME BEFORE THE BADGE. The regression restudy found a coverage gap
+    with an uncomfortable shape: every existing test of the activity-loop skip
+    vocabulary and of readSummaryReference reaches them through the RULE path
+    (parse($path) with no maps). The map-path tests that do exist
+    (test_service_parses_via_live_map_when_rules_fail and its siblings) run on
+    makeNearMissWorkbook, which has no summary block at all. So the exact code
+    path the row-role binding will touch — map-supplied header keys reaching the
+    skip at :1520 and the reader at :1766 — was pinned by NOTHING.
+
+    That is the worst possible state to start binding work in. A regression there
+    fails SILENTLY: a summary row wrongly summed inflates the contract denominator
+    and pushes every month low, and the curve stays monotonic and still ends at
+    100, so nothing looks wrong.
+
+    WHAT SHIPPED. tests/Feature/ScurveHeaderProposalTest.php gains one fixture and
+    two tests:
+      makeMapPathSummaryWorkbook() — "TASK DESCRIPTION" at C10 so the rules miss
+        it (same trick as makeNearMissWorkbook), two activities, a TOTAL row, and
+        then the three vocabulary rows that matter: CUMULATIVE % ACHIEVED,
+        Cash Flow, Project Duration. Each carries numbers under both month spans,
+        so a failure to skip shows up as an inflated denominator rather than as
+        nothing.
+      test_map_path_skips_summary_rows_like_the_rule_path — asserts the rules
+        genuinely miss first (otherwise the test proves nothing about maps), then
+        derives the map and asserts activityCount 2, contractAmount 400000, and
+        the 25/100 curve.
+      test_map_path_still_reads_the_summary_reference — asserts summaryReference
+        is populated via the map, that month 1 reports the author's 20 against the
+        activities' 25 with a 5-point gap, and that curveSource stays 'activities'
+        (the reference never moves the curve).
+
+    BOTH PASSED ON FIRST RUN, WHICH PROVES NOTHING, so each was falsified against
+    the real code before being kept:
+      skip vocabulary at :1520 disabled  -> activityCount 5, not 2. FAILS.
+      reader regex at :1779 disabled     -> summaryReference empty. FAILS.
+    Service file restored and confirmed byte-identical (git diff --stat empty)
+    before the suite run.
+
+    VERIFICATION. php artisan test — 1200 passed (was 1198), 5 failed, and the 5
+    are the known pre-existing ones by name: DashboardOverdueInspection count
+    badge, 2x EmailDraft, IssueLifecycle default baseline, RiskRegister default
+    risk baseline. No code changed, so the 16-read regression and the JS suite are
+    unaffected by construction.
+
+    WHAT THIS BUYS STEP 6. When exclusions and cumulativeSig bind at :1520 and
+    :1766, an empty taught list must leave behaviour bit-identical. These two
+    tests are now the thing that says so on the path the change lives on.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
