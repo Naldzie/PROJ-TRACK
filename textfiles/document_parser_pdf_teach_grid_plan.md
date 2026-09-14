@@ -1650,7 +1650,55 @@
     remaining gate, and there is a re-capture wave outstanding from step 3 that must
     happen first — approved layouts from before step 3 no longer match by hash.
 
-===============================================================================
+  2026-09-15 — HEADER-ROW MEMORY (user-reported: taught R4 shows "none picked yet"
+  on reopen, SEGMENT specimen). Display-only fix, no reader change.
+    Cause: header_rows was used once to build sig then discarded; prefill only
+    restored columns from column_map and defaulted header from [HEADER] tags
+    (SEGMENT has none, all [DATA]). DB proof: 106 auto-capture null map +
+    107 manual-teach live with correct spans/sig but no headerRows key; later
+    106 backfilled by AI assist (same hash) to ai-derived live, 107 gone.
+    Fix: teachColumns stores sorted headerRows ints in map; modal restores them
+    when valid + present in block, else tagged HEADER, else empty (Excel only;
+    PDF branch untouched). Old maps without the key behave as before;
+    findHeaderViaMaps ignores it; no MAP_VERSION bump; no hash change so no
+    new re-capture wave. Tests: +test_taught_header_rows_are_remembered.
+    Suites: ScurveHeaderProposalTest 83/83; JS 158/156 + 2 intended blinding
+    fails; full 1215 passed / same 5 pre-existing BY NAME; verify_p6 16 reads
+    0 changed; BUHI covered by suite. Browser check owed: teach SEGMENT R4,
+    reopen variant shows R4 ticked.
+
+  2026-09-15 — AI-ASSIST HEADER MEMORY (follow-up: AI-derived row also showed
+  "none picked yet"). Same display-only key, other producer.
+    deriveMapFromAiLayout now stamps headerRows:[R#] — the AI-reported R when
+    given, else the inferred label row's kept-ordinal (header always sits in
+    the head, so the 40-row AI slice and 15-row stored block number it the
+    same). Reader ignores it (matches by sig); old AI maps without it still
+    consult. Live row 106 from the prior session keeps working, it just shows
+    empty until re-learned. Tests: derive-map asserts headerRows [1];
+    inferred-vs-explicit equality still holds.
+    BROWSER-CONFIRMED 2026-09-15 (user): AI-derived layout reopens with its
+    header ticked. Manual + AI header memory both proven live.
+
+  2026-09-15 — BROWSER RESULTS FOR STEPS 4-5, ONE DISPLAY DEFECT, ONE UX ASK. No code.
+    CONFIRMED (user): step 4 header-row nudge flashes when Save is blocked.
+    CONFIRMED (user, 6-stage Excel): row pickers render and save. DB row 118
+      (manual-teach live) holds excludeSigs ["total","cumulative % achieved"],
+      cumulativeSig "total", headerRows [2] — the save path works.
+    CONFIRMED (user, PDF row): role band shows disabled with "Excel layouts only —
+      a PDF layout finds its cumulative row by shape."
+    DEFECT 12 — ROLE PICKS VANISH ON REOPEN. Same class as header-row memory: the
+      Excel prefill (modal ~:679-703) restores columns + headerRows but never reads
+      excludeSigs/cumulativeSig, so _schTeach.excludedRows / cumulativeRow start
+      empty. Display-only — the stored map and the read are unaffected. NOT FIXED.
+    PICK WORTH A SECOND LOOK: row 118 taught Cumulative = R7 TOTAL, not R8
+      CUMULATIVE % ACHIEVED. TOTAL carries no month values, so the reader binds to
+      it and finds no reference (degrades to "no reference", curve unmoved). The
+      desk does not warn when a cumulative pick has nothing under the month columns.
+    UX ASK (user): replace the checkbox/radio lists with the column idiom — arm a
+      "Header row" / "Not an activity" / "Cumulative row" palette button, then click
+      R-badges on the grid. Client-only (same payload). Not ordered yet.
+
+ ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
 

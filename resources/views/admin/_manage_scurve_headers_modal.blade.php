@@ -686,6 +686,20 @@ function schTeachColumns(id) {
                 Object.keys(spans).forEach(k => {
                     _schTeach.assigns.months[k] = (spans[k] || []).map(L).filter(Boolean);
                 });
+                // Header-row memory (display-only): tick back the R-lines the
+                // reviewer picked when this layout was taught. Old maps have no
+                // such key and keep the tagged-HEADER default above. Invalid or
+                // unknown R-numbers are ignored, never trusted.
+                try {
+                    const saved = Array.isArray(cm.headerRows) ? cm.headerRows : [];
+                    const known = {};
+                    parsed.rows.forEach(r => { known[r.n] = true; });
+                    const kept = saved.map(n => parseInt(n, 10))
+                        .filter(n => n >= 1 && n <= 40 && known[n]);
+                    if (kept.length) {
+                        _schTeach.headerRows = kept.slice(0, 2);
+                    }
+                } catch (e2) { /* prefill is best-effort */ }
             }
         } catch (e) { /* prefill is best-effort */ }
         // PDF-4: say up front when this row cannot be taught, instead of letting the

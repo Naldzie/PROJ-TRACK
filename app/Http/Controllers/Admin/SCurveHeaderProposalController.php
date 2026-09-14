@@ -488,6 +488,17 @@ class ScurveHeaderProposalController extends Controller
             ], 422);
         }
 
+        // Header-row memory (display-only): remember which R-lines the reviewer
+        // picked so the teach modal can tick them back on reopen. The reader
+        // never consults this key (it matches by sig), so old maps without it
+        // keep working exactly as today.
+        $headerRows = array_values(array_unique(array_map(
+            'intval',
+            (array) ($validated['header_rows'] ?? [])
+        )));
+        sort($headerRows);
+        $map['headerRows'] = $headerRows;
+
         return $this->storeTaughtMap($proposal, $map, $validated['mode'] ?? 'variant');
     }
 

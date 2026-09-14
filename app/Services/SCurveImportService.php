@@ -847,6 +847,20 @@ class SCurveImportService
 
                     continue;
                 }
+                // Header-row memory (display-only, same key the manual teach
+                // stores): so the modal can tick back the R-line the AI read.
+                // The R-number is a kept-ordinal over the slice, and the header
+                // always sits in the head of the table, so the 40-row AI slice
+                // and the 15-row stored block number it identically. The reader
+                // never consults this key (it matches by sig).
+                $headerRNo = $headerR >= 1
+                    ? $headerR
+                    : (array_search($sheetKey, $keptKeys, true) === false
+                        ? 0
+                        : ((int) array_search($sheetKey, $keptKeys, true) + 1));
+                if ($headerRNo >= 1 && $headerRNo <= 40) {
+                    $map['headerRows'] = [$headerRNo];
+                }
                 if (!$this->mapSpansHoldNumbers($grid, $sheetKey, $map['monthSpans'])) {
                     $reason = 'unproven-spans';
 

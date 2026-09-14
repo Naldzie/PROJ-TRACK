@@ -869,6 +869,20 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertArrayNotHasKey('cumulativeSig', $map);
     }
 
+    // Header-row memory (display-only): the R-lines the reviewer picked are
+    // stored on the taught map so the modal can tick them back on reopen.
+    public function test_taught_header_rows_are_remembered(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->teachPayload(['header_rows' => [1]]))
+            ->assertOk();
+
+        $map = ScurveHeaderProposal::orderByDesc('id')->first()->column_map;
+        $this->assertSame([1], $map['headerRows'] ?? null, 'the picked header R must be remembered for reopen');
+    }
+
     // Marking a row cumulative IMPLIES excluding it. One click, not two: the skip
     // vocabulary already lumps cumulat\w* in with cost and cash flow, so a
     // cumulative row that still summed would contradict the rule beside it.
@@ -1703,6 +1717,7 @@ class ScurveHeaderProposalTest extends TestCase
         $map = $service->deriveMapFromAiLayout($this->novelLayout(), $path);
         $this->assertIsArray($map);
         $this->assertSame(1, $map['v']);
+        $this->assertSame([1], $map['headerRows'] ?? null, 'the AI-read header R must be remembered for reopen');
         $this->assertSame(0, $map['descCol']);
         $this->assertCount(3, $map['monthSpans']);
         $this->assertNotEmpty($map['sig']);
