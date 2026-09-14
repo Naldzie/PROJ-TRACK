@@ -2,8 +2,15 @@
 # Parent refs: textfiles/document_parser_learning_loop_plan.md (§6 — the OCR batch:
 #              R1/R2 orientation, P-ROT, F1/F2/F3', scale-2 and crop fallbacks, snapshots)
 #              textfiles/document_parser_ai_fallback_plan.md (AI-1..AI-5 — the slice + merge)
-# Date: September 14, 2026 — Status: ⬜ PLANNED, RESTUDY DONE, NO CODE
-# Branch on build: phase-<n>-ocr-preview (Rule 12 — no merge to main without confirmation)
+# Date: September 14, 2026 — Status: ✅ CLOSED, BROWSER-PROVEN 2026-09-14
+#         All five steps built and proven in one session. The reviewer now SEES the
+#         page they are straightening, turning it is instant, the strip says what
+#         the reader got from each page and why, and the two pages bound for the AI
+#         are named, explained and changeable.
+#         Commits: ea949d4 (plan) · a34faa0 (1) · 2df4ec3 (2) · 4f95560 (3) ·
+#                  2f209f3 (3b) · 0c0e107 (4+5)
+# Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
+#         confirmation; this branch also carries unrelated S-curve and teammate work)
 
 ===============================================================================
   1. PROJECT CONTEXT
@@ -470,8 +477,37 @@
     node --check clean; JS suite 158/156 + the 2 intended blinding fails.
     NOT BROWSER-PROVEN.
 
-  STEP 6 — Logs + browser proof  ⬜ NOT STARTED
-    Log each step here before committing (Rule 11).
+  STEP 6 — Logs + browser proof  ✅ DONE 2026-09-14
+
+    ✅ BROWSER-PROVEN (user, pdfdocstest4.pdf — the 10-page landscape phone-photo
+    scan this whole complaint came from). Every predicted element landed:
+      - the amber notice is down to THREE controls where it used to carry
+        twenty-odd: "Straighten sideways pages & re-read", "👁 See & straighten
+        pdfdocstest4.pdf  [7 unread]", and "Try AI assist". The ⤓ snapshot row and
+        "Copy what was read" are gone from view, behind window._parserDebug;
+      - the panel renders the page itself — the ABC sheet, legible, upright;
+      - the caption reads "pdfdocstest4.pdf  page 1 of 10  nothing at all — try
+        turning it", which is step 4 doing its job: page 1 is DARK, not garbled, so
+        turning it is the right next move and the badge says so;
+      - controls read ‹ prev · next › · ⟳ turn this page · ⟳ turn whole file ·
+        [Re-read 7 pages] — the count derived from the cache, not a tracked set;
+      - the strip reads 1*✦ 2 3*✦ 4* 5* 6* 7* 8 9* 10 — seven unread (matching the
+        notice badge), pages 2, 8 and 10 read, and the ✦ on 1 and 3 showing exactly
+        what the default ranking would send: the first two pages that yielded
+        nothing. Which is also the case the picker exists for — page 1 is the ABC
+        sheet and worth sending, and the reviewer can now see that and say so.
+
+    WHAT THE WHOLE THING COST THE USER BEFORE: a rotate button per page with no
+    picture, and ~20 seconds of full re-read per click to find out whether it
+    helped. Now: one button to open, instant turns, and a re-read that costs only
+    the pages actually turned.
+
+    NOT DONE, and deliberately: the char-count/soupiness ledger is recorded but the
+    AI ranking still does NOT use it — a page with 40 garbled characters still
+    ranks below one with none, even though the first is likelier to be worth the
+    AI's attention. Ranking by "least usable text" rather than "no text" is a real
+    improvement and a separate decision; the picker makes it unnecessary for now
+    because the reviewer can simply choose.
 
 ===============================================================================
   6. RISKS
