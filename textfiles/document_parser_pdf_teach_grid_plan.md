@@ -1580,6 +1580,76 @@
     readout shows "Not activities=R…"; open a PDF row and confirm the band is
     visible, disabled, and explains itself.
 
+  -----------------------------------------------------------------------------
+  2026-09-14 — EXCEL ROW-ROLE WORK, STEP 6 BUILT: THE TEACHING NOW REACHES THE
+  READ. THE PLAN'S OWN PLACEMENT WAS WRONG, AND THE TEST PROVES IT.
+  -----------------------------------------------------------------------------
+
+    THE PLAN SAID: bind exclusions "before the hardcoded vocabulary skip".
+    BUILT INSTEAD: after the TOTAL-row branch. The plan's placement is a real bug,
+    and it was caught by writing the constraint down as a test and then deliberately
+    building it the planned way to watch it fail:
+
+      skip placed before the TOTAL branch, excludeSigs=['total']:
+        contractAmount 0.0  (expected 400,000)
+
+    WHY. $contractTotal prefers the SUM OF ACTIVITY CONTRACT AMOUNTS and falls back
+    to the TOTAL row only when that sum is <= 0 (:1669). On a file whose activities
+    carry month values but no per-row contract amounts — common — the TOTAL row IS
+    the denominator. Skipping earlier means $totalRowContract is never recorded, the
+    denominator goes to zero, every month computes as 0, and the final month is then
+    FORCED to 100. The result still looks like an S-curve. One tick on one row would
+    have silently changed the basis of the entire calculation.
+    Placed after the TOTAL branch, the row's figure is banked before the skip runs.
+    Still before $isActivity, so the row contributes no month pesos and no activity
+    contract amount — which is the whole meaning of "do not sum this row".
+    Pinned by test_excluding_the_total_row_does_not_destroy_the_denominator, whose
+    fixture is built so the TOTAL row is the ONLY denominator source (on the other
+    fixture the activity sum supplies one and the test would prove nothing).
+
+    HOW IT THREADS. Taught roles ride on the $header array returned by
+    findHeaderViaMaps, not through new parameters on parse()/buildMonths(). The rule
+    path never sets those keys, so `?? []` downstream is today's behaviour exactly —
+    which is precisely what makes the two map-path tests written back in STEP 2 the
+    proof that an untaught map is bit-identical. That is what step 2 was for.
+
+    CUMULATIVE BINDS IN TWO PLACES, ON PURPOSE. meta['cumulativeRow'] (:1561) and
+    readSummaryReference (:1856) each found the row independently. Binding only the
+    reader would let the meta name one row while another was actually read. Both now
+    take the taught signature first, first-match, and the label sniff is not
+    consulted at all once a signature is taught — the whole point is a file where
+    the sniff is wrong. A taught signature that does NOT match deliberately yields
+    NO reference rather than falling back to the regex: a reviewer who named a row
+    and then uploaded a file without it should get nothing, not a different row.
+
+    THE MEASUREMENT THAT MAKES THE FEATURE'S CASE. makeNovelSummaryWorkbook holds
+    "Site Establishment Fund" (weight AND contract amount, no summary vocabulary —
+    every existing guard reads it as work) and "RUNNING TOTAL %" (month values and a
+    description, so the residue rule counts it too):
+      untaught            4 activities, contract 600,000, month 1 = 50%
+      one row taught      3 activities, contract 400,000, month 1 = 25.01%
+      both taught         2 activities, contract 400,000, month 1 = 25%
+    The 25.01 has its own test. That stray 0.01 is the un-excluded curve row's
+    PRINTED PERCENTAGE leaking into the month's PESO total, and it is the only place
+    in the entire output where the error is visible. Nothing else about the untaught
+    read looks wrong: monotonic, ends at 100.
+
+    EVERY EXCLUSION IS NAMED IN THE NOTES — matched once, matched several times
+    (all excluded; the label is ambiguous in this file and picking one would be a
+    coin flip), or matched nothing (the layout moved under the teaching, and silence
+    would leave the reviewer believing a row was excluded when it was not).
+
+    VERIFICATION.
+      php artisan test     1214 passed (+6), same 5 pre-existing failures by name
+      npm run test:js      158 tests, 156 pass, 2 intended blinding fails
+      verify_p6.mjs        16 reads, 0 changed
+      BUHI byte-identical  12 months, activities, cumulativeRow=89, gaps unchanged
+      FALSIFIED: the planned placement fails the denominator test (above).
+
+    THE EXCEL ROW-ROLE PLAN IS NOW COMPLETE, steps 1-6. Browser acceptance is the
+    remaining gate, and there is a re-capture wave outstanding from step 3 that must
+    happen first — approved layouts from before step 3 no longer match by hash.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

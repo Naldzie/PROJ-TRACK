@@ -1073,6 +1073,260 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+    // =====================================================================
+    // Row roles reaching the READ (2026-09-14, step 6). The fixture above is
+    // reused on purpose: its Cash Flow / Project Duration rows are already
+    // caught by the hardcoded vocabulary, so a test that a TAUGHT exclusion
+    // works needs a row the vocabulary MISSES. makeNovelSummaryWorkbook is
+    // that file — "Site Establishment Fund" looks exactly like an activity.
+    // =====================================================================
+
+    private function makeNovelSummaryWorkbook(string $path): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', 'TASK DESCRIPTION');
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+
+        $sheet->setCellValue('B12', '1');
+        $sheet->setCellValue('C12', 'Mobilization Works');
+        $sheet->setCellValue('F12', 100000);
+        $sheet->setCellValue('G12', 25);
+        $sheet->setCellValue('I12', 100000);
+
+        $sheet->setCellValue('B13', '2');
+        $sheet->setCellValue('C13', 'Structural Works');
+        $sheet->setCellValue('F13', 300000);
+        $sheet->setCellValue('G13', 75);
+        $sheet->setCellValue('K13', 300000);
+
+        // The trap: no summary vocabulary anywhere in the label, a weight AND a
+        // contract amount, so every existing guard treats it as work.
+        $sheet->setCellValue('C14', 'Site Establishment Fund');
+        $sheet->setCellValue('F14', 200000);
+        $sheet->setCellValue('G14', 50);
+        $sheet->setCellValue('I14', 200000);
+
+        $sheet->setCellValue('C15', 'TOTAL');
+        $sheet->setCellValue('F15', 400000);
+
+        // A printed curve whose wording isCumulativeRow does NOT match.
+        $sheet->setCellValue('C16', 'RUNNING TOTAL %');
+        $sheet->setCellValue('I16', 25);
+        $sheet->setCellValue('K16', 100);
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    private function mapWithRoles(string $path, array $extra): array
+    {
+        $map = app(SCurveImportService::class)->deriveAutoColumnMap($path);
+        $this->assertIsArray($map, 'the fixture must be derivable or the test proves nothing');
+
+        return array_merge($map, $extra);
+    }
+
+    // THE HEADLINE CASE. Untaught, "Site Establishment Fund" is summed as work and
+    // the curve is wrong in a way nothing reports: monotonic, ends at 100, and
+    // every month low. Taught, it is excluded and the curve is right.
+    public function test_a_taught_exclusion_stops_a_row_being_summed(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelSummaryWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        // Untaught: FOUR activities — the trap row, and also "RUNNING TOTAL %",
+        // which the vocabulary misses too and which has month values and a
+        // description, so the residue rule counts it. Contract inflates to 600,000
+        // and month 1 reads 50%. Nothing warns.
+        $plain = $service->parse($path, [['id' => 1, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [])]]);
+        $this->assertSame(4, $plain['meta']['activityCount']);
+        $this->assertSame(600000.0, $plain['meta']['contractAmount']);
+        $this->assertSame(50.0, $plain['months'][0]['planned_progress_percent']);
+
+        $taught = $service->parse($path, [['id' => 2, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['site establishment fund', 'running total %'],
+        ])]]);
+
+        $this->assertTrue($taught['meta']['mapUsed']);
+        $this->assertSame(2, $taught['meta']['activityCount']);
+        $this->assertSame(400000.0, $taught['meta']['contractAmount']);
+        $this->assertSame(25.0, $taught['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $taught['months'][1]['planned_progress_percent']);
+
+        unlink($path);
+    }
+
+    // Worth its own test: excluding only ONE of the two intruders leaves month 1 at
+    // 25.01, not 25. The curve's own numbers are the only place that stray 0.01
+    // shows up — it is the printed percentage of the un-excluded "RUNNING TOTAL %"
+    // row leaking into the month's PESO total. This is what "fails silently" looks
+    // like in practice, and why the notes name every exclusion.
+    public function test_a_partially_taught_file_still_leaks_and_the_leak_is_visible(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelSummaryWorkbook($path);
+
+        $result = app(SCurveImportService::class)->parse($path, [['id' => 3, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['site establishment fund'],
+        ])]]);
+
+        $this->assertSame(3, $result['meta']['activityCount']);
+        $this->assertSame(400000.0, $result['meta']['contractAmount']);
+        $this->assertEqualsWithDelta(25.01, $result['months'][0]['planned_progress_percent'], 0.001);
+
+        unlink($path);
+    }
+
+    // THE CONSTRAINT THAT DROVE THE PLACEMENT. Excluding the TOTAL row must not
+    // remove the contract denominator: the skip sits AFTER the TOTAL branch, so
+    // $totalRowContract is already recorded. Skipping earlier would have let one
+    // tick drop the denominator to zero and switch the curve onto the weights
+    // path — a change of basis with no visible symptom.
+    public function test_excluding_the_total_row_does_not_destroy_the_denominator(): void
+    {
+        // The fixture is built so the TOTAL row is the ONLY source of the
+        // denominator: the activities carry month values but NO contract amounts,
+        // so the activity sum is zero and :1669 must fall back to the TOTAL row.
+        // On makeNovelSummaryWorkbook this test would prove nothing, because the
+        // activity sum alone already supplies a denominator.
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('C10', 'TASK DESCRIPTION');
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('C12', 'Mobilization Works');
+        $sheet->setCellValue('I12', 100000);
+        $sheet->setCellValue('C13', 'Structural Works');
+        $sheet->setCellValue('K13', 300000);
+        $sheet->setCellValue('C14', 'TOTAL');
+        $sheet->setCellValue('F14', 400000);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path, [['id' => 5, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['total'],
+        ])]]);
+
+        // Had the skip been placed before the TOTAL branch, $totalRowContract would
+        // be null here, the denominator would be zero, and month 1 would read 0 with
+        // the final month forced to 100 — a plausible-looking curve on a different
+        // basis entirely.
+        $this->assertSame(400000.0, $result['meta']['contractAmount']);
+        $this->assertSame(25.0, $result['months'][0]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][1]['planned_progress_percent']);
+        $this->assertStringNotContainsString(
+            'Could not determine the total contract amount',
+            implode(' ', $result['meta']['warnings'] ?? [])
+        );
+
+        unlink($path);
+    }
+
+    // A taught cumulative row pins what readSummaryReference reads, including a
+    // wording the regex would never find.
+    public function test_a_taught_cumulative_row_is_the_one_that_is_read(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelSummaryWorkbook($path);
+        $service = app(SCurveImportService::class);
+
+        // Untaught: "RUNNING TOTAL %" matches neither cumulat\w* nor commulat\w*,
+        // so the author's printed curve is invisible.
+        $plain = $service->parse($path, [['id' => 6, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [])]]);
+        $this->assertEmpty($plain['meta']['summaryReference'] ?? []);
+
+        $taught = $service->parse($path, [['id' => 7, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['site establishment fund', 'running total %'],
+            'cumulativeSig' => 'running total %',
+        ])]]);
+
+        $ref = $taught['meta']['summaryReference'] ?? [];
+        $this->assertNotEmpty($ref, 'the taught row must be found where the regex failed');
+        $byMonth = [];
+        foreach ($ref as $e) { $byMonth[$e['month']] = $e; }
+        $this->assertSame(25.0, (float) $byMonth[1]['summary_percent']);
+        // meta and the reader must name the SAME row, or the meta describes a row
+        // nobody read.
+        $this->assertSame(16, $taught['meta']['cumulativeRow']);
+        // Reference only — the curve still comes from the activities.
+        $this->assertSame('activities', $taught['meta']['curveSource']);
+
+        unlink($path);
+    }
+
+    // A signature that hits several rows means the reviewer's label is ambiguous in
+    // this file. All matches are excluded — picking an arbitrary one would be a coin
+    // flip — and the notes say it happened.
+    public function test_an_ambiguous_signature_excludes_every_match_and_says_so(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('C10', 'TASK DESCRIPTION');
+        $sheet->setCellValue('F10', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('C12', 'Mobilization Works');
+        $sheet->setCellValue('F12', 100000);
+        $sheet->setCellValue('G12', 50);
+        $sheet->setCellValue('I12', 100000);
+        $sheet->setCellValue('C13', 'Structural Works');
+        $sheet->setCellValue('F13', 100000);
+        $sheet->setCellValue('G13', 50);
+        $sheet->setCellValue('K13', 100000);
+        // Two rows reading the same, differing only in numbers.
+        $sheet->setCellValue('C14', 'Provisional Sum');
+        $sheet->setCellValue('F14', 50000);
+        $sheet->setCellValue('G14', 10);
+        $sheet->setCellValue('I14', 50000);
+        $sheet->setCellValue('C15', 'Provisional Sum');
+        $sheet->setCellValue('F15', 70000);
+        $sheet->setCellValue('G15', 10);
+        $sheet->setCellValue('K15', 70000);
+        $sheet->setCellValue('C16', 'TOTAL');
+        $sheet->setCellValue('F16', 200000);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path, [['id' => 8, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['provisional sum'],
+        ])]]);
+
+        $this->assertSame(2, $result['meta']['activityCount'], 'both matches must go, not just the first');
+        $this->assertSame(200000.0, $result['meta']['contractAmount']);
+        $notes = implode(' ', $result['meta']['warnings'] ?? []);
+        $this->assertStringContainsString('Excluded 2 rows', $notes);
+        $this->assertStringContainsString('provisional sum', $notes);
+
+        unlink($path);
+    }
+
+    // A taught role that matches nothing is reported rather than ignored: it means
+    // the layout moved under the teaching, and silence would leave the reviewer
+    // believing a row was excluded when it was not.
+    public function test_a_taught_role_matching_nothing_is_reported(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNovelSummaryWorkbook($path);
+
+        $result = app(SCurveImportService::class)->parse($path, [['id' => 9, 'contractor_id' => null, 'column_map' => $this->mapWithRoles($path, [
+            'excludeSigs' => ['a row that is not in this file'],
+        ])]]);
+
+        $notes = implode(' ', $result['meta']['warnings'] ?? []);
+        $this->assertStringContainsString('matched no row in this file', $notes);
+        $this->assertSame(4, $result['meta']['activityCount'], 'nothing was excluded');
+
+        unlink($path);
+    }
+
     // Typo tolerance (user choice): a re-upload with a header typo still
     // matches the stored signature and parses via the same map.
     // Called by: findSignatureRow() fuzzy per-cell matching.

@@ -1046,6 +1046,20 @@ class SCurveImportService
             if ($rowIdx === null) continue;
             if (!$this->mapSpansHoldNumbers($rows, $rowIdx, $monthSpans)) continue;
 
+            // Taught row roles ride on the header array rather than through new
+            // parameters on parse() and buildMonths(). The rule path simply never
+            // sets these keys, so `?? []` downstream is today's behaviour exactly —
+            // which is what lets the two map-path tests written in step 2 stand as
+            // the proof that an untaught map is bit-identical.
+            $excludeSigs = [];
+            foreach ((array) ($cm['excludeSigs'] ?? []) as $s) {
+                $s = trim((string) $s);
+                if ($s !== '') {
+                    $excludeSigs[] = $s;
+                }
+            }
+            $cumulativeSig = trim((string) ($cm['cumulativeSig'] ?? ''));
+
             return [
                 'row' => $rowIdx,
                 'codeCol' => isset($cm['codeCol']) ? (int) $cm['codeCol'] : null,
@@ -1053,6 +1067,8 @@ class SCurveImportService
                 'weightCol' => isset($cm['weightCol']) ? (int) $cm['weightCol'] : null,
                 'contractCol' => isset($cm['contractCol']) ? (int) $cm['contractCol'] : null,
                 'monthSpans' => $monthSpans,
+                'excludeSigs' => $excludeSigs,
+                'cumulativeSig' => $cumulativeSig !== '' ? $cumulativeSig : null,
                 '_mapId' => $entry['id'] ?? null,
             ];
         }
@@ -1554,11 +1570,29 @@ class SCurveImportService
         // per-cell, because Levenshtein on a whole row can never match by distance.
         $cumulativeRow = null;
 
+        // Taught row roles, keyed for O(1) lookup. Empty on the rule path and on
+        // every map taught before row roles existed, which is what makes all of
+        // this additive.
+        $excludeSigs = array_flip($header['excludeSigs'] ?? []);
+        $cumulativeSig = $header['cumulativeSig'] ?? null;
+        $excludeHits = [];
+
         foreach ($rows as $rowIndex => $row) {
             if ($rowIndex < $dataStart) continue;
 
             $description = trim((string) ($row[$this->letter($descCol)] ?? ''));
-            if ($cumulativeRow === null && $this->isCumulativeRow($row)) {
+            // A taught cumulative row OUTRANKS the label sniff entirely — the sniff
+            // is not consulted at all once a signature is taught, so the reviewer's
+            // pick wins even when an earlier row also says "cumulative" (which is
+            // exactly the case the teaching exists for). First match, like the sniff
+            // it replaces, so a duplicated label resolves deterministically.
+            // meta['cumulativeRow'] and readSummaryReference must name the SAME row,
+            // or the meta would describe a row nobody actually read.
+            if ($cumulativeSig !== null) {
+                if ($cumulativeRow === null && self::rowSignature($this->rowTexts($row)) === $cumulativeSig) {
+                    $cumulativeRow = $rowIndex;
+                }
+            } elseif ($cumulativeRow === null && $this->isCumulativeRow($row)) {
                 $cumulativeRow = $rowIndex;
             }
             $weightRaw = $weightCol !== null ? ($row[$this->letter($weightCol)] ?? null) : null;
@@ -1616,6 +1650,34 @@ class SCurveImportService
                 continue;
             }
 
+            // ── Taught exclusions (2026-09-14) ──
+            //
+            // PLACED DELIBERATELY AFTER THE TOTAL BRANCH, not before the hardcoded
+            // vocabulary as first sketched. A taught exclusion must never be able to
+            // remove the contract denominator: if the reviewer marks the row that is
+            // ALSO the TOTAL row, $totalRowContract has already been recorded above,
+            // so the fallback at :1669 still has its figure. Skipping earlier would
+            // have let one tick silently drop the denominator to zero and switch the
+            // whole curve onto the weights path — a change of basis with no visible
+            // symptom.
+            //
+            // Placed before $isActivity so the row contributes no month pesos and no
+            // activity contract amount, which is the entire point of "do not sum
+            // this row".
+            //
+            // ALL matches are excluded, never just the first. A signature that hits
+            // several rows means the reviewer's label is ambiguous in this file, and
+            // excluding an arbitrary one of them would be a coin flip; excluding all
+            // is at least consistent, and the note below says it happened.
+            if (count($excludeSigs) > 0) {
+                $rowSig = self::rowSignature($this->rowTexts($row));
+                if ($rowSig !== '' && isset($excludeSigs[$rowSig])) {
+                    $excludeHits[$rowSig] = ($excludeHits[$rowSig] ?? 0) + 1;
+                    $prevWasActivity = false;
+                    continue;
+                }
+            }
+
             // Section-header rows (PART A-H / DIVISION I-II), the sub-header row
             // under the two-row header (day markers / "(IN PESOS)"), and other
             // non-activity rows carry no weight and no description → skip.
@@ -1662,6 +1724,25 @@ class SCurveImportService
 
         if ($activities === 0) {
             throw new RuntimeException('No activity rows were found after the header row.');
+        }
+
+        // EVERY EXCLUSION IS NAMED. A taught role changes the numbers, and unlike a
+        // mis-assigned column it leaves no visible trace in the result — the curve
+        // stays monotonic and still ends at 100 whether or not a row was dropped.
+        // So the notes say what was dropped, in the reviewer's own words, and say
+        // when a signature matched more than one row (which means their label is
+        // ambiguous in this file and ALL matches were excluded).
+        foreach (array_keys($excludeSigs) as $sig) {
+            $hits = $excludeHits[$sig] ?? 0;
+            if ($hits === 0) {
+                $warnings[] = 'A taught row role for "' . $sig . '" matched no row in this file'
+                    . ' — the layout may have changed, so nothing was excluded for it.';
+            } elseif ($hits === 1) {
+                $warnings[] = 'Excluded "' . $sig . '" from the activity totals, as taught for this layout.';
+            } else {
+                $warnings[] = 'Excluded ' . $hits . ' rows reading "' . $sig . '" from the activity totals,'
+                    . ' as taught for this layout — check that all of them were meant to be excluded.';
+            }
         }
 
         // Resolve the contract total: prefer the sum of activity contract
@@ -1847,9 +1928,24 @@ class SCurveImportService
             return [];
         }
 
+        // A taught cumulative row is tried FIRST and, when it matches, is the answer.
+        // The regex below is the fallback for every untaught file — which is all of
+        // them until a reviewer says otherwise, so the default path is unchanged.
+        // Deliberately NOT falling through to the regex when a taught signature
+        // fails to match: a reviewer who named a row and then uploaded a file
+        // without it should get no reference at all rather than a silently
+        // different row picked by label.
+        $cumulativeSig = $header['cumulativeSig'] ?? null;
         $summaryIdx = null;
         foreach ($rows as $rowIndex => $row) {
             if ($rowIndex < $dataStart || !is_array($row)) {
+                continue;
+            }
+            if ($cumulativeSig !== null) {
+                if (self::rowSignature($this->rowTexts($row)) === $cumulativeSig) {
+                    $summaryIdx = $rowIndex;
+                    break;
+                }
                 continue;
             }
             $text = implode(' ', $this->rowTexts($row));
