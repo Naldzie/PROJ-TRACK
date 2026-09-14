@@ -1051,6 +1051,132 @@
     stale one. Third time this has been the cost of improving the block; it is the
     standing price of header_hash being content-derived, not a defect.
 
+  2026-09-14 (seventh round, part two) — REGRESSION-RISK RESTUDY, STILL NO CODE.
+  User asked: "is the plan for both excel and pdf? can you do another restudy if it
+  can affect the working states". Both are fair, and the answer to the first is worse
+  than the plan implied.
+
+    IS IT AN EXCEL PLAN? NO — IT TOUCHES SHARED SURFACES IN THREE PLACES.
+      step 1 badge          Excel emitter, but the LEGEND lives in BOTH builders and
+                            the Gemini prompt serves both paths
+      step 2 row pickers    the teach modal is ONE file serving both; teachColumns()
+                            validation is unbranched and runs BEFORE the source_type
+                            branch
+      step 3 binding        Excel only
+      step 4 preview        the shared modal again
+      step 5 header gate    the shared modal, and it changes PDF behaviour outright
+    Calling it "the Excel plan" would have been the same mistake that produced six of
+    the seven defects in the fourth round. Recorded so the next plan says so upfront.
+
+    THE ONE GENUINELY REASSURING FINDING, verified from two directions: A LEGEND OR
+    ROLE CHANGE CANNOT STOP A WORKING IMPORT. Layouts are matched at read time by the
+    `sig` inside column_map — Excel findHeaderViaMaps() :924-945, PDF usableLayoutMap()
+    / matchMapPage() — never by header_hash and never by the block text. The hash is
+    dedupe/upsert identity only. So changing the block forks a duplicate PROPOSED row
+    at the next capture; the live row keeps its status and keeps being consulted.
+    Annoying, not destructive. (Live rows right now: 96 manual-teach live, 97
+    auto-capture proposed, both Excel. No PDF row is currently at risk.)
+
+    A CLAIM IN THIS PLAN'S OWN §4 IS WRONG, AND I MEASURED IT TWICE WITHOUT NOTICING.
+      §4 says the summary-aware row budget "applies to BOTH sides: buildPdfSliceBlock
+      (PDF) and SCurveImportService::keptRowKeys". IT DOES NOT. Both Excel walks —
+      the inline one in serializeForAi() :109-128 and its duplicate keptRowKeys()
+      :891-909 — hard-break at `$kept >= $maxRows` with no role exemption. Only the two
+      PDF builders filter `k < maxRows || role === 'SUMMARY' || role === 'CUMULATIVE'`
+      (:1888, :2214).
+      THE EVIDENCE WAS ALREADY IN FRONT OF ME: the block-completeness measurement in
+      part one showed BUHI and the roof .xlsx at "block rows=15, carries a TOTAL row:
+      NO". That is not a coincidence of size — it is this bug. Their summary blocks are
+      cut off entirely.
+      CONSEQUENCE FOR STEP 1: a CUMULATIVE badge would be INVISIBLE on any Excel file
+      whose summary sits past row 15 — which is BUHI, the main real specimen. The badge
+      is worth nothing on its own; the Excel budget exemption has to ship with it.
+
+    HOW THE BINDING COULD SILENTLY BEND A CURVE (the sharpest Excel risk).
+      $contractTotal is the DENOMINATOR OF EVERY MONTH and is accumulated in the very
+      loop exclusions would skip (:1539, :1584-1585). An excludeSig that matches one
+      row too many does not just drop that row's month pesos — it drops its contract
+      amount from the denominator and EVERY MONTH SHIFTS UP. Drop a row worth 10% of
+      the contract and a true 45% month reads 50%.
+      Three things make that silent rather than loud: the only hard failure is
+      `$activities === 0` (:1561), so 1-of-40 and 39-of-40 both proceed; the weight
+      sanity check at :1701 is inert on the many layouts with no weight column; and
+      force-last-to-100 (:1613-1615) keeps the curve ending at exactly 100 and passing
+      the monotonic clamp, so the output has the right shape, right endpoints and right
+      month count while every interior point is wrong.
+      Worse tail: an over-broad exclusion can flip $lastNonZero to 0 and hand the whole
+      curve to the summary fallback (:1636), replacing the baseline wholesale on the
+      strength of a fuzzy string match — and sigCellMatches() (:1020-1033) IS fuzzy
+      (bounded substring ≥4 chars, Levenshtein ≤2).
+      DESIGN CONSEQUENCE, adopt it: exclusions must affect month-value accumulation and
+      the activity count ONLY, never $contractTotal; and every exclusion must name the
+      rows it removed in the import notes. Silence is the failure mode.
+      By contrast cumulativeSig is materially safer — a wrong pin usually lands on a row
+      with no numerics under the month spans and readSummaryReference returns []
+      (:1795-1797), degrading to "no reference" rather than a moved curve.
+
+    THE PLUMBING IS CHEAPER THAN FEARED. findHeaderViaMaps() returns a derived header
+    array (:947-955) that ALREADY reaches both target sites — buildMonths($rows,
+    $header) :1421 and readSummaryReference($rows, $header, ...) :1741. Carrying two
+    extra keys needs ZERO signature changes; only that return literal and two local
+    reads. And the map validation (:924-945) is a pure allow-list, so old maps without
+    the keys and new maps with them both survive.
+      ⚠️ DO NOT BUMP MAP_VERSION (:55). The gate at :929 is `!==`, so a bump instantly
+      stops EVERY live map applying and those files revert to "No S-curve table found"
+      — already pinned by test_version_mismatch_map_is_ignored. The new keys are
+      optional and additive; they do not need a version.
+
+    COVERAGE GAP THAT HAS TO BE CLOSED FIRST: every existing test of the row-skipping
+    logic and of readSummaryReference goes through the RULE path (parse($path) with no
+    maps). NOTHING exercises either through a live map — which is exactly the path this
+    change touches. The map tests that do exist assert month percentages on workbooks
+    with no cumulative row at all. So the change would land on untested ground; the
+    map-path tests must come BEFORE the behaviour.
+
+    THIRTEEN WAYS THIS COULD RE-BREAK THE PDF TEACH FLOW. Listing the ones that are
+    sharp, because the flow was only stabilised three rounds ago:
+      (a) THE 'm'-PREFIX COLLISION. schTeachClickLetter (:808) and schTeachFieldLabel
+          (:708) dispatch on `field.indexOf('m') === 0`. A palette key starting with m
+          — 'mark', 'meta', 'mode' — is treated as MONTH "ark". It lands in
+          a.months['ark'], survives JSON.stringify, passes the server rules (month KEY
+          shape is unvalidated), and buildTaughtPdfMap casts (int)'ark' => 0, producing
+          an index-0 band that pdfMapIsUnnumbered does not catch (it tests index >= 1).
+          Never name a new field with a leading m.
+      (b) A NEW REQUIRED VALIDATION RULE 422s EVERY PDF SAVE. validate() (:305) runs
+          BEFORE the source_type branch (:337). New rules must be sometimes|nullable,
+          and note 'array' rejects an explicit null — send omitted or [], never null.
+      (c) MUTATING r.role IN PLACE would destroy the PDF's CUMULATIVE badge. _schTeach
+          .rows feeds both the teach grid (:848) and the header-row checkbox labels
+          (:785). Role picks must live in a SEPARATE set keyed by r.n.
+      (d) EXTENDING THE PREFILL try BLOCK re-creates the 2026-09-14 M6/M7 defect with
+          zero console noise — the PDF prefill sits inside try{...}catch{/*best-effort*/}
+          (:582-653). New prefill needs its own try, placed AFTER the PDF block.
+      (e) BUMPING PDF_MAP_VERSION "for consistency" silently invalidates every taught
+          PDF map: usableLayoutMap requires an exact match and buildTaughtPdfMap
+          deliberately INHERITS the capture's version ('v' => $map['v'] ?? 1).
+      (f) BINDING ROW CLICK HANDLERS can shadow the column-header clicks at :859 —
+          which are the ONLY way to teach PDF months. The modal would look identical
+          and simply stop assigning.
+      (g) GATING ON THE WRONG SIGNAL. _schTeach does not store source_type at all. The
+          tempting proxies both fail: `blocked` is null for every HEALTHY PDF capture,
+          so gating on it shows the Excel controls on exactly the PDF rows that work;
+          and `cm.kind === 'pdf'` answers false for a PDF row whose map is null. The
+          fix is to put sourceType into the literal at :543.
+      Also flagged: reusing header_rows for the new pickers (its max:2 would 422 both
+      paths), widening the readout gate ahead of `blocked`, and editing the shared
+      storeTaughtMap() create([...]) where a careless source_type would flip taught PDF
+      variants into Excel rows forever.
+
+    REVISED ORDER THIS IMPLIES (the build still needs its own explicit order):
+      1. Excel summary-aware row budget — without it the badge is invisible on BUHI.
+      2. Map-path tests for the skip logic and readSummaryReference — close the
+         coverage gap before touching either.
+      3. The CUMULATIVE badge + legend + prompt.
+      4. The header-gate visibility fix (shared modal, small, independent).
+      5. Row pickers, with sourceType in _schTeach and non-m field names.
+      6. Binding, exclusions never touching $contractTotal, every exclusion named in
+         the import notes.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
