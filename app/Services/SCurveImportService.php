@@ -579,6 +579,45 @@ class SCurveImportService
         return $out;
     }
 
+    /**
+     * Row-role teaching — the ONE rule for turning a row into a matchable signature.
+     *
+     * Taught row roles are stored as TEXT, never as R-numbers. R-numbers are
+     * kept-ordinals over the captured slice (empties compressed), so they shift the
+     * moment a contractor inserts a row, and a taught exclusion that silently slid
+     * onto a neighbouring row would drop a real activity out of the contract total
+     * with nothing to show for it. The header is already matched by text (`sig`)
+     * rather than by rowHint for exactly this reason; this follows house style.
+     *
+     * Numeric cells are dropped because the numbers are what change between
+     * revisions of the same schedule — a "Cash Flow" row keeps its label while its
+     * pesos move every re-issue. What remains is the label, lowercased and
+     * whitespace-collapsed, which is what isCumulativeRow already matches on.
+     *
+     * ONE RULE, TWO CALLERS, ON PURPOSE: the teach endpoint computes signatures
+     * from the stored block and the reader computes them from the live workbook.
+     * The moment those two normalizations differ, every taught role stops matching
+     * and does so silently — the same failure mode keptRowKeys was unified to
+     * prevent. Returns '' for a row with no usable text; callers MUST refuse to
+     * store an empty signature, since it would match every blank row in the file.
+     *
+     * Pure. Called by: ScurveHeaderProposalController::teachColumns() and the
+     * activity loop / summary reader in buildMonths().
+     */
+    public static function rowSignature(array $cells): string
+    {
+        $words = [];
+        foreach ($cells as $cell) {
+            $text = trim((string) ($cell ?? ''));
+            if ($text === '' || is_numeric($text)) {
+                continue;
+            }
+            $words[] = $text;
+        }
+
+        return trim(preg_replace('/\s+/', ' ', mb_strtolower(implode(' ', $words))));
+    }
+
     public function buildTaughtMap(
         array $mergedHeaderCells,
         int $descCol,
@@ -586,7 +625,9 @@ class SCurveImportService
         ?int $weightCol,
         ?int $contractCol,
         array $monthSpans,
-        ?string &$reason = null
+        ?string &$reason = null,
+        array $excludeSigs = [],
+        ?string $cumulativeSig = null
     ): ?array {
         $fail = function (string $code) use (&$reason) { $reason = $code; return null; };
         if ($descCol < 0) return $fail('no-description');
@@ -643,7 +684,21 @@ class SCurveImportService
         $descText = strtolower(trim((string) ($mergedHeaderCells[$descCol] ?? '')));
         if ($descText === '') return $fail('description-cell-empty');
 
-        return [
+        // Row roles are OPTIONAL and additive. Marking the row cumulative implies
+        // excluding it — the two are one decision for the reviewer, and the skip
+        // vocabulary already lumps cumulat\w* in with cost/cash flow/duration, so
+        // a cumulative row that still summed would contradict the rule it lives
+        // beside.
+        $excludeSigs = array_values(array_unique(array_filter(
+            array_map(fn ($s) => trim((string) $s), $excludeSigs),
+            fn ($s) => $s !== ''
+        )));
+        $cumulativeSig = ($cumulativeSig !== null && trim($cumulativeSig) !== '') ? trim($cumulativeSig) : null;
+        if ($cumulativeSig !== null && !in_array($cumulativeSig, $excludeSigs, true)) {
+            $excludeSigs[] = $cumulativeSig;
+        }
+
+        $map = [
             'v' => self::MAP_VERSION,
             'rowHint' => null,
             'codeCol' => $codeCol,
@@ -653,6 +708,18 @@ class SCurveImportService
             'monthSpans' => $spans,
             'sig' => $sig,
         ];
+        // Emitted only when taught, so every map built before row roles existed —
+        // and every map taught without using them — stays byte-identical. An older
+        // map round-trips unchanged because findHeaderViaMaps reads only the keys
+        // it knows.
+        if (count($excludeSigs) > 0) {
+            $map['excludeSigs'] = $excludeSigs;
+        }
+        if ($cumulativeSig !== null) {
+            $map['cumulativeSig'] = $cumulativeSig;
+        }
+
+        return $map;
     }
 
     /**

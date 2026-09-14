@@ -313,6 +313,11 @@ class ScurveHeaderProposalController extends Controller
             'months.*.*' => 'required|string|max:3',
             'header_rows' => 'required|array|min:1|max:2',
             'header_rows.*' => 'required|integer|min:1|max:40',
+            // Row roles (2026-09-14). Both optional: an untaught layout behaves
+            // exactly as before, which is what lets this ship without a re-teach.
+            'excluded_rows' => 'nullable|array|max:40',
+            'excluded_rows.*' => 'required|integer|min:1|max:40',
+            'cumulative_row' => 'nullable|integer|min:1|max:40',
         ]);
 
         // Parse the stored slice: COLUMNS legend + R<n> [ROLE]: csv lines.
@@ -323,7 +328,7 @@ class ScurveHeaderProposalController extends Controller
                 'message' => 'This capture has no readable header block to teach from.',
             ], 422);
         }
-        [$letters, $rlines] = $parsed;
+        [$letters, $rlines, $roles] = $parsed;
 
         // PDF-4 (2026-09-13): a PDF row is a different KIND of layout and must not
         // go down the Excel path. It used to: the desk offers Teach on every row,
@@ -335,6 +340,20 @@ class ScurveHeaderProposalController extends Controller
         // non-PDF map on a pdf row since PDF-1; this is the same guard, one
         // endpoint later.
         if (($proposal->source_type ?? 'excel') === 'pdf') {
+            // Row roles are an EXCEL-only control, and the refusal is explicit
+            // rather than a silent drop. The PDF reader finds its cumulative row by
+            // SHAPE (isCumulativeShapedRow — percent-written, non-decreasing, ends
+            // >= 50), which is label-independent and already immune to the novel
+            // wordings this teaching exists to cover. Storing sigs the PDF reader
+            // will never consult is precisely the half-wired save that cost four
+            // acceptance rounds: the reviewer is told "saved" and nothing changes.
+            if (!empty($validated['excluded_rows']) || ($validated['cumulative_row'] ?? null) !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Row roles apply to Excel layouts only — a PDF layout finds its'
+                        . ' cumulative row by shape, so there is nothing to teach here.',
+                ], 422);
+            }
             try {
                 $map = $this->buildTaughtPdfMap($proposal, $validated);
             } catch (RuntimeException $e) {
@@ -396,6 +415,51 @@ class ScurveHeaderProposalController extends Controller
                 }
             }
 
+            // Row roles -> text signatures. Every refusal below is a case where
+            // storing the pick would be worse than not storing it, because the
+            // damage is invisible at read time: a row that quietly stops being
+            // summed simply makes every month read low.
+            $sigFor = function (int $rno) use ($rlines, $roles): string {
+                if (!isset($rlines[$rno])) {
+                    throw new RuntimeException("Row R{$rno} is not in the stored block.");
+                }
+                if (($roles[$rno] ?? '') === 'HEADER') {
+                    throw new RuntimeException("R{$rno} is the header row — it is never summed as an activity.");
+                }
+                $sig = SCurveImportService::rowSignature($rlines[$rno]);
+                if ($sig === '') {
+                    // A row of nothing but numbers cannot be recognised again in
+                    // the live file, and an empty signature would match every blank
+                    // row there is.
+                    throw new RuntimeException("R{$rno} has no label text to recognise it by — pick a row that names itself.");
+                }
+
+                return $sig;
+            };
+
+            $excludeSigs = [];
+            foreach (($validated['excluded_rows'] ?? []) as $rno) {
+                if (in_array((int) $rno, array_map('intval', $validated['header_rows']), true)) {
+                    throw new RuntimeException("R{$rno} is a header row you picked — it cannot also be a non-activity row.");
+                }
+                $excludeSigs[] = $sigFor((int) $rno);
+            }
+
+            $cumulativeSig = null;
+            if (($validated['cumulative_row'] ?? null) !== null) {
+                $cno = (int) $validated['cumulative_row'];
+                if (in_array($cno, array_map('intval', $validated['header_rows']), true)) {
+                    throw new RuntimeException("R{$cno} is a header row you picked — it cannot also be the cumulative row.");
+                }
+                $cumulativeSig = $sigFor($cno);
+            }
+
+            // Two rows whose labels normalize identically cannot be told apart at
+            // read time, so excluding one would silently exclude both.
+            if (count($excludeSigs) !== count(array_unique($excludeSigs))) {
+                throw new RuntimeException('Two of the rows you picked read the same — pick rows with different labels.');
+            }
+
             $why = null;
             $map = $this->sCurveImportService->buildTaughtMap(
                 array_values($merged),
@@ -404,7 +468,9 @@ class ScurveHeaderProposalController extends Controller
                 $weightCol,
                 $contractCol,
                 $monthSpans,
-                $why
+                $why,
+                $excludeSigs,
+                $cumulativeSig
             );
         } catch (RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -729,6 +795,7 @@ class ScurveHeaderProposalController extends Controller
         }
 
         $rlines = [];
+        $roles = [];
         foreach ($lines as $line) {
             if (!preg_match('/^R(\d+)\s*\[([A-Z]+)\]:\s?(.*)$/', trim($line), $m)) {
                 continue;
@@ -737,12 +804,17 @@ class ScurveHeaderProposalController extends Controller
             // Pad short rows so letter positions stay aligned.
             $cells = array_pad(array_values($cells), count($letters), '');
             $rlines[(int) $m[1]] = $cells;
+            // 2026-09-14: the role was captured and thrown away. Row-role teaching
+            // needs it to explain a refusal in the reviewer's own terms ("R4 is the
+            // header row"), so it is kept as a THIRD element — two-element list()
+            // destructuring in the existing callers is unaffected.
+            $roles[(int) $m[1]] = $m[2];
         }
         if (count($rlines) === 0) {
             return null;
         }
 
-        return [$letters, $rlines];
+        return [$letters, $rlines, $roles];
     }
 
     /**

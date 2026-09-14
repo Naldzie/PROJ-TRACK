@@ -1499,6 +1499,87 @@
     a capture with no HEADER-tagged row and confirm the band flashes and the picker
     opens by itself; then collapse it deliberately and confirm it stays collapsed.
 
+  -----------------------------------------------------------------------------
+  2026-09-14 — EXCEL ROW-ROLE WORK, STEP 5 BUILT: THE TWO ROW PICKERS
+  -----------------------------------------------------------------------------
+
+    ⚠ READ THIS FIRST: AFTER STEP 5 THE TEACHING IS STORED BUT NOT YET HONOURED.
+    The map now CARRIES excludeSigs/cumulativeSig; the reader does not consult them
+    until step 6. A reviewer who teaches and approves a row role today will see no
+    change in the numbers. This is a deliberate split for reviewability, not an
+    oversight, and step 6 follows immediately. Do not ship this commit alone.
+
+    THE MODEL, AS BUILT. Two controls, not three, because there is no positive
+    "this is a data row" decision anywhere in the reader — a row becomes an
+    activity by RESIDUE (SCurveImportService :1490-1545). So:
+      NOT AN ACTIVITY (multi-select)  — "do not sum this row". Protects the numbers.
+      CUMULATIVE ROW  (single-select) — a summary row that ALSO supplies the
+                                        baseline. Picking it EXCLUDES it
+                                        automatically: one click, not two.
+
+    TEXT SIGNATURES, NEVER R-NUMBERS. New public static rowSignature() drops
+    numeric cells, lowercases and collapses whitespace. R-numbers are kept-ordinals
+    over the captured slice, so they shift the instant a contractor inserts a row,
+    and an exclusion that slid onto a neighbour would drop a real activity out of
+    the contract total with NOTHING VISIBLE TO SHOW FOR IT. The header is already
+    matched by text (sig) rather than rowHint for the same reason.
+    ONE RULE, TWO CALLERS, ON PURPOSE: teach time reads the stored block, read time
+    (step 6) reads the live workbook. The moment those normalizations differ every
+    taught role stops matching, silently — the identical failure mode keptRowKeys
+    was unified to prevent in step 1.
+
+    ADDITIVE BY CONSTRUCTION. buildTaughtMap emits the two keys ONLY when taught,
+    so every map built before row roles existed, and every map taught without using
+    them, is byte-identical. findHeaderViaMaps reads only the keys it knows, so an
+    older map round-trips unchanged. Pinned by
+    test_untaught_rows_leave_the_map_shape_unchanged.
+
+    REFUSALS, AND WHY EACH ONE EXISTS. Every case below is one where storing the
+    pick would be WORSE than refusing it, because the damage is invisible at read
+    time — a row that quietly stops being summed just makes every month read low:
+      numbers-only row  -> empty signature would match every blank row in the file
+      header row picked -> it is not summed as an activity anyway; the reviewer has
+                           misread the control
+      two rows normalizing the same -> cannot be told apart at read time, so
+                           excluding one would silently exclude both
+      ANY role field on a PDF row -> explicit 422, NOT a silent drop.
+
+    THE PDF GATE IS PRINCIPLED, NOT AN OVERSIGHT. The PDF reader finds its
+    cumulative row by SHAPE (isCumulativeShapedRow — percent-written,
+    non-decreasing, ends >= 50), which is label-independent and already immune to
+    the novel wordings this teaching exists for. Storing sigs it will never consult
+    is exactly the half-wired save that cost four acceptance rounds. The band stays
+    VISIBLE on a PDF row and says why, rather than vanishing — a control that
+    disappears teaches the reviewer nothing.
+
+    THE PDF TEST ASSERTS THE MESSAGE, NOT THE STATUS. A map-less PDF row already
+    422s inside buildTaughtPdfMap, so a status-only assertion would have passed
+    whether or not the new guard existed at all. Caught before committing.
+
+    m-PREFIX TRAP CLOSED (the plan flagged it; here is what it actually was).
+    schTeachClickLetter branched on `field.indexOf('m') === 0`, which claims EVERY
+    field key beginning with m. This work was one palette button away from adding
+    such a key, and the failure would have been near-undebuggable: clicking a
+    column with "mark" armed assigns it to month "ark", a month number that quietly
+    matches nothing. Now `/^m\d+$/`. No behaviour change for m1..m12.
+
+    ALSO: parseStoredSlice captured the role in $m[2] and threw it away since it
+    was written. Now returned as a THIRD element — two-element list() destructuring
+    in the single existing caller is unaffected — so a refusal can say "R4 is the
+    header row" in the reviewer's own terms.
+
+    VERIFICATION.
+      php artisan test        1208 passed (+7), same 5 pre-existing failures by name
+      verify_p6.mjs           16 reads, 0 changed
+      BUHI byte-identical     12 months, activities, cumulativeRow=89, gaps unchanged
+      node --check on the extracted modal script: clean; Blade compiles.
+      FALSIFIED: removing the implied-exclusion line makes
+      test_marking_a_row_cumulative_also_excludes_it fail.
+
+    BROWSER CHECK OWED: teach a role on the 6-stage Excel row and confirm the
+    readout shows "Not activities=R…"; open a PDF row and confirm the band is
+    visible, disabled, and explains itself.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

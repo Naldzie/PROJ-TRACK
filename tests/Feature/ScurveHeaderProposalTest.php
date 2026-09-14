@@ -550,6 +550,22 @@ class ScurveHeaderProposalTest extends TestCase
         ], $overrides));
     }
 
+    // Row-role teaching (2026-09-14) needs rows worth pointing at: a summary row
+    // with a novel wording the skip vocabulary misses ("Cash Position"), a printed
+    // curve with a novel wording isCumulativeRow misses ("RUNNING TOTAL %"), and a
+    // numbers-only row that cannot be recognised again in the live file.
+    private function makeRoleTeachableRow(array $overrides = []): ScurveHeaderProposal
+    {
+        $text = "COLUMNS: A,B,C,D,E,F,G,H,I,J,K,L,M,N | META: title | HEADER: labels | DATA: rows | SUMMARY: totals | CUMULATIVE: the printed running curve\n"
+            . "R1 [HEADER]: ITEM,,TASK DESCRIPTION,,,CONTRACT AMOUNT,% WEIGHT,,Month 1,,Month 2,,Month 3\n"
+            . "R2 [DATA]: ,1,Mobilization,,,100000,25,,50000,,,,,50000\n"
+            . "R3 [DATA]: ,2,Cash Position,,,,,,120000,,,,,90000\n"
+            . "R4 [DATA]: ,3,RUNNING TOTAL %,,,,,,25,,,,,100\n"
+            . 'R5 [DATA]: ,,,,,,,,1,,2,,3';
+
+        return $this->makeTeachableRow(array_merge(['header_rows_text' => $text], $overrides));
+    }
+
     private function teachPayload(array $overrides = []): array
     {
         return array_merge([
@@ -811,6 +827,127 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertNotEmpty($result['meta']['warnings']);
 
         unlink($path);
+    }
+
+    // =====================================================================
+    // Row-role teaching (2026-09-14): "not an activity" + "the cumulative row".
+    // Stored as TEXT signatures, never R-numbers — see rowSignature's docblock.
+    // =====================================================================
+
+    // The whole point: a summary row whose wording the hardcoded vocabulary misses
+    // ("Cash Position") can be named by a reviewer, and the pick survives into the
+    // stored map as text.
+    public function test_taught_exclusions_are_stored_as_text_signatures(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['excluded_rows' => [3]]))
+            ->assertOk()->assertJsonPath('success', true);
+
+        $map = ScurveHeaderProposal::orderByDesc('id')->first()->column_map;
+        $this->assertSame(['cash position'], $map['excludeSigs'] ?? null);
+        // R-numbers must NOT be stored: they are kept-ordinals over the captured
+        // slice and shift the moment a contractor inserts a row.
+        $this->assertStringNotContainsString('3', json_encode($map['excludeSigs']));
+        $this->assertArrayNotHasKey('cumulativeSig', $map);
+    }
+
+    // An untaught save must produce exactly the map it produced before row roles
+    // existed. This is what lets the feature ship without re-teaching every layout.
+    public function test_untaught_rows_leave_the_map_shape_unchanged(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->teachPayload())
+            ->assertOk();
+
+        $map = ScurveHeaderProposal::orderByDesc('id')->first()->column_map;
+        $this->assertArrayNotHasKey('excludeSigs', $map, 'an untaught map must carry no row-role keys at all');
+        $this->assertArrayNotHasKey('cumulativeSig', $map);
+    }
+
+    // Marking a row cumulative IMPLIES excluding it. One click, not two: the skip
+    // vocabulary already lumps cumulat\w* in with cost and cash flow, so a
+    // cumulative row that still summed would contradict the rule beside it.
+    public function test_marking_a_row_cumulative_also_excludes_it(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['cumulative_row' => 4]))
+            ->assertOk();
+
+        $map = ScurveHeaderProposal::orderByDesc('id')->first()->column_map;
+        $this->assertSame('running total %', $map['cumulativeSig'] ?? null);
+        $this->assertContains('running total %', $map['excludeSigs'] ?? [], 'the curve row is never summed as work');
+    }
+
+    // A row of nothing but numbers cannot be recognised again in the live file, and
+    // an empty signature would match every blank row there is. Refused loudly.
+    public function test_a_row_with_no_label_text_is_refused(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['excluded_rows' => [5]]))
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+
+        $this->assertSame(1, ScurveHeaderProposal::count(), 'a refusal must write nothing');
+    }
+
+    // The header row is not summed as an activity in the first place, so marking it
+    // means the reviewer has misread the control.
+    public function test_a_header_row_cannot_also_be_a_role_row(): void
+    {
+        $row = $this->makeRoleTeachableRow();
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['excluded_rows' => [1]]))
+            ->assertStatus(422);
+    }
+
+    // PDF rows are refused EXPLICITLY rather than having the fields dropped. A save
+    // that reports success and changes nothing is the exact half-wired failure that
+    // cost four acceptance rounds; the PDF reader finds its curve by shape and has
+    // nothing to learn here.
+    public function test_row_roles_are_refused_on_a_pdf_row(): void
+    {
+        $row = $this->makeRoleTeachableRow(['source_type' => 'pdf']);
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['cumulative_row' => 4]))
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            // Asserting the MESSAGE, not just the status: a map-less PDF row already
+            // 422s inside buildTaughtPdfMap, so a status-only assertion would pass
+            // whether or not this guard exists at all.
+            ->assertJsonPath('message', fn ($m) => str_contains((string) $m, 'Excel layouts only'));
+    }
+
+    // Two rows that normalize to the same text cannot be told apart at read time,
+    // so excluding one would silently exclude both.
+    public function test_two_rows_reading_the_same_are_refused(): void
+    {
+        $row = $this->makeRoleTeachableRow([
+            'header_rows_text' => "COLUMNS: A,B,C,D,E,F,G,H,I,J,K,L,M,N | HEADER: labels\n"
+                . "R1 [HEADER]: ITEM,,TASK DESCRIPTION,,,CONTRACT AMOUNT,% WEIGHT,,Month 1,,Month 2,,Month 3\n"
+                . "R2 [DATA]: ,1,Mobilization,,,100000,25,,50000,,,,,50000\n"
+                . "R3 [SUMMARY]: ,,Cash Position,,,,,,120000\n"
+                . 'R4 [SUMMARY]: ,,CASH   position,,,,,,90000',
+        ]);
+
+        $this->actingAs($this->makeUser('staff'))
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $this->teachPayload(['excluded_rows' => [3, 4]]))
+            ->assertStatus(422);
     }
 
     // 2026-09-14 — CLOSING A COVERAGE GAP BEFORE BUILDING ON IT.
