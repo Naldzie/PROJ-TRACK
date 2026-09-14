@@ -156,9 +156,15 @@ class ScurveHeaderProposalController extends Controller
             // the reader still refuses, so the user approved nothing and got "could
             // not read the S-curve" anyway. Repetition cannot supply what the bytes
             // do not contain; only teaching or an AI numbering can.
-            $unnumbered = ScurveHeaderProposal::pdfMapIsUnnumbered($row->column_map);
+            // Nor a row with NO map at all — the Excel twin of the same mistake,
+            // confirmed on the SEGMENT specimen 2026-09-14. When the rules cannot
+            // find the header (GAP 2: every row tags [DATA]) the capture stores
+            // column_map null, and promoting that produced a LIVE row the reader
+            // has nothing to read with. Repetition cannot derive a layout either.
+            $unreadable = $row->column_map === null
+                || ScurveHeaderProposal::pdfMapIsUnnumbered($row->column_map);
             if ($row->occurrences >= 3 && $row->status === 'proposed'
-                && $row->source !== 'ai-derived' && !$unnumbered) {
+                && $row->source !== 'ai-derived' && !$unreadable) {
                 $row->update(['status' => 'live']);
             }
             // Backfill pre-E1-3 rows captured when maps were always null.
@@ -367,13 +373,15 @@ class ScurveHeaderProposalController extends Controller
                 }
             }
 
+            $why = null;
             $map = $this->sCurveImportService->buildTaughtMap(
                 array_values($merged),
                 (int) $descCol,
                 $codeCol,
                 $weightCol,
                 $contractCol,
-                $monthSpans
+                $monthSpans,
+                $why
             );
         } catch (RuntimeException $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -382,7 +390,12 @@ class ScurveHeaderProposalController extends Controller
         if ($map === null) {
             return response()->json([
                 'success' => false,
-                'message' => 'Those columns do not form a usable layout (need a description column plus at least two non-overlapping months, left to right).',
+                // 2026-09-14: this used to be the ONE message every Excel refusal
+                // got, so a reviewer who put a column in two places was told only
+                // that "those columns do not form a usable layout" and had to find
+                // the clash by eye. The PDF branch already names its gate; this one
+                // now does too, using the reviewer's OWN letters.
+                'message' => $this->explainTaughtMapRefusal($why),
             ], 422);
         }
 
@@ -462,6 +475,49 @@ class ScurveHeaderProposalController extends Controller
      * Called by: teachColumns() for source_type 'pdf'.
      * @throws RuntimeException with a reviewer-facing reason.
      */
+    /**
+     * Turn a buildTaughtMap() refusal code into a sentence naming what to fix.
+     *
+     * The codes carry the reviewer's own column letters and month numbers, so the
+     * message can point at the exact click that clashed instead of restating the
+     * rule. Anything unrecognised falls back to the old general wording — a new
+     * gate must never produce a blank refusal.
+     *
+     * Pure. Called by: teachColumns() Excel branch.
+     */
+    protected function explainTaughtMapRefusal(?string $why): string
+    {
+        $generic = 'Those columns do not form a usable layout (need a description column '
+            . 'plus at least two non-overlapping months, left to right).';
+        if ($why === null || $why === '') {
+            return $generic;
+        }
+
+        $parts = explode(':', $why);
+        switch ($parts[0]) {
+            case 'no-description':
+            case 'description-cell-empty':
+                return 'Pick the column holding the work names as the description — '
+                    . 'the one you chose has no label on the header row.';
+            case 'too-few-months':
+                return 'A schedule needs at least two month columns; assign one more before saving.';
+            case 'month-shares-column':
+                return "Column {$parts[1]} is assigned to two different months — each column belongs to one month.";
+            case 'label-in-month':
+                return "Column {$parts[2]} is both the {$parts[1]} column and part of month {$parts[3]} — "
+                    . 'give it to one or the other.';
+            case 'months-out-of-order':
+                return 'The months do not run left to right across the grid — check their order.';
+            case 'header-row-too-empty':
+                return 'The header row you picked is almost empty, so there is nothing to recognise '
+                    . 'this layout by later. Pick the row carrying the column labels.';
+            case 'empty-month':
+                return "Month {$parts[1]} has no column assigned to it.";
+            default:
+                return $generic;
+        }
+    }
+
     protected function buildTaughtPdfMap(ScurveHeaderProposal $proposal, array $validated): array
     {
         $map = $proposal->column_map;

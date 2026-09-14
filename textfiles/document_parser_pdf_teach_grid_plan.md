@@ -791,6 +791,81 @@
     The controller patches source_type afterwards. No live symptom; a colliding hash
     could hijack an Excel row into a PDF one.
 
+
+  2026-09-14 (fifth round) — THE SAME SWEEP ON THE EXCEL PATH (SEGMENT specimen).
+  The user moved the test to Excel. Two of the three findings are the Excel twins of
+  defects already fixed on the PDF side, which is the useful part: the same mistake
+  had been made twice in two branches.
+
+    ASKED AND ANSWERED FIRST — "are columns D and E empty because the text in C
+    stretches through them (merged cells)?" NO. Read the workbook directly: it has
+    ZERO merged ranges. D and E are simply empty in the sheet — the header occupies
+    A, C, F, G and H..L, with B blank on the header row but carrying the item numbers
+    1-4 on the data rows. The grid is showing the file faithfully.
+      WORTH RECORDING, because it confused the read: the block's R-numbers are KEPT
+      ORDINALS, not sheet rows. The sheet is 16 rows with 4-9 and 11 empty, so the
+      block's R4 (the header) is sheet row 10 and R5..R8 are sheet rows 12..15. The
+      LETTERS, however, are the sheet's own columns — verified cell by cell.
+
+    DEFECT 8 — EVERY EXCEL TEACH REFUSAL SAID THE SAME THING.
+      buildTaughtMap returns bare null from EIGHT separate gates and the endpoint
+      printed one catch-all: "Those columns do not form a usable layout (need a
+      description column plus at least two non-overlapping months, left to right)."
+      The user's actual mistake was assigning the WEIGHT column to month 1 as well —
+      replayed through the endpoint to confirm, and the message never said so.
+      Meanwhile the PDF branch has named its gate precisely since 2026-09-13.
+      FIX: buildTaughtMap takes a ?string &$reason out-param — the same idiom
+      deriveMapFromAiLayout already uses for its refusals — and sets a specific code
+      at each gate, carrying the reviewer's own column letters and month numbers.
+      explainTaughtMapRefusal() turns those into sentences, with the old wording kept
+      as the fallback so a future gate can never produce a blank refusal. New
+      SCurveImportService::letterFor() does index -> letter (past Z too).
+      VERIFIED live against the real capture:
+        weight G also in M1 -> "Column G is both the weight column and part of
+                                month 1 — give it to one or the other."
+        H in two months     -> "Column H is assigned to two different months…"
+        months out of order -> "The months do not run left to right across the grid…"
+        desc on empty col D -> "Pick the column holding the work names…"
+        the clean teaching  -> saves.
+
+    DEFECT 9 — A MAP-LESS CAPTURE AUTO-WENT LIVE. The Excel twin of Defect 5.
+      When the rules cannot find the header — GAP 2, every row tags [DATA], which is
+      exactly the layout most in need of teaching — the capture stores column_map
+      null. The >=3 rule promoted it, producing a LIVE row the reader has nothing to
+      read with: the user approved it and the next import still failed.
+      FIX: the auto-live guard now excludes column_map === null as well as an
+      unnumbered PDF map.
+      A TEST WAS PINNING THE BUG, and the plan's own lesson applies — say which kind
+      of property a test pins. test_repeats_increment_and_third_promotes_to_live used
+      makeWorkbook, a deliberately underivable stub, so it asserted that a MAP-LESS
+      row goes live. It now uses makeNearMissWorkbook, which derives a map, so the
+      >=3 rule stays genuinely under test on a row promotion can actually help; the
+      map-less case is pinned separately by test_a_map_less_capture_never_auto_lives.
+
+    DEFECT 10 — THE DESK CALLED A MAP-LESS ROW NOTHING AT ALL. Defect 3's twin: a
+      row with no map simply lacked the blue "Mapped" badge, which reads as a minor
+      difference rather than "the reader cannot use this". It now carries an amber
+      "Needs teaching" badge saying approval alone will not make the file readable.
+
+    NOT A DEFECT: the AI-derived row overwriting the auto-capture is the designed
+    backfill — storeAiDerived fills a map-LESS row and drops it to proposed. The
+    approved AI layout then read 5 / 20 / 40 / 65 / 100 with the true names, which is
+    the loop working.
+
+    TESTS +2 PHP (a map-less capture never auto-lives; an Excel teach refusal names
+    the clashing column, covering three gates plus a clean save on the same row) and
+    1 fixture corrected -> ScurveHeaderProposalTest 66 passed.
+    FAILING-THEN-PASSING CONFIRMED: stashing the service + controller fails exactly
+    those two.
+    SUITES: PHP 1196 passed / the same 5 pre-existing BY NAME. JS 158 tests, 156
+    passed + the 2 intended blinding fails. Reader regression 16 reads, 0 changed.
+
+    STILL OPEN ON THE EXCEL PATH, not built: when NO row is tagged [HEADER] the
+    picker opens with nothing ticked (the deliberate F6 fix) and says "none picked
+    yet" in small text. That is correct but quiet, and it is the second thing that
+    blocked this run. A blocked Save should say "pick the header row first" rather
+    than leaving the reviewer to find it.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

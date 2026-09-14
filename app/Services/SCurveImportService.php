@@ -542,51 +542,81 @@ class SCurveImportService
      *
      * Called by: ScurveHeaderProposalController::teachColumns().
      */
+    /**
+     * 0-based column index -> the letter the teach grid shows for it (0 = A).
+     *
+     * Refusals name the column the reviewer actually clicked, not an index they
+     * never see. Beyond Z it keeps counting (AA, AB…) the way the legend does.
+     *
+     * Pure. Called by: buildTaughtMap() refusal reasons.
+     */
+    public static function letterFor(int $index): string
+    {
+        if ($index < 0) {
+            return '?';
+        }
+        $out = '';
+        $n = $index;
+        while (true) {
+            $out = chr(65 + ($n % 26)) . $out;
+            $n = intdiv($n, 26) - 1;
+            if ($n < 0) {
+                break;
+            }
+        }
+
+        return $out;
+    }
+
     public function buildTaughtMap(
         array $mergedHeaderCells,
         int $descCol,
         ?int $codeCol,
         ?int $weightCol,
         ?int $contractCol,
-        array $monthSpans
+        array $monthSpans,
+        ?string &$reason = null
     ): ?array {
-        if ($descCol < 0) return null;
+        $fail = function (string $code) use (&$reason) { $reason = $code; return null; };
+        if ($descCol < 0) return $fail('no-description');
         foreach (['code' => $codeCol, 'weight' => $weightCol, 'contract' => $contractCol] as $name => $col) {
-            if ($col !== null && $col < 0) return null;
+            if ($col !== null && $col < 0) return $fail("bad-{$name}");
         }
 
         // Normalize month keys (JSON arrives string-keyed) and span cols.
         $spans = [];
         foreach ($monthSpans as $m => $cols) {
             $mi = (int) $m;
-            if ($mi < 1 || $mi > 12 || isset($spans[$mi])) return null;
+            if ($mi < 1 || $mi > 12 || isset($spans[$mi])) return $fail('bad-month-number');
             $cols = array_map('intval', (array) $cols);
-            if (count($cols) === 0) return null;
+            if (count($cols) === 0) return $fail("empty-month:{$mi}");
             foreach ($cols as $c) {
-                if ($c < 0 || $c > 79) return null;
+                if ($c < 0 || $c > 79) return $fail("bad-month-column:{$mi}");
             }
             $spans[$mi] = array_values(array_unique($cols));
         }
-        if (count($spans) < 2) return null;
+        if (count($spans) < 2) return $fail('too-few-months');
         ksort($spans);
 
         // Span cells pairwise disjoint; label cols outside every span.
         $used = [];
-        foreach ($spans as $cols) {
+        foreach ($spans as $mi => $cols) {
             foreach ($cols as $c) {
-                if (isset($used[$c])) return null;
-                $used[$c] = true;
+                if (isset($used[$c])) return $fail('month-shares-column:' . self::letterFor($c));
+                $used[$c] = $mi;
             }
         }
-        foreach ([$descCol, $codeCol, $weightCol, $contractCol] as $col) {
-            if ($col !== null && isset($used[$col])) return null;
+        foreach (['description' => $descCol, 'item code' => $codeCol, 'weight' => $weightCol, 'contract amount' => $contractCol] as $label => $col) {
+            if ($col !== null && isset($used[$col])) {
+                return $fail("label-in-month:{$label}:" . self::letterFor($col) . ":" . $used[$col]);
+            }
         }
 
         // Months run left-to-right (first col of each span strictly increasing).
         $prev = -1;
         foreach ($spans as $cols) {
             $first = min($cols);
-            if ($first <= $prev) return null;
+            if ($first <= $prev) return $fail('months-out-of-order');
             $prev = $first;
         }
 
@@ -598,9 +628,9 @@ class SCurveImportService
                 $sig[] = [$col, $text];
             }
         }
-        if (count($sig) < 2) return null;
+        if (count($sig) < 2) return $fail('header-row-too-empty');
         $descText = strtolower(trim((string) ($mergedHeaderCells[$descCol] ?? '')));
-        if ($descText === '') return null;
+        if ($descText === '') return $fail('description-cell-empty');
 
         return [
             'v' => self::MAP_VERSION,

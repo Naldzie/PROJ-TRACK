@@ -188,11 +188,18 @@ class ScurveHeaderProposalTest extends TestCase
     }
 
     // Repeats bump occurrences; the third confirmation auto-promotes to live.
+    //
+    // The near-miss workbook is used deliberately: it DERIVES a map, so this pins
+    // the >=3 rule on a row that promotion can actually make readable. It used to
+    // use makeWorkbook, whose map derives null — so it was pinning a live row the
+    // reader has nothing to read with, which is the defect the unreadable guard
+    // fixes (2026-09-14). A map-less row's behaviour is pinned separately by
+    // test_a_map_less_capture_never_auto_lives.
     // Called by: repeated failures on the same unknown layout.
     public function test_repeats_increment_and_third_promotes_to_live(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
-        $this->makeWorkbook($path);
+        $this->makeNearMissWorkbook($path);
 
         $staff = $this->makeUser('staff');
         for ($i = 0; $i < 3; $i++) {
@@ -208,6 +215,92 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame('live', $row->status);
 
         unlink($path);
+    }
+
+    // 2026-09-14 — REPETITION CANNOT DERIVE A LAYOUT EITHER.
+    //
+    // The Excel twin of the unnumbered-PDF rule, found on the SEGMENT specimen.
+    // When the rules cannot find the header — GAP 2, every row tags [DATA], which
+    // is precisely the layout most in need of teaching — the capture stores
+    // column_map null. Promoting that at three occurrences produced a row badged
+    // live that the reader has nothing to read with, so the user approved nothing
+    // and the next import failed anyway.
+    // Called by: collect() auto-live rule.
+    public function test_a_map_less_capture_never_auto_lives(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // Deliberately underivable: a novel description header and ONE month column.
+        $this->makeWorkbook($path);
+
+        $staff = $this->makeUser('staff');
+        for ($i = 0; $i < 4; $i++) {
+            $upload = new UploadedFile($path, 'weird.xlsx', null, null, true);
+            $this->actingAs($staff)
+                ->post('/staff/scurve-header-proposals/collect', ['file' => $upload])
+                ->assertCreated();
+        }
+
+        $row = ScurveHeaderProposal::first();
+        $this->assertNull($row->column_map, 'the fixture must stay underivable for this to mean anything');
+        $this->assertSame(4, $row->occurrences, 'repeats still count');
+        $this->assertSame('proposed', $row->status,
+            'a capture with no map must stay proposed however often it is seen');
+
+        unlink($path);
+    }
+
+    // 2026-09-14 — AN EXCEL TEACH REFUSAL NAMES THE CLASH.
+    //
+    // buildTaughtMap returned bare null from eight different gates and the endpoint
+    // printed one catch-all sentence, so a reviewer who put a column in two places
+    // was told only that the columns "do not form a usable layout" and had to find
+    // it by eye. Verified live on the SEGMENT specimen: the user had assigned the
+    // weight column to month 1 as well.
+    // Called by: teachColumns() Excel branch -> explainTaughtMapRefusal().
+    public function test_an_excel_teach_refusal_names_the_clashing_column(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = ScurveHeaderProposal::create([
+            'contractor_id' => null, 'source_type' => 'excel',
+            'header_rows_text' => "COLUMNS: A,B,C,D,E | HEADER: column labels\n"
+                . "R1 [HEADER]: ITEM,DESCRIPTION,% WEIGHT,SEGMENT 1,SEGMENT 2\n"
+                . "R2 [DATA]: 1,Mobilization,5,50000,",
+            'header_hash' => hash('sha256', 'excel-refusal-fixture'),
+            'column_map' => null, 'occurrences' => 1,
+            'status' => 'proposed', 'source' => 'auto-capture',
+        ]);
+        $base = ['desc' => 'B', 'weight' => 'C', 'header_rows' => [1], 'mode' => 'variant'];
+
+        // C is the weight column AND part of month 1 — the exact live mis-click.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $base + ['months' => [1 => ['C', 'D'], 2 => ['E']]])
+            ->assertStatus(422)
+            ->assertJsonPath('message',
+                'Column C is both the weight column and part of month 1 — give it to one or the other.');
+
+        // One column claimed by two months names the column, not the rule.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $base + ['months' => [1 => ['D'], 2 => ['D']]])
+            ->assertStatus(422)
+            ->assertJsonPath('message',
+                'Column D is assigned to two different months — each column belongs to one month.');
+
+        // Right-to-left months are named as such.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $base + ['months' => [1 => ['E'], 2 => ['D']]])
+            ->assertStatus(422)
+            ->assertJsonPath('message',
+                'The months do not run left to right across the grid — check their order.');
+
+        // And a clean teaching of the same row still saves, so the gates above are
+        // refusing the mistake rather than the layout.
+        $this->actingAs($staff)
+            ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns",
+                $base + ['months' => [1 => ['D'], 2 => ['E']]])
+            ->assertOk()->assertJsonPath('success', true);
     }
 
     // Contractors never upload, and the endpoint refuses them regardless.

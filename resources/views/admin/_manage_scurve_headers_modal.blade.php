@@ -316,9 +316,16 @@ async function loadScurveHeadersForManagement() {
                     : (row.source === 'ai-derived'
                         ? '<span class="badge bg-info text-dark" title="Learned from a successful AI read — needs review">AI-derived</span>'
                         : '<span class="badge bg-secondary" title="Captured from a failed import">Auto-capture</span>'));
+            // A row with NO map is not merely "not Mapped" — the reader has nothing
+            // to read it with, so approving it changes nothing and the next import
+            // still fails. That happens whenever the rules could not find the header
+            // (every row tags [DATA]), which is exactly the layout most in need of
+            // teaching. Say so where the badge would have been (2026-09-14).
             const mapMark = row.has_map
                 ? ' <span class="badge bg-primary" title="A column map is attached">Mapped</span>'
-                : '';
+                : ' <span class="badge bg-warning text-dark" title="No column map was derived from this capture,'
+                    + ' so the reader cannot use it. Teach its columns — approving alone will not make the file'
+                    + ' readable.">Needs teaching</span>';
             // E1-PDF: PDF captures land in this same desk, so say which file kind a
             // row came from — the two are read by different engines and a reviewer
             // approving columns should know which one they are teaching.
