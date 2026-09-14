@@ -577,12 +577,38 @@ function schTeachColumns(id) {
                 pages.forEach(page => {
                     if (!page) return;
                     const pseudo = page.pseudoCols || [];
-                    // A band belongs to a letter when their strips overlap at all; the
-                    // stored desc/month bands are built FROM these, so this round-trips.
-                    const lettersIn = (x, xEnd) => pseudo
-                        .filter(pc => pc.x < xEnd - 1e-9 && x < pc.xEnd - 1e-9)
-                        .map(pc => String(pc.letter || '').toUpperCase())
-                        .filter(Boolean);
+                    // DOMINANT overlap, not ANY overlap (2026-09-14).
+                    //
+                    // Month bands and pseudo-columns are two INDEPENDENT griddings of
+                    // the same page — bands come from the midpoints between header
+                    // labels, columns from clustering every token in the table — so
+                    // their edges land a few thousandths apart. An any-overlap test
+                    // therefore handed each month its own column AND a sliver of the
+                    // next, prefilling M1=F+G · M2=G+H · … Measured on the roof: the
+                    // real column is covered 90–99%, the neighbour 3–10%, so the two
+                    // cases are nowhere near each other.
+                    // This was never cosmetic — saving that prefill is REFUSED with
+                    // "Month 2 starts left of where month 1 ends", so the reviewer had
+                    // to clear every duplicate by hand before Save would work.
+                    // A column is claimed when the overlap is most of the COLUMN or
+                    // most of the BAND: either one alone is not enough. Column-share
+                    // catches the ordinary case (a band covering its column); band-
+                    // share catches a band narrower than the column it sits inside.
+                    // Requiring BOTH to be small before rejecting is what keeps a
+                    // continuation page's inherited, empty desc band — which grazes
+                    // month 6's column by 4% — from claiming it as the description.
+                    const lettersIn = (x, xEnd) => {
+                        const bandWidth = (xEnd - x) || 1e-9;
+                        return pseudo.map(pc => {
+                            const colWidth = (pc.xEnd - pc.x) || 1e-9;
+                            const overlap = Math.min(pc.xEnd, xEnd) - Math.max(pc.x, x);
+                            return {
+                                letter: String(pc.letter || '').toUpperCase(),
+                                keep: overlap > 1e-9
+                                    && (overlap / colWidth >= 0.5 || overlap / bandWidth >= 0.5),
+                            };
+                        }).filter(s => s.letter && s.keep).map(s => s.letter);
+                    };
                     // The description is taught on ONE page (a continuation page
                     // legitimately has none), so the first page that yields one wins.
                     if (!_schTeach.assigns.desc) {

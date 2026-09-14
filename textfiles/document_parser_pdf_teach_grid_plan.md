@@ -686,6 +686,57 @@
     backfilled and dropped to proposed by the next successful AI assist on that file
     (Defect 4's fix), so it needs no manual cleanup — though rejecting it is faster.
 
+
+  2026-09-14 (third round) — AI BACKFILL PROVEN IN THE BROWSER, ONE MORE DEFECT.
+    The user wiped the table and re-ran. Defects 4 and 5 are BROWSER-PROVEN: the
+    auto-capture became ai-derived (the AI's numbering reached it instead of being
+    discarded), it did NOT auto-live, and approving it read
+    6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100 with counts 4,4,4,4,3,4,3.
+
+    DEFECT 7 — THE PREFILL CLAIMED TWO COLUMNS PER MONTH.
+      Reopening the teach modal prefilled M1=F+G · M2=G+H · M3=H+I · M4=I+J ·
+      M5=J+K · M6=L+M · M7=M — every month its own column plus a sliver of the next.
+      CAUSE: month bands and pseudo-columns are two INDEPENDENT griddings of the
+      same page. Bands come from the midpoints between header labels
+      (finalizeHeaderBands); columns come from clustering every token in the table
+      (detectPseudoColumns). Their edges land a few thousandths apart, and the
+      prefill claimed a column on ANY overlap.
+      MEASURED on the live row, month band vs column coverage:
+        M1 F 99% G 3% · M2 G 97% H 3% · M3 H 97% I 3% · M4 I 97% J 4%
+        M5 J 96% K 6% · M6 L 96% M 10% · M7 M 90%
+      The real column and the sliver are nowhere near each other, so the rule is not
+      a tuned threshold — anything in the 10–90 gap separates them.
+      NOT COSMETIC, and this is the part worth keeping: saving that prefill is
+      REFUSED ("Month 2 starts left of where month 1 ends"), verified by invoking
+      the builder with the exact prefilled payload. The reviewer had to clear every
+      duplicate by hand before Save would work — which is what the user did in the
+      first round without knowing why.
+      FIX: a column is claimed when the overlap is most of the COLUMN or most of the
+      BAND. Column-share handles the ordinary case; band-share handles a band
+      narrower than the column it sits inside. CAUGHT IN MY OWN FIRST DRAFT: I used
+      column-share with a "best single match" fallback, and a continuation page's
+      inherited empty desc band [0 -> 0.2161] then claimed month 6's column L (it
+      grazes it by 4%, and with nothing above 50% the fallback took the best of a
+      bad set). Requiring BOTH shares to be small before rejecting fixes it — page 1
+      now yields no description at all, which is correct: a continuation page has none.
+      VERIFIED against the real stored map, the rule as written in the Blade:
+        page0 DESC -> A+B+C+D (picks A) · M1 F · M2 G · M3 H · M4 I · M5 J
+        page1 DESC -> (none)          · M6 L · M7 M
+      Exactly the letters the user selected by hand.
+
+    QUESTION ANSWERED (user): "does the individual M label need to be accurate, or
+    is it more of an anchor for where the month columns are?" — ACCURATE. The letter
+    is a pointer and the BAND is what the reader uses: buildTaughtPdfMap turns the
+    taught letters into min(x)..max(xEnd) across them, so an extra letter widens the
+    month over its neighbour's cells. It cannot corrupt a baseline silently — the
+    left-to-right/no-overlap guard refuses it before any write — but it does block
+    the save, which is why a wrong prefill is a real obstacle and not a display nit.
+
+    SUITES: ScurveHeaderProposalTest 64 passed. JS 158 tests, 156 passed + the 2
+    intended blinding fails. Reader regression 16 reads, 0 changed. Blade-inline JS
+    has no unit harness (the standing convention for this file), so the rule was
+    replayed against the REAL stored map in node instead of a synthetic fixture.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================
