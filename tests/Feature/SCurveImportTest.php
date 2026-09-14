@@ -89,6 +89,27 @@ class SCurveImportTest extends TestCase
         $writer->save($path);
     }
 
+    // Row-signature PARITY, PHP side (2026-09-15). The teach modal re-signs block
+    // rows in the browser (scurve-teach-core.js rowSignature) to show which rows a
+    // taught map excludes; if the two normalizations drift, reopened layouts lose
+    // their picks in silence. Both suites read the SAME case file, so changing one
+    // implementation without the other turns a suite red.
+    // Called by: nothing at runtime — pins SCurveImportService::rowSignature().
+    public function test_row_signature_matches_the_shared_parity_cases(): void
+    {
+        $file = base_path('tests/fixtures/scurve_row_signature_cases.json');
+        $cases = json_decode((string) file_get_contents($file), true)['cases'] ?? [];
+        $this->assertGreaterThanOrEqual(10, count($cases), 'the shared parity file must load');
+
+        foreach ($cases as $case) {
+            $this->assertSame(
+                $case['sig'],
+                SCurveImportService::rowSignature($case['cells']),
+                'rowSignature(' . json_encode($case['cells'], JSON_UNESCAPED_UNICODE) . ')'
+            );
+        }
+    }
+
     public function test_parses_client_layout_into_baseline_months(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';

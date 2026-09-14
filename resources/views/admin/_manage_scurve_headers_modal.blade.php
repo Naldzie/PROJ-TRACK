@@ -179,45 +179,27 @@ function schEscapeHtml(text) {
 // render it: lettered columns, role badges, dimmed empties. Capped + scrollable
 // so wide bundles never break the desk. textContent-free zone — everything via
 // schEscapeHtml (header text is contractor-controlled).
-function schSplitCsv(line) {
-    // Quote-aware split (fputcsv quoting) — naive comma-split breaks on
-    // quoted cells like "CONTRACT AMOUNT" or "1,000,000".
-    const out = [];
-    let cur = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (quoted) {
-            if (ch === '"') {
-                if (line[i + 1] === '"') { cur += '"'; i++; }
-                else { quoted = false; }
-            } else { cur += ch; }
-        } else if (ch === '"') { quoted = true; }
-        else if (ch === ',') { out.push(cur); cur = ''; }
-        else { cur += ch; }
+// ---------------------------------------------------------------------------
+// PURE LOGIC LIVES IN public/js/admin/projects/scurve-teach-core.js (2026-09-15),
+// loaded as a module by both layouts and exposed as window.scurveTeachCore, so it
+// runs under `npm run test:js`. The sch* functions below that only delegate keep
+// their old names so no call site in this file had to change. Nothing here may
+// call the core at the top level: module scripts run after this classic script
+// is parsed, and every call below happens on a user action.
+// ---------------------------------------------------------------------------
+function schCore() {
+    if (!window.scurveTeachCore) {
+        // A stale cached layout, or the script tag missing from a layout, lands
+        // here. Say what to do instead of failing deep inside a render.
+        throw new Error('S-curve teach logic (scurve-teach-core.js) is not loaded — hard-refresh the page.');
     }
-    out.push(cur);
-    return out;
+    return window.scurveTeachCore;
 }
 
-// Parse stored header text into { letters, rows: [{n, role, cells}] }.
-// Returns null when the block carries no usable structure.
-function schParseHeaderBlock(text) {
-    if (!text) return null;
-    const lines = String(text).split(/\r?\n/).map(s => s.trim()).filter(s => s !== '');
-    if (lines.length < 2 || lines[0].indexOf('COLUMNS:') !== 0) return null;
-    const legend = lines[0].substring('COLUMNS:'.length).split('|')[0] || '';
-    const letters = legend.split(',').map(s => s.trim()).filter(s => s !== '');
-    if (!letters.length) return null;
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-        const m = lines[i].match(/^R(\d+)\s*\[([A-Z]+)\]:\s?(.*)$/);
-        if (!m) continue;
-        rows.push({ n: parseInt(m[1], 10), role: m[2], cells: schSplitCsv(m[3] || '') });
-    }
-    if (!rows.length) return null;
-    return { letters, rows };
-}
+function schSplitCsv(line) { return schCore().splitCsv(line); }
+
+// Parse stored header text into { letters, rows: [{n, role, cells}] }, or null.
+function schParseHeaderBlock(text) { return schCore().parseHeaderBlock(text); }
 
 // CUMULATIVE is called out separately from SUMMARY on purpose: a schedule prints
 // two rows that both label themselves '%', and only one of them is the running total
@@ -519,17 +501,8 @@ document.addEventListener('show.bs.modal', function (e) {
 let _schRowsCache = [];
 let _schTeach = null;
 
-function schIndexToLetter(i) {
-    // 0-based index → Excel letters (mirrors the server letter() helper).
-    let s = '';
-    i = parseInt(i, 10) + 1;
-    while (i > 0) {
-        const m = (i - 1) % 26;
-        s = String.fromCharCode(65 + m) + s;
-        i = Math.floor((i - 1) / 26);
-    }
-    return s;
-}
+// 0-based index → Excel letters (mirrors the server letter() helper).
+function schIndexToLetter(i) { return schCore().indexToLetter(i); }
 
 function schTeachColumns(id) {
     try {
@@ -560,149 +533,16 @@ function schTeachColumns(id) {
             cumulativeRow: null,
             // How many months this layout looks like it has, so the palette offers
             // that many buttons instead of a fixed wall of twelve.
-            suggestedMonths: (function () {
-                try {
-                    const cm = row.column_map;
-                    if (cm && Array.isArray(cm.pages)) {
-                        let n = 0;
-                        cm.pages.forEach(pg => { (pg.monthCols || []).forEach(mc => { n = Math.max(n, mc.index); }); });
-                        if (n) return n;
-                        // An UNNUMBERED capture has the columns but not the numbering —
-                        // offer one button per column that is not the description.
-                        const cols = cm.pages.reduce((a, pg) => a + (pg.pseudoCols || []).length, 0);
-                        if (cols > 2) return Math.min(12, cols - 2);
-                    }
-                    const spans = (cm && cm.monthSpans) || {};
-                    const keys = Object.keys(spans).map(Number).filter(k => k >= 1);
-                    if (keys.length) return Math.max.apply(null, keys);
-                } catch (e) { /* best-effort sizing */ }
-                return 0;
-            })(),
+            suggestedMonths: schCore().suggestedMonthsFor(row.column_map),
         };
-        // Default header rows: tagged HEADER lines (max 2). When NOTHING is tagged
-        // (unknown files), default to EMPTY and force an explicit pick — defaulting
-        // to the first line would usually arm the title row (F6 wart, 2026-09-10).
-        // The readout + save gate already require ≥1 row.
-        const tagged = parsed.rows.filter(r => r.role === 'HEADER').map(r => r.n).slice(0, 2);
-        _schTeach.headerRows = tagged;
-        // Prefill from an attached map (indices → letters).
+        // Default header rows: tagged HEADER lines (max 2), EMPTY when none is
+        // tagged — the reviewer must then pick (F6). See defaultHeaderRows().
+        _schTeach.headerRows = schCore().defaultHeaderRows(parsed);
+        // Prefill from an attached map: PDF bands -> letters by dominant overlap on
+        // every page (defects 6 + 7); Excel indices -> letters, then header-row and
+        // row-role memory (defect 12). All rules, and why, in prefillFromMap().
         try {
-            const cm = row.column_map || null;
-            if (cm && cm.kind === 'pdf') {
-                // PDF-4 (2026-09-13): a PDF map stores BANDS as page-width
-                // fractions, not column letters, so reading cm.descCol here found
-                // nothing and PDF rows opened with an empty palette. Walk the
-                // recorded pseudoCols back to letters instead — the same bridge the
-                // server uses to turn a taught letter into a band.
-                // EVERY page, not just the first (2026-09-14). §3 made the grid one
-                // table with letters running on across the seam, but this still read
-                // cm.pages[0], so reopening a taught roof layout showed M1–M5 and
-                // silently dropped M6/M7 — the months that live on the printed page
-                // two. The reviewer saw their own saved work come back incomplete.
-                // Letters are globally unique, so each page's bands resolve against
-                // its OWN pseudoCols and the results simply merge.
-                const pages = Array.isArray(cm.pages) ? cm.pages : [];
-                pages.forEach(page => {
-                    if (!page) return;
-                    const pseudo = page.pseudoCols || [];
-                    // DOMINANT overlap, not ANY overlap (2026-09-14).
-                    //
-                    // Month bands and pseudo-columns are two INDEPENDENT griddings of
-                    // the same page — bands come from the midpoints between header
-                    // labels, columns from clustering every token in the table — so
-                    // their edges land a few thousandths apart. An any-overlap test
-                    // therefore handed each month its own column AND a sliver of the
-                    // next, prefilling M1=F+G · M2=G+H · … Measured on the roof: the
-                    // real column is covered 90–99%, the neighbour 3–10%, so the two
-                    // cases are nowhere near each other.
-                    // This was never cosmetic — saving that prefill is REFUSED with
-                    // "Month 2 starts left of where month 1 ends", so the reviewer had
-                    // to clear every duplicate by hand before Save would work.
-                    // A column is claimed when the overlap is most of the COLUMN or
-                    // most of the BAND: either one alone is not enough. Column-share
-                    // catches the ordinary case (a band covering its column); band-
-                    // share catches a band narrower than the column it sits inside.
-                    // Requiring BOTH to be small before rejecting is what keeps a
-                    // continuation page's inherited, empty desc band — which grazes
-                    // month 6's column by 4% — from claiming it as the description.
-                    const lettersIn = (x, xEnd) => {
-                        const bandWidth = (xEnd - x) || 1e-9;
-                        return pseudo.map(pc => {
-                            const colWidth = (pc.xEnd - pc.x) || 1e-9;
-                            const overlap = Math.min(pc.xEnd, xEnd) - Math.max(pc.x, x);
-                            return {
-                                letter: String(pc.letter || '').toUpperCase(),
-                                keep: overlap > 1e-9
-                                    && (overlap / colWidth >= 0.5 || overlap / bandWidth >= 0.5),
-                            };
-                        }).filter(s => s.letter && s.keep).map(s => s.letter);
-                    };
-                    // The description is taught on ONE page (a continuation page
-                    // legitimately has none), so the first page that yields one wins.
-                    if (!_schTeach.assigns.desc) {
-                        _schTeach.assigns.desc = lettersIn(page.descX, page.descRight)[0] || null;
-                    }
-                    (page.monthCols || []).forEach(mc => {
-                        const cols = lettersIn(mc.x, mc.xEnd);
-                        if (cols.length) _schTeach.assigns.months[mc.index] = cols;
-                    });
-                });
-            } else if (cm && typeof cm === 'object') {
-                const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
-                _schTeach.assigns.desc = L(cm.descCol);
-                _schTeach.assigns.code = L(cm.codeCol);
-                _schTeach.assigns.weight = L(cm.weightCol);
-                _schTeach.assigns.contract = L(cm.contractCol);
-                const spans = cm.monthSpans || {};
-                Object.keys(spans).forEach(k => {
-                    _schTeach.assigns.months[k] = (spans[k] || []).map(L).filter(Boolean);
-                });
-                // Header-row memory (display-only): tick back the R-lines the
-                // reviewer picked when this layout was taught. Old maps have no
-                // such key and keep the tagged-HEADER default above. Invalid or
-                // unknown R-numbers are ignored, never trusted.
-                try {
-                    const saved = Array.isArray(cm.headerRows) ? cm.headerRows : [];
-                    const known = {};
-                    parsed.rows.forEach(r => { known[r.n] = true; });
-                    const kept = saved.map(n => parseInt(n, 10))
-                        .filter(n => n >= 1 && n <= 40 && known[n]);
-                    if (kept.length) {
-                        _schTeach.headerRows = kept.slice(0, 2);
-                    }
-                } catch (e2) { /* prefill is best-effort */ }
-                // Row-role memory (display-only, defect 12, 2026-09-15): tick back
-                // the "not an activity" and "cumulative" rows a taught layout names.
-                // The map stores TEXT signatures, never R-numbers, so each block row
-                // is re-signed with schRowSignature() and matched. This also restores
-                // layouts saved before this fix — nothing new is stored.
-                // Runs AFTER the header restore: header rows are never pickable.
-                // ONE row per signature, first in block order. The server refuses two
-                // picks that read the same, so ticking every duplicate would make
-                // Save fail on a layout the reviewer never changed (defect 7's class).
-                // Own try, so a failure here cannot undo the column/header prefill.
-                try {
-                    const exSigs = Array.isArray(cm.excludeSigs)
-                        ? cm.excludeSigs.map(s => String(s).trim()).filter(s => s !== '')
-                        : [];
-                    const cuSig = typeof cm.cumulativeSig === 'string' ? cm.cumulativeSig.trim() : '';
-                    if (exSigs.length || cuSig) {
-                        const claimed = {};
-                        parsed.rows
-                            .filter(r => _schTeach.headerRows.indexOf(r.n) === -1 && r.role !== 'HEADER')
-                            .forEach(r => {
-                                const sig = schRowSignature(r.cells);
-                                if (sig === '' || claimed[sig]) return;
-                                if (exSigs.indexOf(sig) !== -1 || sig === cuSig) {
-                                    claimed[sig] = true;
-                                    _schTeach.excludedRows.push(r.n);
-                                    if (sig === cuSig) { _schTeach.cumulativeRow = r.n; }
-                                }
-                            });
-                        _schTeach.excludedRows.sort((x, y) => x - y);
-                    }
-                } catch (e3) { /* prefill is best-effort */ }
-            }
+            schCore().prefillFromMap(_schTeach, row.column_map || null, parsed);
         } catch (e) { /* prefill is best-effort */ }
         // PDF-4: say up front when this row cannot be taught, instead of letting the
         // reviewer assign every column and only then meet a refusal on Save.
@@ -755,18 +595,21 @@ function schMonthsToShow() {
 // Row fields (2026-09-15). Armed like column fields, but they take clicks on the
 // grid's R-numbers. KEY NAMES MUST NOT START WITH "m": month fields are m1..m12
 // and several dispatchers used to test indexOf('m') === 0 (regression restudy,
-// trap (a)). Every dispatcher now tests /^m\d+$/ or schIsRowField().
+// trap (a)). Every dispatcher now asks scurveTeachCore.isMonthField() (/^m\d+$/)
+// or schIsRowField().
 const SCH_ROW_FIELDS = [
     { key: 'rowHeader', label: 'Header row', tip: 'The line(s) holding the column labels. Detected automatically — arm this and click an R-number only if the labels print on a different line. At most two; click again to clear.' },
     { key: 'rowSkip', label: 'Not an activity', excelOnly: true, tip: 'Rows the system must not add up as work items — author totals, cash-flow or duration lines. Arm this and click their R-numbers; click again to clear.' },
     { key: 'rowCurve', label: 'Cumulative row', excelOnly: true, tip: 'The author’s printed running-total row (the S-curve). Reference only — marking it also marks it Not an activity. Pick one; click again to clear.' },
 ];
-const SCH_ROW_PDF_REASON = 'Excel layouts only — a PDF layout finds its cumulative row by shape.';
+// The keys above must match scurveTeachCore.ROW_FIELD_KEYS (pinned by
+// tests/js/scurve-teach-core.test.mjs, which reads this file's SCH_ROW_FIELDS keys).
+
+// Why the two role fields are disabled on a PDF row — one wording, from the core.
+function schRowPdfReason() { return schCore().ROW_PDF_REASON; }
 
 // Is this palette key a row field (as opposed to a column field)?
-function schIsRowField(key) {
-    return key === 'rowHeader' || key === 'rowSkip' || key === 'rowCurve';
-}
+function schIsRowField(key) { return schCore().isRowField(key); }
 
 // The human label of a row field ("Header row"), for messages.
 function schRowFieldTitle(key) {
@@ -780,7 +623,7 @@ function schTeachFieldLabel(key) {
     if (key === 'weight') return 'WT';
     if (key === 'code') return 'CODE';
     // Was indexOf('m') === 0 — the same trap schTeachClickLetter had.
-    if (/^m\d+$/.test(key)) return 'M' + key.substring(1);
+    if (schCore().isMonthField(key)) return 'M' + key.substring(1);
     return key;
 }
 
@@ -852,7 +695,7 @@ function schRenderTeachPalette() {
         const b = armButton(f, f.label + ': ' + schRowFieldValue(f.key));
         if (f.excelOnly && isPdf) {
             b.disabled = true;
-            b.title = SCH_ROW_PDF_REASON;
+            b.title = schRowPdfReason();
             // A disabled button swallows hover in some browsers, so the reason is
             // also printed once beside the buttons.
         }
@@ -861,7 +704,7 @@ function schRenderTeachPalette() {
     if (isPdf) {
         const why = document.createElement('span');
         why.className = 'small text-muted ms-1';
-        why.textContent = SCH_ROW_PDF_REASON;
+        why.textContent = schRowPdfReason();
         rows.appendChild(why);
     }
 }
@@ -900,103 +743,12 @@ function schNudgeHeaderPicker() {
     setTimeout(function () { btn.style.boxShadow = ''; }, 2400);
 }
 
-/**
- * Apply ONE click on an R-number for an armed row field. Pure over the teaching
- * state `t` (no DOM), so it can be replayed in node against real stored blocks.
- *
- * Called by: schTeachClickRow().
- * Returns { changed, message } — `message` is a refusal the caller shows as a toast.
- *
- * Every refusal mirrors one the server makes in teachColumns(), so the reviewer
- * hears it on the click instead of on Save:
- *   - a row tagged HEADER is never summed, so it cannot be excluded;
- *   - a row the reviewer picked as a header row cannot also carry a role;
- *   - a row with no label text cannot be recognised again (empty signature);
- *   - two role rows that read the same cannot be told apart at read time.
- * Header-row picks STEAL a row from the role picks (the two are disjoint by
- * construction), matching how a column click moves a letter between fields.
- */
-function schApplyRowPick(t, field, n) {
-    const row = (t.rows || []).find(r => r.n === n);
-    if (!row) return { changed: false, message: 'R' + n + ' is not in this block.' };
-    const drop = (list, v) => { const at = list.indexOf(v); if (at !== -1) list.splice(at, 1); };
-    const byNumber = (x, y) => x - y;
+// One R-number click for an armed row field -> { changed, message }. The click
+// rules and every refusal are documented in scurveTeachCore.applyRowPick().
+function schApplyRowPick(t, field, n) { return schCore().applyRowPick(t, field, n); }
 
-    if (field === 'rowHeader') {
-        if (t.headerRows.indexOf(n) !== -1) {
-            drop(t.headerRows, n);
-            return { changed: true, message: null };
-        }
-        if (t.headerRows.length >= 2) {
-            return { changed: false, message: 'At most two header rows — click R' + t.headerRows.join(' or R') + ' to clear one first.' };
-        }
-        t.headerRows.push(n);
-        t.headerRows.sort(byNumber);
-        drop(t.excludedRows, n);
-        if (t.cumulativeRow === n) t.cumulativeRow = null;
-        return { changed: true, message: null };
-    }
-
-    if (field !== 'rowSkip' && field !== 'rowCurve') return { changed: false, message: null };
-    if (t.sourceType === 'pdf') return { changed: false, message: SCH_ROW_PDF_REASON };
-
-    // Clicking a row that already holds this role clears it.
-    if (field === 'rowSkip' && t.excludedRows.indexOf(n) !== -1) {
-        drop(t.excludedRows, n);
-        // The curve row must never be summed as work, so un-excluding it also
-        // un-marks it as the curve.
-        if (t.cumulativeRow === n) t.cumulativeRow = null;
-        return { changed: true, message: null };
-    }
-    if (field === 'rowCurve' && t.cumulativeRow === n) {
-        // Kept as Not an activity (visible on the grid) — a curve row the reviewer
-        // just un-marked is still not work; they can clear that separately.
-        t.cumulativeRow = null;
-        return { changed: true, message: null };
-    }
-
-    if (row.role === 'HEADER') {
-        return { changed: false, message: 'R' + n + ' is tagged HEADER — it is never added up as an activity, so there is nothing to exclude.' };
-    }
-    if (t.headerRows.indexOf(n) !== -1) {
-        return { changed: false, message: 'R' + n + ' is a header row you picked — arm "Header row" and click it to release it first.' };
-    }
-    const sig = schRowSignature(row.cells);
-    if (sig === '') {
-        return { changed: false, message: 'R' + n + ' has no label text to recognise it by — pick a row that names itself.' };
-    }
-    const twin = t.excludedRows.find(m => m !== n && schRowSignature(((t.rows || []).find(r => r.n === m) || {}).cells) === sig);
-    if (twin !== undefined) {
-        return { changed: false, message: 'R' + n + ' reads the same as R' + twin + ' — the system could not tell them apart in the file.' };
-    }
-
-    if (t.excludedRows.indexOf(n) === -1) {
-        t.excludedRows.push(n);
-        t.excludedRows.sort(byNumber);
-    }
-    if (field === 'rowCurve') t.cumulativeRow = n;
-    return { changed: true, message: null };
-}
-
-/**
- * Does row n hold a value under any column the reviewer assigned to a month?
- * Pure. Returns null when no month is assigned yet (nothing to judge against).
- * Called by: schRenderTeachReadout() for the advisory cumulative-row note — a
- * running-total row prints a figure in the month columns; a TOTAL row does not.
- */
-function schRowHasMonthValues(t, n) {
-    const row = (t.rows || []).find(r => r.n === n);
-    const letters = [];
-    Object.keys((t.assigns && t.assigns.months) || {}).forEach(k => {
-        (t.assigns.months[k] || []).forEach(l => letters.push(l));
-    });
-    if (!row || !letters.length) return null;
-    return letters.some(l => {
-        const c = (t.letters || []).indexOf(l);
-        const v = c === -1 ? '' : String(row.cells[c] == null ? '' : row.cells[c]).trim();
-        return /\d/.test(v);
-    });
-}
+// Does row n hold a value under an assigned month column? (null = no months yet)
+function schRowHasMonthValues(t, n) { return schCore().rowHasMonthValues(t, n); }
 
 // Click on an R-number in the teach grid. Row fields take it; with a column field
 // armed the click is explained rather than silently ignored.
@@ -1014,55 +766,18 @@ function schTeachClickRow(n) {
     schRenderTeachReadout();
 }
 
-/**
- * A short human label for a row, for the pickers and the readout.
- *
- * The R-number alone is not enough to pick a row with any confidence — "R7" says
- * nothing, "R7 TOTAL" says everything. Built from the row's own non-numeric cells,
- * which is the same material the server turns into the stored signature, so what
- * the reviewer reads is what gets matched.
- */
-function schRowLabel(r) {
-    const words = (r.cells || [])
-        .map(c => String(c == null ? '' : c).trim())
-        .filter(c => c !== '' && !/^-?[\d,.\s%]+$/.test(c));
-    const text = words.join(' ').replace(/\s+/g, ' ').trim();
-    return text.length > 46 ? text.slice(0, 45) + '…' : text;
-}
+// Short human label for a row ("TOTAL"), for toasts and the advisory.
+function schRowLabel(r) { return schCore().rowLabel(r); }
 
-// PHP is_numeric() on an already-trimmed cell: optional sign, digits with an
-// optional fraction (or a bare fraction), optional exponent.
-const SCH_PHP_NUMERIC = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
-
-/**
- * Browser twin of SCurveImportService::rowSignature() — MUST stay in step with it.
- *
- * Purpose: turn a stored block row back into the text signature a taught map
- * stores (excludeSigs / cumulativeSig), so the teach modal can tick the rows a
- * saved layout names. Display-only: the server recomputes signatures itself on
- * save, and the reader matches the live workbook, never this function.
- * Called by: schTeachColumns() prefill (Excel branch).
- * Mirrors PHP exactly: drop empty and numeric cells, join with a space,
- * lowercase, collapse ASCII whitespace (PCRE \s without /u), PHP trim().
- * If the two ever drift, reopening simply shows fewer ticks — the safe direction.
- */
-function schRowSignature(cells) {
-    const words = [];
-    (cells || []).forEach(c => {
-        const t = String(c == null ? '' : c).replace(/^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g, '');
-        if (t === '' || SCH_PHP_NUMERIC.test(t)) return;
-        words.push(t);
-    });
-    return words.join(' ').toLowerCase()
-        .replace(/[ \t\n\x0B\f\r]+/g, ' ')
-        .replace(/^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g, '');
-}
+// Browser twin of SCurveImportService::rowSignature(); parity pinned from both
+// suites by tests/fixtures/scurve_row_signature_cases.json.
+function schRowSignature(cells) { return schCore().rowSignature(cells); }
 
 // (2026-09-15) schRenderTeachHeaderRows / schRenderTeachRowRoles and their
 // checkbox/radio lists were removed: rows are picked by clicking R-numbers on the
 // grid (schTeachClickRow -> schApplyRowPick), shown by tint + tag in the grid and
 // by the palette's Rows line. Excel-only rationale for the two role fields is
-// unchanged — see SCH_ROW_PDF_REASON.
+// unchanged — see scurveTeachCore.ROW_PDF_REASON.
 
 // Which field (if any) currently claims a column letter.
 function schTeachClaim(letter) {
@@ -1089,7 +804,7 @@ function schTeachClickLetter(letter) {
     }
     if (field === 'desc' || field === 'code' || field === 'weight' || field === 'contract') {
         a[field] = (a[field] === letter) ? null : letter;
-    } else if (/^m\d+$/.test(field)) {
+    } else if (schCore().isMonthField(field)) {
         // 2026-09-14: was indexOf('m') === 0, which claims EVERY field key
         // beginning with m. The row-role work was one palette button away from
         // adding such a key, and the failure would have been near-undebuggable:

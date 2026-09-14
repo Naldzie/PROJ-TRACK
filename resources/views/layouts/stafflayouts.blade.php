@@ -409,6 +409,10 @@ Swal.fire({
 @include('admin._manage_parser_keywords_modal')
 
 {{-- S-CURVE LAYOUTS REVIEW MODAL (E1-2 — staff role layout; admin has its own include) --}}
+{{-- Its pure logic (block parsing, prefill, row-click rules) lives in this module so
+     npm run test:js can test it; the desk cannot work without it, so it loads right
+     beside the desk, filemtime-versioned so an edit never serves a stale copy. --}}
+<script type="module" src="{{ asset('js/admin/projects/scurve-teach-core.js') . '?v=' . filemtime(public_path('js/admin/projects/scurve-teach-core.js')) }}"></script>
 @include('admin._manage_scurve_headers_modal')
     {{-- The two desks above call showDeleteConfirmation from any page, so its
          component must be present wherever they are. Guarded by @once, so pages

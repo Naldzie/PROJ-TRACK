@@ -1,0 +1,18 @@
+{
+    "_about": "Row-signature parity cases. READ BY BOTH SUITES: tests/js/scurve-teach-core.test.mjs (rowSignature in public/js/admin/projects/scurve-teach-core.js) and tests/Feature/SCurveImportTest.php (SCurveImportService::rowSignature). A taught map stores these signatures and the teach modal re-signs block rows to show them again, so the two implementations must agree exactly. Add a case here, never to one side only.",
+    "cases": [
+        { "cells": ["", "TOTAL", "", "", "1200000"], "sig": "total" },
+        { "cells": ["", "CUMULATIVE % ACHIEVED", "", "", "", "5", "20", "40", "60", "80", "100"], "sig": "cumulative % achieved" },
+        { "cells": ["1,200,000", "TOTAL"], "sig": "1,200,000 total" },
+        { "cells": ["5%", "CUMULATIVE % ACHIEVED"], "sig": "5% cumulative % achieved" },
+        { "cells": [" 12 ", "Stage"], "sig": "stage" },
+        { "cells": ["1.", ".5", "x"], "sig": "x" },
+        { "cells": ["1e3", "+5", "-3", "Cash Flow"], "sig": "cash flow" },
+        { "cells": ["CUMULATIVE  %\tACHIEVED"], "sig": "cumulative % achieved" },
+        { "cells": ["Ñandú Works", "0x1A"], "sig": "ñandú works 0x1a" },
+        { "cells": ["", "   ", "Site Establishment Fund", "600000"], "sig": "site establishment fund" },
+        { "cells": ["12.50", "1E-2", "RUNNING TOTAL %"], "sig": "running total %" },
+        { "cells": ["- ", "n/a"], "sig": "- n/a" },
+        { "cells": ["", "1200000", "5", "20"], "sig": "" }
+    ]
+}
