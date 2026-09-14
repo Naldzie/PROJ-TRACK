@@ -613,6 +613,25 @@
   9. SESSION LOGS
 ===============================================================================
 
+  2026-09-14 (late) — PDF-2 CONSULT HARDENED: A STORED LAYOUT MUST FIT THE PAGE'S
+  OWN LABELS. Full record: textfiles/document_parser_pdf_teach_grid_plan.md, the last
+  §13 entry. Pointer here because PDF-2 (matchMapPage) is specified in this file.
+    SYMPTOM (user): with an old approved roof layout live (DB #116), the roof PDF
+    read 6.32 / 24.31 / 42.30 / 42.30 / 59.71 / 77.03 / 100 "with a learned layout".
+    CAUSE: #116 stored ONE page with SEVEN equal bands; the print has SIX "30 days"
+    labels on page one (months 6-7 are on page two). The signature matched on
+    wording ("30 days" everywhere) and numbers sat under enough bands, so it applied.
+    FIX: matchMapPage now also requires bandsHoldLabels — every stored month band
+    contains the centre of a letter-bearing token on the header line or the line
+    below. Every band of a layout that fits holds its own label; a misfit leaves
+    the file unread (capture + AI offer) instead of reading it wrong.
+    CORRECTION TO THIS FILE: the PDF-2 BUILT entry below says "usableLayoutMap()
+    gates version, kind AND SHAPE". The code never had a shape gate — only version,
+    kind and a non-empty page list. The docblock that made the same claim is fixed;
+    bandsHoldLabels is what now refuses geometry that does not fit.
+    VERIFIED: +1 JS test (falsified); verify_p6 16 reads 0 changed; 9 sample blocks
+    0 changed; the user's taught roof layout (#123) still reads the true curve.
+
   2026-09-13 — E6 ✅ BROWSER-PROVEN by the user's log, BOTH halves at once, on a real
   per-day quota. The strongest single run this track has produced for the AI ladder.
     19:13:00  latest  429  quota=GenerateRequestsPerDayPerProjectPerModel-FreeTier
@@ -1945,7 +1964,9 @@
       the stored FRACTIONS by THIS page's width, which is what lets a map fit a
       differently sized print. bandsHoldNumbers() has the final say, so wording
       alone can never make a cover page pose as the table.
-    - usableLayoutMap() gates version, kind AND SHAPE. The shape gate is not
+    - [CORRECTED 2026-09-14 late: no shape gate was ever built — see the top §9
+      entry; bandsHoldLabels now does that job per page.]
+      usableLayoutMap() gates version, kind AND SHAPE. The shape gate is not
       theoretical: pre-correction captures hold a single-page map that would read
       a column-split table short, so they are ignored outright even if a row says
       "live" (this is what neutralises the stale roof row id=55 without touching

@@ -1420,6 +1420,10 @@ function matchMapPage(tokenLines, pageMaxX, mapPage, allowSingleMonth) {
             if (words.some((w) => w === s || headerFuzzyMatch(w, [s]))) hits++;
         }
         if (hits < 2 || hits < Math.ceil(sig.length / 2)) continue;
+        // The stored bands must agree with THIS page's own month labels
+        // (see bandsHoldLabels). Wording alone cannot tell two prints of the same
+        // family apart when every label reads "30 days".
+        if (!bandsHoldLabels(tokenLines, i, monthCols)) continue;
         // P4 — arity-aware, for the same reason the derivation had to become so:
         // a column-overflow page can carry a SINGLE month (the roof's "7 days"
         // tail), and demanding two filled bands is a test it can never pass. The
@@ -1440,12 +1444,55 @@ function matchMapPage(tokenLines, pageMaxX, mapPage, allowSingleMonth) {
 }
 
 /**
+ * Does every stored month band sit over one of this page's own column labels?
+ *
+ * 2026-09-14 (user-reported, roof PDF). A single-page roof layout from an earlier
+ * build (DB rows 114-116) stored SEVEN equal bands across page one, while the
+ * real print carries SIX "30 days" labels there (months 1-5 plus an empty stub;
+ * months 6-7 print on page two). The signature matched — every label is
+ * "30 days" — and numbers sat under enough bands, so the layout applied and read
+ * 6.32 / 24.31 / 42.30 / 42.30 / 59.71 / 77.03 / 100: month 4 repeated, 99.14
+ * lost, July and January with no activities. Measured: its month-4 band
+ * (0.652-0.744 of the page width) holds no label at all, and every later band
+ * reads its neighbour's column.
+ *
+ * A band built from a header (derived, AI-derived or taught from the grid)
+ * always covers its own label, so asking for one is cheap for a layout that fits
+ * and decisive for one that does not. The reviewer's taught roof layout passes:
+ * each of its bands holds exactly its own label, and the stub column it left out
+ * is simply unclaimed — so the rule is "every band has a label", never "every
+ * label has a band".
+ *
+ * A label is a token carrying a LETTER on the header line or the line directly
+ * below it (a split "MONTH" / "1" header). Numeric tokens never count: under the
+ * header they are data, and data under a band is bandsHoldNumbers' question.
+ * Lines ABOVE the header are not consulted — the roof prints "187 days" there,
+ * and it would rescue exactly the misfit band this exists to catch.
+ *
+ * Called by: matchMapPage().
+ */
+function bandsHoldLabels(tokenLines, headerIndex, monthCols) {
+    const labelCentres = [];
+    [headerIndex, headerIndex + 1].forEach((li) => {
+        const line = tokenLines[li];
+        if (!line) return;
+        for (const t of line.tokens) {
+            const text = String(t.str || '').trim();
+            if (!/[A-Za-z]/.test(text)) continue;
+            const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+            labelCentres.push((t.x + xEnd) / 2);
+        }
+    });
+    return monthCols.every((mc) => labelCentres.some((c) => c >= mc.x && c < mc.xEnd));
+}
+
+/**
  * Is this stored map safe to consult at all?
  *
- * Version, kind and SHAPE are all gated. The shape check matters in practice:
- * captures taken before maps became multi-page carry a single-page layout that
- * would read a column-split table short, so they are ignored outright rather
- * than trusted because a row happens to say "live".
+ * Version, kind and a non-empty page list are gated here. (This comment used to
+ * claim a SHAPE check that would ignore single-page maps of a column-split table;
+ * the code never did that. What actually refuses a map whose geometry does not fit
+ * the page is bandsHoldLabels, per page, in matchMapPage.)
  */
 function usableLayoutMap(map) {
     return !!map

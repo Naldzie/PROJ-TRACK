@@ -857,6 +857,44 @@ test('unusable maps are ignored rather than trusted', () => {
     }
 });
 
+// 2026-09-14 (user-reported, roof PDF) — a layout whose bands do not sit over this
+// page's own labels must not read it. An older single-page roof layout stored SEVEN
+// equal bands over a page that prints SIX "30 days" labels; the wording matched and
+// numbers sat under enough bands, so it applied and read month 4 twice and lost
+// 99.14. Every band of a layout that fits holds its own label, so the rule is
+// "every band has a label" — the taught layout that skips the stub column still
+// applies, and the misfit refuses.
+test('a layout whose bands miss the page’s own labels does not apply', () => {
+    const W = 745; // pageMaxX: the last label ends at 700 + 45
+    const roofLike = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 300, 45], ['30 days', 380, 45], ['30 days', 460, 45],
+            ['30 days', 540, 45], ['30 days', 620, 45], ['30 days', 700, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 60, 60],
+            ['1000', 310, 30], ['2000', 390, 30], ['3000', 470, 30], ['4000', 550, 30], ['2000', 630, 30]]],
+        [720, [['B', 45, 8], ['WALLS', 60, 45],
+            ['1000', 310, 30], ['1000', 390, 30], ['1000', 470, 30], ['1000', 550, 30], ['2000', 630, 30]]],
+    ]);
+    assert.equal(parseSCurvePdf([roofLike]), null, 'precondition: the rules must miss');
+
+    const layout = (monthCols) => ({ v: 1, kind: 'pdf', pages: [{
+        pageHint: 0, sig: ['no.', 'amount', '30 days'], descX: 40 / W, descRight: 280 / W, monthCols,
+    }] });
+    // Fits: five bands, each around its own label; the sixth (stub) column unclaimed.
+    const fits = layout([0, 1, 2, 3, 4].map((k) => ({ index: k + 1, x: (290 + 80 * k) / W, xEnd: (370 + 80 * k) / W })));
+    // Misfit: seven equal bands from 0.38 to the page edge, the shape of DB row 116.
+    const step = 0.62 / 7;
+    const misfit = layout([0, 1, 2, 3, 4, 5, 6].map((k) => ({ index: k + 1, x: 0.38 + k * step, xEnd: 0.38 + (k + 1) * step })));
+
+    const good = parseSCurvePdf([roofLike], { liveMaps: [{ id: 123, map: fits }] });
+    assert.ok(good && good.meta.mapUsed, 'the fitting layout still reads the file');
+    assert.equal(good.months.length, 5);
+
+    const bad = parseSCurvePdf([roofLike], { liveMaps: [{ id: 116, map: misfit }] });
+    assert.ok(bad === null || !bad.meta.mapUsed,
+        'a layout whose band holds no label must leave the file unread, not read it wrong');
+});
+
 // A signature can match on wording alone; the bands still have to hold numbers.
 // Without this a same-worded cover page could pose as the table.
 test('a matching signature over empty bands does not apply', () => {

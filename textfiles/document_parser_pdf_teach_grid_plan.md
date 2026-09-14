@@ -13,19 +13,24 @@
 #         Commits: 23abd20 (build) · 22edd71 (1-3) · 63862dd (4-6) · 4ffbcc0 (7) ·
 #         7741341 (close).
 #
-#         🔄 THE SAME SWEEP ON THE EXCEL PATH. Rounds five and six found three more
-#         defects there, fixed in 293b302 and 3ce2f92. Round seven (2026-09-14) was a
-#         restudy; its six-step EXCEL ROW-ROLE plan is now BUILT and COMMITTED
-#         (547ebb5 · 067c46d · e3c30d6 · 6711243 · b7bf35c · 141af76), header-row
-#         memory in 5e9ad07 (pushed). Browser-confirmed so far: step 4 nudge, step 5
-#         pickers save, PDF band disabled, header memory.
-#         ➜ HANDOFF, 2026-09-15: jump to the LAST entry of §13. Defect 12 (role picks
-#         vanish on reopen) is fixed, browser-confirmed and committed (413f810).
-#         Click-to-pick rows is BUILT, BROWSER-CONFIRMED, COMMITTED and PUSHED — its
-#         entry is in §13. The Excel row-role track is CLOSED; nothing is owed.
-#         Row roles stay Excel-only BY DECISION (see §11 Decision 4).
-#         Then the LATENT-DEFECT BATCH (class-name case, storeAiDerived type scope,
-#         PDF CUMULATIVE tag guard, housekeeping) — BUILT, UNCOMMITTED, last §13 entry.
+#         ✅ THE SAME SWEEP ON THE EXCEL PATH IS CLOSED TOO (rounds five-seven, then the
+#         row-role plan). ALL COMMITTED AND PUSHED as of 2026-09-14 late evening:
+#           defects 8-11 ................ 293b302 · 3ce2f92
+#           Excel row-role steps 1-6 .... 547ebb5 · 067c46d · e3c30d6 · 6711243 ·
+#                                         b7bf35c · 141af76
+#           header-row memory ........... 5e9ad07
+#           defect 12 (picks on reopen) . 413f810
+#           click-to-pick rows .......... 238a77c
+#           latent-defect batch ......... cd2804a
+#           teach logic under test ...... scurve-teach-core.js + 29 JS tests +
+#                                         shared PHP/JS signature fixture
+#           roof misfit-layout fix ...... bandsHoldLabels in matchMapPage
+#         Row roles stay Excel-only BY DECISION (§11 Decision 4).
+#         ➜ HANDOFF: the LAST §13 entry. It opens with a DATE NOTE — entries headed
+#           "2026-09-15" were really written on 2026-09-14 local time.
+#         OWED BY THE USER (small): item-2 browser steps not yet shown (Excel prefill
+#           on reopen; staff layout). NEXT ORDERED WORK: the early-100 guard (AGENTS.md
+#           Session Handoff has its two design constraints).
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -2016,6 +2021,232 @@
         substitute for teaching, not an extra layer on top of it.
       - Safe variant if ever wanted: use shape only as a SUGGESTION in the teach modal
         ("R8 looks like a running total — mark it?"), never in the reader.
+    COMMITTED + PUSHED as cd2804a (2026-09-15).
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — ITEM 2: THE TEACH MODAL'S LOGIC IS NOW UNDER npm run test:js
+  ✅ BUILT, COMMITTED + PUSHED (2026-09-14 late, its own commit)
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Status:         committed and pushed. Browser evidence in the next entry (the
+                      module loads; a PDF teach ran through it end to end).
+      Files:          public/js/admin/projects/scurve-teach-core.js (NEW)
+                      resources/views/admin/_manage_scurve_headers_modal.blade.php
+                      resources/views/layouts/app.blade.php, stafflayouts.blade.php
+                      tests/js/scurve-teach-core.test.mjs (NEW)
+                      tests/fixtures/scurve_row_signature_cases.json (NEW)
+                      tests/Feature/SCurveImportTest.php
+      Still unshown:  browser steps 2 (Excel prefill on reopen) and 5 (staff layout).
+      Next ordered:   item 3, the early-100 guard.
+
+    WHY. The rules that four acceptance rounds and two defect fixes stabilised —
+    the one-letter-per-month prefill (defect 7), the every-page prefill (defect 6),
+    the header and row-role memory (defect 12), the row-click rules — lived in the
+    modal's inline <script>. Nothing tested them; they were pinned by one-off probes
+    in C:\temp\opencode that cut functions out of the Blade TEXT. §13 had already
+    said "if a harness ever exists, defect 7's rule is the first thing to move".
+
+    SHAPE CHOSEN, AND THE ALTERNATIVE REJECTED
+      Chosen: a pure ESM core, public/js/admin/projects/scurve-teach-core.js, the
+        same pattern as scurve-import-core.js / scurve-pdf-parser-core.js — loaded
+        with <script type="module">, attaches window.scurveTeachCore, imported
+        directly by the test. The test runs the bytes the browser runs.
+      Rejected: a test that extracts functions from the Blade by text surgery (what
+        the probes did). It tests shipped code too, but breaks on any reformat and
+        cannot be imported like a module.
+      Loaded by BOTH role layouts right beside `@include('admin._manage_scurve_headers_modal')`,
+        filemtime-versioned. Beside the include, not on some pages: the desk is
+        layout-wide, so its dependency is too (the 2026-09-13 showDeleteConfirmation
+        lesson).
+
+    WHAT MOVED (core export -> modal wrapper that now delegates)
+      splitCsv / parseHeaderBlock      -> schSplitCsv / schParseHeaderBlock
+      indexToLetter                    -> schIndexToLetter
+      rowLabel / rowSignature          -> schRowLabel / schRowSignature
+      suggestedMonthsFor               (was an inline IIFE in schTeachColumns)
+      defaultHeaderRows                (was inline in schTeachColumns)
+      lettersInBand + prefillFromMap   (was the ~120-line inline prefill block)
+      ROW_FIELD_KEYS, ROW_PDF_REASON, isRowField, isMonthField
+      applyRowPick / rowHasMonthValues -> schApplyRowPick / schRowHasMonthValues
+    Behaviour is a straight move — same comparisons, same order, same best-effort
+    guards (the prefill keeps separate guards for columns, header memory and role
+    memory). The wrappers keep their sch* names, so no call site changed.
+    SCH_ROW_FIELDS (button labels + tooltips) stays in the modal: it is UI text. The
+    test reads its keys out of the Blade and asserts they equal ROW_FIELD_KEYS.
+    schCore() throws a plain "not loaded — hard-refresh" error if the module is
+    missing, instead of failing somewhere inside a render. No top-level call into
+    the core exists (module scripts run after the classic script is parsed).
+
+    SIGNATURE PARITY IS NOW PINNED FROM BOTH SIDES
+      tests/fixtures/scurve_row_signature_cases.json (13 cases) is read by the new JS
+      test AND by SCurveImportTest::test_row_signature_matches_the_shared_parity_cases.
+      Changing rowSignature in one language without the other turns a suite red.
+
+    TESTS: +29 JS (tests/js/scurve-teach-core.test.mjs), +1 PHP.
+      Block parsing (quotes, roles, junk), letters past Z, row labels, signature
+      parity; opening state (tagged header default, F6 empty default, suggested
+      months for PDF numbered / unnumbered / capped / Excel); Excel prefill (columns,
+      header memory, pre-memory maps, invalid R-numbers, one row per signature, a
+      header row never ticked as a role, malformed map does not throw); PDF prefill
+      (dominant overlap, band-share, paired month, continuation-page graze, every
+      page, first-page description); row keys never month-shaped and equal to the
+      modal's palette; all fourteen row-click scenarios; the cumulative advisory.
+      The 6-stage fixture is the stored block of the SYNTHETIC 6-stage specimen; the
+      PDF geometry is transcribed from the roof's measured coverage, no roof text.
+      CAUGHT WHILE WRITING (mine, both fixture errors, neither a code defect): a desc
+      band spanning A and B was asserted to name B (the rule names the first claimed
+      letter, A — as the roof's own read-back does); and a "header never ticked" case
+      overrode excludeSigs but inherited the map's cumulativeSig, so R8 was correctly
+      ticked. Both fixtures corrected, rule untouched.
+
+    FALSIFIED (C:\temp\opencode\falsify_teach_core.mjs — mutates the core IN PLACE,
+    runs the suite, always restores; verified byte-identical afterwards)
+      defect 7 any-overlap        -> caught (2 tests)
+      defect 6 first page only    -> caught
+      defect 12 every duplicate   -> caught
+      HEADER-tag refusal removed  -> caught
+      signature drift (no lower)  -> caught (5 tests)
+      PHP side: mb_strtolower removed from rowSignature -> the PHP parity test fails;
+      file restored with git checkout (it had no other edits).
+      NOTE, a near-miss worth keeping: the first PHP mutation was done with sed and
+      silently matched nothing — the test "passed" against unchanged code. Caught
+      because the diff stat was empty. Redone with a node string replace. Same class
+      as the regex-through-a-shell lesson: when a falsification passes, first prove
+      the mutation happened.
+
+    VERIFIED
+      npm run test:js     188 tests (+29), 186 pass + the 2 intended blinding fails
+      php artisan test    1217 passed (+1) / the same 5 pre-existing BY NAME
+      verify_teach_wiring.mjs  every schCore().<name> the modal uses (13) exists on
+                          window.scurveTeachCore; no inline copy of moved logic
+                          remains; core rowSignature = PHP on all 25 rows of the 3
+                          stored Excel layouts currently in the DB
+      node --check on the extracted modal script: clean; view:clear + view:cache OK.
+      SUPERSEDED PROBES (outside the repo, kept for history, now stale because they
+      cut functions out of the Blade): verify_roles.mjs, verify_rowpick.mjs,
+      falsify_rowpick.mjs. The suite replaces all three.
+
+    BROWSER CHECK OWED (user) — the one thing no suite can see is the module loading
+      1. Hard-refresh any admin page, open S-Curve Layouts: the list's mini-grids
+         render (they parse through the core).
+      2. Teach the 6-stage Excel row: palette prefilled (Description, months, Rows
+         line "Header row: R2 · Not an activity: R7 + R8 · Cumulative row: R8").
+      3. Click an R-number with a row field armed, and a letter with a month armed —
+         both still assign.
+      4. Open the roof PDF layout: months prefilled one letter each, M6/M7 present.
+      5. Repeat step 1 logged in as STAFF (the other layout carries its own tag).
+      If the desk shows "Could not open the teaching view", the console will say
+      "scurve-teach-core.js is not loaded — hard-refresh the page."
+
+  -----------------------------------------------------------------------------
+  2026-09-14 (late) — ROOF PDF READ WRONG THROUGH A MISFIT LAYOUT: FIXED IN THE
+  READER, COMMITTED + PUSHED. ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ⚠ DATE NOTE, READ FIRST. The §13 entries headed "2026-09-15" (header-row memory
+    onward) were in fact written on the LOCAL date 2026-09-14 — file mtimes and DB
+    created_at (Asia/Manila) prove it: scurve-teach-core.js 23:04, row 123 23:31,
+    this entry ~23:40, all 2026-09-14. They are left as written, not rewritten, so the
+    commit messages that quote them still line up. Read "2026-09-15" above as
+    "2026-09-14, later that evening".
+
+    STATE IN ONE GLANCE
+      Status:       committed and pushed 2026-09-14 late, as the commit after ITEM 2.
+                    NOTHING in this track is uncommitted.
+      Files:        public/js/admin/projects/scurve-pdf-parser-core.js +
+                    tests/js/scurve-pdf-parser.test.mjs + this plan + AGENTS.md
+                    (+ a pointer in document_parser_pdf_layout_learning_plan.md §9).
+      Item 2 browser evidence (user, this session): desk list mini-grids render
+        through the core (screenshot); the teach modal opened on a PDF capture with
+        the role buttons disabled and their reason; the user then TAUGHT that capture
+        (row 123, created 23:31, after the core file existed at 23:04) and the
+        re-import read the true curve — so the modal's clicks, save and the PDF path
+        all ran through the new core. Not separately shown: Excel prefill (step 2)
+        and the staff layout (step 5).
+      Optional for the user: the two unshown item-2 steps, and a roof re-import with
+                    only row 123 live (the probe says it reads the true curve).
+      NEXT ORDERED WORK: item 3, the early-100 guard. Its two constraints are in
+                    AGENTS.md (client-side after the P5 cross-check; read
+                    pre-sanitizer values via the extractRawPoints idiom).
+
+    THE REPORT (user). With DB row 116 (roof, auto-capture, LIVE) approved, the roof
+    PDF imported "with a learned layout" and read
+      6.32 / 24.31 / 42.30 / 42.30 / 59.71 / 77.03 / 100
+    — month 4 repeated, 99.14 gone, July and January listing no activities. Deleting
+    116 made the file miss (capture #122, unnumbered), the user taught it (#123), and
+    that read the truth. The complaint: the file was read WRONG instead of not read.
+
+    DIAGNOSIS (read-only; C:\temp\opencode\dump_pdf_layouts.php + probe_roof_maps.mjs,
+    the REAL roof PDF through the REAL core with the maps from the DB)
+      Rows 114 / 115 / 116 — all created 2026-09-14 19:29-19:32 during testing, all
+      soft-deleted since — are ROOF layouts of an OLD SHAPE: ONE page, SEVEN equal
+      month bands from 0.379 to the page edge. The real print is column-split: page
+      one carries SIX "30 days" labels (months 1-5 plus the empty stub column) at
+      0.425 / 0.530 / 0.635 / 0.740 / 0.846 / 0.950 of the page width; months 6-7 are
+      on page two.
+      Replay reproduced the user's read EXACTLY for all three:
+        #114/#115/#116  6.32/24.31/42.3/42.3/59.71/77.03/100   counts 0,4,4,4,4,3,0
+        #123 (taught)   6.32/24.31/42.3/59.71/77.03/99.14/100  counts 4,4,4,4,3,4,3
+      WHY IT APPLIED: matchMapPage accepts a stored page when its header words match
+      (every label reads "30 days", so any print of the family matches) and numbers
+      sit under at least two bands. Nothing asked whether the stored bands line up
+      with where THIS page prints its labels. Seven bands over six labels: the
+      month-4 band 0.652-0.744 contains no label at all, and every band after it
+      reads its neighbour's column.
+      ALSO FOUND: usableLayoutMap's docblock claimed a SHAPE gate ("single-page
+      layouts of a column-split table are ignored outright"). The code only ever
+      checked version, kind and a non-empty page list. The comment was describing a
+      guard that did not exist — which is part of why this stayed hidden.
+
+    THE FIX — bandsHoldLabels(tokenLines, headerIndex, monthCols), called in
+    matchMapPage after the signature test:
+      EVERY stored month band must contain the centre of at least one LABEL token
+      (a token carrying a letter) on the header line or the line directly below it.
+      - "every band has a label", never "every label has a band": the taught roof
+        layout skips the stub column on purpose, and must still apply;
+      - letter-bearing tokens only: numbers under the header are data, which is
+        bandsHoldNumbers' question, and would trivially satisfy the rule;
+      - the line below counts (a header split "MONTH" / "1"); lines ABOVE do not —
+        the roof prints "187 days" there, inside the misfit month-4 band, and would
+        rescue exactly what this exists to catch.
+      A band derived from a header, from an AI read or taught from the grid always
+      covers its own label, so the rule costs a fitting layout nothing.
+      usableLayoutMap's docblock corrected to say what it actually checks.
+
+    RESULT (probe_roof_maps.mjs after the fix)
+      #114 / #115 / #116  -> NULL  (the file is honestly unread: capture + AI offer,
+                                    exactly what the user expected with no fitting
+                                    layout approved)
+      #121 / #122         -> NULL  (unnumbered, as before)
+      #123                -> 6.32/24.31/42.3/59.71/77.03/99.14/100, counts 4,4,4,4,3,4,3
+    Only #123 is live in the DB now, so nothing the user has approved changes.
+
+    TEST +1 JS "a layout whose bands miss the page's own labels does not apply": a
+    roof-shaped page (six "30 days" labels, five filled columns); a five-band layout
+    that skips the stub still reads (5 months, mapUsed); a seven-equal-band layout —
+    the shape of #116 — leaves the file unread.
+    FALSIFIED (falsify_labels.mjs): with the bandsHoldLabels call disabled in place,
+    the test fails "a layout whose band holds no label must leave the file unread";
+    core restored byte-identical and verified.
+
+    VERIFIED
+      npm run test:js     189 tests (+1), 187 pass + the 2 intended blinding fails
+      verify_p6.mjs       16 reads, 0 changed (every sample PDF, plain AND through its
+                          own taught map — the rule refuses nothing that fits)
+      block_snapshot.mjs  9 sample PDFs, 0 changed
+      PHP: not re-run — no PHP changed since the 1217-pass run of item 2.
+
+    INCIDENT WORTH KNOWING (harness, not product): one verification command piped
+    `node --test` into `grep | head` and stalled past the 2-minute limit. Isolating
+    each parse with `timeout` showed all three finish in <10 ms — the parser never
+    hung. Run node --test to a log file, then grep the file.
+
+    NOT FIXED, DELIBERATELY: HOW a one-page seven-band roof layout got captured and
+    approved at 19:29-19:32 is not reconstructed — those rows are deleted, the build
+    that produced them is several commits back, and the reader now refuses that
+    shape whatever made it. If a fresh capture ever produces one again, that is a
+    capture bug to chase from its own evidence.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
