@@ -700,6 +700,37 @@ function schTeachColumns(id) {
                         _schTeach.headerRows = kept.slice(0, 2);
                     }
                 } catch (e2) { /* prefill is best-effort */ }
+                // Row-role memory (display-only, defect 12, 2026-09-15): tick back
+                // the "not an activity" and "cumulative" rows a taught layout names.
+                // The map stores TEXT signatures, never R-numbers, so each block row
+                // is re-signed with schRowSignature() and matched. This also restores
+                // layouts saved before this fix — nothing new is stored.
+                // Runs AFTER the header restore: header rows are never pickable.
+                // ONE row per signature, first in block order. The server refuses two
+                // picks that read the same, so ticking every duplicate would make
+                // Save fail on a layout the reviewer never changed (defect 7's class).
+                // Own try, so a failure here cannot undo the column/header prefill.
+                try {
+                    const exSigs = Array.isArray(cm.excludeSigs)
+                        ? cm.excludeSigs.map(s => String(s).trim()).filter(s => s !== '')
+                        : [];
+                    const cuSig = typeof cm.cumulativeSig === 'string' ? cm.cumulativeSig.trim() : '';
+                    if (exSigs.length || cuSig) {
+                        const claimed = {};
+                        parsed.rows
+                            .filter(r => _schTeach.headerRows.indexOf(r.n) === -1 && r.role !== 'HEADER')
+                            .forEach(r => {
+                                const sig = schRowSignature(r.cells);
+                                if (sig === '' || claimed[sig]) return;
+                                if (exSigs.indexOf(sig) !== -1 || sig === cuSig) {
+                                    claimed[sig] = true;
+                                    _schTeach.excludedRows.push(r.n);
+                                    if (sig === cuSig) { _schTeach.cumulativeRow = r.n; }
+                                }
+                            });
+                        _schTeach.excludedRows.sort((x, y) => x - y);
+                    }
+                } catch (e3) { /* prefill is best-effort */ }
             }
         } catch (e) { /* prefill is best-effort */ }
         // PDF-4: say up front when this row cannot be taught, instead of letting the
@@ -902,6 +933,34 @@ function schRowLabel(r) {
         .filter(c => c !== '' && !/^-?[\d,.\s%]+$/.test(c));
     const text = words.join(' ').replace(/\s+/g, ' ').trim();
     return text.length > 46 ? text.slice(0, 45) + '…' : text;
+}
+
+// PHP is_numeric() on an already-trimmed cell: optional sign, digits with an
+// optional fraction (or a bare fraction), optional exponent.
+const SCH_PHP_NUMERIC = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+/**
+ * Browser twin of SCurveImportService::rowSignature() — MUST stay in step with it.
+ *
+ * Purpose: turn a stored block row back into the text signature a taught map
+ * stores (excludeSigs / cumulativeSig), so the teach modal can tick the rows a
+ * saved layout names. Display-only: the server recomputes signatures itself on
+ * save, and the reader matches the live workbook, never this function.
+ * Called by: schTeachColumns() prefill (Excel branch).
+ * Mirrors PHP exactly: drop empty and numeric cells, join with a space,
+ * lowercase, collapse ASCII whitespace (PCRE \s without /u), PHP trim().
+ * If the two ever drift, reopening simply shows fewer ticks — the safe direction.
+ */
+function schRowSignature(cells) {
+    const words = [];
+    (cells || []).forEach(c => {
+        const t = String(c == null ? '' : c).replace(/^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g, '');
+        if (t === '' || SCH_PHP_NUMERIC.test(t)) return;
+        words.push(t);
+    });
+    return words.join(' ').toLowerCase()
+        .replace(/[ \t\n\x0B\f\r]+/g, ' ')
+        .replace(/^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g, '');
 }
 
 /**

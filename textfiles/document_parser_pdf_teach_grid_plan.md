@@ -13,13 +13,15 @@
 #         Commits: 23abd20 (build) · 22edd71 (1-3) · 63862dd (4-6) · 4ffbcc0 (7) ·
 #         7741341 (close).
 #
-#         🔄 THE SAME SWEEP ON THE EXCEL PATH IS STILL OPEN. Rounds five and six found
-#         three more defects there, fixed in 293b302 and 3ce2f92. Round seven
-#         (2026-09-14) is a RESTUDY ONLY, no code: the Excel path never emits
-#         [CUMULATIVE], the auto-tagger is wrong on real files three different ways, and
-#         what is worth teaching is "not an activity" + "the curve", never "this is a
-#         data row". Plan and measurements: §13, the 2026-09-14 (seventh round) entry.
-#         NOTHING FROM IT IS BUILT — the build is a separate order (Rule 10).
+#         🔄 THE SAME SWEEP ON THE EXCEL PATH. Rounds five and six found three more
+#         defects there, fixed in 293b302 and 3ce2f92. Round seven (2026-09-14) was a
+#         restudy; its six-step EXCEL ROW-ROLE plan is now BUILT and COMMITTED
+#         (547ebb5 · 067c46d · e3c30d6 · 6711243 · b7bf35c · 141af76), header-row
+#         memory in 5e9ad07 (pushed). Browser-confirmed so far: step 4 nudge, step 5
+#         pickers save, PDF band disabled, header memory.
+#         ➜ HANDOFF, 2026-09-15: jump to the LAST entry of §13. Defect 12 (role picks
+#         vanish on reopen) is fixed, browser-confirmed and committed. Ordered next and
+#         IN PROGRESS: click-to-pick rows (same idiom as columns).
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -1689,7 +1691,8 @@
     DEFECT 12 — ROLE PICKS VANISH ON REOPEN. Same class as header-row memory: the
       Excel prefill (modal ~:679-703) restores columns + headerRows but never reads
       excludeSigs/cumulativeSig, so _schTeach.excludedRows / cumulativeRow start
-      empty. Display-only — the stored map and the read are unaffected. NOT FIXED.
+      empty. Display-only — the stored map and the read are unaffected.
+      (Fixed the same day — see the next entry.)
     PICK WORTH A SECOND LOOK: row 118 taught Cumulative = R7 TOTAL, not R8
       CUMULATIVE % ACHIEVED. TOTAL carries no month values, so the reader binds to
       it and finds no reference (degrades to "no reference", curve unmoved). The
@@ -1697,6 +1700,85 @@
     UX ASK (user): replace the checkbox/radio lists with the column idiom — arm a
       "Header row" / "Not an activity" / "Cumulative row" palette button, then click
       R-badges on the grid. Client-only (same payload). Not ordered yet.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — DEFECT 12 FIXED: ROLE PICKS COME BACK ON REOPEN. ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Committed + pushed:  5e9ad07 header-row memory (and the 21 row-role commits
+                           before it) on origin/wip/phase-5-parser-accuracy-premerge.
+      This fix:            resources/views/admin/_manage_scurve_headers_modal.blade.php
+                           + this plan entry. Blade only; no PHP, no JS file, no route.
+                           BROWSER-CONFIRMED and COMMITTED 2026-09-15 (not pushed).
+      Next ordered work:   click-to-pick rows (UX ASK above) — design notes at the end.
+
+    ROOT CAUSE. The Excel prefill in schTeachColumns() rebuilt the columns and (since
+    5e9ad07) the header rows from column_map, but never read excludeSigs or
+    cumulativeSig. _schTeach.excludedRows / cumulativeRow therefore started empty, and
+    a reopened layout showed "none — the system decides" although the map held the
+    picks. Verified against the live DB before fixing: row 118 (manual-teach, live)
+    stores excludeSigs ["total","cumulative % achieved"], cumulativeSig "total".
+
+    THE FIX, AND WHY THIS SHAPE
+      - New schRowSignature(cells) beside schRowLabel(): a browser twin of
+        SCurveImportService::rowSignature() (drop empty + PHP-is_numeric cells, join,
+        lowercase, collapse ASCII whitespace, PHP trim). SCH_PHP_NUMERIC holds the
+        is_numeric pattern.
+      - The prefill re-signs every non-header block row and ticks the rows whose
+        signature the map names; the cumulative match also sets cumulativeRow.
+      - REJECTED ALTERNATIVE: store R-numbers on the map, the way headerRows does.
+        Signature matching was chosen because it (a) stores nothing new — no map key,
+        no MAP_VERSION question, no hash change, no re-capture wave; (b) repairs rows
+        ALREADY saved (row 118 reopens correctly without re-teaching); (c) shows what
+        the reader will actually match, since the reader matches by signature too.
+      - ONE ROW PER SIGNATURE, first in block order. The server refuses two picks that
+        read the same, so ticking every duplicate would make Save fail on a layout the
+        reviewer never touched — exactly defect 7's shape. The reader still excludes
+        every matching row at read time; the notes already say "matched several times".
+      - Placed AFTER the header-row restore (header rows are never pickable) and in
+        its OWN try, so a failure cannot undo the column/header prefill (trap (d) of
+        the regression restudy). PDF branch untouched.
+      - PARITY IS THE CONTRACT. If schRowSignature and rowSignature ever drift,
+        reopening shows fewer ticks (the safe direction — nothing is saved from it),
+        but it would be this defect again. Change both together; re-run the probe.
+
+    VERIFIED (probes in C:\temp\opencode — they extract the REAL modal code from the
+    Blade, so they test what ships, not a transcription)
+      php dump_sigs.php && node verify_roles.mjs
+        parity: 33 block rows across 4 stored Excel layouts, 0 mismatches
+        row 118 replay -> Not an activity = R7+R8 · Cumulative = R7   (= what was taught)
+      php edge_sigs.php && node edge_sigs.mjs
+        10 awkward cell shapes (1,200,000 · 5% · " 12 " · 1. · .5 · 1e3 · +5 · tabs ·
+        Ñandú · 0x1A · blanks · n/a): 0 differ
+      node extract_script.mjs && node --check modal_script.js   -> clean, 0 Blade directives
+      php artisan view:clear && view:cache                       -> compiled
+      npm run test:js   -> 158 tests, 156 pass + the 2 intended blinding fails
+      PHP suite: not re-run — no PHP changed. Last full run 1215 passed / same 5.
+
+    ✅ BROWSER-CONFIRMED 2026-09-15 (user): reopening row 118 reads "Header row R2 ·
+      Not an activity R7 + R8 · Cumulative row R7" with both lists ticked — exactly
+      what was taught. (The save-without-changes check was suggested; the user
+      reported "working" without separately mentioning it.) Committed after this.
+
+    STILL WORTH A LOOK ON ROW 118 (not a code defect): Cumulative = R7 TOTAL was
+    probably meant to be R8 CUMULATIVE % ACHIEVED. Re-teach it if so.
+
+    DESIGN NOTES FOR THE NEXT ORDER — click-to-pick rows (no code yet)
+      Scope: the one Blade file; the Save payload (header_rows, excluded_rows,
+      cumulative_row) does not change, so no PHP, test or route change is expected.
+      Carry these from the regression restudy (§13, seventh round part two):
+        - palette keys must NOT start with "m" (schTeachClickLetter now uses /^m\d+$/,
+          but schTeachFieldLabel and any new dispatch must be checked too);
+        - row clicks must not shadow the column-header clicks (the only way to teach
+          PDF months);
+        - picks live in _schTeach.headerRows / excludedRows / cumulativeRow, never in
+          r.role (the grid badge and CUMULATIVE tag read r.role);
+        - keep the three row buttons disabled on sourceType 'pdf', with the reason;
+        - the step-4 Save nudge targets #teachHeaderBand — repoint it at the new
+          "Header row" button when the checkbox list goes;
+        - add the warning found above: a Cumulative pick with nothing under the month
+          columns reads no reference.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
