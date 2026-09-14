@@ -74,64 +74,35 @@
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-2">
-                    Click a field, then click its column letter(s) on the grid.
+                    Click a field, then click where it lives on the grid — a <strong>column letter</strong>
+                    for a column field, an <strong>R-number</strong> for a row field.
                     Rows tagged <span class="badge bg-primary">HEADER</span> hold the labels;
                     <span class="badge bg-warning text-dark">SUMMARY</span> rows are reference only, and
                     <span class="badge bg-success">CUMULATIVE</span> marks the running-total row a baseline is read from.
                     R-numbers are kept order, not Excel rows. Hover any button for what it needs.
                 </p>
                 {{-- PDF-4 Stage 2 layout: the grid is the click surface and the whole
-                     point of the screen, so it gets the full width. The palette sits
-                     ABOVE it as a single band, and the header-row picker — auto-detected
-                     and rarely changed — collapses to one line instead of a tall
-                     checkbox column that used to push the grid off the screen. --}}
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-2 p-1 rounded" id="teachHeaderBand"
-                     style="transition:box-shadow .2s,background-color .2s;">
-                    <span class="text-muted small" title="The line holding the column labels. Detected automatically; change it only if the labels print on a different line.">
-                        <strong>Header row</strong>
-                    </span>
-                    <span id="teachHeaderSummary" class="small"></span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="teachHeaderToggle"
-                            title="Pick a different line as the one holding the column labels."
-                            onclick="schToggleHeaderPicker()">change</button>
-                </div>
-                <div id="teachHeaderRows" class="mb-2 d-flex flex-wrap gap-2" style="display:none !important;"></div>
+                     point of the screen, so it gets the full width, with the palette in
+                     a band above it.
+                     2026-09-15 (user): rows are picked the SAME way columns are. The
+                     header-row checkbox list and the two row-role lists are gone; the
+                     palette carries a "Rows" line (Header row / Not an activity /
+                     Cumulative row) and an armed row field takes clicks on the grid's
+                     R-numbers, exactly as an armed column field takes column letters.
+                     The Save payload is unchanged. --}}
+                <div class="mb-1" title="Arm a field, then click on the grid: column letters for column fields, R-numbers for row fields. Clicking something already taken moves it."><strong>Click a field, then its column letter(s) or row number(s) on the grid</strong></div>
+                <div id="teachFieldPalette" class="mb-2"></div>
 
-                {{-- Row roles (2026-09-14). Same collapsed one-line shape as the header-row
-                     picker above — the proven way to point at rows without a tall checkbox
-                     column pushing the grid off screen. Excel only; on a PDF row the band
-                     stays visible and SAYS WHY, because a control that vanishes teaches the
-                     reviewer nothing. --}}
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-2" id="teachRoleBand">
-                    <span class="text-muted small" title="Rows the system must not add up as work items — author totals, cash-flow lines, duration lines. Teach these when the system counted something that is not an activity.">
-                        <strong>Not an activity</strong>
-                    </span>
-                    <span id="teachExcludedSummary" class="small"></span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="teachExcludedToggle"
-                            title="Pick the rows that are totals or notes rather than work items."
-                            onclick="schToggleRowPicker('teachExcludedRows')">change</button>
-
-                    <span class="text-muted small ms-3" title="The row holding the author's own running total — the printed S-curve. Reference only; it is never added into the months.">
-                        <strong>Cumulative row</strong>
-                    </span>
-                    <span id="teachCumulativeSummary" class="small"></span>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="teachCumulativeToggle"
-                            title="Pick the row holding the author's printed running total."
-                            onclick="schToggleRowPicker('teachCumulativeRows')">change</button>
-                </div>
-                <div id="teachExcludedRows" class="mb-2 d-flex flex-wrap gap-2" style="display:none !important;"></div>
-                <div id="teachCumulativeRows" class="mb-2 d-flex flex-wrap gap-2" style="display:none !important;"></div>
-
-                <div class="mb-1" title="Arm a field, then click its column letter(s) on the grid. Assigned columns show badges; clicking a taken letter moves it."><strong>Click a field, then its column(s) on the grid</strong></div>
-                <div id="teachFieldPalette" class="d-flex flex-wrap gap-1 mb-2"></div>
-
-                <div id="teachGrid" class="mb-2" title="Click a column letter to assign it to the armed field." style="overflow:auto;max-height:430px;border:1px solid #dee2e6;border-radius:8px;"></div>
+                <div id="teachGrid" class="mb-2" title="Click a column letter or an R-number to assign it to the armed field." style="overflow:auto;max-height:430px;border:1px solid #dee2e6;border-radius:8px;"></div>
 
                 <div class="row g-3">
                     <div class="col-md-7">
                         <div class="mb-1"><strong>Your teaching</strong></div>
                         <div id="teachReadout" class="small text-muted mb-1">Nothing assigned yet.</div>
                         <div id="teachHint" class="small text-danger"></div>
+                        {{-- Advisory only, never gates Save: a pick that is legal but
+                             probably not what the reviewer meant. --}}
+                        <div id="teachRoleNote" class="small" style="color:#997404;"></div>
                     </div>
                     <div class="col-md-5">
                         <div class="mb-1"><strong>Save as</strong></div>
@@ -748,8 +719,6 @@ function schTeachColumns(id) {
         const ctx = document.getElementById('teachContextLine');
         if (ctx) ctx.textContent = '— ' + _schTeach.contractor + ' · seen ' + _schTeach.occurrences + '× · ' + _schTeach.status;
         schRenderTeachPalette();
-        schRenderTeachHeaderRows();
-        schRenderTeachRowRoles();
         schRenderTeachGrid();
         schRenderTeachReadout();
         new bootstrap.Modal(document.getElementById('teachScurveColumnsModal')).show();
@@ -783,31 +752,87 @@ function schMonthsToShow() {
     return Math.min(SCH_TEACH_MAX_MONTHS, highest + (highest < SCH_TEACH_MAX_MONTHS ? 1 : 0));
 }
 
+// Row fields (2026-09-15). Armed like column fields, but they take clicks on the
+// grid's R-numbers. KEY NAMES MUST NOT START WITH "m": month fields are m1..m12
+// and several dispatchers used to test indexOf('m') === 0 (regression restudy,
+// trap (a)). Every dispatcher now tests /^m\d+$/ or schIsRowField().
+const SCH_ROW_FIELDS = [
+    { key: 'rowHeader', label: 'Header row', tip: 'The line(s) holding the column labels. Detected automatically — arm this and click an R-number only if the labels print on a different line. At most two; click again to clear.' },
+    { key: 'rowSkip', label: 'Not an activity', excelOnly: true, tip: 'Rows the system must not add up as work items — author totals, cash-flow or duration lines. Arm this and click their R-numbers; click again to clear.' },
+    { key: 'rowCurve', label: 'Cumulative row', excelOnly: true, tip: 'The author’s printed running-total row (the S-curve). Reference only — marking it also marks it Not an activity. Pick one; click again to clear.' },
+];
+const SCH_ROW_PDF_REASON = 'Excel layouts only — a PDF layout finds its cumulative row by shape.';
+
+// Is this palette key a row field (as opposed to a column field)?
+function schIsRowField(key) {
+    return key === 'rowHeader' || key === 'rowSkip' || key === 'rowCurve';
+}
+
+// The human label of a row field ("Header row"), for messages.
+function schRowFieldTitle(key) {
+    const f = SCH_ROW_FIELDS.find(x => x.key === key);
+    return f ? f.label : key;
+}
+
 function schTeachFieldLabel(key) {
     if (key === 'desc') return 'DESC';
     if (key === 'contract') return 'AMT';
     if (key === 'weight') return 'WT';
     if (key === 'code') return 'CODE';
-    if (key.indexOf('m') === 0) return 'M' + key.substring(1);
+    // Was indexOf('m') === 0 — the same trap schTeachClickLetter had.
+    if (/^m\d+$/.test(key)) return 'M' + key.substring(1);
     return key;
 }
 
+// What a row field currently holds, for its palette button ("R7 + R8", "none").
+function schRowFieldValue(key) {
+    if (!_schTeach) return '';
+    const list = key === 'rowHeader' ? _schTeach.headerRows
+        : key === 'rowSkip' ? _schTeach.excludedRows
+        : (_schTeach.cumulativeRow ? [_schTeach.cumulativeRow] : []);
+    return list.length ? list.map(n => 'R' + n).join(' + ') : 'none';
+}
+
+/**
+ * Render the field palette: a "Columns" line and a "Rows" line.
+ * Called by: schTeachColumns() on open, every click handler, schNudgeHeaderPicker().
+ * Row buttons show what they hold, so the three row picks stay readable without the
+ * old summary band. On a PDF row the two role buttons are disabled WITH the reason
+ * (a control that vanishes teaches the reviewer nothing); Header row stays usable.
+ */
 function schRenderTeachPalette() {
     const host = document.getElementById('teachFieldPalette');
     if (!host || !_schTeach) return;
     host.innerHTML = '';
+    const line = (label) => {
+        const div = document.createElement('div');
+        div.className = 'd-flex flex-wrap align-items-center gap-1 mb-1';
+        const tag = document.createElement('span');
+        tag.className = 'text-muted small me-1';
+        tag.style.minWidth = '4.5em';
+        tag.textContent = label;
+        div.appendChild(tag);
+        host.appendChild(div);
+        return div;
+    };
+    const armButton = (f, text) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.id = 'teachFieldBtn-' + f.key;
+        b.className = 'btn btn-sm ' + (_schTeach.field === f.key ? 'btn-primary' : 'btn-outline-secondary');
+        b.textContent = text;
+        b.title = f.tip || f.label;
+        // The grid is redrawn too: its R-numbers are outlined while a row field is
+        // armed, which is how the reviewer sees where the next click should go.
+        b.onclick = function () { _schTeach.field = f.key; schRenderTeachPalette(); schRenderTeachGrid(); };
+        return b;
+    };
+
+    const cols = line('Columns');
     const shown = SCH_TEACH_FIELDS.slice();
     const upto = schMonthsToShow();
     for (let m = 1; m <= upto; m++) shown.push(schMonthField(m));
-    shown.forEach(f => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn btn-sm ' + (_schTeach.field === f.key ? 'btn-primary' : 'btn-outline-secondary');
-        b.textContent = f.label;
-        b.title = f.tip || f.label;
-        b.onclick = function () { _schTeach.field = f.key; schRenderTeachPalette(); };
-        host.appendChild(b);
-    });
+    shown.forEach(f => cols.appendChild(armButton(f, f.label)));
     if (upto < SCH_TEACH_MAX_MONTHS) {
         const more = document.createElement('button');
         more.type = 'button';
@@ -818,17 +843,27 @@ function schRenderTeachPalette() {
             _schTeach.suggestedMonths = schMonthsToShow() + 1;
             schRenderTeachPalette();
         };
-        host.appendChild(more);
+        cols.appendChild(more);
     }
-}
 
-// The header-row picker is collapsed by default — it is detected correctly almost
-// always, and expanded it cost more vertical space than the grid it sat beside.
-function schToggleHeaderPicker() {
-    const host = document.getElementById('teachHeaderRows');
-    if (!host) return;
-    const hidden = host.style.display === 'none';
-    host.style.setProperty('display', hidden ? 'flex' : 'none', 'important');
+    const rows = line('Rows');
+    const isPdf = _schTeach.sourceType === 'pdf';
+    SCH_ROW_FIELDS.forEach(f => {
+        const b = armButton(f, f.label + ': ' + schRowFieldValue(f.key));
+        if (f.excelOnly && isPdf) {
+            b.disabled = true;
+            b.title = SCH_ROW_PDF_REASON;
+            // A disabled button swallows hover in some browsers, so the reason is
+            // also printed once beside the buttons.
+        }
+        rows.appendChild(b);
+    });
+    if (isPdf) {
+        const why = document.createElement('span');
+        why.className = 'small text-muted ms-1';
+        why.textContent = SCH_ROW_PDF_REASON;
+        rows.appendChild(why);
+    }
 }
 
 /**
@@ -843,80 +878,140 @@ function schToggleHeaderPicker() {
  * another, with a screenful of grid in between. That is how a session ends with
  * "I can't save even though I've assigned everything."
  *
- * Opens the picker and flashes the band ONCE per teaching session. Once, because
- * re-forcing it open on every render would fight a reviewer who deliberately
- * collapsed it — the flag sits on _schTeach so a different capture nudges again.
+ * Arms the "Header row" field and flashes its button ONCE per teaching session.
+ * 2026-09-15: the checkbox list this used to open is gone (rows are now clicked on
+ * the grid), so the nudge ARMS the field instead — the reviewer's next click on an
+ * R-number then does the right thing. Once, because re-arming on every render would
+ * hijack a reviewer who deliberately armed something else; the flag sits on
+ * _schTeach so a different capture nudges again.
+ * Called by: schRenderTeachReadout() when the header row is the only thing blocking Save.
  */
 function schNudgeHeaderPicker() {
     if (!_schTeach || _schTeach.headerNudged) return;
     _schTeach.headerNudged = true;
-    const host = document.getElementById('teachHeaderRows');
-    if (host && host.style.display === 'none') {
-        host.style.setProperty('display', 'flex', 'important');
-    }
-    const band = document.getElementById('teachHeaderBand');
-    if (!band) return;
-    band.style.boxShadow = '0 0 0 2px #dc3545';
-    band.style.backgroundColor = '#fff5f5';
-    try { band.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* older browsers */ }
-    setTimeout(function () {
-        band.style.boxShadow = '';
-        band.style.backgroundColor = '';
-    }, 2400);
+    _schTeach.field = 'rowHeader';
+    // Neither render calls back into the readout, so this cannot recurse.
+    schRenderTeachPalette();
+    schRenderTeachGrid();
+    const btn = document.getElementById('teachFieldBtn-rowHeader');
+    if (!btn) return;
+    btn.style.boxShadow = '0 0 0 3px #dc3545';
+    try { btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* older browsers */ }
+    setTimeout(function () { btn.style.boxShadow = ''; }, 2400);
 }
 
-function schRenderTeachHeaderRows() {
-    const host = document.getElementById('teachHeaderRows');
-    if (!host || !_schTeach) return;
-    const summary = document.getElementById('teachHeaderSummary');
-    if (summary) {
-        summary.textContent = _schTeach.headerRows.length
-            ? _schTeach.headerRows.map(n => 'R' + n).join(' + ')
-            : 'none picked yet';
-        summary.className = 'small ' + (_schTeach.headerRows.length ? 'text-success' : 'text-danger');
+/**
+ * Apply ONE click on an R-number for an armed row field. Pure over the teaching
+ * state `t` (no DOM), so it can be replayed in node against real stored blocks.
+ *
+ * Called by: schTeachClickRow().
+ * Returns { changed, message } — `message` is a refusal the caller shows as a toast.
+ *
+ * Every refusal mirrors one the server makes in teachColumns(), so the reviewer
+ * hears it on the click instead of on Save:
+ *   - a row tagged HEADER is never summed, so it cannot be excluded;
+ *   - a row the reviewer picked as a header row cannot also carry a role;
+ *   - a row with no label text cannot be recognised again (empty signature);
+ *   - two role rows that read the same cannot be told apart at read time.
+ * Header-row picks STEAL a row from the role picks (the two are disjoint by
+ * construction), matching how a column click moves a letter between fields.
+ */
+function schApplyRowPick(t, field, n) {
+    const row = (t.rows || []).find(r => r.n === n);
+    if (!row) return { changed: false, message: 'R' + n + ' is not in this block.' };
+    const drop = (list, v) => { const at = list.indexOf(v); if (at !== -1) list.splice(at, 1); };
+    const byNumber = (x, y) => x - y;
+
+    if (field === 'rowHeader') {
+        if (t.headerRows.indexOf(n) !== -1) {
+            drop(t.headerRows, n);
+            return { changed: true, message: null };
+        }
+        if (t.headerRows.length >= 2) {
+            return { changed: false, message: 'At most two header rows — click R' + t.headerRows.join(' or R') + ' to clear one first.' };
+        }
+        t.headerRows.push(n);
+        t.headerRows.sort(byNumber);
+        drop(t.excludedRows, n);
+        if (t.cumulativeRow === n) t.cumulativeRow = null;
+        return { changed: true, message: null };
     }
-    host.innerHTML = '';
-    _schTeach.rows.forEach(r => {
-        const label = document.createElement('label');
-        label.className = 'd-block small';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.className = 'form-check-input me-1';
-        cb.checked = _schTeach.headerRows.indexOf(r.n) !== -1;
-        cb.onchange = function () {
-            const at = _schTeach.headerRows.indexOf(r.n);
-            if (cb.checked && at === -1) {
-                if (_schTeach.headerRows.length >= 2) {
-                    showToast('At most two header rows — uncheck one first', 'warning');
-                    cb.checked = false;
-                    return;
-                }
-                _schTeach.headerRows.push(r.n);
-            } else if (!cb.checked && at !== -1) {
-                _schTeach.headerRows.splice(at, 1);
-            }
-            // A row that becomes a header row must leave the role pickers, and a
-            // row that stops being one must rejoin them — the two lists are
-            // disjoint by construction and the server refuses the overlap.
-            if (_schTeach.excludedRows.indexOf(r.n) !== -1) {
-                _schTeach.excludedRows.splice(_schTeach.excludedRows.indexOf(r.n), 1);
-            }
-            if (_schTeach.cumulativeRow === r.n) { _schTeach.cumulativeRow = null; }
-            schRenderTeachHeaderRows();
-            schRenderTeachRowRoles();
-            schRenderTeachReadout();
-        };
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode('R' + r.n + ' [' + r.role + ']'));
-        host.appendChild(label);
+
+    if (field !== 'rowSkip' && field !== 'rowCurve') return { changed: false, message: null };
+    if (t.sourceType === 'pdf') return { changed: false, message: SCH_ROW_PDF_REASON };
+
+    // Clicking a row that already holds this role clears it.
+    if (field === 'rowSkip' && t.excludedRows.indexOf(n) !== -1) {
+        drop(t.excludedRows, n);
+        // The curve row must never be summed as work, so un-excluding it also
+        // un-marks it as the curve.
+        if (t.cumulativeRow === n) t.cumulativeRow = null;
+        return { changed: true, message: null };
+    }
+    if (field === 'rowCurve' && t.cumulativeRow === n) {
+        // Kept as Not an activity (visible on the grid) — a curve row the reviewer
+        // just un-marked is still not work; they can clear that separately.
+        t.cumulativeRow = null;
+        return { changed: true, message: null };
+    }
+
+    if (row.role === 'HEADER') {
+        return { changed: false, message: 'R' + n + ' is tagged HEADER — it is never added up as an activity, so there is nothing to exclude.' };
+    }
+    if (t.headerRows.indexOf(n) !== -1) {
+        return { changed: false, message: 'R' + n + ' is a header row you picked — arm "Header row" and click it to release it first.' };
+    }
+    const sig = schRowSignature(row.cells);
+    if (sig === '') {
+        return { changed: false, message: 'R' + n + ' has no label text to recognise it by — pick a row that names itself.' };
+    }
+    const twin = t.excludedRows.find(m => m !== n && schRowSignature(((t.rows || []).find(r => r.n === m) || {}).cells) === sig);
+    if (twin !== undefined) {
+        return { changed: false, message: 'R' + n + ' reads the same as R' + twin + ' — the system could not tell them apart in the file.' };
+    }
+
+    if (t.excludedRows.indexOf(n) === -1) {
+        t.excludedRows.push(n);
+        t.excludedRows.sort(byNumber);
+    }
+    if (field === 'rowCurve') t.cumulativeRow = n;
+    return { changed: true, message: null };
+}
+
+/**
+ * Does row n hold a value under any column the reviewer assigned to a month?
+ * Pure. Returns null when no month is assigned yet (nothing to judge against).
+ * Called by: schRenderTeachReadout() for the advisory cumulative-row note — a
+ * running-total row prints a figure in the month columns; a TOTAL row does not.
+ */
+function schRowHasMonthValues(t, n) {
+    const row = (t.rows || []).find(r => r.n === n);
+    const letters = [];
+    Object.keys((t.assigns && t.assigns.months) || {}).forEach(k => {
+        (t.assigns.months[k] || []).forEach(l => letters.push(l));
+    });
+    if (!row || !letters.length) return null;
+    return letters.some(l => {
+        const c = (t.letters || []).indexOf(l);
+        const v = c === -1 ? '' : String(row.cells[c] == null ? '' : row.cells[c]).trim();
+        return /\d/.test(v);
     });
 }
 
-function schToggleRowPicker(id) {
-    const host = document.getElementById(id);
-    if (!host) return;
-    const hidden = host.style.display === 'none';
-    host.style.setProperty('display', hidden ? 'flex' : 'none', 'important');
+// Click on an R-number in the teach grid. Row fields take it; with a column field
+// armed the click is explained rather than silently ignored.
+function schTeachClickRow(n) {
+    if (!_schTeach) return;
+    if (!schIsRowField(_schTeach.field)) {
+        showToast('Arm "Header row", "Not an activity" or "Cumulative row" first, then click the R-number.', 'info');
+        return;
+    }
+    const res = schApplyRowPick(_schTeach, _schTeach.field, n);
+    if (res.message) { showToast(res.message, 'warning'); }
+    if (!res.changed) return;
+    schRenderTeachPalette();
+    schRenderTeachGrid();
+    schRenderTeachReadout();
 }
 
 /**
@@ -963,125 +1058,11 @@ function schRowSignature(cells) {
         .replace(/^[ \t\n\r\0\x0B]+|[ \t\n\r\0\x0B]+$/g, '');
 }
 
-/**
- * Row-role pickers — "not an activity" (multi) and "cumulative row" (single).
- *
- * EXCEL ONLY, and visibly so. The PDF reader finds its cumulative row by SHAPE
- * (percent-written, non-decreasing, ends >= 50), which is label-independent and
- * already immune to the novel wordings this teaching exists to cover, so there is
- * nothing here for it to learn. The band stays on screen and says that, rather
- * than disappearing — a control that silently vanishes leaves the reviewer
- * wondering what they did wrong. The server refuses these fields on a PDF row
- * independently; this only saves the wasted effort.
- *
- * Picking the cumulative row EXCLUDES it automatically. The two are one decision:
- * the skip vocabulary already lumps cumulat\w* in with cost and cash flow, so a
- * cumulative row that still summed would contradict the rule it sits beside.
- */
-function schRenderTeachRowRoles() {
-    if (!_schTeach) return;
-    const exHost = document.getElementById('teachExcludedRows');
-    const cuHost = document.getElementById('teachCumulativeRows');
-    const exSum = document.getElementById('teachExcludedSummary');
-    const cuSum = document.getElementById('teachCumulativeSummary');
-    const band = document.getElementById('teachRoleBand');
-    if (!exHost || !cuHost || !band) return;
-
-    if (_schTeach.sourceType === 'pdf') {
-        band.querySelectorAll('button').forEach(b => { b.disabled = true; });
-        if (exSum) {
-            exSum.textContent = 'Excel layouts only — a PDF layout finds its cumulative row by shape.';
-            exSum.className = 'small text-muted';
-        }
-        if (cuSum) { cuSum.textContent = ''; }
-        exHost.style.setProperty('display', 'none', 'important');
-        cuHost.style.setProperty('display', 'none', 'important');
-        exHost.innerHTML = '';
-        cuHost.innerHTML = '';
-        return;
-    }
-
-    if (exSum) {
-        exSum.textContent = _schTeach.excludedRows.length
-            ? _schTeach.excludedRows.map(n => 'R' + n).join(' + ')
-            : 'none — the system decides';
-        exSum.className = 'small ' + (_schTeach.excludedRows.length ? 'text-success' : 'text-muted');
-    }
-    if (cuSum) {
-        cuSum.textContent = _schTeach.cumulativeRow ? ('R' + _schTeach.cumulativeRow) : 'none — the system decides';
-        cuSum.className = 'small ' + (_schTeach.cumulativeRow ? 'text-success' : 'text-muted');
-    }
-
-    // Header rows are never offered: they are not summed as activities in the
-    // first place, and the server refuses the overlap.
-    const pickable = _schTeach.rows.filter(r => _schTeach.headerRows.indexOf(r.n) === -1 && r.role !== 'HEADER');
-
-    exHost.innerHTML = '';
-    pickable.forEach(r => {
-        const label = document.createElement('label');
-        label.className = 'd-block small';
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.className = 'form-check-input me-1';
-        cb.checked = _schTeach.excludedRows.indexOf(r.n) !== -1;
-        cb.onchange = function () {
-            const at = _schTeach.excludedRows.indexOf(r.n);
-            if (cb.checked && at === -1) {
-                _schTeach.excludedRows.push(r.n);
-                _schTeach.excludedRows.sort((x, y) => x - y);
-            } else if (!cb.checked && at !== -1) {
-                // Unticking the row that is ALSO the cumulative pick would leave
-                // the curve row summed as work — contradictory, so clear both.
-                if (_schTeach.cumulativeRow === r.n) { _schTeach.cumulativeRow = null; }
-                _schTeach.excludedRows.splice(at, 1);
-            }
-            schRenderTeachRowRoles();
-            schRenderTeachReadout();
-        };
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode('R' + r.n + ' ' + schRowLabel(r)));
-        exHost.appendChild(label);
-    });
-
-    cuHost.innerHTML = '';
-    const none = document.createElement('label');
-    none.className = 'd-block small';
-    const nr = document.createElement('input');
-    nr.type = 'radio';
-    nr.name = 'teachCumulativePick';
-    nr.className = 'form-check-input me-1';
-    nr.checked = !_schTeach.cumulativeRow;
-    nr.onchange = function () {
-        _schTeach.cumulativeRow = null;
-        schRenderTeachRowRoles();
-        schRenderTeachReadout();
-    };
-    none.appendChild(nr);
-    none.appendChild(document.createTextNode('None — let the system find it'));
-    cuHost.appendChild(none);
-
-    pickable.forEach(r => {
-        const label = document.createElement('label');
-        label.className = 'd-block small';
-        const rb = document.createElement('input');
-        rb.type = 'radio';
-        rb.name = 'teachCumulativePick';
-        rb.className = 'form-check-input me-1';
-        rb.checked = _schTeach.cumulativeRow === r.n;
-        rb.onchange = function () {
-            _schTeach.cumulativeRow = r.n;
-            if (_schTeach.excludedRows.indexOf(r.n) === -1) {
-                _schTeach.excludedRows.push(r.n);
-                _schTeach.excludedRows.sort((x, y) => x - y);
-            }
-            schRenderTeachRowRoles();
-            schRenderTeachReadout();
-        };
-        label.appendChild(rb);
-        label.appendChild(document.createTextNode('R' + r.n + ' ' + schRowLabel(r)));
-        cuHost.appendChild(label);
-    });
-}
+// (2026-09-15) schRenderTeachHeaderRows / schRenderTeachRowRoles and their
+// checkbox/radio lists were removed: rows are picked by clicking R-numbers on the
+// grid (schTeachClickRow -> schApplyRowPick), shown by tint + tag in the grid and
+// by the palette's Rows line. Excel-only rationale for the two role fields is
+// unchanged — see SCH_ROW_PDF_REASON.
 
 // Which field (if any) currently claims a column letter.
 function schTeachClaim(letter) {
@@ -1099,6 +1080,13 @@ function schTeachClickLetter(letter) {
     if (!_schTeach) return;
     const field = _schTeach.field;
     const a = _schTeach.assigns;
+    // A row field is armed: a column letter means nothing to it. Say so rather than
+    // dropping the click, and assign nothing — a stray letter must never land in a
+    // row pick or a column field the reviewer did not arm.
+    if (schIsRowField(field)) {
+        showToast('"' + schRowFieldTitle(field) + '" takes R-numbers — click a row on the left, or arm a column field first.', 'info');
+        return;
+    }
     if (field === 'desc' || field === 'code' || field === 'weight' || field === 'contract') {
         a[field] = (a[field] === letter) ? null : letter;
     } else if (/^m\d+$/.test(field)) {
@@ -1145,20 +1133,45 @@ function schRenderTeachGrid() {
             + '</th>';
     });
     html += '</tr></thead><tbody>';
+    // Row picks are drawn in the row itself — a tint plus a tag beside the R-number
+    // — the way column picks are drawn as badges under the letter. The R badge keeps
+    // its r.role colour: picks live in _schTeach, NEVER in r.role, because the role
+    // tag (and the CUMULATIVE badge) is what the capture itself said.
+    const tintOf = {
+        HDR: { bg: '#e7f1ff', empty: '#dbe8fb', tag: 'bg-primary', tip: 'Header row' },
+        SKIP: { bg: '#eceff1', empty: '#e2e6ea', tag: 'bg-secondary', tip: 'Not an activity' },
+        CURVE: { bg: '#e6f4ea', empty: '#d6ecdc', tag: 'bg-success', tip: 'Cumulative row (also not an activity)' },
+    };
+    const rowArmed = schIsRowField(_schTeach.field);
     _schTeach.rows.forEach(r => {
         const badge = SCH_ROLE_BADGE[r.role] || 'secondary';
-        html += '<tr><td style="white-space:nowrap;"><span class="badge bg-' + badge + '" style="font-size:9px;">R' + r.n + '</span></td>';
+        const pick = _schTeach.cumulativeRow === r.n ? 'CURVE'
+            : _schTeach.headerRows.indexOf(r.n) !== -1 ? 'HDR'
+            : _schTeach.excludedRows.indexOf(r.n) !== -1 ? 'SKIP' : '';
+        const tint = pick ? tintOf[pick] : null;
+        html += '<tr><td style="white-space:nowrap;cursor:pointer;' + (tint ? 'background:' + tint.bg + ';' : '') + '"'
+            + ' data-sch-row="' + r.n + '"'
+            + ' title="' + (rowArmed ? 'Click to set R' + r.n + ' as ' + schEscapeHtml(schRowFieldTitle(_schTeach.field)) : 'Arm a row field above, then click to assign R' + r.n) + '">'
+            + '<span class="badge bg-' + badge + '" style="font-size:9px;' + (rowArmed ? 'outline:1px dashed #0d6efd;outline-offset:1px;' : '') + '">R' + r.n + '</span>'
+            + (pick ? ' <span class="badge ' + tint.tag + '" style="font-size:8px;" title="' + tint.tip + '">' + pick + '</span>' : '')
+            + '</td>';
         for (let c = 0; c < _schTeach.letters.length; c++) {
             const v = (r.cells[c] !== undefined ? String(r.cells[c]).trim() : '');
             html += v === ''
-                ? '<td style="background:#f8f9fa;"></td>'
-                : '<td>' + schEscapeHtml(v) + '</td>';
+                ? '<td style="background:' + (tint ? tint.empty : '#f8f9fa') + ';"></td>'
+                : '<td' + (tint ? ' style="background:' + tint.bg + ';"' : '') + '>' + schEscapeHtml(v) + '</td>';
         }
         html += '</tr>';
     });
     host.innerHTML = html + '</tbody></table>';
+    // Column letters and R-numbers are SEPARATE targets with separate handlers: a
+    // row handler must never shadow the column-header clicks, which are the only
+    // way to teach PDF months (regression restudy, trap (f)).
     host.querySelectorAll('[data-sch-letter]').forEach(th => {
         th.onclick = function () { schTeachClickLetter(th.getAttribute('data-sch-letter')); };
+    });
+    host.querySelectorAll('td[data-sch-row]').forEach(td => {
+        td.onclick = function () { schTeachClickRow(parseInt(td.getAttribute('data-sch-row'), 10)); };
     });
 }
 
@@ -1203,12 +1216,29 @@ function schRenderTeachReadout() {
         if (!a.desc) problem = 'Pick the Description column first.';
         else if (months.length < 2) problem = 'Assign at least two months.';
         else if (!_schTeach.headerRows.length) {
-            problem = 'Pick at least one header row — use "Header row" above the grid.';
+            problem = 'Pick at least one header row — arm "Header row" above the grid, then click its R-number.';
             schNudgeHeaderPicker();
         }
     }
     if (hint) hint.textContent = problem;
     if (save) save.disabled = problem !== '';
+
+    // Advisory, never a Save gate: a cumulative pick with nothing under the month
+    // columns is legal, but the reader will find no printed curve on it. Found on
+    // DB row 118 (2026-09-15), where TOTAL was picked instead of the % row beneath.
+    const note = document.getElementById('teachRoleNote');
+    if (note) {
+        let advice = '';
+        if (_schTeach.sourceType !== 'pdf' && _schTeach.cumulativeRow) {
+            const n = _schTeach.cumulativeRow;
+            if (schRowHasMonthValues(_schTeach, n) === false) {
+                const r = _schTeach.rows.find(x => x.n === n);
+                advice = 'R' + n + (r ? ' (' + schRowLabel(r) + ')' : '') + ' has no values under the month columns you picked, '
+                    + 'so no printed curve can be read from it. The cumulative row is usually the one with a percentage in every month.';
+            }
+        }
+        note.textContent = advice;
+    }
 }
 
 async function schSaveTeaching() {

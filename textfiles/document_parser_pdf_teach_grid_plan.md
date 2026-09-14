@@ -20,8 +20,10 @@
 #         memory in 5e9ad07 (pushed). Browser-confirmed so far: step 4 nudge, step 5
 #         pickers save, PDF band disabled, header memory.
 #         ➜ HANDOFF, 2026-09-15: jump to the LAST entry of §13. Defect 12 (role picks
-#         vanish on reopen) is fixed, browser-confirmed and committed. Ordered next and
-#         IN PROGRESS: click-to-pick rows (same idiom as columns).
+#         vanish on reopen) is fixed, browser-confirmed and committed (413f810).
+#         Click-to-pick rows is BUILT, BROWSER-CONFIRMED, COMMITTED and PUSHED — its
+#         entry is the last one in §13. The Excel row-role track is CLOSED; nothing
+#         is owed. Row roles stay Excel-only BY DECISION (see §11 Decision 4).
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -326,6 +328,35 @@
     capped by PHP's 60s ceiling, so a second pass cannot fit without raising
     max_execution_time — which would leave a user watching a spinner for two minutes
     for an answer four models have already declined.
+
+  Decision 4 — Row roles ("Not an activity" / "Cumulative row") stay EXCEL-ONLY
+    (user asked 2026-09-15 whether leaving PDF out is better; answer: yes, for now).
+    Context: the Excel row-role track shipped end to end; PDF rows show both buttons
+      disabled with the reason.
+    Options: (a) extend teaching to PDF; (b) keep Excel-only, revisit on evidence.
+    Decision: (b).
+    Rationale:
+      - NOTHING TO FIX TODAY. All 8 sample PDFs read correctly (16-read regression);
+        no PDF in the corpus sums a summary row as work. The Excel feature exists
+        because a wrongly summed row bends every month SILENTLY — the PDF reader
+        already has its own guards for exactly that: cumulative detection by SHAPE
+        (percent cells, non-decreasing, ends >= 50 — label-independent, so novel
+        wordings are already covered), the adopted-path filter (named rows with
+        percent cells only), P2-c wordless-summary exclusion, P6 chart-scale
+        exclusion, and the "N unnamed value rows left out" warning.
+      - THE MATCHING KEY DOES NOT CARRY OVER. Excel roles are stored as text
+        signatures and matched against sheet rows. A PDF row is a y-band of tokens;
+        on a column-split print the continuation page's rows are NAMELESS (the label
+        prints on page 1 only — the roof's page-2 cumulative row is a bare
+        "99.14% 100.00%"), so a text signature cannot find them. A PDF version would
+        need a new key (y-offset from the header, per page) that must survive a
+        different page size — new design, new failure modes, on the reader the user
+        spent four acceptance rounds stabilising.
+      - Server and UI already refuse it consistently (explicit 422 + disabled
+        buttons with a reason), so the gap is honest, not half-wired.
+    Revisit when: a real PDF reads wrong because a summary row is summed as an
+      activity, or its running-total row is not percent-written (shape detection
+      would miss it). Bring that file first; design the key against it.
 
 ===============================================================================
   13. BUILD LOG
@@ -1710,7 +1741,8 @@
                            before it) on origin/wip/phase-5-parser-accuracy-premerge.
       This fix:            resources/views/admin/_manage_scurve_headers_modal.blade.php
                            + this plan entry. Blade only; no PHP, no JS file, no route.
-                           BROWSER-CONFIRMED and COMMITTED 2026-09-15 (not pushed).
+                           BROWSER-CONFIRMED and COMMITTED 2026-09-15 as 413f810
+                           (pushed later the same day with click-to-pick rows).
       Next ordered work:   click-to-pick rows (UX ASK above) — design notes at the end.
 
     ROOT CAUSE. The Excel prefill in schTeachColumns() rebuilt the columns and (since
@@ -1779,6 +1811,111 @@
           "Header row" button when the checkbox list goes;
         - add the warning found above: a Cumulative pick with nothing under the month
           columns reads no reference.
+      (All six carried into the build — see the next entry.)
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — CLICK-TO-PICK ROWS ✅ BUILT (UNCOMMITTED). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Status:             BROWSER-CONFIRMED (all 7 steps), COMMITTED and PUSHED
+                          2026-09-15 together with 413f810 (defect 12).
+      Files:              resources/views/admin/_manage_scurve_headers_modal.blade.php,
+                          this plan, AGENTS.md. Blade only — no PHP, JS file, route or
+                          migration; the Save payload is byte-for-byte the same shape.
+      Nothing owed.       The Excel row-role track is closed end to end.
+
+    WHAT THE USER ASKED FOR (2026-09-15): "make them similar to how to choose the
+    columns — click the header button, then click the rows" (same for the role rows).
+
+    WHAT CHANGED ON SCREEN
+      - The collapsed "Header row … change" band, the "Not an activity / Cumulative
+        row … change" band, and all three checkbox/radio lists are GONE.
+      - The palette now has two lines. "Columns": Description … Month N, + month (as
+        before). "Rows": [Header row: R2] [Not an activity: R7 + R8] [Cumulative row:
+        R7] — each button shows what it holds.
+      - Arm a row button, then click an R-number in the grid's left column. While a
+        row field is armed the R-numbers are outlined; picked rows are tinted across
+        the whole row and tagged HDR (blue) / SKIP (grey) / CURVE (green) beside the
+        R badge. The R badge keeps the capture's own role colour.
+      - Clicking a column letter with a row field armed (or an R-number with a column
+        field armed) assigns nothing and explains why in a toast.
+      - PDF rows: "Not an activity" and "Cumulative row" are disabled and the reason is
+        printed beside them ("Excel layouts only — a PDF layout finds its cumulative
+        row by shape."). "Header row" stays usable, as the old picker was.
+      - New ADVISORY line under the Save hint (amber, never blocks Save): a Cumulative
+        pick with no values under the assigned month columns says so — the row-118
+        case, where TOTAL was picked instead of CUMULATIVE % ACHIEVED.
+      - The step-4 Save nudge now ARMS "Header row" and flashes that button (the list
+        it used to open no longer exists). Still once per teaching session.
+
+    RULES OF A ROW CLICK (schApplyRowPick — pure, no DOM)
+      Header row      toggle; at most two; picking a row as header STEALS it from the
+                      role picks (like a column letter moving between fields).
+      Not an activity toggle; un-excluding the curve row also clears the curve.
+      Cumulative row  single; picking implies Not an activity; clicking it again clears
+                      the curve but leaves the row excluded (visible as SKIP) — the old
+                      radio "None" behaved the same.
+      Refused on the click, each mirroring a refusal teachColumns() already makes on
+      Save: a row tagged HEADER; a row the reviewer picked as header; a row with no
+      label text (empty signature); a row that reads the same as another role row;
+      either role field on a PDF row.
+
+    TRAPS FROM THE REGRESSION RESTUDY, AND HOW EACH WAS HANDLED
+      (a) m-prefix: row keys are rowHeader/rowSkip/rowCurve; schTeachFieldLabel was
+          still `indexOf('m') === 0` and now uses /^m\d+$/ like schTeachClickLetter.
+      (c) picks never touch r.role — they live in _schTeach.headerRows / excludedRows /
+          cumulativeRow, and the grid draws tint + tag from those.
+      (d) prefill untouched (defect-12 prefill still fills the same three fields).
+      (f) column letters (th[data-sch-letter]) and R-numbers (td[data-sch-row]) are
+          separate targets with separate handlers; a row click cannot shadow a letter.
+      (g) gating uses _schTeach.sourceType, as before.
+      Save nudge repointed at the new button (#teachFieldBtn-rowHeader).
+
+    FUNCTIONS (all in the modal's inline script)
+      new      SCH_ROW_FIELDS, SCH_ROW_PDF_REASON, schIsRowField, schRowFieldTitle,
+               schRowFieldValue, schApplyRowPick (pure), schRowHasMonthValues (pure),
+               schTeachClickRow
+      changed  schRenderTeachPalette (two lines), schRenderTeachGrid (row targets, tint,
+               tags), schTeachClickLetter (row-field guard), schTeachFieldLabel (m-trap),
+               schNudgeHeaderPicker (arms instead of opening), schRenderTeachReadout
+               (hint wording + advisory), open sequence
+      removed  schToggleHeaderPicker, schRenderTeachHeaderRows, schToggleRowPicker,
+               schRenderTeachRowRoles; markup ids teachHeaderBand, teachHeaderRows,
+               teachRoleBand, teachExcludedRows, teachCumulativeRows and their summaries
+               (grep of resources/public/tests/app: no references left)
+
+    VERIFIED
+      C:\temp\opencode\verify_rowpick.mjs — extracts the REAL pure functions from the
+        Blade and replays clicks against DB row 118's stored block: 14 scenarios pass
+        (the intended R8-curve/R7-skip teaching, advisory true/false/null, curve move,
+        toggles, HEADER-tag and picked-header refusals, header steal, two-header cap,
+        PDF refusal with header still allowed, numbers-only row, same-reading twin,
+        key names never month-shaped, unknown row/field no-op). Regex survived.
+      C:\temp\opencode\falsify_rowpick.mjs — three guards broken one at a time in a
+        COPY of the modal (HEADER refusal, header steal, curve-implies-exclusion):
+        all three CAUGHT. Real modal passes again afterwards.
+      verify_roles.mjs (defect-12 prefill) still: 41 rows / 5 layouts / 0 mismatches.
+      node --check on the extracted script: clean, 0 Blade directives; every id the
+      script asks for exists once in the markup. view:clear + view:cache: compiled.
+      npm run test:js: 158 / 156 + the 2 intended blinding fails.
+      ScurveHeaderProposalTest + SCurveImportTest: 122 passed (no PHP changed).
+
+    ✅ BROWSER-CONFIRMED 2026-09-15 (user): "they are now all working" — all seven
+    steps below. Committed and pushed right after this entry was written.
+    BROWSER SCRIPT (as run by the user) — the DOM/click half no probe can reach
+      1. Excel, 6-stage layout: open Teach. Rows line reads "Header row: R2 · Not an
+         activity: R7 + R8 · Cumulative row: R7"; R2 tinted HDR, R7 CURVE, R8 SKIP.
+         The amber advisory names R7 TOTAL.
+      2. Arm Cumulative row, click R8 → R8 turns CURVE, R7 stays SKIP, advisory clears.
+      3. Arm Not an activity, click R2 → toast refuses (tagged HEADER), nothing changes.
+      4. With a row field armed click a column letter → toast, no assignment. Arm
+         Month 1, click a letter → assigns as before.
+      5. Save as variant → saves; reopen → same picks come back.
+      6. PDF layout (roof): Rows line shows Header row usable, the two role buttons
+         disabled with the reason; month letters still assign.
+      7. Capture with no HEADER-tagged row (SEGMENT): assign Description + two months
+         → Header row button arms itself and flashes red once; click R4 → Save enables.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
