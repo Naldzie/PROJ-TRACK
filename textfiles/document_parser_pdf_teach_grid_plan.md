@@ -1442,6 +1442,63 @@
     behaviour on a path the user has just finished four rounds of acceptance
     testing on, and it belongs in a change they retest.
 
+  -----------------------------------------------------------------------------
+  2026-09-14 — EXCEL ROW-ROLE WORK, STEP 4 BUILT: THE SAVE GATE NOW POINTS AT
+  THE CONTROL IT IS TALKING ABOUT
+  -----------------------------------------------------------------------------
+
+    THE DEFECT, RESTATED FROM THE USER'S OWN SESSION ("i cant save the manual
+    teach even though there is already a description and month column"). They
+    eventually got past it by ticking R4, but only by hunting.
+
+    MEASURED CAUSE. schRenderTeachReadout's gate is STRICTLY ORDERED — desc, then
+    months, then header row. So "Pick at least one header row." can only ever
+    surface AFTER the other two already pass, which is exactly the moment the
+    reviewer believes they are finished. And it surfaces in #teachHint BELOW the
+    grid, while the control it names is the collapsed "Header row: none picked
+    yet" line ABOVE the grid, whose picker is shut by default. The reviewer is
+    told WHAT is wrong in one place and WHERE to fix it in another, with a
+    screenful of grid in between. Neither half is a bug on its own; the distance
+    between them is.
+
+    WHAT SHIPPED.
+      schNudgeHeaderPicker() — when the header row IS the blocker, open the picker
+        and flash the band red for 2.4s, scrolling it into view.
+        ONCE PER TEACHING SESSION, via _schTeach.headerNudged. Re-forcing it open
+        on every render would fight a reviewer who deliberately collapsed it, and
+        schRenderTeachReadout runs on every checkbox change. The flag lives on
+        _schTeach, which is rebuilt per capture, so a different row nudges again
+        while re-rendering the same one does not.
+      The hint now names the control: "Pick at least one header row — use
+        \"Header row\" above the grid."
+      READOUT GLITCH FIXED. `'Headers R' + [].join('+R')` rendered a bare
+        "Headers R ·" with nothing ticked — which reads as a row literally named
+        R, and so concealed the very fact it should have exposed. Now reads
+        "No header row picked".
+      #teachHeaderBand id added to the wrapper purely as a flash target.
+
+    ORDERING CHECKED, NOT ASSUMED: schRenderTeachHeaderRows() runs at :674 before
+    schRenderTeachReadout() at :676, so the picker always has its checkboxes
+    before a nudge can open it. If prefill supplies desc + months, the nudge fires
+    at open time and the picker is simply already open — the desired behaviour.
+
+    INCIDENTAL FINDING WORTH SOMEONE'S TIME. The reason recorded for defect 7
+    being unpinned was "Blade-inline JS has no unit harness". While syntax-checking
+    this change, the modal's entire <script> block extracted cleanly and
+    `node --check` passed: it contains ZERO Blade directives ({{ }}, @if, @foreach,
+    @php all count 0). So a harness is not blocked by Blade at all — the block can
+    be awk-extracted and required. Not acted on here; recorded so the next person
+    does not re-derive the wrong reason.
+
+    VERIFICATION. node --check on the extracted block: clean. Blade compiles
+    (view:clear && view:cache). php artisan test — 1201 passed, same 5 pre-existing
+    failures by name. No PHP and no reader code touched, so verify_p6 and the JS
+    suite are unaffected by construction.
+
+    BROWSER CHECK STILL OWED (user's step): assign a description and two months on
+    a capture with no HEADER-tagged row and confirm the band flashes and the picker
+    opens by itself; then collapse it deliberately and confirm it stays collapsed.
+
 ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
 ===============================================================================

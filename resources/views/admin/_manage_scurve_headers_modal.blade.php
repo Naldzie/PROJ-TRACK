@@ -85,7 +85,8 @@
                      ABOVE it as a single band, and the header-row picker — auto-detected
                      and rarely changed — collapses to one line instead of a tall
                      checkbox column that used to push the grid off the screen. --}}
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-2 p-1 rounded" id="teachHeaderBand"
+                     style="transition:box-shadow .2s,background-color .2s;">
                     <span class="text-muted small" title="The line holding the column labels. Detected automatically; change it only if the labels print on a different line.">
                         <strong>Header row</strong>
                     </span>
@@ -550,6 +551,10 @@ function schTeachColumns(id) {
             field: 'desc',
             assigns: { desc: null, code: null, weight: null, contract: null, months: {} },
             headerRows: [],
+            // One nudge per teaching session (see schNudgeHeaderPicker). Lives on
+            // _schTeach, which is rebuilt per capture, so re-opening the desk on a
+            // different row nudges again while re-rendering the same one does not.
+            headerNudged: false,
             // How many months this layout looks like it has, so the palette offers
             // that many buttons instead of a fixed wall of twelve.
             suggestedMonths: (function () {
@@ -748,6 +753,40 @@ function schToggleHeaderPicker() {
     host.style.setProperty('display', hidden ? 'flex' : 'none', 'important');
 }
 
+/**
+ * Show the reviewer the control that is blocking Save.
+ *
+ * MEASURED CAUSE (2026-09-14): the save gate in schRenderTeachReadout is strictly
+ * ordered — description, then months, then header row — so "Pick at least one
+ * header row." only ever surfaces once the other two already pass. By then it
+ * prints in #teachHint BELOW the grid, while the control it refers to is the
+ * collapsed "Header row: none picked yet" line ABOVE it, whose picker is shut by
+ * default. The reviewer is told WHAT is wrong in one place and WHERE to fix it in
+ * another, with a screenful of grid in between. That is how a session ends with
+ * "I can't save even though I've assigned everything."
+ *
+ * Opens the picker and flashes the band ONCE per teaching session. Once, because
+ * re-forcing it open on every render would fight a reviewer who deliberately
+ * collapsed it — the flag sits on _schTeach so a different capture nudges again.
+ */
+function schNudgeHeaderPicker() {
+    if (!_schTeach || _schTeach.headerNudged) return;
+    _schTeach.headerNudged = true;
+    const host = document.getElementById('teachHeaderRows');
+    if (host && host.style.display === 'none') {
+        host.style.setProperty('display', 'flex', 'important');
+    }
+    const band = document.getElementById('teachHeaderBand');
+    if (!band) return;
+    band.style.boxShadow = '0 0 0 2px #dc3545';
+    band.style.backgroundColor = '#fff5f5';
+    try { band.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* older browsers */ }
+    setTimeout(function () {
+        band.style.boxShadow = '';
+        band.style.backgroundColor = '';
+    }, 2400);
+}
+
 function schRenderTeachHeaderRows() {
     const host = document.getElementById('teachHeaderRows');
     if (!host || !_schTeach) return;
@@ -874,8 +913,14 @@ function schRenderTeachReadout() {
     if (a.code) parts.push('Code=' + a.code);
     const months = Object.keys(a.months).sort((x, y) => x - y);
     months.forEach(m => parts.push('M' + m + '=' + a.months[m].join('+')));
+    // 2026-09-14: with no header row ticked, 'Headers R' + [].join('+R') rendered
+    // a bare "Headers R ·" — which reads as a row named R and hides the very fact
+    // that nothing is picked. Say so instead.
+    const head = _schTeach.headerRows.length
+        ? 'Headers ' + _schTeach.headerRows.map(n => 'R' + n).join('+')
+        : 'No header row picked';
     host.textContent = parts.length
-        ? 'Headers R' + _schTeach.headerRows.join('+R') + ' · ' + parts.join(' · ')
+        ? head + ' · ' + parts.join(' · ')
         : 'Nothing assigned yet.';
     // PDF-4: a row the server will refuse says so FIRST, before the reviewer
     // spends time assigning columns. The server refuses independently — this only
@@ -884,7 +929,10 @@ function schRenderTeachReadout() {
     if (problem === '') {
         if (!a.desc) problem = 'Pick the Description column first.';
         else if (months.length < 2) problem = 'Assign at least two months.';
-        else if (!_schTeach.headerRows.length) problem = 'Pick at least one header row.';
+        else if (!_schTeach.headerRows.length) {
+            problem = 'Pick at least one header row — use "Header row" above the grid.';
+            schNudgeHeaderPicker();
+        }
     }
     if (hint) hint.textContent = problem;
     if (save) save.disabled = problem !== '';
