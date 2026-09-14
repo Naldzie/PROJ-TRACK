@@ -413,18 +413,62 @@
     See-and-straighten entry per surface. node --check clean; JS suite 158/156 +
     the 2 intended blinding fails. Net −64/+57 lines.
 
-  STEP 4 — Read/unread indicators on the page strip  ⬜ NOT STARTED
-    - Mark each page read / not-read / landscape from the ledgers in §3.4. No new
-      plumbing for this much.
-    - Optionally add per-page char count (one-line push at :815) and soupiness so
-      the strip can say WHY a page is weak, not just that it is.
+  STEP 4 — Read/unread indicators on the page strip  ✅ BUILT 2026-09-14
+    The read/not-read/landscape half shipped with step 3 (ocrPageFactsOf already
+    had it). What landed here is the part that says WHY.
+      - extractTextFromPDF now RECORDS what it was already computing: pageChars
+        per photo-read page, and soupyPages via core.scoreOcrSoup. The count was
+        being thrown into a debug console line at :815 and discarded.
+      - Soupiness is RE-SCORED from the page text rather than plumbed out of
+        recognizeEnglish (which returns a bare string). The scorer is pure and
+        cheap, so this costs nothing and changes no signature — the alternative
+        was widening two return types for a display detail.
+      - New ocrPageWhy() turns the three facts into a sentence, and both the
+        caption and the strip tooltips use it.
+    WHY IT MATTERS, and it is the point of the step: "nothing at all" and "forty
+    characters of garbage" are DIFFERENT PROBLEMS. The first is usually
+    orientation or a dark scan and is worth turning the page for; the second means
+    the page was read fine and simply holds nothing useful. The strip used to say
+    only "unread" for both.
+      p.1  nothing at all — try turning it
+      p.2  text read (900 characters)
+      p.3  only garbled marks (40 characters)
+      p.4  read, but the text looks garbled
 
-  STEP 5 — The AI page picker  ⬜ NOT STARTED
-    - Show which pages buildAiSlices would pick and the reason ("OCR read nothing
-      here"), with the ability to select different ones.
-    - buildAiSlices gains an optional explicit selection; with none supplied its
-      ordering is unchanged (so the existing one-click path is byte-identical).
-    - Say plainly in the UI that rotations already apply to what is sent (§3.5).
+  STEP 5 — The AI page picker  ✅ BUILT 2026-09-14
+    THE RANKING IS NOW VISIBLE AND OVERRIDABLE. It was inline inside buildAiSlices,
+    unseen and unchangeable, and it ranks by "which pages OCR handled worst" with
+    NO notion of whether a page contains the fields — so a blank page, a signature
+    sheet or a photo of a stamp ranks FIRST precisely because it yielded nothing.
+    That blind spot cannot be fixed from the inside; only the person looking at the
+    page knows. Hence: show it, explain it, let it be changed.
+      - ocrAiCandidates(maxN) — the ranking, extracted UNCHANGED, now carrying a
+        reason per page ("the reader got nothing here" / "read, but among the
+        weakest" / "first pages of a file with no photo-read pages").
+      - ocrAiSelection(maxN) — what will ACTUALLY be sent: the reviewer's picks
+        when they have made any, else the ranking. buildAiSlices calls this, so
+        what the panel SHOWS and what is SENT cannot drift apart.
+      - Panel: a ✦ on each selected page in the strip, plus a row naming the
+        chosen pages with their reason and a "+ this page" / "− this page" toggle
+        for the page on screen, and a link back to the suggestion.
+      - AI_SLICE_PAGES names the cap (was a bare 2 at each call site). The picker
+        caps to it, oldest choice first, so slice-only stays a rule not a habit.
+      - window._ocrAiPick is cleared in cancelDocumentAutofill — a choice belongs
+        to the documents it was made against.
+
+    STALE PICKS CANNOT SMUGGLE A PAGE. Every pick is re-validated against the
+    CURRENT reports before it is used: an unknown file or an out-of-range page is
+    dropped, and if nothing survives the ranking takes over. This matters because a
+    Re-read rebuilds the reports underneath a selection made before it.
+
+    VERIFIED (step5_aipick.mjs, 12 assertions over transcribed logic): the four
+    yield explanations; the default ranking still picks the two pages that yielded
+    nothing and still caps; an override is honoured and labelled as the user's; an
+    entirely stale pick falls back to the ranking; a partly-stale pick keeps the
+    valid half; a text-layer file still falls back to its first two pages with the
+    right reason; and two files still send only AI_SLICE_PAGES between them.
+    node --check clean; JS suite 158/156 + the 2 intended blinding fails.
+    NOT BROWSER-PROVEN.
 
   STEP 6 — Logs + browser proof  ⬜ NOT STARTED
     Log each step here before committing (Rule 11).

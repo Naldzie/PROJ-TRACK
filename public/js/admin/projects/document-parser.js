@@ -40,6 +40,9 @@ function cancelDocumentAutofill() {
     // session that previewed several files holds them all until reload.
     try { _ocrTextCache = new Map(); } catch (e) { /* best-effort */ }
     try { releaseOcrPreviewDocs(); } catch (e) { /* best-effort */ }
+    // A page choice belongs to the documents it was made against — a new session
+    // must fall back to the system's own ranking rather than an orphaned pick.
+    try { window._ocrAiPick = null; } catch (e) { /* best-effort */ }
     // S3: fresh-popup-fresh-state — clear saved vote/disagreement/scan state AND remove
     // the dynamically built banner/note boxes, so no previous run can linger on screen
     // (stale-banner bug: old red banner survived modal close/reopen into single-file runs).
@@ -152,7 +155,7 @@ async function runDocumentAutofill() {
             if (myRunId !== _autofillRunId) return;
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
@@ -160,7 +163,7 @@ async function runDocumentAutofill() {
                 // and the per-page rotate control (even uncut ones). allLandscape flags fully-
                 // sideways scans for the pre-preview straighten-all rescue.
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages, pageChars: pageChars || {}, soupyPages: soupyPages || [] });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text }, { learned: learnedKeywords });
@@ -376,6 +379,10 @@ let _ocrPagesDone = 0;
 // the deliberate escape hatch in _rescanWithSelection().
 // Cleared with the rest of the session state in cancelDocumentAutofill().
 let _ocrTextCache = new Map();
+// How many pages the AI assist may ever be shown. Slice-only is a standing rule
+// of this feature (never the whole file), so the number is named rather than
+// repeated at each call site — and the AI page picker caps its selection to it.
+const AI_SLICE_PAGES = 2;
 const OCR_PAGE_LIMIT = 10;
 function ocrPageLimit() {
     const custom = (typeof window !== 'undefined') ? Number(window._ocrPageLimit) : NaN;
@@ -801,6 +808,10 @@ async function extractTextFromPDF(file, runId) {
     let landscapeCount = 0;
     const scannedPageNums = [];
     const landscapePages = [];
+    // Per-page yield ledgers (2026-09-14): how much text each photo-read page gave
+    // and whether it looked like symbol salad. Feeds the page strip's explanation.
+    const pageChars = {};
+    const soupyPages = [];
     let pagesVisited = 0;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
@@ -852,8 +863,22 @@ async function extractTextFromPDF(file, runId) {
                 scannedRead++;
                 ocrPages.push(pageNum);
             }
-            // Yield instrumentation for the 3→1 investigation: per-page chars + rotation,
-            // debug-gated so normal runs stay quiet.
+            // Per-page yield, RECORDED not just logged (2026-09-14). The count was
+            // computed here all along and thrown away into a debug console line, so
+            // the page strip could say a page was unread but never WHY — "nothing at
+            // all" and "forty characters of garbage" are different problems with
+            // different remedies, and only the second is worth rotating for.
+            // Soupiness is re-scored from the page text rather than plumbed out of
+            // recognizeEnglish (which returns a bare string): the scorer is pure and
+            // cheap, so re-running it costs nothing and changes no signature.
+            try {
+                const yielded = (pageText || '').trim();
+                pageChars[pageNum] = yielded.length;
+                if (yielded.length > 0 && core && typeof core.scoreOcrSoup === 'function') {
+                    const s = core.scoreOcrSoup(yielded);
+                    if (s && s.soupy) soupyPages.push(pageNum);
+                }
+            } catch (e) { /* instrumentation must never break a read */ }
             if (typeof window !== 'undefined' && window._parserDebug) {
                 try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
             }
@@ -867,7 +892,7 @@ async function extractTextFromPDF(file, runId) {
         // text. Text pages cost ~nothing; scanned pages stay capped by the per-file budget.
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited };
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited, pageChars, soupyPages };
 }
 
 // ===================================================
@@ -1090,12 +1115,33 @@ function ocrPageIsUnread(report, pageNum) {
 function ocrPageFactsOf(report) {
     if (!report) return [];
     const landscape = (report.landscapePages && report.landscapePages.length) ? report.landscapePages : null;
-    return ocrListedPagesOf(report).map((pn) => ({
-        pageNum: pn,
-        rotation: ocrRotationOf(report.fileName, pn),
-        read: !ocrPageIsUnread(report, pn),
-        landscape: landscape ? landscape.indexOf(pn) !== -1 : !!report.allLandscape,
-    }));
+    const chars = report.pageChars || {};
+    const soupy = report.soupyPages || [];
+    return ocrListedPagesOf(report).map((pn) => {
+        const read = !ocrPageIsUnread(report, pn);
+        const n = Number(chars[pn]);
+        return {
+            pageNum: pn,
+            rotation: ocrRotationOf(report.fileName, pn),
+            read: read,
+            landscape: landscape ? landscape.indexOf(pn) !== -1 : !!report.allLandscape,
+            chars: isFinite(n) ? n : null,
+            soupy: soupy.indexOf(pn) !== -1,
+            why: ocrPageWhy(read, isFinite(n) ? n : null, soupy.indexOf(pn) !== -1),
+        };
+    });
+}
+
+// Say what happened to a page in words a reviewer can act on. "Nothing at all"
+// and "forty characters of garbage" are different problems: the first is usually
+// orientation or a dark scan, the second usually means the page WAS read and is
+// simply not worth reading. Only the first is worth turning the page for.
+function ocrPageWhy(read, chars, soupy) {
+    if (read && soupy) return 'read, but the text looks garbled';
+    if (read) return chars ? 'text read (' + chars + ' characters)' : 'text read';
+    if (chars === null || chars === 0) return 'nothing at all — try turning it';
+    if (soupy) return 'only garbled marks (' + chars + ' characters)';
+    return 'too little to use (' + chars + ' characters)';
 }
 
 // The rotate and snapshot handlers resolve a file by INDEX (quote-safe — file
@@ -1282,6 +1328,100 @@ window._rotateAllScanned = function (reportIdx) {
     renderOcrPagePreview();
 };
 
+// ── WHICH PAGES GO TO THE AI ─────────────────────────────────────────────────
+// The ranking has always been "whichever pages OCR handled worst" — unread first,
+// then read — and it has never had any notion of whether a page CONTAINS the
+// fields. A blank page, a signature sheet or a photo of a stamp therefore ranks
+// FIRST, precisely because it yielded nothing. That is the system's blind spot and
+// it cannot be fixed from the inside: only the person looking at the page knows.
+// So the ranking is now shown with its reason, and can be overridden.
+// Pure over the stashes. Called by: buildAiSlices() and the preview panel.
+function ocrAiCandidates(maxN) {
+    const out = [];
+    try {
+        const reports = window._autofillScanReports || [];
+        for (let ri = 0; ri < reports.length && out.length < maxN; ri++) {
+            const r = reports[ri];
+            if (!r || !r.fileName) continue;
+            const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
+            const read = {};
+            (r.ocrPages || []).forEach((pn) => { read[pn] = true; });
+            // The original ordering, unchanged: pages that yielded nothing first.
+            let ordered = scanned.filter((pn) => !read[pn]).concat(scanned.filter((pn) => read[pn]));
+            let fallback = false;
+            if (!ordered.length && r.numPages) {
+                fallback = true;
+                ordered = [];
+                for (let p = 1; p <= Math.min(r.numPages, 2) && ordered.length < 2; p++) ordered.push(p);
+            }
+            for (let k = 0; k < ordered.length && out.length < maxN; k++) {
+                const pn = ordered[k];
+                out.push({
+                    reportIdx: ri,
+                    fileName: r.fileName,
+                    pageNum: pn,
+                    reason: fallback ? 'first pages of a file with no photo-read pages'
+                        : (read[pn] ? 'read, but among the weakest' : 'the reader got nothing here'),
+                });
+            }
+        }
+    } catch (e) { /* selection is best-effort */ }
+    return out;
+}
+
+// What will ACTUALLY be sent: the reviewer's picks when they have made any, else
+// the ranking above. Picks are validated against the current reports, so a stale
+// choice from before a re-read can never smuggle a page that no longer exists.
+function ocrAiSelection(maxN) {
+    try {
+        const picked = window._ocrAiPick;
+        if (Array.isArray(picked) && picked.length) {
+            const reports = window._autofillScanReports || [];
+            const valid = [];
+            for (const p of picked) {
+                if (!p || valid.length >= maxN) continue;
+                const ri = reports.findIndex((r) => r && r.fileName === p.fileName);
+                if (ri === -1) continue;
+                if (ocrRotatablePagesOf(reports[ri]).indexOf(p.pageNum) === -1) continue;
+                valid.push({ reportIdx: ri, fileName: p.fileName, pageNum: p.pageNum, reason: 'you chose this page' });
+            }
+            if (valid.length) return valid;
+        }
+    } catch (e) { /* fall through to the ranking */ }
+    return ocrAiCandidates(maxN);
+}
+
+// Add or remove the shown page from the AI selection. The first toggle seeds the
+// list from the current ranking, so choosing one page does not silently discard
+// the other — the reviewer is adjusting a selection, not starting from nothing.
+window._ocrAiTogglePage = function () {
+    try {
+        if (!_ocrPreview) return;
+        const reports = window._autofillScanReports || [];
+        const r = reports[_ocrPreview.reportIdx];
+        if (!r) return;
+        const pn = _ocrPreview.pageNum;
+        let list = Array.isArray(window._ocrAiPick) && window._ocrAiPick.length
+            ? window._ocrAiPick.slice()
+            : ocrAiSelection(AI_SLICE_PAGES).map((c) => ({ fileName: c.fileName, pageNum: c.pageNum }));
+        const at = list.findIndex((p) => p && p.fileName === r.fileName && p.pageNum === pn);
+        if (at !== -1) list.splice(at, 1);
+        else {
+            list.push({ fileName: r.fileName, pageNum: pn });
+            // Oldest choice makes way — the cap is what keeps this slice-only.
+            while (list.length > AI_SLICE_PAGES) list.shift();
+        }
+        window._ocrAiPick = list.length ? list : null;
+    } catch (e) { /* best-effort */ }
+    renderOcrPagePreview();
+};
+
+// Back to the system's own ranking.
+window._ocrAiResetPick = function () {
+    window._ocrAiPick = null;
+    renderOcrPagePreview();
+};
+
 // R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page.
 // 2026-09-14 — THIS NO LONGER RE-READS. It used to close the preview and re-run the
 // whole pipeline over every uploaded PDF, ~2s per scanned page, so one nudge on a
@@ -1317,6 +1457,7 @@ function ocrPagePreviewShellHtml() {
         + '<span class="text-muted" style="font-size:0.85em;">Pick a page to see it.</span></div>'
         + '<div id="ocrPreviewControls" class="d-flex gap-1 flex-wrap mt-2"></div>'
         + '<div id="ocrPreviewStrip" class="d-flex gap-1 flex-wrap mt-2"></div>'
+        + '<div id="ocrPreviewAi" class="d-flex gap-1 flex-wrap align-items-center mt-2 pt-2 border-top"></div>'
         + '</div>';
 }
 
@@ -1343,12 +1484,13 @@ async function renderOcrPagePreview() {
     // Caption — what page this is, and whether the reader got anything from it.
     const cap = document.getElementById('ocrPreviewCaption');
     if (cap) {
+        const fact = ocrPageFactsOf(r).filter((f) => f.pageNum === pn)[0];
         cap.innerHTML = '<strong>' + escapeHtml(r.fileName) + '</strong>'
             + '<span class="text-muted">page ' + pn + ' of ' + (r.numPages || pages.length) + '</span>'
             + (deg ? '<span class="badge bg-secondary">turned ' + deg + '°</span>' : '')
             + (unread
-                ? '<span class="badge bg-warning text-dark">no text read yet</span>'
-                : '<span class="badge bg-success">text read</span>');
+                ? '<span class="badge bg-warning text-dark">' + escapeHtml(fact ? fact.why : 'no text read yet') + '</span>'
+                : '<span class="badge bg-success">' + escapeHtml(fact ? fact.why : 'text read') + '</span>');
     }
 
     // Controls. Rotate is INSTANT here — it turns the picture and nothing else.
@@ -1365,16 +1507,39 @@ async function renderOcrPagePreview() {
                 : '<span class="ms-auto text-muted" style="font-size:0.85em;">Nothing turned since the last read.</span>');
     }
 
-    // Page strip — which pages the reader managed, and which it did not.
+    // Page strip — what the reader got from each page, and which ones the AI
+    // would be shown. A ✦ marks a page in the current AI selection.
+    const sel = ocrAiSelection(AI_SLICE_PAGES);
+    const inSel = (fileName, pageNum) => sel.some((c) => c.fileName === fileName && c.pageNum === pageNum);
     const strip = document.getElementById('ocrPreviewStrip');
     if (strip) {
         strip.innerHTML = '<span class="text-muted me-1" style="font-size:0.8em;">Pages:</span>' + ocrPageFactsOf(r).map((f) => {
             const cls = f.pageNum === pn ? 'btn-dark' : (f.read ? 'btn-outline-success' : 'btn-outline-warning');
+            const ai = inSel(r.fileName, f.pageNum);
             return '<button type="button" class="btn btn-sm ' + cls + '" style="padding:1px 6px;font-size:0.75em;"'
                 + ' onclick="window._ocrPreviewShow(' + _ocrPreview.reportIdx + ',' + f.pageNum + ')"'
-                + ' title="Page ' + f.pageNum + (f.read ? ' — text read' : ' — no text read') + (f.rotation ? ', turned ' + f.rotation + '°' : '') + '">'
-                + f.pageNum + (f.read ? '' : '*') + '</button>';
+                + ' title="Page ' + f.pageNum + ' — ' + escapeHtml(f.why) + (f.rotation ? ', turned ' + f.rotation + '°' : '') + (ai ? ' — the AI would read this one' : '') + '">'
+                + f.pageNum + (f.read ? '' : '*') + (ai ? ' ✦' : '') + '</button>';
         }).join('');
+    }
+
+    // What the AI would be shown, and why — the ranking was invisible until now,
+    // and it ranks by "which pages OCR handled worst", which is NOT the same as
+    // "which pages hold the contract details". Hence the override.
+    const aiRow = document.getElementById('ocrPreviewAi');
+    if (aiRow) {
+        const mine = Array.isArray(window._ocrAiPick) && window._ocrAiPick.length;
+        const chosen = inSel(r.fileName, pn);
+        aiRow.innerHTML = '<span class="text-muted" style="font-size:0.8em;">✦ AI assist would read:</span> '
+            + (sel.length
+                ? sel.map((c) => '<span class="badge bg-light text-dark border" title="' + escapeHtml(c.reason) + '">'
+                    + escapeHtml(c.fileName) + ' p.' + c.pageNum + '</span>').join(' ')
+                : '<span class="text-muted" style="font-size:0.8em;">nothing yet</span>')
+            + ' <button type="button" class="btn btn-sm ' + (chosen ? 'btn-outline-danger' : 'btn-outline-secondary') + '"'
+            + ' style="padding:1px 8px;font-size:0.75em;" onclick="window._ocrAiTogglePage()"'
+            + ' title="' + (chosen ? 'Do not send this page' : 'Send this page instead — at most ' + AI_SLICE_PAGES + ' are ever sent') + '">'
+            + (chosen ? '− this page' : '+ this page') + '</button>'
+            + (mine ? ' <button type="button" class="btn btn-sm btn-link" style="padding:1px 4px;font-size:0.75em;" onclick="window._ocrAiResetPick()">use the suggestion</button>' : '');
     }
 
     // The page itself. Token-guarded so a fast prev/next cannot paint out of order.
@@ -1516,23 +1681,12 @@ window._pickDisagreeValue = function (inputId, val) {
 async function buildAiSlices(maxN) {
     const out = [];
     try {
-        const reports = window._autofillScanReports || [];
         const files = window._autofillPdfFiles || [];
-        const cands = [];
-        for (let ri = 0; ri < reports.length && cands.length < maxN; ri++) {
-            const r = reports[ri];
-            if (!r || !r.fileName) continue;
-            const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
-            const read = {};
-            (r.ocrPages || []).forEach(pn => { read[pn] = true; });
-            let ordered = scanned.filter(pn => !read[pn]).concat(scanned.filter(pn => read[pn]));
-            if (!ordered.length && r.numPages) {
-                for (let p = 1; p <= Math.min(r.numPages, 2) && ordered.length < 2; p++) ordered.push(p);
-            }
-            for (let k = 0; k < ordered.length && cands.length < maxN; k++) {
-                cands.push({ fileName: r.fileName, pageNum: ordered[k] });
-            }
-        }
+        // ONE source of truth for which pages go (2026-09-14). The ranking used to
+        // live inline here, invisible and unchangeable; it is now ocrAiCandidates()
+        // and the reviewer's override rides the same call, so what the panel SHOWS
+        // and what is actually SENT cannot drift apart.
+        const cands = ocrAiSelection(maxN);
         const rots = (typeof window !== 'undefined' && window._ocrRotations) ? window._ocrRotations : {};
         for (let c = 0; c < cands.length; c++) {
             try {
@@ -1669,7 +1823,7 @@ window._tryAiAssist = async function () {
     window._autofillAiBusy = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Asking AI…'; }
     try {
-        const slices = await buildAiSlices(2);
+        const slices = await buildAiSlices(AI_SLICE_PAGES);
         if (runAtClick !== null && runAtClick !== _autofillRunId) return;
         if (!slices.length) {
             if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
@@ -1719,7 +1873,7 @@ window._tryAiAssistFromWarning = async function () {
     window._autofillAiBusy = true;
     if (typeof showToast === 'function') showToast('Asking the AI assistant to read the weakest pages…', 'info');
     try {
-        const slices = await buildAiSlices(2);
+        const slices = await buildAiSlices(AI_SLICE_PAGES);
         if (!slices.length) {
             if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
             window._autofillAiBusy = false;
