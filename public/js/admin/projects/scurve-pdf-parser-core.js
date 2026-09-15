@@ -1502,6 +1502,171 @@ function usableLayoutMap(map) {
         && map.pages.length > 0;
 }
 
+/* ─── Read guard: refuse a reading the document itself contradicts ────────── */
+//
+// 2026-09-15 (teach-grid plan §13, findings C + D, guard measurement pass). Two
+// printed BUHI schedules read WRONG with no learned layout involved, and looked
+// like any other baseline preview. The checks below were chosen by measurement
+// over 11 PDFs × up to 5 reads each (rules, taught month word, the live database
+// layouts, capture maps, AI maps): each fires only on the specimen it exists for,
+// and on no correct read. They guard those two measured failure shapes; they are
+// not a general proof that a reading is right.
+
+// Left-block column labels (never month words). A line carrying three or more
+// distinct kinds of these is a table's label line.
+const LEFT_BLOCK_LABEL_RE = /^(item(\s*no\.?)?|no\.|description|descritpion|particulars|scheduled\s*tasks|amount|contract(\s*amount)?|unit(\s*cost)?|qty\.?|quantity|%\s*weight|weight|no\.\s*of|days|budget(\s*cost)?|3%\s*discount)\b/i;
+
+// The most distinct left-block label kinds found on any single line of a page.
+function maxLeftBlockLabelKinds(tokenLines) {
+    let best = 0;
+    for (const line of tokenLines) {
+        const kinds = new Set();
+        for (const t of line.tokens) {
+            const s = String(t.str || '').trim();
+            if (LEFT_BLOCK_LABEL_RE.test(s)) kinds.add(s.toLowerCase().slice(0, 6));
+        }
+        if (kinds.size > best) best = kinds.size;
+    }
+    return best;
+}
+
+// A cell's value as the guard reads it: a plain number or a percent-written one.
+function guardCellValue(str) {
+    const s = String(str || '').trim();
+    if (isNumericToken(s)) return parseNumeric(s);
+    if (/^\d[\d,]*(\.\d+)?\s*%$/.test(s)) return parseFloat(s.replace(/[%,]/g, ''));
+    return null;
+}
+
+// Money-style figure for a refusal message ("32,588,531.43").
+function guardFigure(n) {
+    return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Does the read's own TOTAL row add up?
+ *
+ * The TOTAL row is found on a month page by a TOTAL label left of the first month
+ * band. Its month cells are summed with the reader's own band assignment (token
+ * centre, last band inclusive). On a COLUMN-SPLIT print the row continues on the
+ * pages holding the other months, on a label-less line at the same height below
+ * that page's own header (the P3 property) — so those cells are added too. Judging
+ * page by page was measured to FALSELY flag the correct two-page roof read.
+ *
+ * Returns null when there is nothing to judge (no TOTAL row, no month cells in it,
+ * or no printed figure left of the months — the 10-month, 6-stage and SEGMENT
+ * prints), else { match, monthSum, printed, nearest }.
+ *
+ * Called by: readRefusal(). Pure.
+ */
+function totalRowReconciliation(pageResults) {
+    const centre = (t) => (t.x + ((t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x)) / 2;
+    const inBands = (bands, cx) => bands.some((b, k) =>
+        cx >= b.x && (k === bands.length - 1 ? cx <= b.xEnd : cx < b.xEnd));
+
+    let anchor = null;
+    for (const pr of pageResults) {
+        if (!pr.tokenLines || pr.headerIndex < 0) continue;
+        const first = pr.header.monthCols[0].x;
+        for (let i = pr.headerIndex + 1; i < pr.tokenLines.length; i++) {
+            if (pr.tokenLines[i].tokens.some((t) => isTotalLabel(t.str) && centre(t) < first)) {
+                anchor = { pr, line: pr.tokenLines[i] };
+                break;
+            }
+        }
+        if (anchor) break;
+    }
+    if (!anchor) return null;
+
+    const anchorMonths = anchor.pr.header.monthCols.map((mc) => mc.index);
+    const offset = anchor.line.y - anchor.pr.tokenLines[anchor.pr.headerIndex].y;
+    let monthSum = 0;
+    let monthCells = 0;
+    const printed = [];
+
+    for (const pr of pageResults) {
+        if (!pr.tokenLines || pr.headerIndex < 0) continue;
+        let line = null;
+        if (pr === anchor.pr) {
+            line = anchor.line;
+        } else if (pr.header.monthCols.every((mc) => anchorMonths.indexOf(mc.index) === -1)) {
+            // Only a page holding OTHER months continues the row; a page repeating
+            // the same months is a row continuation, and its line at this height is
+            // some other activity.
+            const headerY = pr.tokenLines[pr.headerIndex].y;
+            line = pr.tokenLines.find((l, li) => li > pr.headerIndex && Math.abs((l.y - headerY) - offset) <= 2.5) || null;
+        }
+        if (!line) continue;
+        const bands = pr.header.monthCols;
+        for (const t of line.tokens) {
+            const v = guardCellValue(t.str);
+            if (v === null) continue;
+            const cx = centre(t);
+            if (inBands(bands, cx)) {
+                monthSum += v;
+                monthCells++;
+            } else if (pr === anchor.pr && cx < bands[0].x) {
+                printed.push(v);
+            }
+        }
+    }
+
+    if (monthCells === 0 || printed.length === 0) return null;
+    const tolerance = Math.max(1, monthSum * 0.001);
+    const nearest = printed.reduce((a, b) => (Math.abs(b - monthSum) < Math.abs(a - monthSum) ? b : a));
+    return { match: Math.abs(nearest - monthSum) <= tolerance, monthSum, printed, nearest };
+}
+
+/**
+ * Should this reading be refused? Returns null (keep it) or
+ * { code, message, detail } — the message is reviewer-facing.
+ *
+ * 'split-down'     a page carries the table's left-block label line but no month
+ *                  header, AND every activity came out nameless. Both facts are
+ *                  required: either alone is plausible on a legitimate print. The
+ *                  12-page BUHI print (names on p1-p3, months on p4-p12) is the
+ *                  specimen.
+ * 'total-mismatch' the TOTAL row's month cells do not add up to any figure the row
+ *                  prints left of the months. The one-page BUHI print (a month cell
+ *                  left of every band) is the specimen: 32,346,214 read against
+ *                  32,588,531.43 printed.
+ *
+ * Applies to learned layouts as much as to the rules, so an approved layout that
+ * still does not add up is refused too — the file's own TOTAL row is the arbiter.
+ *
+ * Called by: readPageResults(). Pure.
+ */
+function readRefusal(pageResults, labelOnlyPages, out) {
+    const names = [];
+    (out.months || []).forEach((m) => {
+        ((m && m.activities) || []).forEach((a) => {
+            const n = a && typeof a === 'object' ? a.activity_name : a;
+            if (typeof n === 'string' && n.trim() !== '') names.push(n.trim());
+        });
+    });
+    const allNameless = names.length > 0 && names.every((n) => /^Activity \d+$/.test(n));
+    if (labelOnlyPages.length > 0 && allNameless) {
+        return {
+            code: 'split-down',
+            message: 'This PDF prints the activity names and the monthly columns on separate pages,'
+                + ' so the offline reader cannot tell which figures belong to which activity.',
+            detail: { labelOnlyPages: labelOnlyPages.map((p) => p + 1) },
+        };
+    }
+
+    const total = totalRowReconciliation(pageResults);
+    if (total && !total.match) {
+        return {
+            code: 'total-mismatch',
+            message: 'The monthly figures read from this PDF add up to ' + guardFigure(total.monthSum)
+                + ', but its own TOTAL row prints ' + guardFigure(total.nearest)
+                + ' — some cells were not read into the right month.',
+            detail: { monthSum: total.monthSum, printed: total.printed },
+        };
+    }
+    return null;
+}
+
 /**
  * Walk the pages, collecting one table read per page.
  *
@@ -1517,6 +1682,9 @@ function collectPdfPages(itemsByPage, options, liveMaps) {
     let priorHeader = null;
     let mapId = null;
     const usedMapPages = new Set();
+    // Read guard ('split-down'): pages that carry the table's left-block label line
+    // but no month header. Recorded here because only this walk sees every page.
+    const labelOnlyPages = [];
 
     for (let p = 0; p < itemsByPage.length; p++) {
         const lines = groupItemsIntoLines(itemsByPage[p] || []);
@@ -1559,7 +1727,10 @@ function collectPdfPages(itemsByPage, options, liveMaps) {
             }
         }
 
-        if (!header) continue;
+        if (!header) {
+            if (maxLeftBlockLabelKinds(tokenLines) >= 3) labelOnlyPages.push(p);
+            continue;
+        }
         if (!priorHeader) priorHeader = header;
         if (options.debug) options.debug.push({ t: 'header', page: p, months: header.monthCols.map((mc) => mc.index), descX: header.descX, viaMap: !!liveMaps });
         // P2-c — continuation pages inherit the summary context (not the geometry):
@@ -1569,59 +1740,119 @@ function collectPdfPages(itemsByPage, options, liveMaps) {
         if (parsed.cumulativeYs && parsed.cumulativeYs.length) {
             priorCumulativeYs = priorCumulativeYs.concat(parsed.cumulativeYs);
         }
-        pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum, summaryCandidates: parsed.summaryCandidates });
+        // tokenLines + headerIndex ride along for the read guard's TOTAL-row check;
+        // mergePages and the month builder never read them.
+        pageResults.push({ header, rows: parsed.rows, totalRowSum: parsed.totalRowSum, summaryCandidates: parsed.summaryCandidates, tokenLines, headerIndex });
     }
 
-    return { pageResults, mapId };
+    return { pageResults, mapId, labelOnlyPages };
 }
 
+/**
+ * Turn one pass's page reads into a curve — or refuse it.
+ *
+ * Returns exactly one of:
+ *   { out }       a reading to return as-is;
+ *   { refusal }   a reading the document contradicts (readRefusal);
+ *   { fallback }  nothing buildable here (no rows/months, or buildMonthsFromRows
+ *                 refused) — the caller moves on to the weekly reader, exactly as
+ *                 before the guard existed.
+ *
+ * Called by: parseSCurvePdf(), once for the rules pass and once for the maps pass.
+ */
+function readPageResults(pass, mapId, options) {
+    const pageResults = pass.pageResults;
+    const merged = mergePages(pageResults);
+    if (!(merged.rows.length > 0 && merged.months.length > 0)) return { fallback: true };
+
+    // P4 — candidates now survive a MULTI-PAGE read. The old rule dropped
+    // them outright, which is why a column-split file reported no reference
+    // at all (the roof: summaryReference []). Each page numbers its own
+    // months through its own header, so a candidate's month indices are
+    // already absolute — they are unioned, never positionally guessed.
+    // A month claimed twice with DIFFERENT values is a genuine conflict and
+    // the whole candidate set is refused rather than half-trusted.
+    const summaryCandidates = mergeSummaryCandidates(pageResults);
+    const out = buildMonthsFromRows(merged.rows, merged.months, merged.totalContract, { summaryCandidates, debug: options.debug });
+    // P4 — a null here is a deliberate REFUSAL: the activity math was
+    // unusable and no printed curve could stand in for it. Fall through to
+    // the weekly reader and, failing that, to the honest "not recognised"
+    // answer, rather than return a curve known to be wrong.
+    if (!out) return { fallback: true };
+
+    const refusal = readRefusal(pageResults, pass.labelOnlyPages || [], out);
+    if (refusal) {
+        // A refusal of a LEARNED layout's reading says so (2026-09-15): the fix is then
+        // usually in S-Curve Layouts (a month taught one column off), not a new file.
+        // First live case: a hand-taught two-page roof layout with page 1's months on
+        // G..K instead of F..J, which the committed reader would have imported a month
+        // early — the old message sent the user to the Excel file instead.
+        refusal.viaMap = mapId !== null;
+        if (refusal.viaMap) refusal.mapId = mapId;
+        if (options.debug) options.debug.push({ t: 'refused', viaMap: refusal.viaMap, code: refusal.code, detail: refusal.detail });
+        return { refusal };
+    }
+
+    (merged.warnings || []).forEach((w) => out.meta.warnings.unshift(w));
+    if (mapId !== null) {
+        out.meta.mapUsed = true;
+        out.meta.mapId = mapId;
+        out.meta.warnings.unshift('Heads-up: this PDF was read with a learned layout for this'
+            + ' contractor — the months below came from that mapping. No action needed unless'
+            + ' something looks off.');
+    }
+    return { out };
+}
+
+/**
+ * Read an S-curve PDF: rules first, learned layouts second, the weekly reader last.
+ *
+ * opts: { monthWords, liveMaps, debug, onRefusal }
+ *   onRefusal(refusal) — optional; called with { code, message, detail } when the
+ *   file is left unread BECAUSE the read guard refused it (so the caller can say
+ *   why instead of a generic "not recognised"). Never called on a normal miss.
+ *
+ * Returns { months, meta } or null.
+ */
 export function parseSCurvePdf(itemsByPage, opts) {
     const options = opts || {};
+    const hasMaps = Array.isArray(options.liveMaps) && options.liveMaps.length > 0;
+    let refusal = null;
 
     // Two passes, mirroring the Excel reader: the RULES read every page first, and
-    // a learned layout is consulted only when nothing was recognised anywhere. A
+    // a learned layout is consulted only when the rules produced nothing usable. A
     // file the rules can read is therefore byte-identical to before, whatever has
     // been approved — maps extend the reader, they never override it.
-    let { pageResults } = collectPdfPages(itemsByPage, options, null);
-    let mapId = null;
-    if (pageResults.length === 0 && Array.isArray(options.liveMaps) && options.liveMaps.length > 0) {
+    //
+    // 2026-09-15 — "nothing usable" now also covers a rules reading the read guard
+    // REFUSED. That is what lets a learned layout rescue such a file: without it a
+    // layout would never be consulted on a page the rules recognise but misread
+    // (the one-page BUHI print). The layout's own reading faces the same guard.
+    const rules = collectPdfPages(itemsByPage, options, null);
+    if (rules.pageResults.length > 0) {
+        const r = readPageResults(rules, null, options);
+        if (r.out) return r.out;
+        if (r.fallback) return parseWeeklySchedulePdf(itemsByPage);
+        refusal = r.refusal;
+    }
+
+    if (hasMaps) {
         const viaMaps = collectPdfPages(itemsByPage, options, options.liveMaps);
         if (viaMaps.pageResults.length > 0) {
-            pageResults = viaMaps.pageResults;
-            mapId = viaMaps.mapId;
+            const r = readPageResults(viaMaps, viaMaps.mapId, options);
+            if (r.out) return r.out;
+            if (r.refusal) refusal = r.refusal;
         }
     }
 
-    if (pageResults.length > 0) {
-        const merged = mergePages(pageResults);
-        if (merged.rows.length > 0 && merged.months.length > 0) {
-            // P4 — candidates now survive a MULTI-PAGE read. The old rule dropped
-            // them outright, which is why a column-split file reported no reference
-            // at all (the roof: summaryReference []). Each page numbers its own
-            // months through its own header, so a candidate's month indices are
-            // already absolute — they are unioned, never positionally guessed.
-            // A month claimed twice with DIFFERENT values is a genuine conflict and
-            // the whole candidate set is refused rather than half-trusted.
-            const summaryCandidates = mergeSummaryCandidates(pageResults);
-            const out = buildMonthsFromRows(merged.rows, merged.months, merged.totalContract, { summaryCandidates, debug: options.debug });
-            // P4 — a null here is a deliberate REFUSAL: the activity math was
-            // unusable and no printed curve could stand in for it. Fall through to
-            // the weekly reader and, failing that, to the honest "not recognised"
-            // answer, rather than return a curve known to be wrong.
-            if (!out) return parseWeeklySchedulePdf(itemsByPage);
-            (merged.warnings || []).forEach((w) => out.meta.warnings.unshift(w));
-            if (mapId !== null) {
-                out.meta.mapUsed = true;
-                out.meta.mapId = mapId;
-                out.meta.warnings.unshift('Heads-up: this PDF was read with a learned layout for this'
-                    + ' contractor — the months below came from that mapping. No action needed unless'
-                    + ' something looks off.');
-            }
-            return out;
-        }
-    }
+    const weekly = parseWeeklySchedulePdf(itemsByPage);
+    if (weekly || !refusal) return weekly;
 
-    return parseWeeklySchedulePdf(itemsByPage);
+    // Left unread on purpose: tell the caller why (best-effort, never throws).
+    if (typeof options.onRefusal === 'function') {
+        try { options.onRefusal(refusal); } catch (e) { /* reporting never blocks a read */ }
+    }
+    return null;
 }
 
 /**
@@ -2589,6 +2820,73 @@ export function pdfCurvesDisagree(fileMonths, aiMonths, tolerance = 0.05) {
     return false;
 }
 
+/* ─── AI assist page images: render size (shrink-to-fit, 2026-09-15) ──────── */
+
+// Usual render scale for AI page images: pdf.js measures pages in 72-DPI points,
+// so 2.08 is ~150 DPI.
+export const PDF_SLICE_SCALE = 2.08;
+// Longest side, in pixels, a page image may be rendered at (the AI-3 canvas guard).
+export const PDF_SLICE_MAX_PX = 4000;
+
+/**
+ * Render scale for one AI assist page image.
+ * Called by: buildSCurvePdfSlices (scurve-pdf-parser.js), with the page's size at
+ * scale 1 (points).
+ *
+ * Returns { scale, shrunk, dpi }, or null for a page with no usable size.
+ *
+ * Before 2026-09-15 a page whose ~150 DPI render exceeded 4000 px was SKIPPED. The
+ * one-page BUHI print is 2592 x 1728 pt (5391 px at 2.08) and it is the file's only
+ * page, so AI assist rendered nothing and failed "could not be rendered to images".
+ * Shrinking instead costs no detail the model would have seen: Gemini 3 gives every
+ * image a fixed token budget whatever its pixel size, so a larger render is reduced
+ * on arrival anyway. The 4000 px ceiling stays as the browser-canvas guard.
+ */
+export function pdfSliceRenderScale(width, height) {
+    const longest = Math.max(Number(width), Number(height));
+    if (!Number.isFinite(longest) || !(longest > 0)) return null;
+    const scale = Math.min(PDF_SLICE_SCALE, PDF_SLICE_MAX_PX / longest);
+
+    return { scale, shrunk: scale < PDF_SLICE_SCALE, dpi: Math.round(scale * 72) };
+}
+
+/**
+ * Reviewer-facing note for page images that had to be shrunk before the AI read
+ * them, or null when none were.
+ * Called by: scurve-import-ui.js (_trySCurvePdfAiAssist) — added to the import notes
+ * on an AI answer, and to the error when the AI fails.
+ *
+ * shrunkPages: [{ page, dpi }] as reported by buildSCurvePdfSlices. The lowest DPI is
+ * named, because that page is where small figures are likeliest to be misread.
+ * opts.failed: the AI call failed, so there are no months to call inaccurate — the
+ *   note then warns that a retry would carry the same risk.
+ *
+ * Advice order (user, 2026-09-15): the original Excel first; failing that, a PDF
+ * split LEFT-TO-RIGHT onto two pages with every row and the header repeated on each —
+ * the column-split shape the offline reader already merges (roof, 6-stage, 10-month)
+ * and that gives each AI image its own budget. A top-to-bottom split is the shape the
+ * read guard refuses, hence "every row on each page".
+ */
+export function pdfSliceShrinkNote(shrunkPages, opts) {
+    const dpis = (Array.isArray(shrunkPages) ? shrunkPages : [])
+        .map((p) => Number(p && p.dpi))
+        .filter((d) => Number.isFinite(d) && d > 0);
+    if (dpis.length === 0) return null;
+    const which = dpis.length === 1 ? 'page was' : dpis.length + ' pages were';
+    const shrunk = ' too large to send to the AI at full size and had to be shrunk to about '
+        + Math.min(...dpis) + ' DPI (the usual is 150)';
+    const advice = ' For a dependable baseline, import the original Excel (.xlsx) S-curve file;'
+        + ' failing that, a PDF split left-to-right onto two pages, with every row and the'
+        + ' header rows repeated on each page, reads better than one oversized page.';
+
+    if (opts && opts.failed) {
+        return 'Heads-up: this PDF’s ' + which + shrunk + ', so even if a retry succeeds, small'
+            + ' figures may be misread.' + advice;
+    }
+    return 'Heads-up: this PDF’s ' + which + shrunk + ' before the AI read it. Small figures'
+        + ' may have been misread, so these months may be inaccurate.' + advice;
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -2611,6 +2909,8 @@ if (typeof window !== 'undefined') {
         derivePdfLayoutFromAi,
         crossCheckPdfAgainstFile,
         pdfCurvesDisagree,
+        pdfSliceRenderScale,
+        pdfSliceShrinkNote,
         PDF_MAP_VERSION,
     };
 }

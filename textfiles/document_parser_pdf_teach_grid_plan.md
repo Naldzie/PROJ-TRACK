@@ -26,11 +26,18 @@
 #                                         shared PHP/JS signature fixture
 #           roof misfit-layout fix ...... bandsHoldLabels in matchMapPage
 #         Row roles stay Excel-only BY DECISION (§11 Decision 4).
-#         ➜ HANDOFF: the LAST §13 entry. It opens with a DATE NOTE — entries headed
-#           "2026-09-15" were really written on 2026-09-14 local time.
-#         OWED BY THE USER (small): item-2 browser steps not yet shown (Excel prefill
-#           on reopen; staff layout). NEXT ORDERED WORK: the early-100 guard (AGENTS.md
-#           Session Handoff has its two design constraints).
+#         ➜ HANDOFF: the LAST §13 entry (2026-09-15, "GUARD MEASUREMENT PASS" — proposed
+#           spec, awaiting build order). Read the entry before it too ("THREE FINDINGS
+#           FROM A ONE-PAGE ROOF PRINT AND A PRINTED BUHI PDF", findings A-D). The
+#           misfit-layout entry opens with a DATE NOTE: entries headed "2026-09-15" above
+#           it were really written on 2026-09-14 local time.
+#         NEXT ORDERED WORK (user, 2026-09-15): (1) the split-down guard — a PDF
+#           printed down-then-across must stop reading as a confident baseline;
+#           (3) PDF description-band teaching steps 1-3; item (2), full split-down
+#           support, is PARKED. The early-100 guard queues behind both.
+#         OWED BY THE USER (small): item-2 browser steps (Excel prefill on reopen;
+#           staff layout); a re-printed BUHI specimen (details in the last §13 entry).
+#           The one-page roof print is saved (…-S-CURVE-pdf2.pdf).
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -2247,6 +2254,740 @@
     that produced them is several commits back, and the reader now refuses that
     shape whatever made it. If a fresh capture ever produces one again, that is a
     capture bug to chase from its own evidence.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — THREE FINDINGS FROM A ONE-PAGE ROOF PRINT AND A PRINTED BUHI PDF.
+  DIAGNOSIS ONLY, NO CODE. ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Code:          NOTHING changed. Last commit 7b3402e. All three findings below
+                     were measured read-only against the real files through the real
+                     core (probes listed at the end of this entry).
+      Ordered next (user, 2026-09-15), in this order:
+        (1) THE SPLIT-DOWN GUARD (finding C) — a PDF printed top-to-bottom-then-
+            across must stop reading as a confident baseline. Needs its own
+            measurement pass before any rule is chosen (design notes in C).
+        (3) PDF DESCRIPTION-BAND TEACHING (findings A + B) — steps 1-2 are buildable;
+            step 3 waits for a re-printed BUHI specimen (see "owed").
+        (2) FULL SUPPORT FOR SPLIT-DOWN PRINTS — PARKED by the user. Revive only if
+            the PMU actually receives large schedules as PDF only. The user will ask
+            the client to send the ORIGINAL EXCEL WORKBOOK for bigger S-curve tables
+            (confirmed by the user 2026-09-15 — the BUHI Excel already reads exactly).
+      Owed by the user:
+        - re-print the BUHI workbook with Page Layout -> Print Titles -> rows 10-11
+          repeated at top, and Scaling -> Fit All Columns on One Page; save it in
+          sampledocs/. That is the specimen step 3 is measured on. Guidance given
+          2026-09-15: clear any stale print area first, check Page Break Preview, and
+          export with Excel's own PDF export (File -> Export / Save As PDF), NOT
+          Microsoft Print to PDF — that driver outlined all text to curves on
+          "estimate_only page.pdf" (learning-loop plan, 2026-09-08). Ctrl+A-paste the
+          result to confirm a text layer before using it.
+          WHY THE DEFAULT PRINT WAS UNCONTROLLABLE (read-only, probe_buhi_pagesetup.php):
+          sheet S-CURVE has NO print area, no print titles, scale 100 / fit-to-page off,
+          landscape Folio (paper 14) — and its used range runs to HV104 (title-block
+          artifacts far right of the table, same as the "A10:IR82" note in the accuracy
+          plan). The table itself is A10:AF92 (Month 12 = AE:AF), summary rows 88-92,
+          signatures from row 95. So the guidance sets print area A1:AF104 explicitly.
+      DONE 2026-09-15 — the ONE-PAGE roof print is saved as
+        sampledocs/CSPC-Rehabilitation-of-Roof-at-Academic-Building-II-S-CURVE-pdf2.pdf
+        (368,323 bytes, 1 page 792x612, 297 text items, "7 days" and "Commulative"
+        both on the page — verified read-only, probe_roof2_pages.mjs). The two-page
+        print keeps its original name without the "2". Both roof prints join the
+        guard's measurement set, making it 10 PDFs, not 9.
+      Rule 10 applies before each item.
+
+    FINDING A — ONE-PAGE ROOF: THE AUTO-CAPTURE SHOWS "DESCRIPTION = A". DISPLAY ONLY.
+      REPORT (user): on a roof print with the whole table on one page, the capture's
+        teach modal opened with DESC on column A (ITEM NO.), where the names are in B.
+        Approved as-is it read the truth: 6.32 / 24.31 / 42.30 / 59.71 / 77.03 /
+        99.14 / 100, counts 4,4,4,4,3,4,3, learned-layout + adoption notes. Re-taught
+        by hand as Description=B, Contract amount=E, M1..M7=F..L, it read EXACTLY the
+        same. This print has no phantom "30 days" column (the two-page print's K).
+      WHY IT SAYS A: a derived map stores the description as a BAND (roof: ITEM NO. |
+        DESCRIPTION | UNIT | QTY = A..D), not a column. prefillFromMap names the FIRST
+        letter the band claims (scurve-teach-core.js :212, lettersInBand(...)[0]).
+      WHY A AND B READ THE SAME: the reader uses only the band's RIGHT edge —
+        buildRows takes every token with t.x < descLimit, descLimit =
+        min(descRight, firstMonthX) (scurve-pdf-parser-core.js :669/:683). descX, the
+        LEFT edge, is never read by buildRows. Both bands end where E begins, hence
+        identical output — and why every name reads "A FACILITIES FOR ENGINEER".
+      VERDICT: not a reading defect, but it misleads the one person the screen is for.
+        Folded into item (3) step 1 below.
+
+    FINDING B — "CONTRACT AMOUNT" IS NOT RESTORED ON REOPEN, AND ON PDF IT IS NOT A
+    FIELD AT ALL.
+      REPORT (user): after teaching Contract amount=E, reopening the layout showed no
+        AMT badge. Suspected to be the header-row-memory bug again. It is NOT the same
+        bug: header rows were saved-then-forgotten; the contract column is NEVER SAVED.
+      WHAT THE CODE DOES: buildTaughtPdfMap (SCurveHeaderProposalController :636-789)
+        reads contract / weight / code ONLY as "stops" when widening the taught
+        description to a band (:711-729), then discards them. The stored PDF page holds
+        descX, descRight, monthCols, pseudoCols, sig, hints — no contract key. The PDF
+        reader has no contract column concept either (grep: no contractX/weightX in the
+        core); its contract comes from the TOTAL row / off-column fallback (P2-d).
+      EVERY COLUMN BUTTON, BOTH FILE TYPES (asked by the user):
+        button            EXCEL (SCurveImportService)          PDF
+        Description       names + activity residue            right edge of the band only
+        Month N           month peso spans                    month bands
+        Contract amount   denominator, TOTAL row, skip guard   never stored or read —
+                          (:1600, :1644, :1693)                a stop for the desc band
+        Weight            isActivity + weight sanity (:1598)   same: a stop only
+        Item code         activity sub-label (:1707)           same: a stop only
+      => EXCEL KEEPS ALL FOUR. On PDF, three buttons are boundary hints dressed as
+         fields.
+      THE WIDENING RULE IS ROOF-SHAPED (the user's catch, and correct): the band is
+        stretched to the nearest column assigned to another button. On the roof that
+        is right because Amount follows QTY. On a BUHI-shaped header — DESCRIPTION C |
+        AMOUNT (IN PESOS) D | 3% DISCOUNT E | CONTRACT AMOUNT F | % WEIGHT G | NO. OF
+        DAYS H | months I.. — teaching Contract=F stops the band at F, so AMOUNT and
+        3% DISCOUNT fall inside it ("Construction of Temporary Field Office
+        184,800.00 5,544.00"); only Weight taught -> stops at G; nothing taught -> stops
+        at the first month, swallowing D..H. The AUTO path (P2-b: next header label
+        after the description) would stop correctly at AMOUNT, so a hand-taught map
+        would be WORSE than the automatic one on that layout. Not necessarily cosmetic:
+        on the roof the desc band alone moved the curve (2.48/10.8/... vs 6.32/24.31/...,
+        §13 2026-09-14) because it changes which rows count as named.
+      AGREED DIRECTION FOR ITEM (3) — supersedes the first proposal of the same day
+      (remember the contract letter / rename the badge / tooltip):
+        step 1  on PDF rows, Description accepts a RANGE of letters (like a month with
+                two columns); the band is exactly what was clicked, and reopen shows
+                every letter it holds (B+C+D) — which also retires finding A.
+        step 2  Contract amount / Weight / Item code DISABLED on PDF rows with the
+                reason printed beside them (the row-role button pattern, trap (g):
+                gate on _schTeach.sourceType).
+        step 3  the single-letter fallback rule — candidate: stop at the first column
+                right of the description whose activity-row cells are numbers. NOT
+                chosen until measured on the real roof (both prints) and the re-printed
+                BUHI. Unmeasured question: roof UNIT holds "LOT" (text) and QTY holds
+                "1.00" (numeric) — whether stopping at QTY still reads the true curve.
+      CARRY INTO THE BUILD: the server's `desc` field is one letter today, so step 1
+        touches teachColumns validation + buildTaughtPdfMap + scurve-teach-core.js +
+        the modal. Excel stays byte-for-byte as is. Stored PDF maps hold positions, not
+        letters, so every approved layout keeps reading exactly as it does. Validation
+        rules must stay sometimes|nullable (trap (b)); no leading-"m" palette keys
+        (trap (a)); do not bump PDF_MAP_VERSION (trap (e)).
+
+    FINDING C — THE PRINTED BUHI PDF READS WRONG, WITH NO LEARNED LAYOUT INVOLVED.
+      SPECIMEN: sampledocs/Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi-pdf.pdf (git-ignored,
+        user-printed from the BUHI workbook). pdf.js sees 12 pages, 792x612 each (the
+        user's viewer showed 8 — the count to trust is pdf.js's). The user had kept
+        this file out of testing on purpose, for the reason this finding confirms.
+      HOW EXCEL SPLIT IT — a GRID, printed down then across:
+                         left block (ITEM..DAYS)   Month 1-5   Month 6-10   Month 10-12
+        rows, top third  p1 header + names         p4 header   p7 header    p10 header
+        rows, middle     p2 names only             p5 numbers  p8 numbers   p11 numbers
+        rows, bottom     p3 TOTAL + CUMULATIVE %   p6 numbers  p9 numbers   p12 numbers
+        The roof and SEGMENT are split ACROSS only (P3's case). Here the names live on
+        pages with NO month header, and Month 10's two half-month columns straddle p7
+        and p10. Header heights line up (p1 labels y=434, p4 month labels y=435) —
+        the property a future merge would lean on, recorded for item (2).
+      WHAT THE READER DOES TODAY (parseSCurvePdf, rules only):
+        pages used    p4, p7, p10 only (the pages with a month header). The other nine —
+                      every name, the TOTAL row, the printed cumulative row — ignored.
+        curve         3.31 / 10.51 / 18.06 / 29.47 / 34.77 / 45.39 / 56.83 / 67.62 /
+                      79.63 / 92.03 / 99.18 / 100   (curveSource 'activities')
+        Excel truth   M1 1.12 · M3 6.74 · M4 10.59 · M6 21.09 · M7 28.64 · M9 49.73 ·
+                      M10 68 · M12 100
+        contract      11,530,091.76 (truth 32,588,531.43 — the top third of the rows)
+        names         every activity "Activity N"
+        summaryRef    []
+        warnings      ONE: "pages carry different row counts (14 vs 12) — months were
+                      aligned by position. Verify the monthly split before locking."
+        => a wrong baseline with a normal-looking preview. Same failure class as the
+           2026-09-14 misfit roof layout ("read wrong instead of not read"), reached
+           without any learned layout.
+      WHAT THE CAPTURE STORES: map with 3 pages (pdf p4/p7/p10), desc band 0 -> 0.12 /
+        0.13 / 0.05 (no names on those pages), months 1-5 / 6-10 / 10-12 — month 10 on
+        TWO pages, which buildTaughtPdfMap would refuse ("a month lives on one page").
+        That refusal is correct for today's reader; this file is its first
+        counterexample, parked with item (2). Block: COLUMNS A..AK, R3 [HEADER] = the
+        month labels, R4.. [DATA] = bare peso cells, no names anywhere.
+      WHY AI ASSIST DOES NOT RESCUE IT: buildSCurvePdfSlices sends at most 2 page
+        images (cap 3), table pages first — i.e. p4 and p7: two-thirds of the rows
+        missing, no names, no TOTAL. The P5 cross-check cannot fire either (it needs a
+        printed cumulative row the reader found). So the honest message leads with the
+        original Excel file, and presents AI assist as a weak second option at best.
+      DESIGN NOTES FOR THE GUARD (item 1) — NOTHING CHOSEN YET, MEASURE FIRST:
+        goal (user's words): show that this is not a reliable extraction.
+        outcome options: honestly unread (parseSCurvePdf -> null, so the existing
+          failure branch offers capture + AI beside the button) OR a read carrying a
+          strong, specific warning. Decide from the measurement; leaning unread, since
+          a baseline preview invites locking.
+        candidate signals, each to be measured over ALL 10 sample PDFs (the 8
+        originals + BUHI + the one-page roof pdf2):
+          (a) a page carrying the table's label vocabulary (DESCRIPTION / AMOUNT /
+              ITEM / WEIGHT / NO. OF DAYS) but no month header, while month pages exist;
+          (b) EVERY activity row nameless (generic "Activity N");
+          (c) pages holding numeric cells that no header claimed (p5/p6/p8/p9/p11/p12).
+        hard constraints:
+          - the 16-read regression (verify_p6.mjs) and block_snapshot.mjs stay 0 changed
+            — 6-stage, 10-month, SEGMENT and the roof are column splits whose names sit
+            on a month page, and must not trip it;
+          - the learned-layout consult path must be checked too, not just the rules;
+          - pure core, falsified test (fails with the guard disabled);
+          - regex source written with the file editor, never shell-quoted.
+        NOT the early-100 guard: that one is about a weak AI answer; this one is about
+          the offline reader. The early-100 guard stays queued behind items 1 and 3.
+
+    FINDING D (same day, later) — THE ONE-PAGE BUHI RE-PRINT READS A HALF-MONTH EARLY.
+    A SECOND, DIFFERENT SILENT MISREAD. Diagnosis only, no code.
+      SPECIMEN: sampledocs/Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi-pdf-1page.pdf
+        (user re-print, 504,092 bytes). ONE page 2592x1728, 2,307 text items — the
+        whole sheet on one page, every column, the header, names, TOTAL and the summary
+        block all present. Usable as the step-3 specimen (it is a stronger one than the
+        fit-columns print asked for: no page seams at all).
+      WHAT THE RULES READ (no maps): header found, months 1-12, REAL names —
+        curve   1.42 / 4.46 / 7.64 / 12.34 / 17.69 / 24.2 / 32.8 / 42.92 / 58.56 /
+                76.6 / 93.11 / 100
+        truth   M1 1.12 · M3 6.74 · M4 10.59 · M6 21.09 · M7 28.64 · M9 49.73 · M10 68
+        counts  12,13,14,20,22,32,37,37,45,45,43,34  (Excel 8,11,12,14,19,20,32,34,38,
+                43,41,41 — the PDF lists land about a month EARLY from month 4 on)
+        contract 32,346,214 — exactly the truth 32,588,531.43 MINUS 242,317.46, the
+                TOTAL row's first month cell. That one number proves the mechanism below.
+      MECHANISM (measured, probe_buhi1_bands.mjs): finalizeHeaderBands starts each month
+        band AT its month label (core :352, x: m.x) and ends it at the next label. That
+        assumes a label sits at its column's left edge — true for the single-column
+        prints in the 16-read set. BUHI prints each month as TWO cells under ONE merged
+        label, and the label sits over the middle of the pair. So:
+          Field Office row: 7,469.00 @741 falls LEFT of M1's band [793-934] -> read by no
+          month; M1 gets @809 (its own 2nd cell) + @876 (month 2's 1st cell), and every
+          later band takes the second cell of its month plus the first cell of the
+          next; where column
+          widths change (M5, M9) a band swallows three cells.
+          TOTAL row: 242,317.46 @731 is outside every band — the missing contract piece.
+        The Excel reader does not have this problem: it reads paired spans [col, col+1]
+        starting at the label's own column.
+      TWO SMALLER DEFECTS ON THE SAME READ:
+        - the day-marker sub-header line (NO. / (IN PESOS) / AMOUNT / DAYS / 15 15 … 5)
+          is read as an ACTIVITY named "NO. (IN PESOS)" — its 15s sit in month bands;
+        - summaryReference carries 16 entries from FOUR rows (% ACCOMPLISHED fractions
+          0.07 / 0.14…, CUMULATIVE % fractions, COST pesos) with duplicates, producing 13
+          "the summary was likely computed against a different total" warnings — noisy,
+          and their reassuring wording is wrong for a read that is itself shifted.
+      WHAT THIS MEANS FOR THE ORDER:
+        - the split-down guard (item 1) would NOT catch this: one page, header present,
+          real names. Its signals (a)-(c) are all quiet here.
+        - the natural fix is in the READER (band placement for multi-cell months under a
+          merged label), i.e. the hottest path in the PDF core — the 16-read regression
+          + block_snapshot gate applies, and the roof / SEGMENT / 6-stage / 10-month
+          single-column prints must stay byte-identical. Not ordered; needs the user's
+          decision on scope and order relative to items (1) and (3).
+        - step 3's measurement can still use this file for the description band (names
+          are right), but any curve comparison on it is meaningless until D is resolved.
+      BROWSER-CONFIRMED (user, same day): the import shows exactly the probe's read —
+        1.42 / 4.46 / … / 93.11 / 100, 12 import notes of the "summary was likely
+        computed against a different total … no action needed" kind, and
+        "NO. (IN PESOS)" listed as an activity in every month.
+
+    FINDING D, PART TWO — USER DECISION: D MUST BE LEARNABLE, NOT A NEW RULE. MEASURED
+    WHAT THAT TAKES. Still no code.
+      THE USER'S FRAMING (confirmed correct): the BUHI Excel and the roof Excel are both
+        read by the RULES — no stored layout needed. The user wants the BUHI-shaped PDF
+        to become readable through the learning loop (teach / AI-derive -> approve ->
+        free reads), not through another hardcoded reader rule.
+      WHY IT IS NOT LEARNABLE TODAY — three blockers, each measured:
+        1. A LEARNED LAYOUT IS NEVER CONSULTED ON THIS FILE. parseSCurvePdf (core
+           :1585-1593) consults liveMaps ONLY when the rules recognise no table on any
+           page. Here the rules DO recognise Month 1-12, so an approved layout would sit
+           unused forever. By design ("maps extend the reader, they never override it").
+           ⇒ the rules must first STAND DOWN on a read that is not trustworthy — which is
+             exactly what a guard does. The guard and the learning loop fit together:
+             guard says "unreliable", the file then takes the miss path (capture + AI
+             offer + learned-layout consult).
+        2. THE TEACH GRID CANNOT EXPRESS "THESE TWO CELLS ARE MONTH N". Probe
+           probe_buhi1_teach.mjs (rules forced to miss by renaming "Month" in a COPY of
+           the items): the pseudo-columns merge neighbouring cells on this dense print —
+           M1=G+I M2=J+L M3=M+O M4=O+Q … M9=AC+AE M10=AE+AF: months 3/4, 6/7 and 9/10
+           SHARE a letter, so the taught bands overlap and buildTaughtPdfMap refuses
+           ("Month 4 starts left of where month 3 ends"). As a sanity check the CAPTURED
+           map (label-start bands) reproduces today's shifted read exactly via mapUsed.
+        3. EVEN IDEAL MONTH RANGES DO NOT READ THE TRUTH YET. probe_buhi1_ideal.mjs /
+           probe_buhi1_contrib.mjs: bands cut halfway between the Field Office row's own
+           24 cells (a range no human could draw more precisely) read
+           1.2 / 3.81 / 5.54 / 8.94 / … / 26.59 (M7) / … / 100, contract 30,361,134.
+           Against the file's OWN TOTAL row (paired cells, which DOES give 1.12 / 6.74 /
+           10.59 exactly) the reader's month pesos are off by up to half a month:
+             M2 -13,663 · M3 -498,155 · M4 -226,318 · M7 -351,820 · M9 -563,756 ·
+             M10 -894,963 · M11 +362,473 · M12 +387,520
+           e.g. "a. Footing" contributes to M2 and M4 but not M3. So cells on OTHER rows
+           do not sit where the Field Office row's cells sit. CAUSE NOT YET KNOWN — right-
+           aligned numbers of different widths, merged cells, or per-row x drift are the
+           suspects. This must be understood before ANY layout shape is designed, because
+           it decides what a learned layout has to store.
+      WHAT THE FILE ITSELF OFFERS (the lever for the guard): the TOTAL row pairs reproduce
+        the Excel truth to the cent (M1 364,603.91 -> 1.12%, M3 cumulative 2,195,216.46
+        -> 6.74%, M4 3,452,126.91 -> 10.59%). A read whose month totals do not reconcile
+        with the file's own TOTAL row (today: 242,317.46 outside every band, contract
+        32,346,214 vs the printed 32,588,531.43) is detectably untrustworthy — a SELF-
+        CHECK against the document, not a BUHI-shaped reader rule.
+      REVISED ORDER (proposed to the user 2026-09-15, awaiting confirmation):
+        (1) GUARD, both shapes: split-down (finding C) and "the read does not reconcile
+            with the file's own TOTAL row" (finding D). Effect: the rules stand down, the
+            file takes the miss path. Measure on all 10 PDFs; 16-read regression and
+            block_snapshot 0 changed.
+        (2) RESTUDY D AS A LEARNING PROBLEM, measurement only: why ideal bands still lose
+            pesos (blocker 3); whether pseudo-column detection can separate the cells
+            (blocker 2); the layout shape that reads the truth; whether AI-derive
+            (PDF-3) can produce it.
+        (3) DESCRIPTION-BAND TEACHING (findings A + B) — same teach-grid code as (2), so
+            the two may merge after (2)'s measurements.
+      NEW PROBES: probe_buhi1_teach.mjs, probe_buhi1_ideal.mjs, probe_buhi1_contrib.mjs.
+      USER CONFIRMED the revised order (1) guard -> (2) D restudy -> (3) desc band, and
+      ordered the guard's measurement pass.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — GUARD MEASUREMENT PASS ✅ DONE (read-only, no code). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Code:        still NOTHING changed (last commit 7b3402e).
+      Result:      two signals, each quiet on every correct read and firing only on the
+                   specimen it exists for. Proposed spec below — awaiting build order.
+      Probes:      C:\temp\opencode\guard_measure.mjs (round 1, per-page),
+                   guard_measure2.mjs (round 2, merged + live DB maps),
+                   dump_live_pdf_maps.php (read-only DB dump -> live_pdf_maps.json).
+                   Both measure through guard_core_spy.mjs, a probe-only COPY of the core
+                   with its internals re-exported (collectPdfPages) — the repo core is
+                   untouched.
+
+    WHAT WAS MEASURED — 11 PDFs (the 8 of the 16-read set + roof pdf2 + BUHI 12-page +
+    BUHI 1-page), each read up to five ways: rules plain; rules with a taught month word
+    ["SEGMENT 1"] (the 16-read pairing); through the LIVE DATABASE layouts (#124 SEGMENT
+    auto-capture, #128 the user's hand-taught roof pdf2 — the only two live PDF rows);
+    through the file's own capture map; and for both roofs through the AI-derived map.
+    45 reads in total.
+
+    ROUND 1 FOUND A TRAP, WORTH KEEPING: a per-page TOTAL-row check flagged the CORRECT
+      two-page roof read (page 1 holds months 1-5 of the TOTAL row: 1,725,080.17 vs the
+      printed 2,239,599.72). Months 6-7 are on page 2 on a label-less continuation line.
+      A reconciliation must judge the MERGED table — continuation lines paired by their
+      offset from each page's own header line (the P3 property), exactly as the reader
+      merges. Round 1's "gap cells" signal (numbers between the left block and month 1)
+      also fired on both roofs (the right-aligned Amount column drifts into the gap) —
+      REJECTED.
+
+    ROUND 2 RESULTS (every read; "—" = abstains)
+      read                                      a&b      TOTAL reconciliation (merged)
+      CONSCHEDSAVINGS ×2  plain/word/liveDB      no       — (weekly path, no TOTAL)
+      CONSCHEDSAVINGS ×2  own capture map*       YES      —
+      ROOF 2-page         plain/word/liveDB      — (NULL read)
+      ROOF 2-page         AI map                 no       MATCH 2,239,599.73 vs .72 (pages 1+2)
+      ROOF pdf2 1-page    liveDB (#128 taught)   no       MATCH 2,239,599.73 vs .72
+      ROOF pdf2 1-page    capture / AI map       no       MATCH
+      10-month            all four reads         no       — (TOTAL row has no month cells)
+      6-stage             all four reads         no       — (same)
+      SEGMENT             word / liveDB #124 / capture   no  — (same); plain = NULL
+      scurvepdfsample2, test_page_6              — (NULL reads)
+      BUHI 12-page        all four reads         YES      — (TOTAL is on p3, a page with
+                                                            no month header)
+      BUHI 1-page         all four reads         no       MISMATCH 32,346,214 vs printed
+                                                          32,588,531.43 — and exactly
+                                                          32,346,214 + 242,317.46 (the
+                                                          left-out cell) = 32,588,531.43
+      * not reachable in the app: CONSCHEDSAVINGS reads through the weekly path and never
+        captures; forcing its capture map onto it yields 0/0/0/0/0/100/100/100, so "YES"
+        there is a TRUE positive on a garbage read, not a false alarm.
+      FALSE POSITIVES ON CORRECT READS: ZERO for both signals.
+
+    PROPOSED GUARD SPEC (for the build order — nothing built)
+      SIGNAL 1, split-down (finding C):  a page that carries >=3 distinct left-block labels
+        on one line (ITEM / DESCRIPTION / AMOUNT / CONTRACT / % WEIGHT / NO. OF / DAYS /
+        UNIT / QTY …) but NO month header, while the read found month pages elsewhere,
+        AND every activity in the read is nameless ("Activity N"). Two independent facts
+        are required on purpose: either alone is plausible on a legitimate print.
+      SIGNAL 2, does-not-reconcile (finding D):  the read's TOTAL row — found on a month
+        page by its label left of the first band, continued onto other month pages by
+        header-relative height — has month cells, the row prints at least one figure left
+        of the first band, and NO such figure equals the sum of the month cells (tolerance
+        max(1, 0.1%)). Abstains when there is no TOTAL row, no month cells in it (10-month,
+        6-stage, SEGMENT), or no printed figure. The "left-out cell" identity is recorded
+        as the explanatory detail, not as the trigger (the general mismatch is the rule).
+      APPLIES TO EVERY monthly read — rules AND learned layouts — so an approved layout that
+        still does not reconcile is refused too. That is what makes the file's own TOTAL
+        row the arbiter for item (2): a learned BUHI layout is only trusted once it
+        reconciles. The weekly path is untouched (no bands, no TOTAL row measured).
+      OUTCOME (proposed): the read is REFUSED, not merely warned — a baseline preview
+        invites locking. Design points the build must settle, each with a test:
+        - FLOW: a refused RULES read must fall through to the learned-layout pass (today
+          maps run only when the rules found nothing — core :1587). Without this, item (2)
+          can never work. Then the weekly fallback; confirm it returns null on both BUHI
+          prints rather than a weekly misread.
+        - REASON: parseSCurvePdf returns bare null today. The refusal needs a reason the
+          UI can print ("this PDF's monthly figures do not add up to its own TOTAL row —
+          import the original Excel file; AI assist may also be incomplete" / "this
+          schedule is printed across pages that separate the names from the months").
+          Shape to be decided (e.g. a refusal field the wrapper stashes), additive only.
+        - OTHER CALLERS of parseSCurvePdf: crossCheckPdfAgainstFile (P5) and the PDF-3
+          self-check replay derivePdfLayoutFromAi. A guard refusal must make both abstain
+          (P5: the AI answer stays, marked unverified; PDF-3: nothing taught) — never
+          throw, never swap in a refused reading.
+        - CAPTURE: on the miss path the wrapper will capture BUHI-1page's label-start map.
+          Approving it must still read nothing (the guard applies to map reads — measured:
+          the capture-map read MISMATCHes too). Check the desk does not badge it as usable.
+      REGRESSION GATES FOR THE BUILD: verify_p6.mjs 16 reads 0 changed; block_snapshot.mjs
+        0 changed; guard_measure2.mjs re-run shows the two BUHI prints refused and every
+        other read unchanged; JS tests falsified (each fails with its signal disabled);
+        blinding stays ON (2 intended JS fails).
+      KNOWN LIMITS, stated so nobody over-trusts it: signal 2 cannot see a BUHI-shaped PDF
+        whose TOTAL row carries no month cells, or whose printed total is missing; signal 1
+        cannot see a split-down print whose name pages lack the label line. Both are
+        guards against these two measured failure shapes, not a general correctness proof.
+      (Count correction: the pass was 43 reads, not 45 — the two-page roof's own capture is
+      unnumbered, so it has no capture read.)
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — READ GUARD ✅ BUILT (code, UNCOMMITTED). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    STATE IN ONE GLANCE
+      Ordered:     user "yes proceed with the guard".
+      Status:      built, suite-green, falsified, regression-clean. NOT browser-proven.
+                   Not committed (no commit order given).
+      Files:       public/js/admin/projects/scurve-pdf-parser-core.js   (the guard)
+                   public/js/admin/projects/scurve-pdf-parser.js        (reason stash)
+                   public/js/admin/projects/scurve-import-ui.js         (message + AI note)
+                   tests/js/scurve-pdf-parser.test.mjs                  (+6 tests)
+                   this plan + AGENTS.md
+      No PHP, Blade, route or migration touched; script tags are already $jsv-versioned.
+      Next after the browser check: item (2), the measurement-only restudy of D.
+
+    WHAT SHIPPED — core (pure, node-tested)
+      - readRefusal(pageResults, labelOnlyPages, out) — the two measured signals, exactly
+        as specified in the measurement-pass entry above:
+          'split-down'     a page with >=3 distinct left-block labels on one line and NO
+                           month header (recorded by collectPdfPages, which now returns
+                           labelOnlyPages) AND every activity nameless;
+          'total-mismatch' totalRowReconciliation(): the TOTAL row found on a month page
+                           by its label left of the first band; its month cells summed
+                           with the reader's own band rule; continued onto pages holding
+                           OTHER months (disjoint month indices only — a page repeating
+                           the same months is a row continuation) at the same header-
+                           relative height (±2.5); refused when no figure the row prints
+                           left of the months equals the sum (tolerance max(1, 0.1%));
+                           abstains with no TOTAL row / no month cells / no printed figure.
+        Each refusal is { code, message, detail }; the message is reviewer-facing and names
+        the figures ("add up to 32,346,214.00, but its own TOTAL row prints 32,588,531.43").
+      - collectPdfPages pageResults now also carry tokenLines + headerIndex (read only by the
+        guard; mergePages and the month builder ignore them).
+      - parseSCurvePdf body split into readPageResults(pass, mapId, options) → { out } |
+        { refusal } | { fallback }. Flow:
+          rules read -> out: return it (unchanged)
+                     -> fallback (no rows / buildMonthsFromRows refused): weekly (unchanged)
+                     -> REFUSED: remember the refusal and CONTINUE to the learned layouts
+          maps (when liveMaps exist) -> out: return it (mapUsed note as before)
+                                     -> refused: remember
+          weekly reader -> a result wins; otherwise, if a refusal was recorded, call
+                           opts.onRefusal(refusal) and return null.
+        ⚠ BEHAVIOUR CHANGE, INTENDED: a refused rules read now falls through to learned
+        layouts (before, maps ran only when the rules found no table). This is the change
+        that makes item (2) possible at all. Maps still never override a rules read that
+        is NOT refused — "rules win outright" test untouched and green.
+      - opts.onRefusal is new and optional; omitted = no reporting. debug gains
+        { t: 'refused', viaMap, code, detail }.
+
+    WHAT SHIPPED — browser side
+      scurve-pdf-parser.js: passes onRefusal, stashes window._scurvePdfRefusal (reset per
+        parse, null whenever a reading comes back).
+      scurve-import-ui.js: importPDFSCurve throws the refusal's message + "No baseline was
+        produced from this PDF — please import the original Excel (.xlsx) S-curve file
+        instead." (err.pdfRefusal set); new scurvePdfFailureNote(err) gives both catch
+        branches (wizard + detail) the AI-offer wording: "The offline reading of this PDF was
+        not reliable, so no baseline was produced. AI assist only sees 2 pages, so on a large
+        table it may also be incomplete — the original Excel file is the dependable source."
+        A plain miss keeps the old wording exactly. Capture still posts on a refusal (it is
+        what item (2) will teach from).
+
+    VERIFIED
+      verify_guard.mjs (43 reads, committed core vs working tree):
+        BUHI 12-page ×4 reads   wrong curve -> NULL, refusal 'split-down'
+        BUHI 1-page  ×4 reads   wrong curve -> NULL, refusal 'total-mismatch' naming
+                                32,346,214.00 vs 32,588,531.43
+        every other read        IDENTICAL (curve, names, desc, contract, warnings,
+                                curveSource, mapUsed) — incl. live DB #124 and #128
+        ONE UNPREDICTED CHANGE, an improvement: CONSCHEDSAVINGS ×2 forced through its own
+          capture map used to return 0/0/0/0/0/100/100/100 (map pass ran before the weekly
+          reader); that map read is now refused, so the file falls through to the weekly
+          reader and returns its true 36.7/68.85/91.16/100. Not reachable in the app (the
+          weekly path reads it and it never captures) — recorded, not hidden.
+        The weekly reader returns null on both BUHI prints (checked by the same run).
+      verify_p6.mjs           16 reads, 0 changed; roof via AI map still 6.32 … 100, M7 = 3,
+                              PDF-3 self-check PASSES months 1..7.
+      block_snapshot.mjs      9 PDFs, 0 changed (capture/desk untouched, no re-capture wave).
+      probe_guard_ai_callers  on both BUHI prints crossCheckPdfAgainstFile -> null and the
+                              PDF-3 self-check -> null (abstain, no throw).
+      probe_ui_refusal.cjs    the REAL scurve-import-ui.js in a node vm: refused -> reason
+                              message + pdfRefusal + reliable-note; plain miss -> old message
+                              and "The PDF table was not recognized."; a read -> returned.
+      TESTS +6 (tests/js/scurve-pdf-parser.test.mjs, section "Read guard"):
+        split-down refused with its reason · the conjunction (months page alone reads;
+        label page + named table reads) · total-mismatch refused naming both figures ·
+        a reconciling or uncomparable TOTAL row reads · column-split TOTAL reconciled
+        across pages (sum 300 needs the page-2 cell) and refused when it does not add up ·
+        a refused rules read falls through to a learned layout that adds up (mapUsed, id 6,
+        31.58/68.42/100) while the capture that repeats the mistake is refused too.
+      FALSIFIED (falsify_guard.mjs, mutates the real core in place, restores, verifies the
+        sha256): split-down disabled / total-mismatch disabled / TOTAL judged page by page /
+        no fall-through to maps — ALL FOUR CAUGHT by their named tests, core byte-identical
+        after each restore.
+      SUITES: npm run test:js 195 tests, 193 pass + the 2 intended blinding fails (F-B1,
+        L3 hardcoded ABC). PHP not re-run — no PHP touched (last full run 1217 / same 5).
+      CAUGHT WHILE WRITING THE TESTS (fixture, not code): a first two-page TOTAL fixture read
+        NULL on the COMMITTED core as well — the reader takes the contract from page 1's
+        TOTAL row alone (the roof's known 1,725,080.17 residual), so peso activities over
+        four months overshot it and buildMonthsFromRows refused. Rebuilt on the suite's
+        roof-shaped continuation fixture (percent cells + printed cumulative row), which is
+        the shape the trap actually came from.
+
+    BROWSER CHECK OWED (user)
+      1. Import Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi-pdf-1page.pdf (detail Baseline tab or
+         wizard): a red toast naming 32,346,214.00 vs 32,588,531.43 and the Excel advice; NO
+         setup modal; the amber AI offer carries the "not reliable … 2 pages" note.
+      2. Same with the 12-page BUHI print: the "separate pages" message.
+      3. Roof pdf2 (live #128) and the 6-stage / 10-month PDFs still import exactly as before.
+      4. Optional: the BUHI 1-page capture row appears in S-Curve Layouts; approving it must
+         still refuse on re-import (same reason) — expected, it repeats the misread.
+      Hard-refresh first (Ctrl+F5).
+
+    PROBES (C:\temp\opencode, outside the repo — read-only)
+      probe_buhi_pdf.mjs     pages + rules read + capture map + desk block
+                             (writes buhi_items.json, buhi_capture_map.json)
+      probe_buhi_pages.mjs   per-page label/header tokens with x,y + reader debug
+                             (which pages got a header, the names it produced)
+      probe_pdf_generic.mjs  "<sampledocs file name>" — pages, rules read, capture
+      probe_buhi1_bands.mjs  month bands vs. the x of every cell on three lines
+      probe_roof2_pages.mjs  one-page roof print: page count + text layer
+      probe_buhi_pagesetup.php  the BUHI workbook's page setup (print area, titles)
+      Run to a log file, then read the log (node --test / grep stall lesson).
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — READ GUARD: BROWSER CHECK BY THE USER + A "ROOF STOPPED WORKING"
+  REPORT, DIAGNOSED. No code changed. ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    BROWSER RESULTS (user, two runs; screenshots of the second)
+      1. BUHI 1-page  ✅ red toast "add up to 32,346,214.00, but its own TOTAL row prints
+                      32,588,531.43 …" + Excel advice; no setup modal; amber AI offer
+                      with the "not reliable … 2 pages" note.
+      2. BUHI 12-page ✅ "prints the activity names and the monthly columns on separate
+                      pages …" toast + the same offer.
+      3. 6-stage / 10-month / roof pdf2 ✅ confirmed unchanged.
+      4. Approved BUHI 1-page capture ✅ still refused on re-import (first run).
+      NEW REPORTS, each diagnosed below: (a) the two-page roof now refuses; (b) AI assist
+      on BUHI 1-page fails "The PDF pages could not be rendered to images"; (c) the
+      BUHI 1-page teach grid "has no cumulative row (R18)"; (d) teaching BUHI months
+      needed three letters per month and the first save was refused.
+
+    (a) TWO-PAGE ROOF REFUSED — THE GUARD IS RIGHT; THE MANUAL TEACH IS ONE COLUMN OFF.
+      Live DB now (read-only dump): #134 live auto-capture (roof pdf2, 1 page, M1-7),
+        #135 proposed auto-capture (two-page roof, UNNUMBERED, seen 5x — never promoted,
+        by design :172-177), #136 live manual-teach (two-page roof). The layouts that
+        read the two-page roof correctly before (#123 hand-taught, AI-derived) are no
+        longer in the table; plain rules read the two-page roof as NULL, as always.
+      #136 taught page 1 as M1..M5 = G..K and page 2 as M6 = L, M7 = M. In its own grid
+        F is Month 1 (16%/16%/20%/6%/0%, TOTAL cell 141,466.26) and K is the page's
+        empty sixth "30 days" column. So every page-1 month sits one column right.
+      probe_roof2page_guard.mjs, two-page roof through #136:
+        COMMITTED core (no guard)  24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 99.14 / 100,
+                                   counts 4,4,4,3,0,4,3, contract 1,583,613.91 — a
+                                   month-shifted WRONG baseline that would have imported.
+        GUARD                      NULL, total-mismatch: months 2,098,133.47 vs printed
+                                   2,239,599.72; 2,098,133.47 + 141,466.26 (the M1 cell
+                                   left outside every band) = 2,239,599.73.
+      probe_roof2page_fixteach.mjs, the same #136 with page 1 moved to F..J:
+        committed AND guard read 6.32 / 24.31 / 42.30 / 59.71 / 77.03 / 99.14 / 100,
+        counts 4,4,4,4,3,4,3, no refusal. The guard passes a correct teach.
+      ⇒ first live catch of the guard: it stopped a mis-taught layout from importing a
+        wrong curve. But the MESSAGE misleads on this path: it tells the user to import the
+        Excel when the real fix is to re-teach the layout. Proposed (not built): when the
+        refusal came from a learned layout (debug viaMap), say so and point at S-Curve
+        Layouts; and consider an "adds up" check on the teach modal (taught month cells of
+        the TOTAL row vs its printed total) so the slip is caught at save, not at import.
+
+    (b) AI ASSIST "COULD NOT BE RENDERED TO IMAGES" ON BUHI 1-PAGE — NOT THE GUARD.
+      buildSCurvePdfSlices (scurve-pdf-parser.js :176-178) renders at scale 2.08 and
+      SKIPS any page whose longer side exceeds 4000 px. BUHI 1-page is 2592x1728 pt ->
+      5391 px, and it is the only page, so zero slices. Pre-existing; the guard only made
+      the offer appear. Candidate fix (not built): scale DOWN to fit 4000 instead of
+      skipping (~1.54 here). Whether a 39-column sheet stays legible at that size is
+      unmeasured.
+
+    (c) BUHI 1-PAGE GRID "NO CUMULATIVE ROW" — THE ROW IS THERE, BUT IT DOES NOT LOOK LIKE ONE.
+      Capture #132 R18 = "CUMULATIVE % ACCOMPLISHED" with 0.07 / 0.20 / 0.48 / 0.97 at
+      O / W / AB / AJ — fractions, quarterly, right of the visible screenshot. The
+      CUMULATIVE tag is by shape (percent cells, ends >= 50), so fractions are tagged
+      SUMMARY. Also: #132's block is 4006 chars — the 4000-char store limit cut R20
+      mid-cell. That limit is the known open item (latent-defect batch note).
+
+    (d) THREE LETTERS PER MONTH ON BUHI — blocker 2 of finding D, measured earlier; the
+      pseudo-columns do not match the two printed cells per month. Multi-column months ARE
+      accepted; the refusal is when neighbouring months share or overlap a letter. Even a
+      saved BUHI teach stays refused by the guard until blocker 3 is understood — that is
+      step (2), the restudy.
+
+    PROBES: probe_roof2page_guard.mjs, probe_roof2page_fixteach.mjs, dump_rows_135_136.php,
+      dump_row_132.php (C:\temp\opencode, read-only).
+
+    USER FOLLOW-UP, same day: the roof slip is confirmed and fixed on their side — they had
+      added a month column for the split duplicate and left out the real month 1. The
+      re-taught layout reads again. No code needed.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — AI ASSIST SHRINK-TO-FIT ✅ BUILT (code, UNCOMMITTED, not browser-proven).
+  ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED: user, "lets go with the shrink to fit", plus a warning that the page was
+      shrunk and accuracy may be low, pointing at the Excel file.
+
+    WHY SHRINK, NOT A BIGGER CAP (researched before building)
+      - Gemini 3 gives every image a FIXED token budget whatever its pixel size (media
+        resolution low 280 / medium 560 / high 1120 / ultra_high 2240 tokens; Google:
+        for PDFs "quality typically saturates at medium"). A 5391 px render reaches the
+        model with about the same detail as a 4000 px one — raising the cap only makes
+        the upload bigger. The parser sets no media_resolution (default).
+      - The 4000 px ceiling came from normal-doc AI-3 as a browser-canvas guard, not a
+        model limit. Size budgets are not the constraint: server 10 MB per image / 30 MB
+        total, PHP post_max_size 40M, Gemini 20 MB inline per request.
+      - So: shrink to fit, keep the guard. Expect weak AI answers on dense one-page
+        sheets anyway (39 columns x ~90 rows into ~1120 tokens). Tiling one page into
+        2-3 overlapping images (each gets its own budget) is the idea that could help;
+        PARKED — it changes what the prompt sees (month header on the top tile only)
+        and needs measuring. Also note: an AI answer on a guard-refused file is
+        UNVERIFIED — the P5 cross-check abstains on refused files.
+
+    WHAT SHIPPED
+      core   pdfSliceRenderScale(width, height) -> { scale, shrunk, dpi } | null:
+               min(2.08, 4000 / longer side). pdfSliceShrinkNote(shrunk) -> reviewer note
+               naming the lowest DPI, or null. Both exported and on window.
+      slicer buildSCurvePdfSlices renders at that scale instead of skipping; returns
+               `shrunk: [{page, dpi}]` for pages that actually rode the request. The 4000
+               px check stays as a backstop (e.g. core missing -> old behaviour).
+      UI     _trySCurvePdfAiAssist: on an AI answer the note joins the import notes —
+               EXCEPT when P5 swapped in the file's own months (they did not come from the
+               image, so the note would be untrue). On an AI failure the note is appended
+               to the error toast / in-modal result.
+      WORDING DECISION: the note points at the Excel file only. The user suggested also
+        "a better PDF in smaller size"; left out because it would not help — a smaller
+        paper size of the same one-page table packs the same text into the same image
+        budget (it only hides the note), and splitting it across pages top-to-bottom is
+        exactly the shape the read guard refuses. Easy to add if the user still wants it.
+
+    VERIFIED
+      probe_slice_sizes.mjs   all 19 sample PDFs: ONLY BUHI 1-page changes (p0 2592x1728,
+                              was skipped -> now 4000x2666 px at ~111 DPI). Every other
+                              page renders exactly as before.
+      tests +4                (scurve-pdf-parser.test.mjs, "shrink-to-fit"): ordinary page
+                              keeps 150 DPI; BUHI size shrinks to <=4000 and >=3999 px,
+                              111 DPI, portrait same, 1923/1924 pt boundary; unusable size
+                              -> null; note null / one page / two pages naming lowest DPI.
+      falsify_shrink.mjs      3 mutations (no shrink, shrunk never reported, highest DPI
+                              named) — ALL CAUGHT, core byte-identical after each restore.
+      probe_ui_shrink.cjs     REAL scurve-import-ui.js in a node vm: shrunk+answer -> note in
+                              notes; shrunk+file overruled -> no note; shrunk+AI failed ->
+                              "AI busy. <note>"; not shrunk -> no note either way.
+      verify_p6.mjs           16 reads, 0 changed.   block_snapshot.mjs 9 PDFs, 0 changed.
+      npm run test:js         199 tests, 197 pass + the 2 intended blinding fails.
+      No PHP, Blade or route touched.
+
+    BROWSER CHECK OWED (user; Ctrl+F5 first)
+      1. Import the one-page BUHI PDF -> refused as before -> click Try AI assist. The
+         "could not be rendered to images" error must be gone: the AI is actually called.
+      2. If it answers: the setup modal's import notes carry "…shrunk to about 111 DPI (the
+         usual is 150)… import the original Excel". Check the months against the Excel
+         truth (M1 1.12 · M3 6.74 · M4 10.59 · M6 21.09 · M7 28.64 · M9 49.73 · M10 68 ·
+         M12 100) — a poor answer is EXPECTED and is evidence for the tiling question, not
+         a defect of this change. Do not lock it.
+      3. If it fails (quota / cannot read): the red message ends with the same shrink note.
+      4. Roof two-page AI assist (or cross-check link) still behaves as before, with NO
+         shrink note.
+
+    PROBES: probe_slice_sizes.mjs, falsify_shrink.mjs, probe_ui_shrink.cjs.
+
+    FOLLOW-UP SAME DAY (user) — two wording changes built, one check measured.
+      User's first browser look: AI assist on BUHI 1-page now CALLS the AI (the render
+        error is gone) but the service answered 503 all day, so the answer path is still
+        untested. Their toast showed the shrink note appended to "The AI service could not
+        be reached" — reading "these months may be inaccurate" with no months present.
+      1. SHRINK NOTE WORDING: pdfSliceShrinkNote(shrunk, { failed: true }) gives a failure
+         variant ("…so even if a retry succeeds, small figures may be misread"). Both
+         variants now add the user's second choice after the Excel: "a PDF split
+         left-to-right onto two pages, with every row and the header rows repeated on
+         each page". Left-to-right with every row on each page = the column-split shape
+         the reader merges (roof, 6-stage, 10-month); a top-to-bottom split is what the
+         guard refuses. That a two-page BUHI print reads better is REASONED (each AI image
+         gets its own budget; the offline reader handles column splits), not measured on
+         BUHI.
+      2. LEARNED-LAYOUT REFUSAL WORDING (proposal 1 from the roof diagnosis): the core's
+         refusal now carries viaMap (+ mapId). readPageResults stamps it; a map refusal
+         already overrides the rules refusal in parseSCurvePdf, so the reported one is the
+         layout's. importPDFSCurve words it: "This reading used a layout approved in
+         S-Curve Layouts for this contractor, so that layout is the likely cause — open it
+         there, check that every month sits on its own column (and that a month split
+         across two pages is not counted twice), then import again. … the original Excel
+         … is also a dependable alternative." Rules refusals keep the old wording. The
+         desk shows no row ids, so the message names the desk, not "#136".
+      VERIFIED: tests extended (rules refusal viaMap false / mapId undefined; layout
+        refusal viaMap true / mapId 5; failure wording, Excel-before-two-pages order) —
+        suite 199 tests, 197 pass + 2 intended blinding; PDF file 85/85. verify_p6 16/0,
+        block_snapshot 9/0. probe_roof2page_guard.mjs on the real #136: debug refused
+        viaMap true. probe_ui_viamap.cjs (real UI + real core helpers in a vm): both
+        refusal wordings and both shrink-note wordings exactly as above.
+
+      3. "ADDS UP" CHECK AT TEACH SAVE — MEASURED, NOT BUILT (needs the user's design call).
+         Candidate: using only the stored block text the modal already has, find the TOTAL
+         row, sum every number in the cells of the taught month letters, and require a
+         figure printed LEFT of the first taught month to equal it (max(1, 0.1%)) — the
+         same rule as the import guard, on the grid instead of the page.
+         probe_teach_addsup.mjs on real stored blocks:
+           #136 two-page roof as first taught (G..K, L, M)   DOES NOT ADD UP 2,593,306.47
+                                                             vs 2,239,599.72
+           #136 corrected (F..J, L, M)                       ADDS UP (gap 0.01)
+           #136 split month counted twice (M6 = K+L)         DOES NOT ADD UP (+495,173.01)
+           #136 month 7 forgotten                            DOES NOT ADD UP (19,345.72 short)
+           #134 roof pdf2 one page (F..L)                    ADDS UP (gap 0.01)
+           #132 BUHI 1-page, 3 letters/month from "Month 1"  DOES NOT ADD UP (242,317.43 short —
+                                                             the H cell, same as the import guard)
+           #132 BUHI 1-page, every TOTAL cell H..AM assigned ADDS UP (gap 0.03)
+         Findings: zero wrong verdicts on 7 scenarios. Untaught numeric cells between months
+           CANNOT be a trigger — the corrected roof legitimately leaves K ("495,173.", the
+           clipped page-1 copy of month 6) untaught. NECESSARY, NOT SUFFICIENT: it catches a
+           missing, extra or doubled column, not cells shuffled between months — BUHI
+           "adds up" with every cell assigned while the import still loses pesos per month
+           (finding D blocker 3). The import guard stays the arbiter.
+         Open design questions for the user: warn with "save anyway" vs refuse; PDF only vs
+           Excel too; where the TOTAL row is not in the block (4000-char truncation) the
+           check must abstain.
+
+    DECIDED (user, same day) — NEXT BUILD, NOT STARTED (user: "do not implement for now"):
+      A. TEACH-SAVE "ADDS UP" CHECK
+         - WARN with "Save anyway", never refuse. The import guard stays the hard stop.
+         - PDF layouts ONLY (Excel reads contract column + TOTAL row itself).
+         - Uses the TOTAL row = the MONEY row (per-month peso cells + the contract figure
+           printed left of the months), not the cumulative % row: pesos are exact to the
+           cent, a running % row ends at 100 whatever columns are taught, and BUHI prints
+           its cumulative row only as quarterly fractions.
+         - NO usable TOTAL row -> a visible "Not checked" line, NOT silence (silence would
+           look like a pass). Two wordings: no TOTAL row with monthly amounts in this grid
+           (10-month / 6-stage / SEGMENT shape) vs. the grid was cut before its TOTAL row
+           (block at the 4000-char store limit).
+         - Answered for the record: with no TOTAL row the import guard's total-mismatch
+           signal abstains too (split-down does not need one). Refusing such files would
+           block the correct 10-month / 6-stage / SEGMENT reads, so abstaining is right;
+           those files rely on the reader's own refusals, the summary-row notes, the weak-
+           read AI offer and the reviewer.
+      B. PAGE-EDGE MARKING IN THE PDF TEACH GRID
+         - Measured (probe_roof_clipped_cell.mjs): the two-page roof's page 1 is 792 pt wide
+           and its TOTAL-row month-6 item is literally "495,173." at x 764.3 -> xEnd 793.9;
+           "2,220,253." and "180" likewise run past the edge. The ".83" is NOT in page 1's
+           text layer; page 2 prints the whole column (495,173.83). So it is in the FILE, not
+           a reader defect, and PDF-only (an Excel grid is built from cell values).
+         - Mark a cell whose token ends past the page's width (dimmed + "cut off at page
+           edge — probably repeated on the next page") so a reviewer leaves column K untaught.
+           Exact, not heuristic: the page width is known. Display only — reader output and
+           the 16-read regression must not move; block_snapshot will change only if the mark
+           is stored in the block (decide at build; prefer render-time).
+      Build order when ordered: A then B, each falsified + probe-checked, one browser pass.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

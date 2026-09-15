@@ -588,6 +588,11 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
     };
     if (!ctx || !ctx.file) { restoreOffer(); return; }
     window._scurvePdfAiBusy = true;
+    // Shrink-to-fit (2026-09-15): set once the pages are rendered; names the
+    // accuracy risk when a page had to be shrunk to fit the image budget.
+    // shrinkFailNote is the same warning worded for a failed call (no months yet).
+    var shrinkNote = null;
+    var shrinkFailNote = null;
     try {
         if (linkBtn) { linkBtn.disabled = true; linkBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Asking AI…'; }
         if (resultBox) resultBox.style.display = 'none';
@@ -606,6 +611,13 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         if (!pack || !pack.slices || !pack.slices.length) {
             throw new Error('The PDF pages could not be rendered to images.');
         }
+        try {
+            var pdfCore = window.scurvePdfParserCore || null;
+            if (pdfCore && typeof pdfCore.pdfSliceShrinkNote === 'function') {
+                shrinkNote = pdfCore.pdfSliceShrinkNote(pack.shrunk);
+                shrinkFailNote = pdfCore.pdfSliceShrinkNote(pack.shrunk, { failed: true });
+            }
+        } catch (e) { shrinkNote = null; shrinkFailNote = null; /* the note is a nicety — never block */ }
         var geminiUrl = scurvePdfGeminiUrl(ctx.parseUrl);
         var res = await fetch(geminiUrl, {
             method: 'POST',
@@ -628,7 +640,14 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
         // path does this server-side (applyDerivedLayout); PDFs must do it here,
         // because the server owns no PDF reader. On disagreement the FILE wins,
         // and the swap is said out loud in the import notes.
-        scurveCrossCheckPdfAnswer(data);
+        var fileWon = scurveCrossCheckPdfAnswer(data);
+        // A shrunk page is a risk only to months the AI read from the image. When
+        // the file overruled the AI, the months came from the PDF's own text, so
+        // the note would be untrue and is left out.
+        if (shrinkNote && !fileWon) {
+            data.meta = data.meta || {};
+            data.meta.warnings = (data.meta.warnings || []).concat([shrinkNote]);
+        }
         var months = core.normalizeSCurveMonths(data.months, ctx.startDate || '', ctx.endDate || '');
         if (!months.length) throw new Error('The AI response held no usable months.');
         try {
@@ -652,8 +671,11 @@ window._trySCurvePdfAiAssist = async function (clickedBtn) {
             if (typeof openBaselineSetupModal === 'function') openBaselineSetupModal();
         }
     } catch (err) {
-        paintResult(err.message, 'err');
-        scurveToast(err.message, 'danger');
+        // A failure after a shrunk render still tells the reviewer the page was
+        // shrunk, so a retry is not mistaken for the dependable route.
+        var failMsg = shrinkFailNote ? err.message + ' ' + shrinkFailNote : err.message;
+        paintResult(failMsg, 'err');
+        scurveToast(failMsg, 'danger');
         restoreOffer();
     } finally {
         window._scurvePdfAiBusy = false;
@@ -920,6 +942,25 @@ async function importPDFSCurve(file) {
 
     var parsed = await window.parseSCurvePdfFile(file);
     if (!parsed || !parsed.months || parsed.months.length === 0) {
+        // Read guard (2026-09-15): the reader found the table but the document
+        // itself contradicts the reading — say so, rather than "not recognised".
+        var refusal = window._scurvePdfRefusal || null;
+        if (refusal && refusal.message) {
+            // A learned layout's reading was the one refused: point at the layout
+            // first (a month on the wrong column, or a page-split month counted
+            // twice), then the Excel file.
+            var advice = refusal.viaMap
+                ? ' This reading used a layout approved in S-Curve Layouts for this contractor,' +
+                  ' so that layout is the likely cause — open it there, check that every month' +
+                  ' sits on its own column (and that a month split across two pages is not' +
+                  ' counted twice), then import again. No baseline was produced; the original' +
+                  ' Excel (.xlsx) S-curve file is also a dependable alternative.'
+                : ' No baseline was produced from this PDF — ' +
+                  'please import the original Excel (.xlsx) S-curve file instead.';
+            var refused = new Error(refusal.message + advice);
+            refused.pdfRefusal = refusal;
+            throw refused;
+        }
         throw new Error(
             'Could not read the S-curve from this PDF layout. ' +
             'Please upload the Excel (.xlsx) S-curve file instead.'
@@ -927,6 +968,19 @@ async function importPDFSCurve(file) {
     }
 
     return parsed;
+}
+
+// The beside-button AI offer note for a failed PDF import. A guard refusal gets its
+// own wording: the table WAS found, the reading was not reliable, and the AI (which
+// sees only 2 page images) may be incomplete on a table large enough to be split.
+// Called by: both PDF catch branches (wizard + detail).
+function scurvePdfFailureNote(err) {
+    if (err && err.pdfRefusal) {
+        return 'The offline reading of this PDF was not reliable, so no baseline was produced. ' +
+            'AI assist only sees 2 pages, so on a large table it may also be incomplete — ' +
+            'the original Excel file is the dependable source.';
+    }
+    return 'The PDF table was not recognized.';
 }
 
 async function scurveFetchDocument(url, name) {
@@ -1031,7 +1085,7 @@ function initCreateWizardSCurveImport() {
             // F-C: unreadable PDFs offer the PDF assist beside the button (the
             // local parser throws plain Errors — gate on mode, not isNoTable).
             if (mode === 'pdf' && window._scurvePendingFile) {
-                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn }, 'The PDF table was not recognized.');
+                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurvePendingFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'wizard', btn: btn }, scurvePdfFailureNote(err));
                 // E1-PDF: the same failure silently proposes a layout for review.
                 scurveCaptureHeaders('pdf', null);
             }
@@ -1135,7 +1189,7 @@ function initProjectDetailSCurveImport() {
             // button (sliced client-side from the fetched file — the endpoint
             // takes images only, never document_id).
             if (btn.dataset.docType === 'pdf' && window._scurveDetailFile) {
-                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn }, 'The PDF table was not recognized.');
+                scurveOfferPdfAiAssist({ kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn }, scurvePdfFailureNote(err));
                 // E1-PDF: document_id rides along so the server can scope the
                 // capture to this project's contractor (it is never read as a source).
                 scurveCaptureHeaders('pdf', documentId);

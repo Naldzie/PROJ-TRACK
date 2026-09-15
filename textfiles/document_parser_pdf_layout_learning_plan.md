@@ -613,6 +613,21 @@
   9. SESSION LOGS
 ===============================================================================
 
+  2026-09-15 — P3 MERGE MEETS A PRINT IT WAS NOT BUILT FOR: THE BUHI PDF (split DOWN
+  and ACROSS). Diagnosis only, no code. Full record: textfiles/
+  document_parser_pdf_teach_grid_plan.md, the last §13 entry (finding C). Pointer here
+  because mergePages / merge-by-Y (§3) and consult (PDF-2) are specified in this file.
+    The printed BUHI workbook is a 12-page grid: left block (names, TOTAL, cumulative
+    row) on p1-p3 with NO month header; months on p4-p12 in three column groups, each
+    continuing down three pages. The reader recognises only p4/p7/p10 and reads a
+    wrong 12-month curve (M4 29.47 vs truth 10.59, contract 11.5M vs 32.6M, every name
+    "Activity N") with one weak positional warning. P3's column-split pairing assumes
+    every table page carries its own month header or is an across-continuation; this
+    print breaks both.
+    USER DECISION: full support PARKED (revive only if the PMU receives large schedules
+    as PDF only). ORDERED: a guard so this shape stops reading as a confident baseline.
+    Design notes + hard constraints in the teach-grid plan entry.
+
   2026-09-14 (late) — PDF-2 CONSULT HARDENED: A STORED LAYOUT MUST FIT THE PAGE'S
   OWN LABELS. Full record: textfiles/document_parser_pdf_teach_grid_plan.md, the last
   §13 entry. Pointer here because PDF-2 (matchMapPage) is specified in this file.

@@ -102,7 +102,20 @@ window.parseSCurvePdfFile = async function (file) {
     // P2-0 — month-attribution debug: set window.__scurvePdfDebug = true in the
     // console before importing to log which page/row/cell built each month total.
     const debug = [];
-    const out = core.parseSCurvePdf(itemsByPage, { debug, monthWords, liveMaps });
+    // Read guard (2026-09-15): when the core leaves a file unread BECAUSE the
+    // document contradicts the reading (names and months on separate pages, or
+    // months that do not add up to the file's own TOTAL row), it reports why.
+    // Stashed for importPDFSCurve so the error names the reason instead of the
+    // generic "not recognised". Reset per parse so a stale reason never leaks.
+    let refusal = null;
+    try { window._scurvePdfRefusal = null; } catch (e) { /* stash is best-effort */ }
+    const out = core.parseSCurvePdf(itemsByPage, {
+        debug,
+        monthWords,
+        liveMaps,
+        onRefusal: (r) => { refusal = r; },
+    });
+    try { window._scurvePdfRefusal = out ? null : refusal; } catch (e) { /* stash is best-effort */ }
 
     // E1-PDF (PDF-1) — a PDF the rules could not read proposes a layout for the
     // review desk, exactly as a failed Excel import does. Derived from the page's
@@ -131,10 +144,13 @@ window.parseSCurvePdfFile = async function (file) {
  * Render the weakest S-curve PDF pages to image slices for the F-B endpoint.
  *
  * Re-opens the stashed file (table pages first, then leading pages), renders
- * at ~150 DPI (scale 2.08) with the AI-3 pixel budget (skip absurd canvases),
- * and returns { slices: [{data, mimeType}], pageWords: [...] } for those
- * pages. Best-effort: skips unreadable pages, throws only when nothing
- * sliceable remains.
+ * at ~150 DPI (scale 2.08) and returns
+ * { slices: [{data, mimeType}], pageWords: [...], shrunk: [{page, dpi}] }.
+ * Best-effort: skips unreadable pages, throws only when nothing sliceable remains.
+ *
+ * Shrink-to-fit (2026-09-15): a page too large for the 4000 px canvas budget is
+ * rendered SMALLER instead of skipped (core pdfSliceRenderScale), and listed in
+ * `shrunk` so the caller can warn that small figures may be misread.
  */
 window.buildSCurvePdfSlices = async function (maxN) {
     const file = window._scurvePdfFile || null;
@@ -155,14 +171,23 @@ window.buildSCurvePdfSlices = async function (maxN) {
             if (picks.indexOf(p) === -1) picks.push(p);
         }
         const texts = window._scurvePdfPageTexts || [];
+        const core = window.scurvePdfParserCore || null;
         const slices = [];
         const pageWords = [];
+        const shrunk = [];
         for (const p of picks) {
             try {
                 const page = await doc.getPage(p + 1);
-                const viewport = page.getViewport({ scale: 2.08 });
-                // AI-3 pixel budget: absurd canvases never ride the request.
-                if (Math.max(viewport.width, viewport.height) > 4000) continue;
+                // Pick the render scale from the page's size in points: ~150 DPI,
+                // shrunk to fit the 4000 px canvas budget rather than skipped.
+                const base = page.getViewport({ scale: 1 });
+                const fit = core && typeof core.pdfSliceRenderScale === 'function'
+                    ? core.pdfSliceRenderScale(base.width, base.height)
+                    : { scale: 2.08, shrunk: false, dpi: 150 };
+                if (!fit) continue;
+                const viewport = page.getViewport({ scale: fit.scale });
+                // AI-3 pixel budget stays as the backstop (e.g. core not loaded).
+                if (Math.max(Math.floor(viewport.width), Math.floor(viewport.height)) > 4000) continue;
                 const canvas = document.createElement('canvas');
                 canvas.width = Math.floor(viewport.width);
                 canvas.height = Math.floor(viewport.height);
@@ -171,13 +196,15 @@ window.buildSCurvePdfSlices = async function (maxN) {
                 if (!url || url.length <= 1000) continue;
                 slices.push({ data: url.split(',')[1], mimeType: 'image/png' });
                 pageWords.push(texts[p] || '');
+                // Only pages that actually rode the request are reported as shrunk.
+                if (fit.shrunk) shrunk.push({ page: p, dpi: fit.dpi });
                 if (slices.length >= limit) break;
             } catch (e) { /* next page */ }
         }
         if (slices.length === 0) {
             throw new Error('The PDF pages could not be rendered to images.');
         }
-        return { slices, pageWords };
+        return { slices, pageWords, shrunk };
     } finally {
         try { await doc.destroy(); } catch (e) { /* cleanup is best-effort */ }
     }

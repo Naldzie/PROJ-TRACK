@@ -15,6 +15,8 @@ import {
     derivePdfLayoutFromAi,
     crossCheckPdfAgainstFile,
     pdfCurvesDisagree,
+    pdfSliceRenderScale,
+    pdfSliceShrinkNote,
     chartScaleTokens,
     detectPseudoColumns,
     groupItemsIntoLines,
@@ -1560,4 +1562,229 @@ test('an AI-derived layout merges its pages and never reuses a letter', () => {
     assert.ok(roofRow, 'the activity row is present');
     assert.match(roofRow, /1500/, 'page-two values reach the grid:\n' + roofRow);
     assert.match(roofRow, /500/, 'including the final tail month');
+});
+
+/* ─── Read guard: a reading the document contradicts is refused (2026-09-15) ─── */
+
+// Teach-grid plan §13, findings C + D and the guard measurement pass. Two printed
+// BUHI schedules read WRONG and looked like any other preview. The guard leaves
+// such a file unread and says why, instead of offering a baseline to lock.
+
+// Runs a read and captures the refusal the guard reports (if any).
+function readWithRefusal(pages, opts) {
+    let refusal = null;
+    const result = parseSCurvePdf(pages, { ...(opts || {}), onRefusal: (r) => { refusal = r; } });
+    return { result, refusal };
+}
+
+// The left block (names, amounts, weights) printed on one page, the months on
+// another — the 12-page BUHI print in miniature.
+const SPLIT_LABEL_PAGE = [
+    [800, [['ITEM', 40, 30], ['DESCRIPTION', 120, 80], ['AMOUNT', 300, 50], ['% WEIGHT', 380, 55]]],
+    [760, [['1', 45, 8], ['Mobilization', 120, 80], ['30000', 300, 40], ['30', 380, 20]]],
+    [720, [['2', 45, 8], ['Earthworks', 120, 70], ['70000', 300, 40], ['70', 380, 20]]],
+];
+const SPLIT_MONTH_PAGE = [
+    [800, [['MONTH 1', 200, 55], ['MONTH 2', 300, 55], ['MONTH 3', 400, 55]]],
+    [760, [['10000', 210, 40], ['20000', 310, 40], ['0', 410, 10]]],
+    [720, [['20000', 210, 40], ['30000', 310, 40], ['20000', 410, 40]]],
+];
+
+test('a table whose names and months are printed on separate pages is refused', () => {
+    const { result, refusal } = readWithRefusal([page(SPLIT_LABEL_PAGE), page(SPLIT_MONTH_PAGE)]);
+
+    assert.equal(result, null, 'no baseline may be offered from a split-down print');
+    assert.ok(refusal, 'the refusal must be reported');
+    assert.equal(refusal.code, 'split-down');
+    assert.match(refusal.message, /separate pages/);
+    assert.deepEqual(refusal.detail.labelOnlyPages, [1]);
+});
+
+// BOTH facts are required — each alone is plausible on a legitimate print.
+test('the split-down refusal needs the label page AND nameless activities', () => {
+    // Months page alone: nameless, but nothing shows the names live elsewhere.
+    const alone = readWithRefusal([page(SPLIT_MONTH_PAGE)]);
+    assert.ok(alone.result, 'a nameless read with no label page is not refused');
+    assert.equal(alone.refusal, null);
+
+    // Label page present, but the month page names its own rows.
+    const named = page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55], ['MONTH 3', 400, 55]]],
+        [760, [['Mobilization', 70, 80], ['10000', 210, 40], ['20000', 310, 40], ['0', 410, 10]]],
+        [720, [['Earthworks', 70, 70], ['20000', 210, 40], ['30000', 310, 40], ['20000', 410, 40]]],
+    ]);
+    const withNames = readWithRefusal([page(SPLIT_LABEL_PAGE), named]);
+    assert.ok(withNames.result, 'a label page beside a named table is not refused');
+    assert.equal(withNames.refusal, null);
+});
+
+// The one-page BUHI print in miniature: a month cell sits left of Month 1's band,
+// so no month reads it, and the TOTAL row's months fall short of its own total.
+function totalRowPage(printed, leftOutCell) {
+    const leftOut = leftOutCell ? [['500', 160, 25]] : [];
+    return page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 200, 55], ['MONTH 2', 300, 55], ['MONTH 3', 400, 55]]],
+        [760, [['Mobilization', 70, 80], ...leftOut, ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [720, [['Signage', 70, 60], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+        [680, [['TOTAL', 55, 45], [printed, 100, 35], ...leftOut, ['2500', 210, 30], ['3500', 310, 30], ['3000', 410, 30]]],
+    ]);
+}
+
+test('a reading whose months do not add up to the file’s own TOTAL row is refused', () => {
+    const { result, refusal } = readWithRefusal([totalRowPage('9500', true)]);
+
+    assert.equal(result, null, 'a read the TOTAL row contradicts must not become a baseline');
+    assert.ok(refusal);
+    assert.equal(refusal.code, 'total-mismatch');
+    // The RULES' reading was refused — no learned layout to blame.
+    assert.equal(refusal.viaMap, false);
+    assert.equal(refusal.mapId, undefined);
+    // The message names both figures, so the reviewer sees the contradiction itself.
+    assert.match(refusal.message, /9,000\.00/);
+    assert.match(refusal.message, /9,500\.00/);
+});
+
+test('a TOTAL row that adds up, or has nothing to compare, leaves the read alone', () => {
+    const adds = readWithRefusal([totalRowPage('9000', false)]);
+    assert.ok(adds.result, 'a reconciling TOTAL row reads normally');
+    assert.equal(adds.refusal, null);
+    assert.deepEqual(adds.result.months.map((m) => m.planned_progress_percent), [27.78, 66.67, 100]);
+
+    // No printed figure left of the months (the 10-month / 6-stage / SEGMENT shape):
+    // nothing to reconcile against, so the guard abstains.
+    const nothing = readWithRefusal([page([...HEADER, ...ROW1, ...ROW2, ...TOTAL])]);
+    assert.ok(nothing.result);
+    assert.equal(nothing.refusal, null);
+});
+
+// Measured trap: judged page by page, the correct two-page roof read looked short —
+// its TOTAL row carries months 6-7 on the overflow page, on a label-less line. The
+// row is followed onto a page holding OTHER months at the same header-relative height.
+function splitTotalPages(printed) {
+    const first = page([
+        [800, [['DESCRIPTION', 50, 90], ['STINT 1', 200, 55], ['STINT 2', 300, 55]]],
+        [760, [['Roofing', 60, 70], ['60%', 210, 25], ['40%', 310, 25]]],
+        [720, [['Walls', 60, 60], ['70%', 210, 25], ['30%', 310, 25]]],
+        [680, [['TOTAL', 55, 45], [printed, 120, 30], ['100', 210, 25], ['100', 310, 25]]],
+        [640, [['40.00%', 210, 30], ['80.00%', 310, 30]]],
+    ]);
+    const second = page([
+        [800, [['STINT 2', 200, 55], ['STINT 3', 300, 55]]],
+        [760, [['30%', 210, 25], ['25%', 310, 25]]],
+        [680, [['100', 310, 25]]],
+        [640, [['80.00%', 210, 30], ['100.00%', 310, 32]]],
+    ]);
+    return [first, second];
+}
+
+test('a column-split TOTAL row is reconciled across its pages, not page by page', () => {
+    const labels = { 1: 'STINT 1', 2: 'STINT 2', 3: 'STINT 3' };
+
+    const good = splitTotalPages('300');   // 100 + 100 on page 1, 100 on page 2
+    const derived = derivePdfLayoutFromAi(good, labels, null);
+    assert.ok(derived, 'the fixture must yield a two-page map');
+    const ok = readWithRefusal(good, { liveMaps: [{ id: 1, map: derived.map }] });
+    assert.ok(ok.result, 'page one alone sums to 200 — the continuation cell must be counted');
+    assert.equal(ok.refusal, null);
+    assert.deepEqual(ok.result.months.map((m) => m.planned_progress_percent), [40, 80, 100]);
+
+    const bad = splitTotalPages('999');
+    const derivedBad = derivePdfLayoutFromAi(bad, labels, null);
+    const refused = readWithRefusal(bad, { liveMaps: [{ id: 1, map: derivedBad.map }] });
+    assert.equal(refused.result, null);
+    assert.equal(refused.refusal && refused.refusal.code, 'total-mismatch');
+    assert.match(refused.refusal.message, /add up to 300\.00/);
+});
+
+// The guard is what makes such a file LEARNABLE: a refused rules read falls through
+// to the learned layouts (before 2026-09-15 they were consulted only when the rules
+// found no table at all), and a layout faces the very same check.
+test('a refused rules read falls through to a learned layout that adds up', () => {
+    const misread = totalRowPage('9500', true);
+    const captured = derivePdfLayout([misread]).map;
+
+    // The capture repeats the rules' mistake (bands start at the labels) — refused too.
+    const same = readWithRefusal([misread], { liveMaps: [{ id: 5, map: captured }] });
+    assert.equal(same.result, null, 'a learned layout that does not add up is refused as well');
+    assert.equal(same.refusal && same.refusal.code, 'total-mismatch');
+    // The layout's refusal is the one reported, and it names the layout, so the message
+    // can send the reviewer to S-Curve Layouts rather than only to the Excel file.
+    assert.equal(same.refusal.viaMap, true);
+    assert.equal(same.refusal.mapId, 5);
+
+    // A taught layout whose month 1 reaches the left-out cell reconciles and reads.
+    const W = 455; // pageMaxX: MONTH 3 ends at 400 + 55
+    const taught = { ...captured, pages: [{
+        ...captured.pages[0],
+        monthCols: captured.pages[0].monthCols.map((mc, k) => (k === 0 ? { ...mc, x: 150 / W } : mc)),
+    }] };
+    const learned = readWithRefusal([misread], { liveMaps: [{ id: 6, map: taught }] });
+    assert.ok(learned.result, 'the layout that adds up must rescue the file');
+    assert.equal(learned.result.meta.mapUsed, true);
+    assert.equal(learned.result.meta.mapId, 6);
+    assert.equal(learned.refusal, null);
+    // 1500 then 3500 then 3000 over 9500 — month 1 now carries the left-out cell.
+    assert.deepEqual(learned.result.months.map((m) => m.planned_progress_percent), [31.58, 68.42, 100]);
+});
+
+/* ─── AI assist page images: shrink-to-fit (2026-09-15) ───────────────────── */
+
+// An ordinary page keeps the usual ~150 DPI render and is not reported as shrunk.
+test('pdfSliceRenderScale keeps ~150 DPI for an ordinary page', () => {
+    const fit = pdfSliceRenderScale(792, 612);
+    assert.equal(fit.scale, 2.08);
+    assert.equal(fit.shrunk, false);
+    assert.equal(fit.dpi, 150);
+});
+
+// The one-page BUHI print (2592 x 1728 pt) used to be SKIPPED — 5391 px at 2.08 —
+// so AI assist had no image to send. It must now render, shrunk to the 4000 px budget.
+test('pdfSliceRenderScale shrinks an oversized page to fit instead of skipping it', () => {
+    const fit = pdfSliceRenderScale(2592, 1728);
+    assert.ok(fit, 'an oversized page must still get a render scale');
+    assert.equal(fit.shrunk, true);
+    assert.ok(Math.floor(2592 * fit.scale) <= 4000, 'the longer side fits the canvas budget');
+    assert.ok(Math.floor(2592 * fit.scale) >= 3999, 'and is not shrunk further than needed');
+    assert.equal(fit.dpi, 111);
+    // Portrait: the longer side decides, whichever dimension it is.
+    assert.equal(pdfSliceRenderScale(1728, 2592).scale, fit.scale);
+    // Right at the budget nothing shrinks; one point past it, it does.
+    assert.equal(pdfSliceRenderScale(1923, 1000).shrunk, false);
+    assert.equal(pdfSliceRenderScale(1924, 1000).shrunk, true);
+});
+
+test('pdfSliceRenderScale refuses a page with no usable size', () => {
+    assert.equal(pdfSliceRenderScale(0, 0), null);
+    assert.equal(pdfSliceRenderScale(NaN, 612), null);
+    assert.equal(pdfSliceRenderScale(undefined, undefined), null);
+});
+
+// The note exists only when a page was shrunk, names the lowest DPI, and points at
+// the Excel file as the dependable source.
+test('pdfSliceShrinkNote warns only for shrunk pages and names the lowest DPI', () => {
+    assert.equal(pdfSliceShrinkNote([]), null);
+    assert.equal(pdfSliceShrinkNote(undefined), null);
+    assert.equal(pdfSliceShrinkNote([{ page: 0, dpi: 0 }]), null);
+
+    const one = pdfSliceShrinkNote([{ page: 0, dpi: 111 }]);
+    assert.match(one, /page was too large/);
+    assert.match(one, /about 111 DPI/);
+    assert.match(one, /may be inaccurate/);
+    assert.match(one, /original Excel \(\.xlsx\)/);
+    // Second choice after the Excel: a left-to-right two-page split with every row and
+    // the header on each page (a top-to-bottom split is what the read guard refuses).
+    assert.match(one, /left-to-right onto two pages, with every row and the header rows repeated/);
+    assert.ok(one.indexOf('Excel') < one.indexOf('two pages'), 'the Excel file is advised first');
+
+    // A failed call has no months to call inaccurate: it warns about a retry instead.
+    const failed = pdfSliceShrinkNote([{ page: 0, dpi: 111 }], { failed: true });
+    assert.match(failed, /about 111 DPI/);
+    assert.match(failed, /even if a retry succeeds/);
+    assert.doesNotMatch(failed, /these months/);
+    assert.match(failed, /original Excel \(\.xlsx\)/);
+    assert.equal(pdfSliceShrinkNote([], { failed: true }), null);
+
+    const two = pdfSliceShrinkNote([{ page: 0, dpi: 140 }, { page: 2, dpi: 98 }]);
+    assert.match(two, /2 pages were too large/);
+    assert.match(two, /about 98 DPI/);
 });
