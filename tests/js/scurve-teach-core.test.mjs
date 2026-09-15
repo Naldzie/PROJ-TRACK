@@ -240,6 +240,33 @@ test('PDF prefill walks EVERY page and takes the description from the first (def
     assert.deepEqual(t.assigns.months, { 1: ['F'], 2: ['G'], 3: ['L'], 4: ['M'] }, 'months from both pages, one letter each');
 });
 
+// 2026-09-15 — the reopen bug. BUHI's centred "Month N" label is its own column BETWEEN
+// the month's two cells (H | I label | J). Taught as H+J, the stored band H..J reopened as
+// H+I+J, and the server refuses more than two letters a month, so saving it unchanged
+// failed. The prefill keeps the outer two letters, which the server turns back into the
+// same band (min x .. max xEnd).
+test('PDF prefill never offers more than two letters a month, and keeps the same band', () => {
+    const pseudoCols = [
+        { letter: 'B', x: 0.05, xEnd: 0.28 },
+        { letter: 'H', x: 0.292, xEnd: 0.306 }, { letter: 'I', x: 0.306, xEnd: 0.320 }, { letter: 'J', x: 0.320, xEnd: 0.347 },
+        { letter: 'K', x: 0.347, xEnd: 0.360 }, { letter: 'L', x: 0.360, xEnd: 0.374 }, { letter: 'M', x: 0.374, xEnd: 0.401 },
+        { letter: 'N', x: 0.401, xEnd: 0.414 }, { letter: 'O', x: 0.414, xEnd: 0.455 },
+    ];
+    const band = (letters) => ({ x: Math.min(...letters.map(l => pseudoCols.find(p => p.letter === l).x)), xEnd: Math.max(...letters.map(l => pseudoCols.find(p => p.letter === l).xEnd)) });
+    // The map as buildTaughtPdfMap stored it from the reviewer's H+J, K+M, N+O.
+    const taught = { 1: ['H', 'J'], 2: ['K', 'M'], 3: ['N', 'O'] };
+    const map = { kind: 'pdf', pages: [{ descX: 0.05, descRight: 0.28, pseudoCols,
+        monthCols: Object.entries(taught).map(([m, ls]) => ({ index: +m, ...band(ls) })) }] };
+
+    const t = { assigns: { desc: null, code: null, weight: null, contract: null, months: {} }, headerRows: [], excludedRows: [], cumulativeRow: null };
+    prefillFromMap(t, map, { rows: [] });
+
+    assert.deepEqual(t.assigns.months, { 1: ['H', 'J'], 2: ['K', 'M'], 3: ['N', 'O'] }, 'the outer letters, as taught');
+    Object.values(t.assigns.months).forEach(ls => assert.ok(ls.length <= 2, 'the save validation allows two'));
+    // Saving the prefill rebuilds the exact stored bands.
+    Object.entries(t.assigns.months).forEach(([m, ls]) => assert.deepEqual(band(ls), band(taught[m])));
+});
+
 /* ─── Row fields: keys ─────────────────────────────────────────────────────── */
 
 test('row field keys are never month-shaped, and match the modal palette', () => {

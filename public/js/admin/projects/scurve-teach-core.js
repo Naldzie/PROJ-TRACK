@@ -230,7 +230,14 @@ export function prefillFromMap(t, cm, parsed) {
                 }
                 (page.monthCols || []).forEach(mc => {
                     const cols = lettersInBand(pseudo, mc.x, mc.xEnd);
-                    if (cols.length) t.assigns.months[mc.index] = cols;
+                    // At most two letters, first and last (2026-09-15). A band can cover
+                    // more columns than a reviewer picks: BUHI's centred "Month N" label
+                    // forms its own column BETWEEN the month's two cells, so a layout
+                    // taught as H+J reopened as H+I+J — and the server refuses a month
+                    // with more than two letters, so saving it unchanged failed. The
+                    // server builds a band from min(x)..max(xEnd) of the letters, so
+                    // the two outer letters describe exactly the same band.
+                    if (cols.length) t.assigns.months[mc.index] = cols.length > 2 ? [cols[0], cols[cols.length - 1]] : cols;
                 });
             });
             return;

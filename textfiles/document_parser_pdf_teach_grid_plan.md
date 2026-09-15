@@ -3387,6 +3387,61 @@
           letter of each month's run — buildTaughtPdfMap builds the same band from min(x) ..
           max(xEnd), so no stored layout or read changes. Predates today's work (first layout
           whose bands span a label column).
+    COMMITTED: 456ab3c (the two row rules + this browser result; user confirmed step 2).
+
+    (f) FIXED (code, UNCOMMITTED, not browser-proven) — ordered: user, "fix the reopen bug".
+      scurve-teach-core.js prefillFromMap, PDF branch: a month whose stored band covers more
+        than two pseudo-columns is prefilled with the FIRST and LAST letter only.
+      probe_reopen_prefill.mjs (real live_pdf_maps.json rows, committed teach core vs working
+        tree, bands rebuilt as buildTaughtPdfMap would):
+        #141 BUHI 1-page teach  HEAD M1=H+I+J … (8 months over two letters)
+                                NOW  M1=H+J M2=K+M M3=N+O M4=P+R M5=S+U M6=V+W M7=X+Z M8=AA+AC
+                                     M9=AD+AE M10=AF+AH M11=AI+AK M12=AL+AM — exactly as taught
+        #140 BUHI 1-page capture HEAD M1=I+J+K … (8 over) -> NOW M1=I+K … (0 over). This is
+                                where the user's first "M1=I+J+K" readout came from; the band is
+                                the same (still label-start, which the adds-up check flags).
+        #138 roof teach, #137 roof capture: unchanged.
+        Every rebuilt band identical to the band from the old letters, on every row.
+      TEST +1 (scurve-teach-core.test.mjs): prefill of a BUHI-shaped band taught H+J / K+M / N+O
+        returns those letters, never more than two, and rebuilds the same bands. Falsified: with
+        the collapse removed that test fails, core restored identical.
+      npm run test:js 218 tests, 216 pass + the 2 intended blinding fails; verify_teach_wiring OK.
+      BROWSER CHECK OWED: reopen the BUHI 1-page layout in S-Curve Layouts -> the readout shows
+        M1=H+J … M12=AL+AM and "Adds up"; Save as New variant succeeds (no two-letter refusal).
+      BROWSER (user): ✅ the approved teach reopens as "Headers R3 · Description=B · M1=H+J ·
+        M2=K+M … M12=AL+AM" with "Adds up … 32,588,531.46 … 32,588,531.43". R4's SUMMARY
+        colour is still there — expected: that is (e), not part of this fix, not ordered.
+
+    (g) NEW, DIAGNOSED (no code): A WRONG LIVE LAYOUT SHADOWS THE RIGHT ONE.
+      Report (user): BUHI 1-page's auto-capture (#140) went LIVE by itself (occurrences >= 3
+        auto-promotion). The user then re-taught (Description=A, same months) and approved it
+        (#142). Now the one-page BUHI import is refused ("does not add up"); it worked while only
+        the hand-taught layout was live.
+      Live PDF rows now: #138 roof two-page teach, #140 BUHI 1-page auto-capture (label-start
+        bands), #142 BUHI 1-page teach.
+      probe_shadowed_layout.mjs (real rows, real file):
+        #140 alone        REFUSED total-mismatch (mapId 140)
+        #142 alone        1.12 / 3.59 / … / 84.8 / 100 via #142 — exact
+        [#140, #142]      REFUSED (mapId 140) — #142 never read
+        [#142, #140]      exact via #142
+      Cause 1 — ORDER + ONE MAP OWNS A FILE: /scurve-header-proposals/all?status=live orders by
+        occurrences DESC, then id (index(), controller :206), so the auto-capture (seen 3+ times)
+        precedes a teach (seen once). collectPdfPages lets the first map that matches a page own
+        the file; when readPageResults refuses that map's reading, parseSCurvePdf goes straight
+        to the weekly reader — no other live map is tried.
+      Cause 2 — AUTO-PROMOTION: collect() promotes a capture at occurrences >= 3 unless its map
+        is null or unnumbered. BUHI's capture IS numbered ("Month 1…12") but its bands start at
+        the labels — the very misread the guard refuses — so repeating the import promoted a
+        layout that can never read the file.
+      Workaround now: reject #140 (or set it back to Proposed) in S-Curve Layouts.
+      Proposed fixes (not built):
+        A (reader) when a live map's reading is refused (or cannot be built), retry the maps pass
+          WITHOUT that map, in the same order, until one reads or none match; report the first
+          refusal if all fail. Byte-identical whenever today's first map reads.
+        B (capture) the wrapper checks the capture map against its own file before posting and
+          sends "its reading is refused"; collect() then never auto-promotes that capture (it is
+          still stored for teaching). BUHI 1-page and 12-page captures would stay Proposed; roof
+          pdf2's (reads correctly) would still promote.
 
     PROBES (C:\temp\opencode, read-only): dump_buhi_xlsx_cells.php, probe_buhi1_truth_columns.mjs,
       probe_buhi1_merged_cells.mjs, probe_buhi1_true_bands.mjs, probe_buhi1_teachable.mjs,
