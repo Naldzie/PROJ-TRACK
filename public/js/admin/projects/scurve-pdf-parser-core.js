@@ -657,6 +657,133 @@ export function chartScaleTokens(tokenLines) {
     return scale;
 }
 
+/* ─── Row assembly: header continuation + wrapped descriptions (2026-09-15) ── */
+//
+// Two printing habits a layout cannot express, because they are about what a printed
+// LINE means rather than where a column sits. Found on the one-page BUHI print read
+// through a correct taught layout, and chosen by measurement over 22 reads of the
+// sample corpus (474 value rows): each rule fires on its BUHI defect in every read and
+// on no other row. Teach-grid plan §13, "MEASUREMENTS FOR (a) DAY-MARKER LINE AND (d)
+// WRAPPED NAMES". They apply to every PDF read — rules and learned layouts alike.
+
+// A word, as opposed to an item code, a unit mark or a number: three letters in a row.
+const WORD_RE = /[A-Za-z]{3,}/;
+
+// Does this token sit in one of the header's month bands? (the reader's centre rule)
+function tokenMonthBand(t, monthCols) {
+    const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+    const cx = (t.x + xEnd) / 2;
+    for (let k = 0; k < monthCols.length; k++) {
+        const c = monthCols[k];
+        const isLast = k === monthCols.length - 1;
+        if (cx >= c.x && (isLast ? cx <= c.xEnd : cx < c.xEnd)) return c;
+    }
+    return null;
+}
+
+// Does this line print a number or a percent inside a month band?
+function lineHasMonthFigure(line, monthCols, scaleTokens) {
+    return line.tokens.some((t) => {
+        if (scaleTokens && scaleTokens.has(t)) return false;
+        const s = String(t.str || '').trim();
+        return (isNumericToken(s) || /^\d[\d,]*(\.\d+)?\s*%$/.test(s)) && tokenMonthBand(t, monthCols) !== null;
+    });
+}
+
+/**
+ * Is this value row the header's SECOND LINE rather than an activity?
+ *
+ * BUHI prints its column labels on two lines, and the second carries a day count under
+ * every half-month: "NO. (IN PESOS) AMOUNT DAYS | 15 15 15 … 5". Read as a row it was
+ * an activity named "NO. (IN PESOS)" in all twelve months (every count one too high).
+ *
+ * All three must hold — each alone is unsafe, measured:
+ *  - every word LEFT OF THE FIRST MONTH BAND is a left-block column label or a
+ *    parenthesised unit, with at least two label kinds. Judged left of the months, not
+ *    in the description band, whose width depends on teaching; numbers are allowed
+ *    there because a label-start band leaves a "15" left of month 1.
+ *  - every month cell is a whole number from 1 to 62 written without "%" (a day count;
+ *    two half-months of 31 days at most), filling at least half the month bands. Alone
+ *    this also matched the roof's "Project Duration 30 30 … 7" line and the 12-page
+ *    BUHI's "15" lines, which the label condition rules out.
+ *  - no activity row has been read on this page yet: it sits directly under the header.
+ *
+ * Called by: buildRows(). Pure.
+ */
+function isHeaderContinuationRow(tokens, firstMonthX, bandCount, monthVals, monthPct, monthPresence, activitiesSoFar) {
+    if (activitiesSoFar > 0) return false;
+
+    const words = tokens.filter((t) => {
+        const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+        return (t.x + xEnd) / 2 < firstMonthX && WORD_RE.test(String(t.str || ''));
+    }).map((t) => String(t.str).trim());
+    if (words.length === 0) return false;
+    const kinds = new Set();
+    for (const w of words) {
+        if (LEFT_BLOCK_LABEL_RE.test(w)) kinds.add(w.toLowerCase().slice(0, 6));
+        else if (!/^\(.*\)$/.test(w)) return false;
+    }
+    if (kinds.size < 2) return false;
+
+    const filled = Object.keys(monthPresence);
+    if (filled.length < Math.ceil(bandCount / 2)) return false;
+    return filled.every((k) => !monthPct[k] && monthVals[k] !== undefined
+        && Number.isInteger(monthVals[k]) && monthVals[k] >= 1 && monthVals[k] <= 62);
+}
+
+/**
+ * The words of a description that wrapped AROUND its own figures, or null.
+ *
+ * BUHI's long descriptions print on three lines, and the row's figures sit on the
+ * MIDDLE one, which carries only the item code:
+ *     Power Load Center, Switchgear, and Panelboards, and Other      (words)
+ *     1102                              180 … 5,631.63 5,631.63 …   (code + figures)
+ *     Overcurrent Protection Devices    69,669.60 2,090.09 …         (words + amounts)
+ * The reader took the name from the figures' line alone, so the activity became
+ * "Activity 64" (and "c." for the other such row) although its money was right.
+ *
+ * Called only for a value row whose description band holds no word. Collects the
+ * word-only lines (no figure in a month band) directly above and below it that are
+ * within HALF the page's row pitch and closer to this row than to any other value
+ * line, skipping summary, total and heading lines. Measured: the two BUHI rows' wraps
+ * sit 6.4-7.0 pt away against a 15 pt pitch (ratio 0.42-0.46); no other row in the
+ * corpus has a word-only line near it. Rows that DO carry words (the roof's
+ * activities, with "LOT" printed 0.5 pitch below) never reach here.
+ *
+ * Only the neighbours' WORD tokens are taken — their amounts are not the name.
+ *
+ * Called by: buildRows(). Pure.
+ * @returns {{above: string[], below: string[], wordsX: number}|null}
+ */
+function wrappedDescriptionWords(tokenLines, i, startIndex, descLimit, valueLineYs, pitch) {
+    if (!(pitch > 0)) return null;
+    const y = tokenLines[i].y;
+    const reach = pitch / 2;
+    const others = valueLineYs.filter((v) => v !== y);
+    const found = { above: [], below: [], wordsX: Infinity };
+
+    for (const dir of [-1, 1]) {
+        for (let k = i + dir; k >= startIndex && k < tokenLines.length; k += dir) {
+            const line = tokenLines[k];
+            const dy = Math.abs(line.y - y);
+            if (dy > reach) break;
+            // A line with its own figures belongs to another row: stop looking this way.
+            if (valueLineYs.indexOf(line.y) !== -1) break;
+            if (others.some((v) => Math.abs(line.y - v) <= dy)) break;
+            const wordToks = line.tokens.filter((t) => t.x < descLimit && WORD_RE.test(String(t.str || '')));
+            if (wordToks.length === 0) continue;
+            const text = wordToks.map((t) => String(t.str).trim()).join(' ');
+            if (isSummaryLabel(text) || isTotalLabel(text) || /^(part|division)\b/i.test(text)) break;
+            // Neighbours contribute their word-bearing tokens only.
+            const kept = line.tokens.filter((t) => t.x < descLimit && /[A-Za-z]/.test(String(t.str || '')))
+                .map((t) => String(t.str).trim()).join(' ');
+            (dir < 0 ? found.above : found.below)[dir < 0 ? 'unshift' : 'push'](kept);
+            found.wordsX = Math.min(found.wordsX, ...wordToks.map((t) => t.x));
+        }
+    }
+    return (found.above.length || found.below.length) ? found : null;
+}
+
 function buildRows(tokenLines, header, startIndex, ctx) {
     const rows = [];
     const summaryCandidates = [];
@@ -676,6 +803,16 @@ function buildRows(tokenLines, header, startIndex, ctx) {
     // P6 — the chart's own scale, found once for the page. Its numbers sit in the
     // table's column space but belong to the picture, not the table.
     const scaleTokens = chartScaleTokens(tokenLines);
+    // Wrapped descriptions (2026-09-15): where the page's figure lines sit, and their
+    // usual spacing (the median gap), so a wrap line can be told from the next row.
+    const valueLineYs = [];
+    for (let i = startIndex; i < tokenLines.length; i++) {
+        if (lineHasMonthFigure(tokenLines[i], header.monthCols, scaleTokens)) valueLineYs.push(tokenLines[i].y);
+    }
+    const lineGaps = valueLineYs.slice(1).map((v, k) => Math.abs(valueLineYs[k] - v)).filter((g) => g > 0.5).sort((a, b) => a - b);
+    const rowPitch = lineGaps.length ? lineGaps[Math.floor(lineGaps.length / 2)] : 0;
+    // Header continuation (2026-09-15): value rows read as activities so far on this page.
+    let activitiesSoFar = 0;
 
     for (let i = startIndex; i < tokenLines.length; i++) {
         const tokens = tokenLines[i].tokens;
@@ -736,6 +873,29 @@ function buildRows(tokenLines, header, startIndex, ctx) {
         }
 
         if (!hasMonthValue && descText === '') continue;
+
+        // The header's second line (BUHI's "NO. (IN PESOS) AMOUNT DAYS | 15 15 …") is
+        // not an activity. See isHeaderContinuationRow for the three conditions.
+        if (hasMonthValue && isHeaderContinuationRow(tokens, firstMonthX, header.monthCols.length,
+            monthVals, monthPct, monthPresence, activitiesSoFar)) {
+            if (context.debug) context.debug.push({ t: 'headerContinuation', y: tokenLines[i].y });
+            continue;
+        }
+
+        // A description that wrapped around its own figures: the figures' line holds
+        // only the item code, the words print above and below. See
+        // wrappedDescriptionWords. The code stays in front, as on every other row.
+        const rawDesc = descTokens.map((t) => String(t.str).trim()).filter((s) => s !== '');
+        if (hasMonthValue && rawDesc.length && !WORD_RE.test(rawDesc.join(' '))) {
+            const wrap = wrappedDescriptionWords(tokenLines, i, startIndex, descLimit, valueLineYs, rowPitch);
+            if (wrap) {
+                const code = descTokens.filter((t) => t.x < wrap.wordsX && String(t.str).trim() !== '').map((t) => String(t.str).trim());
+                const tail = descTokens.filter((t) => t.x >= wrap.wordsX && String(t.str).trim() !== '').map((t) => String(t.str).trim());
+                descText = code.concat(wrap.above, wrap.below, tail).join('   ').trim();
+                if (context.debug) context.debug.push({ t: 'wrappedName', y: tokenLines[i].y, name: descText });
+            }
+        }
+
         if (isSummaryLabel(descText)) {
             sawSummary = true;
             // P2-e — keep labeled summary rows as reference candidates (values per
@@ -802,6 +962,7 @@ function buildRows(tokenLines, header, startIndex, ctx) {
             continue;
         }
 
+        if (hasMonthValue) activitiesSoFar++;
         rows.push({
             description: descText || ('Activity ' + (rows.length + 1)),
             months: monthVals,

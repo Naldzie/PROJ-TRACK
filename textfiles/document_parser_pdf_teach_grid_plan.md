@@ -3249,6 +3249,145 @@
           this is READER name assembly (buildRows), so the 16-read regression gates it
       (c) optional: fraction/cost summary rows not compared as percentages
 
+    COMMITTED: 4e35005 (this entry up to here).
+
+    MEASUREMENTS FOR (a) DAY-MARKER LINE AND (d) WRAPPED NAMES ✅ DONE (read-only, no code)
+      Ordered: user, "commit the latest adjustment first then start with the measurements
+      for 2 and 3". Corpus: 11 PDFs x reads (rules, taught word, live DB layouts #138 roof
+      two-page teach + #141 BUHI 1-page teach, own capture map, roof AI map) = 22 reads,
+      474 value rows, through a probe-only core copy exporting collectPdfPages
+      (core_spy_rows.mjs). Probes: probe_rows_signals.mjs, probe_rows_signals2.mjs.
+
+      (a) DAY-MARKER LINE
+        Signals per value row:
+          A  every 3+-letter word LEFT OF THE FIRST MONTH BAND is a LEFT_BLOCK_LABEL_RE label
+             or a parenthesised unit ("(IN PESOS)"), with >= 2 label kinds;
+          B  every month cell is a whole number 1..62 written without %, filling >= half the
+             page's month bands (day counts);
+          C  it is the first value row after the header line.
+        Results: B alone fires on 19 rows — the roof's "Project Duration 30 30 … 7" lines
+          (both prints, every read) and the 12-page BUHI's "15" lines — so B alone is unsafe.
+          A judged on the DESCRIPTION BAND only is band-dependent (the rules read's narrow band
+          sees just "NO. (IN PESOS)", 1 kind). A with "no number left of the months" also
+          fails 3 of 4 BUHI reads (the label-start bands leave a "15" left of month 1).
+          A (as defined above, numbers allowed) AND B AND C: fires on "NO. (IN PESOS) AMOUNT
+          DAYS" in ALL 4 one-page BUHI reads and on NOTHING else.
+        Proposed rule: such a row is the header's second line, not an activity — skipped
+          like a summary row (no activity, no money, no reference candidate).
+
+      (d) WRAPPED NAMES
+        64 value rows have no 3+-letter word in their description band — almost all are
+          number-only rows (12-page BUHI, roof continuation "₱", CONSCHEDSAVINGS capture) with
+          NO word-only line near them. Only BUHI 1-page R74 ("1102") and R82 ("c.") have
+          word-only lines beside them, one above and one below each, in every read:
+            dy 6.4-7.0 pt against a row pitch of 15.0 (ratio 0.42-0.46), closer to that row
+            than to any other value row, not a heading, summary or total label.
+        Word-only lines that close to NAMED rows exist and must stay untouched: the roof's
+          "LOT" under each activity (ratio 0.49-0.50) and "Commulative" (0.24-0.25). The rule
+          only ever looks at rows whose own description holds no word, so they cannot be hit.
+        Proposed rule: for a value row whose description band holds no 3+-letter word, join
+          the word text of the word-only lines directly above and below it that lie within
+          half the page's row pitch and closer to it than to any other value row (skipping
+          summary/total/heading lines), after its own code: "1102 Power Load Center,
+          Switchgear, and Panelboards, and Other Overcurrent Protection Devices". Neighbour
+          lines contribute words only (their amounts are not the name).
+
+      Gates for the build: 16-read regression and block_snapshot 0 changed (no corpus row
+        other than the targets fires either signal); verify_guard reads unchanged; BUHI
+        1-page through #141: same curve, counts = Excel 8,11,12,14,19,20,32,34,38,43,41,41,
+        both names restored; each rule falsified by a test.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — THE TWO ROW RULES ✅ BUILT (code, UNCOMMITTED, not browser-proven).
+  ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED: user, "yes go ahead with the two rules" — after confirming they are READER
+      rules (a foundation for every PDF read and future capture), not stored per layout.
+      Layouts keep saying WHERE columns are; these decide what a printed LINE means.
+      Stored layouts, capture blocks and header hashes are unaffected (no re-teach, no
+      re-capture wave).
+
+    WHAT SHIPPED — scurve-pdf-parser-core.js, buildRows() + four helpers above it
+      isHeaderContinuationRow()  a value row is the header's second line, and skipped, when
+        ALL hold: every 3+-letter word left of the first month band is a LEFT_BLOCK_LABEL_RE
+        label or a parenthesised unit, >= 2 label kinds; every filled month cell is a whole
+        number 1..62 without %, filling >= half the bands; no activity row read yet on the
+        page. Debug: { t: 'headerContinuation', y }.
+      wrappedDescriptionWords()  for a value row whose description band holds no 3+-letter
+        word: word-only lines directly above/below within HALF the page's row pitch (median
+        gap between the page's figure lines), closer to this row than to any other figure
+        line, not a summary / total / PART|DIVISION heading. Name = code tokens + above +
+        below + any other desc-band tokens right of the words; neighbours give only their
+        letter-bearing tokens. Debug: { t: 'wrappedName', y, name }.
+      lineHasMonthFigure(), tokenMonthBand(), WORD_RE — shared by the two.
+      Pre-pass in buildRows: the page's figure-line ys and rowPitch; counter activitiesSoFar.
+
+    VERIFIED
+      verify_rows_rules.mjs — committed core (HEAD 4e35005 copy) vs working tree, 43 reads
+        (rules, word, live DB #138 + #141, capture, AI): 42 IDENTICAL; 1 CHANGED, the target:
+          BUHI 1-page via live #141  curve identical 1.12 … 100, contract identical,
+            counts 9,12,13,15,20,21,33,35,39,44,42,42 -> 8,11,12,14,19,20,32,34,38,43,41,41
+            (= the Excel counts), names gone: "NO. (IN PESOS) AMOUNT DAYS", "Activity 64",
+            "c."; names new: "1102 Power Load Center, Switchgear, and Panelboards, and Other
+            Overcurrent Protection Devices 180" and "c. Consumables and Other Accessories
+            (Rubber Gasket, Nut and Bolts w/ Washer, Welding Rods, Paints, Brushes, etc.)".
+          The trailing "180" (the row's day count) is inside today's widened description
+          band, like the money columns on every other BUHI name — item (3) removes it.
+      verify_p6.mjs 16/0 · block_snapshot.mjs 9/0.
+      TESTS +4 (scurve-pdf-parser.test.mjs "Row assembly"): the day line is not an activity
+        (curve + counts equal the same page without it); a named day-sized row, a label row
+        of pesos, a label+non-label row ("Duration AMOUNT DAYS") and a label row after an
+        activity all stay activities; a wrap joins code first (numeric and "c." codes) with
+        the curve and counts unchanged; no neighbours -> stand-in name kept; a named row
+        with "LOT" below untouched; a PART heading above, a summary line below, a line 9 pt
+        away (pitch 15) and a line nearer another row are never joined.
+      falsify_row_rules.mjs — 8 mutations (4 per rule). FIRST RUN MISSED TWO, both vacuous
+        fixtures, both fixed and recorded so they are not repeated:
+          H2 (non-label words allowed): the "real activity" fixture had NO label words, so
+            the >= 2 kinds condition rejected it first — added "Duration AMOUNT DAYS".
+          W3 (summary/heading lines accepted): the fixture glued "Sub-total cost", and the
+            joined name then read as a summary row and vanished, so "not glued" passed for
+            the wrong reason — split into a heading-only case and a summary-only case that
+            asserts the row and its counts survive.
+        Second run: ALL 8 CAUGHT, core byte-identical after each restore.
+      npm run test:js  217 tests, 215 pass + the 2 intended blinding fails. No PHP touched.
+
+    BROWSER CHECK OWED (user; Ctrl+F5)
+      1. Import the one-page BUHI PDF (live #141 applies): the same curve; counts
+         8,11,12,14,19,20,32,34,38,43,41,41; no "NO. (IN PESOS) …" activity; month 7+ lists
+         "1102 Power Load Center, Switchgear, and Panelboards, and Other Overcurrent
+         Protection Devices 180", months 10-12 "c. Consumables and Other Accessories …".
+      2. Roof two-page (#138), 6-stage, 10-month PDFs: unchanged.
+    PROBES: probe_rows_signals.mjs, probe_rows_signals2.mjs, verify_rows_rules.mjs,
+      falsify_row_rules.mjs, core-head-4e35005.mjs (baseline copy).
+
+    BROWSER RESULT (user, same day)
+      1 ✅ one-page BUHI via #141: counts 8,11,12,14,19,20,32,34,38,43,41,41 (= Excel), the
+           "NO. (IN PESOS) …" activity gone (every month's list now opens with "A.1.1 (3)
+           Construction …"), curve and notes as before. The two restored names sit past the
+           preview's truncation; the probe shows them.
+      2 ✅ roof two-page / 6-stage / 10-month import as before (user confirmed).
+
+    TWO PRE-EXISTING TEACH-DESK DEFECTS SEEN IN THE SAME SCREENSHOT (not caused by this build)
+      (e) R4 "3% DISCOUNT" IS TAGGED SUMMARY (yellow). Already stored that way in #132's block
+          dumped earlier this session, before any of today's code: buildPdfSliceBlock /
+          buildMergedSliceBlock tag a row SUMMARY when a non-value cell passes isSummaryLabel,
+          whose /%/ matches "3% DISCOUNT". Display only on this file (no month figures, never
+          an activity). In the reader the same label sets sawSummary, which only feeds P2-c on
+          LATER pages of a multi-page print. Fix would recognise "N% word" column labels; it
+          changes this capture's block text (one new capture row). Low priority.
+      (f) REOPENING THE BUHI LAYOUT PREFILLS THREE LETTERS PER MONTH (M1=H+I+J …), but the save
+          validation allows at most two ('months.*' => max:2, SCurveHeaderProposalController
+          teachColumns) and the click handler also stops at two. prefillFromMap
+          (scurve-teach-core.js) takes lettersInBand() for each stored band, and the centred
+          "Month N" label column (I) lies fully inside M1's band H..J. So a reviewer who reopens
+          #141 and saves without re-picking months would be refused. From the code, not yet
+          reproduced in the browser. Proposed fix: the PDF prefill keeps the FIRST and LAST
+          letter of each month's run — buildTaughtPdfMap builds the same band from min(x) ..
+          max(xEnd), so no stored layout or read changes. Predates today's work (first layout
+          whose bands span a label column).
+
     PROBES (C:\temp\opencode, read-only): dump_buhi_xlsx_cells.php, probe_buhi1_truth_columns.mjs,
       probe_buhi1_merged_cells.mjs, probe_buhi1_true_bands.mjs, probe_buhi1_teachable.mjs,
       probe_buhi1_realistic_teach.mjs. Data: buhi_xlsx_cells.json, buhi1_pinned.json.

@@ -1805,6 +1805,140 @@ test('a refused rules read falls through to a learned layout that adds up', () =
     assert.deepEqual(learned.result.months.map((m) => m.planned_progress_percent), [31.58, 68.42, 100]);
 });
 
+/* ─── Row assembly: header continuation + wrapped descriptions (2026-09-15) ── */
+
+// All names a read produced, across every month.
+const allNames = (out) => [...new Set(out.months.flatMap((m) => (m.activities || []).map((a) => a.activity_name)))];
+
+// BUHI prints its labels on two lines; the second carries a day count per half-month
+// ("NO. (IN PESOS) AMOUNT DAYS | 15 15 … 5"). It was read as an activity in every month.
+test('a second header line of labels and day counts is not an activity', () => {
+    const dayLine = [785, [['NO.', 50, 15], ['(IN PESOS)', 68, 40], ['AMOUNT', 112, 40], ['DAYS', 156, 25],
+        ['15', 210, 10], ['15', 310, 10], ['5', 410, 6]]];
+    const plain = parseSCurvePdf([page([...HEADER, ...ROW1, ...ROW2, ...TOTAL])]);
+    const withDays = parseSCurvePdf([page([...HEADER, dayLine, ...ROW1, ...ROW2, ...TOTAL])]);
+
+    assert.ok(withDays, 'the table still reads');
+    assert.ok(!allNames(withDays).some((n) => /AMOUNT|DAYS|PESOS/.test(n)), 'no activity named after the labels');
+    assert.deepEqual(withDays.months.map((m) => m.planned_progress_percent), plain.months.map((m) => m.planned_progress_percent));
+    assert.deepEqual(withDays.months.map((m) => (m.activities || []).length), plain.months.map((m) => (m.activities || []).length));
+});
+
+// Each condition alone is unsafe (measured): the rule must leave these rows alone.
+test('a first row with small whole numbers is still an activity unless its words are labels', () => {
+    // A real activity whose cells happen to be small whole numbers (non-label words).
+    const small = [785, [['Mobilization', 50, 60], ['15', 210, 10], ['15', 310, 10], ['15', 410, 10]]];
+    const out = parseSCurvePdf([page([...HEADER, small, ...ROW1, ...ROW2])]);
+    assert.ok(out && allNames(out).some((n) => /Mobilization/.test(n) && out.months[0].activities.length >= 1));
+    assert.ok(allNames(out).includes('Mobilization'), 'a named row of day-sized values stays an activity');
+
+    // Two label kinds AND day counts, but also a word that is not a label ("Duration"):
+    // a row like the roof's "Project Duration … Days" stays a row.
+    const mixed = [785, [['Duration', 50, 45], ['AMOUNT', 100, 40], ['DAYS', 145, 25], ['15', 210, 10], ['15', 310, 10], ['15', 410, 10]]];
+    const outMixed = parseSCurvePdf([page([...HEADER, mixed, ...ROW1, ...ROW2])]);
+    assert.ok(allNames(outMixed).some((n) => /Duration/.test(n)), 'every word left of the months must be a label');
+
+    // Label words, but the cells are pesos rather than day counts.
+    const pesos = [785, [['AMOUNT', 50, 40], ['DAYS', 95, 25], ['1500', 210, 25], ['2500', 310, 25], ['900', 410, 20]]];
+    const out2 = parseSCurvePdf([page([...HEADER, pesos, ...ROW1, ...ROW2])]);
+    assert.ok(allNames(out2).some((n) => /AMOUNT/.test(n)), 'cells above 62 are not day counts');
+
+    // Label words and day counts, but AFTER an activity: not directly under the header.
+    const late = [700, [['AMOUNT', 50, 40], ['DAYS', 95, 25], ['15', 210, 10], ['15', 310, 10], ['15', 410, 10]]];
+    const out3 = parseSCurvePdf([page([...HEADER, ...ROW1, ...ROW2, late])]);
+    assert.ok(allNames(out3).some((n) => /AMOUNT/.test(n)), 'only the line directly under the header is the header’s second line');
+});
+
+// BUHI's long descriptions wrap AROUND their figures: the figures' line carries only the
+// item code, the words print on the lines above and below (7 pt away, rows 15 pt apart).
+const WRAP_PAGE = (above, below, code = '1102') => page([
+    ...HEADER,
+    [760, [['1', 45, 8], ['Mobilization', 60, 60], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+    ...(above ? [[752, [['Power Load Center, Switchgear,', 60, 120]]]] : []),
+    [745, [[code, 45, 20], ['500', 210, 20], ['500', 310, 20], ['500', 410, 20]]],
+    ...(below ? [[738, [['and Overcurrent Devices', 60, 90]]]] : []),
+    [730, [['2', 45, 8], ['Signage', 60, 40], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+    [715, [['3', 45, 8], ['Painting', 60, 45], ['100', 210, 20], ['100', 310, 20], ['100', 410, 20]]],
+]);
+
+test('a description wrapped around its figures is joined to them, code first', () => {
+    const out = parseSCurvePdf([WRAP_PAGE(true, true)]);
+    const names = allNames(out);
+    assert.ok(names.some((n) => /^1102\s+Power Load Center, Switchgear,\s+and Overcurrent Devices$/.test(n)),
+        'got ' + JSON.stringify(names));
+    assert.ok(!names.some((n) => /^Activity \d+$/.test(n)), 'no stand-in name is left');
+    // The wrap lines themselves never become activities, and the money is unchanged.
+    const bare = parseSCurvePdf([WRAP_PAGE(false, false)]);
+    assert.deepEqual(out.months.map((m) => m.planned_progress_percent), bare.months.map((m) => m.planned_progress_percent));
+    assert.deepEqual(out.months.map((m) => (m.activities || []).length), bare.months.map((m) => (m.activities || []).length));
+
+    // A letter code ("c.") is kept in front the same way.
+    const lettered = allNames(parseSCurvePdf([WRAP_PAGE(true, false, 'c.')]));
+    assert.ok(lettered.includes('c.   Power Load Center, Switchgear,'), 'got ' + JSON.stringify(lettered));
+});
+
+test('wrapped-name joining leaves named rows, far lines, headings and totals alone', () => {
+    // Without neighbours the code-only row keeps today's stand-in name.
+    assert.ok(allNames(parseSCurvePdf([WRAP_PAGE(false, false)])).some((n) => /^Activity \d+$/.test(n)));
+
+    // A named row with a word-only line just under it (the roof's "LOT") is untouched.
+    const lot = page([
+        ...HEADER,
+        [760, [['1', 45, 8], ['Roofing', 60, 45], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [753, [['LOT', 60, 20]]],
+        [745, [['2', 45, 8], ['Signage', 60, 40], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+        [730, [['3', 45, 8], ['Painting', 60, 45], ['100', 210, 20], ['100', 310, 20], ['100', 410, 20]]],
+    ]);
+    assert.ok(allNames(parseSCurvePdf([lot])).includes('Roofing'));
+
+    // A heading just above a code-only row is never glued onto it.
+    const neighbourPage = (above, below) => page([
+        ...HEADER,
+        [760, [['1', 45, 8], ['Mobilization', 60, 60], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        ...(above ? [[752, [[above, 60, 120]]]] : []),
+        [745, [['1102', 45, 20], ['500', 210, 20], ['500', 310, 20], ['500', 410, 20]]],
+        ...(below ? [[738, [[below, 60, 60]]]] : []),
+        [730, [['2', 45, 8], ['Signage', 60, 40], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+        [715, [['3', 45, 8], ['Painting', 60, 45], ['100', 210, 20], ['100', 310, 20], ['100', 410, 20]]],
+    ]);
+    const hn = allNames(parseSCurvePdf([neighbourPage('PART B GENERAL REQUIREMENTS', null)]));
+    assert.ok(hn.some((n) => /^Activity \d+$/.test(n)) && !hn.some((n) => /PART B/.test(n)), 'got ' + JSON.stringify(hn));
+
+    // A summary line just below is never glued on either — glued, the row would read as a
+    // summary and its money would vanish from the activities.
+    const bareOut = parseSCurvePdf([neighbourPage(null, null)]);
+    const sumOut = parseSCurvePdf([neighbourPage(null, 'Cumulative cost')]);
+    assert.ok(allNames(sumOut).some((n) => /^Activity \d+$/.test(n)), 'got ' + JSON.stringify(allNames(sumOut)));
+    assert.deepEqual(sumOut.months.map((m) => (m.activities || []).length), bareOut.months.map((m) => (m.activities || []).length));
+
+    // A word line MORE than half a row away (9 pt, pitch 15) is not a wrap, even though it
+    // is still nearer this row than any other.
+    const far = page([
+        ...HEADER,
+        [760, [['1', 45, 8], ['Mobilization', 60, 60], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [745, [['1102', 45, 20], ['500', 210, 20], ['500', 310, 20], ['500', 410, 20]]],
+        [736, [['Loose note line', 60, 60]]],
+        [715, [['2', 45, 8], ['Signage', 60, 40], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+        [700, [['3', 45, 8], ['Painting', 60, 45], ['100', 210, 20], ['100', 310, 20], ['100', 410, 20]]],
+    ]);
+    const fn = allNames(parseSCurvePdf([far]));
+    assert.ok(fn.some((n) => /^Activity \d+$/.test(n)) && !fn.some((n) => /Loose note/.test(n)), 'got ' + JSON.stringify(fn));
+
+    // A word line within half a row of the code-only row, but NEARER the row above it,
+    // belongs to that row (value lines 760 / 752 / 737 / 722 / 707, word line at 757).
+    const nearer = page([
+        ...HEADER,
+        [760, [['1', 45, 8], ['Mobilization', 60, 60], ['1000', 210, 30], ['2000', 310, 30], ['3000', 410, 30]]],
+        [757, [['Works continued', 60, 60]]],
+        [752, [['1102', 45, 20], ['500', 210, 20], ['500', 310, 20], ['500', 410, 20]]],
+        [737, [['2', 45, 8], ['Signage', 60, 40], ['1500', 210, 30], ['1500', 310, 30], ['0', 410, 10]]],
+        [722, [['3', 45, 8], ['Painting', 60, 45], ['100', 210, 20], ['100', 310, 20], ['100', 410, 20]]],
+        [707, [['4', 45, 8], ['Cleanup', 60, 45], ['10', 210, 20], ['10', 310, 20], ['10', 410, 20]]],
+    ]);
+    const nn = allNames(parseSCurvePdf([nearer]));
+    assert.ok(nn.some((n) => /^Activity \d+$/.test(n)) && !nn.some((n) => /Works continued/.test(n)), 'got ' + JSON.stringify(nn));
+});
+
 /* ─── AI assist page images: shrink-to-fit (2026-09-15) ───────────────────── */
 
 // An ordinary page keeps the usual ~150 DPI render and is not reported as shrunk.
