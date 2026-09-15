@@ -875,6 +875,9 @@ function scurveCaptureHeaders(kind, source, extra) {
             fd.append('source_type', 'pdf');
             fd.append('header_rows_text', capture.block);
             fd.append('column_map', JSON.stringify(capture.map));
+            // Whether this layout reads its own file (reads | refused | unread): the
+            // server auto-approves only a capture that reads (2026-09-15).
+            if (capture.selfCheck) fd.append('capture_check', capture.selfCheck);
             // Contractor scope: the wizard knows it from the form, the detail flow
             // from the document (the server resolves that one itself).
             if (source) fd.append('document_id', source);

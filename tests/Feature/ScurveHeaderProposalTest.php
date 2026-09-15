@@ -1826,6 +1826,52 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame('live', ScurveHeaderProposal::where('source_type', 'pdf')->firstOrFail()->status);
     }
 
+    // 2026-09-15 — A CAPTURE THAT CANNOT READ ITS OWN FILE NEVER AUTO-LIVES.
+    //
+    // The one-page BUHI's capture is numbered, so the >=3 rule promoted it — but its
+    // label-start bands are exactly the misread the read guard refuses, and live it
+    // shadowed the reviewer's correct layout. The browser now checks the capture against
+    // its own file and sends capture_check; anything but "reads" stays proposed (still
+    // stored, so it can be taught). A capture that reads still promotes, and one sent
+    // without the field keeps the old rule.
+    // Called by: collect() auto-live rule.
+    public function test_a_capture_whose_own_reading_fails_never_auto_lives(): void
+    {
+        $admin = $this->makeUser('admin');
+        $map = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['pageHint' => 0, 'sig' => ['no.', 'amount', 'month 1'],
+                'descX' => 0.05, 'descRight' => 0.3,
+                'monthCols' => [['index' => 1, 'x' => 0.4, 'xEnd' => 0.6], ['index' => 2, 'x' => 0.6, 'xEnd' => 0.9]]],
+        ]];
+        // Three distinct blocks, one per verdict, so each is its own row.
+        $send = function (string $label, ?string $check) use ($admin, $map) {
+            $payload = [
+                'source_type' => 'pdf', 'source' => 'auto-capture',
+                'header_rows_text' => "COLUMNS: A,B,C,D | HEADER: column labels\nR1 [HEADER]: NO.,Amount,Month 1,Month 2\nR2 [DATA]: A,{$label},4000,4000",
+                'column_map' => json_encode($map),
+            ];
+            if ($check !== null) {
+                $payload['capture_check'] = $check;
+            }
+            foreach (range(1, 3) as $ignored) {
+                $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', $payload)->assertStatus(201);
+            }
+            return ScurveHeaderProposal::where('header_rows_text', 'like', "%{$label}%")->firstOrFail();
+        };
+
+        $refused = $send('REFUSED ROW', 'refused');
+        $this->assertSame(3, $refused->occurrences, 'repeats still count');
+        $this->assertSame('proposed', $refused->status, 'a capture its own file refuses must stay proposed');
+
+        $this->assertSame('proposed', $send('UNREAD ROW', 'unread')->status, 'a capture that reads nothing must stay proposed');
+        $this->assertSame('live', $send('READS ROW', 'reads')->status, 'a capture that reads its file still promotes');
+        $this->assertSame('live', $send('UNCHECKED ROW', null)->status, 'no check sent: the old rule holds');
+
+        $this->actingAs($admin)->post('/admin/scurve-header-proposals/collect', [
+            'source_type' => 'pdf', 'header_rows_text' => "COLUMNS: A,B\nR1 [HEADER]: X,Y", 'capture_check' => 'maybe',
+        ])->assertStatus(302);
+    }
+
     // 2026-09-14 — THE AI'S NUMBERING MUST REACH AN UNNUMBERED CAPTURE.
     //
     // Once the ai-derived block became the same merged grid the capture builds, the

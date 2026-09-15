@@ -133,7 +133,15 @@ window.parseSCurvePdfFile = async function (file) {
         window._scurvePdfCapture = (!out && typeof core.derivePdfLayout === 'function')
             ? core.derivePdfLayout(itemsByPage, 15, { pageBoxes })
             : null;
-    } catch (e) { window._scurvePdfCapture = null; }
+        // Does the capture's own layout read this file? Sent with the capture so the
+        // server never auto-approves one that cannot (2026-09-15: the one-page BUHI's
+        // label-start capture went live after three imports and was refused on every
+        // read). Best-effort: no answer leaves the server's old rule in force.
+        const cap = window._scurvePdfCapture;
+        if (cap && cap.map && typeof core.captureReadsItsOwnFile === 'function') {
+            cap.selfCheck = core.captureReadsItsOwnFile(itemsByPage, cap.map, { monthWords });
+        }
+    } catch (e) { window._scurvePdfCapture = window._scurvePdfCapture || null; }
     try {
         if (window.__scurvePdfDebug && debug.length) console.info('[scurve-pdf] attribution', debug);
         const pages = [];

@@ -17,6 +17,7 @@ import {
     pdfCurvesDisagree,
     pdfSliceRenderScale,
     pdfSliceShrinkNote,
+    captureReadsItsOwnFile,
     chartScaleTokens,
     detectPseudoColumns,
     groupItemsIntoLines,
@@ -1803,6 +1804,60 @@ test('a refused rules read falls through to a learned layout that adds up', () =
     assert.equal(learned.refusal, null);
     // 1500 then 3500 then 3000 over 9500 — month 1 now carries the left-out cell.
     assert.deepEqual(learned.result.months.map((m) => m.planned_progress_percent), [31.58, 68.42, 100]);
+});
+
+// 2026-09-15 — a refused layout must not shadow a correct one. Live layouts arrive
+// most-seen first, so an auto-promoted capture that misreads the file (the one-page
+// BUHI's #140) came before the reviewer's correct teach (#142), owned the file, was
+// refused, and the teach was never tried.
+const W455 = 455; // pageMaxX of totalRowPage: MONTH 3 ends at 400 + 55
+function misreadAndTaught() {
+    const misread = totalRowPage('9500', true);
+    const captured = derivePdfLayout([misread]).map;
+    const taught = { ...captured, pages: [{
+        ...captured.pages[0],
+        monthCols: captured.pages[0].monthCols.map((mc, k) => (k === 0 ? { ...mc, x: 150 / W455 } : mc)),
+    }] };
+    return { misread, captured, taught };
+}
+
+test('a refused live layout does not shadow the next one', () => {
+    const { misread, captured, taught } = misreadAndTaught();
+    const dbg = [];
+    const shadowed = readWithRefusal([misread], { liveMaps: [{ id: 140, map: captured }, { id: 142, map: taught }], debug: dbg });
+    assert.ok(shadowed.result, 'the second layout must be tried once the first is refused');
+    assert.equal(shadowed.result.meta.mapId, 142);
+    assert.deepEqual(shadowed.result.months.map((m) => m.planned_progress_percent), [31.58, 68.42, 100]);
+    assert.equal(shadowed.refusal, null, 'a file that ends up read reports no refusal');
+    assert.ok(dbg.some((d) => d.t === 'mapSkipped' && d.mapId === 140 && d.why === 'total-mismatch'));
+
+    // The other order is today's behaviour: the first map reads, the second is never needed.
+    const direct = readWithRefusal([misread], { liveMaps: [{ id: 142, map: taught }, { id: 140, map: captured }] });
+    assert.equal(direct.result.meta.mapId, 142);
+});
+
+test('when every live layout is refused, the first layout’s refusal is reported', () => {
+    const { misread, captured } = misreadAndTaught();
+    const copy = JSON.parse(JSON.stringify(captured));
+    const both = readWithRefusal([misread], { liveMaps: [{ id: 7, map: captured }, { id: 8, map: copy }] });
+    assert.equal(both.result, null);
+    assert.equal(both.refusal && both.refusal.code, 'total-mismatch');
+    assert.equal(both.refusal.viaMap, true);
+    assert.equal(both.refusal.mapId, 7, 'the most-seen layout the reviewer would look at first');
+});
+
+// The self-check the capture now carries: collect() auto-approves only 'reads'.
+test('captureReadsItsOwnFile: reads, refused, unread', () => {
+    const { misread, captured, taught } = misreadAndTaught();
+    assert.equal(captureReadsItsOwnFile([misread], captured), 'refused', 'the label-start capture repeats the misread');
+    assert.equal(captureReadsItsOwnFile([misread], taught), 'reads');
+    // Unnumbered (an ambiguous capture keeps geometry but no months) cannot read anything.
+    const unnumbered = { ...captured, pages: [{ ...captured.pages[0], monthCols: [], unnumbered: true }] };
+    assert.equal(captureReadsItsOwnFile([misread], unnumbered), 'unread');
+    // A layout whose header words are not on the page matches nothing.
+    const foreign = { ...taught, pages: [{ ...taught.pages[0], sig: ['stint 1', 'stint 2', 'budget'] }] };
+    assert.equal(captureReadsItsOwnFile([misread], foreign), 'unread');
+    assert.equal(captureReadsItsOwnFile([misread], null), 'unread');
 });
 
 /* ─── Row assembly: header continuation + wrapped descriptions (2026-09-15) ── */

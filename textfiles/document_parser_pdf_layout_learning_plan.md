@@ -613,6 +613,20 @@
   9. SESSION LOGS
 ===============================================================================
 
+  2026-09-15 (session close) — PDF-2 CONSULT AND PDF-1 CAPTURE CHANGED. Full record:
+  textfiles/document_parser_pdf_teach_grid_plan.md, §13 entries from "READ GUARD BUILT"
+  to "SESSION CLOSE — HANDOFF". Pointer here because both paths are specified in this file.
+    - CONSULT: learned layouts are now also tried when the RULES reading is REFUSED by the
+      read guard (not only when the rules find no table), and a layout whose own reading is
+      refused is skipped so the next live layout is tried (it used to own the file and stop
+      the pass). A layout's reading faces the same guard as the rules'.
+    - CAPTURE: the browser checks a capture against its own file (captureReadsItsOwnFile)
+      and posts capture_check; collect() never auto-approves a capture that does not read.
+      Captures also carry page-edge marks (an "EDGE:" block line) — display only.
+    - READER: two row rules in buildRows (a header's day-count line is not an activity; a
+      description wrapped around its figures is rejoined). Reader rules, not layout data.
+    - The one-page BUHI print is learnable and browser-proven through a taught layout.
+
   2026-09-15 — P3 MERGE MEETS A PRINT IT WAS NOT BUILT FOR: THE BUHI PDF (split DOWN
   and ACROSS). Diagnosis only, no code. Full record: textfiles/
   document_parser_pdf_teach_grid_plan.md, the last §13 entry (finding C). Pointer here

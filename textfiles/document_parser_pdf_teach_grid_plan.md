@@ -26,18 +26,20 @@
 #                                         shared PHP/JS signature fixture
 #           roof misfit-layout fix ...... bandsHoldLabels in matchMapPage
 #         Row roles stay Excel-only BY DECISION (§11 Decision 4).
-#         ➜ HANDOFF: the LAST §13 entry (2026-09-15, "GUARD MEASUREMENT PASS" — proposed
-#           spec, awaiting build order). Read the entry before it too ("THREE FINDINGS
-#           FROM A ONE-PAGE ROOF PRINT AND A PRINTED BUHI PDF", findings A-D). The
-#           misfit-layout entry opens with a DATE NOTE: entries headed "2026-09-15" above
-#           it were really written on 2026-09-14 local time.
-#         NEXT ORDERED WORK (user, 2026-09-15): (1) the split-down guard — a PDF
-#           printed down-then-across must stop reading as a confident baseline;
-#           (3) PDF description-band teaching steps 1-3; item (2), full split-down
-#           support, is PARKED. The early-100 guard queues behind both.
-#         OWED BY THE USER (small): item-2 browser steps (Excel prefill on reopen;
-#           staff layout); a re-printed BUHI specimen (details in the last §13 entry).
-#           The one-page roof print is saved (…-S-CURVE-pdf2.pdf).
+#         ✅ 2026-09-15 SESSION CLOSED — PDF READ GUARD + BUHI ONE-PAGE LEARNABLE. Every
+#           item built this session is browser-proven and committed (see the LAST §13
+#           entry, "SESSION CLOSE — HANDOFF", for the commit list, lessons and queue).
+#         ➜ HANDOFF: start at the LAST §13 entry. The entries before it are the build log
+#           in order (guard measurement → guard → shrink-to-fit → adds-up check + page-edge
+#           marking → finding D restudy → row rules → reopen fix → layout fallback).
+#         NEXT ORDERED WORK: item (3) PDF Description as a letter range (spec: finding B,
+#           "AGREED DIRECTION FOR ITEM (3)"). Full split-down support stays PARKED; the
+#           early-100 guard queues behind item (3).
+#         OWED BY THE USER (small): the AI-assist ANSWER on the one-page BUHI (untested —
+#           the AI service returned 503 all session); item-2 Excel browser steps from
+#           2026-09-14 (prefill on reopen; staff layout).
+#         DATE NOTE: entries headed "2026-09-15" above the misfit-layout entry were really
+#           written on 2026-09-14 local time.
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         explicit confirmation; this branch also carries an unrelated teammate merge)
 
@@ -3442,12 +3444,190 @@
           sends "its reading is refused"; collect() then never auto-promotes that capture (it is
           still stored for teaching). BUHI 1-page and 12-page captures would stay Proposed; roof
           pdf2's (reads correctly) would still promote.
+    COMMITTED: 0a41eba (the reopen fix (f), browser-confirmed, + this diagnosis).
+
+    (g) A + B ✅ BUILT (code, UNCOMMITTED, not browser-proven) — ordered: user, "yes".
+      A — scurve-pdf-parser-core.js parseSCurvePdf maps pass: a loop. Run the maps pass over
+        the remaining live maps; if the owning map's reading is refused (or unbuildable), drop
+        THAT map and run it again, same order, until a map reads or none matches. The first
+        iteration is exactly the old single pass. Refusal reported when all fail: the FIRST
+        map refusal (a rules refusal is replaced by it, later map refusals are not). Debug:
+        { t: 'mapSkipped', mapId, why }.
+      B — captureReadsItsOwnFile(itemsByPage, captureMap, {monthWords}) -> 'reads' | 'refused' |
+        'unread' (core, pure): parseSCurvePdf with the capture as the only live map; 'refused'
+        only when the refusal is THIS map's (viaMap + its id) — a rules refusal or a map that
+        matches no page is 'unread'. scurve-pdf-parser.js attaches it as capture.selfCheck;
+        scurve-import-ui.js posts it as capture_check; SCurveHeaderProposalController::collect
+        validates in:reads,refused,unread and treats a PDF capture checked as anything but
+        'reads' as unreadable for the >= 3 auto-live rule. Absent field (older pages, Excel) =
+        the old rule. The row is still stored and teachable.
+        CAUGHT WHILE TESTING: the first version counted ANY refusal, so a layout matching
+        nothing on a page whose rules reading was refused came back 'refused' — the test's
+        "foreign layout" case failed; fixed to the viaMap/id check above.
+      VERIFIED
+        probe_shadowed_layout.mjs (real live #140 + #142): [#140, #142] (endpoint order) now
+          reads 1.12 / 3.59 / … / 84.8 / 100 via #142 (was REFUSED); other orders unchanged.
+        probe_capture_selfcheck.mjs (every sample PDF, as an import with no maps): BUHI 1-page
+          capture 'refused', BUHI 12-page capture 'refused', roof two-page capture 'unread'
+          (unnumbered), roof pdf2 capture 'reads', SEGMENT capture 'reads'; 6-stage, 10-month,
+          CONSCHEDSAVINGS read (no capture); scurvepdfsample2 / test_page_6 no capture.
+        verify_maps_fallback.mjs (43 reads vs HEAD 0a41eba, live DB = #138 #140 #142): 42
+          IDENTICAL, 1 CHANGED — BUHI 1-page via live DB: refused total-mismatch -> the exact
+          curve. verify_p6 16/0 · block_snapshot 9/0.
+        probe_ui_capture_check.cjs (real UI in a vm): posts capture_check=refused / reads, and
+          omits it when the capture carries no self-check.
+        TESTS: JS +3 (a refused live layout does not shadow the next one — both orders + the
+          mapSkipped debug; all layouts refused -> the first layout's refusal; self-check
+          reads/refused/unread incl. unnumbered, foreign and null maps). PHP +1 (refused and
+          unread stay proposed at 3 sightings, reads and unchecked promote, a bad value is
+          rejected by validation).
+        falsify_maps_fallback.mjs: 4 mutations (only-first-map, last-refusal-reported,
+          any-refusal-counts, server-ignores-check) — ALL CAUGHT, files byte-identical after.
+        npm run test:js 221 tests, 219 pass + the 2 intended blinding fails.
+        php artisan test (full) 1219 passed / the same 5 pre-existing failures BY NAME.
+      NOT CHANGED ON PURPOSE: a capture that is ALREADY live (#140) is not demoted — A makes it
+        harmless (it is skipped when refused); rejecting it in S-Curve Layouts is still tidy.
+      BROWSER CHECK OWED (user; Ctrl+F5)
+        1. With #140 and #142 both live, import the one-page BUHI PDF: it reads (the exact curve,
+           the learned-layout note) instead of the "does not add up" refusal.
+        2. Optional, B: reject #140, then import the one-page BUHI with #142 set to Proposed
+           (so the import misses and captures) three times — the capture row counts 3 and
+           stays Proposed. Re-approve #142 afterwards.
+        3. Two-page roof (#138), 6-stage, 10-month: unchanged.
+      PROBES: probe_shadowed_layout.mjs, probe_capture_selfcheck.mjs, verify_maps_fallback.mjs,
+        probe_ui_capture_check.cjs, falsify_maps_fallback.mjs.
 
     PROBES (C:\temp\opencode, read-only): dump_buhi_xlsx_cells.php, probe_buhi1_truth_columns.mjs,
       probe_buhi1_merged_cells.mjs, probe_buhi1_true_bands.mjs, probe_buhi1_teachable.mjs,
       probe_buhi1_realistic_teach.mjs. Data: buhi_xlsx_cells.json, buhi1_pinned.json.
       SUPERSEDED: probe_buhi1_ideal.mjs, probe_buhi1_contrib.mjs (page-width bug),
       probe_buhi1_teach.mjs (renamed-label copy).
+      (Layout note: the "TWO ROW RULES", (e)/(f)/(g) blocks above were appended inside this
+      restudy entry as the work continued; this probe list belongs to the restudy.)
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — SESSION CLOSE — HANDOFF. ⬅ START HERE NEXT SESSION
+  -----------------------------------------------------------------------------
+
+    (g) BROWSER RESULT (user): ✅ all three steps confirmed — (1) with #140 and #142 both
+      live, the one-page BUHI reads through #142 instead of the "does not add up" refusal;
+      (2) a capture of the one-page BUHI seen three times stays Proposed; (3) two-page roof,
+      6-stage and 10-month unchanged. Committed with this entry.
+
+    STATE IN ONE GLANCE
+      Branch   wip/phase-5-parser-accuracy-premerge (NOT pushed this session; nothing
+               uncommitted after the close commit except the untracked merging/ folder,
+               which is not ours to touch).
+      Suites   npm run test:js  -> 221 tests, 219 pass + the 2 intended blinding fails
+               php artisan test -> 1219 passed / the same 5 pre-existing failures
+               verify_p6.mjs 16 reads 0 changed · block_snapshot.mjs 9 PDFs 0 changed
+      Proven   every item below is browser-proven by the user.
+
+    WHAT THIS SESSION DELIVERED, IN ORDER (all on the branch above)
+      dfb0974  READ GUARD — a PDF reading the document contradicts is refused with its reason
+               (split-down: names and months on separate pages; total-mismatch: months do not
+               add up to the file's own TOTAL row). A refused rules reading falls through to
+               learned layouts, which face the same check. A refused LEARNED layout's message
+               points at S-Curve Layouts. AI ASSIST SHRINK-TO-FIT — pages over the 4000 px
+               canvas budget render smaller instead of being skipped, with a low-accuracy note.
+      8bc8c04  TEACH-SAVE ADDS-UP CHECK (PDF only, warns with "Save anyway", names the missing
+               or doubled column, "Not checked" when no usable TOTAL row) + PAGE-EDGE MARKING
+               (cells cut off at the page edge fade with a "cut" badge; EDGE line in the block).
+      4e35005  FINDING D RESTUDY (docs) — the one-page BUHI is learnable; both old blockers
+               retracted (page-width probe bug; stale renamed-label probe).
+      456ab3c  TWO ROW RULES (reader, every PDF read) — a header's day-count line is not an
+               activity; a description wrapped around its figures is rejoined to them.
+      0a41eba  REOPEN FIX — a PDF layout reopens with at most two letters per month.
+      (close)  LAYOUT FALLBACK + CAPTURE SELF-CHECK — a refused live layout no longer shadows
+               the next one; a capture that cannot read its own file never auto-approves.
+
+    WHERE THE ONE-PAGE BUHI STANDS (sampledocs/Updated-S-Curve-3-Storey-Bldg.CSPC-Buhi-pdf-1page.pdf)
+      Rules alone      refused, total-mismatch (32,346,214.00 vs 32,588,531.43) — correct.
+      Taught layout    reads the Excel truth exactly: 1.12 / 3.59 / 6.74 / 10.59 / 15.5 /
+                       21.09 / 28.64 / 37.96 / 49.73 / 68 / 84.8 / 100; counts
+                       8,11,12,14,19,20,32,34,38,43,41,41 = Excel; activity membership exact.
+      The teaching     Header R3 · Description B · M1=H+J M2=K+M M3=N+O M4=P+R M5=S+U M6=V+W
+                       M7=X+Z M8=AA+AC M9=AD+AE M10=AF+AH M11=AI+AK M12=AL+AM. The centred
+                       "Month N" labels sit in their OWN column between a month's two cells —
+                       teaching from the label column is wrong in 8 of 12 months (the adds-up
+                       check catches it).
+      Still imperfect  (1) names carry the money columns and, for R74, the day count "180"
+                       — item (3) fixes; (2) 11 noisy summary notes (quarterly fraction/cost
+                       rows compared as percentages) — optional; (3) "3% DISCOUNT" line tagged
+                       SUMMARY on the grid (display only) — optional; (4) AI-derived layouts
+                       start bands at the labels and are refused, so AI assist cannot teach
+                       this file — optional, parked.
+      12-page print    refused (split-down) — full split-down support PARKED by the user; the
+                       client is asked for the original Excel for big schedules.
+
+    DATABASE PDF LAYOUTS — LAST SUCCESSFUL DUMP (before check (g); MySQL was not running at
+    close, so the current state is UNVERIFIED — re-run dump_live_pdf_maps.php first)
+      #138 live manual-teach   two-page roof (M1-5 = F..J, M6 = L, M7 = M; K is the cut copy)
+      #142 live manual-teach   one-page BUHI (the teaching above)
+      #140 live auto-capture   one-page BUHI, label-start bands (auto-promoted before fix B).
+           Check (g) step 2 asked the user to reject it and to toggle #142; the result is
+           not dumped. Harmless if still live (fix A skips a refused layout); tidy to reject.
+           If #142 was left Proposed after step 2, re-approve it.
+      #137 proposed            two-page roof auto-capture (unnumbered; never auto-approves)
+
+    LESSONS WORTH NOT RE-LEARNING
+      - A stored PDF layout is fractions of pageMaxX (the page's rightmost TOKEN end), NOT the
+        page width. Probes that divide by the page width drift progressively (this created a
+        false blocker for a day).
+      - Ground truth beats a typical row: pin PDF tokens to Excel columns by value sequence
+        (probe_buhi1_truth_columns.mjs) before designing any layout shape.
+      - The read guard and the save check compare only the GRAND TOTAL — cells swapped between
+        months still pass both. The preview and the summary notes remain the defence there.
+      - "Leave it alone" tests pass vacuously unless the fixture reaches the condition —
+        falsify every rule by mutation (two vacuous fixtures were caught this way).
+      - Live layouts arrive most-seen first; never assume the first matching layout is the
+        right one (fix A). Never trust repetition to validate a capture (fix B).
+      - The two row rules are READER rules (how a printed line is assembled); layouts only
+        say where columns are. Month-band placement stays learned, not a rule (user decision).
+      - PowerShell 5.1 breaks git commit -m here-strings on double quotes: write the message
+        to a file and use git commit -F.
+      - Blade edit -> php artisan view:clear + view:cache. Script tags are filemtime/$jsv
+        versioned; still Ctrl+F5 before a browser check.
+
+    QUEUE (each needs an explicit order — Rule 10)
+      1. ITEM (3) PDF DESCRIPTION AS A LETTER RANGE. Spec: finding B, "AGREED DIRECTION FOR
+         ITEM (3)" — step 1 Description accepts a letter range on PDF rows (band = exactly
+         what was clicked; reopen shows every letter); step 2 Contract amount / Weight / Item
+         code disabled on PDF rows with the reason (gate on _schTeach.sourceType); step 3 the
+         single-letter fallback rule, MEASURED on both roof prints and the one-page BUHI
+         before it is chosen. Touches teachColumns validation ('desc' is max:3 today),
+         buildTaughtPdfMap (widening), scurve-teach-core prefill, the modal. Excel stays
+         byte-for-byte. Expected: BUHI names without money columns or "180"; roof unchanged.
+         Traps recorded in finding B: validation sometimes|nullable, no leading-"m" palette
+         keys, do not bump PDF_MAP_VERSION.
+      2. Optional BUHI polish: (e) "N% word" labels not tagged SUMMARY (changes the capture
+         block → one new capture row); (c) fraction/cost summary rows not compared as
+         percentages.
+      3. Optional: AI-derived band placement over the value columns beneath a label
+         (derivePdfLayoutFromAi only), so AI assist can teach BUHI-shaped files and P5 can
+         verify them — measure on the roof first (must stay 6.32 … 100).
+      4. EARLY-100 GUARD (queued since 2026-09-14): client-side after P5, pre-sanitizer values.
+      5. Bigger, user decisions: split the mixed wip branch into reviewable branches; the
+         blinding lift (pre-merge prerequisite); merge to main (Rule 12); raise the
+         4000-char capture block limit (BUHI one-page's block is cut at R20).
+      Parked: full split-down PDF support; tiling one page into several AI images.
+
+    PROBES OF THIS SESSION (C:\temp\opencode, read-only; run to a log file, then read it)
+      guard: guard_measure2.mjs, verify_guard.mjs, falsify_guard.mjs
+      shrink: probe_slice_sizes.mjs, falsify_shrink.mjs, probe_ui_viamap.cjs
+      adds-up/edge: probe_teach_addsup.mjs, probe_edge_tokens.mjs, probe_edge_blocks.mjs,
+        probe_teach_modal_addsup.mjs, falsify_addsup_edge.mjs
+      BUHI restudy: dump_buhi_xlsx_cells.php, probe_buhi1_truth_columns.mjs,
+        probe_buhi1_true_bands.mjs, probe_buhi1_teachable.mjs, probe_buhi1_realistic_teach.mjs,
+        probe_buhi1_activities.mjs
+      row rules: probe_rows_signals.mjs, probe_rows_signals2.mjs, verify_rows_rules.mjs,
+        falsify_row_rules.mjs
+      reopen/fallback: probe_reopen_prefill.mjs, probe_shadowed_layout.mjs,
+        probe_capture_selfcheck.mjs, verify_maps_fallback.mjs, probe_ui_capture_check.cjs,
+        falsify_maps_fallback.mjs
+      DB (read-only): dump_live_pdf_maps.php -> live_pdf_maps.json (re-dump before any
+        live-DB read; the table changes as the user teaches).
+      Regression gates: verify_p6.mjs (16 reads), block_snapshot.mjs (9 PDFs).
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

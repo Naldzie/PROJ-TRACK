@@ -53,6 +53,9 @@ class SCurveHeaderProposalController extends Controller
             'column_map' => 'sometimes|string|max:20000',
             // PDF-3: a layout learned FROM a verified AI read, never auto-live.
             'source' => 'sometimes|string|in:auto-capture,ai-derived',
+            // 2026-09-15: the browser's answer to "does this capture's own layout read
+            // the file it came from?" (captureReadsItsOwnFile). Absent = not checked.
+            'capture_check' => 'sometimes|string|in:reads,refused,unread',
         ]);
 
         $isPdf = ($validated['source_type'] ?? 'excel') === 'pdf';
@@ -169,8 +172,19 @@ class SCurveHeaderProposalController extends Controller
             // find the header (GAP 2: every row tags [DATA]) the capture stores
             // column_map null, and promoting that produced a LIVE row the reader
             // has nothing to read with. Repetition cannot derive a layout either.
+            //
+            // Nor a PDF capture whose own layout does NOT read its own file (2026-09-15).
+            // The one-page BUHI's capture is numbered ("Month 1…12") but its bands start
+            // at the labels, the half-month misread the read guard refuses. Seen three
+            // times it went live, could never read the file, and shadowed the reviewer's
+            // correct taught layout. The server owns no PDF reader, so the browser checks
+            // and says so (capture_check). A capture checked as anything but "reads" stays
+            // proposed; an unchecked one (older pages, Excel) keeps the old rule.
+            $selfCheckFailed = $isPdf && isset($validated['capture_check'])
+                && $validated['capture_check'] !== 'reads';
             $unreadable = $row->column_map === null
-                || ScurveHeaderProposal::pdfMapIsUnnumbered($row->column_map);
+                || ScurveHeaderProposal::pdfMapIsUnnumbered($row->column_map)
+                || $selfCheckFailed;
             if ($row->occurrences >= 3 && $row->status === 'proposed'
                 && $row->source !== 'ai-derived' && !$unreadable) {
                 $row->update(['status' => 'live']);

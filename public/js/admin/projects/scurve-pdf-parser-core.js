@@ -1998,11 +1998,25 @@ export function parseSCurvePdf(itemsByPage, opts) {
     }
 
     if (hasMaps) {
-        const viaMaps = collectPdfPages(itemsByPage, options, options.liveMaps);
-        if (viaMaps.pageResults.length > 0) {
+        // A refused (or unbuildable) layout must not shadow the others (2026-09-15).
+        // One map owns a file, and the live layouts arrive most-seen first — so an
+        // auto-promoted capture whose label-start bands misread the one-page BUHI
+        // (#140) owned it, the guard refused that reading, and the reviewer's correct
+        // taught layout (#142) was never tried. Now the pass is repeated WITHOUT the
+        // map that failed, in the same order, until a map reads or none matches. The
+        // first pass is exactly the old one, so whenever the first matching map reads,
+        // nothing changes. If every map fails, the FIRST refusal is the one reported.
+        let remaining = options.liveMaps.slice();
+        while (remaining.length > 0) {
+            const viaMaps = collectPdfPages(itemsByPage, options, remaining);
+            if (viaMaps.pageResults.length === 0 || viaMaps.mapId === null) break;
             const r = readPageResults(viaMaps, viaMaps.mapId, options);
             if (r.out) return r.out;
-            if (r.refusal) refusal = r.refusal;
+            if (r.refusal && !refusal) refusal = r.refusal;
+            else if (r.refusal && refusal && !refusal.viaMap) refusal = r.refusal;
+            if (options.debug) options.debug.push({ t: 'mapSkipped', mapId: viaMaps.mapId, why: r.refusal ? r.refusal.code : 'unbuildable' });
+            const failed = viaMaps.mapId;
+            remaining = remaining.filter((entry) => entry.id !== failed);
         }
     }
 
@@ -2226,6 +2240,42 @@ export function derivePdfLayout(itemsByPage, maxRows = 15, opts = null) {
         block,
         ambiguous,
     };
+}
+
+/**
+ * Does a capture's own layout read the file it was captured from?
+ *
+ * 2026-09-15 — a capture is auto-approved after it is seen three times (collect()).
+ * The one-page BUHI's capture carries month NUMBERS, so it was promoted, but its bands
+ * start at the "Month N" labels — the half-month misread the read guard refuses — so
+ * the live layout could never read the file, and (before the reader learned to try the
+ * next layout) it shadowed the reviewer's correct one. The server has no PDF reader,
+ * so the browser answers the question and sends it with the capture; collect() never
+ * auto-approves a capture whose answer is not 'reads'. The capture is still stored,
+ * for teaching.
+ *
+ * Reads the file exactly as an import would with this map as the only live layout:
+ *   'reads'   the reading came from this map and was not refused;
+ *   'refused' the read guard refused it (e.g. "does not add up");
+ *   'unread'  anything else — an unnumbered map, a map matching no page.
+ *
+ * Called by: scurve-pdf-parser.js (parseSCurvePdfFile), right after derivePdfLayout.
+ * Pure.
+ */
+export function captureReadsItsOwnFile(itemsByPage, captureMap, opts) {
+    if (!usableLayoutMap(captureMap)) return 'unread';
+    const SELF = '__capture_self_check__';
+    let refused = false;
+    const out = parseSCurvePdf(itemsByPage, {
+        monthWords: (opts && opts.monthWords) || null,
+        liveMaps: [{ id: SELF, map: captureMap }],
+        // Only a refusal of THIS map's reading counts: the rules' own reading of the
+        // page may be refused too (that is often why a capture exists), and a map that
+        // matched no page never produced a reading to refuse.
+        onRefusal: (r) => { refused = !!(r && r.viaMap && r.mapId === SELF); },
+    });
+    if (out && out.meta && out.meta.mapUsed && out.meta.mapId === SELF) return 'reads';
+    return refused ? 'refused' : 'unread';
 }
 
 /**
@@ -3140,6 +3190,7 @@ if (typeof window !== 'undefined') {
         pdfCurvesDisagree,
         pdfSliceRenderScale,
         pdfSliceShrinkNote,
+        captureReadsItsOwnFile,
         PDF_MAP_VERSION,
     };
 }
