@@ -692,6 +692,84 @@ test('derivePdfLayout reads positional months from repeated labels', () => {
     assert.match(out.block, /^R\d+ \[DATA\]: A,FACILITIES FOR ENGINEER,16%,/m);
 });
 
+/* ─── Page-edge marking (2026-09-15) ──────────────────────────────────────── */
+
+// The roof's two-page print cuts its month-6 TOTAL cell at the page edge ("495,173."
+// ending at 793.9 on a 792 pt page); the full figure is on page 2. A capture given the
+// page boxes lists such cells on an EDGE line so the teach grid can fade them.
+const EDGE_ONE_PAGE = () => page([
+    [800, [['NO.', 40, 25], ['Amount', 120, 50],
+        ['30 days', 220, 45], ['30 days', 300, 45], ['30days', 380, 42], ['30 days', 460, 45]]],
+    [760, [['A', 45, 8], ['FACILITIES FOR ENGINEER', 120, 95],
+        ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20], ['16%', 470, 20]]],
+]);
+
+// Strip the EDGE line, to prove nothing else in the block moved.
+const withoutEdge = (block) => block.split('\n').filter((l) => !l.startsWith('EDGE:')).join('\n');
+
+test('a capture marks a cell cut off at the right page edge, and changes nothing else', () => {
+    const items = EDGE_ONE_PAGE();
+    const plain = derivePdfLayout([items]);
+    // The last "30 days" label runs 460 -> 505; the visible page ends at 500.
+    const marked = derivePdfLayout([items], 15, { pageBoxes: [[0, 0, 500, 900]] });
+
+    const edge = marked.block.split('\n')[1];
+    assert.match(edge, /^EDGE: R\d+:[A-Z]+$/, 'one cut cell, listed right under the legend');
+    const [, rowNo, letter] = edge.match(/^EDGE: R(\d+):([A-Z]+)$/);
+    const row = marked.block.split('\n').find((l) => l.startsWith('R' + rowNo + ' '));
+    assert.match(row, /\[HEADER\]/, 'the cut token is the header line’s last label');
+    assert.equal(letter, marked.map.pages[0].pseudoCols[marked.map.pages[0].pseudoCols.length - 1].letter);
+
+    assert.equal(withoutEdge(marked.block), plain.block, 'the rest of the block is byte-identical');
+    assert.deepEqual(marked.map, plain.map, 'the layout map never changes');
+});
+
+test('a capture marks text cut off at the LEFT page edge too', () => {
+    // "NO." starts at x 40; a crop box starting at 42 cuts it. "A" at 45 is inside.
+    const marked = derivePdfLayout([EDGE_ONE_PAGE()], 15, { pageBoxes: [[42, 0, 1000, 900]] });
+    assert.match(marked.block.split('\n')[1], /^EDGE: R\d+:A$/);
+});
+
+test('nothing cut, or no page boxes: the block is exactly what it always was', () => {
+    const items = EDGE_ONE_PAGE();
+    const plain = derivePdfLayout([items]);
+    assert.doesNotMatch(plain.block, /^EDGE:/m, 'no boxes -> no marks (block_snapshot’s case)');
+    const roomy = derivePdfLayout([items], 15, { pageBoxes: [[0, 0, 792, 612]] });
+    assert.equal(roomy.block, plain.block, 'a page wide enough for every token adds no line');
+    // Half a point of slack: text ending right at the edge is not "cut".
+    const flush = derivePdfLayout([items], 15, { pageBoxes: [[0, 0, 504.6, 612]] });
+    assert.equal(flush.block, plain.block);
+});
+
+test('a two-page capture marks the cut cell under its run-on letter', () => {
+    const first = page([
+        [800, [['NO.', 40, 25], ['Amount', 120, 50],
+            ['30 days', 220, 45], ['30 days', 300, 45], ['30 days', 380, 45]]],
+        [760, [['A', 45, 8], ['ROOFING', 120, 60], ['16%', 230, 20], ['17%', 310, 20], ['17%', 390, 20]]],
+    ]);
+    const second = page([
+        [800, [['30 days', 40, 45], ['7 days', 120, 40]]],
+        [760, [['16%', 50, 20], ['2%', 130, 18]]],
+    ]);
+    const plain = derivePdfLayout([first, second]);
+    // Page 1's last label runs 380 -> 425; its visible page ends at 420. Page 2 is roomy.
+    const marked = derivePdfLayout([first, second], 15, { pageBoxes: [[0, 0, 420, 900], [0, 0, 792, 612]] });
+
+    const letters = marked.map.pages[0].pseudoCols.map((c) => c.letter);
+    assert.equal(marked.block.split('\n')[1], 'EDGE: R' + (plain.block.split('\n').findIndex((l) => /\[HEADER\]/.test(l))) + ':' + letters[letters.length - 1]);
+    assert.equal(withoutEdge(marked.block), plain.block);
+});
+
+test('an AI-derived capture marks cut cells the same way', () => {
+    const items = EDGE_ONE_PAGE();
+    const labels = { 1: '30 days', 2: '30 days', 3: '30days', 4: '30 days' };
+    const plain = derivePdfLayoutFromAi([items], labels, null);
+    const marked = derivePdfLayoutFromAi([items], labels, null, 15, { pageBoxes: [[0, 0, 500, 900]] });
+    assert.ok(plain && marked);
+    assert.match(marked.block.split('\n')[1], /^EDGE: R\d+:[A-Z]+$/);
+    assert.equal(withoutEdge(marked.block), plain.block);
+});
+
 // Permissive detection is paid for here: a repeated word with nothing numeric
 // beneath it is not a schedule, and must never propose one.
 test('derivePdfLayout refuses a grid with no numbers under it', () => {

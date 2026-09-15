@@ -55,13 +55,30 @@ export function parseHeaderBlock(text) {
     const letters = legend.split(',').map(s => s.trim()).filter(s => s !== '');
     if (!letters.length) return null;
     const rows = [];
+    // Page-edge marks (2026-09-15): a PDF capture lists the cells whose printed text
+    // runs past the page edge as "EDGE: R14:K,R16:K". Kept as "14:K" strings. Any
+    // other non-row line is ignored, exactly as before (the PHP twin,
+    // parseStoredSlice, skips it too).
+    const edgeCells = [];
     for (let i = 1; i < lines.length; i++) {
+        if (lines[i].indexOf('EDGE:') === 0) {
+            lines[i].substring('EDGE:'.length).split(',').forEach(s => {
+                const e = s.trim().match(/^R(\d+):([A-Z]+)$/);
+                if (e) edgeCells.push(parseInt(e[1], 10) + ':' + e[2]);
+            });
+            continue;
+        }
         const m = lines[i].match(/^R(\d+)\s*\[([A-Z]+)\]:\s?(.*)$/);
         if (!m) continue;
         rows.push({ n: parseInt(m[1], 10), role: m[2], cells: splitCsv(m[3] || '') });
     }
     if (!rows.length) return null;
-    return { letters, rows };
+    return { letters, rows, edgeCells };
+}
+
+// Was this grid cell cut off at the page edge when the PDF was printed? (row n, letter)
+export function isEdgeCell(t, n, letter) {
+    return !!(t && Array.isArray(t.edgeCells) && t.edgeCells.indexOf(n + ':' + letter) !== -1);
 }
 
 // 0-based column index -> Excel letters (0 = A, 26 = AA). Mirrors the server's
@@ -376,6 +393,153 @@ export function rowHasMonthValues(t, n) {
     });
 }
 
+/* ─── PDF teach-save "adds up" check (2026-09-15) ─────────────────────────── */
+
+// "Equal" for peso figures — the same tolerance the PDF read guard uses.
+function pesoTolerance(v) {
+    return Math.max(1, Math.abs(v) * 0.001);
+}
+
+// Round to centimos so sums of printed figures do not carry float dust.
+function centavos(v) {
+    return Math.round(v * 100) / 100;
+}
+
+// Every number printed in a grid cell: "₱ 495,173.83 ₱" -> [495173.83], a cut-off
+// "495,173." -> [495173], "LOT" -> []. A merged cell holding two figures yields both.
+export function cellNumbers(cell) {
+    return (String(cell == null ? '' : cell).match(/\d[\d,]*(\.\d+)?/g) || [])
+        .map(s => parseFloat(s.replace(/,/g, '')))
+        .filter(n => Number.isFinite(n));
+}
+
+/**
+ * Do the taught month columns add up to the TOTAL row's printed total?
+ * Called by: the teach modal (schRenderTeachReadout for the live line,
+ * schSaveTeaching for the warning).
+ *
+ * The TOTAL row is the MONEY row: a peso amount under every month and the contract
+ * total printed LEFT of the months. Taught correctly, the month cells add up to that
+ * total. A month on the wrong column, a column left out, or a page-split month
+ * counted twice breaks the sum — the same test the PDF read guard applies to the
+ * page at import, applied here to the grid so the slip is caught at save.
+ * First live case (2026-09-15): the two-page roof taught G..K instead of F..J summed
+ * to 2,593,306.47 against a printed 2,239,599.72.
+ *
+ * NECESSARY, NOT SUFFICIENT: cells swapped between months still add up. The import
+ * guard stays the arbiter; this only catches the slip earlier.
+ *
+ * PDF rows only (user decision): the Excel reader uses the contract column and the
+ * TOTAL row itself.
+ *
+ * Returns null when there is nothing to judge (not a PDF row, fewer than two months
+ * taught), otherwise:
+ *   { status: 'adds-up',   row, sum, printed }
+ *   { status: 'mismatch',  row, sum, printed, gap, culprit }  gap > 0 = months short
+ *   { status: 'unchecked', reason, row? }  reason: 'no-total' | 'truncated' |
+ *                                          'no-month-amounts' | 'no-printed-total'
+ * culprit is { letter, cell, taught, edge } when ONE column accounts for the whole
+ * gap (an untaught column holding exactly the shortfall, or a taught one holding
+ * exactly the excess), else null.
+ */
+export function taughtTotalCheck(t) {
+    if (!t || t.sourceType !== 'pdf') return null;
+    const months = (t.assigns && t.assigns.months) || {};
+    if (Object.keys(months).length < 2) return null;
+    const letters = t.letters || [];
+    const taught = [];
+    Object.keys(months).forEach(k => (months[k] || []).forEach(l => {
+        const i = letters.indexOf(l);
+        if (i !== -1 && taught.indexOf(i) === -1) taught.push(i);
+    }));
+    if (!taught.length) return null;
+    const first = Math.min.apply(null, taught);
+
+    // The TOTAL row: labelled TOTAL somewhere LEFT of the months (the guard's rule —
+    // a "TOTAL" under a month column is a value, not a label). Header and title lines
+    // never count.
+    const total = (t.rows || []).find(r => r.role !== 'HEADER' && r.role !== 'META'
+        && (r.cells || []).slice(0, first).some(c => /^(grand\s*)?total\b/i.test(String(c == null ? '' : c).trim())));
+    if (!total) {
+        // A block cut at the store limit may simply have lost its TOTAL row; say which.
+        return { status: 'unchecked', reason: t.blockTruncated ? 'truncated' : 'no-total' };
+    }
+    const cells = total.cells || [];
+    const valueAt = i => cellNumbers(cells[i]).reduce((a, b) => a + b, 0);
+    if (!taught.some(i => cellNumbers(cells[i]).length)) {
+        return { status: 'unchecked', reason: 'no-month-amounts', row: total.n };
+    }
+    const printed = cells.slice(0, first).reduce((list, c) => list.concat(cellNumbers(c)), []).filter(n => n > 0);
+    if (!printed.length) {
+        return { status: 'unchecked', reason: 'no-printed-total', row: total.n };
+    }
+
+    const sum = centavos(taught.reduce((s, i) => s + valueAt(i), 0));
+    const hit = printed.find(p => Math.abs(p - sum) <= pesoTolerance(p));
+    if (hit !== undefined) return { status: 'adds-up', row: total.n, sum, printed: hit };
+
+    const nearest = printed.reduce((a, b) => (Math.abs(b - sum) < Math.abs(a - sum) ? b : a));
+    const gap = centavos(nearest - sum);
+    // One column that explains the whole gap is worth naming: short -> an untaught
+    // column holding the shortfall (the roof's forgotten month 7, BUHI's left-out H);
+    // over -> a taught column holding the excess (a page-split month counted twice).
+    let culprit = null;
+    for (let i = 0; i < cells.length && !culprit; i++) {
+        const nums = cellNumbers(cells[i]);
+        if (nums.length !== 1 || nums[0] === nearest) continue;
+        const isTaught = taught.indexOf(i) !== -1;
+        const wanted = gap > 0 ? !isTaught : isTaught;
+        if (wanted && Math.abs(nums[0] - Math.abs(gap)) <= pesoTolerance(nums[0])) {
+            culprit = { letter: letters[i], cell: String(cells[i]).trim(), taught: isTaught, edge: isEdgeCell(t, total.n, letters[i]) };
+        }
+    }
+    return { status: 'mismatch', row: total.n, sum, printed: nearest, gap, culprit };
+}
+
+// Peso figure as the reviewer reads it: 2,239,599.72
+function pesoText(v) {
+    return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Reviewer-facing wording for a taughtTotalCheck() result, or '' for null.
+ * Called by: the teach modal. Kept beside the check so the numbers and the words
+ * are tested together.
+ */
+export function taughtTotalMessage(check) {
+    if (!check) return '';
+    const row = check.row ? ' (R' + check.row + ')' : '';
+    if (check.status === 'adds-up') {
+        return 'Adds up: the months you taught total ' + pesoText(check.sum) + ' in the TOTAL row' + row
+            + ', matching the ' + pesoText(check.printed) + ' it prints.';
+    }
+    if (check.status === 'unchecked') {
+        if (check.reason === 'truncated') {
+            return 'Not checked: this grid was cut off at its storage limit before a TOTAL row, so the month columns cannot be compared with one.';
+        }
+        if (check.reason === 'no-month-amounts') {
+            return 'Not checked: the TOTAL row' + row + ' has no amounts under the months you taught.';
+        }
+        if (check.reason === 'no-printed-total') {
+            return 'Not checked: the TOTAL row' + row + ' prints no total left of the months to compare with.';
+        }
+        return 'Not checked: this grid has no TOTAL row to compare the month columns with.';
+    }
+    if (check.status !== 'mismatch') return '';
+    let text = 'The months you taught add up to ' + pesoText(check.sum) + ' in the TOTAL row' + row
+        + ', but that row prints ' + pesoText(check.printed) + ' — '
+        + pesoText(Math.abs(check.gap)) + (check.gap > 0 ? ' short.' : ' too much.');
+    const c = check.culprit;
+    if (c && !c.taught) {
+        text += ' Column ' + c.letter + ' holds ' + c.cell + ' in that row, but no month is on it.';
+    } else if (c && c.taught) {
+        text += ' Column ' + c.letter + ' (' + c.cell + ') accounts for the difference'
+            + (c.edge ? ' — it was cut off at the page edge, so it is probably a partial copy of a column printed in full on the next page.' : '.');
+    }
+    return text + ' A month may be on the wrong column, a column may be missing, or a month split across two pages may be counted twice.'
+        + ' Check the grid, or click Save anyway.';
+}
+
 /* ─── Attach to window for the modal's classic script ─────────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -395,5 +559,9 @@ if (typeof window !== 'undefined') {
         isMonthField,
         applyRowPick,
         rowHasMonthValues,
+        isEdgeCell,
+        cellNumbers,
+        taughtTotalCheck,
+        taughtTotalMessage,
     };
 }

@@ -103,6 +103,11 @@
                         {{-- Advisory only, never gates Save: a pick that is legal but
                              probably not what the reviewer meant. --}}
                         <div id="teachRoleNote" class="small" style="color:#997404;"></div>
+                        {{-- PDF only (2026-09-15): do the taught month columns add up to
+                             the TOTAL row's printed total? Live "Adds up" / "Not checked"
+                             line; a mismatch shows here as a warning on the first Save
+                             click, and Save becomes "Save anyway". Never blocks. --}}
+                        <div id="teachTotalCheck" class="small mt-1"></div>
                     </div>
                     <div class="col-md-5">
                         <div class="mb-1"><strong>Save as</strong></div>
@@ -534,6 +539,14 @@ function schTeachColumns(id) {
             // How many months this layout looks like it has, so the palette offers
             // that many buttons instead of a fixed wall of twelve.
             suggestedMonths: schCore().suggestedMonthsFor(row.column_map),
+            // Adds-up check (2026-09-15). A block at the 4000-char store limit may
+            // have lost its TOTAL row, which the "Not checked" line then says.
+            blockTruncated: String(row.header_rows_text || '').length >= 4000,
+            // Cells cut off at the page edge when the PDF was printed ("14:K").
+            edgeCells: parsed.edgeCells || [],
+            // The month assignments a mismatch warning was shown for; Save goes
+            // through ("Save anyway") only while they are unchanged.
+            saveWarnKey: null,
         };
         // Default header rows: tagged HEADER lines (max 2), EMPTY when none is
         // tagged — the reviewer must then pick (F6). See defaultHeaderRows().
@@ -872,13 +885,28 @@ function schRenderTeachGrid() {
             + '</td>';
         for (let c = 0; c < _schTeach.letters.length; c++) {
             const v = (r.cells[c] !== undefined ? String(r.cells[c]).trim() : '');
-            html += v === ''
-                ? '<td style="background:' + (tint ? tint.empty : '#f8f9fa') + ';"></td>'
-                : '<td' + (tint ? ' style="background:' + tint.bg + ';"' : '') + '>' + schEscapeHtml(v) + '</td>';
+            if (v === '') {
+                html += '<td style="background:' + (tint ? tint.empty : '#f8f9fa') + ';"></td>';
+            } else if (schCore().isEdgeCell(_schTeach, r.n, _schTeach.letters[c])) {
+                // Page-edge mark (2026-09-15): the print cut this cell's text off at the
+                // page edge (the roof's "495,173." — the full 495,173.83 is on page 2),
+                // so it is shown faded and labelled rather than like a real value.
+                html += '<td style="color:#9ca3af;font-style:italic;' + (tint ? 'background:' + tint.bg + ';' : '') + '"'
+                    + ' title="Cut off at the page edge — only part of this cell was printed on this page. It is probably repeated in full on the next page, so this column is usually left untaught.">'
+                    + schEscapeHtml(v) + ' <span class="badge bg-warning text-dark" style="font-size:8px;font-style:normal;">cut</span></td>';
+            } else {
+                html += '<td' + (tint ? ' style="background:' + tint.bg + ';"' : '') + '>' + schEscapeHtml(v) + '</td>';
+            }
         }
         html += '</tr>';
     });
-    host.innerHTML = html + '</tbody></table>';
+    // One line of explanation above the grid whenever any cell carries the mark.
+    const edgeNote = (_schTeach.edgeCells && _schTeach.edgeCells.length)
+        ? '<div class="small px-2 py-1" style="color:#92400e;background:#fffbeb;border-bottom:1px solid #fde68a;">'
+            + 'Cells marked <span class="badge bg-warning text-dark" style="font-size:8px;">cut</span> were cut off at the page edge when this PDF was printed — '
+            + 'usually a partial copy of a column printed in full on the next page. Leave such a column untaught.</div>'
+        : '';
+    host.innerHTML = edgeNote + html + '</tbody></table>';
     // Column letters and R-numbers are SEPARATE targets with separate handlers: a
     // row handler must never shadow the column-header clicks, which are the only
     // way to teach PDF months (regression restudy, trap (f)).
@@ -954,10 +982,68 @@ function schRenderTeachReadout() {
         }
         note.textContent = advice;
     }
+
+    schRenderTotalCheck();
+}
+
+// The month assignments as a comparable string — a warning belongs to exactly these.
+function schMonthsKey() {
+    if (!_schTeach) return '';
+    const a = _schTeach.assigns.months || {};
+    return Object.keys(a).sort((x, y) => x - y).map(k => k + '=' + (a[k] || []).join('+')).join(';');
+}
+
+/**
+ * Render the PDF adds-up line under the readout and label the Save button.
+ * Called by: schRenderTeachReadout() on every change, schSaveTeaching() on a warning.
+ *
+ * Live: "Adds up" (green) or "Not checked" (grey). A mismatch is NOT shown live —
+ * mid-teaching every partial assignment would be one — but only once Save is
+ * clicked (see schSaveTeaching), and it stays while the months are unchanged, with
+ * Save relabelled "Save anyway". Any change to the months withdraws the warning.
+ */
+function schRenderTotalCheck() {
+    const host = document.getElementById('teachTotalCheck');
+    const save = document.getElementById('teachSaveBtn');
+    if (!_schTeach) return;
+    const check = schCore().taughtTotalCheck(_schTeach);
+    if (_schTeach.saveWarnKey !== null && _schTeach.saveWarnKey !== schMonthsKey()) {
+        _schTeach.saveWarnKey = null;
+    }
+    const warned = _schTeach.saveWarnKey !== null && check && check.status === 'mismatch';
+    if (host) {
+        host.textContent = '';
+        host.style.cssText = '';
+        if (warned) {
+            host.style.cssText = 'color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:6px 10px;';
+            host.textContent = schCore().taughtTotalMessage(check);
+        } else if (check && check.status === 'adds-up') {
+            host.style.color = '#15803d';
+            host.textContent = schCore().taughtTotalMessage(check);
+        } else if (check && check.status === 'unchecked') {
+            host.style.color = '#6b7280';
+            host.textContent = schCore().taughtTotalMessage(check);
+        }
+    }
+    if (save && save.textContent !== 'Saving…') save.textContent = warned ? 'Save anyway' : 'Save layout';
 }
 
 async function schSaveTeaching() {
     if (!_schTeach) return;
+    // PDF adds-up check (2026-09-15, user decision: warn, never refuse). The first
+    // click on a mismatch shows the warning and relabels Save; a second click with
+    // the same months saves. The import guard still refuses a reading that does not
+    // add up, so a layout saved anyway cannot quietly import a wrong baseline.
+    try {
+        const check = schCore().taughtTotalCheck(_schTeach);
+        if (check && check.status === 'mismatch' && _schTeach.saveWarnKey !== schMonthsKey()) {
+            _schTeach.saveWarnKey = schMonthsKey();
+            schRenderTotalCheck();
+            const host = document.getElementById('teachTotalCheck');
+            try { if (host) host.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* older browsers */ }
+            return;
+        }
+    } catch (e) { /* the check is advisory — it must never block a save */ }
     const a = _schTeach.assigns;
     const months = {};
     Object.keys(a.months).forEach(k => { months[k] = a.months[k]; });
@@ -1002,6 +1088,8 @@ async function schSaveTeaching() {
         showToast('Network error — failed to save layout', 'error');
     } finally {
         if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save layout'; }
+        // Restore "Save anyway" if a warning still stands (a failed save keeps the modal open).
+        try { schRenderTotalCheck(); } catch (e) { /* label only */ }
     }
 }
 

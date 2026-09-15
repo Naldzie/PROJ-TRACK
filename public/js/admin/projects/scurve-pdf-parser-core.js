@@ -1932,10 +1932,13 @@ function columnLetter(i) {
  *
  * Pure and read-only: callers post it, they do not act on it.
  */
-export function derivePdfLayout(itemsByPage, maxRows = 15) {
+export function derivePdfLayout(itemsByPage, maxRows = 15, opts = null) {
     const pages = Array.isArray(itemsByPage) ? itemsByPage : [];
     const found = [];
     const sheets = [];
+    // Page-edge marking (2026-09-15): optional visible page boxes, one per page, so
+    // the block can flag cells whose printed text was cut off at the edge.
+    const pageBoxes = (opts && Array.isArray(opts.pageBoxes)) ? opts.pageBoxes : null;
 
     for (let p = 0; p < Math.min(pages.length, 20); p++) {
         const tokenLines = linesToTokenLines(groupItemsIntoLines(pages[p] || []));
@@ -2003,7 +2006,7 @@ export function derivePdfLayout(itemsByPage, maxRows = 15) {
 
             // Every page that yielded a header is kept, so the desk can render the
             // WHOLE table rather than just the sheet the names happen to be on.
-            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens });
+            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens, edge: pageEdgeFor(pageBoxes, p) });
             break;
         }
     }
@@ -2084,7 +2087,7 @@ function buildMergedSliceBlock(sheets, maxRows) {
     if (!sheets.length) return '';
     if (sheets.length === 1) {
         const s = sheets[0];
-        return buildPdfSliceBlock(s.tokenLines, s.headerIndex, s.columns, s.monthCols, maxRows, s.scaleTokens);
+        return buildPdfSliceBlock(s.tokenLines, s.headerIndex, s.columns, s.monthCols, maxRows, s.scaleTokens, s.edge);
     }
 
     const Y_TOL = 3;
@@ -2098,7 +2101,8 @@ function buildMergedSliceBlock(sheets, maxRows) {
         return span;
     });
 
-    const cellsFor = (sheet, lineIndex, into, span) => {
+    // `cut` (optional) collects the cell indexes holding text cut off at the page edge.
+    const cellsFor = (sheet, lineIndex, into, span, cut) => {
         if (lineIndex < 0 || lineIndex >= sheet.tokenLines.length) return false;
         const bands = sheet.columns;
         let any = false;
@@ -2116,6 +2120,7 @@ function buildMergedSliceBlock(sheets, maxRows) {
             if (slot === -1) slot = centre < bands[0].x ? 0 : bands.length - 1;
             const at = span.from + slot;
             into[at] = into[at] ? into[at] + ' ' + text : text;
+            if (cut && isCutAtPageEdge(t, sheet.edge)) cut.add(at);
             any = true;
         }
         return any;
@@ -2134,7 +2139,8 @@ function buildMergedSliceBlock(sheets, maxRows) {
     const scanned = [];
     for (let i = Math.max(0, lead.headerIndex - 2); i < lead.tokenLines.length; i++) {
         const cells = new Array(letters.length).fill('');
-        let any = cellsFor(lead, i, cells, spans[0]);
+        const cut = new Set();
+        let any = cellsFor(lead, i, cells, spans[0], cut);
 
         // Pair each later page by the row's offset from its own header.
         const wanted = lead.tokenLines[i].y;
@@ -2148,7 +2154,7 @@ function buildMergedSliceBlock(sheets, maxRows) {
                 if (d < bestDist) { bestDist = d; bestIndex = j; }
             }
             if (bestIndex >= 0 && bestDist <= Y_TOL) {
-                any = cellsFor(s, bestIndex, cells, spans[si]) || any;
+                any = cellsFor(s, bestIndex, cells, spans[si], cut) || any;
             }
         }
         if (!any) continue;
@@ -2166,7 +2172,7 @@ function buildMergedSliceBlock(sheets, maxRows) {
         // another route (2026-09-15). NOT `else if`: a real cumulative row usually
         // matches isSummaryLabel first, and `else if` would kill that upgrade.
         if (role !== 'HEADER' && role !== 'META' && isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
-        scanned.push({ role, cells });
+        scanned.push({ role, cells, cut });
     }
 
     const shown = scanned.filter((r, k) => k < maxRows || r.role === 'SUMMARY' || r.role === 'CUMULATIVE');
@@ -2179,6 +2185,63 @@ function buildMergedSliceBlock(sheets, maxRows) {
         lines.push('R' + (k + 1) + ' [' + row.role + ']: ' + row.cells.map(csvCell).join(','));
     });
 
+    return withEdgeLine(lines, shown, letters);
+}
+
+/* ─── Page-edge marking (2026-09-15) ─────────────────────────────────────── */
+
+// Tolerance, in points, before text counts as running past the page edge.
+// Measured over all 19 sample PDFs: every item past the edge is genuinely cut text
+// (the roof's "495,173." ends at 793.9 on a 792 pt page), and no item ends within
+// 3 pt inside an edge — so a half-point margin separates the two with room to spare.
+const PAGE_EDGE_TOLERANCE = 0.5;
+
+// Most EDGE entries one block may carry. The line sits right under the legend so the
+// 4000-char store limit cannot cut it, which also means it must not eat that budget.
+const PAGE_EDGE_MAX_CELLS = 60;
+
+/**
+ * The visible left/right edges of page p, or null when unknown.
+ * pageBoxes[p] is pdf.js page.view ([x0, y0, x1, y1], the crop box in PDF user space —
+ * the same space as text item transforms) or { x0, x1 }.
+ * Called by: derivePdfLayout(), derivePdfLayoutFromAi().
+ */
+function pageEdgeFor(pageBoxes, p) {
+    const box = pageBoxes ? pageBoxes[p] : null;
+    if (!box) return null;
+    const x0 = Array.isArray(box) ? Number(box[0]) : Number(box.x0);
+    const x1 = Array.isArray(box) ? Number(box[2]) : Number(box.x1);
+    return (Number.isFinite(x0) && Number.isFinite(x1) && x1 > x0) ? { x0, x1 } : null;
+}
+
+// Does this token's printed text run past the page's visible left or right edge?
+function isCutAtPageEdge(t, edge) {
+    if (!edge || !t) return false;
+    const xEnd = (t.xEnd !== undefined && t.xEnd !== null) ? t.xEnd : t.x;
+    return t.x < edge.x0 - PAGE_EDGE_TOLERANCE || xEnd > edge.x1 + PAGE_EDGE_TOLERANCE;
+}
+
+/**
+ * Join a block's lines, inserting "EDGE: R14:K,R16:K" under the legend when any shown
+ * cell holds text cut off at the page edge.
+ * Called by: buildPdfSliceBlock(), buildMergedSliceBlock().
+ *
+ * Display only: the teach grid fades and labels those cells so a reviewer leaves a
+ * partial copy of a column untaught. The line is added ONLY when something was cut,
+ * so every other block stays byte-identical (the block feeds header_hash — no
+ * re-capture wave for files without cut text). Both block parsers skip non-row
+ * lines: scurve-teach-core parseHeaderBlock reads this one, and the PHP
+ * parseStoredSlice ignores it.
+ */
+function withEdgeLine(lines, shown, letters) {
+    const marks = [];
+    shown.forEach((row, k) => {
+        if (!row.cut || !row.cut.size) return;
+        [...row.cut].sort((a, b) => a - b).forEach((c) => {
+            if (marks.length < PAGE_EDGE_MAX_CELLS) marks.push('R' + (k + 1) + ':' + letters[c]);
+        });
+    });
+    if (marks.length) lines.splice(1, 0, 'EDGE: ' + marks.join(','));
     return lines.join('\n');
 }
 
@@ -2433,7 +2496,7 @@ function isCumulativeShapedRow(cells, isValueBand) {
  *
  * Called by: derivePdfLayout().
  */
-function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows, skipTokens) {
+function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows, skipTokens, edge = null) {
     const letters = columns.map((c, k) => columnLetter(k));
     const bands = columns.map((c, k) => ({
         x: c.x,
@@ -2463,6 +2526,8 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
     const scanned = [];
     for (let i = start; i < tokenLines.length; i++) {
         const cells = new Array(letters.length).fill('');
+        // Cells holding text cut off at the page edge (page-edge marking, 2026-09-15).
+        const cut = new Set();
         let any = false;
         for (const t of tokenLines[i].tokens) {
             const text = String(t.str || '').trim();
@@ -2479,6 +2544,7 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
             }
             if (slot === -1) slot = centre < bands[0].x ? 0 : bands.length - 1;
             cells[slot] = cells[slot] ? cells[slot] + ' ' + text : text;
+            if (isCutAtPageEdge(t, edge)) cut.add(slot);
             any = true;
         }
         if (!any) continue;
@@ -2493,7 +2559,7 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
         // (see the comment there for why `else if` is the wrong fix).
         if (role !== 'HEADER' && role !== 'META' && isCumulativeShapedRow(cells, isValueBand)) role = 'CUMULATIVE';
 
-        scanned.push({ role, cells });
+        scanned.push({ role, cells, cut });
     }
 
     // The budget buys the head of the table; SUMMARY rows are then always added,
@@ -2507,7 +2573,7 @@ function buildPdfSliceBlock(tokenLines, headerIndex, columns, monthCols, maxRows
         lines.push('R' + kept + ' [' + row.role + ']: ' + row.cells.map(csvCell).join(','));
     }
 
-    return lines.join('\n');
+    return withEdgeLine(lines, shown, letters);
 }
 
 /**
@@ -2566,8 +2632,10 @@ function aiLabelMonthColumns(sorted, labels, wanted) {
  *
  * Returns { map, block } or null. Callers store it as ai-derived, never live.
  */
-export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 15) {
+export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 15, opts = null) {
     const pages = Array.isArray(itemsByPage) ? itemsByPage : [];
+    // Page-edge marking (2026-09-15) — same optional page boxes as derivePdfLayout.
+    const pageBoxes = (opts && Array.isArray(opts.pageBoxes)) ? opts.pageBoxes : null;
     const known = Object.keys(labels || {})
         .map(Number)
         .filter((n) => Number.isInteger(n) && n >= 1 && n <= 12)
@@ -2665,7 +2733,7 @@ export function derivePdfLayoutFromAi(itemsByPage, labels, aiMonths, maxRows = 1
                 headerLine: anchors.map((t) => String(t.str || '').trim()).join(' '),
             });
             cols.forEach((c) => { assigned[c.index] = true; });
-            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens });
+            sheets.push({ tokenLines, headerIndex: i, columns, monthCols: header.monthCols, scaleTokens, edge: pageEdgeFor(pageBoxes, p) });
             break;
         }
     }

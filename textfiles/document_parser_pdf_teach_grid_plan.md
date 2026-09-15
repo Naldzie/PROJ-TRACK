@@ -2988,6 +2988,123 @@
            the 16-read regression must not move; block_snapshot will change only if the mark
            is stored in the block (decide at build; prefer render-time).
       Build order when ordered: A then B, each falsified + probe-checked, one browser pass.
+      COMMITTED BEFORE THE BUILD: dfb0974 (read guard + shrink-to-fit + this decision log).
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — A (TEACH-SAVE ADDS-UP CHECK) + B (PAGE-EDGE MARKING) ✅ BUILT (code,
+  UNCOMMITTED, not browser-proven). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED: user, "start the implementation" (after dfb0974).
+
+    A — WHAT SHIPPED
+      scurve-teach-core.js (pure, node-tested):
+        cellNumbers(cell)          every number in a grid cell ("₱ 495,173.83 ₱", "495,173.")
+        taughtTotalCheck(t)        null (not PDF / <2 months) | adds-up | mismatch {sum,
+                                   printed, gap, culprit} | unchecked {reason}. TOTAL row =
+                                   non-HEADER/META row with a TOTAL label LEFT of the first
+                                   taught month (the guard's rule); sum of every number under
+                                   the taught letters vs a figure printed left of them,
+                                   max(1, 0.1%). culprit = ONE column explaining the whole gap
+                                   (untaught column holding the shortfall / taught column
+                                   holding the excess), flagged edge when the grid marks it cut.
+                                   Reasons: no-total | truncated (block >= 4000 chars) |
+                                   no-month-amounts | no-printed-total.
+        taughtTotalMessage(check)  the wording, tested with the numbers.
+      _manage_scurve_headers_modal.blade.php:
+        #teachTotalCheck under the readout. Live: green "Adds up…" or grey "Not checked…";
+        a mismatch is NOT shown live (every half-taught state would be one). schSaveTeaching:
+        first click on a mismatch shows the amber warning, relabels Save "Save anyway" and
+        does not save; a second click with the SAME months saves; any month change withdraws
+        the warning (saveWarnKey). PDF rows only; Excel untouched. Never blocks — the check
+        is wrapped so an exception cannot stop a save.
+
+    B — WHAT SHIPPED
+      scurve-pdf-parser-core.js: derivePdfLayout(items, maxRows, { pageBoxes }) and
+        derivePdfLayoutFromAi(…, maxRows, { pageBoxes }) — optional; each sheet carries its
+        page's visible x-edges; a token whose text starts left of x0 or ends right of x1
+        (± 0.5 pt) marks its cell. withEdgeLine() inserts "EDGE: R14:K,…" right under the
+        legend (so the 4000-char cut cannot drop it; capped at 60 entries) — ONLY when a
+        shown cell is cut, so every other block is byte-identical. The map never changes.
+      scurve-pdf-parser.js: collects page.view per page (crop box, same user space as text
+        items), passes it to the capture, stashes window._scurvePdfPageBoxes.
+      scurve-import-ui.js: scurveHarvestPdfLayout passes the stash to the AI-derived capture.
+      scurve-teach-core.js: parseHeaderBlock returns edgeCells ("14:K"); isEdgeCell().
+      modal grid: a marked cell renders faded + italic + a "cut" badge with a tooltip; a note
+        above the grid explains the mark once.
+      Reader untouched: parseSCurvePdf never sees boxes.
+
+    MEASURED BEFORE BUILDING B (probe_edge_tokens.mjs, all 19 sample PDFs): every text item
+      past a page edge is genuinely cut text — roof two-page "495,173.", "2,220,253.", a cut
+      title; BUHI 12-page "6,87", "4,67" and cut titles (both edges); CONSCHEDSAVINGS dates
+      running off an A3 page. No item ends within 3 pt inside an edge anywhere.
+
+    VERIFIED
+      probe_edge_blocks.mjs (real PDFs through the real core, with vs without boxes):
+        MARKED  roof two-page capture + AI-derived   "EDGE: R14:K"
+        MARKED  BUHI 12-page capture                 "EDGE: R1:A,R2:L,R2:P" (cut titles)
+        same    every other sample (incl. roof pdf2, BUHI 1-page, 10-month, 6-stage,
+                SEGMENT, CONSCHEDSAVINGS) — and on the marked ones the REST of the block and
+                the map are byte-identical.
+        Adds-up on the roof's new grid: corrected F..J,L,M adds up (0.01); G..K,L,M
+        353,706.75 too much; M6=K+L names "Column K (495,173.) … cut off at the page edge";
+        month 7 forgotten names "Column M holds 19,345.73 … no month is on it".
+      probe_teach_modal_addsup.mjs — the REAL modal script in a node vm with the real cores
+        and the roof capture rebuilt with boxes: grid shows the note + 1 cut badge on
+        495,173.; one-column-off -> 1st click 0 requests + "Save anyway", 2nd click saves;
+        reopened + corrected months -> warning withdrawn, "Adds up", saves on 1st click;
+        M6=K+L warning names the cut copy; Excel row -> no line, saves on 1st click.
+      verify_teach_wiring.mjs  every schCore() call present (incl. isEdgeCell,
+                               taughtTotalCheck, taughtTotalMessage); PHP parity 25/0.
+      TESTS: JS +14 (teach-core 9: EDGE parsing, cellNumbers, adds-up, one-column-off,
+        doubled month -> cut culprit, forgotten month -> untaught culprit, all four
+        "Not checked" reasons, Excel/half-taught -> null, TOTAL label under a month is a
+        value; PDF core 5: right edge, left edge, nothing cut / no boxes / flush = identical,
+        two-page run-on letter, AI-derived). PHP +1 (ScurveHeaderProposalTest: a block with
+        an EDGE line teaches to the IDENTICAL map) — that class 85/85.
+      falsify_addsup_edge.mjs  8 mutations (4 per feature) — ALL CAUGHT, sources
+                               byte-identical after each restore.
+      npm run test:js          213 tests, 211 pass + the 2 intended blinding fails.
+      verify_p6.mjs 16/0 · block_snapshot.mjs 9/0 (it builds without boxes, as designed).
+      view:clear + view:cache OK.
+      php artisan test (full)  1218 passed / the same 5 pre-existing failures BY NAME
+                               (1 DashboardOverdueInspection, 2 EmailDraft, 2 default-baseline).
+
+    EXPECTED ON FIRST USE (not a defect): the two files with cut text — the two-page roof
+      and the BUHI 12-page — get a NEW block (the EDGE line changes header_hash), so their
+      next failed import adds ONE new proposed capture row. Approve/teach from the new one
+      (it shows the marks), reject the old. Live layouts (#136 etc.) keep reading — maps
+      store positions, not blocks. Old rows never show marks.
+
+    BROWSER CHECK OWED (user; Ctrl+F5)
+      1. Import the two-page roof PDF (it refuses/misses as today) -> S-Curve Layouts: a new
+         proposed auto-capture. Teach: the note above the grid; R14 column K shows
+         "495,173." faded with a "cut" badge.
+      2. Teach M1..M5 = G..K, M6 = L, M7 = M (the original slip) -> Save: amber warning
+         "…2,593,306.47… 2,239,599.72 — 353,706.75 too much…", button "Save anyway",
+         nothing saved. Change any month -> warning gone.
+      3. Teach F..J, L, M -> green "Adds up…" -> Save saves on the first click.
+      4. Optional: M6 = K+L -> the warning names column K as the cut copy.
+      5. An Excel layout's Teach: no check line, Save as before.
+    PROBES: probe_edge_tokens.mjs, probe_edge_blocks.mjs, probe_teach_modal_addsup.mjs,
+      falsify_addsup_edge.mjs.
+
+    BROWSER RESULTS (user, same day, new two-page roof capture)
+      1 ✅ grid: R14 column K shows "495,173." faded with the "cut" badge (screenshot).
+      3 ✅ taught Headers R3 · Description=A · Contract=E · M1-5=F..J · M6=L · M7=M ->
+           "Adds up: the months you taught total 2,239,599.73 in the TOTAL row (R14),
+           matching the 2,239,599.72 it prints."
+      2 ≈  the warning reported was the M6=K+L one ("2,734,772.73 … 495,173.01 too much.
+           Column K (495,173.) … cut off at the page edge …"), identical to step 4 — so the
+           teaching used for step 2 double-counted month 6 rather than the G..K slip. The
+           wording is exactly right for that teaching; the G..K text ("353,706.75 too much",
+           no column named) is pinned by the JS test and the modal probe, not seen in the
+           browser. "Save anyway" relabel / nothing saved / warning withdrawn on a month
+           change: not reported explicitly.
+      4 ✅ M6=K+L warning names column K as the cut copy.
+      5 ✅ Excel layout teach unchanged.
+      Note for item (3) of the queue: the reviewer still picks Description=A on this grid
+        (finding A — the band is A..D and only its right edge is read), unchanged by this work.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

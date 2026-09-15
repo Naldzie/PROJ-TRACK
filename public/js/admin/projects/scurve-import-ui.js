@@ -767,7 +767,10 @@ function scurveHarvestPdfLayout(data) {
         if (!core || typeof core.derivePdfLayoutFromAi !== 'function') return;
         if (!Array.isArray(tokens) || !tokens.length || !labels) return;
 
-        var derived = core.derivePdfLayoutFromAi(tokens, labels, (data && data.months) || null);
+        // Page boxes let the AI-derived grid mark cells cut off at the page edge, the
+        // same as an auto-capture (display only; absent boxes simply mark nothing).
+        var boxes = Array.isArray(window._scurvePdfPageBoxes) ? window._scurvePdfPageBoxes : null;
+        var derived = core.derivePdfLayoutFromAi(tokens, labels, (data && data.months) || null, 15, { pageBoxes: boxes });
         if (!derived || !derived.map || !derived.block) return;
 
         var base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';

@@ -2693,6 +2693,36 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertNotEmpty($page['pseudoCols'], 'pseudoCols must survive so the row can be re-taught');
     }
 
+    // Page-edge marking (2026-09-15): a PDF capture whose print cut a cell off at the
+    // page edge stores an "EDGE: R2:D" line right under the legend. The server's block
+    // reader (parseStoredSlice) must skip it like any non-row line, so such a row
+    // teaches to the SAME map as one without the line — header row R1 still found,
+    // nothing refused.
+    // Called by: teachColumns() -> parseStoredSlice() + buildTaughtPdfMap().
+    public function test_an_edge_line_in_a_pdf_block_does_not_change_teaching(): void
+    {
+        $staff = $this->makeUser('staff');
+        $plain = $this->makePdfRow();
+
+        $marked = $plain->replicate();
+        $marked->header_rows_text = "COLUMNS: A,B,C,D | HEADER: column labels\n"
+            . "EDGE: R2:D\n"
+            . "R1 [HEADER]: DESCRIPTION,AMOUNT,STINT 1,STINT 2\n"
+            . "R2 [DATA]: Roofing,1000,60%,40%";
+        $marked->header_hash = hash('sha256', 'pdf-teach-fixture-edge');
+        $marked->save();
+
+        foreach ([$plain, $marked] as $row) {
+            $this->actingAs($staff)
+                ->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", $this->pdfTeachPayload())
+                ->assertOk()->assertJsonPath('success', true);
+        }
+
+        $maps = ScurveHeaderProposal::where('source', 'manual-teach')->orderBy('id')->get()->pluck('column_map');
+        $this->assertCount(2, $maps);
+        $this->assertSame($maps[0], $maps[1], 'the EDGE line is display-only: the taught map is identical');
+    }
+
     // THE 2026-09-14 REGRESSION, under test.
     //
     // §2 split the roof's left block into ITEM NO. | DESCRIPTION | UNIT | QTY,

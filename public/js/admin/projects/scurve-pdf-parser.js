@@ -32,11 +32,16 @@ window.parseSCurvePdfFile = async function (file) {
     const doc = await pdfjs.getDocument({ data }).promise;
 
     const itemsByPage = [];
+    // Page-edge marking (2026-09-15): each page's visible box (page.view, the crop box
+    // in the same PDF user space as text items), so a capture can flag cells whose
+    // text the print cut off at the page edge. Display only — the reader ignores it.
+    const pageBoxes = [];
     const maxPages = Math.min(doc.numPages, 20);
     for (let p = 1; p <= maxPages; p++) {
         const page = await doc.getPage(p);
         const content = await page.getTextContent();
         itemsByPage.push(content.items || []);
+        pageBoxes.push(Array.isArray(page.view) ? page.view.slice(0, 4) : null);
     }
 
     // F-C stash for the AI slicer: the file (re-rendered on demand), the
@@ -71,6 +76,8 @@ window.parseSCurvePdfFile = async function (file) {
                 width: (it && it.width) || 0,
             }))
         );
+        // The AI-derived capture (scurveHarvestPdfLayout) marks cut cells too.
+        window._scurvePdfPageBoxes = pageBoxes;
     } catch (e) { /* stash is best-effort */ }
 
     // F-D — learned month-header words (approved scurveMonth rows) ride as the
@@ -124,7 +131,7 @@ window.parseSCurvePdfFile = async function (file) {
     // here is used: a capture only becomes readable after a human approves it.
     try {
         window._scurvePdfCapture = (!out && typeof core.derivePdfLayout === 'function')
-            ? core.derivePdfLayout(itemsByPage)
+            ? core.derivePdfLayout(itemsByPage, 15, { pageBoxes })
             : null;
     } catch (e) { window._scurvePdfCapture = null; }
     try {

@@ -18,6 +18,10 @@ import {
     isMonthField,
     applyRowPick,
     rowHasMonthValues,
+    isEdgeCell,
+    cellNumbers,
+    taughtTotalCheck,
+    taughtTotalMessage,
 } from '../../public/js/admin/projects/scurve-teach-core.js';
 
 /*
@@ -364,4 +368,122 @@ test('rowHasMonthValues: the curve row has month values, TOTAL does not, no mont
     assert.equal(rowHasMonthValues(t, 8), true);
     assert.equal(rowHasMonthValues(t, 7), false, 'the row-118 mis-pick the advisory exists for');
     assert.equal(rowHasMonthValues(freshState(p), 8), null);
+});
+
+/* ─── Page-edge marks + the PDF "adds up" check (2026-09-15) ───────────────── */
+
+// The two-page roof print's stored capture (DB row 135), trimmed to the header, one
+// activity and the TOTAL / % rows — verbatim cells, plus the EDGE line a capture now
+// writes: page 1's month-6 TOTAL cell prints "495,173." cut at the page edge; the full
+// 495,173.83 is page 2's first column (L). F..J = months 1-5, L = 6, M = 7.
+const ROOF_TWO_PAGE_BLOCK = [
+    'COLUMNS: A,B,C,D,E,F,G,H,I,J,K,L,M | META: title block | HEADER: column labels',
+    'EDGE: R14:K',
+    'R3 [HEADER]: NO.,,,,Amount,30 days,30 days,30 days,30 days,30days,30 days,30 days,7 days',
+    'R4 [DATA]: A,FACILITIES FOR ENGINEER,,,,16%,17%,17%,16%,17%,,16%,2%',
+    'R14 [SUMMARY]: ,,TOTAL,₱,"2,239,599.72 ₱","141,466.26 ₱","402,960.50 ₱","402,960.50 ₱","389,961.77 ₱","387,731.14 ₱","495,173.","₱ 495,173.83 ₱","19,345.73"',
+    'R16 [CUMULATIVE]: ,,,,%,6.32%,24.31%,42.30%,59.71%,77.03%,99.14%,99.14%,100.00%',
+].join('\n');
+
+// A PDF teaching state over that block with the given months ({1: ['F'], …}).
+function roofTeach(months, over = {}) {
+    const p = parseHeaderBlock(ROOF_TWO_PAGE_BLOCK);
+    return Object.assign(freshState(p, { sourceType: 'pdf', edgeCells: p.edgeCells }), { assigns: { desc: 'B', code: null, weight: null, contract: null, months } }, over);
+}
+const CORRECT = { 1: ['F'], 2: ['G'], 3: ['H'], 4: ['I'], 5: ['J'], 6: ['L'], 7: ['M'] };
+
+test('parseHeaderBlock reads the EDGE line; rows and letters are unaffected', () => {
+    const p = parseHeaderBlock(ROOF_TWO_PAGE_BLOCK);
+    assert.deepEqual(p.edgeCells, ['14:K']);
+    assert.deepEqual(p.rows.map(r => r.n), [3, 4, 14, 16], 'the EDGE line is not a row');
+    assert.equal(isEdgeCell(p, 14, 'K'), true);
+    assert.equal(isEdgeCell(p, 14, 'L'), false);
+    // A block without the line (every capture with nothing cut) parses as before.
+    assert.deepEqual(six().edgeCells, []);
+    // Junk entries are ignored rather than half-read.
+    assert.deepEqual(parseHeaderBlock('COLUMNS: A,B\nEDGE: R2:B, x, R:C, 3:D\nR2 [DATA]: a,b').edgeCells, ['2:B']);
+});
+
+test('cellNumbers reads peso cells, cut-off cells and merged cells', () => {
+    assert.deepEqual(cellNumbers('₱ 495,173.83 ₱'), [495173.83]);
+    assert.deepEqual(cellNumbers('495,173.'), [495173]);
+    assert.deepEqual(cellNumbers('1,000.00 2,500.50'), [1000, 2500.5]);
+    assert.deepEqual(cellNumbers('LOT'), []);
+    assert.deepEqual(cellNumbers(null), []);
+});
+
+test('the corrected two-page roof teaching adds up to its printed total', () => {
+    const c = taughtTotalCheck(roofTeach(CORRECT));
+    assert.equal(c.status, 'adds-up');
+    assert.equal(c.row, 14);
+    assert.equal(c.printed, 2239599.72);
+    assert.match(taughtTotalMessage(c), /^Adds up: .*2,239,599\.73 .*\(R14\).*2,239,599\.72/);
+});
+
+// The live case that motivated the check: page 1's months taught one column right.
+test('a teaching one column off does not add up, and the warning says Save anyway', () => {
+    const c = taughtTotalCheck(roofTeach({ 1: ['G'], 2: ['H'], 3: ['I'], 4: ['J'], 5: ['K'], 6: ['L'], 7: ['M'] }));
+    assert.equal(c.status, 'mismatch');
+    assert.equal(c.sum, 2593306.47);
+    assert.equal(c.printed, 2239599.72);
+    assert.ok(c.gap < 0, 'too much, not short');
+    const msg = taughtTotalMessage(c);
+    assert.match(msg, /add up to 2,593,306\.47 .*prints 2,239,599\.72 — 353,706\.75 too much\./);
+    assert.match(msg, /Save anyway/);
+});
+
+test('a page-split month counted twice names the cut-off copy', () => {
+    const c = taughtTotalCheck(roofTeach({ ...CORRECT, 6: ['K', 'L'] }));
+    assert.equal(c.status, 'mismatch');
+    assert.deepEqual(c.culprit, { letter: 'K', cell: '495,173.', taught: true, edge: true });
+    assert.match(taughtTotalMessage(c), /Column K \(495,173\.\) accounts for the difference — it was cut off at the page edge/);
+});
+
+test('a forgotten month names the untaught column holding the shortfall', () => {
+    const months = { ...CORRECT };
+    delete months[7];
+    const c = taughtTotalCheck(roofTeach(months));
+    assert.equal(c.status, 'mismatch');
+    assert.ok(c.gap > 0, 'short');
+    assert.equal(c.culprit.letter, 'M');
+    assert.equal(c.culprit.taught, false);
+    assert.match(taughtTotalMessage(c), /19,345\.72 short\. Column M holds 19,345\.73 in that row, but no month is on it\./);
+});
+
+test('no usable TOTAL row -> "Not checked", with the reason', () => {
+    // No TOTAL row at all (the 10-month / 6-stage / SEGMENT shape).
+    const noTotal = roofTeach(CORRECT, { rows: parseHeaderBlock(ROOF_TWO_PAGE_BLOCK).rows.filter(r => r.n !== 14) });
+    assert.deepEqual(taughtTotalCheck(noTotal), { status: 'unchecked', reason: 'no-total' });
+    assert.match(taughtTotalMessage(taughtTotalCheck(noTotal)), /^Not checked: this grid has no TOTAL row/);
+    // Same, but the stored block hit its 4000-char limit: the row may have been cut.
+    const cut = { ...noTotal, blockTruncated: true };
+    assert.equal(taughtTotalCheck(cut).reason, 'truncated');
+    assert.match(taughtTotalMessage(taughtTotalCheck(cut)), /cut off at its storage limit/);
+    // A TOTAL row with nothing under the taught months (the 6-stage specimen's shape).
+    const empty = roofTeach({ 1: ['A'], 2: ['B'] });
+    // A and B are left of every label, so there is no "left of the months" at all:
+    // the TOTAL label cannot be found, which is the honest answer.
+    assert.equal(taughtTotalCheck(empty).status, 'unchecked');
+    const noAmounts = parseHeaderBlock('COLUMNS: A,B,C,D\nR1 [HEADER]: ITEM,TOTAL COST,M1,M2\nR2 [SUMMARY]: ,TOTAL,,\nR3 [DATA]: 1,x,5,5');
+    const t = freshState(noAmounts, { sourceType: 'pdf', assigns: { months: { 1: ['C'], 2: ['D'] } } });
+    assert.deepEqual(taughtTotalCheck(t), { status: 'unchecked', reason: 'no-month-amounts', row: 2 });
+    // Month amounts but no total printed left of them.
+    const noPrinted = parseHeaderBlock('COLUMNS: A,B,C,D\nR1 [HEADER]: ITEM,DESC,M1,M2\nR2 [SUMMARY]: ,TOTAL,40,60');
+    const t2 = freshState(noPrinted, { sourceType: 'pdf', assigns: { months: { 1: ['C'], 2: ['D'] } } });
+    assert.deepEqual(taughtTotalCheck(t2), { status: 'unchecked', reason: 'no-printed-total', row: 2 });
+    assert.match(taughtTotalMessage(taughtTotalCheck(t2)), /prints no total left of the months/);
+});
+
+test('the check stays out of Excel rows and half-finished teachings', () => {
+    assert.equal(taughtTotalCheck(roofTeach(CORRECT, { sourceType: 'excel' })), null, 'PDF only (user decision)');
+    assert.equal(taughtTotalCheck(roofTeach({ 1: ['F'] })), null, 'fewer than two months: nothing to judge yet');
+    assert.equal(taughtTotalCheck(null), null);
+    assert.equal(taughtTotalMessage(null), '');
+});
+
+test('a TOTAL label under a month column is a value, not the TOTAL row', () => {
+    // "TOTAL" printed in month column C must not make R2 the TOTAL row.
+    const p = parseHeaderBlock('COLUMNS: A,B,C,D\nR1 [HEADER]: ITEM,DESC,M1,M2\nR2 [DATA]: ,x,TOTAL,5\nR3 [SUMMARY]: ,TOTAL,40,60');
+    const t = freshState(p, { sourceType: 'pdf', assigns: { months: { 1: ['C'], 2: ['D'] } } });
+    assert.equal(taughtTotalCheck(t).row, 3);
 });
