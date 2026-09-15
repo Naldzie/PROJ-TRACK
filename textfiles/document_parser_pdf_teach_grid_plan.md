@@ -3105,6 +3105,155 @@
       5 ✅ Excel layout teach unchanged.
       Note for item (3) of the queue: the reviewer still picks Description=A on this grid
         (finding A — the band is A..D and only its right edge is read), unchanged by this work.
+    COMMITTED: 8bc8c04 (not pushed).
+
+    ⚠ CORRECTION (same day) — an overstatement made to the user, recorded so it is not
+      repeated: A's entry and the chat said "necessary, not sufficient … the import guard
+      stays the arbiter" for cells shuffled between months. The guard does NOT catch that
+      either: totalRowReconciliation compares only the SUM of the TOTAL row's month cells
+      with the printed total. A layout that puts every cell in SOME month but some in the
+      WRONG month adds up at save AND passes the guard at import. What remains against it:
+      the reviewer's preview, the summary-row reference notes (printed %/cumulative rows vs
+      the activity math), and for AI answers the P5 cross-check. Relevant to item (2): a
+      BUHI 1-page layout that reconciles is not yet proof of a correct per-month curve —
+      the restudy must compare months against the TOTAL row's PAIRED cells (which reproduce
+      the Excel truth: M1 1.12 · M3 6.74 · M4 10.59), not just the grand total.
+
+  -----------------------------------------------------------------------------
+  2026-09-15 — ITEM (2): FINDING D RESTUDIED AS A LEARNING PROBLEM ✅ DONE
+  (measurement only, NO CODE). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED: user, "then continue with step 2" (after 8bc8c04).
+
+    HEADLINE: THE ONE-PAGE BUHI PDF IS LEARNABLE TODAY, WITH NO CODE CHANGE. A hand-taught
+      layout with the right letters reads the Excel truth EXACTLY on all 12 months, the save
+      check says "adds up", and the import guard accepts it. Both blockers recorded in
+      "FINDING D, PART TWO" were wrong or stale — retracted below.
+
+    METHOD — GROUND TRUTH, NOT A TYPICAL ROW
+      dump_buhi_xlsx_cells.php: every cell of S-CURVE A10:AF92 (calculated values, formats,
+        widths, merges) -> buhi_xlsx_cells.json. Months are pairs I:J … AE:AF; widths I-R
+        12.22, S-U 12, V-AF 14.11; TOTAL row R88.
+      probe_buhi1_truth_columns.mjs: each PDF line's decimal tokens matched to the ONE Excel
+        row printing the same value sequence (D..AF) -> every token pinned to its Excel
+        column. 62 of 64 month-bearing rows matched (rows 74 and 82 print their amounts and
+        their month cells on two lines 7 pt apart — the read is still exact, see below).
+
+    M1 — WHERE EACH EXCEL COLUMN PRINTS (activity rows)
+      Every month column is RIGHT-ALIGNED and TIGHT: right-edge spread 0.2-3.4 pt, gaps of
+      58-78 pt between neighbours by centre, left edge AND right edge. No activity cell sits
+      inside a neighbour's range. The only wide spreads (I, O, U, AA: 340-390 pt) are the
+      SUMMARY rows 89-92 (quarterly % / cost, merged I:N, O:T, U:Z, AA:AF, printed centred)
+      — probe_buhi1_merged_cells.mjs: zero merges touch month columns in rows 12-87.
+
+    M2 — BLOCKER 3 ("even ideal bands lose up to half a month's pesos") WAS A PROBE BUG.
+      probe_buhi1_ideal.mjs / _contrib.mjs divided band x by the PAGE WIDTH (2592), but
+      matchMapPage multiplies stored fractions by pageMaxX — the page's rightmost TOKEN end,
+      2500.4 here (factor 0.9647). The bands drifted left progressively, which is exactly why
+      the "loss" grew month by month. probe_buhi1_true_bands.mjs (bands from the pinned column
+      edges, normalised by pageMaxX, read through the real map path — a refused rules read
+      falls through since the guard): 1.12 / 3.59 / 6.74 / 10.59 / 15.5 / 21.09 / 28.64 /
+      37.96 / 49.73 / 68 / 84.8 / 100 — 0.00 off everywhere, contract 32,588,531.46, guard
+      accepts. (Its per-month peso table double-counts: both passes push debug 'contrib'.)
+
+    M3 — BLOCKER 1 ("the grid merges neighbouring cells; months share letters") IS STALE.
+      probe_buhi1_teachable.mjs on the CURRENT capture (derivePdfLayout, 39 pseudo-columns —
+      what #132 shows): no pseudo-column holds cells of two months. The old result came from
+      probe_buhi1_teach.mjs's renamed-label copy. What IS true: each centred "Month N" label
+      forms its own thin column, so a month's cells sit in its FIRST and LAST letters with the
+      label column between (M1 = H | I label | J). buildTaughtPdfMap makes a month's band
+      min(x)..max(xEnd) of its letters, so TWO letters are enough:
+        M1=H+J  M2=K+M  M3=N+O  M4=P+R  M5=S+U  M6=V+W  M7=X+Z  M8=AA+AC  M9=AD+AE
+        M10=AF+AH  M11=AI+AK  M12=AL+AM
+      No overlap refusal, within the 2-letter cap.
+
+    M4 — REALISTIC TEACHINGS, SIMULATED EXACTLY AS PHP BUILDS THEM (probe_buhi1_realistic_teach.mjs)
+      A  the letters above, Description=B          save: adds up   import: EXACT
+      B  same + Contract=E                          save: adds up   import: EXACT
+      C  "start at the label column" (≈ the user's  save: MISMATCH  import: REFUSED
+         first try I+J+K, L+M+N, O+P …)             (22,164,251.86 vs 32,588,531.43)
+      D  AI-derived (PDF-3) from "Month N" labels   —               import: REFUSED — its bands
+         start at the labels (765-901, 901-1036…), the same label-start placement as the rules;
+         and P5 abstains even for a PERFECT AI answer, because the file read it would compare
+         against is itself refused. So the AI cannot teach this file, and an AI-assist answer
+         on it stays unverified.
+      The block header shows where labels land: I=Month 1 | L=2 | O=3 | Q=4 | T=5 | W=6 | Y=7 |
+        AB=8 | AE=9 | AG=10 | AJ=11 | AM=12 — in 8 of 12 months the label column is not a
+        cell column, which is what makes label-guided teaching go wrong. The save check
+        catches it.
+
+    WHAT IS STILL WRONG ON A CORRECT TAUGHT READ (A/B) — none of it moves the curve
+      (a) THE DAY-MARKER LINE IS AN ACTIVITY: "NO. (IN PESOS) AMOUNT DAYS" with its 15s is
+          listed in every month (counts 9,12,13,… = Excel 8,11,12,… + 1; 30 pesos a month).
+          Excel reads it as a second header row; on PDF, row roles cannot be taught
+          (Decision 4) and the header pick is one line.
+      (b) NAMES CARRY THE MONEY COLUMNS: "Construction of Temporary Field Office for the
+          Engineer 184,800.00 5,544.00 179,256.00 0.55 350" (A), or "… 184,800.00 5,544.00"
+          with Contract=E (B) — finding B's widening rule, exactly as predicted. Item (3)
+          (Description as a letter range) fixes it.
+      (c) 12 NOISY NOTES: the quarterly summary rows print FRACTIONS (0.07 = 7%) and COST
+          pesos; the summary comparison reads them as percentages ("the file's own summary
+          says 0.07%, but its activity rows add up to 6.74%").
+
+    OPTIONS FOR THE USER (decision, nothing built)
+      1. BROWSER PROOF, NO CODE: teach #132 (proposed) with the letters in M3 + Description=B,
+         header R3; the line should say "Adds up"; approve; re-import -> the exact curve with
+         the "learned layout" note. Proves D learnable end to end. Expect (a)-(c).
+      2. ITEM (3) + (a) AS ONE BUILD: Description as a letter range (fixes b); the day-marker
+         line kept out of activities — design to measure first (a second header line on PDF,
+         or a line whose month cells are all small whole numbers under a header).
+      3. HELP THE REVIEWER: say on the grid that a centred "Month N" label may sit in its own
+         column (or next to the month's cells), and let the adds-up culprit name the left-out
+         cell (already does for H). Changing column detection so labels do not form columns
+         would move blocks (a re-capture wave) — not recommended.
+      4. AI-DERIVED PLACEMENT: place a label's band over the value columns beneath it instead
+         of starting at the label, in derivePdfLayoutFromAi only — would let AI assist teach
+         BUHI-shaped files and let P5 verify them. Touches the PDF-3 path; measure on the roof
+         (must stay 6.32 … 100) before choosing.
+      5. SUMMARY-NOTE NOISE (c): recognise fraction-written and peso summary rows. Low value.
+      Recommendation: 1 first (free, proves the whole loop), then 2.
+
+    OPTION 1 RUN BY THE USER — ✅ BROWSER-PROVEN: D IS LEARNABLE END TO END
+      - Opened #132's Teach with only Description moved to B (months as PREFILLED from the
+        label-start capture). Save check, live: "The months you taught add up to 32,346,214.00
+        in the TOTAL row (R16), but that row prints 32,588,531.43 — 242,317.43 short. Column H
+        holds 242,317.46 in that row, but no month is on it." — the check's first real catch,
+        on exactly the cell the import guard names.
+      - Re-taught: Headers R3 · Description=B · M1=J+H · M2=K+M · M3=N+O · M4=P+R · M5=U+S ·
+        M6=W+V · M7=X+Z · M8=AA+AC · M9=AE+AD · M10=AF+AH · M11=AI+AK · M12=AM+AL -> "Adds up:
+        … 32,588,531.46 … matching the 32,588,531.43 it prints." Approved, re-imported:
+        1.12 / 3.59 / 6.74 / 10.59 / 15.50 / 21.09 / 28.64 / 37.96 / 49.73 / 68.00 / 84.80 /
+        100.00 — the Excel truth — with the learned-layout note and 11 summary notes;
+        counts 9,12,13,15,20,21,33,35,39,44,42,42.
+      ACTIVITY LISTS VERIFIED AGAINST THE WORKBOOK (probe_buhi1_activities.mjs, same letters,
+      name matched by the Excel label inside the PDF name):
+        membership   every month lists EXACTLY the activities with money in that month —
+                     none missing, none wrong — plus the day-marker line.
+        (a) "NO. (IN PESOS) AMOUNT DAYS" in all 12 months (the +1 on every count).
+        (b) 62 of 64 names carry the money columns (desc band widened to the first month).
+        (d) NEW — 2 names lost to WRAPPED descriptions: the row's figures print on the MIDDLE
+            of three lines, which carries only the item code, with the words above and below:
+              Excel R74 "Power Load Center, Switchgear, and Panelboards, and Other Overcurrent
+                Protection Devices" -> "Activity 64" in months 7-12
+                (y 623.5 words | y 616.6 "1102" + days + month cells | y 609.6 words + amounts)
+              Excel R82 "Consumables and Other Accessories (Rubber Gasket, …, Brushes, etc.)"
+                -> "c." in months 10-12  (y 495.8 words | 489.4 "c." + cells | 483.1 words + amounts)
+            Money and months are right (the curve is exact); only the names are lost.
+        (c) the 11 fraction/cost summary notes, as measured.
+
+    NEXT BUILD, PROPOSED (needs the order): item (3) + the BUHI read defects, measured first:
+      (b) Description as a letter range  -> names without money columns
+      (a) the day-marker line kept out of activities
+      (d) a wrapped description joined to the value line that carries only its item code —
+          this is READER name assembly (buildRows), so the 16-read regression gates it
+      (c) optional: fraction/cost summary rows not compared as percentages
+
+    PROBES (C:\temp\opencode, read-only): dump_buhi_xlsx_cells.php, probe_buhi1_truth_columns.mjs,
+      probe_buhi1_merged_cells.mjs, probe_buhi1_true_bands.mjs, probe_buhi1_teachable.mjs,
+      probe_buhi1_realistic_teach.mjs. Data: buhi_xlsx_cells.json, buhi1_pinned.json.
+      SUPERSEDED: probe_buhi1_ideal.mjs, probe_buhi1_contrib.mjs (page-width bug),
+      probe_buhi1_teach.mjs (renamed-label copy).
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE
