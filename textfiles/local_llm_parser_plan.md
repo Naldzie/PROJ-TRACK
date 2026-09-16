@@ -174,7 +174,78 @@
   5. CHOSEN DIRECTION (PROPOSED — needs an explicit order, Rule 10)
 ===============================================================================
 
-  STEP 1 — MEASURE THE MODEL, NOT THE HOSTING.  ⬜ NOT STARTED
+  STEP 1 — MEASURE THE MODEL, NOT THE HOSTING.  ✅ DONE — ❌ BOTH 3B AND 7B FAIL
+    (Qwen2.5-VL on a free T4; detail below. Larger open models need a 24-80 GB GPU,
+    which no free tier offers — so on the constraints set, the local-model tier is not
+    viable for PDF S-curve reading.)
+
+    HOW IT IS RUN (2026-09-16): C:\temp\opencode\colab_vlm_scurve_test.ipynb (source
+    colab_vlm_scurve_test.src.py, built by build_ipynb.mjs), on Colab free T4 (16 GB).
+    Verbatim buildSCurvePdfPrompt; pages rendered like the app (~150 DPI, 4000 px cap,
+    max 2 pages; page text via PyMuPDF instead of pdf.js — close, not identical);
+    scored against the Excel truth, both the stated curve and the curve recomputed from
+    monthlyAmounts / contractAmount. Results land in sampledocs/vlm_results_<model>.json
+    (git-ignored).
+
+    RESULT — Qwen2.5-VL-3B-Instruct (MAX_PIXELS lowered to 2,000,000) ❌ FAIL ON ALL THREE
+      specimen     secs  months  stated curve               recomputed         counts
+      roof 2-page   103   8 (7)  12.5, 25, 37.5 … 100       0.15 … 5.52         1 each (4,4,4,4,3,4,3)
+      roof 1-page    74   8 (7)  12.5, 25, 37.5 … 100       12.41 … 446.69      1 each
+      BUHI 1-page    85   6 (12) 12.5, 25 … 75              0.15 … 3.22         1-2 (8 … 41)
+      It did not read the tables. It returned the PROMPT'S OWN EXAMPLE, extended:
+      12.5-point steps from the example's "12.5", "Mobilization Works" from the example,
+      monthlyAmounts 50,000 / 100,000 / … from the example's 50000, and on two files the
+      example's contractAmount 32,588,531.43. Most activity names are invented
+      ("Site Preparation", "Foundation Works", "Final Inspection"); a few BUHI names look
+      lifted from the machine-read words. Every call also ran 74-103 s on a T4 — past
+      the app's 50 s budget before accuracy is even considered.
+      Would the app have been harmed? No: the printed-words check drops invented names,
+      the recompute check refuses stated-vs-amounts disagreement, and P5 lets the file
+      overrule the AI. Useless, not dangerous — exactly the §5 prediction.
+      VERDICT: 3B is out. An on-device 3B model is not a viable parser tier.
+
+    RESULT — Qwen2.5-VL-7B-Instruct (4-bit nf4, MAX_PIXELS 1,000,000) ❌ FAIL ON ALL THREE
+      Memory: at 2,000,000 pixels the vision encoder's attention asked for 4.1 GB more
+      than the T4 had (OOM); 1,000,000 ran. So BUHI's page was shown heavily downscaled
+      — part of its failure is the T4, not only the model.
+      specimen     secs  months  stated curve                       recomputed
+      roof 1-page    47   5 (7)  6.32/24.31/42.30/59.71/77.03 EXACT   6.32 … 105.68
+      roof 2-page    59   5 (7)  16/17/20/19/0 (not cumulative)       6.32 … 105.68
+      BUHI 1-page   108  12 (12) 12.5 every month                     0.15 … 1.84
+      What happened:
+        roof 1-page — the exact numbers are the file's printed SUMMARY row copied into
+          "months" (its "summary" is identical), which the prompt forbids; it stops at
+          month 5 of 7; its monthlyAmounts sum past 100%. Not a computation from the
+          activity rows.
+        roof 2-page — summary partly read (6.32 / 17.99 / 42.3 …), months nonsense.
+        BUHI — the prompt's example again (12.5, "Mobilization Works", 50,000 and the
+          example contract, which is BUHI's real one — see the finding below).
+        Names: one per month, and they are SECTION HEADINGS ("FACILITIES FOR ENGINEER",
+          "OTHER GENERAL REQUIREMENTS"), not activities.
+      Better than 3B at reading printed figures (it found the roof's summary row and its
+      P1..P5 labels) — but the offline reader already reads that row itself (summary
+      adoption / R2b). It adds nothing the app does not already do, and 2 of 3 calls ran
+      past the 50 s budget.
+      Would the app have been harmed? No: the summary-copy detection (mirror note /
+      prefer-math) and P5 would catch the roof answer, and BUHI's is refused by the
+      recompute check.
+
+    CONCLUSION FOR THE PANEL CONVERSATION (2026-09-16)
+      A free-tier open model (3B or 7B) cannot do this job: neither computed a curve
+      from activity rows on any specimen. What does do it — offline, free, repeatable —
+      is the rule reader plus the learning loop (and, as of today, the date-row rule on
+      phase-21, which reads a day-column layout no model or teaching could). The
+      honest options left for an AI tier are: keep Gemini as an optional second opinion,
+      or test a much larger open model only if the campus can provide a 24 GB+ GPU.
+      Step 2 (configurable endpoint) stays cheap and useful either way; not ordered.
+
+    ⚠ FINDING FROM THE SAME RUN — THE PROMPT'S EXAMPLE CONTRACT IS BUHI'S REAL ONE.
+      buildSCurvePdfPrompt's example carries "contractAmount": 32588531.43, which is the
+      one-page BUHI's true contract to the cent. A model that copies the example scores
+      a "correct" contract on BUHI for free (3B did). Consequences: (1) any evaluation
+      must not count BUHI's contract as evidence of reading; (2) the example should use
+      a neutral figure. Changing it is a prompt change on a live Gemini path — needs an
+      order, not done.
     Whether an open vision model is good enough on THESE files is a one-off test, and
     the benchmark already exists: known-truth curves for the roof
     (6.32/24.31/42.30/59.71/77.03/99.14/100, counts 4,4,4,4,3,4,3) and the one-page

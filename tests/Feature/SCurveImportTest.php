@@ -657,6 +657,196 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * Build a CONSCHED-shaped day-column workbook: NO. / DESCRIPTION / AMOUNT labels,
+     * "#N" day markers, merged calendar-month names, a row of dates, activity rows with
+     * daily pesos, a "CONTRACT AMOUNT" total row with no description, and a second
+     * unlabelled table with its own date row underneath.
+     *
+     * Days: H Dec 30 · I Dec 31 · J Jan 1 · K Jan 2 · L Feb 1 · M Feb 2.
+     * Mobilization 40,000 (H..K) + Roofing 60,000 (K..M) => Dec 20k, Jan 40k, Feb 40k
+     * of 100,000 => 20 / 60 / 100.
+     */
+    protected function makeDayColumnWorkbook(string $path, bool $textDates = false): void
+    {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A1', 'CONSTRUCTION SCHEDULE AND S-CURVE');
+        $sheet->setCellValue('A10', 'NO.');
+        $sheet->setCellValue('B10', 'DESCRIPTION');
+        $sheet->setCellValue('E10', 'UNIT PRICE');
+        $sheet->setCellValue('F10', 'AMOUNT');
+        $sheet->setCellValue('G10', '%');
+        $days = ['H' => '2024-12-30', 'I' => '2024-12-31', 'J' => '2025-01-01', 'K' => '2025-01-02', 'L' => '2025-02-01', 'M' => '2025-02-02'];
+        $n = 0;
+        foreach ($days as $col => $iso) {
+            $n++;
+            $sheet->setCellValue("{$col}10", "#{$n}");
+            $date = new \DateTime($iso);
+            $value = $textDates ? $date->format('F j, Y') : \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel($date);
+            $sheet->setCellValue("{$col}12", $value);
+            $sheet->setCellValue("{$col}17", $value); // second table's own date row
+        }
+        $sheet->setCellValue('H11', 'DECEMBER');
+        $sheet->mergeCells('H11:I11');
+        $sheet->setCellValue('J11', 'JANUARY');
+        $sheet->mergeCells('J11:K11');
+        $sheet->setCellValue('L11', 'FEBRUARY');
+        $sheet->mergeCells('L11:M11');
+
+        $sheet->setCellValue('A13', 'PART I. GENERAL REQUIREMENTS');
+        $sheet->setCellValue('A14', 'A.1');
+        $sheet->setCellValue('B14', 'Mobilization');
+        $sheet->setCellValue('F14', 40000);
+        foreach (['H', 'I', 'J', 'K'] as $col) {
+            $sheet->setCellValue("{$col}14", 10000);
+        }
+        $sheet->setCellValue('A15', 'B.2');
+        $sheet->setCellValue('B15', 'Roofing');
+        $sheet->setCellValue('F15', 60000);
+        foreach (['K', 'L', 'M'] as $col) {
+            $sheet->setCellValue("{$col}15", 20000);
+        }
+        $sheet->setCellValue('E16', 'CONTRACT AMOUNT');
+        $sheet->setCellValue('F16', 100000);
+        $sheet->setCellValue('G16', 1);
+        // Second table: weekly-style figures under their own dates, no labels at all.
+        $sheet->setCellValue('H18', 0.2);
+        $sheet->setCellValue('J18', 0.6);
+        $sheet->setCellValue('L18', 1.0);
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    /**
+     * Date-row header (2026-09-16): day columns under real dates are grouped into
+     * calendar months in order of appearance (December = month 1), the "CONTRACT
+     * AMOUNT" row is the total rather than an orphan subtotal, and the item code is
+     * read under the "NO." label itself. Excel serials and text dates alike.
+     */
+    public function test_date_row_header_groups_day_columns_by_calendar_month(): void
+    {
+        foreach ([false, true] as $textDates) {
+            $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+            $this->makeDayColumnWorkbook($path, $textDates);
+
+            $result = app(SCurveImportService::class)->parse($path);
+            $label = $textDates ? 'text dates' : 'serial dates';
+
+            $this->assertSame([20.0, 60.0, 100.0], array_column($result['months'], 'planned_progress_percent'), $label);
+            $this->assertSame(100000.0, $result['meta']['contractAmount'], $label);
+            $this->assertSame(2, $result['meta']['activityCount'], $label);
+            $this->assertSame('activities', $result['meta']['curveSource'], $label);
+            $this->assertSame([], $result['meta']['warnings'], $label);
+            $this->assertSame(['Mobilization'], array_column($result['months'][0]['activities'], 'activity_name'), $label);
+            $this->assertSame(['Mobilization', 'Roofing'], array_column($result['months'][1]['activities'], 'activity_name'), $label);
+            $this->assertSame(['Roofing'], array_column($result['months'][2]['activities'], 'activity_name'), $label);
+            $this->assertSame('A.1', $result['months'][0]['activities'][0]['description'], $label);
+
+            unlink($path);
+        }
+    }
+
+    /**
+     * The date-row pass is strict: a date run inside a single month, a date row with no
+     * DESCRIPTION label, and non-date numbers never become month columns.
+     */
+    public function test_date_row_header_refuses_unclear_rows(): void
+    {
+        $cases = [
+            'one month only' => ['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'],
+            'gap bigger than a month' => ['2025-01-01', '2025-03-15', '2025-05-30'],
+            'too short' => ['2025-01-31', '2025-02-01'],
+        ];
+        foreach ($cases as $name => $isoDates) {
+            $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setCellValue('A10', 'DESCRIPTION');
+            foreach ($isoDates as $i => $iso) {
+                $col = chr(ord('B') + $i);
+                $sheet->setCellValue("{$col}11", \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(new \DateTime($iso)));
+                $sheet->setCellValue("{$col}12", 1000);
+            }
+            $sheet->setCellValue('A12', 'Works');
+            (new Xlsx($spreadsheet))->save($path);
+
+            try {
+                app(SCurveImportService::class)->parse($path);
+                $this->fail("Expected a refusal: {$name}");
+            } catch (RuntimeException $e) {
+                $this->assertStringContainsString('No S-curve table found', $e->getMessage(), $name);
+            }
+            unlink($path);
+        }
+
+        // A clear date run with no DESCRIPTION label anywhere near it.
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeDayColumnWorkbook($path);
+        $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path);
+        $spreadsheet->getActiveSheet()->setCellValue('B10', 'WHATEVER');
+        (new Xlsx($spreadsheet))->save($path);
+        try {
+            app(SCurveImportService::class)->parse($path);
+            $this->fail('Expected a refusal: no description label');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+        unlink($path);
+
+        // Plain ascending numbers in the Excel-date range but not whole days.
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        foreach (['B' => 45600.5, 'C' => 45620.5, 'D' => 45640.5, 'E' => 45660.5] as $col => $v) {
+            $sheet->setCellValue("{$col}10", $v);
+            $sheet->setCellValue("{$col}11", 1000);
+        }
+        $sheet->setCellValue('A11', 'Works');
+        (new Xlsx($spreadsheet))->save($path);
+        try {
+            app(SCurveImportService::class)->parse($path);
+            $this->fail('Expected a refusal: fractional serials');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('No S-curve table found', $e->getMessage());
+        }
+        unlink($path);
+    }
+
+    /**
+     * The date-row pass is a FALLBACK: when month labels are found, a date row under
+     * them changes nothing (the labels' pairing is kept).
+     */
+    public function test_month_labels_still_win_over_a_date_row(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setCellValue('A10', 'DESCRIPTION');
+        $sheet->setCellValue('B10', 'Month 1');
+        $sheet->setCellValue('C10', 'Month 2');
+        $sheet->setCellValue('D10', 'Month 3');
+        $sheet->setCellValue('E10', 'CONTRACT');
+        foreach (['B' => '2025-01-01', 'C' => '2025-01-15', 'D' => '2025-02-01'] as $col => $iso) {
+            $sheet->setCellValue("{$col}11", \PhpOffice\PhpSpreadsheet\Shared\Date::PHPToExcel(new \DateTime($iso)));
+        }
+        $sheet->setCellValue('A12', 'Works');
+        $sheet->setCellValue('B12', 25000);
+        $sheet->setCellValue('C12', 25000);
+        $sheet->setCellValue('D12', 50000);
+        $sheet->setCellValue('E12', 100000);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        // Labels: three months (25 / 50 / 100). The date row alone would have made
+        // two (January = B+C, February = D) — so three months proves the labels won.
+        $this->assertSame([25.0, 50.0, 100.0], array_column($result['months'], 'planned_progress_percent'));
+
+        unlink($path);
+    }
+
+    /**
      * R2b (reference + warn): the author's cumulative row is read as reference points —
      * fractions scale to percent, values attribute to the interval's last month, gaps past
      * 1.0 warn WITHOUT moving the plan curve. Gap of exactly 1.0 stays silent (boundary).

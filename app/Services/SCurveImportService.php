@@ -4,6 +4,7 @@ namespace App\Services;
 
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use RuntimeException;
@@ -326,7 +327,16 @@ class SCurveImportService
      */
     private function findHeader(array $rows, array $mergeMap = []): ?array
     {
-        return $this->findHeaderWith($rows, $mergeMap, fn (array $cells) => $this->detectHeaderRow($cells));
+        // The date-row detector is passed ONLY here, so it is a fallback of the main
+        // read path alone: the slice tagger and the auto-map derivation (the other two
+        // findHeaderWith callers) are unchanged, and so are capture hashes.
+        return $this->findHeaderWith(
+            $rows,
+            $mergeMap,
+            fn (array $cells) => $this->detectHeaderRow($cells),
+            true,
+            fn (array $cells) => $this->detectHeaderLabels($cells)
+        );
     }
 
     /**
@@ -337,9 +347,14 @@ class SCurveImportService
      * detector (unchanged behavior); deriveAutoColumnMap() passes the relaxed
      * one (novel description wordings only — month rules identical).
      *
-     * Called by: findHeader(), deriveAutoColumnMap().
+     * Date-row fallback (2026-09-16): when $detectLabels is given and neither pass
+     * finds a header, a row of real calendar dates may stand in for month labels
+     * (see findDateRowHeader). Fallback only, so every file that read before reads
+     * exactly as before.
+     *
+     * Called by: findHeader(), deriveAutoColumnMap(), labelSliceRows().
      */
-    private function findHeaderWith(array $rows, array $mergeMap, callable $detect, bool $finalize = true): ?array
+    private function findHeaderWith(array $rows, array $mergeMap, callable $detect, bool $finalize = true, ?callable $detectLabels = null): ?array
     {
         $best = null;
 
@@ -366,6 +381,11 @@ class SCurveImportService
             if ($this->betterHeader($det, $best)) $best = $det;
         }
 
+        // Date-row pass — only when the label passes found nothing at all.
+        if ($best === null && $detectLabels !== null) {
+            $best = $this->findDateRowHeader($rows, $detectLabels);
+        }
+
         if ($best === null) return null;
 
         return $finalize ? $this->finalizeHeader($best) : $best;
@@ -382,29 +402,19 @@ class SCurveImportService
      */
     private function detectHeaderRow(array $cells, bool $relaxed = false): ?array
     {
-        $hasItem = false;
-        $codeCol = null;
-        $descCol = null;
-        $weightCol = null;
-        $contractCol = null;
+        [
+            'hasItem' => $hasItem,
+            'codeCol' => $codeCol,
+            'descCol' => $descCol,
+            'weightCol' => $weightCol,
+            'contractCol' => $contractCol,
+        ] = $this->detectHeaderLabels($cells, $relaxed);
         $monthCols = [];
         $numericCols = [];
 
         foreach ($cells as $colIndex => $value) {
             $label = strtolower(trim((string) ($value ?? '')));
             if ($label === '') continue;
-
-            if ($this->isItemLabel($label)) {
-                $hasItem = true;
-                $codeCol = $colIndex + 1; // item codes sit one column right
-            } elseif ($this->isDescriptionLabel($label)
-                || ($relaxed && $this->isLooseDescriptionLabel($label))) {
-                $descCol = $colIndex;
-            } elseif ($this->isWeightLabel($label)) {
-                $weightCol = $colIndex;
-            } elseif ($this->isContractLabel($label)) {
-                $contractCol = $colIndex;
-            }
 
             $month = $this->matchMonthLabel($label, $relaxed);
             if ($month !== null) {
@@ -438,6 +448,200 @@ class SCurveImportService
             'contractCol' => $contractCol,
             'monthCols' => $monthCols,
         ];
+    }
+
+    /**
+     * Read the non-month column labels of one header row (item code, description,
+     * weight, contract amount). Split out of detectHeaderRow unchanged — the label
+     * checks never depended on the month checks — so the date-row pass can reuse
+     * exactly the same vocabulary.
+     *
+     * Called by: detectHeaderRow(), findHeader() (date-row pass).
+     *
+     * @return array{hasItem: bool, codeCol: ?int, descCol: ?int, weightCol: ?int, contractCol: ?int}
+     */
+    private function detectHeaderLabels(array $cells, bool $relaxed = false): array
+    {
+        $out = ['hasItem' => false, 'codeCol' => null, 'descCol' => null, 'weightCol' => null, 'contractCol' => null];
+
+        foreach ($cells as $colIndex => $value) {
+            $label = strtolower(trim((string) ($value ?? '')));
+            if ($label === '') continue;
+
+            if ($this->isItemLabel($label)) {
+                $out['hasItem'] = true;
+                $out['codeCol'] = $colIndex + 1; // item codes sit one column right
+            } elseif ($this->isDescriptionLabel($label)
+                || ($relaxed && $this->isLooseDescriptionLabel($label))) {
+                $out['descCol'] = $colIndex;
+            } elseif ($this->isWeightLabel($label)) {
+                $out['weightCol'] = $colIndex;
+            } elseif ($this->isContractLabel($label)) {
+                $out['contractCol'] = $colIndex;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Date-row header (2026-09-16): a schedule with one column per DAY (or week)
+     * under calendar dates, e.g. the CONSCHED family — "#1..#90", merged
+     * DECEMBER/JANUARY… labels, and a row of real dates.
+     *
+     * Finds a row holding a clear run of ascending dates (dateColumnGroups), then
+     * looks for the description label on that row or up to three rows above it,
+     * left of the first date column. Months are the calendar months in ORDER OF
+     * APPEARANCE, numbered 1..N (a project starting in December reads December as
+     * month 1), and each month spans every column dated inside it. A second table
+     * further down with its own date row but no DESCRIPTION label never qualifies.
+     *
+     * Called by: findHeaderWith() — only when the label passes found no header.
+     * Calls: dateColumnGroups(), the $detectLabels closure (detectHeaderLabels).
+     */
+    private function findDateRowHeader(array $rows, callable $detectLabels): ?array
+    {
+        $keys = array_keys($rows);
+        $best = null;
+
+        foreach ($keys as $pos => $key) {
+            $groups = $this->dateColumnGroups(array_values((array) $rows[$key]));
+            if ($groups === null) continue;
+            $firstDateCol = min($groups[1]);
+
+            // Nearest labelled row first: the date row itself, then up to 3 above.
+            $labels = null;
+            for ($p = $pos; $p >= max(0, $pos - 3); $p--) {
+                $found = $detectLabels(array_values((array) $rows[$keys[$p]]));
+                if ($found['descCol'] !== null && $found['descCol'] < $firstDateCol) {
+                    $labels = $found;
+                    break;
+                }
+            }
+            if ($labels === null) continue;
+
+            // "NO." / "ITEM" in the first column puts the "one column right" code
+            // guess ON the description column (CONSCHED: NO. in A, DESCRIPTION in B).
+            // Here the code lives under the label itself.
+            $codeCol = $labels['codeCol'];
+            if ($codeCol !== null && $codeCol === $labels['descCol']) {
+                $codeCol--;
+            }
+            // Label columns inside a date run are not labels of this table.
+            foreach (['codeCol', 'weightCol', 'contractCol'] as $k) {
+                $col = $k === 'codeCol' ? $codeCol : $labels[$k];
+                if ($col !== null && $col >= $firstDateCol) {
+                    if ($k === 'codeCol') $codeCol = null; else $labels[$k] = null;
+                }
+            }
+
+            $det = [
+                'score' => ($labels['hasItem'] ? 1 : 0) + ($labels['weightCol'] !== null ? 1 : 0)
+                    + ($labels['contractCol'] !== null ? 1 : 0) + count($groups),
+                'codeCol' => $codeCol,
+                'descCol' => $labels['descCol'],
+                'weightCol' => $labels['weightCol'],
+                'contractCol' => $labels['contractCol'],
+                'monthCols' => array_map(fn (array $cols) => min($cols), $groups),
+                // Explicit spans: finalizeHeader must not re-derive them from merges
+                // or pairing — a day-column month is 28-31 columns wide.
+                'monthSpans' => $groups,
+                'firstRow' => $key,
+                'lastRow' => $key,
+                'mergeMap' => [],
+            ];
+            if ($this->betterHeader($det, $best)) $best = $det;
+        }
+
+        return $best;
+    }
+
+    /**
+     * Group one row's columns by calendar month when the row is a clear run of
+     * dates; null otherwise.
+     *
+     * "Clear" is deliberately strict, because a false hit would turn a row of
+     * numbers into month columns: at least 3 CONSECUTIVE date cells (no gaps),
+     * strictly ascending, every step 1..31 days (daily, weekly or monthly columns),
+     * covering at least two calendar months. Excel serial numbers are accepted only
+     * as whole numbers in 2000..2099; text dates only in a few unambiguous formats.
+     * The longest qualifying run wins.
+     *
+     * Called by: findDateRowHeader().
+     *
+     * @return array<int, array<int, int>>|null  [monthIndex (1..N) => [0-based cols]]
+     */
+    private function dateColumnGroups(array $cells): ?array
+    {
+        $bestRun = [];
+        $run = [];
+        $prev = null;
+        foreach ($cells as $col => $value) {
+            $date = $this->cellDate($value);
+            $step = ($date !== null && $prev !== null) ? (int) $prev->diff($date)->format('%r%a') : null;
+            if ($date !== null && $step !== null && $step >= 1 && $step <= 31) {
+                // Continues the current run.
+                $run[$col] = $date;
+            } else {
+                // A gap, a non-date or a bad step closes the run; a date starts the next.
+                if (count($run) > count($bestRun)) $bestRun = $run;
+                $run = $date !== null ? [$col => $date] : [];
+            }
+            $prev = $date;
+        }
+        if (count($run) > count($bestRun)) $bestRun = $run;
+        if (count($bestRun) < 3) return null;
+
+        $groups = [];
+        $index = 0;
+        $lastYm = null;
+        foreach ($bestRun as $col => $date) {
+            $ym = $date->format('Y-m');
+            if ($ym !== $lastYm) {
+                $index++;
+                $lastYm = $ym;
+            }
+            $groups[$index][] = (int) $col;
+        }
+
+        return count($groups) >= 2 ? $groups : null;
+    }
+
+    /**
+     * A cell as a calendar date, or null. Whole Excel serials in 2000-01-01 ..
+     * 2099-12-31 (toArray hands dates over unformatted), or text in one of a few
+     * unambiguous formats ("December 9, 2024", "Dec 9, 2024", "2024-12-09").
+     *
+     * Called by: dateColumnGroups().
+     */
+    private function cellDate(mixed $value): ?\DateTimeImmutable
+    {
+        if ((is_int($value) || is_float($value)) && !is_bool($value)) {
+            if ($value < 36526 || $value > 73050 || abs($value - round($value)) > 1e-9) {
+                return null;
+            }
+            try {
+                return \DateTimeImmutable::createFromMutable(ExcelDate::excelToDateTimeObject((float) $value));
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+        if (!is_string($value)) {
+            return null;
+        }
+        $text = trim($value);
+        if ($text === '' || !preg_match('/\d{4}/', $text)) {
+            return null;
+        }
+        foreach (['!F j, Y', '!M j, Y', '!Y-m-d'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat($format, $text);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if ($date !== false && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $date;
+            }
+        }
+
+        return null;
     }
 
     private function betterHeader(array $candidate, ?array $best): bool
@@ -1220,6 +1424,12 @@ class SCurveImportService
 
         $sheetRows = range($det['firstRow'] + 1, $det['lastRow'] + 1);
         $monthSpans = [];
+        // Date-row headers arrive with their spans already known (every column dated
+        // inside the month); merges and pairing do not apply to them.
+        if (isset($det['monthSpans'])) {
+            $monthSpans = $det['monthSpans'];
+            $keys = [];
+        }
         foreach ($keys as $i => $monthIndex) {
             $col = $sorted[$monthIndex];
             $span = $this->mergedSpan($det['mergeMap'], $sheetRows, $col);
@@ -1642,7 +1852,15 @@ class SCurveImportService
             // Hyphen-guarded so "Sub-Total" rows never match.
             $isTotalRow = (bool) preg_match('/^(grand\s*)?total/i', $description);
             if (!$isTotalRow && $contractAmt !== null) {
-                $isTotalRow = (bool) preg_match('/(?<![\w-])(grand\s*)?totals?(?![\w-])/i', implode(' ', $this->rowTexts($row)));
+                $rowText = implode(' ', $this->rowTexts($row));
+                $isTotalRow = (bool) preg_match('/(?<![\w-])(grand\s*)?totals?(?![\w-])/i', $rowText)
+                    // 2026-09-16: a description-less row labelled "CONTRACT AMOUNT" beside
+                    // the grand figure (CONSCHED) is the total row too. Without this it
+                    // follows an activity, so the R2a orphan-subtotal branch below added
+                    // the whole contract to itself and halved the curve. Gated on an
+                    // empty description so an activity named "... contract amount ..."
+                    // stays an activity.
+                    || ($description === '' && preg_match('/\bcontract\s*amount\b/i', $rowText));
             }
             if ($isTotalRow) {
                 $totalRowContract = $contractAmt;
