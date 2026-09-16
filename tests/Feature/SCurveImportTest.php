@@ -847,6 +847,114 @@ class SCurveImportTest extends TestCase
     }
 
     /**
+     * 2026-09-16 (D1): a month label merged across several columns on a SINGLE-row
+     * header spans all of them. The merge lookup used to inspect the row below the
+     * header, so "Month 1" over C:E read as C alone (16.67 / 100).
+     */
+    public function test_single_row_header_reads_merged_month_spans(): void
+    {
+        foreach (['A1', 'A5'] as $anchor) {
+            $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+            $spreadsheet = new Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
+            $row = (int) substr($anchor, 1);
+            $sheet->fromArray([
+                ['DESCRIPTION', 'CONTRACT', 'Month 1', null, null, 'Month 2', null, null],
+                ['Works', 60000, 10000, 10000, 10000, 10000, 10000, 10000],
+            ], null, $anchor);
+            $sheet->mergeCells("C{$row}:E{$row}");
+            $sheet->mergeCells("F{$row}:H{$row}");
+            (new Xlsx($spreadsheet))->save($path);
+
+            $result = app(SCurveImportService::class)->parse($path);
+
+            $this->assertSame([50.0, 100.0], array_column($result['months'], 'planned_progress_percent'), "header at {$anchor}");
+            unlink($path);
+        }
+    }
+
+    /**
+     * 2026-09-16 (D3): calendar month NAMES are numbered by column order, so a
+     * project starting in December reads DECEMBER as month 1. They used to be keyed
+     * by calendar number (months 1, 2, 3, 12, summed Jan -> Mar -> Dec). Unequal
+     * amounts make the order visible: Dec 10k, Jan 20k, Feb 30k, Mar 40k of 100k.
+     * Also with merged pairs, and with a name repeated a year later (month 13).
+     */
+    public function test_calendar_month_names_are_numbered_in_column_order(): void
+    {
+        $svc = app(SCurveImportService::class);
+
+        // Single columns.
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([
+            ['DESCRIPTION', 'CONTRACT', 'DECEMBER', 'JANUARY', 'FEBRUARY', 'MARCH'],
+            ['Works', 100000, 10000, 20000, 30000, 40000],
+        ]);
+        (new Xlsx($spreadsheet))->save($path);
+        $result = $svc->parse($path);
+        $this->assertSame([1, 2, 3, 4], array_column($result['months'], 'month_index'));
+        $this->assertSame([10.0, 30.0, 60.0, 100.0], array_column($result['months'], 'planned_progress_percent'));
+        unlink($path);
+
+        // Merged pairs (each month written in two cells).
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['DESCRIPTION', 'CONTRACT', 'DEC', null, 'JAN', null, 'FEB', null, 'MAR', null],
+            ['Works', 100000, 5000, 5000, 10000, 10000, 15000, 15000, 20000, 20000],
+        ]);
+        foreach (['C1:D1', 'E1:F1', 'G1:H1', 'I1:J1'] as $range) {
+            $sheet->mergeCells($range);
+        }
+        (new Xlsx($spreadsheet))->save($path);
+        $result = $svc->parse($path);
+        $this->assertSame([10.0, 30.0, 60.0, 100.0], array_column($result['months'], 'planned_progress_percent'));
+        unlink($path);
+
+        // Fourteen months from December: DECEMBER and JANUARY appear twice.
+        $names = ['DECEMBER', 'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY',
+            'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER', 'JANUARY'];
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([
+            array_merge(['DESCRIPTION', 'CONTRACT'], $names),
+            array_merge(['Works', 140000], array_fill(0, 14, 10000)),
+        ]);
+        (new Xlsx($spreadsheet))->save($path);
+        $result = $svc->parse($path);
+        $this->assertSame(range(1, 14), array_column($result['months'], 'month_index'));
+        $this->assertSame(92.86, $result['months'][12]['planned_progress_percent']);
+        unlink($path);
+    }
+
+    /**
+     * 2026-09-16 (D2): labelled months past 12 are read. "Month 13" and "Month 14"
+     * used to be dropped silently and month 12 forced to 100.
+     */
+    public function test_labelled_months_past_twelve_are_read(): void
+    {
+        $header = ['DESCRIPTION', 'CONTRACT'];
+        $data = ['Works', 140000];
+        for ($i = 1; $i <= 14; $i++) {
+            $header[] = "Month {$i}";
+            $data[] = 10000;
+        }
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $spreadsheet = new Spreadsheet();
+        $spreadsheet->getActiveSheet()->fromArray([$header, $data]);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $result = app(SCurveImportService::class)->parse($path);
+
+        $this->assertCount(14, $result['months']);
+        $this->assertSame(85.71, $result['months'][11]['planned_progress_percent']);
+        $this->assertSame(100.0, $result['months'][13]['planned_progress_percent']);
+        unlink($path);
+    }
+
+    /**
      * R2b (reference + warn): the author's cumulative row is read as reference points —
      * fractions scale to percent, values attribute to the interval's last month, gaps past
      * 1.0 warn WITHOUT moving the plan curve. Gap of exactly 1.0 stays silent (boundary).

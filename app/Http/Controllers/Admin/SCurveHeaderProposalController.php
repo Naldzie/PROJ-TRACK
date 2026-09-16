@@ -330,7 +330,8 @@ class SCurveHeaderProposalController extends Controller
             'code' => 'nullable|string|max:3',
             'weight' => 'nullable|string|max:3',
             'contract' => 'nullable|string|max:3',
-            'months' => 'required|array|min:2|max:12',
+            // Up to MAX_MONTHS (2026-09-16; was 12) — a longer project was unteachable.
+            'months' => 'required|array|min:2|max:' . SCurveImportService::MAX_MONTHS,
             'months.*' => 'required|array|min:1|max:2',
             'months.*.*' => 'required|string|max:3',
             'header_rows' => 'required|array|min:1|max:2',

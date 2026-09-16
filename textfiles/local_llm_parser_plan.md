@@ -6,11 +6,16 @@
 #              textfiles/document_parser_pdf_teach_grid_plan.md (§13, 2026-09-16 — the usage measurement
 #                this file is built on, logged there in full)
 # Date: September 16, 2026
-# Status: 🔄 INVESTIGATION ONLY — NO CODE, NOTHING DECIDED. Raised by the user after
-#         frequent Gemini 503s, and because the capstone PANEL and the CONSULTANT are
-#         likely to require a campus-hosted model instead of a third-party API.
-#         The usage measurement IS DONE (§4) and it supports acting. What it does NOT
-#         support is acting in the order first proposed — see §5 and §8.
+# Status: ⏸ PAUSED AFTER STEP 1 (2026-09-16 close) — NO APP CODE.
+#         §4 usage measurement: done. §5 step 1 (measure the model): DONE, and it FAILED —
+#         Qwen2.5-VL 3B / 7B on the PDF specimens and Qwen2.5-7B-Instruct on the Excel
+#         specimens, all on a free Colab T4: no model computed a curve from activity
+#         rows, and nearly every call exceeded the 50 s budget. Conclusion for the panel
+#         is in §5. Steps 2 (configurable endpoint) and 3 (hosting) not ordered.
+#         Open, needs an order: the prompts' example contractAmount is BUHI's real one;
+#         a "transcribe-only" small-model prompt was proposed as a fairer test.
+#         Notebooks + prompts: C:\temp\opencode\colab_*.ipynb, colab_excel\; results:
+#         sampledocs/vlm_results_*.json, llm_excel_results_*.json (git-ignored).
 # Branch on build: phase-<n>-local-llm-parser (Rule 12; no merge to main without OK)
 
 ===============================================================================
@@ -441,8 +446,13 @@
   1. Read §0, then §4. The measurement is the justification; do not redo it without
      filtering the log to `local.` (the suite shares the file).
   2. Nothing here is built. Ask for an explicit order before starting any step (Rule 10).
-  3. Step 1 needs no code in this repo — it is a model test against the known-truth
-     curves in §5. Do it before anything else.
+  3. Step 1 is DONE (2026-09-16) and failed for 3B and 7B on both PDF and Excel — read
+     its results in §5 before proposing another model test. To re-run or extend it,
+     reuse the notebooks in C:\temp\opencode (colab_vlm_scurve_test / colab_llm_excel_test,
+     built from their .src.py by build_ipynb.mjs) and regenerate the Excel prompts with
+     dump_excel_prompts.php so they match the app. A fairer small-model test would
+     change the PROMPT (no example numbers; transcribe only, let our code sum) — that
+     needs an order.
   4. Keep predictions out of it (§3). The E3 split is what makes this safe.
   5. Log results HERE before committing, and re-check the standing constraints in
      AGENTS.md (blinding stays on; no merge to main without confirmation).

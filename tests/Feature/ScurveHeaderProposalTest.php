@@ -640,6 +640,43 @@ class ScurveHeaderProposalTest extends TestCase
         unlink($path);
     }
 
+    // 2026-09-16 (D2): a layout longer than twelve months can be taught (the
+    // endpoint and the map builder both stopped at 12), and the new ceiling holds.
+    // Called by: PATCH .../columns -> teachColumns() -> buildTaughtMap().
+    public function test_teach_accepts_more_than_twelve_months_up_to_the_ceiling(): void
+    {
+        $staff = $this->makeUser('staff');
+        $letters = [];
+        for ($i = 0; $i < 16; $i++) {
+            $letters[] = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
+        }
+        $monthLabels = [];
+        $months = [];
+        for ($m = 1; $m <= 14; $m++) {
+            $monthLabels[] = "Month {$m}";
+            $months[(string) $m] = [$letters[$m + 1]];   // C..P
+        }
+        $text = 'COLUMNS: ' . implode(',', $letters) . " | META: title | HEADER: labels | DATA: rows | SUMMARY: totals\n"
+            . 'R1 [HEADER]: DESCRIPTION,CONTRACT,' . implode(',', $monthLabels) . "\n"
+            . 'R2 [DATA]: Works,140000,' . implode(',', array_fill(0, 14, 10000));
+        $row = $this->makeTeachableRow(['header_rows_text' => $text]);
+
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$row->id}/columns", [
+            'desc' => 'A', 'contract' => 'B', 'months' => $months, 'header_rows' => [1], 'mode' => 'variant',
+        ])->assertOk();
+        $variant = ScurveHeaderProposal::where('source', 'manual-teach')->first();
+        $this->assertCount(14, $variant->column_map['monthSpans']);
+
+        // Past the ceiling: refused by the map builder, with nothing stored.
+        $row2 = $this->makeTeachableRow(['header_rows_text' => $text]);
+        $this->actingAs($staff)->patchJson("/staff/scurve-header-proposals/{$row2->id}/columns", [
+            'desc' => 'A', 'contract' => 'B',
+            'months' => ['1' => ['C'], (string) (\App\Services\SCurveImportService::MAX_MONTHS + 1) => ['D']],
+            'header_rows' => [1], 'mode' => 'variant',
+        ])->assertUnprocessable();
+        $this->assertSame(1, ScurveHeaderProposal::where('source', 'manual-teach')->count());
+    }
+
     // Explicit replace overwrites the map AND drops live → proposed (re-review).
     // Called by: PATCH .../columns with mode replace.
     public function test_teach_replace_drops_live_to_proposed(): void
