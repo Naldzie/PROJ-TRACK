@@ -29,9 +29,12 @@
 #         ✅ 2026-09-15 SESSION CLOSED — PDF READ GUARD + BUHI ONE-PAGE LEARNABLE. Every
 #           item built this session is browser-proven and committed (see the LAST §13
 #           entry, "SESSION CLOSE — HANDOFF", for the commit list, lessons and queue).
-#         ➜ HANDOFF: start at the LAST §13 entry, "2026-09-16 — SESSION CLOSE — HANDOFF".
-#           ⚠️ IT OPENS WITH THE ONE THING THAT CANNOT WAIT: this session's work is
-#           UNCOMMITTED in the working tree (3 files) and `git stash` would take it away.
+#         ✅ 2026-09-16 (later): EVERYTHING BELOW IS COMMITTED, PUSHED AND MERGED TO
+#           develop — 3a + 2(c) in ac8d0db, 3b + 3c in the commit after it. All
+#           browser-proven. The "UNCOMMITTED" words in the 2026-09-16 lines below are
+#           history, left as written.
+#         ➜ HANDOFF: start at the 2026-09-16 3b + 3c entry near the end of §13 (its
+#           browser result closes the session's work), then the AI-usage measurement.
 #           The two entries before it are that session's detail (the item-3 restudy, then
 #           the 3a build + browser result); the 2026-09-15 close before those holds the
 #           previous commit list. Earlier entries are the build log in order (guard
@@ -63,16 +66,22 @@
 #           behaviour is unchanged. BUHI 12 notes -> 1; the roof read through a
 #           names-only band keeps all 6. Also clears the bogus 'summary-gap' that was
 #           calling an exact read WEAK (that flag only re-words the in-modal AI line; it never controlled whether an offer appears — see the 2(c) entry).
-#         NEXT ORDERED WORK (each needs an explicit order — Rule 10): (1) 3b display-only
-#           range + (2) 3c disabled PDF buttons, done together; optional: a POSITIVE note
+#         ✅ 2026-09-16 ITEMS 3b + 3c BUILT + BROWSER-PROVEN, COMMITTED. The desk
+#           now reports the description BAND ("Description=A..D") instead of its first
+#           letter, and Contract amount / Weight / Item code are disabled on PDF rows with
+#           the reason. Display only — assigns.desc still saves one letter, so every
+#           layout round-trips unchanged. See the LAST §13 entry for the browser steps.
+#         NEXT ORDERED WORK (each needs an explicit order — Rule 10):
+#           optional: a POSITIVE note
 #           when a summary row CONFIRMS the read (user question, 2(c) entry); the Excel-vs-
 #           PDF disagreement is PARKED by decision (§13, option 2; revive as option 4); 3d editable
 #           range stays on HOLD; then the early-100 guard. Full split-down
 #           support stays PARKED. Known and untriggered: the fraction SCALE defect (2(c)
 #           entry).
-#         OWED BY THE USER (small): the AI-assist ANSWER on the one-page BUHI (untested —
-#           the AI service returned 503 all session); item-2 Excel browser steps from
-#           2026-09-14 (prefill on reopen; staff layout).
+#         OWED ITEMS, RESOLVED 2026-09-16: item-2 Excel browser steps SHOWN (prefill on
+#           reopen; staff layout). The AI-assist ANSWER on the one-page BUHI remains
+#           UNTESTABLE — that file has never once got an answer (503 / time budget),
+#           while other files do. See the 3b + 3c entry's browser result.
 #         DATE NOTE: entries headed "2026-09-15" above the misfit-layout entry were really
 #           written on 2026-09-14 local time.
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
@@ -3911,6 +3920,8 @@
   this block keeps up to date.)
   -----------------------------------------------------------------------------
 
+    (SUPERSEDED 2026-09-16 later: all of this was committed — 3a + 2(c) as ac8d0db —
+    and merged to develop. The warning below is kept as written.)
     ⚠️ READ THIS FIRST: NOTHING FROM THIS SESSION IS COMMITTED.
       The user said "no commit for now" and that still stands — do NOT commit without
       asking. Four files are modified in the working tree of
@@ -4293,6 +4304,206 @@
       — the Excel notes are TRUE, self-explaining and end with "no action needed", which
       is a very different thing from the eleven wrong notes 2(c) removed. Whatever is
       chosen, the PDF's 2(c) gate stays: nothing it silenced was true.
+
+  2026-09-16 — ITEMS 3b + 3c ✅ BUILT (code, UNCOMMITTED, not browser-proven).
+  ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    Ordered together, as the restudy recommended: 3b removes the reason anyone was
+    clicking the buttons 3c disables.
+
+    3b — THE DESCRIPTION BAND IS SHOWN, NOT ITS FIRST LETTER (retires finding A)
+      A PDF description is not a column, it is an x-range: buildRows keeps every token
+      left of descRight and never reads the left edge (falsified 2026-09-16). A derived
+      map therefore stores the roof's description as the BAND A..D, and prefillFromMap
+      reported lettersInBand(...)[0] — so the desk opened saying "Description = A" on a
+      file whose names are in B. Nothing read wrong; the one screen whose job is earning
+      the reviewer's trust was telling them something untrue.
+      NOW: prefillFromMap keeps the whole band (t.descBand) alongside the pick, and the
+      desk reports the range — "Description=A..D" in the readout, and a faded DESC badge
+      on every letter the band covers in the grid header.
+      WHAT IS SAVED IS UNCHANGED. assigns.desc stays the single letter the server
+      expects, so every layout round-trips byte-identically; teachColumns, the server's
+      'desc' => max:3 validation and PDF_MAP_VERSION are all untouched. This is 3b as
+      specified: DISPLAY ONLY. An editable range is 3d, still on HOLD.
+      WHICH BAND IS SHOWN, AND WHEN — the honest distinction:
+        untouched   the band the layout ACTUALLY HOLDS (remembered from the stored map)
+        re-picked   the band SAVING WILL STORE (computed: the pick, up to the first
+                    month column — with 3c the only widening stop left)
+        Both a description click and a month click clear t.descBand, so there is no
+        staleness to check for.
+
+    3c — CONTRACT AMOUNT / WEIGHT / ITEM CODE DISABLED ON PDF ROWS
+      Measured in finding B: buildTaughtPdfMap reads all three ONLY as widening stops
+      and then discards them. The stored PDF page has no contract key and the PDF reader
+      has no contract column concept at all (its contract comes from the TOTAL row). On
+      PDF they were three boundary hints dressed as fields.
+      They now carry excelOnly: true and are disabled WITH the reason printed beside
+      them (COL_PDF_REASON), exactly the pattern the two row roles already use — a
+      control that vanishes teaches the reviewer nothing. schTeachClickLetter refuses
+      them on a PDF too, so an armed field can never assign one silently.
+      SAFE BY MEASUREMENT: with no stops left, a single taught letter widens to month 1.
+      Both specimens read EXACT that way (2026-09-16 restudy, finding 6).
+
+    A DEFECT THE REAL FILES CAUGHT, AND THE PROBE DID NOT PREDICT
+      First cut ran the band to the END of the grid when no month stopped it. The roof's
+      TWO-PAGE capture stores NO months (it is the unnumbered capture, DB #137), so the
+      desk would have read "Description=A..M" — a worse answer than the single letter
+      this item exists to replace. pdfDescBandLetters now returns the pick alone when no
+      month lies to its right: with nothing to stop at, the band is not yet determined,
+      and saying so is better than claiming the whole row. Only visible because the
+      acceptance probe replayed the REAL capture maps rather than fixtures.
+
+    WHAT THE DESK NOW SAYS (probe_3b_band_display.mjs, real captures, reopened)
+      specimen      pick   stored band   OLD readout      NEW readout   after re-picking B
+      ROOF 2-page   A      A B C D       Description=A    A..D          B      (no months yet)
+      ROOF 1-page   A      A B C D       Description=A    A..D          B..E
+      BUHI 1-page   A      A B C         Description=A    A..C          B..H
+
+    VERIFICATION
+      npm run test:js        230 tests, 228 pass + the 2 intended blinding fails (+3).
+      falsified by mutation  three mutations, one per test: the band's stop set to the
+                             next letter; prefill's band memory removed; the weight
+                             field's excelOnly flag dropped. Each turned its own test
+                             red and nothing else. Restored -> 42/42 on the teach core.
+      verify_p6.mjs          16 reads, 0 changed.   block_snapshot.mjs  9 PDFs, 0 changed.
+                             (Neither is really at risk — the reader imports neither the
+                             teach core nor the Blade — but both were re-run anyway.)
+      php artisan test       1219 passed / the same 5 pre-existing failures BY NAME.
+      view:clear + view:cache run after the Blade edit.
+
+    BROWSER RESULT (user, same day) — 3b CONFIRMED, 3c NOT YET SHOWN.
+      Screenshot of the teach grid on the BUHI-shaped layout: the band badges render as
+      designed — a SOLID blue DESC on the picked letter (A) and FADED DESC badges on the
+      letters the band covers (B, C, D) — beside the month badges (M1 on H and J, M2 on
+      K and M). The user confirms "the roof is still the same", i.e. an unchanged layout
+      still reads what it always read (checklist steps 1, 2 and 5).
+      STILL TO SHOW: step 3 — Contract amount / Weight / Item code greyed WITH the
+      reason printed beside them on a PDF row (the palette is not in the screenshot) —
+      and step 4, Header row still armable. 3c is the untested half.
+      Nothing committed for 3b/3c.
+
+    BROWSER RESULT, ROUND 2 (user, same day) ✅ 3c PASSED — 3b + 3c CLOSED.
+      Step 3  PDF row (BUHI-shaped): Contract amount / Weight / Item code greyed, the
+              reason "Excel layouts only — a PDF layout stores where the columns sit,
+              and takes its contract from the file's own TOTAL row." printed beneath;
+              none of the three can be assigned by clicking a letter.
+      Step 4  Header row still armable (reads "Header row: R3").
+      Excel   SEGMENT and 6-stage rows: all three fields enabled as before.
+      JS suite re-run before commit: 230 tests, 228 pass + the 2 intended blinding fails.
+      COMMITTED, PUSHED, and develop fast-forwarded to this branch (user order:
+      "commit push and merge to develop").
+
+    THE TWO OWED ITEMS, SETTLED THE SAME DAY
+      Item-2 Excel step 2 (prefill on reopen) — SHOWN. The 6-stage layout opens with
+        Header row R2, Description=B, Contract amount=E, M1..M6=F..K prefilled.
+        "Not an activity: none · Cumulative row: none" looked like a miss against the
+        2026-09-14 step text (which expected R7 + R8 / R8) and is NOT one: the DB holds a
+        single 6-stage Excel row, #148, status proposed, an auto-capture from
+        2026-09-16 19:22 with no excludeSigs / cumulativeSig. Nothing was taught, so
+        nothing is prefilled. The row the old step text described no longer exists.
+        Side observation, not investigated: the readout says "Code=B" on the same
+        letter as Description=B (the auto-map's ITEM-label +1 rule landing on the desc
+        column). Display only as far as known; noted, not a defect claim.
+      Item-2 Excel step 5 (staff layout) — SHOWN, the desk renders for staff.
+      AI-assist ANSWER on the one-page BUHI — STILL UNTESTABLE, and the user's report
+        makes it a finding: every send of THIS file ends in 503 or the spent E5 time
+        budget, never once a success, while other files still get answers (with
+        occasional 503s). A file-specific failure is not explained by provider capacity
+        alone. Unmeasured candidate: the payload — the one-page BUHI is the page that
+        needs shrink-to-fit, i.e. the largest image the app sends. Next step if ordered:
+        read its request/response lines in laravel.log (filtered to `local.`) and compare
+        payload size and time-to-error against a file that succeeds.
+
+  2026-09-16 — MEASUREMENT: HOW OFTEN IS THE AI PARSER PATH ACTUALLY REACHED, AND HOW
+  OFTEN DOES IT WORK? Read-only, no code. Asked before deciding anything about a local
+  LLM (user: the panel and the consultant are likely to require one on the campus server).
+  -----------------------------------------------------------------------------
+
+    SOURCE: storage/logs/laravel.log, 5.4 MB, spanning 2026-09-10 .. 09-16.
+    The suite writes to the SAME file, so every count below is filtered to `local.`
+    (real browser use); `testing.` lines are excluded. That split matters — unfiltered,
+    the log shows 3,980 parser failures, of which 3,565 are the test suite.
+
+    REAL USE OVER SEVEN DAYS
+      date    failed calls   got a response   ladder walked
+      09-10        45              20               0
+      09-11        60              28               0
+      09-12        71              39               0
+      09-13        62              19              26
+      09-14       119              27              52
+      09-15        34               0              12
+      09-16        24               1               9
+      TOTAL       415             134              99
+      Plus: E5 time-budget stops 45 · E6 rung promotions 10.
+
+    WHY THE CALLS FAILED (local only, all seven days)
+      503 .......... 247   capacity, the one the user is reporting
+      throwable .... 125   transport / timeout
+      429 ........... 41   quota
+      404 ............ 2   dead model id
+      Note 41 of these are 429s, not 503s: on those days the free-tier quota was the
+      binding limit, not capacity.
+
+    THE FINDING
+      1. IT IS NOT A PERCEPTION. Over the whole week only 134 of 549 calls returned
+         anything — a 24% success rate. In the LAST TWO DAYS it is 1 response in 59
+         calls. The plan's 2026-09-15 note that "the AI service returned 503 all
+         session" was literally true, and 09-16 is no better.
+      2. THE LADDER IS WORKING AND IS NOT ENOUGH. It walked 99 times and promoted a
+         rung 10 times; it still ends in nothing. Adding more Gemini rungs cannot fix a
+         provider-wide capacity problem.
+      3. THE WAIT IS REAL. 45 times the ladder spent its whole 50-second budget (E5)
+         and stopped with no answer. That is a reviewer watching a spinner for most of
+         a minute for nothing — the worst version of this failure.
+      4. BUT NOTHING IN THE CORPUS NEEDS IT. Every specimen reads offline: the roof
+         family with zero AI, the one-page BUHI through a taught layout, 6-stage and
+         10-month exactly on first upload, and all Excel through phpspreadsheet. The AI
+         path is opt-in (the reviewer clicks "Cross-check with AI?" / "Try AI assist?"),
+         so these 549 calls are deliberate presses during development, not imports
+         failing. A 503 degrades a second opinion; it does not block a baseline.
+      => The AI tier is effectively dead, and the system does not currently depend on
+         it. Both halves of that sentence matter for the decision below.
+
+    WHAT THIS MEANS FOR THE LOCAL-LLM QUESTION (context from the user, 2026-09-16)
+      The panel may require a campus-hosted model instead of Gemini; the consultant has
+      asked them to try it, and has ruled out PAID services because the client will not
+      pay. The stated reason is that a public college's contractors each bring their own
+      S-curve layout, with no fixed format.
+      TWO THINGS TO SAY ABOUT THAT REASONING, both already established here:
+      (a) THE "NO FIXED FORMAT" PROBLEM IS ANSWERED BY THE LEARNING LOOP, NOT BY AI.
+          Capture -> teach -> approve means a novel contractor layout is taught ONCE and
+          then reads free, offline and deterministically, for every later upload from
+          that contractor. That is a stronger answer to a panel than "we ask a model",
+          because it is auditable, repeatable and costs nothing per call. The AI tier
+          exists for a layout nobody has taught YET, and for the P5 cross-check.
+      (b) A CAMPUS-HOSTED MODEL FITS THE CONSTRAINTS the consultant set — no per-call
+          cost, no vendor account, and contractor documents never leave the campus.
+          It is a legitimate answer to "what if the free tier stays down", which the
+          numbers above show is not hypothetical.
+
+    THE CHEAP ENABLING MOVE, NOT YET BUILT (needs an order)
+      The Gemini endpoint is HARDCODED IN THREE PLACES in
+      app/Services/AI/GeminiDocumentParserService.php (:1722, :1889, :2016):
+        https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}
+      Lifting that to config and adding an OpenAI-compatible request/response shape
+      turns "replace Gemini with the campus model" from a rewrite into a config change,
+      and it lets ANY backend be tried without committing to one: Ollama on a campus
+      box, a hosted Qwen endpoint, OpenRouter, Groq. It is contained to one service and
+      changes no parser logic. Worth having BEFORE the panel asks, not after.
+      Sizing recorded while it is fresh: a 7B vision model in 4-bit wants ~6-8 GB VRAM.
+      On a CPU-only server a page image takes minutes, which E5's 50s budget would kill
+      anyway — so "campus server" has to mean a GPU, or the images path stays remote.
+      Google Cloud's Always Free tier has NO GPU (e2-micro); the $300/90-day trial
+      normally carries zero GPU quota until the account is upgraded. Colab free does
+      give a T4 but is an interactive notebook with no stable URL and rationed sessions
+      — not something a Laravel app can depend on during a defense.
+
+    BEFORE ANY OF THAT: measure the MODEL, not the hosting. Whether Qwen2.5-VL (or
+    MiniCPM-V) is good enough on the two REAL specimens is a one-off test, and the
+    benchmark already exists — known-truth curves for the roof and BUHI, plus the
+    scripts in textfiles/pdf_ai_loop_proof_tests.md. If a local model cannot match what
+    Gemini managed on those, the hosting question is moot.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

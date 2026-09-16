@@ -226,7 +226,13 @@ export function prefillFromMap(t, cm, parsed) {
                 if (!page) return;
                 const pseudo = page.pseudoCols || [];
                 if (!t.assigns.desc) {
-                    t.assigns.desc = lettersInBand(pseudo, page.descX, page.descRight)[0] || null;
+                    // Item 3b — keep the FIRST letter as the pick (that is what the
+                    // server stores and re-widens identically), but remember the whole
+                    // band so the desk can show what it really covers instead of
+                    // reporting one letter of it.
+                    const band = lettersInBand(pseudo, page.descX, page.descRight);
+                    t.assigns.desc = band[0] || null;
+                    if (band.length) t.descBand = band;
                 }
                 (page.monthCols || []).forEach(mc => {
                     const cols = lettersInBand(pseudo, mc.x, mc.xEnd);
@@ -284,6 +290,57 @@ export function prefillFromMap(t, cm, parsed) {
             }
         } catch (e3) { /* best-effort */ }
     } catch (e) { /* best-effort */ }
+}
+
+/* ─── Item 3b/3c: the PDF description BAND, and the three fields PDF never keeps ── */
+
+// Why Contract amount / Weight / Item code are disabled on a PDF row (item 3c).
+// Measured 2026-09-15 (finding B): buildTaughtPdfMap reads all three ONLY as "stops"
+// when widening the taught description to a band, then discards them — the stored PDF
+// page holds descX/descRight/monthCols/pseudoCols/sig/hints and no contract key, and
+// the PDF reader has no contract column concept at all (its contract comes from the
+// TOTAL row). On PDF they were three boundary hints dressed as fields.
+export const COL_PDF_REASON = 'Excel layouts only — a PDF layout stores where the columns'
+    + ' sit, and takes its contract from the file’s own TOTAL row.';
+
+/**
+ * Item 3b — which letters the DESCRIPTION BAND covers, for display.
+ *
+ * A PDF description is not a column, it is an x-range: the reader keeps every token
+ * left of descRight and never looks at the left edge (falsified 2026-09-16 — moving
+ * descX changes nothing). So "Description = A" was never the whole truth, and showing
+ * one letter is what made the desk say A when the names are in B (finding A).
+ *
+ * The band runs from the picked letter up to the first month column, because that is
+ * what buildTaughtPdfMap will store: with item 3c disabling contract/weight/code on
+ * PDF, the only remaining widening stop is the leftmost taught month. Nothing here
+ * changes what is SAVED — assigns.desc stays the single letter the server expects.
+ *
+ * Pure. Called by: the modal, on open and after every desc/month click.
+ * Returns [] when there is no description pick to describe.
+ */
+export function pdfDescBandLetters(letters, assigns) {
+    const all = Array.isArray(letters) ? letters : [];
+    const a = assigns || {};
+    const desc = a.desc ? String(a.desc).toUpperCase() : null;
+    if (!desc) return [];
+    const start = all.indexOf(desc);
+    if (start === -1) return [];
+    // The leftmost letter given to any month — the band stops just before it.
+    let stop = -1;
+    Object.keys(a.months || {}).forEach((m) => {
+        (a.months[m] || []).forEach((l) => {
+            const at = all.indexOf(String(l).toUpperCase());
+            if (at > start && (stop === -1 || at < stop)) stop = at;
+        });
+    });
+    // No month to the right yet (an UNNUMBERED capture, or a half-finished teaching):
+    // the band has nothing to stop at, so it is NOT yet determined. Report the pick
+    // alone rather than claiming everything to the end of the grid — measured on the
+    // roof's two-page capture, which stores no months and would otherwise have read
+    // "Description=A..M", a worse answer than the one this item exists to fix.
+    if (stop === -1) return [desc];
+    return all.slice(start, stop);
 }
 
 /* ─── Row fields: Header row / Not an activity / Cumulative row ───────────── */
@@ -560,6 +617,8 @@ if (typeof window !== 'undefined') {
         defaultHeaderRows,
         lettersInBand,
         prefillFromMap,
+        pdfDescBandLetters,
+        COL_PDF_REASON,
         ROW_FIELD_KEYS,
         ROW_PDF_REASON,
         isRowField,

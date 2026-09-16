@@ -581,11 +581,14 @@ function schTeachColumns(id) {
     }
 }
 
+// Item 3c (2026-09-16): the last three are EXCEL-ONLY. On a PDF they were never stored
+// or read — buildTaughtPdfMap used them as widening stops and then discarded them — so
+// they are disabled with the reason, the way the two row roles already are.
 const SCH_TEACH_FIELDS = [
     { key: 'desc', label: 'Description', tip: 'Work-names column (e.g. TASK DESCRIPTION, WORK DETAILS) — activities are read from here. Required.' },
-    { key: 'contract', label: 'Contract amount', tip: 'Peso column holding each activity\u2019s cost (e.g. BUDGET COST) — the baseline denominator. Optional.' },
-    { key: 'weight', label: 'Weight', tip: 'Percent-weight column (e.g. % WEIGHT). Optional.' },
-    { key: 'code', label: 'Item code', tip: 'Row numbering column (e.g. ITEM). Optional.' },
+    { key: 'contract', label: 'Contract amount', excelOnly: true, tip: 'Peso column holding each activity\u2019s cost (e.g. BUDGET COST) — the baseline denominator. Optional.' },
+    { key: 'weight', label: 'Weight', excelOnly: true, tip: 'Percent-weight column (e.g. % WEIGHT). Optional.' },
+    { key: 'code', label: 'Item code', excelOnly: true, tip: 'Row numbering column (e.g. ITEM). Optional.' },
 ];
 // PDF-4 Stage 2 — months are built on demand. A fixed wall of twelve buttons
 // pushed the grid off the screen on every layout, however few months it had.
@@ -620,6 +623,29 @@ const SCH_ROW_FIELDS = [
 
 // Why the two role fields are disabled on a PDF row — one wording, from the core.
 function schRowPdfReason() { return schCore().ROW_PDF_REASON; }
+
+// Item 3c — why Contract amount / Weight / Item code are disabled on a PDF row.
+function schColPdfReason() { return schCore().COL_PDF_REASON; }
+
+// Item 3b — the letters the description BAND covers on a PDF layout, recomputed from
+// the current picks. A PDF description is an x-range, not a column: the reader keeps
+// every token left of the band's right edge, and the band runs to the first month.
+// Display only — assigns.desc stays the one letter the server is given.
+function schDescBand() {
+    if (!_schTeach || _schTeach.sourceType !== 'pdf') return [];
+    // Until the reviewer touches the description or a month, show the band the LAYOUT
+    // ACTUALLY HOLDS (remembered by prefillFromMap). Once they change either, that
+    // band is history and the computed one — what saving will store — is the honest
+    // answer. Both clicks clear descBand, so this needs no staleness check.
+    if (_schTeach.descBand && _schTeach.descBand.length) return _schTeach.descBand;
+    return schCore().pdfDescBandLetters(_schTeach.letters, _schTeach.assigns);
+}
+
+// Is this letter part of the description band without being the letter that was picked?
+function schInDescBand(letter) {
+    if (!_schTeach || _schTeach.assigns.desc === letter) return false;
+    return schDescBand().indexOf(letter) !== -1;
+}
 
 // Is this palette key a row field (as opposed to a column field)?
 function schIsRowField(key) { return schCore().isRowField(key); }
@@ -685,10 +711,26 @@ function schRenderTeachPalette() {
     };
 
     const cols = line('Columns');
+    const isPdfCols = _schTeach.sourceType === 'pdf';
     const shown = SCH_TEACH_FIELDS.slice();
     const upto = schMonthsToShow();
     for (let m = 1; m <= upto; m++) shown.push(schMonthField(m));
-    shown.forEach(f => cols.appendChild(armButton(f, f.label)));
+    shown.forEach(f => {
+        const b = armButton(f, f.label);
+        // Item 3c — same treatment as the two row roles: disabled WITH the reason,
+        // never removed. A control that vanishes teaches the reviewer nothing.
+        if (f.excelOnly && isPdfCols) {
+            b.disabled = true;
+            b.title = schColPdfReason();
+        }
+        cols.appendChild(b);
+    });
+    if (isPdfCols) {
+        const why = document.createElement('span');
+        why.className = 'small text-muted ms-1';
+        why.textContent = schColPdfReason();
+        cols.appendChild(why);
+    }
     if (upto < SCH_TEACH_MAX_MONTHS) {
         const more = document.createElement('button');
         more.type = 'button';
@@ -815,8 +857,17 @@ function schTeachClickLetter(letter) {
         showToast('"' + schRowFieldTitle(field) + '" takes R-numbers — click a row on the left, or arm a column field first.', 'info');
         return;
     }
+    // Item 3c — the three Excel-only column fields cannot be armed on a PDF (their
+    // buttons are disabled), but say so rather than assigning silently if one ever is.
+    if (_schTeach.sourceType === 'pdf' && (field === 'contract' || field === 'weight' || field === 'code')) {
+        showToast(schColPdfReason(), 'info');
+        return;
+    }
     if (field === 'desc' || field === 'code' || field === 'weight' || field === 'contract') {
         a[field] = (a[field] === letter) ? null : letter;
+        // Item 3b — the band remembered from the stored map describes the OLD pick, so
+        // it must not outlive it; schDescBand() recomputes from the new one.
+        if (field === 'desc') _schTeach.descBand = null;
     } else if (schCore().isMonthField(field)) {
         // 2026-09-14: was indexOf('m') === 0, which claims EVERY field key
         // beginning with m. The row-role work was one palette button away from
@@ -832,6 +883,9 @@ function schTeachClickLetter(letter) {
         else if (list.length < 2) { list.push(letter); }
         else { showToast('At most two columns per month — click one to remove it first', 'warning'); return; }
         if (list.length) a.months[m] = list; else delete a.months[m];
+        // Item 3b — the first month is the description band's right edge, so moving a
+        // month can move the band. Drop the remembered one and recompute.
+        _schTeach.descBand = null;
     }
     schRenderTeachPalette();
     schRenderTeachGrid();
@@ -855,9 +909,15 @@ function schRenderTeachGrid() {
         + '<thead class="table-light"><tr><th></th>';
     _schTeach.letters.forEach(l => {
         const claim = schTeachClaim(l);
+        // Item 3b — a letter inside the description band but not the one picked gets a
+        // faded DESC badge, so the reviewer sees how far the band really reaches
+        // without being told it was assigned column by column.
+        const inBand = !claim && schInDescBand(l);
         html += '<th style="cursor:pointer;white-space:nowrap;" data-sch-letter="' + schEscapeHtml(l) + '" title="Assign ' + schEscapeHtml(l) + '">'
             + schEscapeHtml(l)
             + (claim ? '<br><span class="badge bg-primary" style="font-size:9px;">' + schEscapeHtml(schTeachFieldLabel(claim)) + '</span>' : '')
+            + (inBand ? '<br><span class="badge bg-primary" style="font-size:9px;opacity:.45;"'
+                + ' title="Part of the description band — the work names are read from every column up to the first month.">DESC</span>' : '')
             + '</th>';
     });
     html += '</tr></thead><tbody>';
@@ -925,7 +985,12 @@ function schRenderTeachReadout() {
     if (!host || !_schTeach) return;
     const a = _schTeach.assigns;
     const parts = [];
-    if (a.desc) parts.push('Description=' + a.desc);
+    // Item 3b — on a PDF, say the whole band ("Description=B..G"), because that is
+    // what the reader uses. One letter was the old, misleading answer (finding A).
+    if (a.desc) {
+        const band = schDescBand();
+        parts.push('Description=' + (band.length > 1 ? band[0] + '..' + band[band.length - 1] : a.desc));
+    }
     if (a.contract) parts.push('Contract amount=' + a.contract);
     if (a.weight) parts.push('Weight=' + a.weight);
     if (a.code) parts.push('Code=' + a.code);

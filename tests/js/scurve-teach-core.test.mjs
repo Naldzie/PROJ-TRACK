@@ -14,6 +14,8 @@ import {
     prefillFromMap,
     ROW_FIELD_KEYS,
     ROW_PDF_REASON,
+    COL_PDF_REASON,
+    pdfDescBandLetters,
     isRowField,
     isMonthField,
     applyRowPick,
@@ -513,4 +515,81 @@ test('a TOTAL label under a month column is a value, not the TOTAL row', () => {
     const p = parseHeaderBlock('COLUMNS: A,B,C,D\nR1 [HEADER]: ITEM,DESC,M1,M2\nR2 [DATA]: ,x,TOTAL,5\nR3 [SUMMARY]: ,TOTAL,40,60');
     const t = freshState(p, { sourceType: 'pdf', assigns: { months: { 1: ['C'], 2: ['D'] } } });
     assert.equal(taughtTotalCheck(t).row, 3);
+});
+
+/* ─── Items 3b/3c: the PDF description band, and the Excel-only column fields ── */
+
+test('pdfDescBandLetters runs the band from the pick to the first month', () => {
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    // The roof shape: names in B, months from F. The band the server will store runs
+    // B..E, because the only widening stop left on a PDF is the first month column.
+    assert.deepEqual(
+        pdfDescBandLetters(letters, { desc: 'B', months: { 1: ['F'], 2: ['G'] } }),
+        ['B', 'C', 'D', 'E']);
+    // The pick itself is always in the band.
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: 'E', months: { 1: ['F'] } }), ['E']);
+    // The LOWEST-indexed letter given to any month stops it, not the lowest month
+    // number — months are assigned in any order while teaching.
+    assert.deepEqual(
+        pdfDescBandLetters(letters, { desc: 'A', months: { 3: ['C'], 1: ['G'] } }),
+        ['A', 'B']);
+    // WITH NO MONTH TO THE RIGHT the band is not determined, so it is NOT reported as
+    // running to the end of the grid. Measured on the roof's two-page capture, which
+    // stores no months at all and would otherwise have said "Description=A..M" — a
+    // worse answer than the single letter this item exists to replace.
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: 'C', months: {} }), ['C']);
+    // A month to the LEFT of the description is not a stop either.
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: 'E', months: { 1: ['A'] } }), ['E']);
+    // Nothing to describe.
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: null, months: { 1: ['F'] } }), []);
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: 'ZZ', months: {} }), [], 'a letter not on the grid');
+    assert.deepEqual(pdfDescBandLetters(null, { desc: 'B', months: {} }), []);
+    // Case-insensitive, like every other letter comparison in the desk.
+    assert.deepEqual(pdfDescBandLetters(letters, { desc: 'b', months: { 1: ['f'] } }), ['B', 'C', 'D', 'E']);
+});
+
+test('PDF prefill remembers the whole description band, not just its first letter', () => {
+    // Finding A: the desk opened saying "Description = A" on a roof print whose names
+    // are in B, because a derived map stores the description as a BAND (A..D) and the
+    // prefill reported one letter of it. The pick stays the first letter — that is
+    // what the server stores and re-widens identically — but the band is kept for the
+    // desk to show.
+    const map = {
+        kind: 'pdf',
+        pages: [{
+            descX: 0.04, descRight: 0.33,
+            pseudoCols: [
+                { letter: 'A', x: 0.038, xEnd: 0.068 }, { letter: 'B', x: 0.068, xEnd: 0.232 },
+                { letter: 'C', x: 0.232, xEnd: 0.274 }, { letter: 'D', x: 0.274, xEnd: 0.324 },
+                { letter: 'E', x: 0.324, xEnd: 0.424 }, { letter: 'F', x: 0.424, xEnd: 0.526 },
+            ],
+            monthCols: [{ index: 1, x: 0.424, xEnd: 0.526 }, { index: 2, x: 0.526, xEnd: 0.63 }],
+        }],
+    };
+    const t = { assigns: { desc: null, code: null, weight: null, contract: null, months: {} }, headerRows: [], excludedRows: [], cumulativeRow: null };
+    prefillFromMap(t, map, { rows: [] });
+    assert.equal(t.assigns.desc, 'A', 'the pick the server is given is unchanged');
+    assert.deepEqual(t.descBand, ['A', 'B', 'C', 'D'], 'and the band it belongs to is remembered');
+});
+
+test('the three Excel-only column fields are declared as such in the modal', () => {
+    // Item 3c. The modal owns the buttons; this pins that Description stays available
+    // on a PDF while the other three carry the flag that disables them.
+    const blade = fs.readFileSync(new URL('../../resources/views/admin/_manage_scurve_headers_modal.blade.php', import.meta.url), 'utf8');
+    const start = blade.indexOf('const SCH_TEACH_FIELDS = [');
+    assert.ok(start !== -1, 'SCH_TEACH_FIELDS must still be declared in the modal');
+    const block = blade.slice(start, blade.indexOf('];', start));
+    const entries = block.split('{ key:').slice(1);
+    const flagged = {};
+    entries.forEach((e) => {
+        const key = (e.match(/^ *'([^']+)'/) || [])[1];
+        if (key) flagged[key] = /excelOnly: true/.test(e);
+    });
+    assert.deepEqual(flagged, { desc: false, contract: true, weight: true, code: true });
+    // The reason is one wording, owned by the core, and is not the row-role one.
+    assert.ok(typeof COL_PDF_REASON === 'string' && COL_PDF_REASON.length > 20);
+    assert.notEqual(COL_PDF_REASON, ROW_PDF_REASON);
+    assert.match(COL_PDF_REASON, /Excel layouts only/);
+    // The modal must take it from the core rather than restating it.
+    assert.match(blade, /function schColPdfReason\(\) \{ return schCore\(\)\.COL_PDF_REASON; \}/);
 });
