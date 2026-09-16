@@ -58,14 +58,21 @@
             </div>
         </div>
         <div class="db-hero-right">
-            {{-- Client-side table search (additive only — the alert-pill
-                 AJAX filter in dashboard.js is untouched). --}}
-            <label class="db-hero-search" for="db-hero-search-input">
-                <i class="bi bi-search"></i>
-                <input id="db-hero-search-input" type="search"
-                       placeholder="Search projects in table…"
-                       oninput="dbSearchProjects(this.value)" autocomplete="off">
-            </label>
+            {{-- Hero search: filters the table in-place AND offers click-to-open
+                 suggestions (dropdown navigates to the project detail page). --}}
+            <div class="db-hero-search-wrap">
+                <label class="db-hero-search" for="db-hero-search-input">
+                    <i class="bi bi-search"></i>
+                    <input id="db-hero-search-input" type="search"
+                           placeholder="Search projects…"
+                           oninput="dbSearchProjects(this.value); dbAutocompleteSearch(this.value)"
+                           onkeydown="dbAutocompleteKey(event)"
+                           onfocus="dbAutocompleteSearch(this.value)"
+                           autocomplete="off" role="combobox" aria-expanded="false"
+                           aria-controls="db-search-results" aria-autocomplete="list">
+                </label>
+                <div id="db-search-results" class="db-search-results" hidden></div>
+            </div>
             <div class="db-hero-actions">
                 <a href="{{ route($projectsIndex) }}" class="db-header-btn light">
                     <i class="bi bi-plus-circle"></i> New Project
@@ -425,6 +432,9 @@
     const DASHBOARD_FILTER_URL = "{{ auth()->user()->role === 'staff'
         ? route('staff.dashboard.filter')
         : route('admin.dashboard.filter') }}";
+    const DASHBOARD_SEARCH_URL = "{{ auth()->user()->role === 'staff'
+        ? route('staff.dashboard.search')
+        : route('admin.dashboard.search') }}";
 
     // ── Hero search (additive, client-side only) ──────────────────────
     // Filters the currently loaded table rows by text. Does NOT touch
@@ -436,6 +446,100 @@
             row.style.display = (!q || row.innerText.toLowerCase().includes(q)) ? '' : 'none';
         });
     }
+
+    // ── Hero autocomplete (search → suggestions → click to open) ──────
+    // Fetches role-scoped matches from DashboardController@search and shows
+    // them in a dropdown. Clicking (or Enter) navigates to detail_url.
+    let dbAcTimer = null;
+    let dbAcItems = [];
+    let dbAcActive = -1;
+
+    function dbAutocompleteSearch(query) {
+        const box = document.getElementById('db-search-results');
+        const input = document.getElementById('db-hero-search-input');
+        const q = (query || '').trim();
+        clearTimeout(dbAcTimer);
+        if (!q) { dbAcClose(); return; }
+        dbAcTimer = setTimeout(async () => {
+            try {
+                const res = await fetch(DASHBOARD_SEARCH_URL + '?q=' + encodeURIComponent(q), {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!res.ok) throw new Error('bad status');
+                dbAcItems = await res.json();
+                dbAcActive = dbAcItems.length ? 0 : -1;
+                dbAcRender(q);
+            } catch (e) { dbAcClose(); }
+        }, 200);
+    }
+
+    function dbAcStatusClass(status) {
+        return {
+            'Ongoing': 's-ongoing', 'Completed': 's-completed', 'Planned': 's-planned',
+            'Suspended': 's-suspended', 'Cancelled': 's-cancelled'
+        }[status] || 's-ongoing';
+    }
+
+    function dbAcRender(q) {
+        const box = document.getElementById('db-search-results');
+        const input = document.getElementById('db-hero-search-input');
+        if (!box) return;
+        if (!q || !q.trim()) { dbAcClose(); return; }
+        if (!dbAcItems.length) {
+            box.innerHTML = '<div class="db-search-empty"><i class="bi bi-search"></i>No projects match "' +
+                q.replace(/</g, '&lt;') + '"</div>';
+        } else {
+            box.innerHTML = dbAcItems.map((p, i) =>
+                '<a href="' + p.detail_url + '" class="db-search-item' + (i === dbAcActive ? ' active' : '') + '"' +
+                ' data-idx="' + i + '" role="option" aria-selected="' + (i === dbAcActive) + '">' +
+                '<span class="db-search-icon"><i class="bi bi-folder2-open"></i></span>' +
+                '<span class="db-search-main"><span class="db-search-code">' + (p.code || '').replace(/</g, '&lt;') + '</span>' +
+                '<span class="db-search-title">' + (p.title || '').replace(/</g, '&lt;') + '</span>' +
+                (p.contractor ? '<span class="db-search-sub">' + p.contractor.replace(/</g, '&lt;') + '</span>' : '') +
+                '</span><span class="db-search-status ' + dbAcStatusClass(p.status) + '">' + (p.status || '') + '</span></a>'
+            ).join('');
+            box.querySelectorAll('.db-search-item').forEach(el => {
+                el.addEventListener('mousemove', () => {
+                    dbAcActive = parseInt(el.dataset.idx, 10);
+                    box.querySelectorAll('.db-search-item').forEach(x => x.classList.remove('active'));
+                    el.classList.add('active');
+                });
+            });
+        }
+        box.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    function dbAcClose() {
+        const box = document.getElementById('db-search-results');
+        const input = document.getElementById('db-hero-search-input');
+        if (box) box.hidden = true;
+        if (input) input.setAttribute('aria-expanded', 'false');
+        dbAcItems = []; dbAcActive = -1;
+    }
+
+    function dbAutocompleteKey(e) {
+        const box = document.getElementById('db-search-results');
+        if (!box || box.hidden) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!dbAcItems.length) return;
+            dbAcActive = e.key === 'ArrowDown'
+                ? (dbAcActive + 1) % dbAcItems.length
+                : (dbAcActive - 1 + dbAcItems.length) % dbAcItems.length;
+            box.querySelectorAll('.db-search-item').forEach((x, i) =>
+                x.classList.toggle('active', i === dbAcActive));
+        } else if (e.key === 'Enter') {
+            if (dbAcActive >= 0 && dbAcItems[dbAcActive]) {
+                e.preventDefault();
+                window.location.href = dbAcItems[dbAcActive].detail_url;
+            }
+        } else if (e.key === 'Escape') { dbAcClose(); }
+    }
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.db-hero-search-wrap')) dbAcClose();
+    });
 
     // ── Analytics Charts ──────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {

@@ -7,6 +7,7 @@ use App\Models\ActivityLog;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
 use App\Services\ProjectHealthService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -18,6 +19,47 @@ use Illuminate\Support\Facades\Auth;
  */
 class DashboardController extends Controller
 {
+    // ── DASHBOARD HERO SEARCH (autocomplete → click to open) ─────────────
+    // Contractor-scoped lookup: only projects assigned to this contractor.
+    // Returns up to 8 matches as JSON with detail_url pointing at the
+    // contractor's read-only project page (route projects.show).
+    public function search(Request $request)
+    {
+        $q = trim((string) $request->get('q', ''));
+
+        if ($q === '') {
+            return response()->json([]);
+        }
+
+        $user = Auth::user();
+        $contractor = $user->contractor;
+
+        if (! $contractor) {
+            return response()->json([]);
+        }
+
+        $projects = $contractor->projects()
+            ->where('is_archived', false)
+            ->with(['contractor:id,company_name'])
+            ->where(function ($inner) use ($q) {
+                $inner->where('code', 'like', "%{$q}%")
+                    ->orWhere('title', 'like', "%{$q}%");
+            })
+            ->orderByRaw("CASE WHEN status = 'Ongoing' THEN 0 ELSE 1 END")
+            ->orderBy('title', 'asc')
+            ->limit(8)
+            ->get(['id', 'code', 'title', 'status', 'contractor_id']);
+
+        return response()->json($projects->map(fn ($p) => [
+            'id'         => $p->id,
+            'code'       => $p->code,
+            'title'      => $p->title,
+            'status'     => $p->status,
+            'contractor' => $p->contractor->company_name ?? null,
+            'detail_url' => route('projects.show', $p->id),
+        ])->values());
+    }
+
     public function index()
     {
         $user = Auth::user();

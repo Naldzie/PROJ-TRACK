@@ -92,13 +92,17 @@
 ══════════════════════════════════════════ */
 .db-hero {
     position: relative;
-    overflow: hidden;
+    /* overflow:visible so the search suggestion dropdown can spill below
+       the banner. Rounded corners are preserved by rounding the bg image
+       and overlay themselves (see below). */
+    overflow: visible;
     border-radius: var(--radius-lg);
     border: 1px solid var(--line);
     box-shadow: var(--shadow-sm);
     margin-bottom: 16px;
     background: linear-gradient(120deg, #0F172A 0%, #1E3A8A 55%, #1D4ED8 100%);
     isolation: isolate;
+    z-index: 30;
 }
 .db-hero-bg {
     position: absolute;
@@ -108,6 +112,7 @@
     object-fit: cover;
     object-position: center 38%;
     z-index: 0;
+    border-radius: var(--radius-lg);
 }
 /* Readability overlay: deep navy on the left where the copy sits,
    fading out so the campus photo stays visible on the right. */
@@ -115,6 +120,7 @@
     position: absolute;
     inset: 0;
     z-index: 1;
+    border-radius: var(--radius-lg);
     background: linear-gradient(100deg,
         rgba(15, 23, 42, 0.94) 0%,
         rgba(30, 58, 138, 0.88) 34%,
@@ -230,6 +236,77 @@
     font-family: inherit;
 }
 .db-hero-search input::placeholder { color: var(--gray-400); }
+
+/* ── Hero search autocomplete dropdown ─────────────────────────────
+   Suggestion list under the hero search box. Clicking a row navigates
+   to that project's detail page (its "directory"). Shared by the
+   admin/staff dashboard and the contractor dashboard. */
+.db-hero-search-wrap { position: relative; }
+.db-search-results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 60;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+    overflow: hidden;
+    max-height: 320px;
+    overflow-y: auto;
+}
+.db-search-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    text-decoration: none;
+    border-bottom: 1px solid var(--gray-100);
+    color: var(--ink);
+}
+.db-search-item:last-child { border-bottom: none; }
+.db-search-item:hover,
+.db-search-item.active { background: var(--blue-50); }
+.db-search-icon {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue-100);
+    color: var(--brand-dark);
+    font-size: 14px;
+}
+.db-search-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.db-search-code { font-size: 10px; font-weight: 700; letter-spacing: 0.4px; color: var(--gray-500); text-transform: uppercase; }
+.db-search-title {
+    font-size: 13px; font-weight: 600; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.db-search-sub {
+    font-size: 11px; color: var(--gray-500);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.db-search-status {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 9px; border-radius: 20px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+.db-search-status.s-ongoing { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.db-search-status.s-completed { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.db-search-status.s-planned { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.db-search-status.s-suspended { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.db-search-status.s-cancelled { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+.db-search-empty {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px; font-size: 12.5px; color: var(--gray-500);
+}
+.db-search-empty i { color: var(--gray-400); }
 .db-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* Header buttons — class names preserved for Blade compat.

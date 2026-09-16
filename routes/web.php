@@ -76,6 +76,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/dashboard/filter', [DashboardController::class, 'filter'])
     ->name('staff.dashboard.filter');
 
+    Route::get('/dashboard/search', [DashboardController::class, 'search'])
+    ->name('staff.dashboard.search');
+
     Route::get('/warranty', [StaffWarrantyController::class, 'index'])
         ->name('staff.warranty');
 
@@ -388,6 +391,9 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
     Route::get('/dashboard', [ContractorDashboardController::class, 'index'])
         ->name('contractor.dashboard');
 
+    Route::get('/dashboard/search', [ContractorDashboardController::class, 'search'])
+        ->name('contractor.dashboard.search');
+
     Route::get('/email', [ContractorEmailController::class, 'index'])->name('contractor.email');
     Route::get('/emails/{email}', [ContractorEmailController::class, 'show'])->name('contractor.emails.show');
     /*
@@ -518,6 +524,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/dashboard/filter', [DashboardController::class, 'filter'])
     ->name('admin.dashboard.filter');
+
+    Route::get('/dashboard/search', [DashboardController::class, 'search'])
+    ->name('admin.dashboard.search');
     
     Route::get('/staff/{id}', [StaffController::class, 'show']);
     Route::post('/staff/{id}/change-role', [StaffController::class, 'changeRole']);

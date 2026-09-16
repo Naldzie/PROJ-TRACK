@@ -1455,3 +1455,73 @@ ode --check clean.
 
 Audit+fix 2026-09-13 unstyled-on-refresh: audited all blades (zero relative asset paths, Vite commented out and no public-build by design, no mix, no SW); all CSS URLs return 200; no admin-projects-create route exists (creation is modal-only). Definite defect found and fixed: contractorlayouts head had a nested link tag inside the favicon href, corrupting that layout head. Added 2.5s font-swap fallback in all 3 layouts. php -l clean. Note: a stylesheet that fails mid-refresh on single-threaded php-S does not block rendering, so the browser can paint without it; inlined critical CSS plus styled loader now cover that window.
 Deep diagnosis 2026-09-13 unstyled-on-refresh, round 2: reproduced in headless Chrome (clean profile) - login renders fully styled on first load AND reload (screenshots compared). All local CSS returns 200 with correct sizes; heads verified clean after contractor fix; no relative paths, no active Vite, no SW; page headers clean (no CSP); 3 consecutive HTML fetches byte-stable (no truncation). Attempted authed render via crafted file session - rejected (server encrypts session cookies despite SESSION_ENCRYPT=false in env, and guard would not pick it up); forged session file removed afterwards. Conclusion: server delivery proven correct; residual cause must be client-side (poisoned profile cache from the broken-favicon era, or an extension). Decisive test given to user: fresh Chrome profile via --user-data-dir.
+
+---
+### Enhancement (2026-09-16): dashboard hero search is now autocomplete click-to-open
+
+**Request:** dashboard search bars only filtered the visible table rows � user wants
+typing to show matching projects and clicking to go to that project'"'"'s page.
+
+**What changed:**
+- New role-scoped JSON endpoints (all `GET ?q=`, max 8, archived excluded):
+  - `admin/dashboard/search` (`admin.dashboard.search`, `DashboardController@search`)
+  - `staff/dashboard/search` (`staff.dashboard.search`, same controller + `scopeToAssigned`)
+  - `contractor/dashboard/search` (`contractor.dashboard.search`,
+    `Contractor\DashboardController@search`, own projects only)
+  - Each returns `{id, code, title, status, contractor, detail_url}` with a
+    role-correct `detail_url` (`admin.projects.detail` / `staff.projects.detail` /
+    `projects.show` for contractors). Matches on code, title (+ contractor
+    company for admin/staff).
+- `admin/dashboard.blade.php` (serves BOTH admin and staff � `staff/dashboard.blade.php`
+  is an unused static placeholder, untouched) + `contractor/dashboard.blade.php`:
+  search input wrapped in `.db-hero-search-wrap` with a `#*-search-results`
+  dropdown; typing still filters the table AND fetches suggestions (200ms
+  debounce); click / Enter navigates to `detail_url`; Up/Down + Esc supported;
+  closes on outside click; "No projects match" empty state.
+- `public/css/dashboard/dashboard.css`: `.db-search-*` dropdown styles (shared);
+  `.db-hero` changed `overflow:hidden` ? `visible` (bg + overlay keep the rounded
+  corners via their own `border-radius`) so the dropdown is not clipped, hero
+  given `z-index:30`.
+
+**Verify:** `route:list` shows all 3 search routes; `php -l` clean x2; view cache
+cleared; `ContractorDashboardTest` 8/8 pass; `DashboardHealthTest` +
+`DashboardPendingExtensionsTest` 15/15 pass; temp `TempDashboardSearchTest`
+(4 tests: admin match+URL, staff scoping, contractor scoping, empty?[]) passed
+then removed.
+
+---
+### Enhancement (2026-09-16): project detail page chrome matches the Project Monitor list UI
+
+**Request:** make the "view project" (detail) page look like the project list UI.
+
+**Scope (page chrome only � zero functional change):** back button, header,
+stats row, tab nav. Tab contents, modals, routes, JS hooks, IDs and all
+permissions logic are untouched. `staff/dashboard.blade.php`-style dead files
+were not involved; both list + detail CSS files load globally in all layouts,
+so the detail reuses the list'"'"'s own classes.
+
+**What changed:**
+- `project_detail.blade.php`: back link `btn` ? `btn btn-secondary` (same look
+  as the list'"'"'s Archived button; `.btn` kept for svg sizing).
+- `header.blade.php`: `.header-section` now carries `has-cover-bg` + the same
+  navy-gradient-over-`login-image.png` cover as the list cards; code/title
+  render white-on-cover; status/health/progress pills switched from bespoke
+  `.badge` divs to the list'"'"'s `.status-badge`/`.health-badge` with the same
+  per-status icons (incl. on-schedule/late/early for Completed); contractor
+  row restored (was commented out) in the list'"'"'s avatar style; badge state
+  is attribute-only (planned_end_date + precomputed overview progress +
+  getCompletionDelay) � no new queries. Proposal/Reports/Edit buttons keep
+  their markup, modals and routes.
+- `stats-row.blade.php`: untouched � restyle is CSS-only.
+- `project-detail.css` (appended alignment block): cover treatment + badge
+  shadow + contractor-on-cover colors + meta-icon svg sizing on the header;
+  `.header-badge-btn` slimmed to ghost-badge pills; `.stat-cell` ? list
+  metric-card language (white, 12px radius, #E2E8F0 border, 4px left accent
+  per color incl. new green for time-variance, lift on hover; grid fixed to
+  the 3 rendered cells); `.tab-navigation`/`.tab-btn` ? segmented-pill look
+  (blue filled active, same as `.pm-segmented`); responsive rules mirroring
+  the list breakpoints (full-width pills, 1-col stats, 2-col tabs =768px).
+
+**Verify:** `ProjectsRenderTest` 16/16 pass (incl. detail header/manager-meta/
+contractor-access tests); `ProjectsHealthIndexTest` + `UiPolishLayoutTest`
+12/12 pass; `public/images/login-image.png` confirmed present.
