@@ -22,6 +22,8 @@ import {
     detectPseudoColumns,
     groupItemsIntoLines,
     linesToTokenLines,
+    activityDisplayName,
+    isFigureCell,
 } from '../../public/js/admin/projects/scurve-pdf-parser-core.js';
 
 /* ─── Fixture helpers ─────────────────────────────────────────────────────── */
@@ -2054,4 +2056,207 @@ test('pdfSliceShrinkNote warns only for shrunk pages and names the lowest DPI', 
     const two = pdfSliceShrinkNote([{ page: 0, dpi: 140 }, { page: 2, dpi: 98 }]);
     assert.match(two, /2 pages were too large/);
     assert.match(two, /about 98 DPI/);
+});
+
+/* ─── Item (3a): figures that rode in with the name ───────────────────────── */
+
+test('activityDisplayName drops trailing figure columns, and only those', () => {
+    // The one-page BUHI's shape: code, name, then the money columns the reader
+    // swept in because a PDF has no cell to stop at.
+    assert.equal(
+        activityDisplayName('A.1.1 (3)   Construction of Temporary Field Office for the Engineer   184,800.00'),
+        'A.1.1 (3)   Construction of Temporary Field Office for the Engineer');
+    // Several of them, and a weight and a day count, all go.
+    assert.equal(
+        activityDisplayName('B.5(1)   Project Billboard/Signboard   18,480.00   554.40   17,925.60   0.06   180'),
+        'B.5(1)   Project Billboard/Signboard');
+    assert.equal(activityDisplayName('C   EARTHWORK   16%'), 'C   EARTHWORK');
+    assert.equal(activityDisplayName('D   Piling   (1,250.00)'), 'D   Piling');
+
+    // A name with nothing trailing is returned untouched — including its own
+    // spacing, which the roof relies on ("E" and four spaces).
+    assert.equal(activityDisplayName('E    FINISHING AND OTHER CIVIL WORKS'),
+        'E    FINISHING AND OTHER CIVIL WORKS');
+    assert.equal(activityDisplayName('A   FACILITIES FOR ENGINEER'), 'A   FACILITIES FOR ENGINEER');
+    // The stand-in name for an unnamed row is one segment and survives whole.
+    assert.equal(activityDisplayName('Activity 6'), 'Activity 6');
+
+    // A figure INSIDE the name is not trailing and must stay: dropping it would
+    // eat part of the work name itself.
+    assert.equal(activityDisplayName('803(1)a   Excavation 2.5   m depth'),
+        '803(1)a   Excavation 2.5   m depth');
+    // The first word is never dropped, so a row named only by its code keeps it.
+    assert.equal(activityDisplayName('184,800.00'), '184,800.00');
+    assert.equal(activityDisplayName('350   180'), '350');
+    // Defensive: no name at all.
+    assert.equal(activityDisplayName(''), '');
+    assert.equal(activityDisplayName(null), '');
+
+    // A SINGLE space is a real column gap too: the wide gaps in a live read come from
+    // padding inside the pdf.js tokens, so a file without that padding prints its
+    // columns one space apart. This is the case a gap-width rule missed.
+    assert.equal(activityDisplayName('Hauling 184,800.00'), 'Hauling');
+    assert.equal(activityDisplayName('Mobilization 184,800.00 3,696.00 0.06 180'), 'Mobilization');
+
+    // …which is exactly why a small trailing ordinal must NOT read as a figure:
+    // a work name is allowed to end in one.
+    assert.equal(activityDisplayName('Excavation Phase 2'), 'Excavation Phase 2');
+    assert.equal(activityDisplayName('ITEM NO. 5'), 'ITEM NO. 5');
+    assert.equal(activityDisplayName('Concreting Stage 12'), 'Concreting Stage 12');
+
+    // THE RUN RULE. A short day count at the END of a money run is still a column —
+    // it is told apart from an ordinal by the company it keeps, not by its own shape.
+    // BUHI prints 15/20/30-day counts after four money columns.
+    assert.equal(
+        activityDisplayName('B.5(1)   Project Billboard/Signboard   18,480.00   554.40   17,925.60   0.06   15'),
+        'B.5(1)   Project Billboard/Signboard');
+    assert.equal(
+        activityDisplayName('B.9(1)   Mobilization/Demobilization   123,200.00   3,696.00   119,504.00   0.37   20'),
+        'B.9(1)   Mobilization/Demobilization');
+    // …and a run with NO unambiguous figure in it is left entirely alone, however
+    // long: these are the names the rule must not touch.
+    assert.equal(activityDisplayName('Excavation Phase 2 3'), 'Excavation Phase 2 3');
+
+    assert.equal(isFigureCell('184,800.00'), true);
+    assert.equal(isFigureCell('16%'), true);
+    assert.equal(isFigureCell('(1,250.00)'), true);
+    assert.equal(isFigureCell('0.06'), true);
+    assert.equal(isFigureCell('350'), true, 'a three-digit day count is a figure');
+    assert.equal(isFigureCell('180'), true);
+    assert.equal(isFigureCell('2'), false, 'a small ordinal is part of the name');
+    assert.equal(isFigureCell('12'), false);
+    assert.equal(isFigureCell('EARTHWORK'), false);
+    assert.equal(isFigureCell('A.1.1'), false);
+    assert.equal(isFigureCell(''), false);
+});
+
+test('the trim reaches activity names without merging two rows that differ only in money', () => {
+    // Two activities printed with the SAME work name and different amounts — the
+    // case that makes the trim's placement load-bearing. Names are de-duplicated by
+    // string, so trimming before that would collapse these into one activity and
+    // silently drop a row from the month.
+    //
+    // The money column carries NO header label, exactly as on the one-page BUHI.
+    // That is what puts it inside descLimit (which falls through to month 1 when the
+    // header names nothing in between) and so inside the name. A fixture that labels
+    // the column instead is vacuous: P2-b would already have cut the money out and
+    // the trim would have nothing to do.
+    const items = [page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 250, 55], ['MONTH 2', 350, 55]]],
+        [760, [['1', 55, 8], ['Hauling', 70, 60], ['184,800.00', 150, 60], ['1000', 260, 30], ['500', 360, 30]]],
+        [720, [['2', 55, 8], ['Hauling', 70, 60], ['30,800.00', 150, 60], ['1000', 260, 30], ['500', 360, 30]]],
+        [680, [['TOTAL', 55, 45], ['2000', 260, 30], ['1000', 360, 30]]],
+    ])];
+
+    const out = parseSCurvePdf(items);
+    assert.ok(out, 'the fixture must read, or this test proves nothing');
+    const m1 = out.months[0].activities.map((a) => a.activity_name);
+
+    // The leading item number is already stripped by buildRows, so these two rows
+    // read as "Hauling   184,800.00" and "Hauling   30,800.00" — DISTINCT before the
+    // trim and IDENTICAL after it. That is the collision the placement guards against.
+    //
+    // FALSIFIES the rule: without the trim these names still carry the amounts, so
+    // this assertion fails if activityDisplayName stops being applied.
+    assert.deepEqual(m1, ['Hauling', 'Hauling'],
+        'the amount column must be gone from both names');
+    // …and BOTH rows survived the collision.
+    assert.equal(out.months[0].activities.length, 2,
+        'two rows differing only in their amount must stay two activities');
+    // The month description is built from the same trimmed list.
+    assert.equal(out.months[0].description, 'Hauling, Hauling');
+});
+
+test('the trim moves no curve, no count and no contract figure', () => {
+    // The guard that matters most: this is a DISPLAY rule. Classification reads
+    // descText, which is untouched, so every number the reader produces must be
+    // identical whether or not a name carried figures.
+    // Again an UNLABELLED money column, so the figures really do land in the name.
+    const withMoney = [page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 250, 55], ['MONTH 2', 350, 55]]],
+        [760, [['1', 55, 8], ['Mobilization', 70, 90], ['184,800.00', 150, 60], ['1000', 260, 30], ['2000', 360, 30]]],
+        [720, [['2', 55, 8], ['Signage', 70, 60], ['30,800.00', 150, 60], ['1500', 260, 30], ['1500', 360, 30]]],
+        [680, [['TOTAL', 55, 45], ['2500', 260, 30], ['3500', 360, 30]]],
+    ])];
+    const bare = [page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 250, 55], ['MONTH 2', 350, 55]]],
+        [760, [['1', 55, 8], ['Mobilization', 70, 90], ['1000', 260, 30], ['2000', 360, 30]]],
+        [720, [['2', 55, 8], ['Signage', 70, 60], ['1500', 260, 30], ['1500', 360, 30]]],
+        [680, [['TOTAL', 55, 45], ['2500', 260, 30], ['3500', 360, 30]]],
+    ])];
+
+    const a = parseSCurvePdf(withMoney);
+    const b = parseSCurvePdf(bare);
+    assert.ok(a && b, 'both fixtures must read');
+    assert.deepEqual(a.months.map((m) => m.planned_progress_percent), b.months.map((m) => m.planned_progress_percent));
+    assert.deepEqual(a.months.map((m) => (m.activities || []).length), b.months.map((m) => (m.activities || []).length));
+    assert.equal(a.meta.contractAmount, b.meta.contractAmount);
+    // And the names now match the file that never printed the money at all.
+    assert.deepEqual(a.months[0].activities.map((x) => x.activity_name),
+        b.months[0].activities.map((x) => x.activity_name));
+});
+
+/* ─── Item 2(c): a summary BLOCK is several rows, not one ─────────────────── */
+
+// A file whose summary block holds four rows the way the one-page BUHI does: a
+// per-period percentage, a cumulative percentage, a per-period cost and a cumulative
+// cost. Only the last is a cumulative share of the contract. Months are quarters.
+function summaryBlockPage(extraRows) {
+    return page([
+        [800, [['DESCRIPTION', 50, 90], ['MONTH 1', 250, 55], ['MONTH 2', 350, 55], ['MONTH 3', 450, 55], ['MONTH 4', 550, 55]]],
+        [760, [['1', 55, 8], ['Mobilization', 70, 90], ['1000', 260, 30], ['1000', 360, 30], ['1000', 460, 30], ['1000', 560, 30]]],
+        [740, [['2', 55, 8], ['Structure', 70, 70], ['0', 260, 20], ['1000', 360, 30], ['2000', 460, 30], ['3000', 560, 30]]],
+        [700, [['TOTAL', 55, 45], ['1000', 260, 30], ['2000', 360, 30], ['3000', 460, 30], ['4000', 560, 30]]],
+        ...extraRows,
+    ]);
+}
+// Activity math on that fixture: months 1000/2000/3000/4000 of a 10000 contract
+// -> 10 / 30 / 60 / 100 cumulative.
+const CUMULATIVE_COST = [660, [['CUMULATIVE COST', 55, 120], ['1000', 260, 30], ['3000', 360, 30], ['6000', 460, 30], ['10000', 560, 40]]];
+const PER_PERIOD_COST = [680, [['COST', 55, 40], ['1000', 260, 30], ['2000', 360, 30], ['3000', 460, 30], ['4000', 560, 30]]];
+
+test('a confirming summary row silences the other rows of its own block', () => {
+    // BOTH rows are captured as summary candidates. The per-period COST row disagrees
+    // from month 2 on (20 vs 30, 30 vs 60, 40 vs 100) and used to raise three notes on
+    // a file the cumulative row confirms exactly.
+    const out = parseSCurvePdf([summaryBlockPage([PER_PERIOD_COST, CUMULATIVE_COST])]);
+    assert.ok(out, 'the fixture must read, or this test proves nothing');
+    assert.deepEqual(out.months.map((m) => m.planned_progress_percent), [10, 30, 60, 100]);
+
+    const notes = (out.meta.warnings || []).filter((w) => /the file's own summary says/.test(w));
+    assert.equal(notes.length, 0, 'the confirming row settles it — no summary notes');
+
+    // Only the confirming candidate is reported, so isWeakPdfCurve stops calling a
+    // correct read weak on a "summary-gap" it has no business raising.
+    const refs = out.meta.summaryReference || [];
+    assert.equal(refs.length, 4, 'only the agreeing candidate is reported');
+    assert.ok(refs.every((r) => r.gap === 0), 'and it agrees on every month');
+    assert.equal(isWeakPdfCurve(out).reasons.indexOf('summary-gap'), -1);
+});
+
+test('with NOTHING in the file agreeing, every summary note still fires', () => {
+    // THE SAFETY CASE, and the reason this check exists: the per-period row alone.
+    // Nothing confirms the read, so the warnings must survive untouched — this is what
+    // catches a file read through a wrong description band.
+    const out = parseSCurvePdf([summaryBlockPage([PER_PERIOD_COST])]);
+    assert.ok(out);
+    assert.deepEqual(out.months.map((m) => m.planned_progress_percent), [10, 30, 60, 100]);
+
+    const notes = (out.meta.warnings || []).filter((w) => /the file's own summary says/.test(w));
+    assert.equal(notes.length, 3, 'months 2, 3 and 4 disagree and must each say so');
+    assert.match(notes[0], /Month 2\).*says 20%.*add up to 30%/);
+    assert.ok(isWeakPdfCurve(out).reasons.indexOf('summary-gap') !== -1,
+        'and the file still counts as weak');
+});
+
+test('one matching month is not agreement', () => {
+    // The per-period cost row matches month 1 exactly on this shape (1000 = 1000) and
+    // is wrong everywhere after — exactly BUHI's COST row, which matches quarter 1.
+    // Treating that as confirmation would silence a genuinely disagreeing file.
+    const out = parseSCurvePdf([summaryBlockPage([PER_PERIOD_COST])]);
+    const refs = out.meta.summaryReference || [];
+    const m1 = refs.find((r) => r.month === 1);
+    assert.ok(m1 && m1.gap === 0, 'month 1 does match…');
+    assert.ok((out.meta.warnings || []).some((w) => /the file's own summary says/.test(w)),
+        '…but the file is still reported as disagreeing');
 });

@@ -29,12 +29,47 @@
 #         ✅ 2026-09-15 SESSION CLOSED — PDF READ GUARD + BUHI ONE-PAGE LEARNABLE. Every
 #           item built this session is browser-proven and committed (see the LAST §13
 #           entry, "SESSION CLOSE — HANDOFF", for the commit list, lessons and queue).
-#         ➜ HANDOFF: start at the LAST §13 entry. The entries before it are the build log
-#           in order (guard measurement → guard → shrink-to-fit → adds-up check + page-edge
-#           marking → finding D restudy → row rules → reopen fix → layout fallback).
-#         NEXT ORDERED WORK: item (3) PDF Description as a letter range (spec: finding B,
-#           "AGREED DIRECTION FOR ITEM (3)"). Full split-down support stays PARKED; the
-#           early-100 guard queues behind item (3).
+#         ➜ HANDOFF: start at the LAST §13 entry, "2026-09-16 — SESSION CLOSE — HANDOFF".
+#           ⚠️ IT OPENS WITH THE ONE THING THAT CANNOT WAIT: this session's work is
+#           UNCOMMITTED in the working tree (3 files) and `git stash` would take it away.
+#           The two entries before it are that session's detail (the item-3 restudy, then
+#           the 3a build + browser result); the 2026-09-15 close before those holds the
+#           previous commit list. Earlier entries are the build log in order (guard
+#           measurement → guard → shrink-to-fit → adds-up check + page-edge marking →
+#           finding D restudy → row rules → reopen fix → layout fallback).
+#         ⚠️ 2026-09-16 ITEM (3) RESTUDY (no code) — THE AGREED SPEC DOES NOT DO WHAT IT
+#           WAS AGREED TO DO. Measured: the description band's right edge decides row
+#           CLASSIFICATION, not just the name; a names-only band reads the roof
+#           2.48/10.8/… un-refused and refuses BUHI; and NO band gives BUHI a clean name.
+#           The complaint is fixed instead by a trailing-figure trim on the NAME (0 of 45
+#           corpus names changed, 310 of 313 BUHI names cleaned). Revised direction
+#           3a/3b/3c/3d in the LAST §13 entry — READ IT BEFORE BUILDING STEP 1.
+#         ✅ 2026-09-16 ITEM (3a) NAME TRIM BUILT + BROWSER-PROVEN — UNCOMMITTED.
+#           activityDisplayName drops the trailing money/day-count run from a DISPLAY
+#           name only; classification and de-duplication are untouched. BUHI's 313 names
+#           are clean, curve 1.12 … 100 and counts still = Excel; corpus 16 reads 0
+#           changed, 9 blocks 0 changed; JS 224/222 + the 2 intended fails; PHP 1219 /
+#           the same 5. Falsified by mutation. Live import confirmed by the user the same
+#           day; the import NOTES are byte-identical to the committed core's, so the 11
+#           summary notes on that screen are pre-existing (queue item 2(c)), not a 3a
+#           regression — but they are now the least trustworthy thing on an exact import.
+#         ✅ 2026-09-16 ITEM 2(c) SUMMARY-NOTE NOISE BUILT + BROWSER-PROVEN — UNCOMMITTED.
+#           A summary BLOCK is several rows; the one-page BUHI prints
+#           four (per-quarter % and cost, cumulative % and cost) and only the cumulative
+#           cost row is a share of the contract — it matches our read exactly. Each row
+#           used to be compared independently, so an exact import carried 11 wrong notes.
+#           Now: if ANY candidate confirms the read (2+ months within tolerance), only
+#           the confirming ones are reported and nothing warns; when NOTHING agrees the
+#           behaviour is unchanged. BUHI 12 notes -> 1; the roof read through a
+#           names-only band keeps all 6. Also clears the bogus 'summary-gap' that was
+#           calling an exact read WEAK (that flag only re-words the in-modal AI line; it never controlled whether an offer appears — see the 2(c) entry).
+#         NEXT ORDERED WORK (each needs an explicit order — Rule 10): (1) 3b display-only
+#           range + (2) 3c disabled PDF buttons, done together; optional: a POSITIVE note
+#           when a summary row CONFIRMS the read (user question, 2(c) entry); the Excel-vs-
+#           PDF disagreement is PARKED by decision (§13, option 2; revive as option 4); 3d editable
+#           range stays on HOLD; then the early-100 guard. Full split-down
+#           support stays PARKED. Known and untriggered: the fraction SCALE defect (2(c)
+#           entry).
 #         OWED BY THE USER (small): the AI-assist ANSWER on the one-page BUHI (untested —
 #           the AI service returned 503 all session); item-2 Excel browser steps from
 #           2026-09-14 (prefill on reopen; staff layout).
@@ -3506,7 +3541,10 @@
       restudy entry as the work continued; this probe list belongs to the restudy.)
 
   -----------------------------------------------------------------------------
-  2026-09-15 — SESSION CLOSE — HANDOFF. ⬅ START HERE NEXT SESSION
+  2026-09-15 — SESSION CLOSE — HANDOFF.
+  (SUPERSEDED as the start point by the 2026-09-16 close at the END of this section.
+  Still the authority for the 2026-09-15 COMMIT LIST, the one-page BUHI's teaching, and
+  that session's lessons and probes.)
   -----------------------------------------------------------------------------
 
     (g) BROWSER RESULT (user): ✅ all three steps confirmed — (1) with #140 and #142 both
@@ -3628,6 +3666,633 @@
       DB (read-only): dump_live_pdf_maps.php -> live_pdf_maps.json (re-dump before any
         live-DB read; the table changes as the user teaches).
       Regression gates: verify_p6.mjs (16 reads), block_snapshot.mjs (9 PDFs).
+
+  2026-09-16 — ITEM (3) RESTUDY: THE DESCRIPTION BAND, MEASURED. NO CODE.
+  ⬅ HANDOFF POINT. The agreed spec does NOT do what it was agreed to do — read this
+  before building step 1.
+  -----------------------------------------------------------------------------
+
+    WHY THIS PASS EXISTS
+      Item (3) was specified in finding B ("AGREED DIRECTION FOR ITEM (3)") from a
+      diagnosis, not from a measurement of the band's effect on the READ. Its stated
+      expected outcome is "BUHI names without money columns or 180; roof unchanged".
+      This pass measured that claim against the real files through the real core
+      before any of it was built. The claim does not survive.
+
+    WHAT WAS MEASURED (read-only, real core, real files)
+      probe_item3_desc_bands.mjs   every candidate right edge on the left block of
+                                   three specimens -> curve, counts, first name.
+      probe_item3_stop_rule.mjs    per-column cell profile (text vs numeric) on
+                                   activity rows; full names per band; does descX
+                                   change the read.
+      probe_item3_safety.mjs       why the wrong read is not refused; whether the good
+                                   BUHI band is reachable today; step 2's side effect;
+                                   the trailing-figure trim.
+      probe_item3_name_blast.mjs   the trim across the whole 9-PDF / 16-read corpus.
+      probe_item3_dedup.mjs        the collision check (names are de-duplicated BY
+                                   STRING, so a shorter name can drop a row).
+      Logs: item3_bands.log · item3_stop.log · item3_safety.log · item3_blast.log ·
+      item3_dedup.log (all in C:\temp\opencode).
+
+    FINDING 1 — THE BAND'S RIGHT EDGE DOES DOUBLE DUTY, AND CLASSIFICATION IS THE
+    BIGGER HALF.
+      descLimit = min(descRight, firstMonthX) feeds descTokens (:820), and descText
+      then decides FIVE things, only one of which is the name:
+        isSummaryLabel(descText)   -> the row becomes a summary candidate  (:899)
+        descText === ''            -> printed-cumulative-by-shape; P2-c exclusion
+        isTotalLabel(descText)     -> totalRowSum, i.e. the CONTRACT figure   (:947)
+        named: descText !== ''     -> mergePages keeps or drops the row       (:980)
+        description: descText      -> the displayed name                      (:967)
+      So "make the band exactly what was clicked" is not a naming change. It changes
+      which rows are work, which row is the total, and what the read guard has left
+      to check itself against.
+
+    FINDING 2 — A NAMES-ONLY BAND BREAKS BOTH SPECIMENS. MEASURED.
+      ROOF (both prints), band ending at the names column:
+        curve 2.48 / 10.8 / 22.65 / 37.81 / 56.35 / 80.18 / 100   (truth 6.32 / 24.31
+        / 42.30 / 59.71 / 77.03 / 99.14 / 100), counts 10,10,10,10,10,10,10 instead of
+        4,4,4,4,3,4,3 — five real activities plus "Activity 6".."Activity 10".
+        curveSource flips 'summary' -> 'activities'; contractAmount 11,396,769.88
+        instead of 1,725,080.17. The roof's summary LABELS ("TOTAL", "Project
+        Duration", "Commulative") print in the column just right of the names, so
+        cutting there turns the summary block into work rows and inflates the
+        denominator — every month reads low.
+        NOT REFUSED. It ships six specific cross-check warnings ("the file's own
+        summary says 6.32%, but its activity rows add up to 2.48%") and a baseline
+        preview. Loud, but the reviewer can still lock it.
+      BUHI 1-page, same band: REFUSED, total-mismatch (32,346,214.00 vs the file's
+        own 32,588,531.43) — the same refusal the plain rules give.
+      => the widening rule is not a convenience. It is the thing keeping a reviewer
+         from teaching a silently wrong curve, and item (3) step 1 as written removes
+         it on their say-so.
+
+    FINDING 3 — STEP 1 DOES NOT DELIVER ITS STATED GOAL. NO BAND GIVES BUHI A CLEAN
+    NAME.
+      Every reachable right edge on the one-page BUHI (left block A..G, names in B,
+      money in C):
+        band ends at B (names only)  REFUSED total-mismatch
+        band ends at C              EXACT, name "… for the Engineer   184,800.00"
+        band ends at D / E / F / G  EXACT, name carries progressively more money
+      The narrowest band that READS is the one that still includes the money column.
+      The only band that excludes it is refused. The goal "BUHI names without money
+      columns" is unreachable through the band, by construction.
+      (The same table also shows the roof: A..A and A..B wrong, A..C through A..F all
+      exact — the cliff sits between the names column and the one after it.)
+
+    FINDING 4 — A RANGE IS A NO-OP UNLESS THE WIDENING IS ALSO MADE CONDITIONAL.
+      buildTaughtPdfMap widens to min(stops) where stops includes every month's x
+      (:736-743). Transcribed and run: teaching the RANGE B..C on BUHI stores
+      0.0501 -> 0.2925 — month 1's left edge — not 0.0501 -> 0.1842 as clicked. The
+      range is swallowed. Step 1 therefore has to branch the widening, which is the
+      same line that protects finding 2's case. Both cannot be had from one rule.
+
+    FINDING 5 — THE NAME POLLUTION IS A NAME-TEXT PROBLEM, AND IT IS CHEAP AND SAFE.
+      Trim trailing whole segments that are pure figures from the DISPLAY NAME, after
+      the row is classified. Measured:
+        corpus  9 sample PDFs / 16 reads / 45 activity names -> 0 names changed.
+        BUHI    310 of 313 names cleaned:
+                "A.1.1 (3)   Construction of Temporary Field Office for the Engineer"
+                "A.1.4(1)   Provision of Progress Photographs"
+                "B.5(1)   Project Billboard/Signboard"
+        the "180" day count finding B flagged on R74: 117 names carried a bare day
+                count; 0 carry one after the trim.
+        collisions: NONE in any month, on both the taught band and the narrow one —
+                counts stay 8,11,12,14,19,20,32,34,38,43,41,41 = Excel.
+      Placement matters: names are de-duplicated BY STRING (:1210 and :1318). Trim at
+      EMISSION (where activity_name is built, :1255/:1322), never at row build — then
+      dedup still sees the full string and no row can be dropped by a collision.
+      Whitespace must not be renormalised: the roof prints "E    FINISHING AND OTHER
+      CIVIL WORKS" with four spaces, and rejoining on a fixed separator rewrites it
+      (a simulation artifact that looked like a hit until it was checked).
+
+    FINDING 6 — STEP 2 IS SAFE, AND NOW ALSO FREE.
+      Contract / Weight / Item code are the ONLY widening stops on PDF. Disabling them
+      leaves a single taught letter widening to month 1. Measured: roof EXACT, BUHI
+      EXACT. Nothing in the corpus needs a stop.
+      It was also the only lever that produced the narrower BUHI band (Description=B +
+      Contract=D stores exactly the A..C band) — but finding 3 shows that band does
+      not give a clean name either, so nothing of value is lost with it.
+
+    FINDING 7 — FINDING A CONFIRMED BY FALSIFICATION. descX IS NOT READ.
+      Moving the band's LEFT edge from the first left-block column to the last, with
+      the right edge fixed, produced byte-identical output on all three specimens.
+      buildRows filters on t.x < descLimit with no lower bound (:820). So a range's
+      left letter is display and save-time geometry only — it can never change a read.
+      That is what makes step 1's display half (retiring finding A) genuinely free.
+
+    REVISED DIRECTION — PROPOSED, NEEDS THE USER'S ORDER (Rule 10)
+      3a  NAME TRIM (the actual fix for the complaint). Trim trailing figure segments
+          at emission. Reader-side, both file types' PDF path, no map change, no
+          re-teach, no PDF_MAP_VERSION bump. Falsify by mutation. Expect: the 16-read
+          regression 0 changed and block_snapshot 0 changed, BUHI names clean.
+      3b  DISPLAY-ONLY RANGE (retires finding A). prefillFromMap shows EVERY letter
+          the stored band covers instead of lettersInBand(...)[0]; the desk shows the
+          band as a read-only span. No server change, no widening change, no new way
+          to store a narrow band. Zero read risk by finding 7.
+      3c  STEP 2 as specified — Contract / Weight / Item code disabled on PDF rows with
+          the reason, gated on _schTeach.sourceType. Safe by finding 6. Do it WITH 3b,
+          since 3b removes the only reason those buttons were being clicked.
+      3d  AN EDITABLE range — HOLD. It buys nothing measurable (finding 3) and costs
+          the guard-rail of finding 2. Revive only with a specimen where a taught
+          narrow band is the only way to read the file correctly, and pair it with a
+          save-time check that the band still catches the TOTAL row's label.
+      Unchanged from the old spec if 3d is ever revived: 'desc' is max:3 today;
+      validation stays sometimes|nullable; no leading-"m" palette keys; do not bump
+      PDF_MAP_VERSION.
+
+    WHAT THIS DOES NOT COVER
+      Step 3's "single-letter fallback rule" is moot under 3a/3b/3c — nothing narrows
+      the band, so there is nothing to fall back from. The column-profile measurement
+      it would have rested on is in item3_stop.log and is unreliable on the roof
+      (an ad-hoc y-grouping found 3-5 rows where the reader finds ten); it is sound on
+      BUHI (56 rows). If 3d is ever revived, rebuild that profile on the reader's own
+      token lines, not on a probe's grouping.
+
+  2026-09-16 — ITEM (3a) NAME TRIM ✅ BUILT AND ✅ BROWSER-PROVEN (UNCOMMITTED).
+  ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED BY THE USER after the restudy above ("then go. no commit for now"), which
+    recommended 3a first: it is the only one of 3a/3b/3c that fixes the complaint, and
+    the only one that touches neither the map nor the desk.
+
+    WHAT SHIPPED (public/js/admin/projects/scurve-pdf-parser-core.js)
+      isNumberWord(str)         internal. Is this word a number at all?
+      isFigureCell(str)         exported. Is it UNAMBIGUOUSLY a column figure —
+                                thousands comma, decimal point, percent, parentheses,
+                                or three-plus digits? A bare 1-2 digit number is not.
+      activityDisplayName(name) exported. Drops the trailing run of numbers from a
+                                DISPLAY NAME, keeping the cut only when the run holds
+                                at least one unambiguous figure. First word never
+                                dropped; spacing preserved verbatim.
+      Applied at BOTH emission sites in buildMonthsFromRows — the normal path and the
+      adopted-curve rebuild — and nowhere else. Both window export list entries added.
+
+    WHY IT IS PLACED WHERE IT IS
+      descText is untouched, so classification (isSummaryLabel / isTotalLabel / the
+      cumulative-by-shape path / named) reads exactly what it read before. The trim
+      runs AFTER the de-duplication in both paths (activitiesByMonth's indexOf and the
+      adopted rebuild's names.indexOf), so two rows that differ only in their amount
+      cannot collide into one and drop a row from a month.
+
+    TWO RULES THAT WERE TRIED AND CORRECTED BY MEASUREMENT (both worth not repeating)
+      (1) SPLIT ON WIDE GAPS (2+ spaces) — wrong. The wide gaps in a live read come
+          from padding INSIDE the pdf.js token strings; buildRows joins tokens with a
+          single space. A file whose tokens are not padded prints its columns one
+          space apart and the rule missed them entirely. Caught by a test fixture, not
+          by the corpus, because every real sample happens to be padded. Split on any
+          whitespace run instead.
+      (2) A FLAT "3+ DIGITS IS A FIGURE" ORDINAL GUARD — too blunt. It spared BUHI's
+          15/20/30-day counts, and since the scan stops at the first non-figure word,
+          a name ending in one kept its whole money run: "B.5(1) Project
+          Billboard/Signboard 18,480.00 554.40 17,925.60 0.06 15" came out unchanged.
+          Fixed by the RUN rule — walk back over every trailing number, keep the cut
+          only if the run contains a strong figure. "Excavation Phase 2" is still
+          left alone because its run holds no strong figure.
+
+    A VACUOUS FIXTURE WAS CAUGHT ON THE WAY (the trap §13 has flagged twice before)
+      The first end-to-end fixture gave the money column a header label ("AMOUNT"), so
+      P2-b's descRight already cut the money out and the name never carried it: the
+      test passed with the trim MUTATED OUT. The fixtures now leave that column
+      unlabelled, which is what puts it inside descLimit — the BUHI shape.
+
+    VERIFICATION
+      npm run test:js            224 tests, 222 pass + the 2 intended blinding fails.
+                                 +3 tests (unit rule / emission + collision / no
+                                 numeric movement).
+      falsified by mutation      activityDisplayName stubbed to return its input ->
+                                 ALL THREE new tests go red (97/100). Restored -> 100.
+      verify_p6.mjs              16 reads, 0 changed.
+      block_snapshot.mjs         9 PDFs, 0 changed.
+      php artisan test           1219 passed / the same 5 pre-existing failures BY
+                                 NAME (DashboardOverdueInspection, 2x EmailDraft,
+                                 IssueLifecycle + RiskRegister default-baseline).
+      probe_item3a_final.mjs     BUHI one-page through its taught layout:
+                                 curve 1.12 … 100 EXACT vs Excel
+                                 counts 8,11,12,14,19,20,32,34,38,43,41,41 = Excel
+                                 contract 32,588,531.46 · 313 names, 0 still ending in
+                                 a column figure, 0 carrying the 180 day count, and a
+                                 second pass changes 0 (the rule settles).
+                                 Month 1 now reads "A.1.1 (3)   Construction of
+                                 Temporary Field Office for the Engineer" and so on.
+
+    BROWSER RESULT (user, same day) ✅ PASSED — live import of the one-page BUHI through
+    its learned layout, MySQL running.
+      Manage Activities reads "A.1.1 (3)   Construction of Temporary Field Office for
+      the Engineer", "A.1.4(1)   Provision of Progress Photographs", "B.1   Offices,
+      Shops, Stores, and Workmens Accommodation for Contractor", "B.5(1)   Project
+      Billboard/Signboard", "B.7(1)   Occupational Safety and Health Program" — no money
+      columns, no day counts, codes intact.
+      Curve 1.12 / 3.59 / 6.74 / 10.59 / 15.50 / 21.09 / 28.64 / 37.96 / 49.73 / 68.00 /
+      84.80 / 100.00 across July 2025 - June 2026, counts 8,11,12,14,19,20,32,34,38,43,
+      41,41 — both exactly the Excel truth, unmoved by the trim.
+
+    AND THE NOTES DID NOT MOVE EITHER (probe_item3a_warnings.mjs, committed core vs
+    working tree on the same file and layout):
+      numbers  IDENTICAL (curve, counts, contract, curveSource)
+      warnings IDENTICAL, WORD FOR WORD — 12 on both sides
+      names    310 of 313 differ — the only thing 3a touches
+      So the 11 summary notes on the user's import screen are the SAME ones this file
+      has always produced. They are queue item 2(c) — quarterly fraction/cost rows
+      compared as percentages — and are NOT a 3a regression. Worth noting how they read
+      now that everything around them is right: three of them cite plausible-looking
+      figures ("Month 9 … says 28.64%" is really month 7's value; "Month 12 … says
+      50.27%"), so the notes are the least trustworthy thing left on an otherwise exact
+      import. That raises 2(c) from cosmetic to worth doing.
+
+    NOT DONE
+      Nothing is committed (user: "no commit for now").
+      3b (display-only range, retires finding A) and 3c (Contract / Weight / Item code
+      disabled on PDF rows) are unbuilt and still need their own order, as does 2(c).
+
+  2026-09-16 — HANDOFF / ORIENTATION. ⬅ START HERE NEXT SESSION
+  (Written at the 3a close. Work CONTINUED after it: item 2(c) is the entry BELOW this
+  one, and is the newest state. Everything here still holds except the file list, which
+  this block keeps up to date.)
+  -----------------------------------------------------------------------------
+
+    ⚠️ READ THIS FIRST: NOTHING FROM THIS SESSION IS COMMITTED.
+      The user said "no commit for now" and that still stands — do NOT commit without
+      asking. Four files are modified in the working tree of
+      wip/phase-5-parser-accuracy-premerge, whose HEAD is still 61841eb:
+        public/js/admin/projects/scurve-pdf-parser-core.js   item (3a) + item 2(c)
+        tests/js/scurve-pdf-parser.test.mjs                  +6 tests (3 for each)
+        textfiles/document_parser_pdf_teach_grid_plan.md     this file
+        AGENTS.md                                            handoff + suite counts
+      `git stash` would take the whole session with it. The untracked merging/ folder is
+      not ours. Nothing was pushed.
+
+    WHAT HAPPENED, IN ORDER
+      1. ITEM (3) RESTUDY (read-only, no code) — the entry above this one. The agreed
+         spec for item (3) ("Description as a letter range") was measured against the
+         real files and does NOT deliver its stated goal. Five probes, five findings.
+      2. The user picked 3a from the revised direction and said "then go. no commit".
+      3. ITEM (3a) NAME TRIM built, tested, falsified by mutation, and ✅ BROWSER-PROVEN
+         by the user on a live import the same day. Detail in the entry above.
+      4. ITEM 2(c) SUMMARY-NOTE NOISE built and tested (NOT yet browser-proven) — the
+         entry BELOW this one. A confirming summary row now settles the file: the
+         one-page BUHI's import notes drop 12 -> 1, and the bogus 'summary-gap' that was
+         calling an exact read WEAK clears with them (that flag re-words the in-modal AI line only). The roof
+         misread keeps all six of its warnings.
+
+    THE ONE-PARAGRAPH VERSION OF THE RESTUDY (details two entries up)
+      The description band's RIGHT EDGE is not a naming control. descLimit feeds
+      descText, which decides which rows are summaries, which row is the TOTAL (and so
+      what the read guard checks itself against), whether a row counts as named, and
+      only lastly the display name. Measured: a names-only band reads the roof
+      2.48/10.8/… UN-REFUSED, and refuses BUHI; and NO band on BUHI yields a clean name,
+      because the narrowest one that reads still contains the money column. So the
+      complaint was fixed in the NAME TEXT instead, and an editable range was put on
+      hold as a way to teach a silently wrong curve.
+
+    STATE IN ONE GLANCE
+      Branch   wip/phase-5-parser-accuracy-premerge, HEAD 61841eb, NOT pushed.
+      Suites   npm run test:js  -> 227 tests, 225 pass + the 2 intended blinding fails
+               php artisan test -> 1219 passed / the same 5 pre-existing failures BY
+                 NAME (DashboardOverdueInspection · 2x EmailDraft · IssueLifecycle and
+                 RiskRegister default-baseline)
+               verify_p6.mjs 16 reads 0 changed · block_snapshot.mjs 9 PDFs 0 changed
+      Database MySQL is RUNNING (the user confirmed and imported through it). The live
+               PDF layout for the one-page BUHI works. Re-run dump_live_pdf_maps.php
+               before any live-layout reasoning anyway — the table changes as the user
+               teaches.
+      Blinding still ON. Two JS failures is green.
+
+    WHAT 3a ACTUALLY IS, IN CODE (so it can be reviewed without re-deriving it)
+      scurve-pdf-parser-core.js
+        :163  isNumberWord(str)          internal — is this word a number at all?
+        :172  isFigureCell(str)          exported — is it UNAMBIGUOUSLY a column figure
+                                         (comma / decimal / % / parens / 3+ digits)?
+                                         A bare 1-2 digit number is NOT.
+        :213  activityDisplayName(name)  exported — drop the trailing RUN of numbers,
+                                         but only if the run holds one strong figure.
+        Applied at BOTH emission sites in buildMonthsFromRows (the normal path and the
+        adopted-curve rebuild) and nowhere else; both added to the window export list.
+      Placement is load-bearing: descText is untouched so classification is unchanged,
+      and the trim runs AFTER de-duplication so two rows differing only in their amount
+      cannot collide and drop a row.
+
+    NEXT WORK — RECOMMENDED ORDER CHANGED THIS SESSION (each needs an explicit order)
+      1. ~~2(c) THE SUMMARY NOTES~~ ✅ BUILT — see the LAST entry of this section. The
+         one-page BUHI's notes drop 12 -> 1 and the bogus 'summary-gap' clears. NOT yet
+         browser-proven: that is the open step. The fraction SCALE defect is knowingly
+         left in place (untriggered now that the gate silences BUHI's) — detail there.
+      2. 3b DISPLAY-ONLY RANGE (retires finding A). prefillFromMap shows EVERY letter
+         the stored band covers instead of lettersInBand(...)[0]; the desk shows the band
+         as a read-only span. No server change, no widening change, no new way to store a
+         narrow band. Zero read risk — proven by falsification that descX never reaches
+         the reader (buildRows filters t.x < descLimit with no lower bound).
+      3. 3c Contract / Weight / Item code DISABLED on PDF rows with the reason, gated on
+         _schTeach.sourceType. Safe: measured, both specimens read EXACT with no stops.
+         Do it WITH 3b — 3b removes the reason those buttons were being clicked.
+      4. 3d AN EDITABLE RANGE — HOLD. Buys nothing measurable, costs the guard-rail.
+         Revive only with a specimen where a taught narrow band is the ONLY way to read a
+         file correctly, and pair it with a save-time check that the band still catches
+         the TOTAL row's label. If revived: 'desc' is max:3 today; validation stays
+         sometimes|nullable; no leading-"m" palette keys; do NOT bump PDF_MAP_VERSION.
+      5. EARLY-100 GUARD (queued since 2026-09-14): client-side after P5, pre-sanitizer
+         values via the extractRawPoints idiom.
+      6. Bigger, user decisions: split the mixed wip branch into reviewable branches; the
+         blinding lift (pre-merge prerequisite); merge to main (Rule 12); raise the
+         4000-char capture block limit (the one-page BUHI's block is cut at R20).
+      Parked: full split-down PDF support; tiling one page into several AI images;
+      AI-derived band placement over the value columns beneath a label (old item 3).
+      Still owed by the user (small, from 2026-09-15): the AI-assist ANSWER on the
+      one-page BUHI (the service 503'd all that session); the item-2 Excel browser steps
+      (prefill on reopen; staff layout).
+
+    LESSONS WORTH NOT RE-LEARNING (this session's)
+      - A "column" rule that keys on GAP WIDTH is keying on an accident. The wide gaps in
+        a live read come from padding INSIDE the pdf.js token strings; buildRows joins
+        tokens with a single space. Every real sample happens to be padded, so the corpus
+        said the rule worked and a synthetic fixture proved it did not.
+      - A vacuous fixture happened AGAIN, and the tell was the same: the first end-to-end
+        test labelled the money column, so P2-b had already cut the money out and the
+        name never carried it — the test passed with the rule mutated out. Mutate first,
+        then believe the test.
+      - Measure the SPEC, not just the build. The restudy cost one session and stopped a
+        feature that would have shipped a new way to produce a silently wrong baseline
+        while not fixing the complaint it was written for.
+      - When a rule must tell two identical-looking things apart (a "15" day count vs
+        "Phase 2"), judge the word by its company, not by its own shape.
+
+    PROBES OF THIS SESSION (C:\temp\opencode, read-only; run to a log file, then read it)
+      restudy:    probe_item3_desc_bands.mjs (item3_bands.log) — every candidate right
+                    edge on three specimens
+                  probe_item3_stop_rule.mjs (item3_stop.log) — column profiles, full
+                    names per band, descX falsification
+                  probe_item3_safety.mjs (item3_safety.log) — why the wrong read is not
+                    refused; reachability of the good BUHI band; step-2 side effect
+                  probe_item3_name_blast.mjs (item3_blast.log) — the trim across the
+                    whole corpus
+                  probe_item3_dedup.mjs (item3_dedup.log) — the name-collision check
+      acceptance: probe_item3a_final.mjs (item3a_final2.log) — BUHI through its taught
+                    layout: curve, counts, contract, 313 names, idempotence
+                  probe_item3a_warnings.mjs (item3a_warn.log) — committed core vs working
+                    tree: numbers and warnings identical, only names differ
+      NOTE: probe_item3_name_blast.mjs carries its OWN older copy of the rule (2+ space
+        split, no run logic). Run against the current core it reports ~37 further
+        "changes" that are the live rule correctly declining to strip small ordinals —
+        it is a BEFORE-tool, not an after-tool. Use probe_item3a_final.mjs to check the
+        current state.
+      Regression gates: verify_p6.mjs (16 reads), block_snapshot.mjs (9 PDFs).
+      DB (read-only): dump_live_pdf_maps.php -> live_pdf_maps.json.
+      Mutation backup: core_3a_real.js is a copy of the core WITH 3a, used to restore
+        after each falsification run. core_head_3a.mjs is the committed (pre-3a) core.
+
+  2026-09-16 — ITEM 2(c) SUMMARY-NOTE NOISE ✅ BUILT (code, UNCOMMITTED, not
+  browser-proven). ⬅ HANDOFF POINT
+  -----------------------------------------------------------------------------
+
+    ORDERED after the 3a browser result promoted it: an exact import was carrying
+    eleven "the file's own summary says…" notes, one month cited three times with
+    three different figures. They were the least trustworthy thing on a perfect screen.
+
+    WHAT THE FILE ACTUALLY PRINTS (probe_2c_candidates.mjs, one-page BUHI)
+    A summary BLOCK of FOUR rows, each holding four QUARTERLY values (months 3/6/9/12):
+      y=378.98  "% ACCOMPLISHED"             0.07  0.14  0.28  0.49        per quarter, fractions
+      y=364.70  "CUMULATIVE % ACCOMPLISHED"  0.07  0.20  0.48  0.97        cumulative, fractions
+      y=350.42  "COST"                       2,195,216.46  4,678,029.76 …  per quarter, pesos
+      y=336.14  "CUMULATIVE COST"            2,195,216.46  6,873,246.21  16,206,154.76
+                                             32,588,531.43                cumulative, pesos
+    Only the last is a cumulative share of the contract — and it ends EXACTLY on the
+    contract total, matching our read on all four quarters (6.74 / 21.09 / 49.73 / 100,
+    gap 0.00 each). The other three were each compared month-by-month as if they were
+    cumulative percentages, producing 10 wrong notes:
+      the two fraction rows      compared at face value (0.07% instead of 7%)
+      the per-quarter COST row   scaled by the contract -> 6.74 / 14.35 / 28.64 / 50.27,
+                                 which matches month 3 by construction and then drifts
+    (The 11th note, the learned-layout heads-up, is correct and stays.)
+
+    THE RULE — A CONFIRMING ROW SETTLES IT
+      In the P2-e block of buildMonthsFromRows, each candidate is now SCORED before
+      anything is reported. A candidate AGREES when it covers at least two of our months
+      and every one of them is within the existing 1.0 tolerance. If ANY candidate
+      agrees, only the agreeing ones are reported and nothing is warned — the file does
+      not contradict us. If NOTHING agrees, behaviour is exactly as before.
+      Two months is deliberate: BUHI's per-quarter COST row matches month 3 exactly and
+      is wrong about every later quarter, so one matching month is not evidence.
+      FAIL-SAFE worth knowing: `agrees` only decides WHICH candidates are reported, not
+      whether warnings fire. A candidate wrongly judged to agree still warns on each of
+      its own disagreeing months. Loosening the threshold cannot silence a real gap.
+
+    IT ALSO FIXES A SECOND SYMPTOM NOBODY HAD NAMED — BUT SAY WHAT IT IS EXACTLY
+      isWeakPdfCurve (:2146) raises 'summary-gap' from any summaryReference entry with
+      gap > 1.0. The one-page BUHI — an exact read — was being called WEAK on the
+      strength of those bogus notes. summary-gap now clears with them.
+      WHAT THAT FLAG ACTUALLY CONTROLS (checked in scurve-import-ui.js, 2026-09-16,
+      after the claim below was first written too loosely):
+        - The BESIDE-BUTTON offer (scurveOfferPdfAiAssist) is in the CATCH branch only
+          — it appears when the import FAILS. `weak` has nothing to do with it, and a
+          successful import never shows it.
+        - The IN-MODAL link is rendered for EVERY parseable PDF, strong reads included
+          (deliberate, user 2026-09-12). `weak` only changes its WORDING
+          (scurveRenderPdfAiLink :517):
+            weak     "This PDF reading looks weak (generic names / uncertain months) —
+                      cross-checking with AI is recommended."   [Try AI assist?]
+            not weak "Read offline from the PDF, no AI used. Want a second opinion?"
+                                                                [Cross-check with AI?]
+      So the user-visible effect of clearing summary-gap here is that one line flipping
+      from "looks weak … recommended" to "Read offline from the PDF, no AI used" — not
+      an offer appearing or disappearing.
+
+    MEASURED ACROSS THE WHOLE CORPUS BEFORE THE RULE WAS CHOSEN
+    (probe_2c_agreement.mjs — candidates, agreements, warnings and summary-gap per file)
+      BUHI 1-page taught    4 candidates, 1 agrees   warn 11 -> 0   summary-gap Y -> n
+      roof MISREAD (A..B)   1 candidate,  0 agree    warn  6 -> 6   summary-gap Y -> Y
+      every other read      unchanged (no candidates, or one already-agreeing candidate)
+      => the one-page BUHI is the ONLY file in the corpus this rule changes, and the
+         safety case — the roof read through a names-only description band, which is
+         precisely what these notes exist to catch — keeps all six of its warnings.
+
+    VERIFICATION
+      npm run test:js        227 tests, 225 pass + the 2 intended blinding fails (+3).
+      falsified by mutation  THREE separate mutations, because the tests split into a
+                             rule test and two guard tests:
+                               reported = scored (gate removed)      -> gate test red
+                               agrees = some(gap<=1), 1 month enough -> gate test red
+                               warnings never pushed                 -> both guard tests
+                                                                        red (+1 existing)
+                             Restored -> 103/103 on the file, suite green.
+      verify_p6.mjs          16 reads, 0 changed.
+      block_snapshot.mjs     9 PDFs, 0 changed.
+      php artisan test       1219 passed / the same 5 pre-existing failures BY NAME.
+      probe_2c_candidates    one-page BUHI through its taught layout: warnings 12 -> 1
+                             (only the learned-layout heads-up), summaryReference 16
+                             entries -> 4, all gap 0.00, curve and counts unmoved.
+      item (3a) re-checked   probe_item3a_final.mjs still EXACT, counts = Excel.
+
+    NOT DONE / KNOWN AND UNTRIGGERED
+      The FRACTION SCALE is still wrong: a row printed as 0.07/0.20/0.48/0.97 means
+      7/20/48/97, but `asPercent = maxVal <= 100` takes it at face value. No file in the
+      corpus is affected now that the gate silences BUHI's, and it only becomes visible
+      on a file whose ONLY summary row is fraction-style AND disagrees — where the note
+      would read "says 0.07%". Deliberately left alone: fixing it would move
+      summaryReference values (and so the AI-assist offer) on files there is no specimen
+      for. Revive with such a specimen; the fix is a scale step in the same scoring pass.
+      Browser proof is the user's step. Nothing is committed.
+
+    BROWSER RESULT (user, same day) ✅ PASSED — one-page BUHI re-imported live.
+      Import notes are down to the single learned-layout line. Curve 1.12 … 100.00 and
+      counts 8,11,12,14,19,20,32,34,38,43,41,41 unchanged; names still clean (3a).
+      The user asked the right question about the silence, and it is worth recording
+      because the answer is not obvious from the screen:
+        Q: why is there now NO note comparing the activity cells against the written
+           cumulative row — can the system not calculate it?
+        A: it calculated it and it MATCHED. The cumulative-cost row agrees at gap 0.00
+           on all four quarters it covers (M3 6.74, M6 21.09, M9 49.73, M12 100), and a
+           note only fires past a 1.0 gap. That row never produced a note before this
+           change either — all ten removed notes came from the OTHER three rows. So
+           nothing that was previously TRUE went silent; curveSource is still
+           'activities', which is itself the proof the activity math was used and not
+           replaced (a file the reader cannot compute shows curveSource 'summary' and
+           says so in its own notice).
+        Also worth knowing: this summary block is QUARTERLY, so even a perfect
+        comparison can only ever speak about months 3, 6, 9 and 12 — never the other
+        eight.
+      OPEN DESIGN QUESTION RAISED BY THAT EXCHANGE (needs an order, not built):
+        silence currently means BOTH "nothing to compare" and "compared, and it
+        matched" — two very different levels of assurance. A one-line POSITIVE note
+        ("the file's own cumulative row agrees with the activity totals at months
+        3, 6, 9 and 12") would turn the absence of bad news into evidence. The data is
+        already there: summaryReference carries the agreeing candidate's four gap-0.00
+        entries precisely so this is a display decision, not a parsing one.
+
+  2026-09-16 — FINDING: THE EXCEL AND PDF PATHS DISAGREE ABOUT THE SAME WORKBOOK.
+  MEASURED, NO CODE. ⬅ raised by the user right after 2(c) was browser-proven
+  -----------------------------------------------------------------------------
+
+    THE REPORT (user): importing the ORIGINAL BUHI .xlsx shows two notes —
+      "(Month 9): the file's own summary says 48.24%, but its activity rows add up to
+       49.73%"   and   "(Month 12): … says 97%, but … 100%"
+    — while the SAME schedule imported as the one-page PDF now shows none.
+
+    WHY: THE TWO READERS PICK DIFFERENT AUTHORITIES OUT OF THE SAME SUMMARY BLOCK.
+    The workbook's block is four rows (probe_2c_excel_rows.php, full stored precision):
+      R88  TOTAL                      D 33,596,424.1558   <- AMOUNT (gross)
+                                      E  1,007,892.724674 <- 3% DISCOUNT
+                                      F 32,588,531.431126 <- CONTRACT AMOUNT (net)
+      R89  % ACCOMPLISHED             0.065341  0.139242  0.277795  0.487623
+      R90  CUMULATIVE % ACCOMPLISHED  0.065341  0.204583  0.482377  0.970000
+      R91  COST                       2,195,216.46  4,678,029.76  9,332,908.55  16,382,376.67
+      R92  CUMULATIVE COST            2,195,216.46  6,873,246.21  16,206,154.76  32,588,531.43
+      EXCEL (SCurveImportService::readSummaryReference) takes the FIRST row matching
+        /cumulat\w*|commulat\w*/i and BREAKS — that is R90, two rows above R92. It never
+        sees the row that confirms the read.
+      PDF  collects every summary-shaped row (it has no labels it can trust), so it sees
+        R92 as well, and 2(c)'s gate lets that confirming row settle the file.
+
+    AND THE 97% IS FULLY EXPLAINED — the warning's own wording is literally correct.
+    R90 is the cumulative cost over the GROSS amount, not over the contract:
+      discount / gross = 0.030000 exactly      net / gross = 0.970000 exactly
+      month   cumCost/NET   cumCost/GROSS   file's R90    our curve
+      M3       6.7362        6.534078        6.5341        6.74
+      M6      21.0910       20.458267       20.4583       21.09
+      M9      49.7296       48.237737       48.2377       49.73
+      M12    100.0000       97.000000       97.0000      100
+      R90 equals cumCost/GROSS to within 4e-7 on all four quarters. So the author's
+      percentage column is computed before the 3% discount while their cost column and
+      our activity math are computed after it. "The summary was likely computed against
+      a different total" is exactly what happened; the different total is D, not F.
+      Note also WHY only M9 and M12 warn: the error is PROPORTIONAL (always 3%) but the
+      threshold is ABSOLUTE (1.0), so the same discrepancy is silent early in the curve
+      and loud late in it. M3 gap 0.21, M6 0.63, M9 1.49, M12 3.00.
+
+    WHAT THIS IS AND IS NOT
+      NOT caused by 2(c). The paths never agreed on this file: before 2(c) the PDF
+      warned about M3/M6/M8/M11 with face-value fractions (0.07%, 0.2%) and about the
+      per-quarter COST row (14.35 / 28.64 / 50.27) — never the Excel's 48.24 / 97, which
+      the PDF cannot even produce (it only ever has the printed 2-decimal form, where
+      Excel has the stored value). 2(c) changed the SHAPE of the disagreement, from
+      "many wrong notes vs two right ones" to "silence vs two right ones".
+      IS a real defect of its own: the same document read two ways should reach the same
+      conclusion, and the Excel reader's first-match-wins rule picks the row that
+      disagrees when a row that agrees exists two lines below it.
+
+    EXCEL-CORPUS MEASUREMENT (user asked what "lifting the gate" would do, especially to
+    the roof — probe_2c_excel_corpus.php, probe_2c_excel_each_row.php)
+      Every workbook that parses reads curveSource 'activities', so the summary-becomes-
+      the-curve branch ($lastNonZero === 0) fires on NONE of them. The curve is not at
+      risk on this corpus. (A marker in the first probe's output printed that branch on
+      every line — an operator-precedence slip in the PROBE, not a finding.)
+      /cumulat|commulat/ rows per file:
+        BUHI real + difformattest  2   R90 CUMULATIVE % ACCOMPLISHED  [picked, disagrees]
+                                       R92 CUMULATIVE COST            [ignored, confirms]
+        ROOF real                  2   R33 Commulative %              [picked, confirms]
+                                       R36 Commulative Days           [ignored]
+        10-month / 6-stage         1   -> collecting them all is a NO-OP
+        SEGMENT / 5-month / recreated 0
+      THE ROOF, SPECIFICALLY — the answer to the question asked:
+        R33 Commulative %     0.0632 … 1.0  -> 6.32/24.31/42.3/59.71/77.03/99.14/100,
+                              worst gap 0.00 vs our curve => CONFIRMS. 0 notes today,
+                              0 notes after. UNCHANGED.
+        R36 Commulative Days  30/60/90/120/150/180/187 -> worst gap 87 => never confirms.
+        So the roof is untouched WHILE R33 keeps confirming. But collecting all rows adds
+        a NEW EXPOSURE that does not exist today: if R33 ever stopped confirming (a
+        variant layout, a re-export), the Days row would be compared as percentages and
+        say "the file's own summary says 30%, but its activity rows add up to 6.32%".
+        Today that is impossible because the reader stops at the first match.
+      AND THE LIFT IS TWO CHANGES, NOT ONE — the blocker:
+        The Excel comparator scales FRACTIONS ONLY (:2010,
+        `$pct = ($v > 0 && $v < 1.5) ? $v * 100 : $v`). It has no contract-scaling branch,
+        where the PDF has one (`asPercent = maxVal <= 100` else divide by contract). So
+        R92's pesos would be compared as "2195216.46%" and could never confirm. Collecting
+        the rows WITHOUT also teaching the comparator to scale a peso block would achieve
+        nothing on the file that motivated it and add the roof's Days row as new noise.
+
+    A BETTER FRAME, FOUND BY THE SAME MEASUREMENT
+      Sorting the BUHI block by what each row IS makes the whole thing clearer:
+        R89 % ACCOMPLISHED       per-quarter  -> should never be compared to a CUMULATIVE
+        R90 CUMULATIVE %         cumulative   -> real, and genuinely 3% low (computed on
+                                                 the gross); worth saying
+        R91 COST                 per-quarter  -> should never be compared
+        R92 CUMULATIVE COST      cumulative   -> confirms exactly
+      The notes 2(c) removed from the PDF were wrong for TWO different reasons: two rows
+      were PER-PERIOD rows treated as cumulative, and the two % rows were read at face
+      value instead of x100. NEITHER of those is the Excel's M9/M12 note, which is TRUE.
+      A shape test separates them cleanly on this corpus: a cumulative row's last value
+      reaches the total, and only R90 (97%) and R92 (100%) do — R89 ends at 48.8% and R91
+      at 50.3% of contract. ("Ends >= 50" as used by cumulativeRowValues is too loose
+      here; ~90 would hold.) Fixing the PDF's fraction scale then puts the PDF within a
+      rounding step of the Excel's own message (7/20/48/97 vs 6.74/21.09/49.73/100).
+
+    OPTIONS (needs the user's decision — Rule 10; NOTHING BUILT)
+      (1) Lift 2(c)'s gate into the Excel reader. Collect every /cumulat/ row instead of
+          breaking on the first, and let a confirming one settle the file the same way.
+          Both paths then agree and both go quiet on BUHI. Must keep the TAUGHT
+          cumulative row (cumulativeSig) as the sole answer when one exists — the code
+          comment there is explicit that a taught row must not fall through to the
+          regex. Needs its own corpus measurement on the Excel side (roof, SEGMENT,
+          6-stage, 10-month + the row-role fixtures) before it is chosen.
+      (2) Leave both as they are and document the difference. Cheapest, but the same
+          file keeps saying two different things depending on which format arrives.
+      (3) Make the threshold proportional rather than absolute, so a 3%-of-base error
+          reads the same at M3 and M12. Changes warning counts on files there is no
+          complaint about; measure before considering.
+      (4) NEW, and after the measurement above the one to prefer: COMPARE ONLY ROWS THAT
+          ARE ACTUALLY CUMULATIVE, in both readers, and scale them properly. A row whose
+          last value does not reach the total is a per-period row and was never
+          comparable to a cumulative curve. On this corpus that drops R89 and R91 (the
+          two rows behind most of the PDF's old noise) and keeps R90 and R92. Pair it
+          with the PDF fraction-scale fix and both paths end up reporting the SAME true
+          thing — the author's percentage column runs 3% low because it is computed on
+          the gross — instead of one path shouting wrong figures and the other saying
+          nothing. 2(c)'s gate then becomes a tie-breaker between two genuine cumulative
+          rows rather than the thing doing all the work.
+      ⬛ DECIDED 2026-09-16 (user): PARKED. Option (2) for now — both readers stay as they
+         are and the difference is documented here. Rationale accepted: the two paths
+         produce the IDENTICAL correct baseline (1.12 … 100.00, same counts, same
+         activities), so the disagreement is between "says two true things" and "says
+         nothing" and misleads nobody about what is being locked. Revive as option (4),
+         not option (1), and only with its own measurement pass. Work continued to
+         3b + 3c instead.
+
+      RECOMMENDATION REVISED (2026-09-16, after measuring): NOT (1) as first written.
+      (1) is two coupled changes to a stable path, buys silence on one file, and adds the
+      roof's Days row as a new noise source. Prefer (4), or (2) if the appetite is small
+      — the Excel notes are TRUE, self-explaining and end with "no action needed", which
+      is a very different thing from the eleven wrong notes 2(c) removed. Whatever is
+      chosen, the PDF's 2(c) gate stays: nothing it silenced was true.
 
  ===============================================================================
   12. CONVERSATION CONTINUATION GUIDE

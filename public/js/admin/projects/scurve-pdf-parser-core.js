@@ -158,6 +158,84 @@ export function isNumericPct(str) {
     return /^[\d,]+(\.\d+)?%?$/.test(s.replace(/%$/, '').trim());
 }
 
+// Is this word a number at all? (money, percentage, count, parenthesised negative)
+// Anything carrying a letter is not.
+function isNumberWord(str) {
+    return /^[(]?[\d,]+(\.\d+)?[)]?%?$/.test(String(str || '').trim());
+}
+
+// Does this word read UNAMBIGUOUSLY as a column figure rather than part of a work
+// name? A thousands comma, a decimal point, a percent sign, parentheses, or three or
+// more digits all mark it out. A bare one- or two-digit number does NOT: "Excavation
+// Phase 2" and BUHI's "15"-day count look identical in isolation, so they are told
+// apart by their company instead — see activityDisplayName.
+export function isFigureCell(str) {
+    const s = String(str || '').trim();
+    if (s === '' || !isNumberWord(s)) return false;
+    if (/[,.%()]/.test(s)) return true;
+    return s.length >= 3;
+}
+
+/**
+ * Item (3a) — drop the money and day-count columns from an activity's DISPLAY NAME.
+ *
+ * A PDF has no cells: the reader takes a row's name from every token left of one
+ * x-threshold (descLimit), so whatever the author printed between the work name and
+ * the first month rides along with it. On the one-page BUHI that is the amount, the
+ * 3% discount, the contract amount, the weight and the day count:
+ *   "A.1.1 (3)   Construction of Temporary Field Office for the Engineer   184,800.00"
+ * Narrowing the band is NOT the fix — measured 2026-09-16, the band's right edge also
+ * decides which rows count as work, which row is the TOTAL, and what the read guard
+ * checks itself against; every band narrow enough to exclude the money either reads
+ * the roof wrong (2.48/10.8/…) or is refused outright. See the item (3) restudy in
+ * textfiles/document_parser_pdf_teach_grid_plan.md §13.
+ *
+ * So the name is trimmed, and only the name. The trailing RUN of numbers is dropped,
+ * but only when at least one of them is UNAMBIGUOUSLY a figure (isFigureCell). That
+ * "company" test settles the case a single number cannot settle alone:
+ *   "B.5(1) Project Billboard/Signboard 18,480.00 554.40 17,925.60 0.06 15"
+ *      -> the run ends in a bare "15", but it travels with money: the whole run goes.
+ *   "Excavation Phase 2"
+ *      -> a lone small number after a word: kept, it belongs to the name.
+ * The first word is never dropped, so a row named only by its code keeps it, and
+ * spacing is preserved verbatim — the roof prints "E    FINISHING AND OTHER CIVIL
+ * WORKS", and rejoining on a fixed separator would quietly rewrite it.
+ *
+ * Split on ANY whitespace run, not on the wide gaps alone: the gaps in a real read
+ * come from padding inside the pdf.js token strings, so a file whose tokens are not
+ * padded joins its columns with a single space and a gap-based rule would miss them.
+ *
+ * Pure. Called by: buildMonthsFromRows(), both places a names list becomes output —
+ * ALWAYS after de-duplication, never at row build. Names are de-duplicated BY STRING
+ * (activitiesByMonth indexOf, and the adopted-curve rebuild), so trimming earlier
+ * could collide two rows that differ only in their amount and silently drop one.
+ */
+export function activityDisplayName(name) {
+    const s = String(name == null ? '' : name);
+    // Split on runs of whitespace, KEEPING the separators, so the pieces can be
+    // rejoined exactly as they were printed.
+    const parts = s.split(/(\s+)/);
+    const segs = [];
+    for (let i = 0; i < parts.length; i += 2) {
+        segs.push({ text: parts[i], sep: parts[i + 1] || '' });
+    }
+    // Walk back over every trailing NUMBER, then keep the cut only if the run it
+    // covers holds at least one unambiguous figure.
+    let end = segs.length;
+    let sawFigure = false;
+    while (end > 1 && isNumberWord(segs[end - 1].text)) {
+        if (isFigureCell(segs[end - 1].text)) sawFigure = true;
+        end--;
+    }
+    if (!sawFigure || end === segs.length) return s;
+    let out = '';
+    for (let i = 0; i < end; i++) {
+        out += segs[i].text;
+        if (i < end - 1) out += segs[i].sep;
+    }
+    return out;
+}
+
 export function parseNumericPct(str) {
     const s = String(str || '').trim().replace('%', '').replace(/,/g, '');
     const n = parseFloat(s);
@@ -1246,7 +1324,9 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
         running = cum;
         prev = cum;
 
-        const names = activitiesByMonth[idx];
+        // Item (3a) — the figures that rode in with the name are dropped HERE, once
+        // the list is settled, so de-duplication above still compared full strings.
+        const names = activitiesByMonth[idx].map(activityDisplayName);
         const desc = names.length ? names.join(', ') : '';
         months.push({
             month_index: idx,
@@ -1317,9 +1397,12 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
                 if (!(row.months[m.month_index] > 0)) continue;
                 if (names.indexOf(row.description) === -1) names.push(row.description);
             }
-            const joined = names.join(', ');
+            // Item (3a) — same trim, same reason, and again only after the indexOf
+            // above has de-duplicated on the full printed string.
+            const shown = names.map(activityDisplayName);
+            const joined = shown.join(', ');
             m.description = joined.length > 200 ? joined.slice(0, 200) + '…' : joined;
-            m.activities = names.map((name) => ({ activity_name: name, description: null }));
+            m.activities = shown.map((name) => ({ activity_name: name, description: null }));
         }
         let run = 0;
         for (const m of months) {
@@ -1375,20 +1458,49 @@ export function buildMonthsFromRows(rows, monthIndices, totalContract, extra) {
     if (lastNonZero > 0 && candidates.length > 0) {
         const byMonth = {};
         months.forEach((m) => { byMonth[m.month_index] = m.planned_progress_percent; });
-        candidates.forEach((cand) => {
+
+        // Score every candidate on its own BEFORE anything is reported.
+        const scored = candidates.map((cand) => {
             const keys = Object.keys(cand.values || {}).map(Number);
             const maxVal = keys.length ? Math.max(...keys.map((k) => cand.values[k])) : 0;
             const asPercent = maxVal <= 100;
+            const entries = [];
             keys.forEach((m) => {
                 if (byMonth[m] === undefined) return;
                 const raw = cand.values[m];
                 const summaryPct = Math.round((asPercent ? raw : (contract > 0 ? (raw / contract) * 100 : 0)) * 100) / 100;
                 const gap = Math.round(Math.abs(summaryPct - byMonth[m]) * 100) / 100;
-                summaryReference.push({ month: m, summary_percent: summaryPct, activity_percent: byMonth[m], gap });
-                if (opts.debug) opts.debug.push({ t: 'ref', month: m, summary: summaryPct, activity: byMonth[m], gap });
-                if (gap > 1.0) {
-                    warnings.push(`Heads-up (Month ${m}): the file's own summary says ${summaryPct}%, but its activity rows add up to`
-                        + ` ${byMonth[m]}%. The summary was likely computed against a different total. Your baseline below uses the activity math —`
+                entries.push({ month: m, summary_percent: summaryPct, activity_percent: byMonth[m], gap });
+            });
+            // Agreement needs at least TWO months: one month matching is coincidence,
+            // and BUHI's per-quarter COST row matches month 3 exactly while being wrong
+            // about every later month.
+            return { entries, agrees: entries.length >= 2 && entries.every((e) => typeof e.gap === 'number' && e.gap <= 1.0) };
+        });
+
+        // 2(c) — A SUMMARY BLOCK IS NOT ONE ROW. The one-page BUHI prints four:
+        //   % ACCOMPLISHED             0.07 0.14 0.28 0.49   per quarter, as fractions
+        //   CUMULATIVE % ACCOMPLISHED  0.07 0.20 0.48 0.97   cumulative, as fractions
+        //   COST                       2,195,216.46 …        per quarter, in pesos
+        //   CUMULATIVE COST            2,195,216.46 …        cumulative, in pesos
+        // Only the last is a cumulative share of the contract, and it matches our read
+        // EXACTLY on all four quarters. Comparing each row independently made an exact
+        // import carry eleven "the file's own summary says…" notes, one month cited
+        // three times with three different figures — the least trustworthy thing on an
+        // otherwise perfect screen.
+        // So: if ANY candidate confirms the read, the file does NOT contradict us —
+        // report only the confirming ones and say nothing. Warn exactly as before when
+        // NOTHING in the file agrees, which is the case this check exists for (a roof
+        // read through a wrong description band keeps all six of its warnings).
+        const agreeing = scored.filter((s) => s.agrees);
+        const reported = agreeing.length > 0 ? agreeing : scored;
+        reported.forEach((s) => {
+            s.entries.forEach((e) => {
+                summaryReference.push(e);
+                if (opts.debug) opts.debug.push({ t: 'ref', month: e.month, summary: e.summary_percent, activity: e.activity_percent, gap: e.gap });
+                if (e.gap > 1.0) {
+                    warnings.push(`Heads-up (Month ${e.month}): the file's own summary says ${e.summary_percent}%, but its activity rows add up to`
+                        + ` ${e.activity_percent}%. The summary was likely computed against a different total. Your baseline below uses the activity math —`
                         + ' no action needed.');
                 }
             });
@@ -3178,6 +3290,8 @@ if (typeof window !== 'undefined') {
         isSummaryLabel,
         isNumericPct,
         parseNumericPct,
+        isFigureCell,
+        activityDisplayName,
         groupItemsIntoLines,
         linesToTokenLines,
         parseSCurvePdf,
