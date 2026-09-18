@@ -2,45 +2,57 @@
 # Parent refs: textfiles/document_parser_excel_learning_loop_plan.md (E1 — maps, teaching, learn-from-AI)
 #              textfiles/document_parser_pdf_teach_grid_plan.md (the teach desk)
 #              textfiles/local_llm_parser_plan.md (why the AI tier cannot carry this alone)
-# Date: September 16, 2026
-# Status: THE ACTIVE PLAN FILE (2026-09-16 close).
+# Date: September 16, 2026 (last updated September 18, 2026)
+# Status: ⏸ PARKED 2026-09-18 — the remaining steps are parked by the user's order, on a
+#         CLIENT FACT: the PMU confirmed they mainly receive the ORIGINAL EXCEL files for
+#         S-curves, so the exotic-layout work this file opened for is no longer the thing
+#         standing between the system and real use. Priority moved to pilot-testing
+#         readiness (textfiles/pilot_testing_readiness_plan.md).
 #         ✅ (A) date-row rule — COMMITTED 31e6b10 on phase-21-scurve-date-row, MERGED to
 #            develop, browser-proven.
 #         ✅ Restudy for (B)-(E) — done, no code (§6).
-#         ✅ Steps 1-3 (D1 merged spans · D3 calendar names · D2 60 months) — BUILT and
-#            BROWSER-PROVEN on phase-22-scurve-month-headers, ⚠️ UNCOMMITTED by the
-#            user's order ("do not commit for now").
-#         ⬜ Step 4 (month-name header rule) · ⬜ step 5 (teach a month as a range) ·
-#         ⬜ PDF counterpart restudy · ⏸ option E deferred.
-# Branch: phase-22-scurve-month-headers (off develop c081c39; Rule 12)
+#         ✅ Steps 1-3 (D1 merged spans · D3 calendar names · D2 60 months) — BUILT,
+#            BROWSER-PROVEN, and COMMITTED 9545cc1 on phase-22-scurve-month-headers.
+#         ⏸ Step 4 (month-name header rule) · ⏸ step 5 (teach a month as a range) —
+#            PARKED 2026-09-18, not abandoned. Both stay fully specified in §4/§6 and can
+#            be un-parked whenever a contractor file actually needs them.
+#         ⏸ PDF counterpart restudy — parked with them (same reason: the S-curve arrives
+#            as Excel; the PDF path is the fallback, not the main road).
+#         ⏸ option E deferred (unchanged).
+# Branch: phase-22-scurve-month-headers (off develop c081c39; Rule 12) — steps 1-3
+#         committed as 9545cc1; nothing from this file is uncommitted.
 
 ===============================================================================
   0. READ THIS FIRST
 ===============================================================================
 
-  ➜ HANDOFF (2026-09-16 close) — START HERE
-    WORKING TREE: branch phase-22-scurve-month-headers, HEAD = develop = c081c39, with
-    the steps 1-3 build UNCOMMITTED in:
-      app/Services/SCurveImportService.php
-      app/Http/Controllers/Admin/SCurveHeaderProposalController.php
-      resources/views/admin/_manage_scurve_headers_modal.blade.php
-      tests/Feature/SCurveImportTest.php, tests/Feature/ScurveHeaderProposalTest.php
-      this file, AGENTS.md
-    Do NOT stash, reset or switch branches without asking. The untracked merging/
-    folder is not ours. Commit only on the user's order ("commit" = no push).
-    STATE: PHP 1226 passed / the same 5 pre-existing failures; JS 230 / 228 + the 2
-    intended blinding fails; all 10 sampledocs workbooks byte-identical to develop.
+  ➜ HANDOFF (2026-09-18) — START HERE. THIS FILE IS PARKED.
+    WHY IT IS PARKED (user, 2026-09-18): the client confirmed they mainly have the
+    ORIGINAL EXCEL files for S-curves. Everything this file exists for — reading a
+    contractor's exotic printed layout — matters much less once the source workbook is
+    what actually arrives. The PMU's real document problem is elsewhere: their NORMAL
+    documents (contracts, proposals, supporting papers) are mostly SCANNED, because they
+    are handed physical copies. That moves the pressure to the normal-doc OCR path, not
+    to S-curve layout exotica. Priority is now pilot-testing readiness —
+    textfiles/pilot_testing_readiness_plan.md is the active file.
+    WORKING TREE: branch phase-22-scurve-month-headers. Steps 1-3 are COMMITTED as
+    9545cc1 (the earlier "do not commit for now" order was lifted). Nothing from this
+    file is uncommitted.
+    STATE AT THE PARK: PHP 1226 passed / the same 5 pre-existing failures; JS 230 / 228 +
+    the 2 intended blinding fails; all 10 sampledocs workbooks byte-identical to develop.
     Browser-proven: the two calendar fixtures, the teach desk past Month 12, and an
-    unchanged existing import (§6, last entry).
-    READ, IN ORDER: §0 (this), then §6's last three entries — the restudy (defects
-    D1-D3, the teaching path end to end, the recommended order), the steps 1-3 build,
-    and its browser result.
-    NEXT, EACH NEEDS AN ORDER (Rule 10):
-      - commit phase-22 (and push / merge to develop if said)
+    unchanged existing import (§6).
+    READ, IN ORDER, ONLY IF THIS IS UN-PARKED: §0 (this), then §6's last four entries —
+    the restudy (defects D1-D3, the teaching path end to end, the recommended order), the
+    steps 1-3 build, its browser result, and the 2026-09-18 park entry.
+    PARKED WORK, EACH STILL FULLY SPECIFIED AND EACH NEEDING AN ORDER TO RESUME (Rule 10):
       - step 4: a month-name header rule so a DATELESS day-column file (S1) reads
       - step 5: teach a month as a first..last range, wider captures, 4000-char limit
       - PDF counterpart: scurve-pdf-parser-core.js keys month names by calendar number
         and caps numbered labels at 12 — its own restudy first
+    WHAT WOULD UN-PARK THIS: a real contractor S-curve that arrives WITHOUT its workbook
+    and that the date-row rule, the calendar-name rule and hand-teaching all fail to read.
+    Until then this is speculative work against a problem the client does not have.
     FIXTURES (sampledocs/, git-ignored): SCurve-Test-CONSCHED-Daily-{values,formulas},
     SCurve-Test-Calendar-DecStart-4Month, SCurve-Test-Calendar-14Month. Generators and
     probes live in C:\temp\opencode (listed per entry in §6). The before/after gate is
@@ -140,7 +152,7 @@
     sheet with the last 17 days missing.
 
 ===============================================================================
-  4. OPTIONS (PROPOSED — needs an order)
+  4. OPTIONS (⏸ (C)/(D)/(E) PARKED 2026-09-18 — see §0 and the park entry in §6)
 ===============================================================================
 
   (A) DATE-ROW RULE — recommended first.  ✅ BUILT 2026-09-16 (user: "lets go with your
@@ -153,19 +165,22 @@
       column); partial first/last months (Dec 9-31, Mar 1-8) are just shorter groups;
       the second table's own date row must not win the header pick (it has no
       DESCRIPTION column — betterHeader should already prefer the first).
-  (B) CALENDAR NAMES -> PROJECT ORDER.  ⬜
+  (B) CALENDAR NAMES -> PROJECT ORDER.  ✅ DONE as D3 in steps 1-3 (committed 9545cc1).
       Map month names by position, not by calendar number, whenever they are not
       already 1..N in order. Small, and useful without (A) for monthly layouts that
       start mid-year.
-  (C) EXCEL MONTH AS A RANGE in maps (first..last column), as PDF already does. Lets a
-      reviewer and the AI teach what (A) misses. Touches the map format (MAP_VERSION),
-      teachColumns validation, the desk, and the AI sanitizer.
-  (D) LIFT THE CAPS: the 80-column map/slice limit and the 12-month limit
-      (buildTaughtMap, teachColumns months max:12). A 4-storey building can outrun 12
-      months; a day-column file outruns 80 columns in under 3 months.
-  (E) FOR THE AI SLICE: summarize day columns before sending (e.g. send per-month
-      column sums once (A) knows the months) instead of raw cells. Only matters if the
-      AI tier comes back (local_llm_parser_plan.md).
+  (C) ⏸ PARKED 2026-09-18. EXCEL MONTH AS A RANGE in maps (first..last column), as PDF
+      already does. Lets a reviewer and the AI teach what (A) misses. Touches the map
+      format, teachColumns validation, the desk, and the AI sanitizer. (The restudy later
+      found NO MAP_VERSION bump is needed — monthSpans is already a plain column list, so
+      a range expands server-side into the same list. Read that before restarting this.)
+  (D) ⏸ PARKED 2026-09-18, PARTLY SUPERSEDED. LIFT THE CAPS. The 12-month limit was
+      already lifted to 60 by step 3 (buildTaughtMap, teachColumns, the desk). What stays
+      parked is the capture side: the 80-column map/slice limit and the 4000-char block
+      store limit. A day-column file outruns 80 columns in under 3 months.
+  (E) ⏸ DEFERRED (unchanged). FOR THE AI SLICE: summarize day columns before sending
+      (e.g. send per-month column sums once (A) knows the months) instead of raw cells.
+      Only matters if the AI tier comes back (local_llm_parser_plan.md).
 
   WHAT MUST NOT CHANGE: every existing corpus read. Any build re-runs verify_p6 (16
   reads), block_snapshot (9 PDFs), the PHP S-curve tests and the Excel corpus probes.
@@ -446,3 +461,49 @@
 
     PROBES: excel_reads_phase22.json, mutate_p22.mjs, *_p22_real.php (pre-mutation
     copies), php_p22.log, js_p22.log.
+
+  2026-09-18 — ⏸ PARKED (steps 4 and 5, and the PDF counterpart). NO APP CODE.
+  User order: "an update those step 4 and 5 i want to park it for now."
+
+    THE CLIENT FACTS BEHIND IT (user, 2026-09-18) — the reason this is a park and not a
+    pause, and the single most decision-changing thing learned about the parser track:
+      1. THE PMU MAINLY HAS THE ORIGINAL EXCEL FILES for S-curves. The whole premise of
+         this file was a contractor schedule we only had as a PRINT (CONSCHEDSAVINGS.pdf,
+         §1). If the workbook itself is what normally arrives, phpspreadsheet reads it
+         exactly, offline, with no AI and no teaching — which is the path that already
+         works for every workbook in the corpus.
+      2. THEIR NORMAL DOCUMENTS ARE MAINLY SCANNED. Contracts, proposals and supporting
+         papers reach the PMU as PHYSICAL COPIES and are scanned in. That is the opposite
+         of the S-curve situation: no source file exists at all, and the parser is facing
+         an image, not a document with a text layer.
+    CONSEQUENCE FOR PRIORITY: the pressure moves off S-curve layout exotica and onto the
+    NORMAL-DOC OCR path (textfiles/ocr_page_preview_and_ai_picker_plan.md, and the OCR
+    batch in document_parser_learning_loop_plan.md §6). Recorded here so the next session
+    does not re-open steps 4/5 on momentum.
+
+    WHAT IS PARKED, AND WHAT SURVIVES THE PARK
+      step 4  month-name header rule for a DATELESS day-column file (S1). Spec intact in
+              §4 and in the restudy's "RECOMMENDED ORDER". Nothing built.
+      step 5  option C + D — teach a month as first..last, captures wider than 80 columns,
+              the 4000-char store limit, the 79-column map cap. Spec intact; the restudy's
+              finding that monthSpans is ALREADY a plain column list (so a range expands
+              server-side with NO MAP_VERSION bump) is the thing to re-read first.
+      PDF     scurve-pdf-parser-core.js still keys calendar month names by CALENDAR NUMBER
+              (:79) and caps numbered/ordinal labels at 12 (:77) — the same two defects
+              fixed on the Excel side as D3/D2. STILL PRESENT, deliberately. A PDF S-curve
+              starting in any month but January is misread today. Lower priority now that
+              the Excel is the expected source, but it is a KNOWN DEFECT, not a gap —
+              if the pilot surfaces a PDF-only S-curve, this is the first thing to fix.
+      All fixtures, probes and the before/after gate (snapshot_excel_reads.php vs
+      excel_reads_after.json / excel_reads_phase22.json) stay where they are.
+
+    WHAT IS NOT PARKED: everything already built and committed — the date-row rule
+    (31e6b10) and the month-header fixes D1/D2/D3 (9545cc1). Those are live behaviour and
+    are covered by the suite; they are not affected by this decision.
+
+    UN-PARK CONDITION: a real contractor S-curve that arrives without its workbook AND
+    defeats the date-row rule, the calendar-name rule and hand-teaching. Pilot testing is
+    exactly the thing likeliest to produce one — so revisit after the pilot, with a real
+    file in hand rather than a rebuilt fixture.
+
+    NEXT ACTIVE FILE: textfiles/pilot_testing_readiness_plan.md.
