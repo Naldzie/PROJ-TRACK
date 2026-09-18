@@ -33,7 +33,11 @@
 #         removed from the DOM rather than hidden, because sharing one <div> with the
 #         warning banner is what made three fixes leak. ❓ Q3 (§7) asks what to do when
 #         an extracted Category / Budget Source / Contractor is not in the DB — answered
-#         with a proposal, NOT ordered.
+#         BUILT 2026-09-18: create-in-place for Category / Budget Source (policy-gated),
+#         and a loud named miss for Contractor (never auto-created, never stored as text).
+#         §9 answers the OCR-cost research question: sequential pages, a fresh tesseract
+#         worker PER PAGE via the one-shot API, a ~3x penalty on pages that yield nothing,
+#         and a per-FILE (not per-run) budget — with the accuracy-neutral levers ranked.
 # Branch on build: phase-<n>-<short-description> (Rule 12).
 
 ===============================================================================
@@ -432,7 +436,9 @@
      PMU staff member will sit through on a PMU desktop.
 
   ── Q3. WHAT SHOULD HAPPEN WHEN AN EXTRACTED CATEGORY / BUDGET SOURCE / CONTRACTOR
-         IS NOT IN THE DATABASE? ── ⚠ USER'S QUESTION 2026-09-18, ANSWER PROPOSED, NOT ORDERED
+         IS NOT IN THE DATABASE? ── ✅ BUILT 2026-09-18
+     ✅ ORDERED AND BUILT 2026-09-18 — see the Q3 entry in §8. The text below is the
+     proposal as written before the build; it is unchanged so the reasoning survives.
      Asked verbatim: "for the contractor, currently even when i apply the extracted, if
      the contractor extracted is not existing in the database, it will not be auto picked
      right? same case with the others. now what can we do? should we save those as text?"
@@ -816,6 +822,193 @@
                  ever wrong.
     VERIFICATION: node --check clean (one duplicated tail caught); npm run test:js
     231/231/0; view:clear. No PHP, no core extraction logic.
+
+  2026-09-18 — Q3 BUILT (user: "Q3 lets go with your recommendation"). Same branch.
+  The proposal in §7 Q3 is implemented as written: create-in-place for the two lookup
+  tables, and a loud, honest miss for contractor. No schema change, no text columns.
+
+    Q3(a) CATEGORY + BUDGET SOURCE — CREATE FROM THE PREVIEW
+      When an extracted value matches no option, the preview now offers
+      「 + Add "X" as a new category 」 under the field. Pressing it POSTs to the
+      EXISTING store endpoint, reloads the live control from the server
+      (loadProjectCategories / loadBudgetSources), and re-syncs the preview so the new
+      row is present AND selected. If the reload does not bring it back (a different
+      role's list route, a cache), the option is appended locally so the reviewer is not
+      stuck; the next real load agrees.
+      GATED BY THE SAME POLICY AS THE (+) BUTTONS. The store routes live in the admin
+      group, so _projectModalConfig now carries canCreateCategory / canCreateBudgetSource
+      computed from CategoryPolicy / BudgetSourcePolicy in the Blade (both policies
+      exist). A staff user sees no button rather than a button that 403s.
+      Duplicate names are treated as ordinary, not as failures worth shouting about — the
+      server's message is shown and the list reload surfaces the existing row either way.
+
+    Q3(b) CONTRACTOR — NEVER CREATED, NEVER STORED AS TEXT, NEVER SILENT
+      The unmatched branch used to show a bare "not parsed" indicator, so the name the
+      document gave us was simply lost. It now names it:
+        "The document says <X>, which is not in the contractor list. Closest match: <Y>.
+         Pick the right one, or add the contractor first — it is not created
+         automatically."
+      The "closest match" half only appears when the fuzzy matcher found something it was
+      not confident enough to choose (score > 0 but < 0.5) — a near miss is exactly the
+      case a human eye settles in a second.
+      WHY NOT CREATE OR STORE AS TEXT, recorded here because it will be asked again:
+      projects.contractor_id is an FK, and contractors carry logins, notifications,
+      ratings and warranty submissions. A contractor minted from OCR text would be a
+      hollow record in the very table the pilot seeds with the PMU's real contractors;
+      a contractor stored as loose text would LOOK filled while dropping out of
+      contractor-filtered views, ratings and notifications. Both are worse than an
+      obvious blank with a clear note.
+
+    FILES: public/js/admin/projects/document-parser.js (renderChoiceCreateAction,
+    createChoiceFromPreview, setContractorMissNote, and the sync loop calling the first);
+    resources/views/admin/_create_project_modal.blade.php (store routes + the two
+    capability flags in _projectModalConfig).
+    NO migration, NO model change, NO new route — every endpoint used already existed.
+
+    VERIFICATION: node --check clean; npm run test:js 231/231/0; view:clear. The JS suite
+    covers the pure core, not this DOM code, so the browser steps below are the bar.
+
+    ⬜ BROWSER CHECK OWED (user)
+      1. As ADMIN, upload a document whose category is not in the list: the preview shows
+         「+ Add "…" as a new category」. Press it — the category is created, the dropdown
+         reloads with it selected, and Apply then fills the real form.
+      2. Same for Budget Source.
+      3. As STAFF (who may not create): the same unmatched value shows NO add button, and
+         the value is still visible as "… — from document (not in list)".
+      4. Press the add button twice / add a name that already exists: the message is
+         sensible and nothing breaks.
+      5. Upload a document naming a contractor that does not exist: the field stays empty
+         and the note names the extracted contractor, with a "Closest match" only when
+         there genuinely is a near one.
+
+===============================================================================
+  9. OCR COST — WHY IT IS SLOW, HOW IT SCALES, AND WHAT CAN BE CUT
+     Research, 2026-09-18, READ-ONLY. User: "the ocr parsing can take very long right?
+     is it also gets longer as the number of pdf uploaded is more and more page? is
+     there no way to reduce it without sacrificing the accuracy of the ocr parser?"
+     NOTHING HERE IS BUILT OR ORDERED. Every figure is read from the code; the ones
+     marked MEASURE must be confirmed in a browser run before anything is changed.
+===============================================================================
+
+  9.1 WHAT ACTUALLY COSTS TIME (line refs in public/js/admin/projects/document-parser.js)
+
+    THE PAGE LOOP IS STRICTLY SEQUENTIAL. extractTextFromPDF walks pages in a plain
+    `for (let pageNum = 1; ...)` and awaits ocrPage one at a time (:884). Nothing is
+    parallel — one page is read while every core but one sits idle.
+
+    THE BIGGEST ONE: EVERY RECOGNITION USES THE ONE-SHOT CONVENIENCE API.
+    loadTesseract() resolves to window.Tesseract, the library NAMESPACE (:374-389), and
+    every read calls tesseract.recognize(canvas, ...) (:594, :642, :671, :760). That
+    entry point is documented as a convenience for a SINGLE image: it creates a worker,
+    loads the WASM core and the language data, recognises, then terminates the worker —
+    per call. The library's own guidance is to create a worker ONCE and reuse it when
+    reading more than one image, which is exactly our case.
+    So on a 10-page scan we pay worker spin-up and language initialisation TEN OR MORE
+    TIMES instead of once, and with 'eng+osd' that is two traineddata sets each time.
+    MEASURE BEFORE BUILDING: time one page through the current call versus one
+    createWorker() reused across pages. The claim rests on the library's documented
+    behaviour, not on a measurement of ours.
+
+    A FAILING PAGE COSTS ABOUT 3x A SUCCEEDING ONE. ocrPage runs a dead-page ladder
+    (:749-756): plain recognise, then if under 10 characters a scale-2 re-render, then
+    if still under 10 a cropped re-render. A page that yields text stops at rung 1; a
+    page that yields nothing pays all three, each with its own worker under the one-shot
+    API.
+    ON THE USER'S OWN FILE that is the difference between roughly 10 recognitions and
+    roughly 24: 3 pages read (1 each) plus 7 dead pages (about 3 each). The pages that
+    give us NOTHING are the ones we spend the most on — see F1.
+
+    OSD RUNS ON EVERY PAGE. useOsd defaults to TRUE whenever window._ocrLangMode is
+    unset (:743), so the first rung is 'eng+osd' — orientation detection, on every page
+    of every file. Orientation is a property of a SCAN, not usually of a page.
+
+    RENDER COST. Pages render at scale 3 (tesseract's ~300 DPI sweet spot) capped to a
+    3000px longest side (:674-690). Already tuned, and NOT a lever — see 9.4.
+
+    WHAT IS ALREADY EFFICIENT and should not be re-solved: pages carrying a real text
+    layer never reach OCR; a memoising cache keyed file#size#page@rotation makes
+    re-reading a page at an angle already read free (:664); the reader script is warmed
+    when the popup opens.
+
+  9.2 HOW IT SCALES (the user's second question — yes, in both directions)
+
+    PER FILE:   cost is about min(scanned pages, read depth) x per-page cost.
+                Read depth defaults to OCR_PAGE_LIMIT = 10, user-settable 1..50.
+    PER UPLOAD: THE BUDGET IS PER FILE, NOT PER RUN. extractTextFromPDF resets
+                _ocrPagesDone = 0 for each file (:827, comment O1 — a deliberate
+                fairness decision so a later file still gets read). There is NO global
+                ceiling, so three scanned PDFs at the default depth is up to THIRTY page
+                reads, and ten files is a hundred. Nothing warns the reviewer of that.
+    SO: linear in scanned pages per file, and linear again in the number of scanned
+    files. The UI's own estimate is about 2s per page ("Read depth (~2s per page)"),
+    putting one 10-page scan near 20s and three of them near 60s — before the 3x penalty
+    on pages that yield nothing.
+
+  9.3 WHAT CAN BE CUT WITHOUT TOUCHING ACCURACY (ranked; none ordered)
+
+    A. REUSE ONE WORKER INSTEAD OF THE ONE-SHOT API.  biggest win, ZERO accuracy cost
+       createWorker(langs) once per run, reuse for every page, terminate in the finally.
+       Accuracy-neutral BY CONSTRUCTION: identical engine, identical parameters,
+       identical image — only the worker's lifetime changes. Removes N spin-ups and N
+       language initialisations per file.
+       Watch: terminate on cancel/abort or it leaks. _autofillRunId already marks
+       superseded runs, so tie the worker's lifetime to that.
+
+    B. READ PAGES IN PARALLEL WITH A SCHEDULER.  near-linear on a multi-core desktop,
+       ZERO accuracy cost. Pages are independent, so a scheduler with 2-4 workers reads
+       2-4 at once. Same engine, same images, same answers — only the ORDER of completion
+       changes, so text must be reassembled by page number rather than by arrival.
+       Watch: each worker holds its own WASM and traineddata, so memory is the limit. On
+       a PMU desktop 2-3 is sensible, not 8. Pairs naturally with A.
+
+    C. STOP PAYING FOR OSD ON EVERY PAGE.  likely win, SMALL accuracy risk
+       Detect orientation once per FILE (first scanned page, or on a page that fails) and
+       reuse it, instead of 'eng+osd' on all ten. Orientation is a property of how the
+       document went through a scanner.
+       Risk, and it is real: a file whose pages are NOT uniformly oriented. Measurable on
+       the corpus before committing.
+
+    D. GATE THE DEAD-PAGE LADDER ON EVIDENCE.  needs measurement FIRST
+       The 3x penalty falls entirely on pages that yield nothing. The rungs exist because
+       they sometimes rescue a page — but nobody has counted how often. MEASURE: across
+       the sample corpus, how many pages did the scale-2 rung rescue, and how many did
+       the crop rung rescue? A rung that has never rescued anything is pure cost and can
+       go for free; one that rescues rarely can be gated (crop only when there is ink
+       near the margins). Do NOT remove them on intuition — that is trading accuracy
+       blind, and F1 says accuracy is already short.
+
+    E. PREFETCH THE LANGUAGE DATA WHEN THE POPUP OPENS.  small, zero accuracy cost
+       The script is already warmed; the traineddata still downloads on the first
+       recognise. With A in place the worker and its languages can be created while the
+       reviewer is still choosing files, moving that cost off the critical path.
+       PILOT ANGLE: PMU desktops fetch tesseract.js and its language data from a CDN. If
+       those machines are offline or slow this is not a small constant — see the pilot
+       plan F3. Vendoring the WASM and traineddata locally is the same argument the
+       no-vite convention already applies to every other library here.
+
+  9.4 WHAT I WOULD NOT DO
+
+    LOWER THE RENDER RESOLUTION. Scale 3 aims at tesseract's documented ~300 DPI sweet
+    spot, and the 3000px cap exists because oversized canvases made it fail silently.
+    Dropping resolution trades accuracy directly, and F1 says accuracy is already the
+    problem — 7 of 10 pages yield nothing today. Spending less per page to read even
+    less is the wrong direction.
+
+    SKIP PAGES BY "IMPORTANCE". The picker's ranking is known to be poor (it ranks by
+    which pages OCR handled WORST, with no notion of whether a page holds the fields),
+    so using it to skip work would skip the wrong pages.
+
+  9.5 THE ORDER THAT MAKES SENSE, AND ITS PREREQUISITE
+
+    F2 COMES FIRST. The same file yielded 3 read pages one run and 4 the next (see F2).
+    No speed change can be judged against a baseline that moves on its own — a "faster"
+    run that happens to read one page fewer would look like a win.
+    A CONNECTION WORTH TESTING: one of F2's candidate causes was warm-versus-cold
+    tesseract state. Under the one-shot API every page gets a FRESH worker, so if F2 is
+    state-related, lever A (one reused worker) may make runs MORE deterministic as well
+    as faster — which would make A the first thing to try for BOTH problems.
+    THEN: A (reuse) -> measure -> B (parallel) -> measure -> D's measurement -> C if the
+    corpus says orientation is uniform -> E.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

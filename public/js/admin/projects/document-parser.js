@@ -2330,7 +2330,116 @@ function syncAutofillChoiceFields() {
         target.innerHTML = html.join('');
         // A blank placeholder must not win when we have something to select.
         if (keep) { try { target.value = keep; } catch (e) { /* best-effort */ } }
+        // Q3(a) 2026-09-18 — A VALUE THE DOCUMENT GAVE US MUST NOT DIE BECAUSE NOBODY
+        // HAS ADDED IT YET. When the extracted name matches no option, offer to create
+        // it right here for the two fields where that is safe: Category and Budget
+        // Source are simple lookup tables with existing store endpoints and (+) buttons.
+        // CONTRACTOR IS DELIBERATELY EXCLUDED — a contractor is not a label, it is a
+        // record that logins, notifications, ratings and warranty submissions hang off,
+        // and minting one from OCR text would put a hollow record in the very table the
+        // pilot seeds with the PMU's real contractors. That case gets a loud note
+        // instead (see markUnmatchedChoice below).
+        renderChoiceCreateAction(target, sourceId, (keep && !matched) ? keep : '');
     });
+}
+
+// Put (or remove) the "Add as new …" action under a choice field.
+// Shown only when: the value came from the document, matches no option, the field is
+// one of the two safe ones, and THIS USER may create it — the capability flags mirror
+// the same policy that gates the (+) buttons, and the store routes are admin-only.
+function renderChoiceCreateAction(target, sourceId, unmatchedValue) {
+    const HOLDER = 'afp-choice-action';
+    let holder = target.parentNode ? target.parentNode.querySelector('.' + HOLDER) : null;
+    const cfg = (typeof window !== 'undefined' && window._projectModalConfig) ? window._projectModalConfig : {};
+    const CREATABLE = {
+        projectCategory: { label: 'category', allowed: !!cfg.canCreateCategory },
+        projectBudgetSource: { label: 'budget source', allowed: !!cfg.canCreateBudgetSource },
+    };
+    const spec = CREATABLE[sourceId];
+    const show = !!unmatchedValue && !!spec && spec.allowed;
+    if (!show) {
+        if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+        return;
+    }
+    if (!holder) {
+        holder = document.createElement('div');
+        holder.className = HOLDER + ' mt-1';
+        target.insertAdjacentElement('afterend', holder);
+    }
+    holder.innerHTML = '<button type="button" class="btn btn-sm btn-outline-primary afp-add-choice">'
+        + '<i class="bi bi-plus-circle"></i> Add "' + escapeHtml(unmatchedValue) + '" as a new ' + escapeHtml(spec.label)
+        + '</button>';
+    const btn = holder.querySelector('.afp-add-choice');
+    if (btn) {
+        btn.addEventListener('click', function () {
+            createChoiceFromPreview(sourceId, unmatchedValue, btn);
+        });
+    }
+}
+
+// Create the missing category / budget source, then refresh the LIVE control and
+// re-sync the preview so the new row is selected. Nothing else in the form changes.
+// Called by: the "Add as new …" button rendered above.
+async function createChoiceFromPreview(sourceId, value, btn) {
+    const cfg = (typeof window !== 'undefined' && window._projectModalConfig) ? window._projectModalConfig : {};
+    const ROUTES = {
+        projectCategory: { url: cfg.categoriesStoreRoute, reload: 'loadProjectCategories', label: 'category' },
+        projectBudgetSource: { url: cfg.budgetSourcesStoreRoute, reload: 'loadBudgetSources', label: 'budget source' },
+    };
+    const spec = ROUTES[sourceId];
+    if (!spec || !spec.url || !value) return;
+    const original = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Adding…'; }
+    try {
+        const token = cfg.csrfToken
+            || (document.querySelector('meta[name="csrf-token"]') || {}).content
+            || '';
+        const res = await fetch(spec.url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ name: value }),
+        });
+        if (!res.ok) {
+            // A duplicate name is the common case and is NOT a failure worth shouting
+            // about — the list reload below will surface the existing row either way.
+            let msg = 'Could not add the ' + spec.label + ' (' + res.status + ').';
+            try {
+                const body = await res.json();
+                if (body && body.message) msg = body.message;
+                else if (body && body.errors) msg = Object.values(body.errors).flat().join(' ');
+            } catch (e) { /* non-JSON error body */ }
+            if (btn) { btn.disabled = false; btn.innerHTML = original; }
+            alert(msg);
+            return;
+        }
+        // Refresh the real control from the server, then re-sync the preview so the
+        // freshly created row is both present and selected.
+        try {
+            const reload = (typeof window !== 'undefined') ? window[spec.reload] : null;
+            if (typeof reload === 'function') await reload();
+        } catch (e) { /* the option append below still covers the common case */ }
+        const live = document.getElementById(sourceId);
+        const known = live && live.options
+            ? Array.from(live.options).some(o => String(o.textContent || '').trim().toLowerCase() === value.toLowerCase())
+            : false;
+        if (live && !known) {
+            // The reload did not bring it (different role route, cache) — add it locally
+            // so the reviewer is not stuck. The next real load will agree.
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            live.appendChild(opt);
+        }
+        try { syncAutofillChoiceFields(); } catch (e) { /* best-effort */ }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+        alert('Could not add the ' + spec.label + ' — check your connection and try again.');
+    }
 }
 function applyAutofillFromPreview() {
     // Belt and braces for the stuck spinner: whatever path got us here, the reviewer
@@ -2598,8 +2707,52 @@ function tryMatchContractorDropdown(extractedName) {
         _markAutofilled('contractorSelect');
         showParseIndicator('contractorSelect', true);
     } else {
+        // Q3(b) 2026-09-18 — SAY WHAT WE READ, AND SAY IT LOUDLY.
+        // A contractor is never auto-created from a document: it is a record that
+        // logins, notifications, ratings and warranty submissions hang off, and one
+        // minted from OCR text would be hollow — no company details, no user account —
+        // in the very table the pilot seeds with the PMU's real contractors. Nor is the
+        // name stored as loose text: projects.contractor_id is an FK, and a project
+        // whose contractor exists only as a string would silently drop out of
+        // contractor-filtered views, ratings and notifications while LOOKING filled.
+        // So the honest outcome is: leave the field empty, and make sure the reviewer
+        // sees exactly what the document said so a human can decide. Previously this
+        // branch showed a bare "not parsed" indicator and the read was simply lost.
         showParseIndicator('contractorSelect', false);
+        setContractorMissNote(extractedName, bestOption, bestScore);
     }
+}
+
+// Name the contractor the document gave us, next to the field it could not fill.
+// Two cases worth telling apart: nothing resembled it at all, versus there IS a close
+// option we were not confident enough to choose for them (a near miss is exactly when
+// a human glance settles it in a second).
+// Called by: tryMatchContractorDropdown() on every unmatched read.
+function setContractorMissNote(extractedName, bestOption, bestScore) {
+    try {
+        const field = document.getElementById('contractorSelect');
+        if (!field) return;
+        const id = 'contractorMissNote';
+        let note = document.getElementById(id);
+        if (!extractedName) {
+            if (note && note.parentNode) note.parentNode.removeChild(note);
+            return;
+        }
+        if (!note) {
+            note = document.createElement('small');
+            note.id = id;
+            const anchor = field.closest('.input-group') || field;
+            anchor.insertAdjacentElement('afterend', note);
+        }
+        note.className = 'text-warning d-block mt-1';
+        const near = (bestOption && bestScore > 0)
+            ? ' Closest match: <strong>' + escapeHtml(String(bestOption.textContent || '').trim()) + '</strong>.'
+            : '';
+        note.innerHTML = '<i class="bi bi-exclamation-triangle"></i> The document says '
+            + '<strong>' + escapeHtml(extractedName) + '</strong>, which is not in the contractor list.'
+            + near
+            + ' Pick the right one, or add the contractor first — it is not created automatically.';
+    } catch (e) { /* the note is an aid, never a blocker */ }
 }
 
 /**

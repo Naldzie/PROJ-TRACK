@@ -422,6 +422,15 @@ window._projectModalConfig = {
     // Staff can CHOOSE budget source when creating/editing (only admin can MANAGE add/edit/delete)
     staffBudgetSourcesListRoute: '{{ route("staff.budget-sources.list") }}',
     contractorBudgetSourcesListRoute: '{{ route("contractor.budget-sources.list") }}',
+    // Q3(a) 2026-09-18 — the auto-fill preview can create a MISSING category or budget
+    // source in place, so a value the parser read from a document is not lost just
+    // because nobody has added it yet. Store routes are admin-only by design, so the
+    // capability flags below mirror the same policy the (+) buttons already use and the
+    // preview hides the action for anyone who cannot create.
+    categoriesStoreRoute: '{{ route("admin.categories.store") }}',
+    budgetSourcesStoreRoute: '{{ route("admin.budget-sources.store") }}',
+    canCreateCategory: {{ (auth()->check() && auth()->user()->can('create', \App\Models\Category::class)) ? 'true' : 'false' }},
+    canCreateBudgetSource: {{ (auth()->check() && auth()->user()->can('create', \App\Models\BudgetSource::class)) ? 'true' : 'false' }},
 };
 
 // Initialize modal state
