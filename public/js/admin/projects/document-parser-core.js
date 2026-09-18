@@ -653,12 +653,21 @@ const DocumentParserCore = (function () {
         return null;
     }
 
-    // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC hardcoded
-    // patterns disabled so the clean selectable file misses and the loop-first round-trip
-    // can run. Single switch shared by extractABC() AND collectAbcCandidates() (ABC-pooling)
-    // so the demo stays intact while blinding is ON: the collector sleeps, and the
-    // single-match learned path (pattern-fixed) still carries approved rows. See plan §6.
-    const L3_TEST_BLIND_ABC = true;
+    // L3-TEST TEMP BLINDING — ⬛ LIFTED 2026-09-18 (pilot readiness, item N1).
+    // WHAT IT DID: with this ON, extractABC()'s hardcoded patterns were replaced by an
+    // EMPTY list, the corroborated Total/Approved-Budget-Amount reassignment (F-B1) was
+    // skipped, the ABC words-shape fallback was skipped, and collectAbcCandidates()
+    // (ABC-pooling) slept. A clean selectable file therefore MISSED on ABC on purpose,
+    // so the teach -> approve -> fills-free learning-loop round trip could be demonstrated
+    // end to end on a document that would otherwise have read straight away.
+    // WHY IT IS OFF NOW: the pilot hands the normal-doc parser to PMU staff with real
+    // scanned contracts. Blinded, a document that plainly states "Approved Budget for the
+    // Contract (ABC): PHP X" comes back with an empty ABC box, which reads as a defect.
+    // The demo value no longer outweighs that. See textfiles/pilot_testing_readiness_plan.md
+    // section 5, item N1, and the learning-loop plan section 6.
+    // TO RE-BLIND FOR A DEMO: set this back to true and expect two INTENDED JS failures
+    // (F-B1 conditional, L3 hardcoded-ABC) plus the sleep-asserting fixtures to flip back.
+    const L3_TEST_BLIND_ABC = false;
 
     // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
     // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.
@@ -770,6 +779,20 @@ const DocumentParserCore = (function () {
         return null;
     }
 
+    // Written-cents guard (N1a, 2026-09-18). A funds-certificate line spells the amount in
+    // words and ends "… PESOS & 59/100" — the "59/100" is the CENTS, not the amount. asMoney
+    // happily reads 59 out of it, so the un-blinded ABC label patterns were returning P59.00
+    // for a P4,834,297.59 certificate AND short-circuiting the words-shape rule that reads it
+    // correctly. True only when EVERY digit in the text belongs to an NN/100 cents marker, so
+    // a real figure ("Php 4,834,297.59") is untouched.
+    // Called by: extractABC() validator; collectAbcCandidates() before asMoney().
+    function isCentsFractionOnly(text) {
+        const s = String(text || '');
+        if (!/\d/.test(s)) return false;
+        const stripped = s.replace(/\b\d{1,2}\s*\/\s*100\b/g, ' ');
+        return !/\d/.test(stripped);
+    }
+
     // Approved Budget for the Contract (ABC) — standalone ABC label.
     // Phase 5 NEW: distinguishes ABC ceiling from Contract Price (savings = ABC - price).
     // Called by: parseProjectInfo() → returns abc field; budget uses extractBudget().
@@ -786,7 +809,9 @@ const DocumentParserCore = (function () {
         if (hasOrigRevised && !L3_TEST_BLIND_ABC) {
             patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
         }
-        const direct = findLabeledValue(lines, patterns, asMoney);
+        // N1a: reject a "59/100" cents marker before it can pose as the amount and
+        // short-circuit the words-shape rule below.
+        const direct = findLabeledValue(lines, patterns, (t) => (isCentsFractionOnly(t) ? null : asMoney(t)));
         if (direct) return direct;
         // Layer-2 rule A (ABC words-shape): PESOS-words fallback for funds-cert lines when the
         // Php numeric is absent (garbled) — same wordsToNumber machinery as extractBudget's fourth
@@ -1244,6 +1269,9 @@ const DocumentParserCore = (function () {
                     if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
                     // Thousand-dot strip for matched ABC labels (same narrow F1 rule).
                     if (/\d\.\d{3}(?=[\d,])/.test(t) && ((t.match(/\.\d{2}\b/g) || []).length === 1)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+                    // N1a: a "& 59/100" written-cents marker is not the amount (same guard
+                    // extractABC uses, so both ABC tracks agree — see isCentsFractionOnly).
+                    if (isCentsFractionOnly(t)) continue;
                     const val = asMoney(t);
                     if (val) {
                         const ctx = ctxOf(i);
@@ -1791,6 +1819,7 @@ const DocumentParserCore = (function () {
         collectAbcCandidates,
         abcWordsAtWindow,
         readAbcWordsAmount,
+        isCentsFractionOnly,
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,

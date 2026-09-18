@@ -658,21 +658,25 @@ test('Weak-find guard: marked small figures and labeled large singles still fill
     assert.equal(core.extractBudget(core.buildLinesFromText('TOTAL ESTIMATED PROJECT COST 4,834,297.59')), '4834297.59');
 });
 
-// --- ABC-pooling: collector + vote + debug + disagree (blinding-gated) ---------------
-// NOTE: L3_TEST_BLIND_ABC is ON (demo), so the hardcoded collector sleeps and these
-// fixtures assert the asleep plumbing. RESTORE step flips them to full-collection
-// asserts (standalone-ABC / approved-budget / F-B1-conditional / date-ghost fixtures).
+// --- ABC-pooling: collector + vote + debug + disagree -------------------------------
+// RESTORED 2026-09-18 (pilot item N1): L3_TEST_BLIND_ABC is OFF, so these assert the
+// real collection behaviour. To re-blind for a demo, flip the flag and these three
+// fixtures go back to asserting [] / null.
 
-test('ABC-pooling: blinded collector sleeps so the clean-file demo misses honestly', () => {
+test('ABC-pooling: collector reads a labelled ABC line', () => {
     const lines = core.buildLinesFromText('Approved Budget for the Contract: Php 4,834,297.59');
-    assert.deepEqual(core.collectAbcCandidates(lines, 'demo.pdf'), []);
+    const got = core.collectAbcCandidates(lines, 'demo.pdf');
+    assert.equal(got.length, 1);
+    assert.equal(got[0].value, '4834297.59');
+    assert.equal(got[0].labeled, true);
+    assert.equal(got[0].pattern, 'abc-line');
 });
 
 test('ABC-pooling: pooled return carries abc vote/debug/disagree/fileCounts keys', () => {
     const pooled = core.parseProjectInfoPooled([
         { text: 'Approved Budget for the Contract: Php 4,834,297.59', fileName: 'demo.pdf' },
     ]);
-    assert.equal(pooled.abc, null);
+    assert.equal(pooled.abc, '4834297.59');
     assert.ok(pooled._debug && Array.isArray(pooled._debug.abc));
     assert.equal(pooled._disagree.abc, null);
     assert.ok(pooled._fileCounts && typeof pooled._fileCounts.abc === 'object');
@@ -693,9 +697,8 @@ test('ABC-pooling: empty pooled abc never clobbers the learned single-match fill
 });
 
 // --- ABC words-rule (A): PESOS-words fallback for funds-cert lines ------------------
-// The shared helper is tested directly (strict shape), so the rule logic is covered while
-// blinding sleeps the wired paths. RESTORE step flips the two sleep asserts below to full
-// single-match + collector asserts (words-only file fills; words-shape candidate votes).
+// The shared helper is tested directly (strict shape), and since the 2026-09-18 restore
+// (pilot item N1) the WIRED paths are tested end to end below as well.
 
 test('ABC words-shape: strict funds-cert wording reads full without Php numeric', () => {
     // Real shape (test5 funds cert p3) minus the Php figure — garbled-numeric case.
@@ -717,10 +720,35 @@ test('ABC words-shape: strictness guards reject lookalikes', () => {
     assert.equal(core.abcWordsAtWindow('with an approved budget for the contract of SUPPLIES PESOS & 59/100', ''), null);
 });
 
-test('ABC words-shape: wired paths sleep while blinded (flip at restore)', () => {
-    const lines = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
-    assert.equal(core.extractABC(lines), null);
-    assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf'), []);
+// RESTORED 2026-09-18 (pilot item N1): the wired paths are live, so they are asserted
+// end to end here rather than asserted asleep.
+
+test('ABC words-shape: wired paths read the words amount, not its cents marker (N1a)', () => {
+    // THE DEFECT THE BLINDING WAS HIDING. The label pattern captures the whole tail
+    // "… PESOS & 59/100"; asMoney used to read 59 out of that cents marker, return
+    // P59.00 as the ABC, and short-circuit the words rule that reads it correctly.
+    // Both tracks must now agree on the words amount.
+    const real = 'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100';
+    const lines = core.buildLinesFromText(real);
+    assert.equal(core.extractABC(lines), '4834297.59');
+    assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf').map(c => c.value), ['4834297.59']);
+    // The shorter synthetic shape reads the same way.
+    const short = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
+    assert.equal(core.extractABC(short), '4000000.59');
+});
+
+test('ABC words-shape: the cents guard never eats a real figure (N1a)', () => {
+    // A labelled numeric ABC is untouched by the guard.
+    const numeric = core.buildLinesFromText('Approved Budget for the Contract (ABC): Php 4,834,297.59');
+    assert.equal(core.extractABC(numeric), '4834297.59');
+    // Round cents in words still read.
+    const round = core.buildLinesFromText('approved budget for the contract of TWO MILLION PESOS & 00/100');
+    assert.equal(core.extractABC(round), '2000000.00');
+    // The guard itself: digits ONLY inside an NN/100 marker are not an amount.
+    assert.equal(core.isCentsFractionOnly('PESOS & 59/100'), true);
+    assert.equal(core.isCentsFractionOnly('Php 4,834,297.59'), false);
+    assert.equal(core.isCentsFractionOnly('4,000,000.00 & 59/100'), false);
+    assert.equal(core.isCentsFractionOnly('no digits here'), false);
 });
 
 test('ABC words-shape: end-to-end via the shared helper on the real funds-cert wording', () => {
