@@ -34,6 +34,9 @@ let _autofillRunId = 0;
 function cancelDocumentAutofill() {
     _autofillRunId++;
     _ocrPagesDone = 0;
+    // No run survives a cancel, so nothing may keep the scan indicator alive either.
+    _autofillScansInFlight = 0;
+    try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
     // The photo-read cache is per modal session, like the rotations it is keyed
     // against — a reopened popup must never serve text read from a file that is
     // no longer the one attached. The preview's open documents go with it, or a
@@ -123,7 +126,12 @@ async function runDocumentAutofill() {
         return;
     }
 
-    showAutofillScanning('Scanning documents…');
+    // This run is now in flight — the spinner is allowed to paint from here until the
+    // finally below takes it back down. Placed before the first showAutofillScanStatus()
+    // so that call is not itself suppressed by the in-flight gate.
+    _autofillScansInFlight++;
+    _autofillCurrentFile = ''; // no file named until the read loop reaches one
+    showAutofillScanStatus('Reading your documents…');
 
     // Snapshots (2026-09-07): keep the original File per PDF so the per-page "save image"
     // diagnostic can re-render any scanned page later without a server round-trip.
@@ -153,6 +161,9 @@ async function runDocumentAutofill() {
 
         for (const doc of pdfDocs) {
             if (myRunId !== _autofillRunId) return;
+            // Name the file the indicator is currently reading. Module-scoped because
+            // ocrPage() is several frames down and only receives the page, not the doc.
+            _autofillCurrentFile = doc.fileName || "";
 
             try {
                 const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages } = await extractTextFromPDF(doc.file, myRunId);
@@ -319,6 +330,16 @@ async function runDocumentAutofill() {
         console.error('[DocumentParser] Autofill failed:', err);
         // Silent failure — the user can still fill the form manually
         hideAutofillBanner();
+    } finally {
+        // This run is over, whatever happened. Clear the spinner if it is still the
+        // spinner — showAutofillWarning() stamps its own state, so a notice this run
+        // raised (weak parse, unread pages, the AI offer) survives untouched, and a
+        // NEWER run's spinner is left alone because it re-stamps 'scanning' after this.
+        // Before this the spinner was cleared only by showAutofillPreview() and by
+        // closing the modal, so any path that ended without opening the preview left
+        // it turning on a finished run.
+        _autofillScansInFlight = Math.max(0, _autofillScansInFlight - 1);
+        try { removeAutofillScanStatus(); } catch (e) { /* cleanup is best-effort */ }
     }
 }
 
@@ -372,6 +393,19 @@ function loadTesseract() {
 // and adjustable per run via window._ocrPageLimit (default OCR_PAGE_LIMIT = 10).
 // Each photo-read page costs ~2s on slow connections — see the re-scan control.
 let _ocrPagesDone = 0;
+// How many autofill scans are actually running right now. The "Scanning…" spinner
+// is allowed to exist ONLY while this is above zero: it is raised from several
+// places (the run start, and again per page during OCR), and before 2026-09-18 a
+// call that arrived after a run had finished could repaint it with nothing left to
+// clear it, so it sat spinning on a completed run until the modal was closed.
+// Incremented by runDocumentAutofill() and decremented in its finally.
+let _autofillScansInFlight = 0;
+// Watchdog state for the scanning spinner: when it was last painted, and the timer
+// that takes it down when the painting stops. See armAutofillSpinnerWatchdog().
+let _autofillSpinnerTick = 0;
+let _autofillSpinnerTimer = null;
+// The file the scan indicator should name right now — set per file in the read loop.
+let _autofillCurrentFile = '';
 // Photo-read results for this modal session, keyed file#size#page@rotation. The
 // rotation is IN the key, so a page the reviewer turns always misses and is
 // genuinely re-read; the size guards against a different file arriving under a
@@ -695,7 +729,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
 
     if (runId !== _autofillRunId) return '';
-    showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
+    // Name the page, so the strip visibly MOVES while the read is working — a reviewer
+    // watching a static spinner cannot tell progress from a hang.
+    showAutofillScanStatus('Reading scanned page ' + (page && page.pageNumber ? page.pageNumber : '?') + '…');
     // NOTE (2026-09-07 crop-harm fix): NO pre-step auto-crop here — it amputated yielding text
     // (test4 p2 lost ~15 chars/line). Crop runs solely as the last dead-page fallback rung below.
     preprocessOcrCanvas(canvas);
@@ -1919,21 +1955,32 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             return;
         }
     } catch (e) { /* guard is best-effort — render normally on any failure */ }
-
     // Phase 5: expanded fields — ABC standalone, Budget Source, Category.
     // Hardcoded value-keyword fallback (TITLE/CONTRACTOR) already merged into parsed.
+    // LAYOUT 2026-09-18: `w` is the Bootstrap column span this field gets on a
+    // medium-or-wider screen — 12 for free text that genuinely needs the width
+    // (title, location, description), 6 for everything short so it pairs up.
+    // Order is grouped by kind rather than by extraction order: the long text
+    // first, then what/who, then the money, then the schedule. Nothing downstream
+    // depends on this order (the L1 snapshot below is keyed by field name).
+    // `choices` names the LIVE form control whose options this field should offer.
+    // Rendered as a real <select> (the same dropdown the create form has), filled by
+    // syncAutofillChoiceFields() because those lists are fetched asynchronously. An
+    // extracted value that matches no option is kept as its own labelled option rather
+    // than dropped — and every option's VALUE is the NAME, because Apply and
+    // autofillFormFields() match these fields by name, not by id.
     const fields = [
-        { id: 'projectTitle', label: 'Project Title', value: parsed.title },
-        { id: 'projectLocation', label: 'Location', value: parsed.location },
-        { id: 'projectDescription', label: 'Description', value: parsed.description },
-        { id: 'projectCategory', label: 'Category', value: parsed.category },
-        { id: 'projectBudget', label: 'Contract Price', value: parsed.budget },
-        { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc },
-        { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource },
-        { id: 'plannedStartDate', label: 'Start Date', value: parsed.startDate },
-        { id: 'plannedEndDate', label: 'End Date', value: parsed.endDate },
-        { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration },
-        { id: 'contractorSelect', label: 'Contractor', value: parsed.contractor },
+        { id: 'projectTitle', label: 'Project Title', value: parsed.title, w: 12 },
+        { id: 'projectLocation', label: 'Location', value: parsed.location, w: 12 },
+        { id: 'projectDescription', label: 'Description', value: parsed.description, w: 12 },
+        { id: 'projectCategory', label: 'Category', value: parsed.category, w: 6, choices: 'projectCategory' },
+        { id: 'contractorSelect', label: 'Contractor', value: parsed.contractor, w: 6, choices: 'contractorSelect' },
+        { id: 'projectBudget', label: 'Contract Price', value: parsed.budget, w: 6 },
+        { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc, w: 6 },
+        { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource, w: 6, choices: 'projectBudgetSource' },
+        { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration, w: 6 },
+        { id: 'plannedStartDate', label: 'Start Date', value: parsed.startDate, w: 6 },
+        { id: 'plannedEndDate', label: 'End Date', value: parsed.endDate, w: 6 },
     ];
 
     const tbody = document.getElementById('autofillPreviewRows');
@@ -1973,21 +2020,39 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 return ' <span class="badge bg-info text-dark" data-ai-marker="1" title="Filled by the AI-assisted read — please verify">AI-assisted</span>';
             } catch (e) { return ''; }
         };
+        // One grid cell per field. Long text spans the row; short fields pair up.
+        // Choice fields render as a REAL <select> — the reviewer asked for the same
+        // dropdown the create form has. It is populated by syncAutofillChoiceFields()
+        // below rather than here, because the live Category / Budget Source lists are
+        // FETCHED asynchronously and are usually still empty at the moment this runs.
         tbody.innerHTML = fields.map(f => {
             const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
             const value = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
+            const span = f.w === 12 ? 'col-12' : 'col-12 col-md-6';
+            const control = f.choices
+                // data-extracted remembers what the document said, so a re-sync that
+                // arrives after the options load can still select it (or keep it as its
+                // own option when it matches nothing).
+                ? `<select class="form-select form-select-sm" id="previewInput-${f.id}"
+                        data-choices-from="${escapeHtml(f.choices)}" data-extracted="${value ? escapeHtml(value) : ''}">
+                        ${value ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}</option>` : '<option value="">Loading options…</option>'}
+                   </select>`
+                : `<input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
+                        value="${value ? escapeHtml(value) : ''}"
+                        placeholder="${f.value ? '' : 'Not found — fill manually'}" />`;
             return `
-                <tr>
-                    <td class="autofill-preview-label">${escapeHtml(f.label)}</td>
-                    <td>
-                        <input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
-                            value="${value ? escapeHtml(value) : ''}"
-                            placeholder="${f.value ? '' : 'Not found — fill manually'}" />
+                <div class="${span}">
+                    <div class="afp-cell">
+                        <label class="form-label autofill-preview-label mb-1" for="previewInput-${f.id}">${escapeHtml(f.label)}</label>
+                        ${control}
                         ${disagreeNoteFor(f.id)}${aiMarkerFor(f.id)}
-                    </td>
-                </tr>
+                    </div>
+                </div>
             `;
         }).join('');
+        // Fill the dropdowns now, and again when the modal is actually shown (below) —
+        // whichever happens after the option fetch lands is the one that sticks.
+        try { syncAutofillChoiceFields(); } catch (e) { /* dropdowns are best-effort */ }
         // L1 learning loop: snapshot what extraction guessed per CORE field, so Apply can
         // diff guesses vs user-kept values. Date-normalized exactly like the inputs above.
         // AI-3 emptyBaseline: the AI-from-warning flow opens a preview with no rule guesses —
@@ -2179,6 +2244,27 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     hideAutofillBanner();
 
     const instance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    // Re-fill the dropdowns once the dialog is actually on screen. The Category and
+    // Budget Source lists arrive over the network, so the render-time pass often runs
+    // before they exist; this is the second chance. Registered once (the flag guards
+    // against stacking a handler per preview) and harmless when the lists were already
+    // there. Also clears any spinner that survived to this point.
+    try {
+        if (!modalEl.dataset.afpSyncBound) {
+            modalEl.addEventListener('shown.bs.modal', function () {
+                try { syncAutofillChoiceFields(); } catch (e) { /* best-effort */ }
+                try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
+            });
+            // CLOSING the preview is the reviewer saying they are done with this read.
+            // Reported 2026-09-18: the spinner was still there after the modal was
+            // closed, so this is the reported moment itself, covered explicitly.
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                _autofillScansInFlight = 0;
+                try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
+            });
+            modalEl.dataset.afpSyncBound = '1';
+        }
+    } catch (e) { /* binding is best-effort — the render-time pass still ran */ }
     instance.show();
 }
 
@@ -2193,7 +2279,63 @@ function closeAutofillPreview() {
 // Apply the previewed data to the form (Apply button in the preview modal).
 // Reads the (possibly edited) input values from the preview rows.
 // Phase 5: includes abc, budgetSource, category.
+
+// Fill the preview's Category / Budget Source / Contractor dropdowns from the LIVE
+// create-project controls, so they offer exactly the options the real form offers —
+// including anything added through the (+) buttons, which this file knows nothing about.
+//
+// WHY IT IS A SEPARATE PASS rather than part of the render: Category and Budget Source
+// are fetched over the network (see loadCategories in _create_project_modal.js), so at
+// the moment the preview renders those selects usually hold nothing but their
+// "-- Select --" placeholder. This runs at render AND again on shown.bs.modal; whichever
+// fires after the fetch lands is the one that sticks, and running twice is harmless.
+//
+// THE OPTION VALUE IS THE NAME, NOT THE ID — deliberately. applyAutofillFromPreview()
+// reads .value and autofillFormFields() matches these fields BY NAME, so yielding an id
+// here would silently break the fill. An extracted value that matches no option is kept
+// as its own option (marked) rather than dropped, which is the "do both" the reviewer
+// asked for: a real dropdown that still cannot lose what the document said.
+// Called by: showAutofillPreview() at render, and its shown.bs.modal handler.
+function syncAutofillChoiceFields() {
+    const selects = document.querySelectorAll('#autofillPreviewRows select[data-choices-from]');
+    selects.forEach((target) => {
+        const sourceId = target.getAttribute('data-choices-from');
+        const src = sourceId ? document.getElementById(sourceId) : null;
+        let names = [];
+        try {
+            if (src && src.options) {
+                names = Array.from(src.options)
+                    .map(o => String(o.textContent || '').trim())
+                    // Drop the source's own placeholder rows ("-- Select Category --").
+                    .filter(t => t && t.indexOf('--') !== 0);
+            }
+        } catch (e) { names = []; }
+        // What the document said, or what the reviewer has already chosen this session.
+        const extracted = (target.getAttribute('data-extracted') || '').trim();
+        const chosen = (target.value || '').trim();
+        const keep = chosen || extracted;
+        const html = [];
+        let matched = false;
+        names.forEach((n) => {
+            const isSel = keep && n.toLowerCase() === keep.toLowerCase();
+            if (isSel) matched = true;
+            html.push('<option value="' + escapeHtml(n) + '"' + (isSel ? ' selected' : '') + '>' + escapeHtml(n) + '</option>');
+        });
+        // Nothing in the list matches what we read — keep it, flagged, so Apply can still
+        // use it and the reviewer can see what the document actually said.
+        if (keep && !matched) {
+            html.unshift('<option value="' + escapeHtml(keep) + '" selected>' + escapeHtml(keep) + ' — from document (not in list)</option>');
+        }
+        html.unshift('<option value="">' + (names.length ? '— none —' : 'No options available') + '</option>');
+        target.innerHTML = html.join('');
+        // A blank placeholder must not win when we have something to select.
+        if (keep) { try { target.value = keep; } catch (e) { /* best-effort */ } }
+    });
+}
 function applyAutofillFromPreview() {
+    // Belt and braces for the stuck spinner: whatever path got us here, the reviewer
+    // is now acting on the result, so no scan is meaningfully "in progress" to them.
+    try { _autofillScansInFlight = 0; removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
     const read = (id) => {
         const el = document.getElementById('previewInput-' + id);
         return el ? el.value.trim() : '';
@@ -2556,23 +2698,108 @@ function tryMatchCategoryDropdown(extractedName) {
         }
     }
 }
-
 // ===================================================
 // UI BANNER — shown at the top of the current page
-// ===================================================
-function showAutofillScanning(message) {
-    const banner = getOrCreateAutofillBanner();
-    banner.className = 'alert alert-info autofill-banner d-flex align-items-center gap-2 mb-3';
-    banner.innerHTML = `
-        <span class="spinner-border spinner-border-sm flex-shrink-0" role="status" aria-hidden="true"></span>
-        <span class="flex-grow-1"><strong>${message}</strong> Extracting project information from your uploaded files.</span>
-        <button type="button" class="btn-close flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
-    `;
-    banner.style.display = 'flex';
+// THE SCAN INDICATOR (rebuilt 2026-09-18, third report of it sticking).
+//
+// It used to be the SAME <div> as the finished-run "Auto-fill notice" warning, told
+// apart by a data-state stamp. That sharing is what made clearing it conditional —
+// "hide it, but only if it is not currently a warning, and only if no newer run is
+// going" — and every one of those conditions leaked in a different way. Three fixes
+// failed against it.
+//
+// So the mechanism is replaced rather than patched again. This is its OWN element,
+// created when a scan starts and REMOVED FROM THE DOM when the scan stops. The rule
+// is now statable in one line and needs no conditions: IF IT IS ON SCREEN, A SCAN IS
+// RUNNING. There is no hidden-but-present state left to get stuck in, and the warning
+// banner (#autofillBanner) is a different element that this code never touches.
+//
+// It also reads differently on purpose (the reviewer asked for a different sign): a
+// slim strip beside the documents it is reading, naming the page it is on, so it
+// visibly MOVES while work is happening instead of spinning in place.
+const AUTOFILL_SCAN_STATUS_ID = 'autofillScanStatus';
+// Shorten a file name for the scan indicator without losing what identifies it.
+// Keeps the extension (so a reviewer still sees it is the PDF) and trims the stem,
+// because contractor file names are long and front-loaded with boilerplate —
+// "Rehabilitation-of-Canteen-Contract-FINAL-v3.pdf" must not push the page number
+// off the strip. Middle of the stem goes, not the end, so both the distinctive
+// start and the extension survive.
+function shortScanFileName(name, max) {
+    const s = String(name || '').trim();
+    const limit = (typeof max === 'number' && max > 8) ? max : 26;
+    if (!s || s.length <= limit) return s;
+    const dot = s.lastIndexOf('.');
+    const ext = (dot > 0 && (s.length - dot) <= 6) ? s.slice(dot) : '';
+    const stem = ext ? s.slice(0, dot) : s;
+    const keep = Math.max(6, limit - ext.length - 1);
+    return stem.slice(0, keep).trimEnd() + '…' + ext;
+}
+// Called by: runDocumentAutofill() at the start, ocrPage() per scanned page.
+// `message` is the activity ("Reading scanned page 7…"); the file being read is added
+// here from _autofillCurrentFile so no caller has to carry it.
+function showAutofillScanStatus(message) {
+    // Same gate as before: no run in flight, nothing to show. Kept because ocrPage()
+    // calls this per page and a late call must not be able to create the element.
+    if (_autofillScansInFlight <= 0) return;
+    let el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+    if (!el) {
+        const anchor = document.getElementById('documentsListContainer')
+            || document.querySelector('.form-page.active')
+            || document.getElementById('page1');
+        if (!anchor) return;
+        el = document.createElement('div');
+        el.id = AUTOFILL_SCAN_STATUS_ID;
+        el.className = 'afp-scan-status';
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        // ABOVE the "Added Documents:" block, not below it — the indicator reads as a
+        // heading for the list it belongs to rather than as a footnote after it.
+        if (anchor.id === 'documentsListContainer') anchor.insertAdjacentElement('beforebegin', el);
+        else anchor.insertBefore(el, anchor.firstChild);
+    }
+    const file = shortScanFileName(_autofillCurrentFile);
+    el.innerHTML = '<span class="afp-scan-bar" aria-hidden="true"><i></i></span>'
+        + (file ? '<span class="afp-scan-file" title="' + escapeHtml(_autofillCurrentFile) + '">' + escapeHtml(file) + '</span>' : '')
+        + '<span class="afp-scan-text">' + escapeHtml(message) + '</span>';
+    _autofillSpinnerTick = Date.now();
+    armAutofillSpinnerWatchdog();
+}
+
+// The only way this indicator goes away — and it is unconditional. Safe to call when
+// nothing is showing.
+function removeAutofillScanStatus() {
+    _autofillCurrentFile = '';
+    const el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    disarmAutofillSpinnerWatchdog();
+}
+
+// THE WATCHDOG stays as the last line of defence, now watching for the element rather
+// than a display style. While the indicator exists it checks once a second and removes
+// it when either no run is in flight, or nothing has refreshed it for STALE_MS — a live
+// scan refreshes per page, so silence that long means the work is over however it ended.
+// Self-disarming, so it costs nothing when idle.
+const AUTOFILL_SPINNER_STALE_MS = 6000;
+function armAutofillSpinnerWatchdog() {
+    if (_autofillSpinnerTimer) return;
+    try {
+        _autofillSpinnerTimer = setInterval(function () {
+            const el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+            if (!el) { disarmAutofillSpinnerWatchdog(); return; }
+            const stale = (Date.now() - _autofillSpinnerTick) > AUTOFILL_SPINNER_STALE_MS;
+            if (_autofillScansInFlight <= 0 || stale) removeAutofillScanStatus();
+        }, 1000);
+    } catch (e) { /* watchdog is best-effort — the explicit removals still run */ }
+}
+function disarmAutofillSpinnerWatchdog() {
+    try { if (_autofillSpinnerTimer) clearInterval(_autofillSpinnerTimer); } catch (e) { /* best-effort */ }
+    _autofillSpinnerTimer = null;
 }
 
 function showAutofillWarning(message, opts) {
     const banner = getOrCreateAutofillBanner();
+    // The scan indicator is its own element now, so this warning cannot collide with it
+    // and needs no state stamp to protect it.
     banner.className = 'alert alert-warning autofill-banner d-flex align-items-start gap-2 mb-3';
     // F-COPY on empty runs: failures must stay diagnosable — offer the read text for chat
     // when any file yielded text (even unparsable). Engine-failure runs pass copy:false.

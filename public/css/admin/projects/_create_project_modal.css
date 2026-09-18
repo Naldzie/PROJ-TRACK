@@ -664,10 +664,117 @@
 /* ========================================== */
 /*     AUTO-FILL PREVIEW MODAL                */
 /* ========================================== */
+/* LAYOUT 2026-09-18: the extracted fields were a two-column table (one field per
+   row, every input full width). They are now a responsive grid — see
+   components/autofill-preview-modal.blade.php and showAutofillPreview(). The old
+   `tbody tr:last-child td` rule is gone with the table it styled. */
 #autofillPreviewModal .autofill-preview-label {
     font-weight: 600;
     color: #374151;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
 }
-#autofillPreviewModal tbody tr:last-child td {
-    border-bottom: none;
+/* Each field sits in its own bordered cell so pairs stay visually separate at
+   half width without needing a table's rules. The border goes on an INNER cell,
+   never on the Bootstrap column — the column carries the grid gutter, and a
+   border there would make neighbouring cells touch. */
+#autofillPreviewModal #autofillPreviewRows .afp-cell {
+    height: 100%;
+    padding: 8px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+}
+#autofillPreviewModal #autofillPreviewRows .afp-cell .form-control,
+#autofillPreviewModal #autofillPreviewRows .afp-cell .form-select {
+    font-size: 13px;
+}
+/* Category / Budget Source / Contractor are real dropdowns here, matching the
+   create form. An option that came from the document but is not in the list is
+   kept and labelled rather than dropped — see syncAutofillChoiceFields(). */
+#autofillPreviewModal #autofillPreviewRows .afp-cell .form-select {
+    text-overflow: ellipsis;
+}
+/* The pick-one note is secondary to the value it questions — keep it tight so a
+   field carrying one does not tower over the field beside it. */
+#autofillPreviewModal #autofillPreviewRows .afp-cell .alert {
+    margin-bottom: 0;
+}
+/* Long documents make this list tall; the dialog scrolls its body rather than
+   the page (modal-dialog-scrollable), so cap nothing here. */
+
+/* ========================================== */
+/*     AUTO-FILL SCAN INDICATOR               */
+/* ========================================== */
+/* Replaces the old shared "Scanning documents…" alert banner (2026-09-18). That one
+   was the SAME element as the finished-run warning, so clearing it had to be
+   conditional and the conditions leaked — it stuck on screen three separate times.
+   This element is created when a scan starts and REMOVED when it stops, so if it is
+   visible a scan is genuinely running. Deliberately reads differently from the old
+   blue alert: a slim strip beside the documents being read, naming the page it is on
+   so it visibly moves. See showAutofillScanStatus() in document-parser.js. */
+.afp-scan-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    /* Sits ABOVE the "Added Documents:" block it describes, so the spacing hangs below. */
+    margin: 4px 0 10px;
+    padding: 8px 12px;
+    border: 1px solid #c7d2fe;
+    border-left: 3px solid #4f46e5;
+    border-radius: 8px;
+    background: #eef2ff;
+    color: #3730a3;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+/* The file being read, shown before the activity text. Middle-truncated in JS
+   (shortScanFileName) and carrying the full name as a title, so a long contractor
+   file name cannot push the page number off the strip. */
+.afp-scan-status .afp-scan-file {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #e0e7ff;
+    color: #312e81;
+    font-weight: 700;
+}
+.afp-scan-status .afp-scan-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 600;
+}
+/* An indeterminate sweep rather than a spinner — it reads as "work is moving through
+   the file" instead of "something is busy". */
+.afp-scan-status .afp-scan-bar {
+    position: relative;
+    flex: 0 0 64px;
+    height: 4px;
+    border-radius: 999px;
+    background: #c7d2fe;
+    overflow: hidden;
+}
+.afp-scan-status .afp-scan-bar i {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 40%;
+    border-radius: 999px;
+    background: #4f46e5;
+    animation: afpScanSweep 1.1s ease-in-out infinite;
+}
+@keyframes afpScanSweep {
+    0%   { left: -40%; }
+    100% { left: 100%; }
+}
+/* Respect a reduced-motion preference: keep the strip, drop the sweep. */
+@media (prefers-reduced-motion: reduce) {
+    .afp-scan-status .afp-scan-bar i { animation: none; left: 0; width: 100%; }
 }
