@@ -218,9 +218,9 @@
       pdf.js loading, OCR via tesseract.js, the page preview/rotation, the AI page
       picker, the auto-fill notice.
     Its OCR behaviour is documented in ocr_page_preview_and_ai_picker_plan.md (CLOSED,
-  ── N1. LIFT THE ABC BLINDING. ✅ BUILT + BROWSER-PROVEN 2026-09-18 ───────────  ✅
+    browser-proven) and document_parser_learning_loop_plan.md §6.
 
-  ── N1. LIFT THE ABC BLINDING. ✅ BUILT 2026-09-18, browser check owed ────────  🔄
+  ── N1. LIFT THE ABC BLINDING. ✅ BUILT + BROWSER-PROVEN 2026-09-18 ───────────  ✅
     This is the finding that most changes the plan, and it was hiding in a constraint
     filed under "merge prerequisite" rather than "parser defect".
     WHAT IT IS: document-parser-core.js:661 sets L3_TEST_BLIND_ABC = true. Its own

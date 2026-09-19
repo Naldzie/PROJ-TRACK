@@ -18,8 +18,16 @@
 #         ⚠ F2 NOTED 2026-09-18: the SAME file yielded 3 read pages one run and 4 the
 #         next — a fixed file should read deterministically, and F1 is not measurable
 #         until it does. Stage 2 now opens with "establish determinism".
-#         Stage 2 (OCR/READ) — NOT started, now the priority. Stage 3 (EXTRACTION) ·
-#         Stage 4 (LEARNING LOOP) — not started.
+#         ⬛ STAGE 2 (THE READ PATH) RESTUDIED 2026-09-18 — §10, read-only. F2 now has a
+#         CONCRETE MECHANISM, not just "wobble": window._ocrLangMode pins itself to plain
+#         'eng' after two empty OSD reads and the pin SURVIVES INTO THE NEXT RUN (it is
+#         cleared only when the modal is cancelled), and the OCR cache key omits the
+#         language mode, so one run can mix two engines. Both are resolvable by ONE run
+#         (§10.2). F1 has a named suspect too: preprocessOcrCanvas() DOES exist and its
+#         washed-page gate is outlier-driven, so one dark mark (a signature, a staple)
+#         can skip the contrast stretch — and it already logs its own decision (§10.3).
+#         ⚠ §9 CORRECTED: a dead page costs UP TO SEVEN recognitions, not ~3 (§10.4).
+#         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
 #         2-column grid, Category / Budget Source / Contractor given real option lists,
@@ -280,7 +288,7 @@
            PIXELS tesseract was handed. If that image looks poor, the fix is upstream of
            tesseract; if it looks fine, the fix is tesseract's configuration.
 
-  ── F2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN ── ⚠ NOTED, NOT INVESTIGATED
+  ── F2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN ── ⚠ MECHANISM FOUND §10.2
      User, 2026-09-18, on the second run of the identical file: "if you remember earlier
      the ocr gets 3 pages, now its 4 — there is an issue with the ocr right?" They asked
      for it to be NOTED and for the UI work to continue, so nothing was investigated.
@@ -376,7 +384,13 @@
   6. STAGES NOT YET DONE
 ===============================================================================
 
-  STAGE 2 — THE READ PATH (OCR).  ⬜ NOT STARTED — ⬆ NOW THE PRIORITY (F1).
+  STAGE 2 — THE READ PATH (OCR).  ✅ RESTUDIED 2026-09-18 — SEE §10 (this entry is the
+    pre-restudy brief, kept because it set the questions §10 answers).
+    ⚠ ONE THING IT GOT WRONG, corrected in §10.3: it lists "what preprocessing happens
+    and what does not" as an open question. preprocessOcrCanvas() DOES exist and runs on
+    every page; the real question is its outlier-driven gate.
+    The brief itself follows.
+    ⬜ NOT STARTED — ⬆ NOW THE PRIORITY (F1).
     The client's documents are scans, so this is where the system either works or does
     not, and on the one real specimen we have it does NOT: 7 of 10 pages yield nothing
     (§3 step 2b). Extraction is demonstrably fine on whatever text it is handed — the
@@ -881,6 +895,73 @@
          and the note names the extracted contractor, with a "Closest match" only when
          there genuinely is a near one.
 
+  2026-09-18 — STAGE 2 RESTUDIED (the OCR read path). READ-ONLY, NO APP CODE.
+  User order: "do a restudy of the document parser for normal doc, especially the one
+  needing ocr." Written up as §10. Also a log-consolidation pass — see the end.
+
+    WHAT CHANGED IN WHAT WE BELIEVE
+      F2 IS NO LONGER "WOBBLE". It has a concrete, deterministic mechanism, and in fact
+      two of them, both state that survives from one run into the next:
+        (1) window._ocrLangMode pins itself to plain 'eng' after TWO empty OSD reads
+            (:776-781) or immediately on a thrown OSD error (:789). It is cleared only
+            by cancelDocumentAutofill() — which fires when the MODAL is cancelled, not
+            when a RUN ends. So a second run inside the same modal session starts in a
+            different engine mode than the first did, and 'eng' and 'eng+osd' do not
+            produce the same text. On this file SEVEN pages read empty, so the pin is
+            guaranteed to trip partway through run 1.
+        (2) the OCR cache key is file#size#page@rotation (:883) — NO language mode. A
+            page read under OSD in run 1 is served from cache in run 2 even though run 2
+            is pinned to 'eng', so one run's output can mix two engines.
+      Mechanism (3), the 10-character cliff, is the one already on record and is still
+      real — but it was being treated as the WHOLE answer.
+
+      ⚠ PRIOR ART WORTH FACING SQUARELY. The learning-loop plan recorded on 2026-09-07:
+      "the 2-vs-3 button flicker is marginal pages crossing the 10-char bar between runs
+      (photo-reading is slightly non-deterministic; NOT a regression)" (:474), and left a
+      later yield investigation unexplained with "prime suspects remain run-to-run OCR
+      wobble ... or a stale-code run" (:525-526). That entry filed under "noise"
+      something that has at least one deterministic, fixable cause. Not a criticism of
+      it — it predates the current stabiliser — but it must not be quoted again as the
+      complete explanation.
+
+      F1 HAS A NAMED SUSPECT, and §6 was wrong to list preprocessing as unknown.
+      preprocessOcrCanvas() (:446-475) DOES run on every page. It is a contrast stretch
+      gated on `washed = (lo >= 100) && ((hi - lo) <= 140)`, where lo/hi are the MIN and
+      MAX grey of a sample. A single dark mark — a signature, a staple, a punch hole, a
+      skewed scan's dark edge — drops lo below 100 and the stretch is SKIPPED on a page
+      that may need it most. The user's page 7 carries three signatures and a stamp.
+      Hypothesis, not finding — and it is cheap to settle because the function already
+      logs its own verdict under _parserDebug: "OCR cleanup applied|skipped: lo= hi= mean=".
+
+    ⚠ A CORRECTION TO MY OWN §9. I wrote that a dead page costs "about 3x" a good one.
+    That undercounts: recognizeEnglish() is a FOUR-RUNG PSM LADDER (:574 — default, PSM
+    6, PSM 11, PSM 4 empty-only), so one dead page costs up to SEVEN recognitions
+    (eng+osd, up to 4 PSM rungs, scale-2, crop) against ONE for a page that reads first
+    time. The code's own comment at :885 says "up to ~6", the same order. On the user's
+    file that is roughly FIFTY recognitions for a ten-page document, each spinning up a
+    fresh worker under the one-shot API. §9 is annotated in place rather than rewritten,
+    so the correction stays visible. It also makes §9.3 lever A worth more than estimated.
+
+    NOTHING WAS BUILT. Every item in §10.6 needs an order (Rule 10), and the first two
+    are a single browser run with no code at all — the per-page yield log built for this
+    in 2026-09-07 (:919, "OCR page N: yielded=M rot=D") has been sitting unused.
+
+    DOCUMENTATION DEFECTS FOUND AND FIXED IN THE SAME PASS (both mine, both from
+    incremental edits during the session rather than one coherent write):
+      - AGENTS.md's Session Handoff had drifted into self-contradiction: it claimed N1
+        and stage 1b were UNCOMMITTED (all four commits are pushed), gave the branch and
+        tree state as phase-22 at 89beb2f, still described the choice fields as
+        input+datalist (superseded by real <select>), predicted the JS suite would reach
+        230/230 (it reached 231/231), carried a garbled tail where the superseded
+        data-state spinner fix sat after the replacement description, and mentioned
+        neither Q3 nor §9. Rewritten as one coherent block.
+      - pilot_testing_readiness_plan.md carried a DUPLICATE N1 heading (the corrected
+        "BUILT + BROWSER-PROVEN" one and the stale "browser check owed" one, both
+        present). The stale one is removed.
+    Lesson, and it is the same shape as the spinner's: a handoff assembled by repeated
+    small edits drifts, because each edit is locally right and nothing re-reads the
+    whole. Rewrite the block, do not patch the sentence.
+
 ===============================================================================
   9. OCR COST — WHY IT IS SLOW, HOW IT SCALES, AND WHAT CAN BE CUT
      Research, 2026-09-18, READ-ONLY. User: "the ocr parsing can take very long right?
@@ -909,6 +990,9 @@
     createWorker() reused across pages. The claim rests on the library's documented
     behaviour, not on a measurement of ours.
 
+    ⚠ CORRECTED 2026-09-18 IN §10.4 — IT IS UP TO SEVEN RECOGNITIONS, NOT 3x. The figure
+    below undercounts because it misses recognizeEnglish's four-rung PSM ladder. Kept as
+    written so the correction is visible; read §10.4 for the real bill.
     A FAILING PAGE COSTS ABOUT 3x A SUCCEEDING ONE. ocrPage runs a dead-page ladder
     (:749-756): plain recognise, then if under 10 characters a scale-2 re-render, then
     if still under 10 a cropped re-render. A page that yields text stops at rung 1; a
@@ -1009,6 +1093,211 @@
     as faster — which would make A the first thing to try for BOTH problems.
     THEN: A (reuse) -> measure -> B (parallel) -> measure -> D's measurement -> C if the
     corpus says orientation is uniform -> E.
+
+===============================================================================
+  10. STAGE 2 — THE READ PATH (OCR), RESTUDIED
+      Ordered 2026-09-18 ("do a restudy of the document parser for normal doc,
+      especially the one needing ocr"). READ-ONLY, NO APP CODE WRITTEN.
+      This is the stage §6 said was blocked; it is not, for its first questions —
+      pdfdocstest5.pdf already reproduces the failures, and the code answers more
+      than expected. Real PMU scans are still needed before TUNING anything (N2).
+===============================================================================
+
+  10.1 THE READ PATH, END TO END (so every finding below has an address)
+
+    extractTextFromPDF(file, runId)                     :818
+      arrayBuffer -> pdf.js getDocument
+      maxPages = min(pdf.numPages, 50)                  :824
+      _ocrPagesDone = 0  <- THE BUDGET IS RESET PER FILE :827
+      for each page (SEQUENTIAL, one at a time):
+        getTextContent -> core.pageItemsToText           :859-861
+        IF that text trims to < 10 chars -> the page is "scanned"  :864
+          count it, ledger it, note landscape
+          rotKey = file#page      (manual rotations)     :878
+          cacheKey = file#size#page@rotation             :883
+          ocrText = await ocrPage(...)                   :884
+          cache the result INCLUDING an empty one        :892-897
+          if ocrText >= 10 chars -> the page counts as read  :898-902
+        per-page debug line: "OCR page N: yielded=M rot=D"  :919
+
+    ocrPage(page, runId, rotationDeg, cacheKey)          :683
+      budget gate: _ocrPagesDone >= ocrPageLimit() -> "" :684
+      run-supersede gate                                  :685
+      cache hit -> return, and STILL count a budget unit :~697
+      render at scale 3, capped to 3000px longest side   :~712-726
+      preprocessOcrCanvas(canvas)                        :737
+      useOsd = window._ocrLangMode is null or 'osd'      :743
+      if useOsd:  recognize(canvas, 'eng+osd')           :760
+                  >= 10 chars -> pin 'osd', reset misses, RETURN
+                  else: misses++, and at 2 PIN 'eng' FOR THE SESSION :776-781
+                        then recognizeEnglish(...) + dead-page ladder
+      else / on throw: pin 'eng', recognizeEnglish(...) + ladder
+
+    recognizeEnglish(tesseract, canvas)                  :566
+      A FOUR-RUNG PSM LADDER, each rung a separate recognition:
+        default -> PSM 6 (uniform block) -> PSM 11 (sparse) -> PSM 4 (empty-only)
+      Later rungs run only while the best so far is short OR long-but-soupy
+      (core.scoreOcrSoup). PSM 4 is skipped the moment there is any text at all.
+
+    tryDeadPageFallbacks(current)                        :749
+      only while under 10 chars: scale-2 re-render (1 recognition, :642)
+      then cropped re-render (1 recognition, :671). First yielding rung wins.
+
+  10.2 ⚠ F2 EXPLAINED — AND IT IS NOT (ONLY) "WOBBLE"
+
+    F2 was: the same file yielded 3 read pages one run and 4 the next. The code gives
+    a concrete, deterministic mechanism for it, and the mechanism is state that
+    SURVIVES FROM ONE RUN TO THE NEXT INSIDE ONE MODAL SESSION.
+
+    MECHANISM 1 — THE LANGUAGE MODE PINS ITSELF, AND THE PIN OUTLIVES THE RUN.
+      window._ocrLangMode is a three-state session flag (:742-743):
+        null = untried -> use 'eng+osd'
+        'osd' = confirmed working
+        'eng' = PINNED plain, no orientation detection
+      An OSD read that comes back EMPTY increments window._ocrOsdMisses, and at TWO
+      consecutive empties the flag is pinned to 'eng' for the whole session (:776-781).
+      A thrown OSD error pins it immediately (:789).
+      NEITHER FLAG IS RESET BETWEEN RUNS. cancelDocumentAutofill() does clear both
+      (:64-65) — but that fires when the MODAL is cancelled/reopened, not when a run
+      ends. So inside one modal session:
+        run 1  starts at null -> early pages go through 'eng+osd'; if two of them come
+               back empty (and on this file SEVEN pages come back empty), the flag pins
+               to 'eng' partway through, and the REST of run 1 uses plain OCR.
+        run 2  starts ALREADY PINNED to 'eng' -> every page, including the first ones,
+               takes a different engine path than it did in run 1.
+      'eng' and 'eng+osd' do not produce the same text. So run 2 legitimately reads a
+      different number of pages, deterministically, for a reason that has nothing to do
+      with the file. THAT IS THE 3-versus-4.
+
+    MECHANISM 2 — THE CACHE KEY DOES NOT INCLUDE THE LANGUAGE MODE.
+      cacheKey = file.name + '#' + size + '#' + pageNum + '@' + rotation  (:883)
+      Nothing about the engine. A page read in run 1 under 'eng+osd' is served from
+      cache in run 2 even though run 2 is pinned to 'eng'. So a single run's output can
+      be a MIX of two engines' results, and which pages are mixed depends on the order
+      things happened in an earlier run. Empty results are cached too (:892-897,
+      deliberately and with the trade-off written down), so a page that failed once
+      keeps failing for the rest of the session even if the conditions changed.
+
+    MECHANISM 3 — THE 10-CHARACTER BAR IS A CLIFF, and this one IS the documented
+      wobble. A page that yields 9 characters is "unread" and one that yields 11 is
+      "read"; genuine OCR variance of a character or two flips it. This is the
+      explanation already on record.
+
+    ⚠ PRIOR ART, AND WHY THIS MATTERS. The learning-loop plan recorded this on
+    2026-09-07: "the 2-vs-3 button flicker is marginal pages crossing the 10-char bar
+    between runs (photo-reading is slightly non-deterministic; NOT a regression)"
+    (:474), and a later yield investigation (3 pages -> 1) was left unexplained with
+    "prime suspects remain run-to-run OCR wobble ... or a stale-code run" (:525-526).
+    Mechanism 3 alone was the accepted answer. Mechanisms 1 and 2 are not wobble: they
+    are state carry-over, they are deterministic, and they are fixable. The earlier
+    conclusion may have been filing a fixable defect under "noise".
+    NOT A CRITICISM OF THAT ENTRY — it was written before the mode-pinning stabiliser
+    existed in its current form. But it should not be quoted again as the whole answer.
+
+    THE DIAGNOSTIC ALREADY EXISTS. ":919" logs "OCR page N: yielded=M rot=D" per page
+    under _parserDebug, built in 2026-09-07 for exactly this ("compare yielded counts
+    across two runs to separate wobble from regression"). Nobody has had to build
+    anything to settle F2; the measurement below just has to be run.
+
+    HOW TO SETTLE IT (no code, ~10 minutes)
+      1. Open the create-project modal fresh. window._parserDebug = true.
+      2. Upload pdfdocstest5.pdf. Record: every "OCR page N: yielded=M" line, and
+         window._ocrLangMode afterwards.
+      3. WITHOUT closing the modal, press "Preview Extracted Data" again. Record the
+         same two things.
+      4. Then CLOSE and REOPEN the modal (this resets the flags) and upload again.
+      PREDICTION, if mechanisms 1+2 are the cause: run 2 differs from run 1, and run 3
+      (after the reopen) matches run 1. If all three agree, mechanism 3 is the whole
+      story after all and the fix is a different one.
+
+  10.3 ⚠ F1 — WHAT THE CODE SAYS ABOUT SEVEN LEGIBLE PAGES YIELDING NOTHING
+
+    THERE *IS* PREPROCESSING, and I was wrong to list it as an open question in §6 —
+    preprocessOcrCanvas() (:446-475) runs on every page before recognition. It is a
+    contrast stretch, and it is GATED:
+        washed = (lo >= 100) && ((hi - lo) <= 140)      :462
+        if (!washed) return;                            :466
+    lo/hi are the min and max grey of a SAMPLE (every 4th pixel, :452).
+    ⚠ THE GATE IS OUTLIER-DRIVEN. A single dark pixel anywhere in the sample — a staple
+    mark, a binder hole, a punch shadow, the dark edge of a skewed scan, a signature in
+    heavy ink — drops `lo` below 100 and the page is judged "not washed", so the stretch
+    is SKIPPED on a page that may badly need it. The user's page 7 carries exactly that
+    kind of ink: three signatures and a stamp.
+    This is a hypothesis, NOT a finding — but it is cheap to confirm, because the
+    function already logs its own decision under _parserDebug (:463-465):
+        "[Parser] OCR cleanup applied|skipped: lo=… hi=… mean=…"
+    ⇒ ASK FOR THAT LINE FOR PAGE 7. If it says "skipped" with a low lo and a high mean,
+    the gate is the culprit and the fix is to make it robust (a percentile instead of a
+    raw min — e.g. the 5th percentile of the sample rather than the minimum), which is
+    accuracy-POSITIVE, not a trade.
+
+    WHAT IS ALREADY RULED OUT, and should not be re-proposed:
+      - the budget (H1, falsified twice — §4);
+      - "we never tried" (the ladder runs up to seven recognitions on a dead page, 10.4);
+      - orientation, on the evidence available — the page is upright in the preview and
+        turning it changes nothing the user could see.
+    STILL OPEN: the render cap. ":685" logs "OCR render capped: longest=… -> scale=…"
+    when it fires. Worth reading the same run for it. Precedent at :674 says oversized
+    canvases "choke tesseract to silent empty ... even on perfectly upright, human-crisp
+    pages" — the 3000px cap was that fix, and the same signature is back.
+
+  10.4 ⚠ CORRECTION TO §9: A DEAD PAGE COSTS FAR MORE THAN I SAID
+
+    §9 estimated "about 3x" for a page that yields nothing. Reading recognizeEnglish
+    properly, that is an UNDERCOUNT. The worst case for ONE dead page:
+        eng+osd                                   1 recognition   :760
+        recognizeEnglish PSM ladder               up to 4         :574
+        scale-2 re-render                         1               :642
+        cropped re-render                         1               :671
+        -------------------------------------------------------------
+        UP TO SEVEN RECOGNITIONS FOR ONE PAGE
+    against ONE for a page that reads on the first attempt. The code's own comment at
+    :885-887 says "up to ~6 recognitions", which is the same order and confirms the
+    shape.
+    ON THE USER'S FILE that is 3 good pages plus 7 dead ones at up to 7 each — on the
+    order of FIFTY recognitions for a ten-page document, EACH of which, under the
+    one-shot API (§9.1), spins up a worker and loads language data from scratch.
+    THIS IS THE REAL ANSWER TO "why does it take so long": not the page count, but the
+    number of recognitions per failed page multiplied by a per-recognition constant that
+    should have been paid once for the whole run.
+    It also sharpens §9.3 lever A: reusing one worker is worth roughly the per-worker
+    constant times ~50 on this file, not times ~10.
+
+  10.5 SMALLER THINGS WORTH KNOWING (verified, not urgent)
+
+    - THE "SCANNED" TEST IS A 10-CHARACTER THRESHOLD on the pdf.js text layer (:864).
+      A page with a thin text layer (a header, a page number, a watermark) that totals
+      10+ characters is treated as fully read and NEVER goes to OCR — its body is then
+      invisible to the parser with no ledger entry saying so. Not observed on this
+      corpus; worth a probe when real PMU scans arrive, because "born-digital cover page
+      + scanned body" is a common shape for exactly the documents the PMU handles.
+    - maxPages = min(numPages, 50) (:824) caps the WALK, while the OCR budget caps the
+      READS. A 60-page document silently stops being looked at after page 50.
+    - EMPTY RESULTS ARE CACHED (:892-897). Deliberate, with the trade-off written down.
+      Consequence worth stating plainly: within one modal session a page that failed
+      once cannot succeed again, even after the language mode changes underneath it.
+      That is mechanism 2's partner.
+    - THE PSM LADDER'S LATER RUNGS ARE SOUP-GATED (:583) via core.scoreOcrSoup — so a
+      long-but-garbled read keeps climbing, which is correct and worth preserving.
+
+  10.6 WHAT STAGE 2 RECOMMENDS (PROPOSED — nothing ordered, Rule 10)
+
+    S2-1  RUN THE F2 MEASUREMENT IN 10.2. No code. It is the prerequisite for every
+          other item here and in §9, and it distinguishes three mechanisms that need
+          three different fixes.
+    S2-2  READ THE TWO EXISTING DEBUG LINES FOR PAGE 7 — "OCR cleanup applied|skipped"
+          and "OCR render capped". No code. Together with S2-1 this is one browser run
+          and it decides whether F1 is a preprocessing gate, a canvas size, or neither.
+    S2-3  THEN, and only then: if mechanism 1 is confirmed, reset _ocrLangMode and
+          _ocrOsdMisses at the START OF EACH RUN rather than only on modal cancel, and
+          put the language mode in the cache key. Both are small, both are
+          determinism-positive, neither changes what a single clean read produces.
+    S2-4  If 10.3 is confirmed, make the washed-page gate percentile-based instead of
+          min-based. Accuracy-positive.
+    S2-5  Lever A from §9.3 (one reused worker) — now worth more than §9 estimated
+          (10.4), and possibly determinism-positive too (§9.5).
+
+    ORDER: S2-1 and S2-2 are the same browser run. Everything else waits on it.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
