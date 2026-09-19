@@ -105,6 +105,9 @@
   whole categories of work (no server, no domain, no TLS, no deploy pipeline, no merge).
   It creates a different set, and these are specific and checkable rather than
   theoretical. F1-F3 are VERIFIED against the tree; F4-F6 need your answer.
+  ⚠ NAMING: these F-numbers are THIS FILE'S environment findings and nothing else. The
+  normal-doc restudy names its OCR findings OCR-1 / OCR-2 (they were F1/F2 until
+  2026-09-18, which collided with these). Do not cross-reference the two sets.
 
   F1 — THE ZIP SHIPS A DEVELOPMENT CONFIGURATION.  ⚠ VERIFIED — BLOCKER
        .env today carries APP_ENV=local and APP_DEBUG=true.

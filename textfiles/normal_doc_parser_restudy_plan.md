@@ -11,19 +11,19 @@
 #         Its one hypothesis (H1, "the OCR budget ran out") was MEASURED AND FALSIFIED the
 #         same day — kept in §4 as a dead end so it is not re-proposed.
 #         ⚠ WHAT THE MEASUREMENT FOUND INSTEAD IS WORSE, and is now the highest-value
-#         question in the restudy: F1 — SEVEN OF TEN PAGES of a real scanned document
+#         question in the restudy: OCR-1 — SEVEN OF TEN PAGES of a real scanned document
 #         yield nothing, through a three-rung OCR ladder, on pages a human reads at a
 #         glance. 70% of the document is invisible to the parser. That is a READ-PATH
 #         problem (stage 2), not a UI wording problem.
-#         ⚠ F2 NOTED 2026-09-18: the SAME file yielded 3 read pages one run and 4 the
-#         next — a fixed file should read deterministically, and F1 is not measurable
+#         ⚠ OCR-2 NOTED 2026-09-18: the SAME file yielded 3 read pages one run and 4 the
+#         next — a fixed file should read deterministically, and OCR-1 is not measurable
 #         until it does. Stage 2 now opens with "establish determinism".
-#         ⬛ STAGE 2 (THE READ PATH) RESTUDIED 2026-09-18 — §10, read-only. F2 now has a
+#         ⬛ STAGE 2 (THE READ PATH) RESTUDIED 2026-09-18 — §10, read-only. OCR-2 now has a
 #         CONCRETE MECHANISM, not just "wobble": window._ocrLangMode pins itself to plain
 #         'eng' after two empty OSD reads and the pin SURVIVES INTO THE NEXT RUN (it is
 #         cleared only when the modal is cancelled), and the OCR cache key omits the
 #         language mode, so one run can mix two engines. Both are resolvable by ONE run
-#         (§10.2). F1 has a named suspect too: preprocessOcrCanvas() DOES exist and its
+#         (§10.2). OCR-1 has a named suspect too: preprocessOcrCanvas() DOES exist and its
 #         washed-page gate is outlier-driven, so one dark mark (a signature, a staple)
 #         can skip the contrast stretch — and it already logs its own decision (§10.3).
 #         ⚠ §9 CORRECTED: a dead page costs UP TO SEVEN recognitions, not ~3 (§10.4).
@@ -46,6 +46,11 @@
 #         §9 answers the OCR-cost research question: sequential pages, a fresh tesseract
 #         worker PER PAGE via the one-shot API, a ~3x penalty on pages that yield nothing,
 #         and a per-FILE (not per-run) budget — with the accuracy-neutral levers ranked.
+# NAMING (fixed 2026-09-18): this file's findings are OCR-1, OCR-2 … The pilot plan
+#         (textfiles/pilot_testing_readiness_plan.md) numbers ITS environment findings
+#         F1-F6, and they are UNRELATED — its F1 is "the zip ships a dev config", not
+#         "seven pages yield nothing". They were both F1/F2 until today, which was
+#         confusing in exactly the way you would expect. Do not cross-reference them.
 # Branch on build: phase-<n>-<short-description> (Rule 12).
 
 ===============================================================================
@@ -260,7 +265,7 @@
      (visited everything; how many yielded text) vs cut (stopped at the budget). Never one
      sentence meaning both." The UI told the truth; the hypothesis was wrong.
 
-  ── F1. SEVEN OF TEN PAGES YIELD NOTHING THROUGH A THREE-RUNG LADDER ── ⚠ THE REAL FINDING
+  ── OCR-1. SEVEN OF TEN PAGES YIELD NOTHING THROUGH A THREE-RUNG LADDER ── ⚠ THE REAL FINDING
      This is what the measurement found instead, and it is worse than the hypothesis it
      replaced. Page 7 WAS attempted, and not once:
        :709-720  the dead-page fallback chain — plain recognize → scale-2 re-render →
@@ -288,7 +293,7 @@
            PIXELS tesseract was handed. If that image looks poor, the fix is upstream of
            tesseract; if it looks fine, the fix is tesseract's configuration.
 
-  ── F2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN ── ⚠ MECHANISM FOUND §10.2
+  ── OCR-2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN ── ⚠ MECHANISM FOUND §10.2
      User, 2026-09-18, on the second run of the identical file: "if you remember earlier
      the ocr gets 3 pages, now its 4 — there is an issue with the ocr right?" They asked
      for it to be NOTED and for the UI work to continue, so nothing was investigated.
@@ -309,12 +314,12 @@
          whatever scale survived), or its worker is warm vs cold.
      CONSEQUENCE IF LEFT: two identical uploads can fill different fields, and a reviewer
      who re-uploads "to check" gets a different answer with no explanation. That is worse
-     for trust than a consistent miss, and it also undermines any measurement of F1 —
+     for trust than a consistent miss, and it also undermines any measurement of OCR-1 —
      tuning against a moving baseline proves nothing.
      ⇒ STAGE 2 MUST ESTABLISH DETERMINISM BEFORE IT MEASURES ANYTHING ELSE. The first
      stage-2 action is now: run the same file three times and record scannedRead each
      time, BEFORE touching render scale or preprocessing. If the number moves, fix that
-     first; F1's "7 of 10 yield nothing" is not a stable measurement until it stops.
+     first; OCR-1's "7 of 10 yield nothing" is not a stable measurement until it stops.
 
   ── U1 REVISITED. THE BADGE IS WRONG FOR A DIFFERENT REASON THAN H1 ASSUMED
      U1 stands, but its cause is now known: page 7 was read three ways and yielded
@@ -332,7 +337,7 @@
 
   ⚠ READ THIS BEFORE PICKING ONE. The 2026-09-18 measurement changed what "UI improvement"
   should mean here. Seven of ten pages of a real document are invisible to the parser
-  (F1). NO amount of better wording fixes that — the best possible UI on this run would
+  (OCR-1). NO amount of better wording fixes that — the best possible UI on this run would
   say, very clearly, "we could not read 70% of your document". The UI items below are
   still worth doing and the user's order was UI first, so they are kept and sharpened;
   but STAGE 2 (the read path) is where this document actually gets parsed, and UI-1 has
@@ -390,13 +395,13 @@
     and what does not" as an open question. preprocessOcrCanvas() DOES exist and runs on
     every page; the real question is its outlier-driven gate.
     The brief itself follows.
-    ⬜ NOT STARTED — ⬆ NOW THE PRIORITY (F1).
+    ⬜ NOT STARTED — ⬆ NOW THE PRIORITY (OCR-1).
     The client's documents are scans, so this is where the system either works or does
     not, and on the one real specimen we have it does NOT: 7 of 10 pages yield nothing
     (§3 step 2b). Extraction is demonstrably fine on whatever text it is handed — the
     vote log read both dates correctly off the 3 pages that worked — so the loss is
     entirely upstream.
-    ⚠ FIRST, BEFORE ANY OTHER MEASUREMENT: establish DETERMINISM (F2). The same file gave
+    ⚠ FIRST, BEFORE ANY OTHER MEASUREMENT: establish DETERMINISM (OCR-2). The same file gave
     3 read pages on one run and 4 on the next. Nothing measured here means anything until
     that stops moving. Run it three times, record scannedRead, then proceed.
     THEN (§5 UI-1): why does a legible, upright page return under 10 characters
@@ -525,7 +530,7 @@
     NOT verified: H1 (needs one browser run); whether ocrTruncated is surfaced anywhere.
     NOTHING IS ORDERED.
 
-  2026-09-18 (same day, second pass) — H1 MEASURED AND FALSIFIED; F1 FOUND. NO APP CODE.
+  2026-09-18 (same day, second pass) — H1 MEASURED AND FALSIFIED; OCR-1 FOUND. NO APP CODE.
     The user re-ran pdfdocstest5.pdf with window._parserDebug = true and sent the notice
     and the vote log. Both are quoted verbatim in §3 step 2b.
     H1 IS DEAD, twice: the notice is the not-truncated branch ("visited all 10 pages …
@@ -536,7 +541,7 @@
     I ALSO WITHDRAW a stage-1 doubt: truncation IS surfaced honestly at run level (:2049
     states the intent, "three honest states … never one sentence meaning both"). The UI
     told the truth; the hypothesis did not.
-    WHAT REPLACED IT (F1): 7 of 10 scanned pages yield nothing, through all three rungs of
+    WHAT REPLACED IT (OCR-1): 7 of 10 scanned pages yield nothing, through all three rungs of
     the dead-page ladder, on pages a human reads at a glance. Extraction is fine on what
     it receives (both dates read correctly, with excerpts, off the 3 pages that worked).
     So ~70% of a real document is invisible to the parser, entirely in the read path.
@@ -713,7 +718,7 @@
          gone. Then run the scanned test5 and confirm the amber "Auto-fill notice" STILL
          appears and STAYS (that is the banner the cleanup must never touch).
 
-  2026-09-18 — STAGE 1b, THIRD PASS: the spinner, properly this time. Plus F2 noted.
+  2026-09-18 — STAGE 1b, THIRD PASS: the spinner, properly this time. Plus OCR-2 noted.
   User: "the preview modal already appeared and when i close it, the ocr label is still
   there." Also: "the ocr gets 3 pages, now its 4 — there is an issue with the ocr right?
   (for now just note this, and focus first on UI and layout improvements)."
@@ -752,9 +757,9 @@
     so it holds whether or not I found the leaking path. Reach for that sooner when the
     requirement is simpler than the control flow.
 
-    F2 NOTED, NOT INVESTIGATED (§4): the same file yielded 3 read pages on one run and 4
+    OCR-2 NOTED, NOT INVESTIGATED (§4): the same file yielded 3 read pages on one run and 4
     on the next. Recorded as a finding because a rules-based OCR read of a fixed file
-    should be deterministic, and because it makes F1 unmeasurable until it stops. Stage 2
+    should be deterministic, and because it makes OCR-1 unmeasurable until it stops. Stage 2
     now opens with "establish determinism", ahead of the render-cap and pixel questions.
     Per the user's instruction, nothing about it was changed.
 
@@ -900,7 +905,7 @@
   needing ocr." Written up as §10. Also a log-consolidation pass — see the end.
 
     WHAT CHANGED IN WHAT WE BELIEVE
-      F2 IS NO LONGER "WOBBLE". It has a concrete, deterministic mechanism, and in fact
+      OCR-2 IS NO LONGER "WOBBLE". It has a concrete, deterministic mechanism, and in fact
       two of them, both state that survives from one run into the next:
         (1) window._ocrLangMode pins itself to plain 'eng' after TWO empty OSD reads
             (:776-781) or immediately on a thrown OSD error (:789). It is cleared only
@@ -924,7 +929,7 @@
       it — it predates the current stabiliser — but it must not be quoted again as the
       complete explanation.
 
-      F1 HAS A NAMED SUSPECT, and §6 was wrong to list preprocessing as unknown.
+      OCR-1 HAS A NAMED SUSPECT, and §6 was wrong to list preprocessing as unknown.
       preprocessOcrCanvas() (:446-475) DOES run on every page. It is a contrast stretch
       gated on `washed = (lo >= 100) && ((hi - lo) <= 140)`, where lo/hi are the MIN and
       MAX grey of a sample. A single dark mark — a signature, a staple, a punch hole, a
@@ -1000,7 +1005,7 @@
     API.
     ON THE USER'S OWN FILE that is the difference between roughly 10 recognitions and
     roughly 24: 3 pages read (1 each) plus 7 dead pages (about 3 each). The pages that
-    give us NOTHING are the ones we spend the most on — see F1.
+    give us NOTHING are the ones we spend the most on — see OCR-1.
 
     OSD RUNS ON EVERY PAGE. useOsd defaults to TRUE whenever window._ocrLangMode is
     unset (:743), so the first rung is 'eng+osd' — orientation detection, on every page
@@ -1059,7 +1064,7 @@
        the crop rung rescue? A rung that has never rescued anything is pure cost and can
        go for free; one that rescues rarely can be gated (crop only when there is ink
        near the margins). Do NOT remove them on intuition — that is trading accuracy
-       blind, and F1 says accuracy is already short.
+       blind, and OCR-1 says accuracy is already short.
 
     E. PREFETCH THE LANGUAGE DATA WHEN THE POPUP OPENS.  small, zero accuracy cost
        The script is already warmed; the traineddata still downloads on the first
@@ -1074,7 +1079,7 @@
 
     LOWER THE RENDER RESOLUTION. Scale 3 aims at tesseract's documented ~300 DPI sweet
     spot, and the 3000px cap exists because oversized canvases made it fail silently.
-    Dropping resolution trades accuracy directly, and F1 says accuracy is already the
+    Dropping resolution trades accuracy directly, and OCR-1 says accuracy is already the
     problem — 7 of 10 pages yield nothing today. Spending less per page to read even
     less is the wrong direction.
 
@@ -1084,11 +1089,11 @@
 
   9.5 THE ORDER THAT MAKES SENSE, AND ITS PREREQUISITE
 
-    F2 COMES FIRST. The same file yielded 3 read pages one run and 4 the next (see F2).
+    OCR-2 COMES FIRST. The same file yielded 3 read pages one run and 4 the next (see OCR-2).
     No speed change can be judged against a baseline that moves on its own — a "faster"
     run that happens to read one page fewer would look like a win.
-    A CONNECTION WORTH TESTING: one of F2's candidate causes was warm-versus-cold
-    tesseract state. Under the one-shot API every page gets a FRESH worker, so if F2 is
+    A CONNECTION WORTH TESTING: one of OCR-2's candidate causes was warm-versus-cold
+    tesseract state. Under the one-shot API every page gets a FRESH worker, so if OCR-2 is
     state-related, lever A (one reused worker) may make runs MORE deterministic as well
     as faster — which would make A the first thing to try for BOTH problems.
     THEN: A (reuse) -> measure -> B (parallel) -> measure -> D's measurement -> C if the
@@ -1143,9 +1148,9 @@
       only while under 10 chars: scale-2 re-render (1 recognition, :642)
       then cropped re-render (1 recognition, :671). First yielding rung wins.
 
-  10.2 ⚠ F2 EXPLAINED — AND IT IS NOT (ONLY) "WOBBLE"
+  10.2 ⚠ OCR-2 EXPLAINED — AND IT IS NOT (ONLY) "WOBBLE"
 
-    F2 was: the same file yielded 3 read pages one run and 4 the next. The code gives
+    OCR-2 was: the same file yielded 3 read pages one run and 4 the next. The code gives
     a concrete, deterministic mechanism for it, and the mechanism is state that
     SURVIVES FROM ONE RUN TO THE NEXT INSIDE ONE MODAL SESSION.
 
@@ -1197,7 +1202,7 @@
     THE DIAGNOSTIC ALREADY EXISTS. ":919" logs "OCR page N: yielded=M rot=D" per page
     under _parserDebug, built in 2026-09-07 for exactly this ("compare yielded counts
     across two runs to separate wobble from regression"). Nobody has had to build
-    anything to settle F2; the measurement below just has to be run.
+    anything to settle OCR-2; the measurement below just has to be run.
 
     HOW TO SETTLE IT (no code, ~10 minutes)
       1. Open the create-project modal fresh. window._parserDebug = true.
@@ -1210,7 +1215,7 @@
       (after the reopen) matches run 1. If all three agree, mechanism 3 is the whole
       story after all and the fix is a different one.
 
-  10.3 ⚠ F1 — WHAT THE CODE SAYS ABOUT SEVEN LEGIBLE PAGES YIELDING NOTHING
+  10.3 ⚠ OCR-1 — WHAT THE CODE SAYS ABOUT SEVEN LEGIBLE PAGES YIELDING NOTHING
 
     THERE *IS* PREPROCESSING, and I was wrong to list it as an open question in §6 —
     preprocessOcrCanvas() (:446-475) runs on every page before recognition. It is a
@@ -1282,12 +1287,12 @@
 
   10.6 WHAT STAGE 2 RECOMMENDS (PROPOSED — nothing ordered, Rule 10)
 
-    S2-1  RUN THE F2 MEASUREMENT IN 10.2. No code. It is the prerequisite for every
+    S2-1  RUN THE OCR-2 MEASUREMENT IN 10.2. No code. It is the prerequisite for every
           other item here and in §9, and it distinguishes three mechanisms that need
           three different fixes.
     S2-2  READ THE TWO EXISTING DEBUG LINES FOR PAGE 7 — "OCR cleanup applied|skipped"
           and "OCR render capped". No code. Together with S2-1 this is one browser run
-          and it decides whether F1 is a preprocessing gate, a canvas size, or neither.
+          and it decides whether OCR-1 is a preprocessing gate, a canvas size, or neither.
     S2-3  THEN, and only then: if mechanism 1 is confirmed, reset _ocrLangMode and
           _ocrOsdMisses at the START OF EACH RUN rather than only on modal cancel, and
           put the language mode in the cache key. Both are small, both are
