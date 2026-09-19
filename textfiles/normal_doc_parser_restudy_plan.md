@@ -22,10 +22,14 @@
 #         CONCRETE MECHANISM, not just "wobble": window._ocrLangMode pins itself to plain
 #         'eng' after two empty OSD reads and the pin SURVIVES INTO THE NEXT RUN (it is
 #         cleared only when the modal is cancelled), and the OCR cache key omits the
-#         language mode, so one run can mix two engines. Both are resolvable by ONE run
-#         (§10.2). OCR-1 has a named suspect too: preprocessOcrCanvas() DOES exist and its
-#         washed-page gate is outlier-driven, so one dark mark (a signature, a staple)
-#         can skip the contrast stretch — and it already logs its own decision (§10.3).
+#         language mode, so one run can mix two engines. Both confirmed by measurement.
+#         ⬛ MEASURED 2026-09-18 — §11, the browser run. OCR-2 mechanism 1 CONFIRMED in
+#         the log, and its ROOT CAUSE found: the OSD path is STRUCTURALLY BROKEN on this
+#         CDN build ("LSTM requested, but not present") — it can never work, it wastes
+#         the first two pages of every session, and the pin it triggers IS the
+#         non-determinism. ❌ My OCR-1 suspect (the washed-page gate) is REFUTED: every
+#         page has full dynamic range, so the gate is correct. ⚠ And the user found a
+#         FOURTH mechanism — devtools OPEN reads 3 pages, CLOSED reads 4.
 #         ⚠ §9 CORRECTED: a dead page costs UP TO SEVEN recognitions, not ~3 (§10.4).
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
@@ -293,7 +297,9 @@
            PIXELS tesseract was handed. If that image looks poor, the fix is upstream of
            tesseract; if it looks fine, the fix is tesseract's configuration.
 
-  ── OCR-2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN ── ⚠ MECHANISM FOUND §10.2
+  ── OCR-2. THE SAME FILE GIVES A DIFFERENT NUMBER OF READ PAGES EACH RUN
+         ── ✅ MECHANISM 1 CONFIRMED IN THE LOG §11.2; ROOT CAUSE FOUND §11.3;
+            ⚠ A FOURTH MECHANISM FOUND (devtools open vs closed) §11.5
      User, 2026-09-18, on the second run of the identical file: "if you remember earlier
      the ocr gets 3 pages, now its 4 — there is an issue with the ocr right?" They asked
      for it to be NOTED and for the UI work to continue, so nothing was investigated.
@@ -967,6 +973,77 @@
     small edits drifts, because each edit is locally right and nothing re-reads the
     whole. Rewrite the block, do not patch the sentence.
 
+  2026-09-18 — THE MEASUREMENT RUN (user, _parserDebug on). Written up as §11. NO CODE.
+  This is the run §10.6 asked for, and it paid for itself three times over.
+
+    ✅ CONFIRMED: OCR-2 mechanism 1. The log prints the pin firing verbatim —
+    "orientation read empty twice running, using plain OCR for this session" (:780) —
+    after pages 1 and 2 both came back empty from the OSD path. Predicted in §10.2 from
+    reading the code; now observed.
+
+    ⚠ ROOT CAUSE FOUND, and it was under the mechanism rather than beside it. The two
+    red walls in the log are "Error: LSTM requested, but not present!!" from
+    tesseract-core-simd-lstm.wasm (core v5.1.1), thrown by the 'eng+osd' call at :760.
+    'eng+osd' asks an LSTM-ONLY core to load osd.traineddata, which is a LEGACY model.
+    The core cannot run it. This is structural to the core/traineddata pairing, not
+    flaky — SO ON THIS BUILD THE OSD PATH CAN NEVER WORK.
+    The consequences chain: every fresh modal session burns its first two scanned pages
+    on an engine that cannot work, the reviewer gets two stack traces, the pin trips, and
+    THAT pin is OCR-2's mechanism 1. The non-determinism is a symptom of a broken
+    dependency, not an independent defect.
+    The code predicted this in a comment at :739-742 ("on this CDN build the OSD data can
+    fail with 'LSTM requested, but not present'") and built the pin as a STABILISER for
+    it. The stabiliser works. What nobody did was ask whether the thing being stabilised
+    was worth keeping — it throws every time, so it straightens nothing, so turning it
+    off costs a capability that is already absent.
+
+    ❌ REFUTED: my own OCR-1 hypothesis. §10.3 guessed the washed-page gate in
+    preprocessOcrCanvas was outlier-driven — one dark mark (a signature, a staple)
+    dropping `lo` below 100 and skipping the contrast stretch on a page that needed it.
+    THE DATA SAYS NO: every one of the ten pages reports lo = 0-2, hi = 255. Full dynamic
+    range on all of them, so `washed` is correctly false and the stretch would be
+    near-identity anyway. The gate is right. Preprocessing is not why seven pages yield
+    nothing. Retired in place rather than deleted, so it is not re-proposed.
+    A weak thread left behind, NOT an answer: the three pages that READ are the three
+    darkest by mean (153, 158, 153) and the failures skew lighter (up to 218) — but p3
+    (158) fails where p6 (158) reads, so brightness alone does not separate them. If
+    anything it points at FAINTNESS, which would need local/adaptive thresholding rather
+    than a global stretch. Unmeasured.
+
+    ⚠ THE USER FOUND A FOURTH MECHANISM, and it is the strangest one: "if the console log
+    is open, the ocr only get 3 out of 10, while if its close its 4 out of 10." Their two
+    runs bear it out. Candidates (none measured): timing (devtools slows JS, and
+    capturing those LSTM stack traces is itself expensive), memory pressure (a worker per
+    recognition under the one-shot API), or a marginal page crossing the 10-character bar
+    — which would be mechanism 3 surfacing under a new trigger.
+    It matters out of proportion to its size: the parser's output depends on whether a
+    developer tool is open, and the obvious way to investigate OCR-1 (compare runs) is
+    itself perturbed by observing it.
+
+    SMALLER THINGS THE LOG SETTLED
+      - The crop rung NEVER runs a recognition on this file — every dead page logs
+        "crop skipped (full-bleed)" or "(degenerate kept=0.00)". It costs nothing here
+        and rescues nothing (0 for 7).
+      - "degenerate kept=0.00" on three pages means the auto-crop decided ZERO percent of
+        a mean-160 page should be kept. That looks wrong on its face.
+      - The three pages that read need NO ladder at all — attempt 0, clean, non-soupy.
+        The whole PSM/scale-2/crop apparatus exists for pages it never rescued here.
+      - Dead pages DID walk all four PSM rungs: recognizeEnglish logs an attempt only
+        after `if (!text.trim()) continue;` (:601 before :618), so empty rungs print
+        nothing. Absence of attempt lines is evidence of empties, not of a skipped ladder.
+
+    WHAT I GOT WRONG, worth keeping: I proposed the cleanup gate as OCR-1's suspect from
+    reading the code, and the very first measurement killed it. The reading was not
+    careless — the gate IS outlier-driven — but I reasoned about what the gate COULD do
+    without checking what the pages actually look like. One log line per page settled in
+    seconds what an hour of code reading had only made plausible. Measure the input
+    before theorising about the filter.
+
+    NOTHING BUILT. §11.7 proposes M-1..M-4; all need an order (Rule 10). M-1 (default the
+    language mode to 'eng' so the broken OSD path is never taken) is the one that pays
+    immediately: it removes two wasted page-reads per session, the error spam, and
+    OCR-2's mechanism 1, and costs nothing that currently works.
+
 ===============================================================================
   9. OCR COST — WHY IT IS SLOW, HOW IT SCALES, AND WHAT CAN BE CUT
      Research, 2026-09-18, READ-ONLY. User: "the ocr parsing can take very long right?
@@ -1216,6 +1293,9 @@
       story after all and the fix is a different one.
 
   10.3 ⚠ OCR-1 — WHAT THE CODE SAYS ABOUT SEVEN LEGIBLE PAGES YIELDING NOTHING
+       ❌ THE HYPOTHESIS BELOW (the washed-page gate) WAS MEASURED AND REFUTED — §11.4.
+       Every page has full dynamic range, so the gate is correct to skip. Kept as a
+       retired dead end. The live candidates are now in §11.7 M-4.
 
     THERE *IS* PREPROCESSING, and I was wrong to list it as an open question in §6 —
     preprocessOcrCanvas() (:446-475) runs on every page before recognition. It is a
@@ -1303,6 +1383,146 @@
           (10.4), and possibly determinism-positive too (§9.5).
 
     ORDER: S2-1 and S2-2 are the same browser run. Everything else waits on it.
+
+===============================================================================
+  11. THE MEASUREMENT (user, 2026-09-18, _parserDebug on, pdfdocstest5.pdf)
+      This is the browser run §10.6 asked for. It CONFIRMS one thing, REFUTES one of
+      my own hypotheses, and turns up a root cause nobody had named.
+      NO APP CODE. Everything below is from the console log verbatim.
+===============================================================================
+
+  11.1 THE PER-PAGE LEDGER (devtools OPEN — see 11.5, it matters)
+
+      page   cleanup            attempts        scale-2   crop            yielded
+      1      skipped lo=0 hi=255 mean=200   (all empty)   chars=0   skipped full-bleed   0
+      2      skipped lo=2 hi=255 mean=171   (all empty)   chars=0   skipped full-bleed   0
+      3      skipped lo=1 hi=255 mean=158   (all empty)   chars=0   skipped degenerate   0
+      4      skipped lo=1 hi=255 mean=153   attempt 0: 4312 clean                     4312
+      5      skipped lo=1 hi=255 mean=218   (all empty)   chars=0   skipped full-bleed   0
+      6      skipped lo=0 hi=255 mean=158   attempt 0: 1627 clean                     1627
+      7      skipped lo=1 hi=255 mean=191   (all empty)   chars=0   skipped full-bleed   0
+      8      skipped lo=1 hi=255 mean=161   (all empty)   chars=0   skipped degenerate   0
+      9      skipped lo=1 hi=255 mean=159   (all empty)   chars=0   skipped degenerate   0
+      10     skipped lo=1 hi=255 mean=153   attempt 0: 3864 clean                     3864
+
+      Pages 4, 6 and 10 read, first attempt, clean, no ladder needed. Seven pages
+      yielded ZERO — not garbage, zero.
+      "(all empty)" is inferred, not missing: recognizeEnglish logs an attempt only
+      AFTER `if (!text.trim()) continue;` (:601 before :618), so an empty rung prints
+      nothing. The dead pages therefore DID walk all four PSM rungs and every rung
+      returned an empty string.
+
+  11.2 ✅ OCR-2 MECHANISM 1 — CONFIRMED, VERBATIM, IN THE LOG
+
+      After pages 1 and 2 both came back empty from the OSD path, the log prints:
+        "[Parser] orientation read empty twice running, using plain OCR for this
+         session."   (:780)
+      That is the pin firing exactly as §10.2 predicted. Pages 1-2 of a fresh session
+      are read through one engine and pages 3-10 through another, and on a second run
+      in the same modal session pages 1-2 would ALSO use plain 'eng'. The mechanism is
+      no longer a hypothesis.
+
+  11.3 ⚠ THE ROOT CAUSE UNDER IT — THE OSD PATH IS BROKEN ON THIS BUILD
+
+      The log's red errors, twice, from ocrPage :760:
+        "Error: LSTM requested, but not present!! Loading tesseract."
+        ... tesseract-core-simd-lstm.wasm.js (tesseract.js-core v5.1.1)
+      That is the failure the code comment at :739-742 predicted word for word: "on this
+      CDN build the OSD data can fail with 'LSTM requested, but not present'".
+      WHY IT HAPPENS: 'eng+osd' asks the LSTM-only core to load osd.traineddata, which is
+      a legacy (non-LSTM) model. The core cannot run it. This is not a flaky failure — it
+      is structural to the core/traineddata pairing, so ON THIS BUILD OSD CAN NEVER WORK.
+      WHAT IT COSTS, every fresh modal session:
+        - the first two scanned pages are read through an engine that cannot work, and
+          contribute nothing but latency (and they are counted against the budget);
+        - the reviewer gets two walls of red stack trace in the console;
+        - the pin then trips, which is OCR-2's mechanism 1. THE NON-DETERMINISM IS A
+          SYMPTOM OF THIS, not an independent bug.
+      WHAT IS LOST IF OSD GOES: nothing that currently works. OSD exists to straighten
+      tilted/sideways pages (added for a phone-tilted S-curve sample), but on this build
+      it never straightens anything — it throws. Turning it off loses a capability that
+      is already absent, and REMOVES two wasted page-reads plus the error spam plus the
+      run-to-run drift.
+
+  11.4 ❌ MY OCR-1 HYPOTHESIS IS REFUTED — the cleanup gate is behaving correctly
+
+      §10.3 guessed that preprocessOcrCanvas's washed-page gate was outlier-driven, so a
+      single dark mark (a signature, a staple) would skip the contrast stretch on a page
+      that needed it. THE DATA SAYS NO.
+      Every page reports lo = 0-2 and hi = 255 — FULL dynamic range, true blacks and true
+      whites on all ten. `washed = (lo >= 100) && ((hi - lo) <= 140)` is correctly false
+      for all of them, and on a page with full range the stretch would be near-identity
+      anyway. The gate is right, the skip is right, and preprocessing is NOT why seven
+      pages yield nothing. Hypothesis retired; recorded rather than deleted so it is not
+      re-proposed.
+
+      WHAT THE NUMBERS DO HINT AT, weakly and not enough to act on: the three pages that
+      READ are the three darkest by mean (153, 158, 153), while the failures skew lighter
+      (200, 218, 191, 171, 161, 159, 158). The overlap (p3 mean 158 fails, p6 mean 158
+      reads) means brightness alone does not separate them, so this is a thread, not an
+      answer. What it suggests is FAINTNESS — light grey strokes on white — which is a
+      different problem from "washed out" and would need a different treatment
+      (adaptive/local thresholding rather than a global stretch). NOT MEASURED.
+
+  11.5 ⚠ NEW, AND THE USER FOUND IT: DEVTOOLS OPEN CHANGES THE RESULT
+
+      User, verbatim: "i notice that if the console log is open, the ocr only get 3 out
+      of 10, while if its close its 4 out of 10."
+      Reproduced in their own two runs: this ledger (devtools open) yields 3 pages; the
+      run notice they pasted from the closed-devtools run says 4 of 10.
+      THIS IS A FOURTH NON-DETERMINISM MECHANISM and it is not any of the three in §10.2.
+      Candidates, NONE measured:
+        - TIMING. Devtools open slows JS substantially, and capturing/rendering those
+          LSTM stack traces is itself expensive. Anything time-sensitive in the path
+          (an abort, a worker lifetime, a race between runs) shifts.
+        - MEMORY. The one-shot API creates a worker per recognition; devtools adds
+          pressure. A recognition under pressure can fail where it otherwise succeeds.
+        - MARGINAL PAGES. If the extra page is one hovering near the 10-character bar,
+          this is mechanism 3 (§10.2) surfacing under a different trigger.
+      WHY IT MATTERS OUT OF PROPORTION TO ITS SIZE: it means the parser's output depends
+      on whether a developer tool is open. Whatever the cause, no measurement of OCR-1 is
+      trustworthy until the read is stable — and the obvious next measurement (compare
+      runs) is itself perturbed by the act of observing it. Which page is the fourth one
+      is the first thing to establish: re-run with devtools CLOSED and read the notice,
+      then open devtools and diff the ledger.
+
+  11.6 SMALLER THINGS THE LOG SETTLED
+
+      - THE CROP RUNG NEVER RUNS A RECOGNITION on this file. Every dead page logs either
+        "crop skipped (full-bleed)" or "crop skipped (degenerate kept=0.00)". So it costs
+        nothing here — and rescues nothing. Relevant to §9.3 lever D: on this specimen the
+        crop rung is pure dead weight, though one file is not a corpus.
+      - "degenerate kept=0.00" on pages 3, 8, 9 means the auto-crop computed that ZERO
+        percent of the page should be kept — the whole page read as "dark surround" on a
+        page whose mean is ~160. That looks wrong on its face and deserves its own look
+        if the crop rung is ever revived.
+      - THE READING PAGES NEED NO LADDER AT ALL: 4, 6 and 10 all succeed on attempt 0,
+        clean, non-soupy. The entire PSM ladder, scale-2 and crop machinery exists for
+        pages that, on this file, it never rescues — 0 for 7.
+      - COST CONFIRMED (§10.4): a dead page here pays the PSM ladder (4) + scale-2 (1)
+        = 5 recognitions, plus eng+osd on the first two pages. Seven dead pages is ~35
+        recognitions that produce nothing, each spinning up its own worker.
+
+  11.7 WHAT THIS CHANGES ABOUT THE ORDER (PROPOSED — nothing ordered, Rule 10)
+
+      M-1  TURN OFF THE OSD PATH ON THIS BUILD. It cannot work (11.3), it wastes the
+           first two pages of every session, it spams errors, and it is the direct cause
+           of OCR-2's mechanism 1. Cheapest defensible form: default window._ocrLangMode
+           to 'eng' instead of null, leaving the existing machinery intact so OSD can be
+           re-enabled if the core/traineddata pairing is ever fixed. This is
+           determinism-POSITIVE and costs nothing that currently works.
+           Better, if OSD is actually wanted back: load the legacy core for the OSD probe,
+           or run orientation detection once per file rather than per page. Both are
+           larger; M-1 is the one that pays immediately.
+      M-2  RESET THE MODE AND THE MISS COUNTER AT THE START OF EACH RUN, and put the
+           language mode in the OCR cache key (§10.2 mechanism 2). Still worth doing with
+           M-1 in place — it removes the whole class rather than today's instance.
+      M-3  ESTABLISH WHICH PAGE THE DEVTOOLS-CLOSED RUN READS (11.5) before trusting any
+           further measurement.
+      M-4  ONLY THEN look at why seven legible pages yield zero. The cleanup gate is
+           exonerated (11.4); the next candidates are the actual pixels handed to
+           tesseract ("Save page image ↓ p.7") and, if those look fine, faint-stroke
+           handling — local/adaptive thresholding rather than the global stretch.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
