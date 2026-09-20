@@ -3740,5 +3740,74 @@
         · confirm a field the hardcoded rules already fill is NOT changed by a taught
           phrase pointing elsewhere.
 ===============================================================================
+  34. TWO QUESTIONS THAT FOUND A DEFECT IN L-9 (user, 2026-09-20)
+===============================================================================
+
+  34.1 ⚠ "WON'T THE HARDCODED AND LEARNED KEYWORD SHARE THE SAME WORDING?"
+
+      YES — AND IT WAS WORSE THAN THE QUESTION SUGGESTED. Measured with the blinding
+      temporarily off:
+        hardcoded only   4834297.00  count 1  score 0.85  ["abc-line"]
+        + both phrases   4834297.00  count 2  score 1.36  ["abc-line","learned:approved…"]
+                         4834297.59  count 1  score 0.51  ["learned:| total estimated…"]
+                         winner .00 · DISAGREEMENT: FALSE
+      The hardcoded abc-line rule ALREADY matches "Approved Budget for the Contract",
+      so the taught phrase is a restatement of it — and on this document both read THE
+      SAME DAMAGED LINE ("4,834,297 5g", the ".59" read as " 5g").
+      The false corroboration pushed the wrong value past 2x the correct one, which is
+      pooledDisagree's silence threshold. ⇒ THE RIGHT ANSWER DISAPPEARED PRECISELY
+      BECAUSE TWO RULES AGREED ABOUT ONE LINE. L-9 made this case worse, not better.
+
+  34.2 THE FIX — CORROBORATION NOW REQUIRES INDEPENDENCE
+
+      THE SAME LINE READ TWICE IS ONE PIECE OF EVIDENCE, NOT TWO. Every collector now
+      records the line its find came from, and voteCandidatePoolDebug refuses to let the
+      same (value, file, line) vote a second time. The duplicate's PATTERN is still
+      recorded — knowing both rules found it is useful in the inspector — but it does
+      not score or count again.
+      AFTER:
+        4834297.00  count 1  score 0.85  ["abc-line","learned:approved budget…"]
+        4834297.59  count 1  score 0.51  ["learned:| total estimated project cost p"]
+        winner .00 · DISAGREEMENT: TRUE, offering .00 vs .59
+      The reviewer is asked again, which is the whole point of the pick-one control.
+      ⚠ THIS IS NOT ONLY A LEARNED-LABEL PROBLEM. Two HARDCODED patterns whose wordings
+      overlap on one line were double-counting each other too, and always have been. The
+      learned track only made it visible.
+      Finds with no line recorded are never deduped — they keep their own vote — so the
+      change cannot silently remove evidence it does not understand.
+
+  34.3 "CAN THE POOL AND CORROBORATION WORK WITH BLINDING ON?"
+
+      THE POOL ALREADY DOES, and §33's measurement is the proof: with the blinding ON,
+      the two taught ABC phrases voted, disagreed, and produced a pick-one note. What
+      sleeps under blinding is only collectAbcCandidates — the HARDCODED contribution.
+      CORROBORATION CANNOT, and not for a fixable reason: corroboration means a hardcoded
+      find and a learned find agreeing, and the blinding exists precisely to remove the
+      hardcoded find. There is nothing left to agree with.
+      ⚠ AND IT SHOULD NOT BE MADE TO WORK. The blinding's purpose is that a clean file
+      MISSES the ABC so the teach → approve → fills-free round trip can be demonstrated.
+      If the collector still voted, the pool would fill the ABC and the field would not
+      be empty — the demo would have nothing to demonstrate. The two requirements are
+      genuinely exclusive, so the answer is "flip it off for that test", not "make both
+      work at once".
+
+  34.4 VERIFICATION
+
+      JS 258/258/0 (two new tests) · PHP 1231 passed / 0 failed.
+      The two: a taught phrase deliberately worded to hit the same line as a hardcoded
+      rule produces the SAME count and score as the hardcoded rule alone; and finds on
+      genuinely different lines (two files) still corroborate, count 2, two files — so
+      the fix removes double-counting without removing real evidence.
+
+  34.5 WHAT THIS SAYS ABOUT THE LOOP, WORTH KEEPING
+
+      The taught phrase here was never going to help: it restates a rule the parser
+      already had. What it did was make a DAMAGED READING of a line look corroborated.
+      ⇒ A label worth learning is one that finds something the hardcoded rules DO NOT.
+        The desk cannot see that today — it shows the phrase, not whether the phrase
+        adds anything. "This wording is already covered by a built-in rule" would be a
+        genuinely useful thing for the approval screen to say, and the pool now has the
+        information to say it. NOT BUILT, and not ordered.
+===============================================================================
   END OF RESTUDY
 ===============================================================================

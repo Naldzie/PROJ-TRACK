@@ -1444,7 +1444,7 @@ const DocumentParserCore = (function () {
                         // line, ti 1-2 = borrowed from below). A slid date/figure can no
                         // longer tie a same-line price before frequency even counts.
                         if (ti > 0) w *= 0.8;
-                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i), line: i });
                         if (name === 'total-row') totalRowHit.add(i);
                         break;
                     }
@@ -1473,7 +1473,7 @@ const DocumentParserCore = (function () {
                 const val = asMoney(combined);
                 // Step 1f-3: unlabeled guesses count less (0.5, was 0.8) — a contract
                 // label (1.0) beats several table guesses even when they repeat.
-                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName, pattern: fbName, excerpt: excerptOf(i) });
+                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName, pattern: fbName, excerpt: excerptOf(i), line: i });
             }
         }
         return out;
@@ -1528,7 +1528,7 @@ const DocumentParserCore = (function () {
                         if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price|approved\s*budget|\babc\b/i.test(ctx)) w *= 0.5;
                         // Same-line values outrank slid ones (1i-2).
                         if (ti > 0) w *= 0.8;
-                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i), line: i });
                         break;
                     }
                 }
@@ -1540,7 +1540,7 @@ const DocumentParserCore = (function () {
         // rationale as the 'total-row' exemption in the budget collector).
         for (let i = 0; i < norm.length; i++) {
             const wv = abcWordsAtWindow(norm[i], norm[i + 1] || '');
-            if (wv) out.push({ value: wv, labeled: true, weight: getSectionWeight(ctxOf(i)), fileName, pattern: 'words-shape', excerpt: excerptOf(i) });
+            if (wv) out.push({ value: wv, labeled: true, weight: getSectionWeight(ctxOf(i)), fileName, pattern: 'words-shape', excerpt: excerptOf(i), line: i });
         }
         return out;
     }
@@ -1566,7 +1566,7 @@ const DocumentParserCore = (function () {
                     if (val) {
                         let w = getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' '));
                         if (isTotal) w *= 1.25;
-                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i), line: i });
                         break;
                     }
                 }
@@ -1577,7 +1577,7 @@ const DocumentParserCore = (function () {
                 // Step 1f-3: unlabeled duration guesses count less (0.5, was 0.8).
                 if (wm) {
                     const val = asDays(wm[1]) || asDays(wm[0]);
-                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName, pattern: 'within-clause', excerpt: excerptOf(i) }); break; }
+                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName, pattern: 'within-clause', excerpt: excerptOf(i), line: i }); break; }
                 }
             }
         }
@@ -1601,7 +1601,7 @@ const DocumentParserCore = (function () {
             for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                 if (!t) continue;
                 const val = asDate(t);
-                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
+                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i), line: i }); break; }
             }
         }
         return out;
@@ -1639,9 +1639,34 @@ const DocumentParserCore = (function () {
         const rows = [];
         if (!cands || cands.length === 0) return { winner: null, rows };
         const groups = new Map(); // norm -> { original, score, count, labeledCount, files:Set, patterns:Set, excerpts:[] }
+        // INDEPENDENCE (2026-09-20) — THE SAME LINE READ TWICE IS ONE PIECE OF
+        // EVIDENCE, NOT TWO. Two rules can match the same line and produce the same
+        // value: a hardcoded pattern and a taught phrase that restates it, or two
+        // hardcoded patterns whose wordings overlap. Counting both inflated the score
+        // and the count of a value that had exactly one source.
+        // THE USER FOUND THIS BY ASKING WHETHER A LEARNED PHRASE WOULD SHARE WORDING
+        // WITH A HARDCODED ONE. It does: 'Approved Budget for the Contract' is both a
+        // taught phrase and the hardcoded abc-line rule, and on the test document they
+        // both read the SAME DAMAGED LINE ("4,834,297 5g"). The false corroboration
+        // pushed that wrong value past 2x the correct one, which silenced the
+        // disagreement note — so the right answer disappeared precisely because two
+        // rules agreed about one line.
+        // Finds with no line recorded are never deduped; they keep their own vote.
+        const seenLines = new Set();
         for (const c of cands) {
             const norm = normalizeForPool(c.value);
             if (!norm) continue;
+            if (c.line !== undefined && c.line !== null) {
+                const key = norm + '@' + (c.fileName || '') + '#' + c.line;
+                if (seenLines.has(key)) {
+                    // Still record the PATTERN — knowing both rules found it is useful
+                    // in the inspector — but do not let it vote a second time.
+                    const g0 = groups.get(norm);
+                    if (g0 && c.pattern) g0.patterns.add(c.pattern);
+                    continue;
+                }
+                seenLines.add(key);
+            }
             if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, count: 0, labeledCount: 0, files: new Set(), patterns: new Set(), excerpts: [] });
             const g = groups.get(norm);
             g.score += (c.weight || 0.85);
@@ -1873,6 +1898,7 @@ const DocumentParserCore = (function () {
                     fileName,
                     pattern: 'learned:' + src,
                     excerpt: excerptOf(i),
+                    line: i,
                 });
                 break; // one find per phrase per file — a phrase is not evidence twice
             }

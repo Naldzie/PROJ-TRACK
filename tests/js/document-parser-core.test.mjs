@@ -1205,3 +1205,37 @@ test('no learned vocabulary leaves the pool exactly as it was', () => {
     assert.deepEqual(withEmpty._debug.duration, withNone._debug.duration);
     assert.equal(withNone.duration, '185');
 });
+
+// ─── Independence: the same line read twice is ONE piece of evidence ────────
+// Found by the user asking whether a learned phrase would share wording with a
+// hardcoded one. It does — "Approved Budget for the Contract" is both a taught
+// phrase and the hardcoded abc-line rule — and on the test document both read the
+// SAME DAMAGED LINE. Counting them twice pushed that wrong value past 2x the
+// correct one, which silenced the disagreement note: the right answer disappeared
+// precisely because two rules agreed about one line.
+
+test('two rules matching the same line do not corroborate each other', () => {
+    const text = 'Contract Duration: 185 calendar days';
+    // A taught phrase deliberately worded to hit the SAME line the hardcoded rule does.
+    const learned = { learned: { labels: { duration: ['Contract Duration'] } } };
+    const solo = core.parseProjectInfoPooled([{ text, fileName: 'a.pdf' }]);
+    const both = core.parseProjectInfoPooled([{ text, fileName: 'a.pdf' }], learned);
+    const soloRow = solo._debug.duration.find(r => r.value === '185');
+    const bothRow = both._debug.duration.find(r => r.value === '185');
+    assert.equal(bothRow.count, soloRow.count, 'the same line must not vote twice');
+    assert.equal(bothRow.score, soloRow.score, 'nor score twice');
+    // The pattern IS still recorded — knowing both rules found it is useful.
+    assert.ok(bothRow.patterns.some(x => x.startsWith('learned:')));
+    assert.ok(bothRow.patterns.includes('labeled'));
+});
+
+test('finds on DIFFERENT lines still corroborate normally', () => {
+    // Same value, two separate files: genuine independent evidence, and it must count.
+    const docs = [
+        { text: 'Contract Duration: 185 calendar days', fileName: 'a.pdf' },
+        { text: 'Contract Duration: 185 calendar days', fileName: 'b.pdf' },
+    ];
+    const row = core.parseProjectInfoPooled(docs)._debug.duration.find(r => r.value === '185');
+    assert.equal(row.count, 2, 'two files is two pieces of evidence');
+    assert.equal(row.files.length, 2);
+});
