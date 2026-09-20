@@ -139,7 +139,18 @@
 #         VERBATIM in the text — and on a scan the correction exists precisely because
 #         the text is wrong. Numeric fields and OCR-read-correctly fields still teach.
 #         §25.3 predicts the retest; §25.4 has the fuzzy-anchor option, NOT built.
-#         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
+#         ⬛ STAGE 4 (THE LEARNING LOOP) RESTUDIED 2026-09-20 — §26, read-only. Seven
+#         findings, all verified in source. The two that matter: an UNANCHORED
+#         correction still writes a row, and that row AUTO-PROMOTES to 'live' with an
+#         EMPTY phrase (L-2) — on scans that is the normal path, so the desk fills with
+#         rules that teach nothing; and CAPTURE ONLY FIRES AT APPLY from the preview
+#         modal (L-4), so a correction made later in the form is never seen. §26.8 ranks
+#         the fixes and argues fuzzy anchoring should ship LAST, not first.
+#         ⬛ ABC BLINDING RE-APPLIED 2026-09-20 at the user's request, and the suite is
+#         now SWITCH-AWARE: L3_TEST_BLIND_ABC is exported and the six affected tests
+#         assert whichever behaviour is configured. 250/250/0 with it ON *and* OFF — the
+#         "2 intended failures is green" convention is retired for good.
+#         Stage 3 (EXTRACTION) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
 #         2-column grid, Category / Budget Source / Contractor given real option lists,
@@ -3008,6 +3019,144 @@
       this is attempted it wants a tight distance budget, the gated/ungated scoring kept,
       and the approval desk treated as the real safety net.
       NOT ORDERED. Measure the retest first: 25.3 says how to read it.
+===============================================================================
+  26. STAGE 4 — THE LEARNING LOOP, RESTUDIED (2026-09-20)
+      READ-ONLY. No app code written for this section. Ordered by the user before
+      the loop retest: "restudy and do research first for any improvements".
+      Everything below was verified in source today, not recalled.
+===============================================================================
+
+  26.0 THE PIPELINE AS BUILT, IN ONE PASS
+
+      L1 CAPTURE   applyAutofillFromPreview() calls harvestCorrections(parsed)
+                   (document-parser.js:2728). For each of the 11 learnable boxes it
+                   diffs what the parser produced against what the reviewer left, and
+                   for each changed box asks mineCorrectionLabels(docText, value, 3)
+                   for up to 3 candidate LABEL phrases. Posts to
+                   /parser-keyword-proposals/collect.
+      L1 MINER     mineCorrectionLabels() locates the CORRECTED VALUE inside a document
+                   line and takes the text to its left as the label; falls back to the
+                   previous line when nothing sits to the left. Scores each hit with the
+                   F-GATE rule and ranks gated hits first.
+      L2 STORE     one row per distinct (field, label_phrase). Repeats increment
+                   `occurrences`. VALUES ARE NEVER STORED — labels only (Decision L0b),
+                   which is the right call and constrains every fix below.
+      L2 PROMOTE   status 'proposed' -> 'live' on human approval at the desk, OR
+                   AUTOMATICALLY at occurrences >= 3 (controller :76-78).
+      L3 CONSULT   learned-keywords-loader.js fetches ?status=live and hands
+                   parseProjectInfo opts.learned.labels[field]. Each phrase becomes an
+                   extra findLabeledValue pattern using the field's own normalizer, and
+                   — for title and contractor — also widens the VALUE-side candidate
+                   test. Consulted as lowest priority; an empty table reproduces
+                   today's behaviour exactly.
+
+  26.1 ⚠ L-1. THE ANCHOR IS EXACT, AND THAT IS THE WHOLE SCANNED-DOCUMENT PROBLEM
+
+      Recorded in full at §25.2 and not repeated here. Summary: a non-numeric
+      correction anchors by line.toLowerCase().indexOf(value.toLowerCase()), so on a
+      scan — where the correction exists precisely because OCR mangled the value —
+      there is nothing to anchor to. THIS IS THE DOMINANT FINDING, and F6 ("the pilot
+      starts with REAL PMU projects") makes it the common case rather than the exception.
+
+  26.2 ⚠ L-2. AN UNANCHORED CORRECTION STILL WRITES A ROW — AND THAT ROW GOES LIVE
+
+      When the miner finds nothing, harvestCorrections STILL posts a proposal with
+      label: null (the loop is written to record that a correction happened at all).
+      The store's dedup key is (field, label_phrase) WITH AN EXPLICIT whereNull BRANCH
+      (controller :67-71), so EVERY unanchored correction for a field collapses into ONE
+      row — and that row's `occurrences` climbs with each one. At three it
+      AUTO-PROMOTES to 'live' (:76-78), and the listing renders label_phrase ?? ''
+      (:124).
+      ⇒ THE RESULT IS A LIVE ROW WITH AN EMPTY PHRASE, which teaches nothing (the reader
+        skips empty strings) but occupies the desk and reports itself as learned.
+      ⇒ ON SCANS THIS IS THE NORMAL PATH, not the edge case. Three scanned corrections
+        to the same field and the desk shows a live rule that is pure noise.
+      This is not cosmetic: it is the loop telling a reviewer it learned something when
+      it learned nothing, which is exactly the signal a reviewer uses to decide whether
+      the feature is working.
+
+  26.3 ⚠ L-3. PROMOTION AT THREE IS AUTOMATIC AND UNREVIEWED
+
+      Nothing human stands between a mined phrase and live vocabulary once it has been
+      seen three times.
+      TODAY THAT IS DEFENSIBLE, because the exact anchor makes a wrong label unlikely —
+      the phrase really did sit next to the value in the text.
+      ⚠ IT STOPS BEING DEFENSIBLE THE MOMENT THE ANCHOR IS LOOSENED (§25.4). A fuzzy
+      anchor that mines from a NEARBY line produces plausible-looking wrong labels, and
+      three of them go live without anyone looking. ANY FUZZY-ANCHOR WORK MUST CHANGE
+      THIS THRESHOLD IN THE SAME BREATH — they are one decision, not two.
+
+  26.4 ⚠ L-4. CAPTURE FIRES ONLY AT APPLY, AND ONLY FROM THE PREVIEW MODAL
+
+      harvestCorrections reads the PREVIEW's boxes at the moment Apply is pressed
+      (document-parser.js:2706-2728). A reviewer who presses Apply and THEN fixes a
+      field in the create-project form itself teaches the loop nothing.
+      ⇒ That is very likely the common human path: people correct things where they can
+        see the whole form, not inside a modal. Under F6, PMU staff encoding real
+        projects will do exactly this.
+      ⇒ The richest corrections — the ones made after seeing everything in context —
+        are the ones the loop never sees.
+
+  26.5 ⚠ L-5. ONE PHRASE LIST SERVES BOTH THE LABEL SIDE AND THE VALUE SIDE
+
+      learnedFor('title') feeds BOTH tryLearnedLabel (as a findLabeledValue pattern) AND
+      extractTitle's extraTitleKeywords / isContractorValueCandidate's extraKeywords.
+      So a phrase mined as a LABEL — "Project Title", "Name of Contractor" — also
+      becomes a VALUE-side keyword, and a learned value hit deliberately SKIPS the
+      heuristic shape gates ("a reviewed vocabulary outranks heuristics").
+      ⇒ A line that merely CONTAINS the label phrase can therefore be accepted as the
+        VALUE. The desk shows an innocuous-looking label row; the behaviour it unlocks is
+        broader than what the approver thought they were approving.
+      ⇒ This is the same substring-matching hazard that §25.1 had to guard against for
+        the bid-abstract row, showing up on a second path.
+
+  26.6 L-6. CLEARING A WRONG VALUE TEACHES NOTHING
+
+      harvestCorrections skips a box when the final value is empty or under 3 characters
+      (:2771). So "the parser filled this, it is wrong, and there is no right answer on
+      this page" — a real and confident human judgement — is discarded.
+      The loop can only learn what a field IS, never what a rule got WRONG. A bad
+      hardcoded rule cannot be unlearned by use.
+
+  26.7 L-7. NO DOCUMENT-TYPE SCOPING
+
+      Every learned phrase is global. A phrase that means ABC on a funds certificate may
+      mean something else on a contract or an abstract of bids, and the loop has no way
+      to express that. With the pilot's documents arriving as mixed bundles this is a
+      real cross-contamination route, though no instance has been observed yet.
+
+  26.8 WHAT I WOULD PROPOSE, RANKED BY VALUE PER UNIT OF RISK (nothing ordered)
+
+      A. FIX L-2 FIRST. It is the cheapest and it is pure cleanup: either stop posting a
+         proposal when the miner found no label, or keep recording it but EXCLUDE
+         null-label rows from auto-promotion and from the live list. My preference is the
+         second — the count is genuinely useful evidence ("47 corrections to contractor
+         that we could not anchor" is exactly the number that justifies fixing L-1) — but
+         it must never present itself as a learned rule.
+         ⇒ No accuracy risk whatsoever. It only stops the loop claiming false credit.
+      B. THEN L-4, capture on form submit as well as on Apply. Also low risk: the same
+         diff against the same snapshot, fired from a second place. It roughly doubles
+         the corrections the loop ever sees, and it catches the considered ones.
+      C. THEN L-3, and ONLY WITH a decision about L-1. Raise the auto-promotion bar, or
+         remove auto-promotion for anything not exactly anchored. This is the safety
+         valve that makes any anchor loosening survivable.
+      D. L-1 (fuzzy anchoring) LAST, not first, despite being the headline problem.
+         It is the only one that can make the parser CONFIDENTLY WRONG on every future
+         document, and it should not ship before C is in place. §25.4 has the shape.
+      E. L-5 and L-7 are design questions to answer, not defects to rush. L-5 wants the
+         label list and the value list separated; L-7 wants a document-type column. Both
+         are larger than they look and neither has a witnessed failure yet.
+
+  26.9 ⚠ WHAT TO DO BEFORE ANY OF THIS — AND IT IS NOT CODE
+
+      The retest the user has planned (§25.3) is the measurement that should decide A-E,
+      and the blinding is now ON specifically so the round trip can be demonstrated.
+      RUN IT FIRST. In particular it will show whether L-2's null-label rows appear as
+      predicted, which is a claim made here from reading the code and has not yet been
+      seen happen.
+      ⚠ AND A CAUTION ABOUT THE RESTUDY ITSELF: every finding above is from SOURCE, not
+      from a run. §11 and §15 of this file are both records of a confident reading being
+      refuted by the first measurement. Treat 26.1-26.7 as well-founded predictions.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

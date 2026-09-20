@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 
 import core from '../../public/js/admin/projects/document-parser-core.js';
 
+// ─── The ABC blinding switch ────────────────────────────────────────────────
+// L3_TEST_BLIND_ABC empties extractABC's patterns, skips the corroborated
+// reassignment, skips the words-shape fallback and puts collectAbcCandidates to
+// sleep, so a clean file MISSES the ABC and the teach → approve → fills-free
+// round trip can be demonstrated end to end.
+// The suite reads the switch and asserts whichever behaviour is actually
+// configured. It deliberately does NOT carry "intended failures": a suite that is
+// expected to be red cannot tell you when it goes red for a new reason, and this
+// project has already paid for that lesson once.
+const BLIND = !!core.L3_TEST_BLIND_ABC;
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 // Build a PDF.js-like text item: { str, transform:[1,0,0,1,x,y], width, hasEOL? }
@@ -629,7 +640,8 @@ test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised
         'Original Contract Amount: Php 4,204,128.84\nTotal budget Amount Php 4,834,297.59'
     );
     assert.equal(core.extractBudget(both), '4204128.84');
-    assert.equal(core.extractABC(both), '4834297.59');
+    // Blinded: the corroborated budget-Amount → ABC reassignment is skipped.
+    assert.equal(core.extractABC(both), BLIND ? null : '4834297.59');
     // Lone budget-Amount line: today's price behavior preserved (no emptying).
     const lone = core.buildLinesFromText('Total budget Amount Php 4,834,297.59');
     assert.equal(core.extractBudget(lone), '4834297.59');
@@ -666,6 +678,11 @@ test('Weak-find guard: marked small figures and labeled large singles still fill
 test('ABC-pooling: collector reads a labelled ABC line', () => {
     const lines = core.buildLinesFromText('Approved Budget for the Contract: Php 4,834,297.59');
     const got = core.collectAbcCandidates(lines, 'demo.pdf');
+    if (BLIND) {
+        // Blinded: the collector sleeps, which is what makes the demo file miss.
+        assert.equal(got.length, 0);
+        return;
+    }
     assert.equal(got.length, 1);
     assert.equal(got[0].value, '4834297.59');
     assert.equal(got[0].labeled, true);
@@ -676,7 +693,8 @@ test('ABC-pooling: pooled return carries abc vote/debug/disagree/fileCounts keys
     const pooled = core.parseProjectInfoPooled([
         { text: 'Approved Budget for the Contract: Php 4,834,297.59', fileName: 'demo.pdf' },
     ]);
-    assert.equal(pooled.abc, '4834297.59');
+    // The KEYS must exist either way — only the value depends on the switch.
+    assert.equal(pooled.abc, BLIND ? null : '4834297.59');
     assert.ok(pooled._debug && Array.isArray(pooled._debug.abc));
     assert.equal(pooled._disagree.abc, null);
     assert.ok(pooled._fileCounts && typeof pooled._fileCounts.abc === 'object');
@@ -730,21 +748,28 @@ test('ABC words-shape: wired paths read the words amount, not its cents marker (
     // Both tracks must now agree on the words amount.
     const real = 'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100';
     const lines = core.buildLinesFromText(real);
+    const short = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
+    if (BLIND) {
+        // Blinded: the words-shape fallback is skipped and the collector sleeps.
+        assert.equal(core.extractABC(lines), null);
+        assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf'), []);
+        assert.equal(core.extractABC(short), null);
+        return;
+    }
     assert.equal(core.extractABC(lines), '4834297.59');
     assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf').map(c => c.value), ['4834297.59']);
     // The shorter synthetic shape reads the same way.
-    const short = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
     assert.equal(core.extractABC(short), '4000000.59');
 });
 
 test('ABC words-shape: the cents guard never eats a real figure (N1a)', () => {
     // A labelled numeric ABC is untouched by the guard.
     const numeric = core.buildLinesFromText('Approved Budget for the Contract (ABC): Php 4,834,297.59');
-    assert.equal(core.extractABC(numeric), '4834297.59');
-    // Round cents in words still read.
     const round = core.buildLinesFromText('approved budget for the contract of TWO MILLION PESOS & 00/100');
-    assert.equal(core.extractABC(round), '2000000.00');
-    // The guard itself: digits ONLY inside an NN/100 marker are not an amount.
+    assert.equal(core.extractABC(numeric), BLIND ? null : '4834297.59');
+    assert.equal(core.extractABC(round), BLIND ? null : '2000000.00');
+    // The guard itself is PURE and the switch does not touch it: digits ONLY inside an
+    // NN/100 marker are not an amount, blinded or not.
     assert.equal(core.isCentsFractionOnly('PESOS & 59/100'), true);
     assert.equal(core.isCentsFractionOnly('Php 4,834,297.59'), false);
     assert.equal(core.isCentsFractionOnly('4,000,000.00 & 59/100'), false);
@@ -843,7 +868,9 @@ test('L3: hardcoded ABC beats learned label regardless of line order', () => {
     // Learned-labeled line FIRST proves priority is structural, not positional.
     const text = 'Estimated Project Outlay: Php 9,999,999.99\nABC: Php 4,834,297.59';
     const learned = { labels: { abc: ['Estimated Project Outlay'] } };
-    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+    // Blinded, the hardcoded rule has nothing to win WITH, so the learned label fills
+    // instead — which IS the demonstration the switch exists for.
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, BLIND ? '9999999.99' : '4834297.59');
 });
 
 test('L3: learned title value-keyword fills when hardcoded phrases miss', () => {
