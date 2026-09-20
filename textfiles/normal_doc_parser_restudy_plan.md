@@ -150,6 +150,13 @@
 #         now SWITCH-AWARE: L3_TEST_BLIND_ABC is exported and the six affected tests
 #         assert whichever behaviour is configured. 250/250/0 with it ON *and* OFF — the
 #         "2 intended failures is green" convention is retired for good.
+#         ⭐ LOOP RETEST 2026-09-20 (§27): the scan DID teach — two ABC labels mined and
+#         stored, because the ABC is NUMERIC and numeric anchoring survives OCR spacing
+#         damage, exactly as §25.2 predicted. ⚠ TWO DEFECTS FOUND: approving one label
+#         gives 4,834,297.00 and the other 4,834,297.59 (§27.2, needs the raw read text);
+#         and P-3 SILENTLY BROKE THE AI PAGE PICKER — it ranks "pages that yielded
+#         nothing" first, and now nothing yields nothing, so it always sends pages 1-2
+#         (§27.3). AGENTS.md future-queue item 8 is no longer optional.
 #         Stage 3 (EXTRACTION) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -3157,6 +3164,102 @@
       ⚠ AND A CAUTION ABOUT THE RESTUDY ITSELF: every finding above is from SOURCE, not
       from a run. §11 and §15 of this file are both records of a confident reading being
       refuted by the first measurement. Treat 26.1-26.7 as well-founded predictions.
+===============================================================================
+  27. THE LOOP RETEST ON THE SCANNED FILE, AND WHAT IT TURNED UP
+      (user, 2026-09-20, blinding ON, pdfdocstest5.pdf)
+===============================================================================
+
+  27.1 WHAT THE SCAN ACTUALLY TAUGHT — §25.2's PREDICTION HELD
+
+      The loop mined TWO label candidates for the ABC and stored both. Verified in the
+      live DB (parser_keyword_proposals), not from the screen:
+        #82  abc  occ=1  proposed  AI-assisted  'Approved Budget for the Contract; PB'
+        #83  abc  occ=1  proposed  AI-assisted  '| TOTAL ESTIMATED PROJECT COST P'
+      ⇒ WHY IT ANCHORED ON A SCAN, WHICH §25.2 SAID WOULD USUALLY FAIL: the ABC is a
+        NUMERIC field, and numeric anchoring compares DIGIT RUNS with separators
+        stripped. The OCR line reads "P 4,834, 297.59" — mangled spacing, correct digits
+        — so the typed value still matched. That is exactly the exception §25.2 named:
+        "tolerant of punctuation damage, NOT of digit damage."
+      ⇒ ZERO NULL-LABEL ROWS. L-2 (§26.2) did NOT materialise here. It is UNOBSERVED
+        RATHER THAN REFUTED: only the ABC box was corrected in this run, and it anchored,
+        so nothing could have produced a null row. The prediction still stands for a text
+        field on a scan; it has simply not been exercised yet.
+      ⚠ BOTH ROWS ARE source = 'AI-assisted', NOT 'correction'. What the loop harvested
+        was the AI's answer being KEPT, not a human typing a value. That is the designed
+        AI-4 behaviour ("learn everything, tag the origin") and the desk shows the badge
+        — but it means that on this file THE LOOP IS CURRENTLY LEARNING FROM THE MODEL,
+        not from the reviewer. Worth knowing before the desk's contents are read as
+        human judgement.
+
+  27.2 ⚠ THE REAL DEFECT THE RETEST FOUND — TWO LABELS, TWO DIFFERENT ANSWERS
+
+      Approving '| TOTAL ESTIMATED PROJECT COST P'  -> ABC reads 4,834,297.59  (correct)
+      Approving 'Approved Budget for the Contract; PB' -> ABC reads 4,834,297.00 (WRONG)
+      The user's read is that this label is what produces the competing .00 value that
+      the pick-one control has been offering all along. That is a good hypothesis and it
+      fits: the preview showed BOTH .00 and .59 as candidates before any learning.
+      WHAT I COULD REPRODUCE, and it is not yet the answer:
+        'Approved Budget for the Contract; PB 4,834,297.59'  -> 4834297.59  correct
+        'Approved Budget for the Contract; PB 4,834, 297.59' -> 4834297.59  correct
+          (glueMoneyFragments handles the split figure, so the OCR spacing is NOT it)
+        'Approved Budget for the Contract; PB P 4,834, 297.59' -> null
+          (a peso marker BETWEEN the label and the figure defeats it)
+      None of those produces .00, so the line that does is a line I have not seen.
+      ⬜ OWED, AND IT IS ONE BUTTON: the preview carries "Copy read text". With the raw
+      OCR text in hand, every line containing 4,834,297 can be checked and the one that
+      yields .00 identified. Guessing at the shape has already cost three wrong synthetic
+      lines above; this file's own §8 records what that habit costs.
+
+  27.3 ⭐ P-3 SILENTLY BROKE THE AI PAGE PICKER — A SIDE EFFECT NOBODY PREDICTED
+
+      The user noticed AI assist "seems to default to page 1 and 2". It does, and the
+      reason is P-3's success.
+      ocrAiCandidates() (document-parser.js:1543) orders candidates as:
+        pages that yielded NOTHING first, then pages that were read
+      Before P-3, seven of ten pages yielded nothing, so that ordering carried real
+      signal — it sent the pages the reader had failed on. AFTER P-3 EVERY PAGE YIELDS
+      TEXT, so the "yielded nothing" list is EMPTY, `ordered` collapses to plain document
+      order, and with AI_SLICE_PAGES = 2 (:475) the picker sends PAGES 1 AND 2, every
+      time, on every file.
+      ⇒ THE RANKING NOW HAS ZERO SIGNAL. It is not choosing the weakest pages; it is
+        choosing the first two and calling it a ranking.
+      ⇒ THIS IS AGENTS.md's FUTURE-QUEUE ITEM 8 — "rank by LEAST USABLE text rather than
+        NO text ... the per-page char-count and soupiness ledger already exists and the
+        ranking ignores it" — which was filed as optional polish. IT IS NO LONGER
+        OPTIONAL. The condition that made it a nicety (some pages yield nothing) is the
+        condition P-3 removed.
+      ⇒ THE FIX IS CHEAP BECAUSE THE DATA IS ALREADY THERE: every scan report carries
+        pageChars and soupyPages. Ordering by ascending usable characters, soupy pages
+        first, restores the signal without new plumbing.
+
+  27.4 ⚠ AND A CAUTION ABOUT THE GOOD RESULT
+
+      The AI filled the (blinded) ABC correctly from pages 1 and 2, which the user says
+      do not contain the ABC — it is on pages 5, 7 and 8.
+      ONLY IMAGES ARE SENT. postAiSlices posts body { images: slices } and nothing else
+      (:1986) — no OCR text, no extracted values. So if the ABC truly is not on the two
+      pages sent, THE MODEL DID NOT READ IT.
+      A value that is right by luck is indistinguishable, from the outside, from one that
+      is wrong by luck, and the banner itself said "Answered by backup model — verify
+      carefully". Before this is taken as evidence that AI assist works well on
+      normal-doc scans, it is worth confirming whether the ABC appears on page 1 or 2 at
+      all. If it does not, the outcome is a warning wearing the costume of a success.
+
+  27.5 THE USER'S PROPOSAL — LET THE REVIEWER CHOOSE HOW MANY PAGES GO
+
+      Raised by the user in the same message, and it is a good idea that COMPOSES with
+      27.3 rather than replacing it: a better ranking decides WHICH pages go, a depth
+      control decides HOW MANY.
+      THERE IS ALREADY PRECEDENT IN THE SAME PANEL: "Read depth (≈2s per page)" with a
+      10/25/40/50 selector drives the OCR budget. An "AI pages" selector beside it would
+      be the same control shape in the same place, which is the cheapest kind of new UI.
+      WHAT IT COSTS, and it must be said before it is built: pages go as IMAGES, so
+      each page is tokens, latency and quota against a tier the pilot cannot rely on. The
+      50-second ladder budget does not grow because the reviewer asked for ten pages.
+      A sensible shape: keep 2 as the default, offer 2 / 5 / all, and warn on the larger
+      settings rather than forbidding them.
+      NOT ORDERED. 27.3 should land first — sending MORE of the wrong pages is not an
+      improvement, and fixing the ranking may well make 2 pages enough.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
