@@ -1895,12 +1895,41 @@ const DocumentParserCore = (function () {
             duration: asDays,
             contractor: lenRange(3, 150),
         };
+        // L-8 (2026-09-20) — A PRIMARY KEY IS NOT A TIE-BREAK.
+        // This used to hand findLabeledValue the whole phrase list at once, and that
+        // returns the FIRST match. The list arrives in row order, so when a field had
+        // two approved phrases the winner was decided by insertion id. On the real
+        // document that meant the phrase reading a DAMAGED line won over the one
+        // reading a clean one: page 1's OCR says "4,834,297 5g" (the ".59" read as
+        // " 5g"), so that label yields 4,834,297.00 while the other yields .59, and
+        // approving both made the wrong one win because it was stored first.
+        // THE HARDCODED TRACK NEVER WORKED THIS WAY. It pools every find and hands a
+        // genuine disagreement to the reviewer through the pick-one control. The
+        // learned track now does the same: ask each phrase separately, keep the
+        // distinct values, and when two disagree say so rather than silently choosing.
+        // The first value is still returned, so a field with one phrase is unchanged.
+        const learnedDisagree = {};
         const tryLearnedLabel = (field) => {
             const patterns = learnedPatterns(field);
             if (!patterns.length) return null;
             const norm = learnedNormalizers[field];
             if (!norm) return null;
-            return findLabeledValue(lines, patterns, norm);
+            const seen = [];
+            for (const pat of patterns) {
+                const v = findLabeledValue(lines, [pat], norm);
+                if (v === null || v === undefined || v === '') continue;
+                if (seen.indexOf(v) === -1) seen.push(v);
+            }
+            if (!seen.length) return null;
+            if (seen.length > 1) {
+                // Same shape the pooled track produces, so the existing pick-one note
+                // renders it without knowing where it came from.
+                learnedDisagree[field] = {
+                    winner: { value: seen[0], count: 1, files: [] },
+                    runnerUp: { value: seen[1], count: 1, files: [] },
+                };
+            }
+            return seen[0];
         };
         // Label-based extraction
         // B-3: the title keeps its own colons — "Phase 2: Completion" is a real title —
@@ -1978,6 +2007,9 @@ const DocumentParserCore = (function () {
         const totalFields = 11;
         const confidence = Math.round(((labelHits + valueKeywordHits * 0.6) / totalFields) * 100);
         parsed._confidence = Math.min(100, confidence);
+        // L-8: only present when two approved phrases for one field disagreed. The
+        // wrapper merges it into the same channel the pooled disagreement uses.
+        if (Object.keys(learnedDisagree).length) parsed._learnedDisagree = learnedDisagree;
         parsed._valueKeywordHits = valueKeywordHits;
         parsed._labelHits = labelHits;
 

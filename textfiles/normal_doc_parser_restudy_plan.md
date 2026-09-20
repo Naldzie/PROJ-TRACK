@@ -3523,5 +3523,73 @@
       be checked with the blinding OFF.
 
 ===============================================================================
+  31. L-8 FIXED, AND REJECTION BECOMES A VERDICT (2026-09-20, ordered)
+      Branch phase-27-ai-assist-targeting.
+===============================================================================
+
+  31.1 L-8 — A PRIMARY KEY IS NOT A TIE-BREAK
+
+      tryLearnedLabel handed findLabeledValue the whole phrase list at once, and that
+      returns the FIRST match. The list arrives in row order, so a field with two
+      approved phrases had its winner chosen by insertion id. On the real document the
+      phrase reading page 1's damaged line ("4,834,297 5g", the ".59" read as " 5g")
+      beat the one reading page 7 cleanly, and the ABC came back .00.
+      THE USER PUT IT EXACTLY RIGHT: this is how the HARDCODED track already works — it
+      pools every find and hands a real disagreement to the reviewer — so the learned
+      track should work that way too.
+      NOW: each phrase is asked SEPARATELY, distinct values are kept, and when two
+      disagree the pair is published in the SAME shape the pooled track uses, so the
+      existing pick-one note renders it without knowing where it came from. The first
+      value is still returned, so a field with one phrase is byte-identical to before.
+      MEASURED on the two real labels against the two real lines:
+        both phrases -> abc 4834297.00, disagreement { winner .00, runnerUp .59 }
+        one phrase   -> abc 4834297.59, no disagreement
+      ⚠ THE WINNER IS STILL THE DAMAGED ONE, and that is deliberate. The parser has no
+      way to know which OCR line is the honest one, and inventing a preference would be
+      guessing dressed as logic. What changed is that it no longer decides SILENTLY —
+      the reviewer sees both and picks, which is the mechanism this app already trusts
+      everywhere else.
+      The wrapper merges the two channels with the POOLED verdict winning where both
+      exist: it has counts and files behind it, where the learned one knows only that
+      two approved phrases read differently.
+
+  31.2 REJECTION IS NOW RECORDED, NOT DELETED
+
+      ⚠ A CORRECTION FIRST: I told the user the reject button was "not implemented".
+      It IS — the desk has had one all along. What it did was SOFT-DELETE.
+      That is the part worth fixing, and §28.1 had already shown the cost from the other
+      end: a deleted row is invisible to the ordinary query, so collect() could not see
+      that a phrase had been refused, and the same wording could be re-proposed,
+      re-judged and re-deleted forever with no memory of the decision. It also misled my
+      own reading of that table — a query without withTrashed() concluded the loop had
+      never learned from a human, because the human's rows had been deleted.
+      NOW: destroy() sets status='rejected' and KEEPS the row; the listing accepts the
+      new status; the desk has a Rejected tab and a grey badge; and collect() still
+      increments the count — "this wording has now been seen eleven times" is exactly
+      what would justify revisiting a refusal — but NEVER lets a rejected row climb back
+      to proposed or live. Three more sightings is not a rebuttal to a reviewer.
+      Verified against the live database: rejected, visible WITHOUT withTrashed,
+      occurrences still rising, status unchanged after three further collects.
+
+  31.3 VERIFICATION
+
+      JS 252/252/0 · PHP 1231 passed / 0 failed / 4598 assertions · both PHP files lint.
+      The existing reject test asserted the OLD contract (assertSoftDeleted) and was
+      rewritten to the new one: the row survives with status='rejected', is NOT
+      soft-deleted, and three further collect() calls leave the status alone while the
+      occurrence count keeps rising. A behaviour change should move its test, not be
+      shaped around it.
+
+  31.4 ⬜ WHAT IS OWED
+
+      Both are DOM paths. ⚠ AND THE FIRST NEEDS THE BLINDING OFF: while it is ON the
+      pooled ABC track sleeps (§28.4), which is fine for testing the learned
+      disagreement on its own but means the MERGE of the two channels cannot be
+      exercised.
+        · approve BOTH ABC phrases again and confirm the amber "I found two different
+          values" note now appears with .00 and .59, and that picking .59 fills it;
+        · reject a proposal and confirm it moves to the Rejected tab rather than
+          vanishing, and that re-uploading the same document does not resurrect it.
+===============================================================================
   END OF RESTUDY
 ===============================================================================

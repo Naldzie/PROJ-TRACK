@@ -25,6 +25,9 @@
                         <button class="nav-link btn-sm" data-pkp-filter="live" onclick="pkpSetFilter('live')">Live</button>
                     </li>
                     <li class="nav-item">
+                        <button class="nav-link btn-sm" data-pkp-filter="rejected" onclick="pkpSetFilter('rejected')">Rejected</button>
+                    </li>
+                    <li class="nav-item">
                         <button class="nav-link btn-sm" data-pkp-filter="all" onclick="pkpSetFilter('all')">All</button>
                     </li>
                 </ul>
@@ -149,7 +152,10 @@ async function loadParserKeywordsForManagement() {
         rows.forEach((row) => {
             const badge = row.status === 'live'
                 ? '<span class="badge bg-success">Live</span>'
-                : '<span class="badge bg-warning text-dark">Proposed</span>';
+                : (row.status === 'rejected'
+                    // A rejection is a decision on the record, not an absence.
+                    ? '<span class="badge bg-secondary">Rejected</span>'
+                    : '<span class="badge bg-warning text-dark">Proposed</span>');
             // AI-4 origin badge: AI-assisted rows carry AI-taught wording (Decision A3).
             const origin = row.source === 'AI-assisted'
                 ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'

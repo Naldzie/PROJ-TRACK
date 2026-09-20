@@ -181,7 +181,22 @@ class ParserKeywordProposalTest extends TestCase
         $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$row->id}")
             ->assertOk()->assertJson(['success' => true]);
 
-        $this->assertSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+        // 2026-09-20: rejecting RECORDS A VERDICT, it does not delete the row. A
+        // soft-deleted row is invisible to the ordinary query, so collect() could not
+        // see that a phrase had already been refused and the same bad wording was
+        // re-proposed and re-judged forever with no memory of the decision.
+        $this->assertDatabaseHas('parser_keyword_proposals', ['id' => $row->id, 'status' => 'rejected']);
+        $this->assertNotSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+
+        // And the verdict holds: three more sightings must NOT promote it back.
+        for ($i = 0; $i < 3; $i++) {
+            $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+                'proposals' => [['field' => 'budget', 'label' => 'Bad Label']],
+            ])->assertSuccessful();
+        }
+        $after = $row->fresh();
+        $this->assertSame('rejected', $after->status, 'a rejected phrase must never climb back to live');
+        $this->assertGreaterThan(1, $after->occurrences, 'the count is still evidence and should keep rising');
     }
 
     // Contractors get nothing on review routes either (redirect by role middleware).

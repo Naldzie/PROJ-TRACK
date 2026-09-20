@@ -72,7 +72,16 @@ class ParserKeywordProposalController extends Controller
 
             $row = $query->first();
             if ($row) {
+                // The count is evidence and is always worth keeping — "this wording has
+                // now been seen eleven times" is exactly what would justify revisiting a
+                // refusal. But a REJECTED phrase must never climb back to proposed or
+                // live on its own: a reviewer decided, and three more sightings is not a
+                // rebuttal. Only the desk can undo a rejection.
                 $row->increment('occurrences');
+                if ($row->status === 'rejected') {
+                    $stored++;
+                    continue;
+                }
                 if ($row->occurrences >= 3 && $row->status === 'proposed') {
                     $row->update(['status' => 'live']);
                 }
@@ -113,7 +122,7 @@ class ParserKeywordProposalController extends Controller
         $this->ensureReviewer();
 
         $query = ParserKeywordProposal::orderByDesc('occurrences')->orderBy('field');
-        if (in_array($request->query('status'), ['proposed', 'live'], true)) {
+        if (in_array($request->query('status'), ['proposed', 'live', 'rejected'], true)) {
             $query->where('status', $request->query('status'));
         }
 
@@ -153,14 +162,24 @@ class ParserKeywordProposalController extends Controller
     }
 
     /**
-     * Reject a proposal: soft-delete it (recoverable via restore, keeps history).
+     * Reject a proposal.
+     *
+     * 2026-09-20: this used to SOFT-DELETE, and that quietly cost us the judgement.
+     * A deleted row is invisible to the ordinary query, so collect() could not see that
+     * a phrase had already been refused — the same bad wording was re-proposed,
+     * re-reviewed and re-deleted with no memory that anyone had ever decided. (It also
+     * misled a reading of this very table: a check that omitted withTrashed() concluded
+     * the loop had never learned from a human, because the human's rows were deleted.)
+     * It now records status='rejected' and KEEPS the row, so the decision survives and
+     * collect() can honour it. Deletion remains available in the desk for genuine
+     * housekeeping; refusal is no longer spelled the same way.
      */
     public function destroy(ParserKeywordProposal $proposal)
     {
         $this->ensureReviewer();
 
         $label = $proposal->label_phrase;
-        $proposal->delete();
+        $proposal->update(['status' => 'rejected']);
 
         $this->logActivity('Reject Parser Keyword', "Rejected parser keyword '{$label}' for field {$proposal->field}");
 

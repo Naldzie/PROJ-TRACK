@@ -350,7 +350,19 @@ async function runDocumentAutofill() {
 
         // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote.
         // Stored for the preview modal to render amber pick-one notes. Silent when clear.
-        window._autofillDisagree = pooledDisagreeInfo;
+        // L-8: a learned-label disagreement reaches the SAME pick-one note as a pooled
+        // one. The pooled verdict wins where both exist — it has counts and files behind
+        // it, where the learned one only knows that two approved phrases read differently.
+        // This is what stops an insertion id deciding the ABC silently (restudy §31).
+        try {
+            const learnedD = (parsed && parsed._learnedDisagree) ? parsed._learnedDisagree : null;
+            if (learnedD) {
+                const merged = Object.assign({}, learnedD, pooledDisagreeInfo || {});
+                window._autofillDisagree = merged;
+            } else {
+                window._autofillDisagree = pooledDisagreeInfo;
+            }
+        } catch (e) { window._autofillDisagree = pooledDisagreeInfo; }
 
         // AI-3 opt-in trigger (Tier 3, very last): offer only when the local pipeline admits
         // weakness (few fills, low confidence, unresolved disagree). Silent on clean runs —
