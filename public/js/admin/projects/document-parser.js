@@ -291,7 +291,9 @@ async function runDocumentAutofill() {
             const core = getCore();
             if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
                 const pooledDocs = perFileData.map(e => ({ text: e.text, fileName: e.fileName }));
-                const pooled = core.parseProjectInfoPooled(pooledDocs) || {};
+                // L-9: the pool now consults the SAME learned vocabulary the single
+                // parse does, so a taught label votes instead of living on a side track.
+                const pooled = core.parseProjectInfoPooled(pooledDocs, { learned: learnedKeywords }) || {};
                 // Override only fields the pool resolved (budget/abc/duration/dates);
                 // keep voted title/contractor/location/etc. from per-file vote.
                 for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {

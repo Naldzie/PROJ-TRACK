@@ -1151,3 +1151,57 @@ test('the contractor reads clean through parseProjectInfo with no label at all',
     ].join('\n');
     assert.equal(core.parseProjectInfo({ text }).contractor, 'SKYSCRAPER CONSTRUCTION & ENGINEERING');
 });
+
+// ─── Learned labels are pool members (L-9) ──────────────────────────────────
+// They vote, they corroborate, they can disagree — and they can NEVER outrank a
+// hardcoded find. The guarantee is enforced in the sort rather than by weight,
+// because weights accumulate: enough learned finds would eventually outvote a
+// hardcoded one, and "enough" is not a policy anybody chose.
+
+const TAUGHT_DURATION = { learned: { labels: { duration: ['MY TAUGHT LABEL'] } } };
+
+test('a learned label votes and appears in the inspector with its phrase', () => {
+    const text = 'Approved Budget for the Contract; PB 4,834,297 5g\n| TOTAL ESTIMATED PROJECT COST P 4,834, 297.59';
+    const learned = { learned: { labels: { abc: ['Approved Budget for the Contract; PB', '| TOTAL ESTIMATED PROJECT COST P'] } } };
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }], learned);
+    const rows = p._debug.abc;
+    assert.equal(rows.length, 2, 'both taught phrases should have voted');
+    // The phrase travels with the row, so the inspector can say which wording found what.
+    assert.ok(rows.every(r => r.patterns.some(x => x.startsWith('learned:'))));
+    assert.ok(rows.some(r => r.patterns.includes('learned:approved budget for the contract')));
+    // And two taught phrases disagreeing is handled by the ORDINARY pooled adjudicator.
+    assert.ok(p._disagree.abc, 'the pool itself should report the disagreement');
+    assert.equal(p._disagree.abc.winner.value, '4834297.00');
+    assert.equal(p._disagree.abc.runnerUp.value, '4834297.59');
+});
+
+test('a learned-only value never outranks a hardcoded one, whatever the score', () => {
+    // Five files carrying the taught label against ONE hardcoded find. The learned
+    // value wins on raw score (2.55 vs 0.85) and must still lose.
+    const docs = [{ text: 'Contract Duration: 185 calendar days', fileName: 'real.pdf' }];
+    for (let i = 0; i < 5; i++) docs.push({ text: 'MY TAUGHT LABEL: 777', fileName: `bulk${i}.pdf` });
+    const p = core.parseProjectInfoPooled(docs, TAUGHT_DURATION);
+    const learnedRow = p._debug.duration.find(r => r.value === '777');
+    const hardRow = p._debug.duration.find(r => r.value === '185');
+    assert.ok(learnedRow.score > hardRow.score, 'the fixture must actually out-score it, or this proves nothing');
+    assert.equal(p.duration, '185', 'hardcoded support wins regardless of accumulated learned score');
+});
+
+test('a learned label agreeing with a hardcoded rule shows as corroboration', () => {
+    const p = core.parseProjectInfoPooled(
+        [{ text: 'Contract Duration: 185 calendar days\nMY TAUGHT LABEL: 185', fileName: 'x.pdf' }],
+        TAUGHT_DURATION);
+    const rows = p._debug.duration;
+    assert.equal(rows.length, 1, 'the same value from two sources is ONE row, not two');
+    assert.equal(rows[0].count, 2);
+    assert.ok(rows[0].patterns.includes('labeled'));
+    assert.ok(rows[0].patterns.some(x => x.startsWith('learned:')));
+});
+
+test('no learned vocabulary leaves the pool exactly as it was', () => {
+    const docs = [{ text: 'Contract Duration: 185 calendar days', fileName: 'a.pdf' }];
+    const withNone = core.parseProjectInfoPooled(docs);
+    const withEmpty = core.parseProjectInfoPooled(docs, { learned: { labels: {} } });
+    assert.deepEqual(withEmpty._debug.duration, withNone._debug.duration);
+    assert.equal(withNone.duration, '185');
+});

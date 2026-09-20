@@ -1320,6 +1320,29 @@ const DocumentParserCore = (function () {
     // Weight for a candidate from its nearby lines (Step 1e-5).
     // Contract summary = 1.0, neutral = 0.85, supporting section = 0.6.
     // Called by: collectFieldCandidates() for every candidate.
+    // L-9 (2026-09-20): hoisted out of parseProjectInfo so the POOLED path can build
+    // the same patterns and apply the same normalizers. Defined ONCE on purpose — two
+    // copies of a normalizer table is exactly the kind of thing that drifts silently
+    // and then disagrees with itself about what a learned label means.
+    // Called by: parseProjectInfo() and parseProjectInfoPooled().
+    const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
+    function learnedLabelPattern(ph) {
+        return new RegExp('^\\s*(?:' + String(ph).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=[:\\-\\d]|$|\\s+\\d)\\s*[:\\-]?\\s*(.*)', 'i');
+    }
+    const LEARNED_NORMALIZERS = {
+        title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
+        location: (v) => lenRange(3, 200)(stripEdgeDebris(cutAtEmbeddedLabel(v))),
+        budget: asBudget,
+        abc: asMoney,
+        budgetSource: asSourceName,
+        category: asCategoryName,
+        startDate: asDate,
+        endDate: asDate,
+        duration: asDays,
+        contractor: (v) => asCompanyName(stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(v || '')))),
+    };
+    const learnedNormalizerFor = (field) => LEARNED_NORMALIZERS[field] || null;
+
     function getSectionWeight(contextText) {
         const s = String(contextText || '');
         const isContract = /contract\s*amount|contract\s*time|effectivity|original\s*contract|revised\s*contract/i.test(s);
@@ -1631,7 +1654,14 @@ const DocumentParserCore = (function () {
         for (const [norm, g] of groups.entries()) {
             rows.push({ value: g.original, norm, count: g.count, score: Math.round(g.score * 100) / 100, labeledCount: g.labeledCount, files: [...g.files], patterns: [...g.patterns], excerpts: g.excerpts });
         }
-        rows.sort((a, b) => b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
+        // L-9: A LEARNED-ONLY VALUE NEVER OUTRANKS ONE WITH HARDCODED SUPPORT.
+        // Enforced here rather than by weight, because weights accumulate: enough
+        // learned finds would eventually outvote a hardcoded one, and "enough" is not a
+        // policy anyone chose. A row counts as hardcoded-backed if ANY of its patterns
+        // is not a learned one, so corroboration between the two lifts the row into the
+        // trusted group rather than dragging it down.
+        const backed = (r) => (r.patterns || []).some(p => String(p).indexOf('learned:') !== 0) ? 1 : 0;
+        rows.sort((a, b) => backed(b) - backed(a) || b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
         return { winner: rows.length ? rows[0].value : null, rows };
     }
 
@@ -1804,8 +1834,56 @@ const DocumentParserCore = (function () {
     // ONE pile per field and votes. Returns { budget, abc, duration, startDate, endDate }.
     // Per-file single values (parseProjectInfo) are still used for the WARNING track.
     // Called by: document-parser.js runDocumentAutofill() when available.
-    function parseProjectInfoPooled(docs) {
+    // L-9 (2026-09-20) — LEARNED LABELS JOIN THE POOL.
+    // Until now a learned label lived on a separate track: it could fill a field the
+    // hardcoded rules missed, but it never entered the vote, so it had no count, no
+    // files, no excerpt in the inspector, and two learned phrases disagreeing had to be
+    // adjudicated by a second mechanism bolted alongside (§31, §32).
+    // Now they are collected as ordinary candidates, which buys three things:
+    //   · CORROBORATION BECOMES VISIBLE — a learned phrase and a hardcoded rule landing
+    //     on the same value now show as one row carrying both patterns, which nobody
+    //     could see before;
+    //   · a learned find appears in the vote inspector, with the phrase that found it;
+    //   · two learned phrases that disagree are handled by the SAME pooledDisagree that
+    //     handles everything else, so there is one adjudicator instead of two.
+    // ⚠ AND THEY CAN NEVER OUTRANK A HARDCODED FIND. That guarantee is enforced in the
+    // SORT (see voteCandidatePoolDebug), not by the weight — weights accumulate, so
+    // enough learned finds would eventually outvote a hardcoded one, and "enough" is
+    // not a policy anybody chose. L3's documented rule is that learned vocabulary is
+    // the lowest-priority fallback; this keeps that exactly while ending the split.
+    // Called by: parseProjectInfoPooled().
+    function collectLearnedCandidates(lines, fileName, field, taught, norm) {
+        const out = [];
+        if (!taught || !taught.length || !norm) return out;
+        const rows = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const excerptOf = (i) => [rows[i - 1] || '', rows[i] || '', rows[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 180);
+        for (const t of taught) {
+            for (let i = 0; i < rows.length; i++) {
+                const m = rows[i].match(t.pattern);
+                if (!m) continue;
+                const v = norm(cleanValue(m[1] || ''));
+                if (v === null || v === undefined || v === '') continue;
+                // The phrase travels with the row so the inspector can say WHICH taught
+                // wording produced which value — the whole point of the .00/.59 case.
+                const src = String(t.phrase || '').slice(0, 32);
+                out.push({
+                    value: v,
+                    labeled: true,
+                    weight: getSectionWeight(excerptOf(i)) * 0.6,
+                    fileName,
+                    pattern: 'learned:' + src,
+                    excerpt: excerptOf(i),
+                });
+                break; // one find per phrase per file — a phrase is not evidence twice
+            }
+        }
+        return out;
+    }
+
+    function parseProjectInfoPooled(docs, opts) {
         const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [] };
+        // L-9: the same learned vocabulary the single parse consults, as pool candidates.
+        const pooledLearnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
         for (const d of (docs || [])) {
             const lines = d.lines || buildLinesFromText(d.text || '');
             const fn = d.fileName || d.name || '';
@@ -1814,6 +1892,14 @@ const DocumentParserCore = (function () {
             pile.duration.push(...collectDurationCandidates(lines, fn));
             pile.startDate.push(...collectDateCandidates(lines, fn, 'start'));
             pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
+            // L-9: learned labels for the five POOLED fields only. The others keep the
+            // single-parse path — there is no pool for them to join.
+            for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
+                const phrases = normalizeKeywordList(pooledLearnedLabels[f]);
+                if (!phrases.length) continue;
+                const taught = phrases.map(ph => ({ phrase: ph, pattern: learnedLabelPattern(ph) }));
+                pile[f].push(...collectLearnedCandidates(lines, fn, f, taught, learnedNormalizerFor(f)));
+            }
         }
         // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
         // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
@@ -1879,22 +1965,15 @@ const DocumentParserCore = (function () {
         // the full line intact. The lookahead also blocks prefix collisions (ABC vs ABCs).
         // An empty capture means label-alone → next-line fallback in findLabeledValue.
         // Mid-line labels stay unsupported by design.
-        const learnedPatterns = (field) => learnedFor(field).map(ph =>
-            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=[:\\-\\d]|$|\\s+\\d)\\s*[:\\-]?\\s*(.*)', 'i'));
-        // Per-field normalizers for the learned-label pass (mirrors each hardcoded extractor).
-        const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
-        const learnedNormalizers = {
-            title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
-            location: lenRange(3, 200),
-            budget: asBudget,
-            abc: asMoney,
-            budgetSource: lenRange(2, 100),
-            category: lenRange(3, 50),
-            startDate: asDate,
-            endDate: asDate,
-            duration: asDays,
-            contractor: lenRange(3, 150),
-        };
+        // L-9: one definition, shared with the pooled path (see learnedLabelPattern).
+        const learnedPatterns = (field) => learnedFor(field).map(learnedLabelPattern);
+        // L-9: the per-field normalizers now live at module level as
+        // LEARNED_NORMALIZERS so the pooled path applies exactly the same rules.
+        // ⚠ THIS ALSO FIXES A DRIFT NOBODY HAD NOTICED: the local copy still used the
+        // OLD length-only validators for budgetSource, category, location and
+        // contractor, so a LEARNED label bypassed every shape guard the B-queue added.
+        // A taught phrase could still fill the budget source with "Accor, Fost =".
+        const learnedNormalizers = LEARNED_NORMALIZERS;
         // L-8 (2026-09-20) — A PRIMARY KEY IS NOT A TIE-BREAK.
         // This used to hand findLabeledValue the whole phrase list at once, and that
         // returns the FIRST match. The list arrives in row order, so when a field had

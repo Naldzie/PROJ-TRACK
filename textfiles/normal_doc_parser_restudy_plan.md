@@ -3658,5 +3658,87 @@
       documented precedence while ending the two-mechanism split — and it is the only
       version of this I would recommend.
 ===============================================================================
+  33. L-9 — LEARNED LABELS ARE POOL MEMBERS NOW (2026-09-20, ordered)
+      The user's summary of the proposal was exact: "able to disagree and in the
+      pool but do not outrank hardcoded keywords". That is what shipped.
+===============================================================================
+
+  33.1 WHAT CHANGED
+
+      collectLearnedCandidates() produces ordinary candidate rows — value, labeled,
+      weight, fileName, pattern, excerpt — for the five POOLED fields, and
+      parseProjectInfoPooled now takes the same opts.learned the single parse consults.
+      THREE THINGS THIS BUYS, none of which existed before:
+        · CORROBORATION IS VISIBLE. A taught phrase and a hardcoded rule landing on the
+          same value now group into ONE row carrying both patterns, count 2. That fact
+          was previously unrecorded anywhere.
+        · A learned find appears in the vote inspector WITH THE PHRASE THAT FOUND IT
+          ("learned:approved budget for the contract"), which is exactly what was needed
+          to see why .00 beat .59 and could not be seen at all before.
+        · Two taught phrases that disagree are adjudicated by the ORDINARY pooledDisagree.
+          One mechanism instead of the two §31/§32 had to bolt together.
+
+  33.2 ⚠ THE GUARANTEE, AND WHY IT IS IN THE SORT RATHER THAN THE WEIGHT
+
+      L3's documented rule is that learned vocabulary is the LOWEST-PRIORITY fallback:
+      "every hardcoded rule runs first, so an empty table reproduces today's behaviour
+      exactly". Pool membership could have broken the second half of that.
+      A LOW WEIGHT WOULD NOT HAVE HELD IT. Scores accumulate by count, so enough learned
+      finds would eventually outvote a hardcoded one — and "enough" is not a policy
+      anybody chose. The rule is therefore enforced in voteCandidatePoolDebug's SORT: a
+      row counts as hardcoded-backed if ANY of its patterns is not a learned one, and
+      backed rows sort above unbacked ones before score is consulted at all.
+      MEASURED, with the fixture deliberately rigged against the guarantee: FIVE files
+      carrying a taught label (count 5, score 2.55) against ONE hardcoded find (count 1,
+      score 0.85). The hardcoded value still wins. The test asserts the learned row
+      really does out-score it first, because otherwise it would prove nothing.
+      NOTE THE DELIBERATE ASYMMETRY: corroboration LIFTS a row into the trusted group
+      rather than dragging it down — a value found by both a hardcoded rule and a taught
+      phrase is backed, not diluted.
+
+  33.3 ⭐ AND IT FIXED A DRIFT NOBODY HAD NOTICED
+
+      Hoisting the per-field normalizers to module level (so both paths share one
+      definition) exposed that the LOCAL copy inside parseProjectInfo still used the OLD
+      length-only validators:
+          budgetSource: lenRange(2, 100)    category: lenRange(3, 50)
+          location:     lenRange(3, 200)    contractor: lenRange(3, 150)
+      Those are precisely the validators B-1, B-1b, B-3, B-4 and B-5 replaced. So a
+      LEARNED label bypassed every shape guard the whole B-queue added — a taught phrase
+      could still have filled the budget source with "Accor, Fost =", and the contractor
+      with the untidied OCR line.
+      The shared table now uses asSourceName, asCategoryName, asCompanyName and the
+      tidying, so the learned path and the hardcoded path finally agree about what a
+      valid value looks like.
+      ⚠ THIS IS THE SAME CLASS OF DEFECT AS THE OTHER FOUR THIS SESSION: a fix applied
+      to one of two parallel paths, with nothing to notice the other. It was found by
+      REMOVING the duplication, not by testing.
+
+  33.4 VERIFICATION
+
+      JS 256/256/0 (four new tests) · PHP 1231 passed / 0 failed.
+      The four: a learned label votes and is named in the inspector; a learned-only
+      value never outranks a hardcoded one however it scores; agreement shows as ONE
+      corroborated row; and AN EMPTY LEARNED TABLE LEAVES THE POOL BYTE-IDENTICAL, which
+      is the guarantee L3's documentation actually promises.
+
+  33.5 HOW THIS SITS WITH §32
+
+      §32's mergeDisagreements is NOT redundant — it now covers the fields that have no
+      pool at all (title, location, budgetSource, category, contractor). For the five
+      pooled fields the pool resolves them, pooledResolvedFields marks them, and the
+      learned note is correctly dropped in favour of the pool's own. The two compose
+      rather than overlap.
+
+  33.6 ⬜ OWED
+
+      Browser, and it needs the BLINDING OFF so the hardcoded ABC collector is awake and
+      the corroboration/precedence paths are actually exercised:
+        · approve both ABC phrases and confirm the pick-one note appears from the POOL
+          this time, with .00 and .59, and that the vote inspector lists both learned
+          rows naming their phrases;
+        · confirm a field the hardcoded rules already fill is NOT changed by a taught
+          phrase pointing elsewhere.
+===============================================================================
   END OF RESTUDY
 ===============================================================================
