@@ -1239,3 +1239,44 @@ test('finds on DIFFERENT lines still corroborate normally', () => {
     assert.equal(row.count, 2, 'two files is two pieces of evidence');
     assert.equal(row.files.length, 2);
 });
+
+// ─── Is a taught phrase worth approving? (the desk indicator) ───────────────
+// The desk showed a reviewer the phrase and asked them to judge it, without
+// telling them whether a BUILT-IN rule already covers that wording. On the test
+// document one approved phrase restated a hardcoded rule and changed nothing while
+// the other found the only correct value — and they looked identical on screen.
+
+test('builtInCoversPhrase knows a built-in wording from a new one', () => {
+    // Wordings the hardcoded rules already have.
+    assert.equal(core.builtInCoversPhrase('duration', 'Contract Duration'), true);
+    assert.equal(core.builtInCoversPhrase('location', 'Project Location'), true);
+    assert.equal(core.builtInCoversPhrase('budgetSource', 'Source of Funds'), true);
+    assert.equal(core.builtInCoversPhrase('category', 'Type of Project'), true);
+    assert.equal(core.builtInCoversPhrase('startDate', 'Notice to Proceed'), true);
+    // Wordings nothing built in knows — these are the ones worth approving.
+    assert.equal(core.builtInCoversPhrase('duration', 'MY OWN TAUGHT WORDING'), false);
+    assert.equal(core.builtInCoversPhrase('location', 'Site Of The Works'), false);
+    assert.equal(core.builtInCoversPhrase('budgetSource', 'Charged Against'), false);
+    assert.equal(core.builtInCoversPhrase('category', 'Kind Of Undertaking'), false);
+});
+
+test('builtInCoversPhrase says "cannot tell" rather than guessing', () => {
+    // Title and contractor are found mainly by VALUE-side heuristics, so a probe line
+    // would be matched on its own wording rather than on the label.
+    assert.equal(core.builtInCoversPhrase('title', 'Project Name'), null);
+    assert.equal(core.builtInCoversPhrase('contractor', 'Awarded To'), null);
+    assert.equal(core.builtInCoversPhrase('budget', ''), null);
+    assert.equal(core.builtInCoversPhrase('notAField', 'anything'), null);
+    // While the ABC blinding is on its hardcoded rules are EMPTY, so every ABC phrase
+    // would look like a discovery. Null is the honest answer, and it tracks the switch.
+    assert.equal(core.builtInCoversPhrase('abc', 'Approved Budget for the Contract'),
+        core.L3_TEST_BLIND_ABC ? null : true);
+});
+
+test('a probe value that identifies itself yields "cannot tell", not a false positive', () => {
+    // "777 calendar days" is found by a built-in rule whatever label precedes it. The
+    // control run inside builtInCoversPhrase is what stops that reading as coverage —
+    // without it, every duration phrase looked already-covered.
+    assert.equal(core.builtInCoversPhrase('duration', 'Zqxj Control Label'), false);
+    assert.notEqual(core.builtInCoversPhrase('duration', 'MY OWN TAUGHT WORDING'), true);
+});

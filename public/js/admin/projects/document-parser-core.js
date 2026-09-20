@@ -1906,6 +1906,67 @@ const DocumentParserCore = (function () {
         return out;
     }
 
+    // ─── DOES A TAUGHT PHRASE ADD ANYTHING? (2026-09-20) ────────────────────────
+    // The approval desk shows a reviewer the phrase and asks them to judge it, without
+    // telling them the one thing that decides its worth: whether a BUILT-IN rule
+    // already covers that wording. §34.5b measured both kinds on one document —
+    // "Approved Budget for the Contract; PB" restates the hardcoded abc-line rule and
+    // changes nothing, while "| TOTAL ESTIMATED PROJECT COST P" is the phrase that
+    // found the correct value. They look identical on the desk.
+    //
+    // THE TEST USES THE REAL RULES RATHER THAN A DESCRIPTION OF THEM: build a line out
+    // of the phrase and a probe value, run the field's own hardcoded extractor over it,
+    // and see whether the built-in rules pull the probe back out. Nothing is duplicated,
+    // so nothing can drift — which is the mistake §33.3 had just finished cleaning up.
+    //
+    // Returns true (already covered), false (finds what no built-in rule does), or NULL
+    // meaning "cannot tell", which is a real answer and must not be dressed up as
+    // either of the others.
+    // Called by: the parser-keyword desk, via a lazy import.
+    const COVERAGE_PROBE = {
+        budget: { text: 'Php 1,234,567.89', expect: '1234567.89' },
+        abc: { text: 'Php 1,234,567.89', expect: '1234567.89' },
+        duration: { text: '777', expect: '777' },
+        startDate: { text: 'January 15, 2026', expect: '2026-01-15' },
+        endDate: { text: 'January 15, 2026', expect: '2026-01-15' },
+        location: { text: 'ZZ Probe Location Site', expect: 'ZZ Probe Location Site' },
+        budgetSource: { text: 'ZZProbeSource', expect: 'ZZProbeSource' },
+        category: { text: 'ZZ Probe Category', expect: 'ZZ Probe Category' },
+    };
+    function builtInCoversPhrase(field, phrase) {
+        const ph = String(phrase || '').trim();
+        if (!ph) return null;
+        // ⚠ While the ABC blinding is on its hardcoded rules are EMPTY, so every ABC
+        // phrase would look like a discovery. Say "cannot tell" instead of lying.
+        if (field === 'abc' && L3_TEST_BLIND_ABC) return null;
+        // TITLE and CONTRACTOR are deliberately absent from the probe table: both are
+        // found mainly by VALUE-side heuristics, so a probe line would be matched on
+        // its own wording rather than on the label, and the answer would be noise.
+        const probe = COVERAGE_PROBE[field];
+        if (!probe) return null;
+        const extractors = {
+            budget: extractBudget, abc: extractABC, duration: extractDuration,
+            startDate: extractStartDate, endDate: extractEndDate,
+            location: extractLocation, budgetSource: extractBudgetSource,
+            category: extractCategory,
+        };
+        const ex = extractors[field];
+        if (!ex) return null;
+        try {
+            const found = ex(buildLinesFromText(ph + ': ' + probe.text)) === probe.expect;
+            if (!found) return false;
+            // ⚠ A CONTROL RUN, because a probe VALUE can identify itself. "777 calendar
+            // days" is found by a built-in rule whatever label sits in front of it, so
+            // without this every duration phrase looked already-covered. If a nonsense
+            // label pulls the same value out, the built-in rule matched the VALUE and
+            // this test cannot say anything about the PHRASE — which is null, not true.
+            const control = ex(buildLinesFromText('Zqxj Control Label: ' + probe.text)) === probe.expect;
+            return control ? null : true;
+        } catch (e) {
+            return null;
+        }
+    }
+
     function parseProjectInfoPooled(docs, opts) {
         const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [] };
         // L-9: the same learned vocabulary the single parse consults, as pool candidates.
@@ -2175,6 +2236,7 @@ const DocumentParserCore = (function () {
         cutAtEmbeddedLabel,
         editDistance,
         nearestName,
+        builtInCoversPhrase,
         extractCategory,
         extractStartDate,
         extractEndDate,

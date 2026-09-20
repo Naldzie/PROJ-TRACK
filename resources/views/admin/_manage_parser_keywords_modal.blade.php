@@ -140,6 +140,38 @@ async function loadParserKeywordsForManagement() {
         const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
         const rows = await response.json();
 
+        // WORTH-APPROVING INDICATOR (2026-09-20). The desk showed a reviewer the phrase
+        // and asked them to judge it, without telling them the one thing that decides
+        // its worth: whether a BUILT-IN rule already covers that wording. On the test
+        // document one approved phrase restated a hardcoded rule and changed nothing,
+        // while the other found the only correct value — and they looked identical here.
+        // The core is lazily imported because this desk lives in the LAYOUTS (every
+        // page) while document-parser-core.js is only loaded by the create-project
+        // modal. Best-effort: if it cannot load, the column simply stays quiet.
+        let pkpCore = null;
+        try {
+            if (window.documentParserCore) {
+                pkpCore = window.documentParserCore;
+            } else {
+                const mod = await import('{{ asset('js/admin/projects/document-parser-core.js') }}');
+                pkpCore = (mod && mod.default) ? mod.default : null;
+            }
+        } catch (e) { pkpCore = null; }
+        const pkpWorth = (field, phrase) => {
+            if (!pkpCore || typeof pkpCore.builtInCoversPhrase !== 'function' || !phrase) return '';
+            let covered = null;
+            try { covered = pkpCore.builtInCoversPhrase(field, phrase); } catch (e) { return ''; }
+            if (covered === true) {
+                return '<br><small class="text-muted"><i class="bi bi-dash-circle"></i> '
+                    + 'A built-in rule already reads this wording — approving it adds nothing.</small>';
+            }
+            if (covered === false) {
+                return '<br><small class="text-success"><i class="bi bi-stars"></i> '
+                    + 'Finds a value no built-in rule does.</small>';
+            }
+            return ''; // null = cannot tell; say nothing rather than guess
+        };
+
         const tbody = document.getElementById('parserKeywordsList');
         tbody.innerHTML = '';
 
@@ -167,7 +199,7 @@ async function loadParserKeywordsForManagement() {
             const approveBtn = row.status === 'live' ? '' :
                 '<button class="btn btn-sm btn-outline-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording"><i class="bi bi-check-lg"></i> Approve</button>';
             html += '<tr>' +
-                '<td>' + label + excerpt + '</td>' +
+                '<td>' + label + excerpt + pkpWorth(row.field, row.label_phrase) + '</td>' +
                 '<td>' + pkpEscapeHtml(pkpFieldLabel(row.field)) + '</td>' +
                 '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
                 '<td>' + origin + '</td>' +

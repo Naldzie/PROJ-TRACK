@@ -3839,5 +3839,68 @@
         genuinely useful thing for the approval screen to say, and the pool now has the
         information to say it. NOT BUILT, and not ordered.
 ===============================================================================
+  35. THE DESK NOW SAYS WHETHER A PHRASE IS WORTH APPROVING (2026-09-20, ordered)
+      Built straight from §34.5b: the reviewer was being asked to judge a phrase
+      without being told the one thing that decides its worth.
+===============================================================================
+
+  35.1 WHAT IT SHOWS
+
+      Under each suggested wording, one line:
+        "A built-in rule already reads this wording — approving it adds nothing."
+        "Finds a value no built-in rule does."
+        (nothing at all, when it cannot tell)
+      On the test document those two phrases sat side by side looking identical, and
+      one of them was the only reason the correct ABC was ever found.
+
+  35.2 THE TEST USES THE REAL RULES, NOT A DESCRIPTION OF THEM
+
+      builtInCoversPhrase(field, phrase) builds a line out of the phrase and a probe
+      value, runs the FIELD'S OWN hardcoded extractor over it, and sees whether the
+      built-in rules pull the probe back out. Nothing about the rules is duplicated
+      anywhere, so nothing can drift — which is the mistake §33.3 had just finished
+      cleaning up, and it would have been easy to repeat here by hand-listing the
+      known label wordings.
+
+  35.3 ⚠ TWO WAYS IT COULD HAVE LIED, AND WHAT STOPS THEM
+
+      (a) A PROBE VALUE THAT IDENTIFIES ITSELF. The first build used "777 calendar days"
+          for duration, and a built-in rule finds that whatever label precedes it — so
+          EVERY duration phrase read as already-covered. Caught by trying it, not by
+          reasoning about it.
+          FIXED with a CONTROL RUN: the same probe is also offered under a nonsense
+          label, and if the value still comes back, the rule matched the VALUE rather
+          than the PHRASE and the answer is NULL — cannot tell. The duration probe is
+          now a bare number so the label has to do the work.
+      (b) A FIELD WHOSE RULES ARE ASLEEP. While the ABC blinding is on, extractABC's
+          patterns are EMPTY, so every ABC phrase would look like a discovery — the
+          most misleading possible answer on the very field this session has been
+          working on. It returns NULL for abc while blinded, and the test asserts that
+          it TRACKS THE SWITCH rather than hardcoding either answer.
+      TITLE and CONTRACTOR are deliberately absent from the probe table: both are found
+      mainly by VALUE-side heuristics, so a probe line would be matched on its own
+      wording and the answer would be noise. Null is a real answer here and is shown as
+      silence, never dressed up as either verdict.
+
+  35.4 WHERE IT RUNS
+
+      The desk lives in the LAYOUTS — every page — while document-parser-core.js is
+      loaded only by the create-project modal. So the core is LAZILY IMPORTED when the
+      desk renders, reusing window.documentParserCore when the page already has it.
+      Best-effort throughout: if the import fails the column simply stays quiet, because
+      an approval screen that breaks is worse than one that says less.
+
+  35.5 VERIFICATION
+
+      JS 261/261/0 (three new tests) · PHP 1231 passed / 0 failed · the Blade compiles
+      (view:cache, then cleared).
+      The three cover both verdicts across five fields, the four "cannot tell" cases,
+      and the self-identifying-probe trap specifically — that last one exists because
+      the first build fell into it.
+      ⬜ BROWSER OWED: open the desk and confirm the two ABC rows show nothing (blinded,
+      correctly), then flip the blinding off and confirm "Approved Budget for the
+      Contract; PB" reads as already-covered while "| TOTAL ESTIMATED PROJECT COST P"
+      reads as a discovery.
+===============================================================================
   END OF RESTUDY
 ===============================================================================
