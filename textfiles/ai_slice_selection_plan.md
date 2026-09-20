@@ -7,7 +7,9 @@
 #                availability; §4 F2 — what must not leave a PMU desktop)
 #              AGENTS.md future-queue item 8
 # Date: September 20, 2026
-# Status: 🔄 PLAN ONLY — READ-ONLY RESTUDY DONE, NOTHING BUILT, NOTHING ORDERED.
+# Status: 🔄 PLAN READY — the four questions are ANSWERED (§5b Decision Log, user
+#         2026-09-20: per-session exclusion · per-page AND whole-file · default
+#         count 3). NOTHING BUILT, BUILD NOT YET ORDERED.
 #         §2 carries EIGHT verified findings (A1-A8), all traced in source today.
 #         §4 is the proposed build in four steps with a deliberate ORDER.
 #         §5 carries the four questions the user owns. Rule 10: nothing proceeds
@@ -201,17 +203,27 @@
        the answer improving.
 
   ── S-4. THE REVIEWER-CHOSEN COUNT ─────────────────────────────────────────  ⬜
-     LAST, DELIBERATELY. Fixes A1 + A4.
-     AI_SLICE_PAGES becomes a default (2) and a ceiling (3, the server's own limit),
-     with a small 1/2/3 selector in the AI row. _ocrAiTogglePage's `shift()` cap reads
-     the chosen count rather than the constant.
+     LAST, DELIBERATELY. Fixes A1 + A4 + A8 + A9.
+     AI_SLICE_PAGES becomes a DEFAULT OF 3 (Decision 3) and a ceiling of 3 — the
+     server's own limit — with a small 1/2/3 selector in the AI row.
+     _ocrAiTogglePage's `shift()` cap reads the chosen count rather than the constant,
+     so a reviewer can finally express three picks (A4).
      ALSO FIX A8 HERE, because this is the step that makes the promise specific: when
      buildAiSlices returns fewer slices than the selection asked for, SAY SO before
-     sending ("1 of the 2 pages could not be rendered — send 1 anyway?"), rather than
+     sending ("1 of the 3 pages could not be rendered — send 2 anyway?"), rather than
      quietly sending a shorter request.
-     ⚠ DO NOT RAISE THE DEFAULT TO 3. Raise the CEILING. The default is what an
-       unattended reviewer sends, and F1's "nothing leaves unless asked" spirit argues
-       for the smallest default that works.
+     ALSO FIX A9 HERE: a client-side total-bytes check before posting, naming the
+     selector, so the 30 MB refusal cannot arrive server-side after three renders.
+     ⚠ NOTE FOR THE FUTURE READER: an earlier draft of this plan argued AGAINST a
+       default of 3 ("raise the ceiling, not the default"). THE USER DECIDED
+       OTHERWISE on 2026-09-20 and the reasoning is in Decision 3 — the AI tier
+       answers ~2% of calls, so context per landed call is worth more than a spared
+       slot, and the exclusion controls ship in the same branch. The old caution is
+       kept here only so nobody "restores" it as a bug fix.
+     ⚠ THE WITHIN-BRANCH ORDER STILL HOLDS: S-4 is built LAST even though it is the
+       most visible. Raising the volume before S-1 and S-2 exist would ship a window
+       in which more pages leave the machine than today with no way to see or refuse
+       them. The default and the controls must land together or not at all.
 
 ===============================================================================
   5. THE FOUR QUESTIONS THE USER OWNS (Rule 10 — do not decide these alone)
@@ -240,6 +252,69 @@
       honours it; if the answer is "we do not care", S-2 costs nothing and S-1 is still
       worth having. NOTHING IN THIS PLAN DEPENDS ON THE ANSWER, which is why it can be
       built before the answer arrives.
+
+===============================================================================
+  5b. DECISION LOG — ANSWERED BY THE USER 2026-09-20
+===============================================================================
+
+  Decision 1 — EXCLUSION IS PER MODAL SESSION.
+    Context: Q1. Every other AI stash dies in cancelDocumentAutofill; a durable
+      exclusion would need a key, and file NAME is the only handle available.
+    Options: per-session · durable keyed by file name · durable keyed by content.
+    DECISION: per-session ("lets go with no").
+    Rationale: it cannot be wrong about which document it is refusing. A name-keyed
+      rule can refuse the wrong contract or silently forget after a re-upload.
+    Consequences: window._ocrAiExclude is cleared in cancelDocumentAutofill beside
+      _ocrAiPick. A reviewer who closes and reopens the popup re-excludes. If the
+      pilot shows that is annoying, persistence is a NEW conversation, not a bigger
+      commit (§8).
+
+  Decision 2 — BOTH PER-PAGE AND WHOLE-FILE EXCLUSION.
+    Context: Q2. The user's framing said "file"; the concrete case (§46.6) is one
+      page of a contract whose other pages are exactly what the AI should read.
+    DECISION: both ("both").
+    Consequences: _ocrAiExclude carries two lists — { pages: [...], files: [...] }.
+      Per-page is the prominent control (it sits in the AI row beside + / −);
+      whole-file sits next to the file's name in the gray scan note.
+
+  Decision 3 — ⚠ THE DEFAULT COUNT BECOMES 3, WHICH IS ALSO THE CEILING.
+    Context: Q3. I had recommended keeping 2 as the default with 3 available.
+    DECISION: 3 as the default ("lets go with 3 as default"). The user's call,
+      taken with the exclusion controls landing in the same build.
+    ⚠ WHAT IT MEANS, STATED PLAINLY BECAUSE IT IS NOT OBVIOUS: 3 is the SERVER'S
+      HARD MAXIMUM (DocumentParserController:128, "Provide 1 to 3 page images").
+      So the default is now the ceiling — every unattended press sends the most the
+      system can send, and the selector can only ever reduce it. There is no headroom
+      left for a later "send one more".
+    ⚠ AND IT MAKES A PREVIOUSLY-UNREACHABLE FAILURE REACHABLE — see finding A9 below.
+    Rationale recorded for the future reader: the AI tier answers ~2% of calls
+      (local_llm_parser_plan.md §4), so when a call does land, more context per call
+      is worth more than a spared slot. Exclusion (S-2) is what keeps "more pages"
+      from meaning "more pages nobody vetted", which is why it ships in the same
+      branch and BEFORE S-4 within it.
+
+  A9 — ⚠ NEW FINDING, FOUND WHILE CHECKING DECISION 3. THE TOTAL-BYTES CEILING
+       BECOMES REACHABLE AT THREE PAGES.
+         DocumentParserController:32  MAX_SLICE_BYTES = 10 MB  (per image)
+                                :35  MAX_TOTAL_BYTES = 30 MB  (per request)
+                                :173 $total > MAX_TOTAL_BYTES ->
+                                     "The page images exceed the total size budget.
+                                      Send fewer pages."
+       At two pages the worst case is 20 MB and the total ceiling is unreachable by
+       construction. AT THREE IT IS EXACTLY 30 MB — the boundary. And buildAiSlices
+       renders PNG (:2081, canvas.toDataURL('image/png')), which is the worst format
+       for a noisy scan: a 1650x2130 scanned page compresses poorly, so three of them
+       is the realistic bad case, not a contrived one.
+       THE FAILURE IS SERVER-SIDE AND LATE: the reviewer waits through three page
+       renders and the upload, then gets "Send fewer pages" with no control named.
+       ⇒ S-4 MUST THEREFORE CARRY A CLIENT-SIDE TOTAL CHECK — measure the assembled
+         slices before posting and, if they exceed the budget, say so naming the
+         selector ("3 pages is 34 MB, over the 30 MB limit — send 2?") instead of
+         letting the server refuse it after the cost is paid.
+       ⬜ NOT CHOSEN, RECORDED AS THE LEVER IF IT BITES: rendering the AI slice as
+         JPEG instead of PNG would cut size several-fold at negligible cost to a
+         vision model. It changes what the model is shown, so it is a measured
+         decision of its own, not a tweak to slip into S-4.
 
 ===============================================================================
   6. HOW EACH STEP WOULD BE PROVEN
