@@ -3799,6 +3799,36 @@
       genuinely different lines (two files) still corroborate, count 2, two files — so
       the fix removes double-counting without removing real evidence.
 
+  34.5b ⭐ IS A NEAR-DUPLICATE LEARNED LABEL ACTUALLY HARMFUL? (user, 2026-09-20)
+
+      THE USER ASKED WHETHER A LEARNED KEYWORD CLOSE TO A HARDCODED ONE IS REALLY BAD —
+      "won't it just add more range and proof for the accuracy?"
+      THE ANSWER IS: NOT ANY MORE, AND THE QUESTION IS RIGHT. It WAS harmful, for exactly
+      one reason — double-counting the same line (34.1) — and that is now fixed. After
+      34.2 a near-duplicate costs nothing where it overlaps and helps wherever its
+      wording reaches a line the hardcoded rules miss.
+      ⚠ BUT "PROOF FOR ACCURACY" NEEDS ONE QUALIFICATION: corroboration is only evidence
+      when the finds are INDEPENDENT — different lines, or different files. Two rules
+      agreeing about ONE line is not two witnesses; it is one sentence read twice. That
+      distinction is the whole of 34.2.
+
+      MEASURED ON THIS DOCUMENT, and the two taught phrases are one of each kind:
+        hardcoded rules alone                  -> 4834297.00(1)
+        + phrase A "Approved Budget for the
+          Contract; PB"                        -> 4834297.00(1)          NO CHANGE
+        + phrase B "| TOTAL ESTIMATED PROJECT
+          COST P"                              -> 4834297.00(1) 4834297.59(1)   ⭐
+      PHRASE A IS DEAD WEIGHT: it restates the hardcoded abc-line rule and lands on the
+      same line, so it adds no value, no count and no coverage. Harmless now; worthless
+      always.
+      PHRASE B IS THE WHOLE POINT OF THE LOOP: no hardcoded rule knows that wording, and
+      it is the phrase that finds 4,834,297.59 — the CORRECT value, on the page whose
+      OCR is undamaged. Without it the parser sees only the mangled .00.
+      ⇒ SO THE LOOP EARNED ITS KEEP ON THIS FILE, through exactly one of the two phrases
+        the user approved. That is the clearest single argument for the feature so far,
+        and it also shows what the desk cannot yet tell a reviewer: which of the two
+        they were approving.
+
   34.5 WHAT THIS SAYS ABOUT THE LOOP, WORTH KEEPING
 
       The taught phrase here was never going to help: it restates a rule the parser
