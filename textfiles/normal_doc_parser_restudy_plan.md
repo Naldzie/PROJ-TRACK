@@ -132,6 +132,13 @@
 #         ⚠ §24.5: NO browser check is possible — no further sample documents exist, and
 #         B-1 empties the budget source on the one file we have, so no create control
 #         renders at all. N2 (get real PMU scans) is now BLOCKING the whole B-queue.
+#         ⬛ LEARNING LOOP 2026-09-20 (§25): B-4 had demoted the LEARNED vocabulary
+#         below the heuristics — fixed, and the learned branch was unreachable before
+#         that too. ⭐ AND THE ANSWER TO "does mining work on scans": it RUNS but usually
+#         learns NOTHING, because the miner anchors on the corrected value appearing
+#         VERBATIM in the text — and on a scan the correction exists precisely because
+#         the text is wrong. Numeric fields and OCR-read-correctly fields still teach.
+#         §25.3 predicts the retest; §25.4 has the fuzzy-anchor option, NOT built.
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -2916,6 +2923,91 @@
         BLOCKING ITEM for the whole B-queue. Four changes now sit suite-green and
         browser-unproven, and the suite does not cover the DOM half at all.
       ⇒ Until then, treat B-1/B-1b/B-2/B-3/B-4/B-5 as BUILT AND UNPROVEN, not as done.
+===============================================================================
+  25. THE LEARNING LOOP — A REGRESSION I CAUSED, AND WHY IT FINDS NOTHING ON A SCAN
+      (2026-09-20, before the user's planned loop retest)
+===============================================================================
+
+  25.1 ⚠ B-4 HAD DEMOTED THE LEARNED VOCABULARY BELOW THE HEURISTICS — FIXED
+
+      The core states the loop's rule plainly: "learned hits skip the construction-word
+      gate ... a reviewed vocabulary outranks heuristics". B-4 put
+      `if (!asCompanyName(raw)) return null;` at the TOP of
+      isContractorValueCandidate, so a phrase the reviewer had taught and an approver had
+      approved could still be refused by a heuristic ceiling it was meant to overrule.
+      ⚠ AND THE OBVIOUS FIX WOULD NOT HAVE WORKED. Simply relaxing the length bound for
+      the learned branch changes nothing, because THE LEARNED BRANCH WAS UNREACHABLE for
+      most real lines: the hardcoded-keyword branch ran first and RETURNED — null
+      included — before `extra` was ever consulted, and almost every contractor line
+      contains one of those keywords. The original ordering did not implement its own
+      stated precedence; B-4 only made that visible.
+      WHAT SHIPPED:
+        1. the learned check runs FIRST, and keeps the length bounds only (5..150);
+        2. the hardcoded guess keeps the tighter ceiling — it has no label and no human
+           behind it, so it is the path that should be strict;
+        3. the '|' rejection applies to EVERY path INCLUDING the learned one. That is
+           deliberate and is the one place teaching does NOT win: learned phrases match
+           by SUBSTRING, so a taught "skyscraper construction" also matches the
+           bid-abstract ROW that contains it, and B-4's defect would walk back in through
+           the learned door. No amount of teaching makes a table row into one company.
+      Verified in all four directions: a taught 104-character name is accepted; the same
+      line untaught is refused; a taught phrase inside a piped row is still refused; an
+      ordinary name still reads. JS suite 250/250/0.
+
+  25.2 ⭐ DOES THE LOOP MINE FROM SCANNED FILES? YES IT RUNS, AND NO IT USUALLY LEARNS
+       NOTHING — AND THE REASON IS EXACT
+
+      The user asked this after observing it "might not work" on a scan. It is not
+      imagination, and it is not a bug in the plumbing.
+      THE PLUMBING IS FINE. window._autofillDocTexts is stashed unconditionally from
+      whatever text a file produced (document-parser.js:252), OCR text included, and
+      harvestCorrections() does not gate on OCR anywhere.
+      THE ANCHOR IS THE PROBLEM. mineCorrectionLabels() finds the label by locating the
+      CORRECTED VALUE inside a document line, and for any non-numeric field that is an
+      EXACT case-insensitive substring match:
+          const idx = line.toLowerCase().indexOf(lowerVal);
+      On a scanned document the corrected value is, by definition, the thing OCR got
+      wrong. The reviewer types SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES; the OCR
+      text says "...ENGINEERING NES : ELA fom". No substring match, no anchor, no label,
+      no proposal. THE CORRECTION THAT IS MOST WORTH LEARNING FROM IS THE ONE THE MINER
+      CAN LEAST ANCHOR.
+      WHAT DOES STILL WORK ON A SCAN, and it is not nothing:
+        · NUMERIC fields, which use a far more tolerant rule — digit runs compared with
+          separators stripped, so a typed "4,834,297.59" anchors an OCR'd "4.834,297.59".
+          Tolerant of punctuation damage, NOT of digit damage.
+        · TEXT fields where OCR read the VALUE correctly but the parser missed it — an
+          unrecognised label, a layout it could not follow. That is the loop's core use
+          case and it works on scans exactly as on selectable files.
+      WHAT CANNOT WORK: any field where OCR mangled the value itself.
+
+  25.3 PREDICTION FOR THE PLANNED RETEST (stated before the run, per §19.4's habit)
+
+      SCANNED pdfdocstest5.pdf — a MIXED result is the correct outcome, not a failure:
+        · corrections to fields whose value OCR read correctly should teach normally;
+        · corrections to fields whose value OCR mangled should teach NOTHING, silently.
+          The contractor is the clearest example in this file.
+      SELECTABLE pdfdocstest5.pdf — should behave as designed throughout, since every
+      corrected value exists verbatim in the text.
+      ⚠ IF THE SCANNED RUN TEACHES NOTHING AT ALL, that is worth a second look: by 25.2
+      the fields OCR read cleanly should still anchor.
+      ⚠ AND NOTE WHAT CHANGED UNDER THE DEMO: the ABC blinding is LIFTED, so a clean
+      selectable file now FILLS the ABC rather than missing it. The old
+      miss-then-teach demonstration no longer reproduces without flipping
+      L3_TEST_BLIND_ABC back on. The B-queue's stricter validators are the natural source
+      of misses now.
+
+  25.4 IF IT IS WORTH FIXING (proposed, NOT built)
+
+      Anchoring a correction FUZZILY rather than exactly is the obvious move, and the
+      machinery now exists: B-2 added editDistance/nearestName to this same core. A
+      corrected value could anchor to the best-matching line within a distance budget
+      instead of requiring a verbatim hit.
+      ⚠ IT IS NOT A SMALL CHANGE AND IT CUTS BOTH WAYS. A loose anchor mines a label
+      from the WRONG line, and a wrong label approved into live vocabulary is worse than
+      no label at all — it will then mis-fill confidently on every later document. If
+      this is attempted it wants a tight distance budget, the gated/ungated scoring kept,
+      and the approval desk treated as the real safety net.
+      NOT ORDERED. Measure the retest first: 25.3 says how to read it.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

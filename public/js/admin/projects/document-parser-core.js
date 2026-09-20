@@ -1275,15 +1275,29 @@ const DocumentParserCore = (function () {
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
-        // B-4: a row of a bid abstract carries construction words in abundance and would
-        // otherwise be the strongest-looking candidate on the page. Shape first.
-        if (!asCompanyName(raw)) return null;
+        // B-4 / L3 PRECEDENCE FIX (2026-09-20). A '|' is a CELL BOUNDARY, and this check
+        // runs on EVERY path INCLUDING the learned one. That is deliberate: learned
+        // phrases match by SUBSTRING, so a taught "skyscraper construction" would also
+        // match the bid-abstract ROW that contains it, and B-4's defect would walk back
+        // in through the learned door. No amount of teaching makes a table row into one
+        // company, so this is structural rather than heuristic.
+        if (raw.indexOf('|') !== -1) return null;
+        // L3 FIRST. The loop's documented rule is that a human-reviewed vocabulary
+        // OUTRANKS the heuristics, and it keeps the LENGTH BOUNDS ONLY (the 5..150
+        // above). It is checked before the hardcoded keywords rather than after, because
+        // after is unreachable in practice: almost every contractor line contains one of
+        // those keywords, so the hardcoded branch returned — null included — before the
+        // learned branch was ever consulted. A phrase the reviewer taught and approved
+        // could therefore be refused by a heuristic it was meant to overrule.
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
         if (CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            // The HARDCODED guess is the strict path: it has no label and no human
+            // behind it, so it also takes asCompanyName's tighter length ceiling.
+            if (!asCompanyName(raw)) return null;
             if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
             return cleanValue(raw);
         }
-        const extra = normalizeKeywordList(extraKeywords);
-        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
         return null;
     }
 
