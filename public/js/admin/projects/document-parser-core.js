@@ -339,6 +339,193 @@ const DocumentParserCore = (function () {
 
     // Normalizer helpers used by the field extractors.
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
+    // B-1 (2026-09-20) — a funding source is a NAME, and a name has a shape.
+    // WHY THIS EXISTS: extractBudgetSource validated with lenRange(2, 100), which is a
+    // length check and nothing else, so ANY 2-to-100-character tail following a funding
+    // label was accepted. It never bit while most scanned pages went unread; the moment
+    // the contrast fix made six more pages of a real scan readable, a misread tail
+    // arrived as "Accor, Fost =" — and the preview does not merely SHOW a budget source,
+    // it offers to CREATE it as a row in budget_sources. Garbage in a text box is a
+    // nuisance; garbage offered as a permanent database row is a different matter.
+    // WHAT A SOURCE LOOKS LIKE: a short name or acronym — GAA, CHED, DPWH, LGU, GAD,
+    // "Trust Fund", "CHED-HEDF", "General Appropriations Act (GAA)", "20% Development
+    // Fund". Never a sentence, never an equation, never a bare number.
+    // DELIBERATELY BIASED TOWARDS REJECTING. A rejected value leaves the field empty for
+    // the reviewer to type, and the L1-L3 learning loop lets them teach it so the next
+    // document fills free. An accepted misread invites a junk row nobody unmakes.
+    // Called by: extractBudgetSource().
+    const SOURCE_STOP_WORDS = new Set(['the', 'in', 'of', 'and', 'with', 'for', 'to',
+        'from', 'at', 'by', 'as', 'is', 'are', 'was', 'were', 'that', 'this', 'which',
+        'shall', 'said', 'per', 'such', 'any', 'all']);
+    function asSourceName(v) {
+        const t = cleanValue(v || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 2 || t.length > 60) return null;
+        // Name punctuation only. '=', '|', '_', '*', '<', '>', '#', '@', '"', ':' and the
+        // rest are OCR debris or a label bleeding in — never part of a source's name.
+        if (!/^[A-Za-z0-9 .,&()\-\/'%]+$/.test(t)) return null;
+        // A name opens on a letter, a digit or a bracket and closes on a letter, digit,
+        // bracket, full stop or percent. The leading digit is deliberate: "20% Development
+        // Fund" is a real LGU source. It costs nothing, because a purely numeric misread
+        // like "05142005" is caught by the two-consecutive-letters rule just below.
+        if (!/^[A-Za-z0-9(]/.test(t) || !/[A-Za-z0-9).%]$/.test(t)) return null;
+        // At least one real word, so "3 1" and "05142005" are out.
+        if (!/[A-Za-z]{2}/.test(t)) return null;
+        // A source is a name, not a clause. Six words is already generous for
+        // "General Appropriations Act (GAA) FY 2025".
+        const words = t.split(' ').filter(Boolean);
+        if (words.length > 6) return null;
+        // A fragment caught mid-sentence starts on a function word; a name does not.
+        if (SOURCE_STOP_WORDS.has(words[0].toLowerCase().replace(/[^a-z]/g, ''))) return null;
+        // Punctuation-heavy strings are debris even when every character is allowed.
+        const compact = t.replace(/\s/g, '');
+        const punct = (compact.match(/[.,&()\-\/'%]/g) || []).length;
+        if (punct / compact.length > 0.25) return null;
+        return t;
+    }
+    // B-4 (2026-09-20) — a contractor field holds ONE company, not a table row.
+    // WHY THIS EXISTS: the contractor was validated by length alone (3..150), and the
+    // value-side heuristic accepts any 5-to-150-character line carrying a construction
+    // word. An ABSTRACT OF BIDS lists every bidder across one printed row, so once the
+    // contrast fix made that page readable the row itself became the best-looking
+    // candidate and won: "DONBER CONSTRUCTION | 301 ENGINEERS | SKYSCRAPER CONS. &
+    // ENGINEERING SERVICES | CHRISTINAJOY ..." — four companies in the field, and the
+    // real contractor (SKYSCRAPER, named on the contract page as "hereinafter called the
+    // CONTRACTOR") demoted. Before that page could be read, the contract page won and
+    // the field was right.
+    // THE SIGNAL IS THE PIPE. A '|' in this text is a CELL BOUNDARY — either the line
+    // reconstructor joining columns, or tesseract reading a table's printed vertical
+    // rule. It is never part of a company's name, so a candidate carrying one is a ROW.
+    // ⚠ WHAT THIS DOES NOT CATCH: a bidder table drawn WITHOUT vertical rules, whose
+    // cells OCR into one pipe-less line. The length ceiling below is the only guard
+    // against that, and it is a weak one. Noted rather than papered over.
+    // Called by: extractContractor(), isContractorValueCandidate().
+    function asCompanyName(v) {
+        const t = cleanValue(v || '').trim();
+        if (t.length < 5 || t.length > 100) return null;
+        if (t.indexOf('|') !== -1) return null;
+        return t;
+    }
+    // B-2 (2026-09-20) — how close is this value to a row that already exists?
+    // WHY: the preview can CREATE a missing category or budget source. B-1 stopped
+    // obvious debris, but a value can be well-shaped and still wrong — OCR confuses C
+    // and G, so GAA arrives as CAA, passes every shape check, and becomes a near-
+    // duplicate row that silently splits every report grouping by source.
+    // Returns { name, distance } for the closest existing name within `max` edits, or
+    // null. Case- and space-insensitive, because "Trust  fund" and "Trust Fund" are the
+    // same row to a human and should not become two.
+    // Pure, so the suite tests it; the preview does the warning.
+    // Called by: renderChoiceCreateAction() in document-parser.js.
+    function editDistance(a, b) {
+        const s1 = String(a || ''), s2 = String(b || '');
+        if (s1 === s2) return 0;
+        if (!s1.length) return s2.length;
+        if (!s2.length) return s1.length;
+        // Two rolling rows rather than the full matrix — these are short names.
+        let prev = new Array(s2.length + 1);
+        let cur = new Array(s2.length + 1);
+        for (let j = 0; j <= s2.length; j++) prev[j] = j;
+        for (let i = 1; i <= s1.length; i++) {
+            cur[0] = i;
+            for (let j = 1; j <= s2.length; j++) {
+                const cost = s1.charAt(i - 1) === s2.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+            }
+            const t = prev; prev = cur; cur = t;
+        }
+        return prev[s2.length];
+    }
+    function nearestName(value, names, max) {
+        const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const v = norm(value);
+        if (!v) return null;
+        const limit = (typeof max === 'number') ? max : 2;
+        let best = null;
+        for (const raw of (names || [])) {
+            const n = norm(raw);
+            if (!n) continue;
+            const d = editDistance(v, n);
+            // An exact match is not a near miss — the caller wants "did you mean", and
+            // distance 0 means the value IS that row and no creation is in question.
+            if (d > limit) continue;
+            if (!best || d < best.distance) best = { name: String(raw), distance: d };
+            if (best.distance === 0) break;
+        }
+        return best;
+    }
+    // B-1b (2026-09-20) — the same hole B-1 closed, next door.
+    // extractCategory validated with lenRange(3, 50): length and nothing else, exactly
+    // what extractBudgetSource had. The preview can CREATE a missing category, and a
+    // category is not an ordinary label — CategorySeeder defines exactly four, and the
+    // dashboards and reports GROUP BY them. A junk fifth category does not merely sit
+    // in a table; it splits every figure that counts projects by type.
+    // B-2 already shields the worst route (a SCANNED document can no longer create
+    // anything, and a human now types the name), so this is the remaining layer rather
+    // than the only one.
+    // HOW IT DIFFERS FROM asSourceName: a funding source is often an acronym and can
+    // legitimately open on a digit ("20% Development Fund"); a CATEGORY is an ordinary
+    // English noun phrase — New Construction, Renovation, Repair, Maintenance. So this
+    // opens on a letter, takes no percent sign, and allows fewer words.
+    // ⚠ THE STRONGER FIX IS STILL NOT THIS ONE. With only four valid values, matching
+    // the extracted text against the live list (nearestName already exists for it) beats
+    // any shape test — but the list lives in the DB and the core is pure, so it would
+    // have to be plumbed through parseProjectInfo's opts. Noted, not done.
+    // Called by: extractCategory().
+    function asCategoryName(v) {
+        const t = cleanValue(v || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 3 || t.length > 50) return null;
+        // No pipe: that is a table cell boundary, as B-4 found for the contractor.
+        if (!/^[A-Za-z0-9 .,&()\-\/']+$/.test(t)) return null;
+        if (!/^[A-Za-z]/.test(t) || !/[A-Za-z0-9).]$/.test(t)) return null;
+        if (!/[A-Za-z]{2}/.test(t)) return null;
+        const words = t.split(' ').filter(Boolean);
+        if (words.length > 5) return null;
+        if (SOURCE_STOP_WORDS.has(words[0].toLowerCase().replace(/[^a-z]/g, ''))) return null;
+        const compact = t.replace(/\s/g, '');
+        const letters = (compact.match(/[A-Za-z]/g) || []).length;
+        if (letters / compact.length < 0.6) return null;
+        return t;
+    }
+    // B-3 / B-5 (2026-09-20) — a value that ran into its neighbours.
+    // THREE SYMPTOMS, ONE CAUSE. A scanned page has no columns, only a picture of them,
+    // so OCR reads a printed ROW as one line and whatever sat to the right is glued on:
+    //   title       "] Rehabilitation/Refurbishment of Canteen..."  (a leading artifact)
+    //   location    "...Polytechnic Colleges Date: 05142005"       (the next column)
+    //   contractor  "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom"  (both ends)
+    // B-4 caught the version of this that carries a '|'. These carry only a space, so
+    // the cell boundary is invisible and something else has to mark it.
+    //
+    // stripEdgeDebris: a one-character token at either end that is not a word is a
+    // speck, a bracket, a margin mark — never part of a name. "i " and "]" go.
+    // cutAtEmbeddedLabel: a "Word:" inside a value means the NEXT FIELD started there.
+    //   ⚠ SCOPED ON PURPOSE. This is applied to LOCATION and CONTRACTOR, where a colon
+    //   is never part of the value, and NOT to the title, where "Phase 2: Completion"
+    //   is a real title and cutting it would destroy content. A rule that is right for
+    //   one field is not automatically right for its neighbour.
+    // Called by: extractLocation(), extractContractor(), extractTitle() (debris only).
+    function stripEdgeDebris(v) {
+        let t = String(v || '').trim();
+        // Leading: a lone non-word character, or a single letter followed by a space and
+        // then a real word (the OCR speck that reads as "i" or "l").
+        t = t.replace(/^[^A-Za-z0-9(]+/, '').trim();
+        t = t.replace(/^[A-Za-z]\s+(?=[A-Z0-9])/, '').trim();
+        // Trailing: punctuation and lone characters left behind by a cut.
+        t = t.replace(/[^A-Za-z0-9).%]+$/, '').trim();
+        return t;
+    }
+    function cutAtEmbeddedLabel(v) {
+        const t = String(v || '').trim();
+        // A label is the SINGLE word immediately before a colon, somewhere past the
+        // start. The first one wins, because everything after it belongs to another field.
+        // ⚠ ONE WORD, NOT TWO, and the difference is not cosmetic: allowing an optional
+        // second word let the pattern swallow real content as part of the label —
+        // "…& ENGINEERING NES :" cut at ENGINEERING and "…Colleges Date:" cut at
+        // Colleges. Both lost a word of the answer. Matching the minimum is correct here.
+        // RESIDUE, accepted: a genuinely two-word label ("Project Location:") leaves its
+        // first word behind on the value. That is a stray word, not a lost one.
+        const m = t.match(/\s+[A-Za-z][A-Za-z.]{1,14}\s*:/);
+        if (!m || m.index <= 0) return t;
+        return t.slice(0, m.index).trim();
+    }
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
     // Placeholder tokens mean "intentionally empty" (bundle "xxx" for no revision,
@@ -611,9 +798,12 @@ const DocumentParserCore = (function () {
     // Keep only project-specific: location, project site/site address, project location, barangay/brgy.
     // CSPC campus value is often just "CSPC" or "CSPC - Buhi Campus" (geotag deferred).
     function extractLocation(lines) {
+        // B-3: a scanned page reads a printed ROW as one line, so the column to the right
+        // arrives glued on ("…Polytechnic Colleges Date: 05142005"). Cut where the next
+        // field starts, then drop any speck left at either end, THEN validate length.
         return findLabeledValue(lines, [
             /(?:location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 200));
+        ], (v) => lenRange(3, 200)(stripEdgeDebris(cutAtEmbeddedLabel(v))));
     }
 
     // Labels that start another field — used to terminate a prose description
@@ -653,12 +843,21 @@ const DocumentParserCore = (function () {
         return null;
     }
 
-    // L3-TEST TEMP BLINDING (LOCAL ONLY — RESTORE BEFORE ANY COMMIT): ABC hardcoded
-    // patterns disabled so the clean selectable file misses and the loop-first round-trip
-    // can run. Single switch shared by extractABC() AND collectAbcCandidates() (ABC-pooling)
-    // so the demo stays intact while blinding is ON: the collector sleeps, and the
-    // single-match learned path (pattern-fixed) still carries approved rows. See plan §6.
-    const L3_TEST_BLIND_ABC = true;
+    // L3-TEST TEMP BLINDING — ⬛ LIFTED 2026-09-18 (pilot readiness, item N1).
+    // WHAT IT DID: with this ON, extractABC()'s hardcoded patterns were replaced by an
+    // EMPTY list, the corroborated Total/Approved-Budget-Amount reassignment (F-B1) was
+    // skipped, the ABC words-shape fallback was skipped, and collectAbcCandidates()
+    // (ABC-pooling) slept. A clean selectable file therefore MISSED on ABC on purpose,
+    // so the teach -> approve -> fills-free learning-loop round trip could be demonstrated
+    // end to end on a document that would otherwise have read straight away.
+    // WHY IT IS OFF NOW: the pilot hands the normal-doc parser to PMU staff with real
+    // scanned contracts. Blinded, a document that plainly states "Approved Budget for the
+    // Contract (ABC): PHP X" comes back with an empty ABC box, which reads as a defect.
+    // The demo value no longer outweighs that. See textfiles/pilot_testing_readiness_plan.md
+    // section 5, item N1, and the learning-loop plan section 6.
+    // TO RE-BLIND FOR A DEMO: set this back to true and expect two INTENDED JS failures
+    // (F-B1 conditional, L3 hardcoded-ABC) plus the sleep-asserting fixtures to flip back.
+    const L3_TEST_BLIND_ABC = false;
 
     // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
     // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.
@@ -770,6 +969,20 @@ const DocumentParserCore = (function () {
         return null;
     }
 
+    // Written-cents guard (N1a, 2026-09-18). A funds-certificate line spells the amount in
+    // words and ends "… PESOS & 59/100" — the "59/100" is the CENTS, not the amount. asMoney
+    // happily reads 59 out of it, so the un-blinded ABC label patterns were returning P59.00
+    // for a P4,834,297.59 certificate AND short-circuiting the words-shape rule that reads it
+    // correctly. True only when EVERY digit in the text belongs to an NN/100 cents marker, so
+    // a real figure ("Php 4,834,297.59") is untouched.
+    // Called by: extractABC() validator; collectAbcCandidates() before asMoney().
+    function isCentsFractionOnly(text) {
+        const s = String(text || '');
+        if (!/\d/.test(s)) return false;
+        const stripped = s.replace(/\b\d{1,2}\s*\/\s*100\b/g, ' ');
+        return !/\d/.test(stripped);
+    }
+
     // Approved Budget for the Contract (ABC) — standalone ABC label.
     // Phase 5 NEW: distinguishes ABC ceiling from Contract Price (savings = ABC - price).
     // Called by: parseProjectInfo() → returns abc field; budget uses extractBudget().
@@ -786,7 +999,9 @@ const DocumentParserCore = (function () {
         if (hasOrigRevised && !L3_TEST_BLIND_ABC) {
             patterns.push(/(?:total\s*budget\s*amount|approved\s*budget|budget\s*amount)\s*[:\-]?\s*(?:php|₱)?\s*(.*)/i);
         }
-        const direct = findLabeledValue(lines, patterns, asMoney);
+        // N1a: reject a "59/100" cents marker before it can pose as the amount and
+        // short-circuit the words-shape rule below.
+        const direct = findLabeledValue(lines, patterns, (t) => (isCentsFractionOnly(t) ? null : asMoney(t)));
         if (direct) return direct;
         // Layer-2 rule A (ABC words-shape): PESOS-words fallback for funds-cert lines when the
         // Php numeric is absent (garbled) — same wordsToNumber machinery as extractBudget's fourth
@@ -841,18 +1056,23 @@ const DocumentParserCore = (function () {
     // Budget Source / Funding Source — new in Phase 5.
     // Maps to budget_sources table (9 seeded: GAA, CHED, DPWH, LGU, GAD...).
     // Table lookup is done in document-parser.js (Option A: admin-only warning).
+    // B-1: validated by SHAPE (asSourceName) rather than by length. The preview offers
+    // an unmatched value for CREATION as a budget_sources row, so a misread accepted
+    // here becomes a permanent junk record — see asSourceName for the full reasoning.
     function extractBudgetSource(lines) {
         return findLabeledValue(lines, [
             /(?:source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing)\s*[:\-]\s*(.*)/i,
-        ], lenRange(2, 100));
+        ], asSourceName);
     }
 
     // Category / Project Type — new in Phase 5.
     // Maps to categories table (4 seeded: New Construction, Renovation, Repair, Maintenance).
+    // B-1b: validated by SHAPE (asCategoryName) rather than by length, because the
+    // preview can create a missing category and the reports group by this column.
     function extractCategory(lines) {
         return findLabeledValue(lines, [
             /(?:category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 50));
+        ], asCategoryName);
     }
 
     // Contract / Project Start Date.
@@ -956,7 +1176,7 @@ const DocumentParserCore = (function () {
     function extractContractor(lines) {
         let raw = findLabeledValue(lines, [
             /(?:contractor|contractor\s*name|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 150));
+        ], asCompanyName);
         if (!raw) return null;
         // Try labeled with next-two-lines already handled by findLabeledValue, but also handle inline wrap:
         // If contractor name is bold ALL-CAPS across 2 lines, findLabeledValue already joins next line.
@@ -966,8 +1186,14 @@ const DocumentParserCore = (function () {
         const cut = raw.split(/\s*\(hereinafter.*/i)[0].trim();
         // Also cut at " — hereinafter" etc. and trailing " (hereinafter called the "CONTRACTOR")"
         const cleaned = cut.replace(/\s*\(.*$/, '').trim();
-        const normalized = lenRange(3, 150)(cleanValue(cleaned || cut));
-        return normalized || cleanValue(cut);
+        // B-4: try the paren-stripped name, then the uncut form — the second chance is
+        // for a name that stripping made too short. If NEITHER is a company name the
+        // field stays empty: the old `|| cleanValue(cut)` returned the raw text whatever
+        // the validator said, which meant a rejected row came back regardless.
+        // B-5: strip the OCR speck and cut anything that ran in from the next column
+        // BEFORE validating, so a recoverable name is recovered rather than refused.
+        const tidy = (x) => stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(x || '')));
+        return asCompanyName(tidy(cleaned || cut)) || asCompanyName(tidy(cut)) || null;
     }
 
     // ─── VALUE-SIDE KEYWORD DICTIONARIES (HARDCODED Phase 5) ───────────────────
@@ -1047,14 +1273,39 @@ const DocumentParserCore = (function () {
         let raw = String(line || '').trim();
         // Strip parenthetical tail for clean name
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
+        // B-5b (2026-09-20): tidy the VALUE-SIDE path too. B-5 wired stripEdgeDebris and
+        // cutAtEmbeddedLabel into extractContractor's LABELED path only, and the document
+        // that motivated the whole fix has no "Contractor:" label on that line — it is
+        // found by this heuristic. So the field still came back
+        // "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom" in the browser while
+        // the unit test of the labeled path passed. Tidying BEFORE the shape checks means
+        // a recoverable name is recovered rather than refused, exactly as it is there.
+        raw = stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(raw)));
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
+        // B-4 / L3 PRECEDENCE FIX (2026-09-20). A '|' is a CELL BOUNDARY, and this check
+        // runs on EVERY path INCLUDING the learned one. That is deliberate: learned
+        // phrases match by SUBSTRING, so a taught "skyscraper construction" would also
+        // match the bid-abstract ROW that contains it, and B-4's defect would walk back
+        // in through the learned door. No amount of teaching makes a table row into one
+        // company, so this is structural rather than heuristic.
+        if (raw.indexOf('|') !== -1) return null;
+        // L3 FIRST. The loop's documented rule is that a human-reviewed vocabulary
+        // OUTRANKS the heuristics, and it keeps the LENGTH BOUNDS ONLY (the 5..150
+        // above). It is checked before the hardcoded keywords rather than after, because
+        // after is unreachable in practice: almost every contractor line contains one of
+        // those keywords, so the hardcoded branch returned — null included — before the
+        // learned branch was ever consulted. A phrase the reviewer taught and approved
+        // could therefore be refused by a heuristic it was meant to overrule.
+        const extra = normalizeKeywordList(extraKeywords);
+        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
         if (CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
+            // The HARDCODED guess is the strict path: it has no label and no human
+            // behind it, so it also takes asCompanyName's tighter length ceiling.
+            if (!asCompanyName(raw)) return null;
             if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
             return cleanValue(raw);
         }
-        const extra = normalizeKeywordList(extraKeywords);
-        if (extra.length && extra.some(kw => s.includes(kw))) return cleanValue(raw);
         return null;
     }
 
@@ -1069,6 +1320,29 @@ const DocumentParserCore = (function () {
     // Weight for a candidate from its nearby lines (Step 1e-5).
     // Contract summary = 1.0, neutral = 0.85, supporting section = 0.6.
     // Called by: collectFieldCandidates() for every candidate.
+    // L-9 (2026-09-20): hoisted out of parseProjectInfo so the POOLED path can build
+    // the same patterns and apply the same normalizers. Defined ONCE on purpose — two
+    // copies of a normalizer table is exactly the kind of thing that drifts silently
+    // and then disagrees with itself about what a learned label means.
+    // Called by: parseProjectInfo() and parseProjectInfoPooled().
+    const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
+    function learnedLabelPattern(ph) {
+        return new RegExp('^\\s*(?:' + String(ph).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=[:\\-\\d]|$|\\s+\\d)\\s*[:\\-]?\\s*(.*)', 'i');
+    }
+    const LEARNED_NORMALIZERS = {
+        title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
+        location: (v) => lenRange(3, 200)(stripEdgeDebris(cutAtEmbeddedLabel(v))),
+        budget: asBudget,
+        abc: asMoney,
+        budgetSource: asSourceName,
+        category: asCategoryName,
+        startDate: asDate,
+        endDate: asDate,
+        duration: asDays,
+        contractor: (v) => asCompanyName(stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(v || '')))),
+    };
+    const learnedNormalizerFor = (field) => LEARNED_NORMALIZERS[field] || null;
+
     function getSectionWeight(contextText) {
         const s = String(contextText || '');
         const isContract = /contract\s*amount|contract\s*time|effectivity|original\s*contract|revised\s*contract/i.test(s);
@@ -1170,7 +1444,7 @@ const DocumentParserCore = (function () {
                         // line, ti 1-2 = borrowed from below). A slid date/figure can no
                         // longer tie a same-line price before frequency even counts.
                         if (ti > 0) w *= 0.8;
-                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i), line: i });
                         if (name === 'total-row') totalRowHit.add(i);
                         break;
                     }
@@ -1199,7 +1473,7 @@ const DocumentParserCore = (function () {
                 const val = asMoney(combined);
                 // Step 1f-3: unlabeled guesses count less (0.5, was 0.8) — a contract
                 // label (1.0) beats several table guesses even when they repeat.
-                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName, pattern: fbName, excerpt: excerptOf(i) });
+                if (val && parseFloat(val) > 100000) out.push({ value: val, labeled: false, weight: getSectionWeight(combined) * 0.5, fileName, pattern: fbName, excerpt: excerptOf(i), line: i });
             }
         }
         return out;
@@ -1244,6 +1518,9 @@ const DocumentParserCore = (function () {
                     if (!/(?:php|₱|\bP\b|pesos|amount)/i.test(t) && asDate(t)) continue;
                     // Thousand-dot strip for matched ABC labels (same narrow F1 rule).
                     if (/\d\.\d{3}(?=[\d,])/.test(t) && ((t.match(/\.\d{2}\b/g) || []).length === 1)) t = t.replace(/(\d)\.(\d{3})(?=[\d,])/g, '$1$2');
+                    // N1a: a "& 59/100" written-cents marker is not the amount (same guard
+                    // extractABC uses, so both ABC tracks agree — see isCentsFractionOnly).
+                    if (isCentsFractionOnly(t)) continue;
                     const val = asMoney(t);
                     if (val) {
                         const ctx = ctxOf(i);
@@ -1251,7 +1528,7 @@ const DocumentParserCore = (function () {
                         if (!/contract\s*amount|revised|original|effectivity|contract\s*time|contract\s*price|approved\s*budget|\babc\b/i.test(ctx)) w *= 0.5;
                         // Same-line values outrank slid ones (1i-2).
                         if (ti > 0) w *= 0.8;
-                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled, weight: w, fileName, pattern: name, excerpt: excerptOf(i), line: i });
                         break;
                     }
                 }
@@ -1263,7 +1540,7 @@ const DocumentParserCore = (function () {
         // rationale as the 'total-row' exemption in the budget collector).
         for (let i = 0; i < norm.length; i++) {
             const wv = abcWordsAtWindow(norm[i], norm[i + 1] || '');
-            if (wv) out.push({ value: wv, labeled: true, weight: getSectionWeight(ctxOf(i)), fileName, pattern: 'words-shape', excerpt: excerptOf(i) });
+            if (wv) out.push({ value: wv, labeled: true, weight: getSectionWeight(ctxOf(i)), fileName, pattern: 'words-shape', excerpt: excerptOf(i), line: i });
         }
         return out;
     }
@@ -1289,7 +1566,7 @@ const DocumentParserCore = (function () {
                     if (val) {
                         let w = getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' '));
                         if (isTotal) w *= 1.25;
-                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i) });
+                        out.push({ value: val, labeled: true, weight: w, fileName, pattern: isTotal ? 'total-contract-time' : 'labeled', excerpt: excerptOf(i), line: i });
                         break;
                     }
                 }
@@ -1300,7 +1577,7 @@ const DocumentParserCore = (function () {
                 // Step 1f-3: unlabeled duration guesses count less (0.5, was 0.8).
                 if (wm) {
                     const val = asDays(wm[1]) || asDays(wm[0]);
-                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName, pattern: 'within-clause', excerpt: excerptOf(i) }); break; }
+                    if (val) { out.push({ value: val, labeled: false, weight: getSectionWeight(t) * 0.5, fileName, pattern: 'within-clause', excerpt: excerptOf(i), line: i }); break; }
                 }
             }
         }
@@ -1324,7 +1601,7 @@ const DocumentParserCore = (function () {
             for (const t of [cleanValue(m[1] || ''), cleanValue(norm[i + 1] || ''), cleanValue(norm[i + 2] || '')]) {
                 if (!t) continue;
                 const val = asDate(t);
-                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i) }); break; }
+                if (val) { out.push({ value: val, labeled: true, weight: getSectionWeight([norm[i - 1] || '', norm[i], norm[i + 1] || ''].join(' ')), fileName, pattern: 'labeled', excerpt: excerptOf(i), line: i }); break; }
             }
         }
         return out;
@@ -1362,9 +1639,34 @@ const DocumentParserCore = (function () {
         const rows = [];
         if (!cands || cands.length === 0) return { winner: null, rows };
         const groups = new Map(); // norm -> { original, score, count, labeledCount, files:Set, patterns:Set, excerpts:[] }
+        // INDEPENDENCE (2026-09-20) — THE SAME LINE READ TWICE IS ONE PIECE OF
+        // EVIDENCE, NOT TWO. Two rules can match the same line and produce the same
+        // value: a hardcoded pattern and a taught phrase that restates it, or two
+        // hardcoded patterns whose wordings overlap. Counting both inflated the score
+        // and the count of a value that had exactly one source.
+        // THE USER FOUND THIS BY ASKING WHETHER A LEARNED PHRASE WOULD SHARE WORDING
+        // WITH A HARDCODED ONE. It does: 'Approved Budget for the Contract' is both a
+        // taught phrase and the hardcoded abc-line rule, and on the test document they
+        // both read the SAME DAMAGED LINE ("4,834,297 5g"). The false corroboration
+        // pushed that wrong value past 2x the correct one, which silenced the
+        // disagreement note — so the right answer disappeared precisely because two
+        // rules agreed about one line.
+        // Finds with no line recorded are never deduped; they keep their own vote.
+        const seenLines = new Set();
         for (const c of cands) {
             const norm = normalizeForPool(c.value);
             if (!norm) continue;
+            if (c.line !== undefined && c.line !== null) {
+                const key = norm + '@' + (c.fileName || '') + '#' + c.line;
+                if (seenLines.has(key)) {
+                    // Still record the PATTERN — knowing both rules found it is useful
+                    // in the inspector — but do not let it vote a second time.
+                    const g0 = groups.get(norm);
+                    if (g0 && c.pattern) g0.patterns.add(c.pattern);
+                    continue;
+                }
+                seenLines.add(key);
+            }
             if (!groups.has(norm)) groups.set(norm, { original: c.value, score: 0, count: 0, labeledCount: 0, files: new Set(), patterns: new Set(), excerpts: [] });
             const g = groups.get(norm);
             g.score += (c.weight || 0.85);
@@ -1377,7 +1679,14 @@ const DocumentParserCore = (function () {
         for (const [norm, g] of groups.entries()) {
             rows.push({ value: g.original, norm, count: g.count, score: Math.round(g.score * 100) / 100, labeledCount: g.labeledCount, files: [...g.files], patterns: [...g.patterns], excerpts: g.excerpts });
         }
-        rows.sort((a, b) => b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
+        // L-9: A LEARNED-ONLY VALUE NEVER OUTRANKS ONE WITH HARDCODED SUPPORT.
+        // Enforced here rather than by weight, because weights accumulate: enough
+        // learned finds would eventually outvote a hardcoded one, and "enough" is not a
+        // policy anyone chose. A row counts as hardcoded-backed if ANY of its patterns
+        // is not a learned one, so corroboration between the two lifts the row into the
+        // trusted group rather than dragging it down.
+        const backed = (r) => (r.patterns || []).some(p => String(p).indexOf('learned:') !== 0) ? 1 : 0;
+        rows.sort((a, b) => backed(b) - backed(a) || b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
         return { winner: rows.length ? rows[0].value : null, rows };
     }
 
@@ -1467,11 +1776,25 @@ const DocumentParserCore = (function () {
     // label — when nothing gated exists, a single count-only {label: null} row is returned
     // (preserves today's harvest behavior for unanchorable values).
     // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
-    function mineCorrectionLabels(docText, finalValue, cap) {
+    // TEXT FIELDS ANCHOR BY TEXT, WHATEVER CHARACTERS THEY HAPPEN TO CONTAIN
+    // (2026-09-20). The strategy used to be chosen by "does this value contain a
+    // digit", which is right for money and durations and wrong for everything else. A
+    // reviewer who disambiguated a duplicate title by appending " 2" turned the whole
+    // title into a DIGIT match: the miner looked for a bare "2" anywhere in the
+    // document, found one in an unrelated line, and mined "Amount" as the label for a
+    // project title. The user saw the result on the desk as
+    // "(field count only — no wording found) = 1 | Ea Page; of12 | _ (LA".
+    // The same trap catches "Brgy. 3", "301 Engineers", "Phase 2" — any text value
+    // with a numeral in it.
+    // The field now decides. Callers that pass no field keep the old behaviour, so
+    // existing tests and the legacy single-label wrapper are unaffected.
+    const TEXT_ANCHOR_FIELDS = ['title', 'location', 'description', 'contractor', 'budgetSource', 'category'];
+    function mineCorrectionLabels(docText, finalValue, cap, field) {
         const raw = String(finalValue || '').trim();
         if (raw.length < 3) return [];
         const lines = buildLinesFromText(docText || '');
-        const hasDigit = /\d/.test(raw);
+        const anchorAsText = field ? TEXT_ANCHOR_FIELDS.indexOf(field) !== -1 : false;
+        const hasDigit = !anchorAsText && /\d/.test(raw);
         const digitSig = raw.replace(/\D/g, '');
         const lowerVal = raw.toLowerCase();
         // M1: short digit strings anchor whole tokens only — bounded by non-digit AND
@@ -1537,11 +1860,11 @@ const DocumentParserCore = (function () {
         return [{ label: null, excerpt: best.excerpt }];
     }
 
-    function mineCorrectionLabel(docText, finalValue) {
+    function mineCorrectionLabel(docText, finalValue, field) {
         // Legacy single-label wrapper: returns the survey winner (or null when unanchored).
         // Kept so existing callers and fixtures behave exactly as before multi-label.
         // Called by: document-parser.js harvestCorrections() fallback; tests.
-        const rows = mineCorrectionLabels(docText, finalValue, 1);
+        const rows = mineCorrectionLabels(docText, finalValue, 1, field);
         return rows.length ? rows[0] : null;
     }
 
@@ -1550,8 +1873,118 @@ const DocumentParserCore = (function () {
     // ONE pile per field and votes. Returns { budget, abc, duration, startDate, endDate }.
     // Per-file single values (parseProjectInfo) are still used for the WARNING track.
     // Called by: document-parser.js runDocumentAutofill() when available.
-    function parseProjectInfoPooled(docs) {
+    // L-9 (2026-09-20) — LEARNED LABELS JOIN THE POOL.
+    // Until now a learned label lived on a separate track: it could fill a field the
+    // hardcoded rules missed, but it never entered the vote, so it had no count, no
+    // files, no excerpt in the inspector, and two learned phrases disagreeing had to be
+    // adjudicated by a second mechanism bolted alongside (§31, §32).
+    // Now they are collected as ordinary candidates, which buys three things:
+    //   · CORROBORATION BECOMES VISIBLE — a learned phrase and a hardcoded rule landing
+    //     on the same value now show as one row carrying both patterns, which nobody
+    //     could see before;
+    //   · a learned find appears in the vote inspector, with the phrase that found it;
+    //   · two learned phrases that disagree are handled by the SAME pooledDisagree that
+    //     handles everything else, so there is one adjudicator instead of two.
+    // ⚠ AND THEY CAN NEVER OUTRANK A HARDCODED FIND. That guarantee is enforced in the
+    // SORT (see voteCandidatePoolDebug), not by the weight — weights accumulate, so
+    // enough learned finds would eventually outvote a hardcoded one, and "enough" is
+    // not a policy anybody chose. L3's documented rule is that learned vocabulary is
+    // the lowest-priority fallback; this keeps that exactly while ending the split.
+    // Called by: parseProjectInfoPooled().
+    function collectLearnedCandidates(lines, fileName, field, taught, norm) {
+        const out = [];
+        if (!taught || !taught.length || !norm) return out;
+        const rows = (lines || []).map(l => String(l).trim()).filter(Boolean);
+        const excerptOf = (i) => [rows[i - 1] || '', rows[i] || '', rows[i + 1] || ''].filter(Boolean).join(' | ').slice(0, 180);
+        for (const t of taught) {
+            for (let i = 0; i < rows.length; i++) {
+                const m = rows[i].match(t.pattern);
+                if (!m) continue;
+                const v = norm(cleanValue(m[1] || ''));
+                if (v === null || v === undefined || v === '') continue;
+                // The phrase travels with the row so the inspector can say WHICH taught
+                // wording produced which value — the whole point of the .00/.59 case.
+                const src = String(t.phrase || '').slice(0, 32);
+                out.push({
+                    value: v,
+                    labeled: true,
+                    weight: getSectionWeight(excerptOf(i)) * 0.6,
+                    fileName,
+                    pattern: 'learned:' + src,
+                    excerpt: excerptOf(i),
+                    line: i,
+                });
+                break; // one find per phrase per file — a phrase is not evidence twice
+            }
+        }
+        return out;
+    }
+
+    // ─── DOES A TAUGHT PHRASE ADD ANYTHING? (2026-09-20) ────────────────────────
+    // The approval desk shows a reviewer the phrase and asks them to judge it, without
+    // telling them the one thing that decides its worth: whether a BUILT-IN rule
+    // already covers that wording. §34.5b measured both kinds on one document —
+    // "Approved Budget for the Contract; PB" restates the hardcoded abc-line rule and
+    // changes nothing, while "| TOTAL ESTIMATED PROJECT COST P" is the phrase that
+    // found the correct value. They look identical on the desk.
+    //
+    // THE TEST USES THE REAL RULES RATHER THAN A DESCRIPTION OF THEM: build a line out
+    // of the phrase and a probe value, run the field's own hardcoded extractor over it,
+    // and see whether the built-in rules pull the probe back out. Nothing is duplicated,
+    // so nothing can drift — which is the mistake §33.3 had just finished cleaning up.
+    //
+    // Returns true (already covered), false (finds what no built-in rule does), or NULL
+    // meaning "cannot tell", which is a real answer and must not be dressed up as
+    // either of the others.
+    // Called by: the parser-keyword desk, via a lazy import.
+    const COVERAGE_PROBE = {
+        budget: { text: 'Php 1,234,567.89', expect: '1234567.89' },
+        abc: { text: 'Php 1,234,567.89', expect: '1234567.89' },
+        duration: { text: '777', expect: '777' },
+        startDate: { text: 'January 15, 2026', expect: '2026-01-15' },
+        endDate: { text: 'January 15, 2026', expect: '2026-01-15' },
+        location: { text: 'ZZ Probe Location Site', expect: 'ZZ Probe Location Site' },
+        budgetSource: { text: 'ZZProbeSource', expect: 'ZZProbeSource' },
+        category: { text: 'ZZ Probe Category', expect: 'ZZ Probe Category' },
+    };
+    function builtInCoversPhrase(field, phrase) {
+        const ph = String(phrase || '').trim();
+        if (!ph) return null;
+        // ⚠ While the ABC blinding is on its hardcoded rules are EMPTY, so every ABC
+        // phrase would look like a discovery. Say "cannot tell" instead of lying.
+        if (field === 'abc' && L3_TEST_BLIND_ABC) return null;
+        // TITLE and CONTRACTOR are deliberately absent from the probe table: both are
+        // found mainly by VALUE-side heuristics, so a probe line would be matched on
+        // its own wording rather than on the label, and the answer would be noise.
+        const probe = COVERAGE_PROBE[field];
+        if (!probe) return null;
+        const extractors = {
+            budget: extractBudget, abc: extractABC, duration: extractDuration,
+            startDate: extractStartDate, endDate: extractEndDate,
+            location: extractLocation, budgetSource: extractBudgetSource,
+            category: extractCategory,
+        };
+        const ex = extractors[field];
+        if (!ex) return null;
+        try {
+            const found = ex(buildLinesFromText(ph + ': ' + probe.text)) === probe.expect;
+            if (!found) return false;
+            // ⚠ A CONTROL RUN, because a probe VALUE can identify itself. "777 calendar
+            // days" is found by a built-in rule whatever label sits in front of it, so
+            // without this every duration phrase looked already-covered. If a nonsense
+            // label pulls the same value out, the built-in rule matched the VALUE and
+            // this test cannot say anything about the PHRASE — which is null, not true.
+            const control = ex(buildLinesFromText('Zqxj Control Label: ' + probe.text)) === probe.expect;
+            return control ? null : true;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function parseProjectInfoPooled(docs, opts) {
         const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [] };
+        // L-9: the same learned vocabulary the single parse consults, as pool candidates.
+        const pooledLearnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
         for (const d of (docs || [])) {
             const lines = d.lines || buildLinesFromText(d.text || '');
             const fn = d.fileName || d.name || '';
@@ -1560,6 +1993,14 @@ const DocumentParserCore = (function () {
             pile.duration.push(...collectDurationCandidates(lines, fn));
             pile.startDate.push(...collectDateCandidates(lines, fn, 'start'));
             pile.endDate.push(...collectDateCandidates(lines, fn, 'end'));
+            // L-9: learned labels for the five POOLED fields only. The others keep the
+            // single-parse path — there is no pool for them to join.
+            for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
+                const phrases = normalizeKeywordList(pooledLearnedLabels[f]);
+                if (!phrases.length) continue;
+                const taught = phrases.map(ph => ({ phrase: ph, pattern: learnedLabelPattern(ph) }));
+                pile[f].push(...collectLearnedCandidates(lines, fn, f, taught, learnedNormalizerFor(f)));
+            }
         }
         // _debug powers the vote inspector (Step 1f-2): every find + winner per field.
         // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
@@ -1571,6 +2012,50 @@ const DocumentParserCore = (function () {
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
         const dbgFor = (f) => f === 'budget' ? bDbg : f === 'abc' ? aDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg;
+
+        // CROSS-FIELD EXCLUSION (2026-09-20) — A VALUE THAT HAS ALREADY WON ANOTHER
+        // FIELD IS NOT THIS FIELD'S SECOND OPINION.
+        // The user noticed the CONTRACT PRICE pick-one had started offering
+        // 4,834,297.59 as its alternative. That is the ABC. It reached the budget pool
+        // because P-3 made six more pages readable and the ABC figure appears on several
+        // of them, so it accumulated enough finds to pass the genuine revised amount.
+        // The winner was still right; the ALTERNATIVE was a different field's answer
+        // wearing this field's label.
+        // ⚠ ONLY THE ALTERNATIVES ARE FILTERED, NEVER THE WINNER. rows[0] is the value
+        // in the box, and it must stay in the pair whatever else claims it — a number
+        // that is legitimately both the ABC and the contract price (a bid at exactly the
+        // ceiling) must not be struck out of its own field.
+        // ⚠ AND THIS REMOVES A WRONG ANSWER WITHOUT SUPPLYING A RIGHT ONE. With the ABC
+        // gone the runner-up here is an OCR ghost scoring too low to speak, so the note
+        // falls SILENT rather than switching to the revised amount. That is honest —
+        // there is a clear winner — but it is not the original-vs-revised choice the
+        // user remembers. The revised figure is a different FACT about the project, not
+        // a competing reading of the same one, and the form has one box for it.
+        // ⚠ SCOPED TO ONE DIRECTION, DELIBERATELY: the ABC is struck out of the
+        // CONTRACT PRICE's alternatives, and nothing else is filtered anywhere.
+        // A general "no field may offer another field's winner" rule was written first
+        // and REGRESSED a real case: on a document with no contract price at all, the
+        // budget pool is entirely ABC leakage, its winner is one of the ABC's own
+        // readings, and the general rule then struck that reading out of the ABC's own
+        // pick-one — silencing exactly the .59-vs-.00 note that L-8, L-9 and the
+        // independence fix exist to produce.
+        // The asymmetry is the evidence, not a preference. The ABC pool's members are
+        // competing READINGS OF ONE FIGURE, so filtering them against another field can
+        // remove a legitimate alternative. The budget pool legitimately holds DIFFERENT
+        // FIGURES — original, revised — plus whatever leaks in, and a runner-up that is
+        // exactly the ABC's winner is the ABC leaking rather than a second reading of
+        // the price. Only the second case has been observed, so only it is handled.
+        const disagreeFor = (field) => {
+            const rows = (dbgFor(field) || {}).rows || [];
+            if (field !== 'budget' || rows.length < 2) return pooledDisagree(rows);
+            const abcWinner = (dbgFor('abc') || {}).winner;
+            if (!abcWinner) return pooledDisagree(rows);
+            const claimed = normalizeForPool(abcWinner);
+            // rows[0] is the value in the box and always stays: a bid at exactly the
+            // ceiling is legitimately both, and must not be struck out of its own field.
+            const kept = [rows[0]].concat(rows.slice(1).filter(r => r.norm !== claimed));
+            return pooledDisagree(kept);
+        };
         const fileCounts = {};
         for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
             fileCounts[f] = {};
@@ -1587,11 +2072,11 @@ const DocumentParserCore = (function () {
             _debug: { budget: bDbg.rows, abc: aDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
             _fileCounts: fileCounts,
             _disagree: {
-                budget: pooledDisagree(bDbg.rows),
-                abc: pooledDisagree(aDbg.rows),
-                duration: pooledDisagree(dDbg.rows),
-                startDate: pooledDisagree(sDbg.rows),
-                endDate: pooledDisagree(eDbg.rows),
+                budget: disagreeFor('budget'),
+                abc: disagreeFor('abc'),
+                duration: disagreeFor('duration'),
+                startDate: disagreeFor('startDate'),
+                endDate: disagreeFor('endDate'),
             },
         };
     }
@@ -1625,31 +2110,56 @@ const DocumentParserCore = (function () {
         // the full line intact. The lookahead also blocks prefix collisions (ABC vs ABCs).
         // An empty capture means label-alone → next-line fallback in findLabeledValue.
         // Mid-line labels stay unsupported by design.
-        const learnedPatterns = (field) => learnedFor(field).map(ph =>
-            new RegExp('^\\s*(?:' + ph.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')(?=[:\\-\\d]|$|\\s+\\d)\\s*[:\\-]?\\s*(.*)', 'i'));
-        // Per-field normalizers for the learned-label pass (mirrors each hardcoded extractor).
-        const stripOeTitle = (v) => /^oe\s+/i.test(v) ? v.replace(/^oe\s+/i, '').trim() : v;
-        const learnedNormalizers = {
-            title: (v) => { const c = lenRange(5, 200)(v); return c ? stripOeTitle(c) : null; },
-            location: lenRange(3, 200),
-            budget: asBudget,
-            abc: asMoney,
-            budgetSource: lenRange(2, 100),
-            category: lenRange(3, 50),
-            startDate: asDate,
-            endDate: asDate,
-            duration: asDays,
-            contractor: lenRange(3, 150),
-        };
+        // L-9: one definition, shared with the pooled path (see learnedLabelPattern).
+        const learnedPatterns = (field) => learnedFor(field).map(learnedLabelPattern);
+        // L-9: the per-field normalizers now live at module level as
+        // LEARNED_NORMALIZERS so the pooled path applies exactly the same rules.
+        // ⚠ THIS ALSO FIXES A DRIFT NOBODY HAD NOTICED: the local copy still used the
+        // OLD length-only validators for budgetSource, category, location and
+        // contractor, so a LEARNED label bypassed every shape guard the B-queue added.
+        // A taught phrase could still fill the budget source with "Accor, Fost =".
+        const learnedNormalizers = LEARNED_NORMALIZERS;
+        // L-8 (2026-09-20) — A PRIMARY KEY IS NOT A TIE-BREAK.
+        // This used to hand findLabeledValue the whole phrase list at once, and that
+        // returns the FIRST match. The list arrives in row order, so when a field had
+        // two approved phrases the winner was decided by insertion id. On the real
+        // document that meant the phrase reading a DAMAGED line won over the one
+        // reading a clean one: page 1's OCR says "4,834,297 5g" (the ".59" read as
+        // " 5g"), so that label yields 4,834,297.00 while the other yields .59, and
+        // approving both made the wrong one win because it was stored first.
+        // THE HARDCODED TRACK NEVER WORKED THIS WAY. It pools every find and hands a
+        // genuine disagreement to the reviewer through the pick-one control. The
+        // learned track now does the same: ask each phrase separately, keep the
+        // distinct values, and when two disagree say so rather than silently choosing.
+        // The first value is still returned, so a field with one phrase is unchanged.
+        const learnedDisagree = {};
         const tryLearnedLabel = (field) => {
             const patterns = learnedPatterns(field);
             if (!patterns.length) return null;
             const norm = learnedNormalizers[field];
             if (!norm) return null;
-            return findLabeledValue(lines, patterns, norm);
+            const seen = [];
+            for (const pat of patterns) {
+                const v = findLabeledValue(lines, [pat], norm);
+                if (v === null || v === undefined || v === '') continue;
+                if (seen.indexOf(v) === -1) seen.push(v);
+            }
+            if (!seen.length) return null;
+            if (seen.length > 1) {
+                // Same shape the pooled track produces, so the existing pick-one note
+                // renders it without knowing where it came from.
+                learnedDisagree[field] = {
+                    winner: { value: seen[0], count: 1, files: [] },
+                    runnerUp: { value: seen[1], count: 1, files: [] },
+                };
+            }
+            return seen[0];
         };
         // Label-based extraction
-        let title = extractTitle(lines, text, learnedFor('title'));
+        // B-3: the title keeps its own colons — "Phase 2: Completion" is a real title —
+        // so only EDGE DEBRIS is stripped here, never an embedded label. A scanned
+        // underline read as a bracket ("] Rehabilitation/…") is what this removes.
+        let title = stripEdgeDebris(extractTitle(lines, text, learnedFor('title')) || '') || null;
         let contractor = extractContractor(lines);
         let valueKeywordHits = 0;
 
@@ -1721,6 +2231,9 @@ const DocumentParserCore = (function () {
         const totalFields = 11;
         const confidence = Math.round(((labelHits + valueKeywordHits * 0.6) / totalFields) * 100);
         parsed._confidence = Math.min(100, confidence);
+        // L-8: only present when two approved phrases for one field disagreed. The
+        // wrapper merges it into the same channel the pooled disagreement uses.
+        if (Object.keys(learnedDisagree).length) parsed._learnedDisagree = learnedDisagree;
         parsed._valueKeywordHits = valueKeywordHits;
         parsed._labelHits = labelHits;
 
@@ -1770,7 +2283,18 @@ const DocumentParserCore = (function () {
         extractDescription,
         extractBudget,
         extractABC,
+        // Exported so the suite can assert the RIGHT behaviour for whichever way the
+        // switch is set, instead of carrying "intended failures" that hide real ones.
+        L3_TEST_BLIND_ABC,
         extractBudgetSource,
+        asSourceName,
+        asCategoryName,
+        asCompanyName,
+        stripEdgeDebris,
+        cutAtEmbeddedLabel,
+        editDistance,
+        nearestName,
+        builtInCoversPhrase,
         extractCategory,
         extractStartDate,
         extractEndDate,
@@ -1791,6 +2315,7 @@ const DocumentParserCore = (function () {
         collectAbcCandidates,
         abcWordsAtWindow,
         readAbcWordsAmount,
+        isCentsFractionOnly,
         collectDurationCandidates,
         collectDateCandidates,
         voteCandidatePool,

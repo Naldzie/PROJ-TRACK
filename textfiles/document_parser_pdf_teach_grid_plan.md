@@ -29,6 +29,11 @@
 #         ✅ 2026-09-15 SESSION CLOSED — PDF READ GUARD + BUHI ONE-PAGE LEARNABLE. Every
 #           item built this session is browser-proven and committed (see the LAST §13
 #           entry, "SESSION CLOSE — HANDOFF", for the commit list, lessons and queue).
+#         ➜ 2026-09-16 (close): THE ACTIVE WORK HAS MOVED to
+#           textfiles/document_parser_day_column_layout_plan.md (Excel date-row rule,
+#           then the Excel month-header fixes on phase-22, UNCOMMITTED) and
+#           textfiles/local_llm_parser_plan.md (paused after step 1). Nothing in THIS
+#           file is open work except the queue items listed below.
 #         ✅ 2026-09-16 (later): EVERYTHING BELOW IS COMMITTED, PUSHED AND MERGED TO
 #           develop — 3a + 2(c) in ac8d0db, 3b + 3c in the commit after it. All
 #           browser-proven. The "UNCOMMITTED" words in the 2026-09-16 lines below are

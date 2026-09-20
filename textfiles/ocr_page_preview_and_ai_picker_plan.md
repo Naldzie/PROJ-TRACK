@@ -11,6 +11,24 @@
 #                  2f209f3 (3b) · 0c0e107 (4+5)
 # Branch: wip/phase-5-parser-accuracy-premerge (Rule 12 — no merge to main without
 #         confirmation; this branch also carries unrelated S-curve and teammate work)
+#
+# ⬆ 2026-09-18 — THIS PATH JUST BECAME THE IMPORTANT ONE. The client confirmed their
+#   NORMAL DOCUMENTS ARE MAINLY SCANNED: contracts, proposals and supporting papers reach
+#   the PMU as PHYSICAL COPIES and are scanned in, so the uploaded PDF frequently has no
+#   text layer and the parser is reading an image. Everything in this file — the preview,
+#   free rotation, the per-page "what did we get and why" strip, the AI page picker — is
+#   therefore the parser work most likely to be exercised by real users in the pilot.
+#   TWO THINGS TO DO BEFORE TOUCHING ANY OF IT (neither is ordered):
+#     1. GET REAL PMU SCANS. Everything here was proven on developer samples. Their
+#        scanner, their paper, their skew and their DPI are unknown, and tuning OCR
+#        against imagined inputs is how you build for a document nobody has.
+#     2. THE DEFERRED RANKING ITEM IS NOW A REAL CANDIDATE (§ the plan's own "flagged for
+#        future", and AGENTS.md queue item 8): the AI picker ranks pages by "which pages
+#        OCR handled worst" with no notion of whether a page HOLDS the fields, so a blank
+#        or signature page ranks first precisely because it yielded nothing. The per-page
+#        char-count and soupiness ledger already exists and is ignored by the ranking.
+#   Tracked as item P4 in textfiles/pilot_testing_readiness_plan.md, which is the active
+#   plan file. CLOSED still means closed — nothing here regressed; the priority moved.
 
 ===============================================================================
   1. PROJECT CONTEXT

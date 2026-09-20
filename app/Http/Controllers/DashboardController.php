@@ -240,6 +240,50 @@ class DashboardController extends Controller
         ));
     }
 
+    // ── DASHBOARD HERO SEARCH (autocomplete → click to open) ─────────────
+    // Role-scoped project lookup for the dashboard search bar. Staff only
+    // see their assigned projects (scopeToAssigned); admins see everything.
+    // Returns up to 8 matches as JSON: { id, code, title, status,
+    // contractor, detail_url }. The Blade dropdown navigates to detail_url
+    // on click / Enter — the "directory" of the project.
+    public function search(Request $request)
+    {
+        $q = trim((string) $request->get('q', ''));
+
+        if ($q === '') {
+            return response()->json([]);
+        }
+
+        $query = Project::where('is_archived', false)
+            ->with(['contractor:id,company_name']);
+        $this->scopeToAssigned($query);
+
+        $query->where(function ($inner) use ($q) {
+            $inner->where('code', 'like', "%{$q}%")
+                ->orWhere('title', 'like', "%{$q}%")
+                ->orWhereHas('contractor', fn ($c) => $c->where('company_name', 'like', "%{$q}%"));
+        });
+
+        $projects = $query
+            ->orderByRaw("CASE WHEN status = 'Ongoing' THEN 0 ELSE 1 END")
+            ->orderBy('title', 'asc')
+            ->limit(8)
+            ->get(['id', 'code', 'title', 'status', 'contractor_id']);
+
+        $isStaff = Auth::user()->role === 'staff';
+
+        return response()->json($projects->map(fn ($p) => [
+            'id'         => $p->id,
+            'code'       => $p->code,
+            'title'      => $p->title,
+            'status'     => $p->status,
+            'contractor' => $p->contractor->company_name ?? null,
+            'detail_url' => $isStaff
+                ? route('staff.projects.detail', $p->id)
+                : route('admin.projects.detail', $p->id),
+        ])->values());
+    }
+
     public function filter(Request $request)
     {
         // ── VALIDATE TYPE PARAMETER ───────────────────────────────────────

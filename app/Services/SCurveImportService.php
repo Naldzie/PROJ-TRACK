@@ -54,6 +54,13 @@ class SCurveImportService
      * Called by: deriveAutoColumnMap() (writes), findHeaderViaMaps() (gates).
      */
     public const MAP_VERSION = 1;
+
+    /**
+     * Highest month number a header, a learned layout or a teaching may carry
+     * (2026-09-16; was 12, which silently dropped month 13 onward). 60 matches the
+     * ceiling the AI sanitizers already use. Bare-number headers stay 1..12.
+     */
+    public const MAX_MONTHS = 60;
     /**
      * Serialize a workbook to compact CSV text for the E2 AI fallback.
      *
@@ -411,17 +418,36 @@ class SCurveImportService
         ] = $this->detectHeaderLabels($cells, $relaxed);
         $monthCols = [];
         $numericCols = [];
+        $calendarCols = [];
 
         foreach ($cells as $colIndex => $value) {
             $label = strtolower(trim((string) ($value ?? '')));
             if ($label === '') continue;
 
+            if ($this->calendarMonthNumber($label) !== null) {
+                $calendarCols[] = $colIndex;
+                continue;
+            }
             $month = $this->matchMonthLabel($label, $relaxed);
             if ($month !== null) {
                 $monthCols[$month] = $colIndex;
             } elseif (preg_match('/^(\d{1,2})$/', $label, $m)) {
+                // Bare numbers stay 1..12: unlike "Month 13" they are ambiguous.
                 $n = (int) $m[1];
                 if ($n >= 1 && $n <= 12) $numericCols[$n] = $colIndex;
+            }
+        }
+
+        // Calendar-named months (2026-09-16) are numbered by COLUMN ORDER: a project
+        // that starts in December reads DECEMBER as month 1, and a name repeated a year
+        // later becomes month 13. They used to be keyed by calendar number, so
+        // DECEMBER..MARCH came out as months 1, 2, 3, 12 — summed Jan -> Mar -> Dec and
+        // dated "month 12" at the project end. Used only when the row carries no
+        // numbered month labels ("Month N" etc. keep their own numbers). A header that
+        // starts in January numbers exactly as before.
+        if (count($monthCols) === 0 && count($calendarCols) >= 2) {
+            foreach (array_slice($calendarCols, 0, self::MAX_MONTHS) as $i => $col) {
+                $monthCols[$i + 1] = $col;
             }
         }
 
@@ -843,7 +869,7 @@ class SCurveImportService
         $spans = [];
         foreach ($monthSpans as $m => $cols) {
             $mi = (int) $m;
-            if ($mi < 1 || $mi > 12 || isset($spans[$mi])) return $fail('bad-month-number');
+            if ($mi < 1 || $mi > self::MAX_MONTHS || isset($spans[$mi])) return $fail('bad-month-number');
             $cols = array_map('intval', (array) $cols);
             if (count($cols) === 0) return $fail("empty-month:{$mi}");
             foreach ($cols as $c) {
@@ -1422,7 +1448,16 @@ class SCurveImportService
             }
         }
 
-        $sheetRows = range($det['firstRow'] + 1, $det['lastRow'] + 1);
+        // Rows whose merges describe the month spans. The two passes in
+        // findHeaderWith record rows differently (the same duality labelSliceRows
+        // handles): a single-row detection stores the row KEY, already the 1-based
+        // sheet row; a two-row detection stores 0-based POSITIONS, hence +1.
+        // 2026-09-16: the single-row case used to get the +1 too, so it inspected the
+        // row BELOW the header and never saw a merged month label — "Month 1" merged
+        // across C:E read as C alone (curve 16.67 / 100 instead of 50 / 100).
+        $sheetRows = $det['firstRow'] === $det['lastRow']
+            ? [$det['firstRow']]
+            : range($det['firstRow'] + 1, $det['lastRow'] + 1);
         $monthSpans = [];
         // Date-row headers arrive with their spans already known (every column dated
         // inside the month); merges and pairing do not apply to them.
@@ -1609,42 +1644,56 @@ class SCurveImportService
      */
     private function matchMonthLabel(string $label, bool $relaxed = false): ?int
     {
+        // 2026-09-16: every NUMBERED family accepts 1..MAX_MONTHS (was 1..12). A
+        // 14-month file labelled "Month 1..14" used to lose months 13 and 14 without
+        // a word, and month 12 was forced to 100%. Calendar names are no longer
+        // handled here — see calendarMonthNumber() and detectHeaderRow().
+        $inRange = fn (int $n): ?int => ($n >= 1 && $n <= self::MAX_MONTHS) ? $n : null;
+
         if (preg_match('/^(?:month|m)\s*(\d{1,2})$/i', $label, $m)) {
-            $n = (int) $m[1];
-            return ($n >= 1 && $n <= 12) ? $n : null;
+            return $inRange((int) $m[1]);
         }
 
         // E1-3 relaxed: "P1"–"P12" / "Period N" / "Phase N" (third family).
         if ($relaxed && preg_match('/^(?:p|period|phase)\s*(\d{1,2})$/i', $label, $m)) {
-            $n = (int) $m[1];
-            return ($n >= 1 && $n <= 12) ? $n : null;
+            return $inRange((int) $m[1]);
         }
 
         // P1-follow-up relaxed: "STAGE 1"–"STAGE 6" / "Quarter|QTR|Q N" (fourth
         // family). Relaxed-only like P-months — hits become scoped auto-maps,
         // never strict-path behavior.
         if ($relaxed && preg_match('/^(?:stage|stg|quarter|qtr|q)\s*(\d{1,2})$/i', $label, $m)) {
-            $n = (int) $m[1];
-            return ($n >= 1 && $n <= 12) ? $n : null;
+            return $inRange((int) $m[1]);
         }
 
         // R2a: ordinal month labels ("1st.", "2nd.", "3rd." … — roof family AM:AS).
         if (preg_match('/^(\d{1,2})(st|nd|rd|th)\.?$/i', $label, $m)) {
-            $n = (int) $m[1];
-            return ($n >= 1 && $n <= 12) ? $n : null;
+            return $inRange((int) $m[1]);
         }
 
+        return null;
+    }
+
+    /**
+     * Is this header cell a calendar month NAME ("DECEMBER", "Jan")? Returns its
+     * calendar number (1..12) or null. The number is only used to recognise the
+     * cell: detectHeaderRow numbers calendar-named months by COLUMN ORDER, because
+     * a schedule's month 1 is whatever month the project starts in.
+     *
+     * Called by: detectHeaderRow().
+     */
+    private function calendarMonthNumber(string $label): ?int
+    {
         $months = [
             'january' => 1, 'february' => 2, 'march' => 3, 'april' => 4,
             'may' => 5, 'june' => 6, 'july' => 7, 'august' => 8,
             'september' => 9, 'october' => 10, 'november' => 11, 'december' => 12,
             'jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4,
-            'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8,
+            'jun' => 6, 'jul' => 7, 'aug' => 8,
             'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12,
         ];
-        $key = strtolower($label);
 
-        return $months[$key] ?? null;
+        return $months[strtolower($label)] ?? null;
     }
 
     /**

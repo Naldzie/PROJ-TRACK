@@ -6,11 +6,23 @@
 #              textfiles/document_parser_pdf_teach_grid_plan.md (§13, 2026-09-16 — the usage measurement
 #                this file is built on, logged there in full)
 # Date: September 16, 2026
-# Status: 🔄 INVESTIGATION ONLY — NO CODE, NOTHING DECIDED. Raised by the user after
-#         frequent Gemini 503s, and because the capstone PANEL and the CONSULTANT are
-#         likely to require a campus-hosted model instead of a third-party API.
-#         The usage measurement IS DONE (§4) and it supports acting. What it does NOT
-#         support is acting in the order first proposed — see §5 and §8.
+# Status: ⏸ PAUSED AFTER STEP 1 (2026-09-16 close) — NO APP CODE.
+#         §4 usage measurement: done. §5 step 1 (measure the model): DONE, and it FAILED —
+#         Qwen2.5-VL 3B / 7B on the PDF specimens and Qwen2.5-7B-Instruct on the Excel
+#         specimens, all on a free Colab T4: no model computed a curve from activity
+#         rows, and nearly every call exceeded the 50 s budget. Conclusion for the panel
+#         is in §5. Steps 2 (configurable endpoint) and 3 (hosting) not ordered.
+#         Open, needs an order: the prompts' example contractAmount is BUHI's real one.
+#         2026-09-17: STEP 1c "TEST A" (the model LOCATES, the app READS) is BUILT and
+#         waiting for the user's Colab run — see §5, STEP 1c. No app code.
+#         Notebooks + prompts: C:\temp\opencode\colab_*.ipynb, colab_excel\; results:
+#         sampledocs/vlm_results_*.json, llm_excel_results_*.json (git-ignored).
+#         2026-09-18: ⏬ DEPRIORITISED. The client confirmed S-curves arrive as the ORIGINAL
+#         EXCEL (so the Excel path needs no model at all) and that their NORMAL documents
+#         are mainly SCANNED (so if an AI tier ever revives, it belongs on the normal-doc
+#         path, not here). Active file is textfiles/pilot_testing_readiness_plan.md; the
+#         AI tier's ~2% answer rate is a pilot UX decision there (item P5), not a hosting
+#         question. See §0's 2026-09-18 note and Decision 4.
 # Branch on build: phase-<n>-local-llm-parser (Rule 12; no merge to main without OK)
 
 ===============================================================================
@@ -50,6 +62,26 @@
     1. Measure the MODEL on the two real specimens — before any hosting decision.
     2. Make the endpoint configurable (one service, three hardcoded URLs).
     3. Only then choose where it runs.
+
+  ➜ 2026-09-18 — TWO CLIENT FACTS THAT CHANGE THIS FILE'S WEIGHT (read before proposing
+    any further model test)
+      1. THE PMU MAINLY HAS THE ORIGINAL EXCEL for S-curves. §7 already said not to put
+         an LLM on the Excel path because phpspreadsheet reads those workbooks exactly.
+         That was a design argument; it is now also the normal case. The S-curve half of
+         this plan has almost no problem left to solve.
+      2. THEIR NORMAL DOCUMENTS ARE MAINLY SCANNED — physical copies, scanned in, often
+         with no text layer at all. IF an AI tier is ever worth reviving, THIS is where
+         it would earn its place: the normal-doc slice path over scanned pages, not the
+         S-curve path. Note what that implies for a local model — it would be doing OCR-
+         grade vision work on photographed/scanned paper, which is harder than reading a
+         clean digital table, and step 1 already showed 3B/7B failing the CLEAN case.
+    PRIORITY: this file is not the active work. Pilot-testing readiness is —
+    textfiles/pilot_testing_readiness_plan.md. The AI tier's availability appears there
+    as item P5 (what "Try AI assist" should do when the tier answers ~2% of calls), which
+    is a UX decision to make before the pilot, not a hosting decision.
+    STILL OWED: the STEP 1c "Test A" Colab run (built 2026-09-17, §5). Unblocked and
+    cheap, but not urgent — and its result cannot change §4's measurement or §0's
+    conclusion.
 
   HARD CONSTRAINTS ALREADY ESTABLISHED
     - No paid services (consultant; the client will not pay).
@@ -303,6 +335,60 @@
       must not count BUHI's contract as evidence of reading; (2) the example should use
       a neutral figure. Changing it is a prompt change on a live Gemini path — needs an
       order, not done.
+    STEP 1c — TEST A: THE MODEL LOCATES, THE APP READS  🔄 BUILT 2026-09-17, RUN OWED (user)
+      WHY (user, 2026-09-17): another AI model advised using Qwen to EXTRACT, not to
+      calculate. Correction recorded before building: the first test did not fail only on
+      arithmetic. The model also copied the prompt's example, copied a summary row, and on
+      Excel picked the WRONG MONTH COLUMNS — an extraction failure the split does not
+      remove. So Test A asks the smallest extraction question there is: WHERE things are.
+      No figure ever comes from the model; the app reads every number from the file.
+      THREE QUESTIONS (20 calls, one Qwen2.5-VL-7B 4-bit run on a free T4)
+        Excel layout  (6 workbooks) headerRow / descCol / contractCol / monthColumns on the
+                      app's own 40-row slice -> deriveMapFromAiLayout -> the reader's MAP
+                      path (forced by reflection, so rule-readable files are also read
+                      strictly through the model's layout).
+        PDF labels    (roof 2-page + 1-page) each month's printed header text ->
+                      derivePdfLayoutFromAi -> parseSCurvePdf with that layout.
+        PDF teach     (roof x2 + one-page BUHI) page images + the teach-desk grid ->
+                      description letter + month letters -> a JS port of
+                      buildTaughtPdfMap -> parseSCurvePdf.
+        Excel and PDF-teach are asked twice: "csv" (the grid exactly as the app builds it)
+        and "lettered" (each cell tagged with its letter, empties dropped) — to see whether
+        comma-counting is what defeats a small model. Prompts carry NO example numbers;
+        output is schema-constrained by lm-format-enforcer when it loads (the run records
+        whether it did).
+      CEILING FIRST (a perfect answer, run through the same scorers) — so a model failure
+        means the model, not the path:
+        Excel  all 6 PASS exactly. The roof needs header R5 (the DESCRIPTION row); R6, where
+               its month labels sit, is refused 'invalid-map' (single-header only). Its
+               true months are the hidden-value block AM..AS, not the "30 days" columns.
+        PDF labels  roof 2-page and 1-page PASS exactly. The one-page BUHI does NOT read
+               through labels even with "Month 1..12" (layout derived, file refuses it) —
+               so BUHI is a teach-only case.
+        PDF teach   all 3 PASS exactly (roof 2-page F..J + L, M across the page join; BUHI
+               M1=H+J … M12=AL+AM).
+      FOUND WHILE SELF-TESTING THE SCORER: a layout that names too FEW months (segment,
+        M1=I M2=J) passes deriveMapFromAiLayout and reads a wrong 15 / 100 curve. The
+        Excel gates prove the columns hold numbers, not that the layout is complete —
+        worth remembering if model-taught layouts are ever auto-approved.
+      FILES (C:\temp\opencode\testa\): colab_testa_layout.ipynb (source .src.py, built by
+        ..\build_ipynb.mjs); colab_inputs\ (12 files: 6 Excel slices, 3 PDF grids, 3 PDFs,
+        made by make_inputs.php / make_inputs.mjs from the app's own code);
+        score_all.mjs -> score_excel_layout.php, score_pdf_layout.mjs, score_pdf_teach.mjs
+        (no argument = the ceiling); probes probe_excel_truth.php, probe_pdf_headers.mjs,
+        probe_pdf_blocks.mjs, probe_roof_xlsx.php, dump_slice.php.
+      PASS BAR: the curve through the model's layout matches the truth (every month within
+        1.0) inside the app's 50 s budget. Results go here when the run is back.
+      RUN 1 (user, 2026-09-17) — STOPPED on the first call: CUDA out of memory. BUHI's Excel
+        slice is ~8-9k tokens (Qwen tokenizes every digit), and the VL model prefills a
+        text prompt in one pass (SDPA asked for 3.92 GiB more). The enforcement fallback
+        then retried the same prefill and died too. Notebook rebuilt: Excel now runs on
+        the text-only Qwen2.5-7B-Instruct with the 1,024-token chunked prefill that
+        carried step 1b's 20k-char sheet; PDF runs afterwards on Qwen2.5-VL-7B (one model
+        on the GPU at a time); an out-of-memory call is recorded and the run continues;
+        answers are saved after every call and a re-run skips finished ones. Results
+        therefore carry a per-run "model".
+
     Whether an open vision model is good enough on THESE files is a one-off test, and
     the benchmark already exists: known-truth curves for the roof
     (6.32/24.31/42.30/59.71/77.03/99.14/100, counts 4,4,4,4,3,4,3) and the one-page
@@ -409,6 +495,23 @@
     Consequence: the local LLM is justified by RESILIENCE and DATA BOUNDARY, not by
       layout variety. Argue it on those grounds.
 
+  Decision 4 — The client's document reality deprioritises this whole file (user,
+    2026-09-18).
+    Context: the PMU confirmed (a) they mainly have the ORIGINAL EXCEL for S-curves and
+      (b) their NORMAL documents are mainly SCANNED physical copies.
+    Decision: this plan stays paused and drops below pilot-testing readiness. Steps 2
+      (configurable endpoint) and 3 (hosting) are NOT ordered.
+    Rationale: (a) removes most of the remaining S-curve difficulty — phpspreadsheet
+      already reads those workbooks exactly, and §7 was always against putting a model on
+      that path. (b) points anywhere an AI tier could still help AWAY from S-curves and
+      toward the normal-doc OCR path, which is a different and harder vision problem than
+      the clean tables step 1 already failed on.
+    Consequences: do not re-open the hosting question on momentum. The live question
+      before the pilot is narrower and is tracked elsewhere: what the "Try AI assist"
+      button should do while the tier answers ~2% of calls
+      (pilot_testing_readiness_plan.md §4 item P5). Step 2 remains cheap and useful
+      whenever a provider question returns — it is deferred, not rejected.
+
 ===============================================================================
   9. OPEN QUESTIONS / STILL TO RESOLVE
 ===============================================================================
@@ -441,8 +544,13 @@
   1. Read §0, then §4. The measurement is the justification; do not redo it without
      filtering the log to `local.` (the suite shares the file).
   2. Nothing here is built. Ask for an explicit order before starting any step (Rule 10).
-  3. Step 1 needs no code in this repo — it is a model test against the known-truth
-     curves in §5. Do it before anything else.
+  3. Step 1 is DONE (2026-09-16) and failed for 3B and 7B on both PDF and Excel — read
+     its results in §5 before proposing another model test. To re-run or extend it,
+     reuse the notebooks in C:\temp\opencode (colab_vlm_scurve_test / colab_llm_excel_test,
+     built from their .src.py by build_ipynb.mjs) and regenerate the Excel prompts with
+     dump_excel_prompts.php so they match the app. The fairer small-model test was
+     ordered 2026-09-17 and built as STEP 1c (Test A, layout only); a Test B
+     (transcribe a scanned PDF's table, our code sums) was proposed and is not ordered.
   4. Keep predictions out of it (§3). The E3 split is what makes this safe.
   5. Log results HERE before committing, and re-check the standing constraints in
      AGENTS.md (blinding stays on; no merge to main without confirmation).

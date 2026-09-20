@@ -592,8 +592,10 @@ const SCH_TEACH_FIELDS = [
 ];
 // PDF-4 Stage 2 — months are built on demand. A fixed wall of twelve buttons
 // pushed the grid off the screen on every layout, however few months it had.
-// SCH_TEACH_MAX is the ceiling the server also enforces (months max:12).
-const SCH_TEACH_MAX_MONTHS = 12;
+// SCH_TEACH_MAX is the ceiling the server also enforces (months max:MAX_MONTHS —
+// 60 since 2026-09-16; it was 12, so a longer project could not be taught). Buttons
+// still appear one at a time via "+ month", so a short layout's palette is unchanged.
+const SCH_TEACH_MAX_MONTHS = {{ \App\Services\SCurveImportService::MAX_MONTHS }};
 function schMonthField(m) {
     return { key: 'm' + m, label: 'Month ' + m, tip: 'Monthly peso columns for Month ' + m + ' — click 1 letter for single-column months (P1), 2 for paired months (value written twice).' };
 }

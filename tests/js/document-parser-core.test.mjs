@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 
 import core from '../../public/js/admin/projects/document-parser-core.js';
 
+// ─── The ABC blinding switch ────────────────────────────────────────────────
+// L3_TEST_BLIND_ABC empties extractABC's patterns, skips the corroborated
+// reassignment, skips the words-shape fallback and puts collectAbcCandidates to
+// sleep, so a clean file MISSES the ABC and the teach → approve → fills-free
+// round trip can be demonstrated end to end.
+// The suite reads the switch and asserts whichever behaviour is actually
+// configured. It deliberately does NOT carry "intended failures": a suite that is
+// expected to be red cannot tell you when it goes red for a new reason, and this
+// project has already paid for that lesson once.
+const BLIND = !!core.L3_TEST_BLIND_ABC;
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 // Build a PDF.js-like text item: { str, transform:[1,0,0,1,x,y], width, hasEOL? }
@@ -629,7 +640,8 @@ test('F-B1 conditional: budget-Amount reroutes to ABC only with Original/Revised
         'Original Contract Amount: Php 4,204,128.84\nTotal budget Amount Php 4,834,297.59'
     );
     assert.equal(core.extractBudget(both), '4204128.84');
-    assert.equal(core.extractABC(both), '4834297.59');
+    // Blinded: the corroborated budget-Amount → ABC reassignment is skipped.
+    assert.equal(core.extractABC(both), BLIND ? null : '4834297.59');
     // Lone budget-Amount line: today's price behavior preserved (no emptying).
     const lone = core.buildLinesFromText('Total budget Amount Php 4,834,297.59');
     assert.equal(core.extractBudget(lone), '4834297.59');
@@ -658,21 +670,31 @@ test('Weak-find guard: marked small figures and labeled large singles still fill
     assert.equal(core.extractBudget(core.buildLinesFromText('TOTAL ESTIMATED PROJECT COST 4,834,297.59')), '4834297.59');
 });
 
-// --- ABC-pooling: collector + vote + debug + disagree (blinding-gated) ---------------
-// NOTE: L3_TEST_BLIND_ABC is ON (demo), so the hardcoded collector sleeps and these
-// fixtures assert the asleep plumbing. RESTORE step flips them to full-collection
-// asserts (standalone-ABC / approved-budget / F-B1-conditional / date-ghost fixtures).
+// --- ABC-pooling: collector + vote + debug + disagree -------------------------------
+// RESTORED 2026-09-18 (pilot item N1): L3_TEST_BLIND_ABC is OFF, so these assert the
+// real collection behaviour. To re-blind for a demo, flip the flag and these three
+// fixtures go back to asserting [] / null.
 
-test('ABC-pooling: blinded collector sleeps so the clean-file demo misses honestly', () => {
+test('ABC-pooling: collector reads a labelled ABC line', () => {
     const lines = core.buildLinesFromText('Approved Budget for the Contract: Php 4,834,297.59');
-    assert.deepEqual(core.collectAbcCandidates(lines, 'demo.pdf'), []);
+    const got = core.collectAbcCandidates(lines, 'demo.pdf');
+    if (BLIND) {
+        // Blinded: the collector sleeps, which is what makes the demo file miss.
+        assert.equal(got.length, 0);
+        return;
+    }
+    assert.equal(got.length, 1);
+    assert.equal(got[0].value, '4834297.59');
+    assert.equal(got[0].labeled, true);
+    assert.equal(got[0].pattern, 'abc-line');
 });
 
 test('ABC-pooling: pooled return carries abc vote/debug/disagree/fileCounts keys', () => {
     const pooled = core.parseProjectInfoPooled([
         { text: 'Approved Budget for the Contract: Php 4,834,297.59', fileName: 'demo.pdf' },
     ]);
-    assert.equal(pooled.abc, null);
+    // The KEYS must exist either way — only the value depends on the switch.
+    assert.equal(pooled.abc, BLIND ? null : '4834297.59');
     assert.ok(pooled._debug && Array.isArray(pooled._debug.abc));
     assert.equal(pooled._disagree.abc, null);
     assert.ok(pooled._fileCounts && typeof pooled._fileCounts.abc === 'object');
@@ -693,9 +715,8 @@ test('ABC-pooling: empty pooled abc never clobbers the learned single-match fill
 });
 
 // --- ABC words-rule (A): PESOS-words fallback for funds-cert lines ------------------
-// The shared helper is tested directly (strict shape), so the rule logic is covered while
-// blinding sleeps the wired paths. RESTORE step flips the two sleep asserts below to full
-// single-match + collector asserts (words-only file fills; words-shape candidate votes).
+// The shared helper is tested directly (strict shape), and since the 2026-09-18 restore
+// (pilot item N1) the WIRED paths are tested end to end below as well.
 
 test('ABC words-shape: strict funds-cert wording reads full without Php numeric', () => {
     // Real shape (test5 funds cert p3) minus the Php figure — garbled-numeric case.
@@ -717,10 +738,42 @@ test('ABC words-shape: strictness guards reject lookalikes', () => {
     assert.equal(core.abcWordsAtWindow('with an approved budget for the contract of SUPPLIES PESOS & 59/100', ''), null);
 });
 
-test('ABC words-shape: wired paths sleep while blinded (flip at restore)', () => {
-    const lines = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
-    assert.equal(core.extractABC(lines), null);
-    assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf'), []);
+// RESTORED 2026-09-18 (pilot item N1): the wired paths are live, so they are asserted
+// end to end here rather than asserted asleep.
+
+test('ABC words-shape: wired paths read the words amount, not its cents marker (N1a)', () => {
+    // THE DEFECT THE BLINDING WAS HIDING. The label pattern captures the whole tail
+    // "… PESOS & 59/100"; asMoney used to read 59 out of that cents marker, return
+    // P59.00 as the ABC, and short-circuit the words rule that reads it correctly.
+    // Both tracks must now agree on the words amount.
+    const real = 'with an approved budget for the contract of FOUR MILLION EIGHT HUNDRED THIRTY FOUR THOUSAND TWO HUNDRED NINETY SEVEN PESOS & 59/100';
+    const lines = core.buildLinesFromText(real);
+    const short = core.buildLinesFromText('with an approved budget for the contract of FOUR MILLION PESOS & 59/100');
+    if (BLIND) {
+        // Blinded: the words-shape fallback is skipped and the collector sleeps.
+        assert.equal(core.extractABC(lines), null);
+        assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf'), []);
+        assert.equal(core.extractABC(short), null);
+        return;
+    }
+    assert.equal(core.extractABC(lines), '4834297.59');
+    assert.deepEqual(core.collectAbcCandidates(lines, 'funds.pdf').map(c => c.value), ['4834297.59']);
+    // The shorter synthetic shape reads the same way.
+    assert.equal(core.extractABC(short), '4000000.59');
+});
+
+test('ABC words-shape: the cents guard never eats a real figure (N1a)', () => {
+    // A labelled numeric ABC is untouched by the guard.
+    const numeric = core.buildLinesFromText('Approved Budget for the Contract (ABC): Php 4,834,297.59');
+    const round = core.buildLinesFromText('approved budget for the contract of TWO MILLION PESOS & 00/100');
+    assert.equal(core.extractABC(numeric), BLIND ? null : '4834297.59');
+    assert.equal(core.extractABC(round), BLIND ? null : '2000000.00');
+    // The guard itself is PURE and the switch does not touch it: digits ONLY inside an
+    // NN/100 marker are not an amount, blinded or not.
+    assert.equal(core.isCentsFractionOnly('PESOS & 59/100'), true);
+    assert.equal(core.isCentsFractionOnly('Php 4,834,297.59'), false);
+    assert.equal(core.isCentsFractionOnly('4,000,000.00 & 59/100'), false);
+    assert.equal(core.isCentsFractionOnly('no digits here'), false);
 });
 
 test('ABC words-shape: end-to-end via the shared helper on the real funds-cert wording', () => {
@@ -815,7 +868,9 @@ test('L3: hardcoded ABC beats learned label regardless of line order', () => {
     // Learned-labeled line FIRST proves priority is structural, not positional.
     const text = 'Estimated Project Outlay: Php 9,999,999.99\nABC: Php 4,834,297.59';
     const learned = { labels: { abc: ['Estimated Project Outlay'] } };
-    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, '4834297.59');
+    // Blinded, the hardcoded rule has nothing to win WITH, so the learned label fills
+    // instead — which IS the demonstration the switch exists for.
+    assert.equal(core.parseProjectInfo({ text }, { learned }).abc, BLIND ? '9999999.99' : '4834297.59');
 });
 
 test('L3: learned title value-keyword fills when hardcoded phrases miss', () => {
@@ -847,3 +902,481 @@ test('L3: empty learned table reproduces default behavior exactly', () => {
         core.parseProjectInfo({ text }));
 });
 
+
+// ─── Budget source shape (B-1) ──────────────────────────────────────────────
+// The preview offers an unmatched budget source for CREATION as a budget_sources
+// row, so what this validator lets through can become a permanent database record.
+// It is deliberately biased towards rejecting: a rejected value leaves the field
+// empty for the reviewer (and the L1-L3 loop lets them teach it), while an accepted
+// misread invites a junk row nobody unmakes.
+
+test('asSourceName accepts real funding sources', () => {
+    for (const ok of [
+        'GAA', 'CHED', 'DPWH', 'LGU', 'GAD',
+        'Trust Fund', 'Special Trust Fund', 'CHED-HEDF', 'DPWH/LGU',
+        'General Appropriations Act (GAA)', 'GAA 2025', '2025 GAA',
+        '20% Development Fund',            // a real LGU source, hence the leading digit
+    ]) {
+        assert.equal(core.asSourceName(ok), ok, `should accept ${ok}`);
+    }
+});
+
+test('asSourceName rejects OCR debris', () => {
+    // The one that prompted this: a misread tail from a scanned funds certificate,
+    // which the old lenRange(2, 100) accepted because it is 13 characters long.
+    assert.equal(core.asSourceName('Accor, Fost ='), null);
+    for (const bad of [
+        '=', 'a', '-- ', '...,,,--',      // punctuation and scraps
+        '05142005', '3 1', 'A-1',         // no real word in them
+        'of Funds', 'the contract in accordance with the provisions of', // sentence fragments
+        'Source | Fund_2',                // characters that never appear in a name
+        'a'.repeat(61),                   // longer than any source is
+    ]) {
+        assert.equal(core.asSourceName(bad), null, `should reject ${JSON.stringify(bad)}`);
+    }
+});
+
+test('extractBudgetSource takes the name and refuses the misread', () => {
+    const from = (t) => core.extractBudgetSource(core.buildLinesFromText(t));
+    assert.equal(from('Source of Funds: GAA'), 'GAA');
+    assert.equal(from('Funding Source: General Appropriations Act (GAA)'), 'General Appropriations Act (GAA)');
+    // Was accepted before B-1, and was then offered for creation as a database row.
+    assert.equal(from('Source of Funds: Accor, Fost ='), null);
+});
+
+// ─── Contractor shape (B-4) ─────────────────────────────────────────────────
+// An Abstract of Bids prints every bidder across ONE row. Once the contrast fix
+// made that page readable, the row outranked the contract page's real contractor,
+// because the old rule asked only "is this 5-150 characters with a construction
+// word in it" — and a row of four construction companies answers yes loudly.
+
+const BID_ROW = "DONBER CONSTRUCTION AND SUPPLY | 301 ENGINEERS | SKYSCRAPER CONS. & ENGINEERING SERVICES | CHRISTINAJOY CONSTRUCTION AND DEV'T CORP";
+const REAL_CONTRACTOR = 'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES';
+
+test('asCompanyName refuses a table row and keeps a company', () => {
+    assert.equal(core.asCompanyName(BID_ROW), null);          // a pipe is a cell boundary
+    assert.equal(core.asCompanyName('A | B'), null);
+    assert.equal(core.asCompanyName(REAL_CONTRACTOR), REAL_CONTRACTOR);
+    assert.equal(core.asCompanyName('ACME BUILDERS'), 'ACME BUILDERS');
+    assert.equal(core.asCompanyName('ACME'), null);           // too short to be a name
+    assert.equal(core.asCompanyName('x'.repeat(101)), null);  // longer than any company
+});
+
+test('the bid-abstract row never becomes the contractor', () => {
+    assert.equal(core.isContractorValueCandidate(BID_ROW), null);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Contractor: ' + BID_ROW)), null);
+});
+
+test('the real contractor still reads, with its hereinafter tail stripped', () => {
+    const withTail = REAL_CONTRACTOR + ' (hereinafter called the "CONTRACTOR")';
+    assert.equal(core.isContractorValueCandidate(withTail), REAL_CONTRACTOR);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Contractor: ' + withTail)), REAL_CONTRACTOR);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Awarded to: ACME BUILDERS')), 'ACME BUILDERS');
+});
+
+// ─── Near-match against existing rows (B-2) ─────────────────────────────────
+// The preview can CREATE a category or budget source. B-1 stopped values that LOOK
+// like debris; this catches the ones that look fine and are still wrong — OCR turns
+// GAA into CAA, which passes every shape check and becomes a near-duplicate row that
+// silently splits every report grouping by source.
+
+const EXISTING = ['GAA', 'CHED', 'DPWH', 'LGU', 'GAD', 'Trust Fund', 'Special Trust Fund'];
+
+test('editDistance counts single edits', () => {
+    assert.equal(core.editDistance('GAA', 'GAA'), 0);
+    assert.equal(core.editDistance('CAA', 'GAA'), 1);      // substitution — the OCR case
+    assert.equal(core.editDistance('GA', 'GAA'), 1);       // deletion
+    assert.equal(core.editDistance('GAAX', 'GAA'), 1);     // insertion
+    assert.equal(core.editDistance('', 'GAA'), 3);
+    assert.equal(core.editDistance('Bananas', 'GAA'), 7);
+});
+
+test('nearestName finds the row a misread was meant to be', () => {
+    assert.deepEqual(core.nearestName('CAA', EXISTING, 2), { name: 'GAA', distance: 1 });
+    assert.deepEqual(core.nearestName('Speclal Trust Fund', EXISTING, 2), { name: 'Special Trust Fund', distance: 1 });
+    // Case and spacing are not differences a human would accept as two separate rows.
+    assert.deepEqual(core.nearestName('TRUST FUND', EXISTING, 2), { name: 'Trust Fund', distance: 0 });
+    assert.deepEqual(core.nearestName('Trust  fund', EXISTING, 2), { name: 'Trust Fund', distance: 0 });
+});
+
+test('nearestName stays quiet when nothing is close', () => {
+    assert.equal(core.nearestName('Bananas', EXISTING, 2), null);
+    assert.equal(core.nearestName('', EXISTING, 2), null);
+    assert.equal(core.nearestName('GAA', [], 2), null);
+    assert.equal(core.nearestName('GAA', null, 2), null);
+});
+
+test('a real neighbouring source is still only a WARNING, not a block', () => {
+    // GAD (Gender and Development) is one edit from GAA and is a genuinely different
+    // fund. The caller must warn and let the reviewer proceed — which is why this
+    // returns a distance rather than a verdict.
+    const near = core.nearestName('GAD', ['GAA', 'CHED'], 2);
+    assert.equal(near.name, 'GAA');
+    assert.equal(near.distance, 1);
+    assert.ok(near.distance > 0, 'a non-zero distance is a question, not an answer');
+});
+
+// ─── Category shape (B-1b) ──────────────────────────────────────────────────
+// Same hole as B-1, next door. A category is not an ordinary label: CategorySeeder
+// defines exactly four and the dashboards GROUP BY this column, so a junk fifth
+// category does not sit quietly in a table — it splits every figure counting
+// projects by type.
+
+test('asCategoryName accepts the seeded categories and their kin', () => {
+    for (const ok of [
+        'New Construction', 'Renovation', 'Repair', 'Maintenance',   // the seeded four
+        'Rehabilitation/Refurbishment', 'Repair & Maintenance',
+    ]) {
+        assert.equal(core.asCategoryName(ok), ok, `should accept ${ok}`);
+    }
+});
+
+test('asCategoryName rejects debris', () => {
+    for (const bad of [
+        'Accor, Fost =',      // the budget-source misread, for good measure
+        '05142005',           // no word in it
+        'A | B',              // a table row — B-4's cell boundary
+        'of the project', 'the Works',   // sentence fragments
+        'x',                  // too short
+        'Cat: 3',             // a label bled into the value
+    ]) {
+        assert.equal(core.asCategoryName(bad), null, `should reject ${JSON.stringify(bad)}`);
+    }
+});
+
+test('extractCategory takes the name and refuses the misread', () => {
+    const from = (t) => core.extractCategory(core.buildLinesFromText(t));
+    assert.equal(from('Category: Renovation'), 'Renovation');
+    assert.equal(from('Type of Project: New Construction'), 'New Construction');
+    assert.equal(from('Category: Accor, Fost ='), null);
+});
+
+// ─── Values that ran into their neighbours (B-3 / B-5) ──────────────────────
+// A scanned page has no columns, only a picture of them, so OCR reads a printed ROW
+// as one line and whatever sat to the right is glued on. B-4 caught the version
+// carrying a '|'; these carry only a space, so something else has to mark the edge.
+
+test('stripEdgeDebris drops specks without touching the name', () => {
+    assert.equal(core.stripEdgeDebris(']  Rehabilitation/Refurbishment of Canteen'), 'Rehabilitation/Refurbishment of Canteen');
+    assert.equal(core.stripEdgeDebris('i SKYSCRAPER CONSTRUCTION'), 'SKYSCRAPER CONSTRUCTION');
+    assert.equal(core.stripEdgeDebris('ACME BUILDERS'), 'ACME BUILDERS');
+    assert.equal(core.stripEdgeDebris('New Construction'), 'New Construction');   // keeps a real first word
+    assert.equal(core.stripEdgeDebris('ACME BUILDERS —'), 'ACME BUILDERS');
+});
+
+test('cutAtEmbeddedLabel stops where the next field starts', () => {
+    assert.equal(
+        core.cutAtEmbeddedLabel('Nabua Campus, Camarines Sur Polytechnic Colleges Date: 05142005'),
+        'Nabua Campus, Camarines Sur Polytechnic Colleges');
+    assert.equal(
+        core.cutAtEmbeddedLabel('SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // Nothing to cut.
+    assert.equal(core.cutAtEmbeddedLabel('Nabua Campus, Camarines Sur'), 'Nabua Campus, Camarines Sur');
+    // A leading label is the value's own, not an embedded one — index 0 never cuts.
+    assert.equal(core.cutAtEmbeddedLabel('Location: Nabua'), 'Location: Nabua');
+});
+
+test('cutAtEmbeddedLabel matches ONE word, because two swallowed real content', () => {
+    // With an optional second word the pattern read "& ENGINEERING NES :" as the label
+    // and cut at ENGINEERING, and "Colleges Date:" and cut at Colleges — each losing a
+    // word of the answer. These two assertions are what pin that down.
+    assert.ok(core.cutAtEmbeddedLabel('A B & ENGINEERING NES : x').endsWith('ENGINEERING'));
+    assert.ok(core.cutAtEmbeddedLabel('X Y Colleges Date: 1').endsWith('Colleges'));
+});
+
+test('the contractor is recovered rather than refused', () => {
+    const from = (t) => core.extractContractor(core.buildLinesFromText('Contractor: ' + t));
+    assert.equal(from('i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // A clean name is untouched by the tidying.
+    assert.equal(from('SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES');
+    assert.equal(from('ACME BUILDERS'), 'ACME BUILDERS');
+});
+
+test('parseProjectInfo cleans all three fields that ran into neighbours', () => {
+    const text = [
+        'Project: ]  Rehabilitation/Refurbishment of Canteen at Food Laboratory Building',
+        'Location: Nabua Campus, Camarines Sur Polytechnic Colleges Date: 05142005',
+        'Contractor: i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom',
+    ].join('\n');
+    const p = core.parseProjectInfo({ text });
+    assert.equal(p.title, 'Rehabilitation/Refurbishment of Canteen at Food Laboratory Building');
+    assert.equal(p.location, 'Nabua Campus, Camarines Sur Polytechnic Colleges');
+    assert.equal(p.contractor, 'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+});
+
+test('a clean document is not altered by the tidying', () => {
+    const text = [
+        'Project: Construction of Two-Storey Academic Building',
+        'Location: Nabua, Camarines Sur',
+        'Contractor: ACME BUILDERS AND CONSTRUCTION SUPPLY',
+    ].join('\n');
+    const p = core.parseProjectInfo({ text });
+    assert.equal(p.title, 'Construction of Two-Storey Academic Building');
+    assert.equal(p.location, 'Nabua, Camarines Sur');
+    assert.equal(p.contractor, 'ACME BUILDERS AND CONSTRUCTION SUPPLY');
+});
+
+// ─── The VALUE-SIDE contractor path is tidied too (B-5b) ────────────────────
+// B-5 wired the tidying into extractContractor's LABELED path only, and the very
+// document that motivated it has no "Contractor:" label on that line — it is found
+// by the value-side heuristic. So the browser still showed
+// "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom" while the labeled-path
+// test passed. A green suite said nothing about the path actually in use.
+
+test('isContractorValueCandidate tidies what it returns', () => {
+    assert.equal(
+        core.isContractorValueCandidate('i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // The hereinafter tail is still stripped, and a clean name is untouched.
+    assert.equal(
+        core.isContractorValueCandidate('SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES (hereinafter called the "CONTRACTOR")'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES');
+    assert.equal(
+        core.isContractorValueCandidate('ACME BUILDERS AND CONSTRUCTION SUPPLY'),
+        'ACME BUILDERS AND CONSTRUCTION SUPPLY');
+    // And the bid-abstract row is still refused — tidying must not rescue a table row.
+    assert.equal(core.isContractorValueCandidate(BID_ROW), null);
+});
+
+test('the contractor reads clean through parseProjectInfo with no label at all', () => {
+    // The real shape: the name sits mid-sentence on the contract page, no "Contractor:"
+    // anywhere on the line, so only the value-side path can find it.
+    const text = [
+        'ES (hereinafter called the',
+        'i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom',
+        'CONTRACTOR"), duly represented by ENGR. ARCHIEVAL S. FRIANELA',
+    ].join('\n');
+    assert.equal(core.parseProjectInfo({ text }).contractor, 'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+});
+
+// ─── Learned labels are pool members (L-9) ──────────────────────────────────
+// They vote, they corroborate, they can disagree — and they can NEVER outrank a
+// hardcoded find. The guarantee is enforced in the sort rather than by weight,
+// because weights accumulate: enough learned finds would eventually outvote a
+// hardcoded one, and "enough" is not a policy anybody chose.
+
+const TAUGHT_DURATION = { learned: { labels: { duration: ['MY TAUGHT LABEL'] } } };
+
+test('a learned label votes and appears in the inspector with its phrase', () => {
+    const text = 'Approved Budget for the Contract; PB 4,834,297 5g\n| TOTAL ESTIMATED PROJECT COST P 4,834, 297.59';
+    const learned = { learned: { labels: { abc: ['Approved Budget for the Contract; PB', '| TOTAL ESTIMATED PROJECT COST P'] } } };
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }], learned);
+    const rows = p._debug.abc;
+    assert.equal(rows.length, 2, 'both taught phrases should have voted');
+    // The phrase travels with the row, so the inspector can say which wording found what.
+    assert.ok(rows.every(r => r.patterns.some(x => x.startsWith('learned:'))));
+    assert.ok(rows.some(r => r.patterns.includes('learned:approved budget for the contract')));
+    // And two taught phrases disagreeing is handled by the ORDINARY pooled adjudicator.
+    assert.ok(p._disagree.abc, 'the pool itself should report the disagreement');
+    assert.equal(p._disagree.abc.winner.value, '4834297.00');
+    assert.equal(p._disagree.abc.runnerUp.value, '4834297.59');
+});
+
+test('a learned-only value never outranks a hardcoded one, whatever the score', () => {
+    // Five files carrying the taught label against ONE hardcoded find. The learned
+    // value wins on raw score (2.55 vs 0.85) and must still lose.
+    const docs = [{ text: 'Contract Duration: 185 calendar days', fileName: 'real.pdf' }];
+    for (let i = 0; i < 5; i++) docs.push({ text: 'MY TAUGHT LABEL: 777', fileName: `bulk${i}.pdf` });
+    const p = core.parseProjectInfoPooled(docs, TAUGHT_DURATION);
+    const learnedRow = p._debug.duration.find(r => r.value === '777');
+    const hardRow = p._debug.duration.find(r => r.value === '185');
+    assert.ok(learnedRow.score > hardRow.score, 'the fixture must actually out-score it, or this proves nothing');
+    assert.equal(p.duration, '185', 'hardcoded support wins regardless of accumulated learned score');
+});
+
+test('a learned label agreeing with a hardcoded rule shows as corroboration', () => {
+    const p = core.parseProjectInfoPooled(
+        [{ text: 'Contract Duration: 185 calendar days\nMY TAUGHT LABEL: 185', fileName: 'x.pdf' }],
+        TAUGHT_DURATION);
+    const rows = p._debug.duration;
+    assert.equal(rows.length, 1, 'the same value from two sources is ONE row, not two');
+    assert.equal(rows[0].count, 2);
+    assert.ok(rows[0].patterns.includes('labeled'));
+    assert.ok(rows[0].patterns.some(x => x.startsWith('learned:')));
+});
+
+test('no learned vocabulary leaves the pool exactly as it was', () => {
+    const docs = [{ text: 'Contract Duration: 185 calendar days', fileName: 'a.pdf' }];
+    const withNone = core.parseProjectInfoPooled(docs);
+    const withEmpty = core.parseProjectInfoPooled(docs, { learned: { labels: {} } });
+    assert.deepEqual(withEmpty._debug.duration, withNone._debug.duration);
+    assert.equal(withNone.duration, '185');
+});
+
+// ─── Independence: the same line read twice is ONE piece of evidence ────────
+// Found by the user asking whether a learned phrase would share wording with a
+// hardcoded one. It does — "Approved Budget for the Contract" is both a taught
+// phrase and the hardcoded abc-line rule — and on the test document both read the
+// SAME DAMAGED LINE. Counting them twice pushed that wrong value past 2x the
+// correct one, which silenced the disagreement note: the right answer disappeared
+// precisely because two rules agreed about one line.
+
+test('two rules matching the same line do not corroborate each other', () => {
+    const text = 'Contract Duration: 185 calendar days';
+    // A taught phrase deliberately worded to hit the SAME line the hardcoded rule does.
+    const learned = { learned: { labels: { duration: ['Contract Duration'] } } };
+    const solo = core.parseProjectInfoPooled([{ text, fileName: 'a.pdf' }]);
+    const both = core.parseProjectInfoPooled([{ text, fileName: 'a.pdf' }], learned);
+    const soloRow = solo._debug.duration.find(r => r.value === '185');
+    const bothRow = both._debug.duration.find(r => r.value === '185');
+    assert.equal(bothRow.count, soloRow.count, 'the same line must not vote twice');
+    assert.equal(bothRow.score, soloRow.score, 'nor score twice');
+    // The pattern IS still recorded — knowing both rules found it is useful.
+    assert.ok(bothRow.patterns.some(x => x.startsWith('learned:')));
+    assert.ok(bothRow.patterns.includes('labeled'));
+});
+
+test('finds on DIFFERENT lines still corroborate normally', () => {
+    // Same value, two separate files: genuine independent evidence, and it must count.
+    const docs = [
+        { text: 'Contract Duration: 185 calendar days', fileName: 'a.pdf' },
+        { text: 'Contract Duration: 185 calendar days', fileName: 'b.pdf' },
+    ];
+    const row = core.parseProjectInfoPooled(docs)._debug.duration.find(r => r.value === '185');
+    assert.equal(row.count, 2, 'two files is two pieces of evidence');
+    assert.equal(row.files.length, 2);
+});
+
+// ─── Is a taught phrase worth approving? (the desk indicator) ───────────────
+// The desk showed a reviewer the phrase and asked them to judge it, without
+// telling them whether a BUILT-IN rule already covers that wording. On the test
+// document one approved phrase restated a hardcoded rule and changed nothing while
+// the other found the only correct value — and they looked identical on screen.
+
+test('builtInCoversPhrase knows a built-in wording from a new one', () => {
+    // Wordings the hardcoded rules already have.
+    assert.equal(core.builtInCoversPhrase('duration', 'Contract Duration'), true);
+    assert.equal(core.builtInCoversPhrase('location', 'Project Location'), true);
+    assert.equal(core.builtInCoversPhrase('budgetSource', 'Source of Funds'), true);
+    assert.equal(core.builtInCoversPhrase('category', 'Type of Project'), true);
+    assert.equal(core.builtInCoversPhrase('startDate', 'Notice to Proceed'), true);
+    // Wordings nothing built in knows — these are the ones worth approving.
+    assert.equal(core.builtInCoversPhrase('duration', 'MY OWN TAUGHT WORDING'), false);
+    assert.equal(core.builtInCoversPhrase('location', 'Site Of The Works'), false);
+    assert.equal(core.builtInCoversPhrase('budgetSource', 'Charged Against'), false);
+    assert.equal(core.builtInCoversPhrase('category', 'Kind Of Undertaking'), false);
+});
+
+test('builtInCoversPhrase says "cannot tell" rather than guessing', () => {
+    // Title and contractor are found mainly by VALUE-side heuristics, so a probe line
+    // would be matched on its own wording rather than on the label.
+    assert.equal(core.builtInCoversPhrase('title', 'Project Name'), null);
+    assert.equal(core.builtInCoversPhrase('contractor', 'Awarded To'), null);
+    assert.equal(core.builtInCoversPhrase('budget', ''), null);
+    assert.equal(core.builtInCoversPhrase('notAField', 'anything'), null);
+    // While the ABC blinding is on its hardcoded rules are EMPTY, so every ABC phrase
+    // would look like a discovery. Null is the honest answer, and it tracks the switch.
+    assert.equal(core.builtInCoversPhrase('abc', 'Approved Budget for the Contract'),
+        core.L3_TEST_BLIND_ABC ? null : true);
+});
+
+test('a probe value that identifies itself yields "cannot tell", not a false positive', () => {
+    // "777 calendar days" is found by a built-in rule whatever label precedes it. The
+    // control run inside builtInCoversPhrase is what stops that reading as coverage —
+    // without it, every duration phrase looked already-covered.
+    assert.equal(core.builtInCoversPhrase('duration', 'Zqxj Control Label'), false);
+    assert.notEqual(core.builtInCoversPhrase('duration', 'MY OWN TAUGHT WORDING'), true);
+});
+
+// ─── Cross-field exclusion: another field's winner is not this field's alternative ──
+// The CONTRACT PRICE pick-one had started offering 4,834,297.59 — which is the ABC.
+// It reached the budget pool because P-3 made six more pages readable and the ABC
+// figure appears on several of them, accumulating enough finds to pass the genuine
+// revised amount. The winner was still right; the ALTERNATIVE was a different
+// field's answer wearing this field's label.
+
+const CROSS_FIELD_DOC = [
+    'Contract Price: Php 4,204,128.84',
+    'in the amount of FOUR MILLION TWO HUNDRED FOUR THOUSAND PESOS (P 4,204,128.84).',
+    '3. Original Contract Amount Php4,204,128.84',
+    'Contract Amount: PhP 4,204,128.84',
+    'Approved Budget for the Contract: P 4,834,297.59',
+    '| TOTAL ESTIMATED PROJECT COST P 4,834,297.59 |',
+    'Sub-Total P 4,834,297.59',
+    '4. Revised Contract Amount Php4,323,196.77',
+].join('\n');
+
+test('the ABC is never offered as the alternative CONTRACT PRICE', () => {
+    const p = core.parseProjectInfoPooled([{ text: CROSS_FIELD_DOC, fileName: 'd.pdf' }]);
+    assert.equal(p.budget, '4204128.84', 'the winner must still be the contract price');
+    assert.equal(p.abc, '4834297.59', 'and the ABC must still be the ABC');
+
+    // The fixture has to actually reproduce the problem, or this proves nothing: the
+    // unfiltered top two must satisfy pooledDisagree's condition (first < 2 x second).
+    const [first, second] = p._debug.budget;
+    assert.equal(second.value, '4834297.59', 'the ABC must really be the runner-up by score');
+    assert.ok(first.score < 2 * second.score, 'unfiltered, the note WOULD have fired offering the ABC');
+
+    // And it does not, because the ABC is claimed by another field.
+    const note = p._disagree.budget;
+    if (note) {
+        assert.notEqual(note.runnerUp.value, '4834297.59', 'the ABC must not be the alternative');
+        assert.notEqual(note.winner.value, '4834297.59');
+    }
+});
+
+test('excluding a claimed value never removes the field its own winner', () => {
+    // A bid at exactly the ceiling: the same number is legitimately both. The winner
+    // must survive in its own field even though another field claims it.
+    const text = [
+        'Approved Budget for the Contract: P 4,834,297.59',
+        'Contract Price: Php 4,834,297.59',
+        'Contract Amount: PhP 4,834,297.59',
+    ].join('\n');
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }]);
+    assert.equal(p.budget, '4834297.59', 'the contract price is still itself');
+    assert.equal(p.abc, '4834297.59', 'and so is the ABC');
+});
+
+test('the ABC pick-one is untouched by the exclusion', () => {
+    // The .59 vs .00 result must survive — it is what L-8, L-9 and the independence
+    // fix were built for, and the budget winner is a different number, so nothing in
+    // the ABC pair is claimed elsewhere.
+    const text = [
+        'Approved Budget for the Contract; PB 4,834,297 5g',
+        '| TOTAL ESTIMATED PROJECT COST P 4,834, 297.59',
+        'Contract Price: Php 4,204,128.84',
+    ].join('\n');
+    const learned = { learned: { labels: { abc: ['Approved Budget for the Contract; PB', '| TOTAL ESTIMATED PROJECT COST P'] } } };
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }], learned);
+    const values = p._debug.abc.map(r => r.value);
+    assert.ok(values.includes('4834297.59'));
+    assert.ok(values.includes('4834297.00'));
+});
+
+// ─── A text value is anchored as TEXT, numerals and all ─────────────────────
+// The strategy used to be chosen by "does this value contain a digit", which is
+// right for money and wrong for everything else. A reviewer disambiguating a
+// duplicate title by appending " 2" turned the whole title into a DIGIT match: the
+// miner looked for a bare "2" anywhere, found one in an unrelated line, and mined
+// "Amount" as the label for a project title.
+
+const MINER_DOC = [
+    'Sheet 1 of 12 | Ea Page; of12 | _ (LA',
+    'Project Name: Rehabilitation/Refurbishment of Canteen at Food Laboratory Building',
+    'Amount 2 items',
+    'Original Contract Amount Php4,204,128.84',
+].join('\n');
+const labelOf = (v, field) => (core.mineCorrectionLabels(MINER_DOC, v, 1, field)[0] || {}).label;
+const TITLE = 'Rehabilitation/Refurbishment of Canteen at Food Laboratory Building';
+
+test('a title containing a numeral is not anchored by the numeral', () => {
+    // Without the field, the old behaviour: the bare "2" wins and mines nonsense.
+    assert.equal(labelOf(TITLE + ' 2'), 'Amount');
+    // With it, the digit is just part of the text — and that text is not in the
+    // document, so there is honestly nothing to learn. Silence beats "Amount".
+    assert.equal(labelOf(TITLE + ' 2', 'title'), undefined);
+});
+
+test('the same title without a numeral still anchors correctly', () => {
+    assert.equal(labelOf(TITLE, 'title'), 'Project Name');
+});
+
+test('money and durations still anchor by their digits', () => {
+    assert.equal(labelOf('4204128.84', 'budget'), 'Original Contract Amount Php');
+    // A location with a numeral in it is TEXT, not a number hunt.
+    assert.equal(core.mineCorrectionLabels('Site: Brgy. 3 Nabua\nPage 3 of 9', 'Brgy. 3 Nabua', 1, 'location')[0].label, 'Site');
+});

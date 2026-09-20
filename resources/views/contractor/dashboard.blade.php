@@ -82,12 +82,19 @@
         </div>
       </div>
       <div class="db-hero-right">
-        <label class="db-hero-search" for="ct-hero-search-input">
-          <i class="bi bi-search"></i>
-          <input id="ct-hero-search-input" type="search"
-                 placeholder="Search my projects…"
-                 oninput="ctSearchProjects(this.value)" autocomplete="off">
-        </label>
+        <div class="db-hero-search-wrap">
+          <label class="db-hero-search" for="ct-hero-search-input">
+            <i class="bi bi-search"></i>
+            <input id="ct-hero-search-input" type="search"
+                   placeholder="Search my projects…"
+                   oninput="ctSearchProjects(this.value); ctAutocompleteSearch(this.value)"
+                   onkeydown="ctAutocompleteKey(event)"
+                   onfocus="ctAutocompleteSearch(this.value)"
+                   autocomplete="off" role="combobox" aria-expanded="false"
+                   aria-controls="ct-search-results" aria-autocomplete="list">
+          </label>
+          <div id="ct-search-results" class="db-search-results" hidden></div>
+        </div>
         <div class="db-hero-actions">
           <a href="{{ route('contractor.projects') }}" class="db-header-btn light">
             <i class="bi bi-eye"></i> View All Projects
@@ -437,6 +444,8 @@
 </div>{{-- end db-page --}}
 
 <script>
+  const CT_DASHBOARD_SEARCH_URL = "{{ route('contractor.dashboard.search') }}";
+
   // Hero search (client-side row filter only).
   function ctSearchProjects(query) {
     const q = (query || '').trim().toLowerCase();
@@ -445,6 +454,98 @@
       row.style.display = (!q || row.innerText.toLowerCase().includes(q)) ? '' : 'none';
     });
   }
+
+  // ── Hero autocomplete (search → suggestions → click to open) ──────
+  // Contractor-scoped matches from Contractor\DashboardController@search.
+  // Clicking (or Enter) navigates to the project's read-only page.
+  let ctAcTimer = null;
+  let ctAcItems = [];
+  let ctAcActive = -1;
+
+  function ctAutocompleteSearch(query) {
+    const box = document.getElementById('ct-search-results');
+    const q = (query || '').trim();
+    clearTimeout(ctAcTimer);
+    if (!q) { ctAcClose(); return; }
+    ctAcTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(CT_DASHBOARD_SEARCH_URL + '?q=' + encodeURIComponent(q), {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!res.ok) throw new Error('bad status');
+        ctAcItems = await res.json();
+        ctAcActive = ctAcItems.length ? 0 : -1;
+        ctAcRender(q);
+      } catch (e) { ctAcClose(); }
+    }, 200);
+  }
+
+  function ctAcStatusClass(status) {
+    return {
+      'Ongoing': 's-ongoing', 'Completed': 's-completed', 'Planned': 's-planned',
+      'Suspended': 's-suspended', 'Cancelled': 's-cancelled'
+    }[status] || 's-ongoing';
+  }
+
+  function ctAcRender(q) {
+    const box = document.getElementById('ct-search-results');
+    const input = document.getElementById('ct-hero-search-input');
+    if (!box) return;
+    if (!q || !q.trim()) { ctAcClose(); return; }
+    if (!ctAcItems.length) {
+      box.innerHTML = '<div class="db-search-empty"><i class="bi bi-search"></i>No projects match "' +
+        q.replace(/</g, '&lt;') + '"</div>';
+    } else {
+      box.innerHTML = ctAcItems.map((p, i) =>
+        '<a href="' + p.detail_url + '" class="db-search-item' + (i === ctAcActive ? ' active' : '') + '"' +
+        ' data-idx="' + i + '" role="option" aria-selected="' + (i === ctAcActive) + '">' +
+        '<span class="db-search-icon"><i class="bi bi-folder2-open"></i></span>' +
+        '<span class="db-search-main"><span class="db-search-code">' + (p.code || '').replace(/</g, '&lt;') + '</span>' +
+        '<span class="db-search-title">' + (p.title || '').replace(/</g, '&lt;') + '</span>' +
+        '</span><span class="db-search-status ' + ctAcStatusClass(p.status) + '">' + (p.status || '') + '</span></a>'
+      ).join('');
+      box.querySelectorAll('.db-search-item').forEach(el => {
+        el.addEventListener('mousemove', () => {
+          ctAcActive = parseInt(el.dataset.idx, 10);
+          box.querySelectorAll('.db-search-item').forEach(x => x.classList.remove('active'));
+          el.classList.add('active');
+        });
+      });
+    }
+    box.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  }
+
+  function ctAcClose() {
+    const box = document.getElementById('ct-search-results');
+    const input = document.getElementById('ct-hero-search-input');
+    if (box) box.hidden = true;
+    if (input) input.setAttribute('aria-expanded', 'false');
+    ctAcItems = []; ctAcActive = -1;
+  }
+
+  function ctAutocompleteKey(e) {
+    const box = document.getElementById('ct-search-results');
+    if (!box || box.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!ctAcItems.length) return;
+      ctAcActive = e.key === 'ArrowDown'
+        ? (ctAcActive + 1) % ctAcItems.length
+        : (ctAcActive - 1 + ctAcItems.length) % ctAcItems.length;
+      box.querySelectorAll('.db-search-item').forEach((x, i) =>
+        x.classList.toggle('active', i === ctAcActive));
+    } else if (e.key === 'Enter') {
+      if (ctAcActive >= 0 && ctAcItems[ctAcActive]) {
+        e.preventDefault();
+        window.location.href = ctAcItems[ctAcActive].detail_url;
+      }
+    } else if (e.key === 'Escape') { ctAcClose(); }
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.db-hero-search-wrap')) ctAcClose();
+  });
 
   // Status Donut
   new Chart(document.getElementById('statusDonut'), {

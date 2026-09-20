@@ -12,7 +12,8 @@
     <link rel="stylesheet" href="{{ asset('css/dashboard/timeline.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/project-detail.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/projects.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}">
+    {{-- Versioned by mtime: this file changes with the auto-fill preview layout, and an unversioned stylesheet is the documented "browser serves a ghost" incident. --}}
+    <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}?v={{ filemtime(public_path('css/admin/projects/_create_project_modal.css')) }}">
     {{-- PRELOADER --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

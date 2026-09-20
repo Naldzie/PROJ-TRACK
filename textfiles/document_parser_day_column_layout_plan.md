@@ -2,16 +2,61 @@
 # Parent refs: textfiles/document_parser_excel_learning_loop_plan.md (E1 — maps, teaching, learn-from-AI)
 #              textfiles/document_parser_pdf_teach_grid_plan.md (the teach desk)
 #              textfiles/local_llm_parser_plan.md (why the AI tier cannot carry this alone)
-# Date: September 16, 2026
-# Status: ✅ OPTION (A) DATE-ROW RULE BUILT on branch phase-21-scurve-date-row (UNCOMMITTED,
-#         suite-green, falsified; browser import owed by the user). Both CONSCHED rebuilds
-#         now read 18.24 / 58.46 / 91.16 / 100 on first upload; every other workbook in
-#         sampledocs reads byte-identically. Options (B)-(E) not built. See §6.
-# Branch: phase-21-scurve-date-row (off develop 5f5136b; Rule 12)
+# Date: September 16, 2026 (last updated September 18, 2026)
+# Status: ⏸ PARKED 2026-09-18 — the remaining steps are parked by the user's order, on a
+#         CLIENT FACT: the PMU confirmed they mainly receive the ORIGINAL EXCEL files for
+#         S-curves, so the exotic-layout work this file opened for is no longer the thing
+#         standing between the system and real use. Priority moved to pilot-testing
+#         readiness (textfiles/pilot_testing_readiness_plan.md).
+#         ✅ (A) date-row rule — COMMITTED 31e6b10 on phase-21-scurve-date-row, MERGED to
+#            develop, browser-proven.
+#         ✅ Restudy for (B)-(E) — done, no code (§6).
+#         ✅ Steps 1-3 (D1 merged spans · D3 calendar names · D2 60 months) — BUILT,
+#            BROWSER-PROVEN, and COMMITTED 9545cc1 on phase-22-scurve-month-headers.
+#         ⏸ Step 4 (month-name header rule) · ⏸ step 5 (teach a month as a range) —
+#            PARKED 2026-09-18, not abandoned. Both stay fully specified in §4/§6 and can
+#            be un-parked whenever a contractor file actually needs them.
+#         ⏸ PDF counterpart restudy — parked with them (same reason: the S-curve arrives
+#            as Excel; the PDF path is the fallback, not the main road).
+#         ⏸ option E deferred (unchanged).
+# Branch: phase-22-scurve-month-headers (off develop c081c39; Rule 12) — steps 1-3
+#         committed as 9545cc1; nothing from this file is uncommitted.
 
 ===============================================================================
   0. READ THIS FIRST
 ===============================================================================
+
+  ➜ HANDOFF (2026-09-18) — START HERE. THIS FILE IS PARKED.
+    WHY IT IS PARKED (user, 2026-09-18): the client confirmed they mainly have the
+    ORIGINAL EXCEL files for S-curves. Everything this file exists for — reading a
+    contractor's exotic printed layout — matters much less once the source workbook is
+    what actually arrives. The PMU's real document problem is elsewhere: their NORMAL
+    documents (contracts, proposals, supporting papers) are mostly SCANNED, because they
+    are handed physical copies. That moves the pressure to the normal-doc OCR path, not
+    to S-curve layout exotica. Priority is now pilot-testing readiness —
+    textfiles/pilot_testing_readiness_plan.md is the active file.
+    WORKING TREE: branch phase-22-scurve-month-headers. Steps 1-3 are COMMITTED as
+    9545cc1 (the earlier "do not commit for now" order was lifted). Nothing from this
+    file is uncommitted.
+    STATE AT THE PARK: PHP 1226 passed / the same 5 pre-existing failures; JS 230 / 228 +
+    the 2 intended blinding fails; all 10 sampledocs workbooks byte-identical to develop.
+    Browser-proven: the two calendar fixtures, the teach desk past Month 12, and an
+    unchanged existing import (§6).
+    READ, IN ORDER, ONLY IF THIS IS UN-PARKED: §0 (this), then §6's last four entries —
+    the restudy (defects D1-D3, the teaching path end to end, the recommended order), the
+    steps 1-3 build, its browser result, and the 2026-09-18 park entry.
+    PARKED WORK, EACH STILL FULLY SPECIFIED AND EACH NEEDING AN ORDER TO RESUME (Rule 10):
+      - step 4: a month-name header rule so a DATELESS day-column file (S1) reads
+      - step 5: teach a month as a first..last range, wider captures, 4000-char limit
+      - PDF counterpart: scurve-pdf-parser-core.js keys month names by calendar number
+        and caps numbered labels at 12 — its own restudy first
+    WHAT WOULD UN-PARK THIS: a real contractor S-curve that arrives WITHOUT its workbook
+    and that the date-row rule, the calendar-name rule and hand-teaching all fail to read.
+    Until then this is speculative work against a problem the client does not have.
+    FIXTURES (sampledocs/, git-ignored): SCurve-Test-CONSCHED-Daily-{values,formulas},
+    SCurve-Test-Calendar-DecStart-4Month, SCurve-Test-Calendar-14Month. Generators and
+    probes live in C:\temp\opencode (listed per entry in §6). The before/after gate is
+    snapshot_excel_reads.php (compare against excel_reads_after.json).
 
   THE QUESTION (user, 2026-09-16): a contractor schedule like CONSCHEDSAVINGS.pdf has
   one column PER DAY under calendar-month labels, plus a second table that groups the
@@ -107,7 +152,7 @@
     sheet with the last 17 days missing.
 
 ===============================================================================
-  4. OPTIONS (PROPOSED — needs an order)
+  4. OPTIONS (⏸ (C)/(D)/(E) PARKED 2026-09-18 — see §0 and the park entry in §6)
 ===============================================================================
 
   (A) DATE-ROW RULE — recommended first.  ✅ BUILT 2026-09-16 (user: "lets go with your
@@ -120,19 +165,22 @@
       column); partial first/last months (Dec 9-31, Mar 1-8) are just shorter groups;
       the second table's own date row must not win the header pick (it has no
       DESCRIPTION column — betterHeader should already prefer the first).
-  (B) CALENDAR NAMES -> PROJECT ORDER.  ⬜
+  (B) CALENDAR NAMES -> PROJECT ORDER.  ✅ DONE as D3 in steps 1-3 (committed 9545cc1).
       Map month names by position, not by calendar number, whenever they are not
       already 1..N in order. Small, and useful without (A) for monthly layouts that
       start mid-year.
-  (C) EXCEL MONTH AS A RANGE in maps (first..last column), as PDF already does. Lets a
-      reviewer and the AI teach what (A) misses. Touches the map format (MAP_VERSION),
-      teachColumns validation, the desk, and the AI sanitizer.
-  (D) LIFT THE CAPS: the 80-column map/slice limit and the 12-month limit
-      (buildTaughtMap, teachColumns months max:12). A 4-storey building can outrun 12
-      months; a day-column file outruns 80 columns in under 3 months.
-  (E) FOR THE AI SLICE: summarize day columns before sending (e.g. send per-month
-      column sums once (A) knows the months) instead of raw cells. Only matters if the
-      AI tier comes back (local_llm_parser_plan.md).
+  (C) ⏸ PARKED 2026-09-18. EXCEL MONTH AS A RANGE in maps (first..last column), as PDF
+      already does. Lets a reviewer and the AI teach what (A) misses. Touches the map
+      format, teachColumns validation, the desk, and the AI sanitizer. (The restudy later
+      found NO MAP_VERSION bump is needed — monthSpans is already a plain column list, so
+      a range expands server-side into the same list. Read that before restarting this.)
+  (D) ⏸ PARKED 2026-09-18, PARTLY SUPERSEDED. LIFT THE CAPS. The 12-month limit was
+      already lifted to 60 by step 3 (buildTaughtMap, teachColumns, the desk). What stays
+      parked is the capture side: the 80-column map/slice limit and the 4000-char block
+      store limit. A day-column file outruns 80 columns in under 3 months.
+  (E) ⏸ DEFERRED (unchanged). FOR THE AI SLICE: summarize day columns before sending
+      (e.g. send per-month column sums once (A) knows the months) instead of raw cells.
+      Only matters if the AI tier comes back (local_llm_parser_plan.md).
 
   WHAT MUST NOT CHANGE: every existing corpus read. Any build re-runs verify_p6 (16
   reads), block_snapshot (9 PDFs), the PHP S-curve tests and the Excel corpus probes.
@@ -235,3 +283,227 @@
     PROBES (C:\temp\opencode): snapshot_excel_reads.php -> excel_reads_before/after.json,
     mutate_daterow.mjs, SCurveImportService_daterow_real.php (pre-mutation copy),
     php_daterow.log.
+
+  2026-09-16 — RESTUDY FOR THE REMAINING LAYOUT WORK (B)-(E). READ-ONLY, NO APP CODE.
+  (User: "lets go with the more layout work … do a restudy first".) One probe edit to
+  the service was applied and restored byte-exact (git diff clean).
+
+    THREE DEFECTS FOUND IN THE RULE READER (all silent — no warning is raised)
+
+    D1 MERGED MONTH CELLS ARE IGNORED ON A SINGLE-ROW HEADER (off-by-one).
+       finalizeHeader looks for merges on range(firstRow + 1, lastRow + 1). That +1 is
+       right for the TWO-row pass (positions, 0-based) and wrong for the single-row pass
+       (row KEYS, already 1-based) — it inspects the row BELOW the header.
+         S3a  "Month 1" merged C:E, "Month 2" F:H, 10k in every cell
+              today: spans {1:[C],2:[F]}, curve 16.67 / 100   (truth 50 / 100)
+         S3c  the same merges placed one row LOWER: read correctly — proves the offset.
+       Uniformly paired months (BUHI) escape it only because the "next month two
+       columns away" pairing rule rebuilds the pair.
+       Fix measured: sheetRows = [firstRow] for a single-row detection. S3a/S3b then
+       read 50 / 100, and ALL 10 sampledocs workbooks stay byte-identical
+       (excel_reads_mergefix.json).
+
+    D2 MONTHS AFTER 12 ARE DROPPED. matchMonthLabel returns null for "Month 13".
+         S4   Month 1..14, 10k each: 12 months read, month 12 forced to 100 (it was
+              78.57) — two months of work vanish from the baseline.
+       The 12 appears in: matchMonthLabel (every family), bare numbers (:424),
+       longestNumberRun, buildTaughtMap (:846 'bad-month-number'), teachColumns
+       (months max:12), the desk (SCH_TEACH_MAX_MONTHS = 12), suggestedMonthsFor (PDF
+       cap). The AI side already accepts 1..60 everywhere; the import UI has no cap
+       (normalizeSCurveMonths dates start + (index - 1), pins overflow to the end date
+       and already warns about collisions).
+
+    D3 CALENDAR NAMES ARE CALENDAR NUMBERS, NOT PROJECT MONTHS (option B).
+         S2   DECEMBER JANUARY FEBRUARY MARCH (one column each)
+              today: month_index 1, 2, 3, 12 — summed Jan -> Feb -> Mar -> Dec. The
+              curve only LOOKS right (25/50/75/100) because every month holds 10k; the
+              UI then dates "month 12" at start + 11 months (pinned to the end date).
+         S2   the same with merged pairs: 25 / 50 / 62.5 / 100 (truth 25/50/75/100) —
+              D1 and D3 together: December and March each lost a column.
+         S2c  OCT..MAR: month_index 1,2,3,10,11,12.
+         S2b  JANUARY..APRIL: correct (the only case that works).
+       A project that starts in any month but January is misread today.
+
+    WHAT A DAY-COLUMN FILE WITHOUT DATES LOOKS LIKE (S1: CONSCHED with its date rows
+    removed — "#1..#90" plus merged DECEMBER/JANUARY/… only)
+      Rules refuse it and auto-map is null: the names sit in row 11 under "#N" in row 10,
+      so the two-row pass reads "#1 DECEMBER"; row 11 alone has no DESCRIPTION.
+      The capture (serializeForAi(path, 15)) is 3,561 chars, 15 rows, 80 columns: the
+      month-name row shows DECEMBER / JANUARY / FEBRUARY but NOT MARCH (column CL is past
+      CB), and only 4 activity rows fit. So a reviewer could not even SEE March to teach it.
+
+    THE TEACHING PATH, END TO END (what option C/D would touch)
+      capture   collect() -> serializeForAi(path, 15): 80-column cut, 15-row budget,
+                stored mb_substr(…, 4000). The DB column is TEXT (65k) — 4000 is an app
+                limit, repeated in three places in the controller + the model.
+      desk      schTeachClickLetter: "At most two columns per month" (list.length < 2);
+                SCH_TEACH_MAX_MONTHS 12; prefillFromMap shows stored columns as-is.
+      endpoint  teachColumns: months max:12, months.* max:2 letters, header_rows ≤ R40.
+      map       buildTaughtMap: months 1..12, columns 0..79, spans disjoint, first column
+                of each month strictly increasing. monthSpans is ALREADY a plain list of
+                columns — a range can be expanded server-side into that same list, so
+                NO map-format change and NO MAP_VERSION bump is needed.
+      reader    findHeaderViaMaps: sig row + mapSpansHoldNumbers, then buildMonths sums
+                every listed column. No width or month cap on the read side.
+      AI learn  sanitizer keeps ≤4 letters per month; the prompt asks for 1-2.
+      Stored data: the live DB holds 2 Excel layouts, 11 month spans, ALL single-column
+      (probe_excel_maps.php). Test fixtures use adjacent pairs (I+J) and overlap
+      refusals (I+J / J+K). So "two letters = first..last range" changes the meaning of
+      NO stored layout and no test — adjacent pairs expand to themselves.
+
+    RECOMMENDED ORDER (each step small, measured against the 10-workbook snapshot)
+      1. D1 merge off-by-one. One line + a test. Measured corpus-neutral.
+      2. D3 / option B: number calendar-named months by COLUMN ORDER (so Dec..Mar reads
+         1..4 and a repeated name 12 months later becomes month 13). Only when the
+         header's months are calendar names; "Month N" labels keep their numbers.
+      3. D2: lift 12 -> 60 (the AI's existing ceiling) for labelled months, maps, the
+         teach endpoint and the desk; bare numbers stay 1..12 (ambiguous by nature).
+         Goes with 2, because a 14-month calendar-named file repeats two names.
+      4. Month-name header rule (new, S1): a row of calendar names / "Month N" labels,
+         with DESCRIPTION on it or up to 3 rows above — the date pass's twin. Spans from
+         the merges (needs 1) or up to the next label. Makes S1 read on first upload.
+      5. Option C + D, teaching wide layouts: a month taught as first..last letter
+         (server expands; adjacent pairs unchanged), capture wider than 80 columns
+         (at least for capture), the 4000-char store limit raised, column cap 79 lifted.
+         Largest step; touches capture, desk, endpoint, map builder and the JS suite.
+      6. Option E (AI slice for wide files): DEFER. Gemini already gets the .xlsx
+         attached; only a local model would need it, and step 1 of the local-LLM plan
+         says no local model is fit for this.
+
+    PROBES (C:\temp\opencode, read-only): probe_layout_restudy.php + probe_layout_restudy2.php
+    -> layout_restudy.log; probe_excel_maps.php; excel_reads_mergefix.json;
+    SCurveImportService_restudy_real.php (the pre-probe copy used to restore).
+
+  2026-09-16 — STEPS 1-3 ✅ BUILT (D1 merged spans · D3 calendar names · D2 60 months).
+  Branch phase-22-scurve-month-headers (off develop c081c39). UNCOMMITTED — user order:
+  "start on a new branch. do not commit for now".
+
+    WHAT CHANGED
+      SCurveImportService
+        MAX_MONTHS = 60           new constant (the AI sanitizers' existing ceiling).
+        finalizeHeader            merges are read on [firstRow] for a single-row
+                                  detection (row keys), range(first+1, last+1) only for
+                                  the two-row pass (positions). D1.
+        matchMonthLabel           numbered families accept 1..MAX_MONTHS; calendar names
+                                  moved out. D2.
+        calendarMonthNumber       new — recognises a calendar name (the duplicate 'may'
+                                  key of the old table dropped; same lookups).
+        detectHeaderRow           calendar-named cells collected in column order and
+                                  numbered 1..N, ONLY when the row has no numbered month
+                                  labels. Bare numbers stay 1..12. D3.
+        buildTaughtMap            months 1..MAX_MONTHS.
+      SCurveHeaderProposalController::teachColumns   months max:MAX_MONTHS.
+      _manage_scurve_headers_modal.blade.php         SCH_TEACH_MAX_MONTHS from the PHP
+                                  constant (the "+ month" button now goes to 60; a short
+                                  layout's palette is unchanged). view:cache OK.
+      Deliberately NOT changed: suggestedMonthsFor's cap of 12 for an UNNUMBERED PDF
+      capture (a starting suggestion only, pinned by a JS test).
+
+    RESULT (restudy probes re-run)
+      S3a/S3b merged "Month N" over 3 cols   50 / 100 (was 16.67 / 100)
+      S3c merges on the row BELOW             no longer read as spans (correct)
+      S2 DEC..MAR single / merged pairs       months 1-4, 25/50/75/100 (was 1,2,3,12 / 62.5)
+      S2c OCT..MAR                            months 1-6 (was 1,2,3,10,11,12)
+      S2b JAN..APR                            unchanged
+      S4 Month 1..14                          14 months, 85.71 at month 12 (was 12, forced 100)
+      S1 CONSCHED without dates               still refused — step 4 (not ordered)
+      sampledocs, all 10 workbooks            BYTE-IDENTICAL (excel_reads_phase22.json vs
+                                              excel_reads_after.json: result, auto-map, slice)
+
+    VERIFICATION
+      +4 tests: SCurveImportTest (merged single-row spans, calendar names in column order
+      with unequal amounts + merged pairs + a 14-month repeat, labelled months past 12);
+      ScurveHeaderProposalTest (a 14-month teaching saves; month MAX_MONTHS+1 refused).
+      Falsified (mutate_p22.mjs), five mutations, each red: off-by-one restored ·
+      calendar numbering off · ceiling back to 12 · map-builder cap 12 · teach max:12.
+      php artisan test   1226 passed / the same 5 pre-existing failures BY NAME.
+      npm run test:js    230 tests, 228 pass + the 2 intended blinding fails.
+
+    BROWSER CHECK OWED (user)
+      1. Import an Excel whose month header is DECEMBER..MARCH (or any non-January
+         start): months dated from the project start in file order, no gap.
+      2. S-Curve Layouts -> Teach an Excel row -> "+ month" keeps offering buttons past
+         Month 12, and a 13+ month teaching saves.
+      3. An existing Excel (BUHI / roof) imports exactly as before.
+
+    BROWSER RESULT (user, same day)
+      Step 2 ✅ "+ month" goes past Month 12 and a longer teaching saves.
+      Step 3 ✅ existing Excel imports as before.
+      Step 1 — the user imported the CONSCHED day-column rebuild: 18.24 / 58.46 / 91.16
+        / 100, 11/9/16/9 — correct, but that file reads through its DATE ROW (phase 21),
+        not the calendar-name header, so it does not exercise D1/D3. Two dedicated
+        browser fixtures were built for it (make_calendar_fixtures.php, sampledocs/,
+        git-ignored), each checked by hand:
+          SCurve-Test-Calendar-DecStart-4Month.xlsx  DECEMBER..MARCH merged pairs,
+            unequal amounts: months 1-4, 10 / 35 / 65 / 100, counts 2,2,2,1,
+            contract 2,000,000, no notes. (Before: months 1,2,3,12 with lost columns.)
+          SCurve-Test-Calendar-14Month.xlsx  DECEMBER .. JANUARY (14 names, two
+            repeated): months 1-14, 2.86 / 5.71 / 13.57 … 92.14 / 100, counts
+            1,1,2,…,2, contract 700,000, no notes.
+      Step 1 ✅ PASSED with both fixtures (user, same day), exactly as predicted:
+        DecStart-4Month   10.00 / 35.00 / 65.00 / 100.00, activities 2,2,2,1, names in
+                          the right months (Mobilization only in month 1, Roofing and
+                          Finishing alone in month 4).
+        14Month           14 months July 2025 .. August 2026, 2.86 / 5.71 / 13.57 /
+                          21.43 / 29.29 / 37.14 / 45.00 / 52.86 / 60.71 / 68.57 / 76.43 /
+                          84.29 / 92.14 / 100.00, activities 1,1 then 2 — no date
+                          collision note (the test project's dates hold 14 months).
+      => STEPS 1-3 ARE BROWSER-PROVEN. Still uncommitted by the user's order.
+
+    OPEN / NOT DONE
+      - THE PDF READER HAS THE SAME TWO LIMITS (scurve-pdf-parser-core.js:
+        MONTHS table keyed by calendar number at :79, ordinal/numbered caps of 12 at
+        :77 and the learned-word generalisation). Not touched — this order was the Excel
+        reader. Its own restudy first: PDF month bands are built from label positions,
+        and the corpus gates are verify_p6 / block_snapshot.
+      - Step 4 (month-name header rule for dateless day-column files) and step 5
+        (teaching a month as a range, wider captures) not started.
+
+    PROBES: excel_reads_phase22.json, mutate_p22.mjs, *_p22_real.php (pre-mutation
+    copies), php_p22.log, js_p22.log.
+
+  2026-09-18 — ⏸ PARKED (steps 4 and 5, and the PDF counterpart). NO APP CODE.
+  User order: "an update those step 4 and 5 i want to park it for now."
+
+    THE CLIENT FACTS BEHIND IT (user, 2026-09-18) — the reason this is a park and not a
+    pause, and the single most decision-changing thing learned about the parser track:
+      1. THE PMU MAINLY HAS THE ORIGINAL EXCEL FILES for S-curves. The whole premise of
+         this file was a contractor schedule we only had as a PRINT (CONSCHEDSAVINGS.pdf,
+         §1). If the workbook itself is what normally arrives, phpspreadsheet reads it
+         exactly, offline, with no AI and no teaching — which is the path that already
+         works for every workbook in the corpus.
+      2. THEIR NORMAL DOCUMENTS ARE MAINLY SCANNED. Contracts, proposals and supporting
+         papers reach the PMU as PHYSICAL COPIES and are scanned in. That is the opposite
+         of the S-curve situation: no source file exists at all, and the parser is facing
+         an image, not a document with a text layer.
+    CONSEQUENCE FOR PRIORITY: the pressure moves off S-curve layout exotica and onto the
+    NORMAL-DOC OCR path (textfiles/ocr_page_preview_and_ai_picker_plan.md, and the OCR
+    batch in document_parser_learning_loop_plan.md §6). Recorded here so the next session
+    does not re-open steps 4/5 on momentum.
+
+    WHAT IS PARKED, AND WHAT SURVIVES THE PARK
+      step 4  month-name header rule for a DATELESS day-column file (S1). Spec intact in
+              §4 and in the restudy's "RECOMMENDED ORDER". Nothing built.
+      step 5  option C + D — teach a month as first..last, captures wider than 80 columns,
+              the 4000-char store limit, the 79-column map cap. Spec intact; the restudy's
+              finding that monthSpans is ALREADY a plain column list (so a range expands
+              server-side with NO MAP_VERSION bump) is the thing to re-read first.
+      PDF     scurve-pdf-parser-core.js still keys calendar month names by CALENDAR NUMBER
+              (:79) and caps numbered/ordinal labels at 12 (:77) — the same two defects
+              fixed on the Excel side as D3/D2. STILL PRESENT, deliberately. A PDF S-curve
+              starting in any month but January is misread today. Lower priority now that
+              the Excel is the expected source, but it is a KNOWN DEFECT, not a gap —
+              if the pilot surfaces a PDF-only S-curve, this is the first thing to fix.
+      All fixtures, probes and the before/after gate (snapshot_excel_reads.php vs
+      excel_reads_after.json / excel_reads_phase22.json) stay where they are.
+
+    WHAT IS NOT PARKED: everything already built and committed — the date-row rule
+    (31e6b10) and the month-header fixes D1/D2/D3 (9545cc1). Those are live behaviour and
+    are covered by the suite; they are not affected by this decision.
+
+    UN-PARK CONDITION: a real contractor S-curve that arrives without its workbook AND
+    defeats the date-row rule, the calendar-name rule and hand-teaching. Pilot testing is
+    exactly the thing likeliest to produce one — so revisit after the pilot, with a real
+    file in hand rather than a rebuilt fixture.
+
+    NEXT ACTIVE FILE: textfiles/pilot_testing_readiness_plan.md.

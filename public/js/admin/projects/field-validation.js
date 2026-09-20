@@ -28,6 +28,14 @@
 function createFieldValidator(config) {
     let validationTimeout;
     let isValidationPending = false;
+    // THE VALIDATOR'S OWN VERDICT (2026-09-20). Callers used to read the field's
+    // `is-invalid` CSS CLASS to decide whether a value was acceptable — but
+    // clearFieldErrors() strips that class from every field at the START of every page
+    // validation, so the guard was reading state its own caller had just destroyed and
+    // was waiting for an async call to restore. A second Next click arriving inside
+    // that window saw a clean field and let a DUPLICATE PROJECT TITLE through.
+    // A class is presentation. This is the fact.
+    let lastVerdict = 'unknown';   // 'unknown' | 'valid' | 'invalid'
     
     const field = document.getElementById(config.fieldId);
     const feedback = document.getElementById(config.feedbackId);
@@ -141,6 +149,7 @@ function createFieldValidator(config) {
          * Show success state (field value is valid/available)
          */
         showValid(value) {
+            lastVerdict = 'valid';
             if (feedback) {
                 const message = config.successMessage || 'Available';
                 feedback.innerHTML = `<small class="text-success"><i class="bi bi-check-circle"></i> ${message}</small>`;
@@ -154,6 +163,7 @@ function createFieldValidator(config) {
          * Show error state (field value already exists / invalid)
          */
         showInvalid(message) {
+            lastVerdict = 'invalid';
             if (feedback) {
                 feedback.innerHTML = `<small class="text-danger"><i class="bi bi-exclamation-circle"></i> ${message}</small>`;
                 feedback.style.display = 'block';
@@ -176,6 +186,7 @@ function createFieldValidator(config) {
          * Clear all feedback and input styling
          */
         clear() {
+            lastVerdict = 'unknown';
             if (feedback) {
                 feedback.innerHTML = '';
                 feedback.style.display = 'none';
@@ -188,6 +199,14 @@ function createFieldValidator(config) {
          */
         isPending() {
             return isValidationPending;
+        },
+
+        /**
+         * The last thing the server actually said about this value.
+         * Survives clearFieldErrors(), which is the entire point.
+         */
+        verdict() {
+            return lastVerdict;
         }
     };
 }

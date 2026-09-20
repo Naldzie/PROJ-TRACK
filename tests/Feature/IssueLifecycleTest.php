@@ -565,6 +565,14 @@ class IssueLifecycleTest extends TestCase
 
     public function test_default_baseline_returns_earliest_baseline_when_no_progress_and_no_current_month(): void
     {
+        // P3 (2026-09-20): this test used to depend on the REAL calendar. Its fixtures
+        // include a 2026-09 baseline, and getDefaultIssueBaseline's first rule is "a
+        // baseline whose month_label is TODAY'S month" — so the moment the real date
+        // reached September 2026 the test began returning that baseline instead of the
+        // earliest one, and the name "no current month" stopped being true. Freeze the
+        // clock on a month the fixtures do not contain, so the test means what it says.
+        $this->travelTo(\Carbon\Carbon::parse('2026-07-01 09:00:00'));
+
         $first = ProjectBaselineSchedule::factory()->create([
             'project_id'   => $this->project->id,
             'month_label'  => '2026-04',

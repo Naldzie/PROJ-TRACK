@@ -18,6 +18,59 @@ function getCore() {
 }
 
 // ===================================================
+// M-1 — OSD ORIENTATION PATH DISABLED ON THIS BUILD (2026-09-20)
+// 'eng+osd' asks the LSTM-only tesseract core we load from the CDN
+// (tesseract.js-core v5.1.1) to load the legacy osd.traineddata, which that core
+// cannot run: every call throws "LSTM requested, but not present!!". The path could
+// therefore never straighten a page. What it did instead, every fresh modal session:
+// burn the first two scanned pages on an engine that cannot work, print two walls of
+// red stack trace, and then trip the session-wide 'eng' pin below - which is why the
+// SAME file read 3 pages one run and 4 the next.
+// Measured verbatim from the console: normal_doc_parser_restudy_plan.md 11.2-11.3.
+// The OSD machinery below is left INTACT and simply unreachable while this is false;
+// flip it to true if the core/traineddata pairing is ever fixed.
+// NOTE: this is AUTOMATIC orientation only. The reviewer's manual "See & straighten"
+// rotation (window._ocrRotations) is a different path and is unaffected.
+const OCR_OSD_ENABLED = false;
+
+// ===================================================
+// T2 — THE DEBUG FLAG SURVIVES A RELOAD (2026-09-20)
+// window._parserDebug gates every per-page OCR log, and it could only be set by typing
+// into the console. That meant debug logging was ON exactly when devtools was OPEN and
+// OFF when it was shut — so the "devtools open reads 3 pages, closed reads 4" question
+// could never be measured, because measuring it required the console. The flag is
+// logging-only at all of its sites (restudy §12.8), so it cannot change what a page
+// yields; the confound was in how it gets SET, not in what it does.
+// Hydrating the same flag from localStorage at load dissolves that: turn logging on
+// once, close devtools, reload, run, then reopen devtools and read the log back.
+// The pure core reads window._parserDebug too (document-parser-core.js:138), so
+// hydrating the window flag covers both halves of the parser with no other change.
+// Called by: nothing — the hydrator runs once at script load.
+const PARSER_DEBUG_KEY = 'pmuParserDebug';
+(function hydrateParserDebugFlag() {
+    try {
+        if (typeof window === 'undefined') return;
+        // An explicit in-session override always wins over the stored preference.
+        if (window._parserDebug) return;
+        if (localStorage.getItem(PARSER_DEBUG_KEY) === '1') window._parserDebug = true;
+    } catch (e) { /* storage can be blocked or absent; debug logging is never load-bearing */ }
+})();
+
+// Turn parser debug logging on or off ACROSS RELOADS in one console call.
+// Usage: window._parserDebugPersist(true) → reload → run with devtools shut → reopen
+// devtools and scroll back. window._parserDebugPersist(false) clears it again.
+// Called by: the browser console only.
+window._parserDebugPersist = function (on) {
+    const want = (on !== false);
+    try {
+        if (want) localStorage.setItem(PARSER_DEBUG_KEY, '1');
+        else localStorage.removeItem(PARSER_DEBUG_KEY);
+    } catch (e) { /* fall through — the window flag below still serves this session */ }
+    try { window._parserDebug = want; } catch (e) {}
+    return 'parser debug ' + (want ? 'ON' : 'OFF') + ' (persists across reloads)';
+};
+
+// ===================================================
 // ENTRY POINT
 // Parses all pending PDFs and shows the preview modal
 // (Apply fills the form). Returns a Promise.
@@ -34,6 +87,9 @@ let _autofillRunId = 0;
 function cancelDocumentAutofill() {
     _autofillRunId++;
     _ocrPagesDone = 0;
+    // No run survives a cancel, so nothing may keep the scan indicator alive either.
+    _autofillScansInFlight = 0;
+    try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
     // The photo-read cache is per modal session, like the rotations it is keyed
     // against — a reopened popup must never serve text read from a file that is
     // no longer the one attached. The preview's open documents go with it, or a
@@ -58,12 +114,17 @@ function cancelDocumentAutofill() {
         window._ocrRotateTargets = [];
         // OSD probe + engine-failure flag are per-session: a fresh popup re-probes once
         // (network conditions may have changed), never inheriting a pinned fallback.
-        window._ocrLangMode = null;
+        // M-1: while OCR_OSD_ENABLED is false there is nothing to probe, so the session
+        // starts already pinned to plain 'eng' - no run can take the broken path, and no
+        // run can inherit a pin from the run before it (that inheritance was OCR-2).
+        window._ocrLangMode = OCR_OSD_ENABLED ? null : 'eng';
         window._ocrOsdMisses = 0;
         window._ocrEngineFailed = false;
         // F-COPY/L1 stashes belong to the run that made them — never reuse across sessions.
         window._autofillDocTexts = [];
         window._autofillDocNames = [];
+        // L-4: what the loop has already been told this session.
+        window._autofillHarvestSent = {};
         window._autofillOriginal = null;
         // AI-3/AI-4 stashes: provenance stamps + busy/merged flags belong to the preview run.
         window._autofillAiAssisted = {};
@@ -123,7 +184,12 @@ async function runDocumentAutofill() {
         return;
     }
 
-    showAutofillScanning('Scanning documents…');
+    // This run is now in flight — the spinner is allowed to paint from here until the
+    // finally below takes it back down. Placed before the first showAutofillScanStatus()
+    // so that call is not itself suppressed by the in-flight gate.
+    _autofillScansInFlight++;
+    _autofillCurrentFile = ''; // no file named until the read loop reaches one
+    showAutofillScanStatus('Reading your documents…');
 
     // Snapshots (2026-09-07): keep the original File per PDF so the per-page "save image"
     // diagnostic can re-render any scanned page later without a server round-trip.
@@ -153,9 +219,12 @@ async function runDocumentAutofill() {
 
         for (const doc of pdfDocs) {
             if (myRunId !== _autofillRunId) return;
+            // Name the file the indicator is currently reading. Module-scoped because
+            // ocrPage() is several frames down and only receives the page, not the doc.
+            _autofillCurrentFile = doc.fileName || "";
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages, beyondBudgetPages, budget } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
@@ -163,7 +232,7 @@ async function runDocumentAutofill() {
                 // and the per-page rotate control (even uncut ones). allLandscape flags fully-
                 // sideways scans for the pre-preview straighten-all rescue.
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages, pageChars: pageChars || {}, soupyPages: soupyPages || [] });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages, pageChars: pageChars || {}, soupyPages: soupyPages || [], beyondBudgetPages: beyondBudgetPages || [], budget: budget || 0 });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text }, { learned: learnedKeywords });
@@ -219,15 +288,20 @@ async function runDocumentAutofill() {
         // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote
         // (null when one clear winner). Set inside the pooled block below.
         let pooledDisagreeInfo = null;
+        const pooledResolvedFields = {};
         try {
             const core = getCore();
             if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
                 const pooledDocs = perFileData.map(e => ({ text: e.text, fileName: e.fileName }));
-                const pooled = core.parseProjectInfoPooled(pooledDocs) || {};
+                // L-9: the pool now consults the SAME learned vocabulary the single
+                // parse does, so a taught label votes instead of living on a side track.
+                const pooled = core.parseProjectInfoPooled(pooledDocs, { learned: learnedKeywords }) || {};
                 // Override only fields the pool resolved (budget/abc/duration/dates);
                 // keep voted title/contractor/location/etc. from per-file vote.
                 for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
-                    if (pooled[f]) parsed[f] = pooled[f];
+                    // Remembered so the pick-one note can describe the track that
+                    // actually produced the value in the box (see mergeDisagreements).
+                    if (pooled[f]) { parsed[f] = pooled[f]; pooledResolvedFields[f] = true; }
                 }
                 // Step 1f-2 vote inspector: stash + log every find and the winner.
                 // How to use: in the browser console run `window._parserDebug = true`,
@@ -283,7 +357,15 @@ async function runDocumentAutofill() {
 
         // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote.
         // Stored for the preview modal to render amber pick-one notes. Silent when clear.
-        window._autofillDisagree = pooledDisagreeInfo;
+        // L-8: a learned-label disagreement reaches the SAME pick-one note as a pooled
+        // one. The pooled verdict wins where both exist — it has counts and files behind
+        // it, where the learned one only knows that two approved phrases read differently.
+        // This is what stops an insertion id deciding the ABC silently (restudy §31).
+        try {
+            const learnedD = (parsed && parsed._learnedDisagree) ? parsed._learnedDisagree : null;
+            const merged = mergeDisagreements(learnedD, pooledDisagreeInfo, pooledResolvedFields);
+            window._autofillDisagree = Object.keys(merged).length ? merged : pooledDisagreeInfo;
+        } catch (e) { window._autofillDisagree = pooledDisagreeInfo; }
 
         // AI-3 opt-in trigger (Tier 3, very last): offer only when the local pipeline admits
         // weakness (few fills, low confidence, unresolved disagree). Silent on clean runs —
@@ -308,7 +390,7 @@ async function runDocumentAutofill() {
             console.log('[Parser] preview run ' + myRunId + ': files=[' + perFileData.map(e => e.fileName).join(', ') + '] mismatch=' + (!!mismatchInfo.hasMismatch));
             // P2: the vote tables are stashed on EVERY preview (flag or not) — this hint line
             // means nobody has to memorize the recovery command or re-upload for tables.
-            console.log('[Parser] tip: type window._autofillVoteDebug in the console to inspect all finds (values, patterns, excerpts, files).');
+            console.log('[Parser] tip: window._parserVoteTables() re-prints these tables at any time — including after closing and reopening devtools. window._autofillVoteDebug holds the raw rows.');
             // R-reach: scan reports stashed per run so the straighten-all rescue can name
             // sideways files even from the preview path.
             window._autofillScanReports = scanReports.slice();
@@ -319,6 +401,16 @@ async function runDocumentAutofill() {
         console.error('[DocumentParser] Autofill failed:', err);
         // Silent failure — the user can still fill the form manually
         hideAutofillBanner();
+    } finally {
+        // This run is over, whatever happened. Clear the spinner if it is still the
+        // spinner — showAutofillWarning() stamps its own state, so a notice this run
+        // raised (weak parse, unread pages, the AI offer) survives untouched, and a
+        // NEWER run's spinner is left alone because it re-stamps 'scanning' after this.
+        // Before this the spinner was cleared only by showAutofillPreview() and by
+        // closing the modal, so any path that ended without opening the preview left
+        // it turning on a finished run.
+        _autofillScansInFlight = Math.max(0, _autofillScansInFlight - 1);
+        try { removeAutofillScanStatus(); } catch (e) { /* cleanup is best-effort */ }
     }
 }
 
@@ -372,6 +464,19 @@ function loadTesseract() {
 // and adjustable per run via window._ocrPageLimit (default OCR_PAGE_LIMIT = 10).
 // Each photo-read page costs ~2s on slow connections — see the re-scan control.
 let _ocrPagesDone = 0;
+// How many autofill scans are actually running right now. The "Scanning…" spinner
+// is allowed to exist ONLY while this is above zero: it is raised from several
+// places (the run start, and again per page during OCR), and before 2026-09-18 a
+// call that arrived after a run had finished could repaint it with nothing left to
+// clear it, so it sat spinning on a completed run until the modal was closed.
+// Incremented by runDocumentAutofill() and decremented in its finally.
+let _autofillScansInFlight = 0;
+// Watchdog state for the scanning spinner: when it was last painted, and the timer
+// that takes it down when the painting stops. See armAutofillSpinnerWatchdog().
+let _autofillSpinnerTick = 0;
+let _autofillSpinnerTimer = null;
+// The file the scan indicator should name right now — set per file in the read loop.
+let _autofillCurrentFile = '';
 // Photo-read results for this modal session, keyed file#size#page@rotation. The
 // rotation is IN the key, so a page the reviewer turns always misses and is
 // genuinely re-read; the size guards against a different file arriving under a
@@ -384,10 +489,36 @@ let _ocrTextCache = new Map();
 // repeated at each call site — and the AI page picker caps its selection to it.
 const AI_SLICE_PAGES = 2;
 const OCR_PAGE_LIMIT = 10;
+// What the reviewer ASKED FOR — the read-depth selector's value (10/25/40/50), or the
+// default. This is the number the gray scan note quotes, and it must keep meaning that
+// even when a file is allowed to overrun it (see ocrFileBudget below).
 function ocrPageLimit() {
     const custom = (typeof window !== 'undefined') ? Number(window._ocrPageLimit) : NaN;
     if (isFinite(custom) && custom >= 1 && custom <= 50) return Math.floor(custom);
     return OCR_PAGE_LIMIT;
+}
+
+// P-4 (2026-09-20) — NEVER QUIT WITHIN SIGHT OF THE END OF A FILE.
+// Stopping two pages short of a twelve-page document is the worst place to stop: the
+// reviewer pays the FULL ten-page cost (~20s) and still does not have the document,
+// then has to notice a gray note, find a dropdown and pay ~24s again. Twelve pages is
+// the common shape here, not an outlier (restudy §45.3 — the CHS Savings pair).
+// So a file within SLACK pages of the budget is read WHOLE. The ceiling rises from 10
+// to 13 pages per file, a bounded ~6s; a genuinely long annex still truncates and
+// still gets the depth selector. This does not raise the default budget for everyone.
+const OCR_PAGE_SLACK = 3;
+// The budget in force for the file being read right now. Set per file by
+// extractTextFromPDF (files are read strictly sequentially, and _ocrPagesDone is
+// already reset per file, so this cannot be crossed between two files — §48.5c).
+let _ocrFileBudget = OCR_PAGE_LIMIT;
+// Decide that budget. `pagesInFile` must be the number of pages the walk will ACTUALLY
+// visit (min(numPages, 50)), not the raw page count — keying it to numPages on a
+// 52-page file would set a budget the loop can never spend (§48.5b).
+function ocrFileBudget(pagesInFile) {
+    const selected = ocrPageLimit();
+    const pages = Number(pagesInFile);
+    if (!isFinite(pages) || pages <= selected) return selected;
+    return (pages <= selected + OCR_PAGE_SLACK) ? Math.floor(pages) : selected;
 }
 // Warm the photo-reader script when the create-project popup opens (called from
 // resetModalToCreateMode). Downloads the reader code early so the first preview does not
@@ -399,15 +530,49 @@ function warmTesseract() {
     } catch (e) { /* best-effort */ }
 }
 
+// ===================================================
+// P-3 — THE DOCUMENT-BAND CONTRAST STRETCH (2026-09-20)
+// WHAT WAS WRONG, measured rather than guessed (restudy §17.1, §18):
+//   The old gate keyed on lo/hi — the darkest and lightest pixel on the canvas — and
+//   the stretch mapped [lo, hi] onto [0, 255]. On a photographed document lo is set by
+//   the BINDER SHADOW and hi by the white PAGE MARGIN, neither of which is the
+//   document. On the test scan that was 1.05% and 5.78% of the pixels: seven percent,
+//   none of it text, both disabling the gate AND making the mapping the identity
+//   function, so the stretch could not have helped even if it had fired.
+//   Meanwhile the document itself lived between gray 120 and 180 — paper ~167, text
+//   ~135, a separation of 32 levels out of 255 where a clean scan has ~215.
+// WHAT THIS DOES INSTEAD: takes both the decision and the mapping from the page's OWN
+//   band — percentiles computed over the document pixels, ignoring the near-white
+//   margin — so a speck of shadow and a strip of margin can no longer decide either.
+// THE MEASURED SEPARATOR: p5 of the document band ("how dark are the darkest strokes")
+//   split all ten pages of the test scan with no exception — the four that read sat at
+//   69-108, the six that yielded nothing at 113-145.
+// ⚠ THOSE THRESHOLDS COME FROM ONE FILE. They are deliberately named constants, not
+//   inline numbers, because real PMU scans (pilot plan §5 N2) are what should set them.
+// ===================================================
+const OCR_CLEANUP_MODE = 'band';        // 'band' = this rule · 'legacy' = the old lo/hi
+                                        // gate, unchanged · 'off' = no cleanup at all
+const OCR_BAND_WHITE_FLOOR = 240;       // at or above this is page margin, not document
+const OCR_BAND_LOW_PCT = 0.05;          // the ink end of the band — the text strokes
+const OCR_BAND_HIGH_PCT = 0.95;         // the paper end of the band
+const OCR_BAND_STROKES_DARK_ENOUGH = 110; // whole-canvas p5 at or below this already
+                                        // reads fine, so the page is left alone
+                                        // (the §18.1 line, in the gap 108..113)
+const OCR_BAND_MIN_WIDTH = 12;          // a band narrower than this cannot be stretched
+                                        // without amplifying sensor noise into strokes
+const OCR_BAND_MIN_DOC_SHARE = 0.05;    // a canvas that is almost all margin has no
+                                        // document to take statistics from
+
 // OCR group 1: light canvas cleanup (no new library) — grayscale + contrast stretch via
 // plain 2D canvas APIs, so washed-out photocopies reach the reader with fuller blacks.
 // Runs on the already-rendered canvas, in place, best-effort (any failure keeps the original).
-// F2 conditional gate (2026-09-07): the global stretch is applied ONLY to washed-out pages
-// (no deep blacks to anchor on + compressed tonal range) and SKIPPED on already-clean pages,
-// restoring pre-group1 behavior exactly where pixels look healthy. An unconditional remap
-// calibrated to outlier specks (stamps, glare) can crush faint cell text into the background —
-// the prime suspect for test4 p1 @0° + p2 @90° yielding 0 on upright, human-crisp pixels.
-// Decision is logged under window._parserDebug (applied/skipped + sampled range).
+// The F2 conditional gate (2026-09-07) still holds in spirit — a page whose strokes are
+// already dark is left EXACTLY alone, because an unconditional remap calibrated to outlier
+// specks can crush faint text into the background (the old suspect for test4 p1 @0° + p2
+// @90° yielding 0 on upright, human-crisp pixels). What changed is what "already dark"
+// means: it is now read from the document's own band, not from two outlier pixels.
+// Decision is logged under window._parserDebug (applied/skipped, the sampled range, the
+// band and its verdict, plus the T3 percentile/ink-fraction diagnostics).
 // Called by: ocrPage() once per scanned page, before any recognize() attempt.
 function preprocessOcrCanvas(canvas) {
     try {
@@ -415,25 +580,101 @@ function preprocessOcrCanvas(canvas) {
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = img.data;
         let lo = 255, hi = 0, sum = 0, n = 0;
+        // T3: a 256-bin gray histogram filled in the SAME pass — one array increment per
+        // sample, so it costs nothing measurable. Everything below (the band, the
+        // percentiles, the ink fractions) is read out of this one histogram rather than
+        // by walking the pixels again.
+        const hist = new Uint32Array(256);
         for (let i = 0; i < d.length; i += 16) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
             if (g < lo) lo = g;
             if (g > hi) hi = g;
             sum += g; n++;
+            hist[g | 0]++;
         }
         if (hi - lo < 8) return;
-        // F2 gate: stretch only washed-out pages (faded gray text, no true blacks, narrow
-        // range). Clean pages (real black text, healthy range) skip untouched — the stretch
-        // is near-identity for them at best and outlier-calibrated damage at worst.
-        const washed = (lo >= 100) && ((hi - lo) <= 140);
-        if (typeof window !== 'undefined' && window._parserDebug) {
-            try { console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped') + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))); } catch (e) {}
+
+        // Percentile over ALL sampled pixels — used for the diagnostics only.
+        const pct = (frac) => {
+            const want = Math.max(1, Math.round(n * frac));
+            let acc = 0;
+            for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= want) return v; }
+            return 255;
+        };
+        const inkBelow = (t) => { let acc = 0; for (let v = 0; v < t; v++) acc += hist[v]; return acc; };
+
+        // THE DOCUMENT BAND. Percentiles taken over the document pixels only — everything
+        // below the white floor — so the page margin cannot drag the paper end up to 255
+        // the way it drags `hi` up to 255 today. This is what makes one rule work for a
+        // page that is 94% photo and a page that is half blank margin.
+        let docN = 0;
+        for (let v = 0; v < OCR_BAND_WHITE_FLOOR; v++) docN += hist[v];
+        const bandPct = (frac) => {
+            const want = Math.max(1, Math.round(docN * frac));
+            let acc = 0;
+            for (let v = 0; v < OCR_BAND_WHITE_FLOOR; v++) { acc += hist[v]; if (acc >= want) return v; }
+            return OCR_BAND_WHITE_FLOOR - 1;
+        };
+        const docShare = docN / Math.max(1, n);
+        const dLo = docN ? bandPct(OCR_BAND_LOW_PCT) : 0;
+        const dHi = docN ? bandPct(OCR_BAND_HIGH_PCT) : 255;
+
+        // THE GATE QUANTITY IS THE WHOLE-CANVAS PERCENTILE, NOT THE BAND ONE, AND THE
+        // DIFFERENCE MATTERS. §18.1 measured its ten-page separation (readers 69-108,
+        // dead 113-145) on the whole-canvas p5, and the band p5 is a DIFFERENT NUMBER:
+        // excluding the margin moves the same percentile further down the dark tail.
+        // On page 3 that is 109 against 112 — enough to fall the wrong side of the line
+        // and skip the very page the rule exists for. So the gate keys on the quantity
+        // that was actually validated; only the MAPPING uses the band.
+        const strokeDark = pct(OCR_BAND_LOW_PCT);
+
+        // THE DECISION. Each refusal carries its own reason so the ledger says WHY a page
+        // was left alone — "skipped" with no reason is what made the old gate unreadable.
+        const legacyWashed = (lo >= 100) && ((hi - lo) <= 140);
+        let apply = false, sLo = lo, sHi = hi, why = '';
+        if (OCR_CLEANUP_MODE === 'off') {
+            why = 'disabled';
+        } else if (OCR_CLEANUP_MODE === 'legacy') {
+            apply = legacyWashed; why = legacyWashed ? 'legacy washed' : 'legacy clean';
+        } else if (docShare < OCR_BAND_MIN_DOC_SHARE) {
+            why = 'band: almost no document (' + (docShare * 100).toFixed(1) + '% )';
+        } else if ((dHi - dLo) < OCR_BAND_MIN_WIDTH) {
+            why = 'band: too narrow to stretch (' + (dHi - dLo) + ')';
+        } else if (strokeDark <= OCR_BAND_STROKES_DARK_ENOUGH) {
+            why = 'band: strokes already dark (' + strokeDark + ')';
+        } else {
+            apply = true; sLo = dLo; sHi = dHi; why = 'band';
         }
-        if (!washed) return;
-        const range = (hi - lo) || 1;
+
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            // Diagnostics. The gate keys on the band now, but lo/hi/mean are still
+            // reported FIRST and unchanged so every earlier ledger in the restudy plan
+            // stays directly comparable against a new run.
+            //   pN   = the Nth-percentile gray over the whole canvas
+            //   ink< = the share of sampled pixels below a darkness threshold
+            //   band = the document's own [ink .. paper] range, margin excluded
+            //   gain = what the chosen mapping multiplies contrast by (1.00 = unchanged)
+            try {
+                const share = (c) => ((c / Math.max(1, n)) * 100).toFixed(2) + '%';
+                console.log('[Parser] OCR cleanup ' + (apply ? 'applied' : 'skipped')
+                    + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))
+                    + ' p1=' + pct(0.01) + ' p5=' + pct(0.05) + ' p50=' + pct(0.50)
+                    + ' p75=' + pct(0.75) + ' p95=' + pct(0.95) + ' p99=' + pct(0.99)
+                    + ' ink<128=' + share(inkBelow(128)) + ' ink<160=' + share(inkBelow(160))
+                    + ' | band=' + dLo + '..' + dHi + ' doc=' + (docShare * 100).toFixed(1) + '%'
+                    + ' gain=' + (255 / Math.max(1, sHi - sLo)).toFixed(2)
+                    + ' why=' + why);
+            } catch (e) {}
+        }
+
+        if (!apply) return;
+        // Map the chosen range onto the full scale. Values outside it clamp, which is the
+        // point rather than a side effect: the binder shadow goes to black and the page
+        // margin to white, and the document's own band gets the whole range to itself.
+        const range = (sHi - sLo) || 1;
         for (let i = 0; i < d.length; i += 4) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
-            const v = Math.max(0, Math.min(255, Math.round(((g - lo) / range) * 255)));
+            const v = Math.max(0, Math.min(255, Math.round(((g - sLo) / range) * 255)));
             d[i] = v; d[i + 1] = v; d[i + 2] = v;
         }
         ctx.putImageData(img, 0, 0);
@@ -550,6 +791,9 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
             // F3': the PSM 4 rung is empty-pages-only — any text at all (even soupy) skips it.
             if (raw.emptyOnly && best.trim().length > 0) break;
         }
+        // P-6b: this rung is about to work — keep the indicator's clock fresh so the
+        // watchdog cannot mistake a slow recognition for a finished run.
+        touchAutofillSpinner();
         // Strip the control flag before handing options to tesseract (it is ours, not its).
         const options = {};
         for (const k of Object.keys(raw)) { if (k !== 'emptyOnly') options[k] = raw[k]; }
@@ -605,6 +849,7 @@ async function ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFai
         canvas.height = viewport.height;
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         // NOTE: no preprocessOcrCanvas and no ladder — one default shot, like pre-group1.
+        touchAutofillSpinner(); // P-6b: a rung at work is not a hang.
         const ret = await tesseract.recognize(canvas, 'eng');
         const text = (ret && ret.data && ret.data.text) || '';
         if (typeof window !== 'undefined' && window._parserDebug) {
@@ -634,6 +879,7 @@ async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFaile
         if (!(kept > 0) || kept > 0.95) return '';
         // NOTE: no preprocessOcrCanvas here — the crop rung isolates the geometry variable;
         // the wash-gate already had its say on the uncropped canvas.
+        touchAutofillSpinner(); // P-6b: a rung at work is not a hang.
         const ret = await tesseract.recognize(canvas, 'eng');
         const text = (ret && ret.data && ret.data.text) || '';
         if (typeof window !== 'undefined' && window._parserDebug) {
@@ -647,7 +893,10 @@ async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFaile
 }
 
 async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
-    if (_ocrPagesDone >= ocrPageLimit()) return '';
+    // The budget in force is the FILE's (P-4), which is the selected depth unless the
+    // file was within slack of the end. The caller no longer reaches this gate for a
+    // page it already knows is past the budget (P-5) — this stays as the backstop.
+    if (_ocrPagesDone >= _ocrFileBudget) return '';
     if (runId !== _autofillRunId) return '';
 
     // PHOTO-READ CACHE (2026-09-14). Re-reading a page at an angle it has already
@@ -663,6 +912,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     // let later pages into a budget that was meant to be spent.
     if (cacheKey && _ocrTextCache.has(cacheKey)) {
         _ocrPagesDone++;
+        // P-6b: a cached page returns before the per-page repaint at the bottom of this
+        // function, so without this the watchdog hears nothing during a cached re-read.
+        touchAutofillSpinner();
         return _ocrTextCache.get(cacheKey);
     }
 
@@ -695,7 +947,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
 
     if (runId !== _autofillRunId) return '';
-    showAutofillScanning('Scanning documents… (OCR reading scanned pages)');
+    // Name the page, so the strip visibly MOVES while the read is working — a reviewer
+    // watching a static spinner cannot tell progress from a hang.
+    showAutofillScanStatus('Reading scanned page ' + (page && page.pageNumber ? page.pageNumber : '?') + '…');
     // NOTE (2026-09-07 crop-harm fix): NO pre-step auto-crop here — it amputated yielding text
     // (test4 p2 lost ~15 chars/line). Crop runs solely as the last dead-page fallback rung below.
     preprocessOcrCanvas(canvas);
@@ -704,7 +958,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     // data can fail with "LSTM requested, but not present" — retrying per page spams red errors
     // and doubles time. So: first page tries osd; any failure pins plain 'eng' for the session.
     // window._ocrLangMode: null = untried, 'osd' = working, 'eng' = pinned fallback.
-    const useOsd = (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
+    // M-1: the build-level switch is tested FIRST, so a page read before any modal reset
+    // has run (window._ocrLangMode still undefined) cannot slip onto the broken path.
+    const useOsd = OCR_OSD_ENABLED && (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
     const markEngineFailed = () => { try { window._ocrEngineFailed = true; } catch (e) {} };
     // Dead-page fallback chain (2026-09-07): proven path first, experiments as rungs —
     // uncropped ladder result → scale-2 re-render → cropped re-render. Each rung runs only while
@@ -789,6 +1045,10 @@ async function extractTextFromPDF(file, runId) {
     // O1: fair per-file budget — every file gets its own scanned pages regardless of
     // upload order (previously the 10-page cap was shared first-come-first-served).
     _ocrPagesDone = 0;
+    // P-4: and that budget now stretches to cover a file that ends within slack of it,
+    // rather than stopping two pages short of the document. Computed from maxPages (what
+    // this walk will really visit), so it can never exceed what the loop can spend.
+    _ocrFileBudget = ocrFileBudget(maxPages);
     let fullText = '';
     let ocrUsed = false;
     // O2/N3: truncation + real-count tracking — a file with more scanned pages than the
@@ -812,6 +1072,13 @@ async function extractTextFromPDF(file, runId) {
     // and whether it looked like symbol salad. Feeds the page strip's explanation.
     const pageChars = {};
     const soupyPages = [];
+    // P-5 (2026-09-20): pages the budget refused BEFORE any work was done. Until now a
+    // budget-skipped page was recorded identically to an attempted-and-empty one, so the
+    // page strip told the reviewer "nothing at all — try turning it" about a page nothing
+    // had been asked of — and turning it can never succeed, because the gate fires before
+    // any work and a cached page spends a budget slot on purpose. The fact existed and was
+    // thrown away; this is the ledger that keeps it (restudy §46).
+    const beyondBudgetPages = [];
     let pagesVisited = 0;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
@@ -838,52 +1105,70 @@ async function extractTextFromPDF(file, runId) {
                     landscapePages.push(pageNum);
                 }
             } catch (e) { /* aspect is best-effort */ }
-            if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
-            // R2: per-page manual rotation (degrees stashed by the rotate control).
-            const rotKey = file.name + '#' + pageNum;
-            const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
-            // Cache key carries the angle, so turning a page re-reads it for real
-            // while every untouched page comes back from memory (2026-09-14).
-            const cacheKey = file.name + '#' + (file.size || 0) + '#' + pageNum + '@' + rotDeg;
-            const ocrText = await ocrPage(page, runId, rotDeg, cacheKey);
-            // Cache the EMPTY result too. A dead page costs the most (the PSM
-            // ladder plus the scale-2 and crop fallbacks, up to ~6 recognitions),
-            // and those are exactly the pages a rotate-heavy session revisits.
-            // Tradeoff written down because it is real: photo-reading wobbles
-            // slightly run to run (learning-loop plan, §6 2026-09-07), so caching
-            // an empty forgoes the chance that an unchanged page reads next time.
-            // The read-depth "Re-scan" clears the cache, which is the deliberate
-            // way to ask for a genuinely fresh read.
-            if (cacheKey && runId === _autofillRunId) {
-                try { _ocrTextCache.set(cacheKey, ocrText || ''); } catch (e) { /* cache is best-effort */ }
-            }
-            if (ocrText && ocrText.trim().length >= 10) {
-                pageText = ocrText;
-                ocrUsed = true;
-                scannedRead++;
-                ocrPages.push(pageNum);
-            }
-            // Per-page yield, RECORDED not just logged (2026-09-14). The count was
-            // computed here all along and thrown away into a debug console line, so
-            // the page strip could say a page was unread but never WHY — "nothing at
-            // all" and "forty characters of garbage" are different problems with
-            // different remedies, and only the second is worth rotating for.
-            // Soupiness is re-scored from the page text rather than plumbed out of
-            // recognizeEnglish (which returns a bare string): the scorer is pure and
-            // cheap, so re-running it costs nothing and changes no signature.
-            try {
-                const yielded = (pageText || '').trim();
-                pageChars[pageNum] = yielded.length;
-                if (yielded.length > 0 && core && typeof core.scoreOcrSoup === 'function') {
-                    const s = core.scoreOcrSoup(yielded);
-                    if (s && s.soupy) soupyPages.push(pageNum);
+            // P-5: a page past the budget is RECORDED AND SKIPPED, not attempted. It used
+            // to fall through to ocrPage(), which returned '' at its gate before doing any
+            // work — and the caller then wrote that empty into the photo-read cache, so a
+            // reviewer who raised the depth and pressed Re-read (which reuses the cache)
+            // was served a never-attempted empty from memory (§46.4). Skipping here removes
+            // the pointless call and the bad cache write together.
+            // pageChars is deliberately LEFT UNSET for these pages: zero is a measurement,
+            // and this is the absence of one. Both consumers already tolerate absence.
+            if (_ocrPagesDone >= _ocrFileBudget) {
+                ocrTruncated = true;
+                beyondBudgetPages.push(pageNum);
+                if (typeof window !== 'undefined' && window._parserDebug) {
+                    try { console.log('[Parser] OCR page ' + pageNum + ': past the ' + _ocrFileBudget + '-page budget, not scanned'); } catch (e) {}
                 }
-            } catch (e) { /* instrumentation must never break a read */ }
-            if (typeof window !== 'undefined' && window._parserDebug) {
-                try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
-            }
+            } else {
+                // R2: per-page manual rotation (degrees stashed by the rotate control).
+                const rotKey = file.name + '#' + pageNum;
+                const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
+                // Cache key carries the angle, so turning a page re-reads it for real
+                // while every untouched page comes back from memory (2026-09-14).
+                const cacheKey = file.name + '#' + (file.size || 0) + '#' + pageNum + '@' + rotDeg;
+                const ocrText = await ocrPage(page, runId, rotDeg, cacheKey);
+                // Cache the EMPTY result too. A dead page costs the most (the PSM
+                // ladder plus the scale-2 and crop fallbacks, up to ~6 recognitions),
+                // and those are exactly the pages a rotate-heavy session revisits.
+                // Tradeoff written down because it is real: photo-reading wobbles
+                // slightly run to run (learning-loop plan, §6 2026-09-07), so caching
+                // an empty forgoes the chance that an unchanged page reads next time.
+                // The read-depth "Re-scan" clears the cache, which is the deliberate
+                // way to ask for a genuinely fresh read.
+                if (cacheKey && runId === _autofillRunId) {
+                    try { _ocrTextCache.set(cacheKey, ocrText || ''); } catch (e) { /* cache is best-effort */ }
+                }
+                if (ocrText && ocrText.trim().length >= 10) {
+                    pageText = ocrText;
+                    ocrUsed = true;
+                    scannedRead++;
+                    ocrPages.push(pageNum);
+                }
+                // Per-page yield, RECORDED not just logged (2026-09-14). The count was
+                // computed here all along and thrown away into a debug console line, so
+                // the page strip could say a page was unread but never WHY — "nothing at
+                // all" and "forty characters of garbage" are different problems with
+                // different remedies, and only the second is worth rotating for.
+                // Soupiness is re-scored from the page text rather than plumbed out of
+                // recognizeEnglish (which returns a bare string): the scorer is pure and
+                // cheap, so re-running it costs nothing and changes no signature.
+                try {
+                    const yielded = (pageText || '').trim();
+                    pageChars[pageNum] = yielded.length;
+                    if (yielded.length > 0 && core && typeof core.scoreOcrSoup === 'function') {
+                        const s = core.scoreOcrSoup(yielded);
+                        if (s && s.soupy) soupyPages.push(pageNum);
+                    }
+                } catch (e) { /* instrumentation must never break a read */ }
+                if (typeof window !== 'undefined' && window._parserDebug) {
+                    try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
+                }
+            } // end of the within-budget branch (P-5)
         }
 
+        // Every page still contributes its text layer, including a page the budget
+        // refused — that is a sub-10-character remnant, but leaving it out would change
+        // the concatenated text the extractors see for no reason connected to P-5.
         fullText += pageText + '\n\n';
 
         // Full-scan default (no early break): EVERY page reads up to the per-file budget,
@@ -892,7 +1177,10 @@ async function extractTextFromPDF(file, runId) {
         // text. Text pages cost ~nothing; scanned pages stay capped by the per-file budget.
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited, pageChars, soupyPages };
+    // budget = what this file was actually allowed (P-4); beyondBudgetPages = the pages
+    // that allowance did not reach (P-5). Both travel on the scan report so every page
+    // surface can tell "never asked" from "asked and got nothing".
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited, pageChars, soupyPages, beyondBudgetPages, budget: _ocrFileBudget };
 }
 
 // ===================================================
@@ -1070,19 +1358,25 @@ window._copyExtractedText = function () {
 // showAutofillWarning, and the page-preview panel.
 
 // Pages a file offers for rotating or snapshotting: the scanned ledger when we
-// have one, else whatever actually yielded text. The 12-per-file cap is the one
-// both surfaces have always applied — kept so this factoring changes nothing.
+// have one, else whatever actually yielded text.
+// THE 12-PER-FILE CAP IS GONE (2026-09-20, §47.4). It predated the read-depth
+// selector: once a reviewer can ask for 25, 40 or 50 pages, a fixed 12 is
+// arbitrary, and on an 18-page read it silently stopped the page strip, the
+// per-page facts and the save-image buttons at page 12 while the reader had
+// read all eighteen. ocrRotatablePagesOf was always uncapped, so the two
+// disagreed; they now agree. What this does NOT fix is a reachability problem —
+// prev/next always walked the uncapped list, so pages 13+ were viewable and
+// turnable all along; what they lacked was a button and an explanation (§48.2).
 function ocrListedPagesOf(report) {
     if (!report) return [];
     const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
     const read = (report.ocrPages && report.ocrPages.length) ? report.ocrPages : [];
-    return (scanned || read).slice(0, 12);
+    return (scanned || read).slice();
 }
 
-// Every page a file can be rotated through — UNCAPPED, unlike ocrListedPagesOf.
-// The distinction is real and was previously implicit: the surfaces show at most
-// 12 buttons per file, but "rotate all" has always turned every scanned page,
-// including ones with no button. Kept that way; named so it reads as deliberate.
+// Every page a file can be rotated through. Historically this differed from
+// ocrListedPagesOf, which capped at 12 — now they agree, and this one is kept as
+// the name the rotate paths ask by.
 function ocrRotatablePagesOf(report) {
     if (!report) return [];
     const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
@@ -1117,9 +1411,15 @@ function ocrPageFactsOf(report) {
     const landscape = (report.landscapePages && report.landscapePages.length) ? report.landscapePages : null;
     const chars = report.pageChars || {};
     const soupy = report.soupyPages || [];
+    // P-5: the third state, and the budget to name in the sentence. A report captured
+    // before this ledger existed simply has no beyond-budget pages, which is the right
+    // answer for it — it predates the skip-without-attempting path.
+    const beyond = report.beyondBudgetPages || [];
+    const budget = Number(report.budget) || (typeof ocrPageLimit === 'function' ? ocrPageLimit() : 10);
     return ocrListedPagesOf(report).map((pn) => {
         const read = !ocrPageIsUnread(report, pn);
         const n = Number(chars[pn]);
+        const past = beyond.indexOf(pn) !== -1;
         return {
             pageNum: pn,
             rotation: ocrRotationOf(report.fileName, pn),
@@ -1127,7 +1427,8 @@ function ocrPageFactsOf(report) {
             landscape: landscape ? landscape.indexOf(pn) !== -1 : !!report.allLandscape,
             chars: isFinite(n) ? n : null,
             soupy: soupy.indexOf(pn) !== -1,
-            why: ocrPageWhy(read, isFinite(n) ? n : null, soupy.indexOf(pn) !== -1),
+            beyondBudget: past,
+            why: ocrPageWhy(read, isFinite(n) ? n : null, soupy.indexOf(pn) !== -1, past, budget),
         };
     });
 }
@@ -1136,7 +1437,18 @@ function ocrPageFactsOf(report) {
 // and "forty characters of garbage" are different problems: the first is usually
 // orientation or a dark scan, the second usually means the page WAS read and is
 // simply not worth reading. Only the first is worth turning the page for.
-function ocrPageWhy(read, chars, soupy) {
+// P-5 (2026-09-20) adds the third state, and it goes FIRST because it is the only
+// one of the three that is not a statement about the page's ink. A page past the
+// budget was never attempted, so "nothing at all — try turning it" blamed the page
+// for a silence nobody asked it to break, and prescribed the one remedy that can
+// never work: the budget gate fires before any work, and a cached page spends a
+// budget slot on purpose, so turn-then-re-read returns empty at any angle, forever.
+// Re-scan is the only action that reaches it, and it is now the one named.
+function ocrPageWhy(read, chars, soupy, beyondBudget, budget) {
+    if (beyondBudget) {
+        const n = Number(budget);
+        return 'not scanned — past the ' + (isFinite(n) && n > 0 ? n : 'chosen') + '-page depth; use Re-scan with a deeper setting to read it';
+    }
     if (read && soupy) return 'read, but the text looks garbled';
     if (read) return chars ? 'text read (' + chars + ' characters)' : 'text read';
     if (chars === null || chars === 0) return 'nothing at all — try turning it';
@@ -1179,7 +1491,14 @@ function ocrPendingRereadPages(report) {
         const files = window._autofillPdfFiles || [];
         for (const f of files) { if (f && f.fileName === report.fileName) { size = (f.file && f.file.size) || 0; break; } }
     } catch (e) { /* best-effort */ }
+    // P-5 consequence, and it would have been a live defect: a beyond-budget page no
+    // longer writes an empty into the cache (that write was the §46.4 trap), so without
+    // this it would report as "pending" on every render — the Re-read button would offer
+    // to re-read pages nothing had turned, and re-reading them could not reach them
+    // anyway. A re-read is defined as what a TURN made stale; the budget is Re-scan's job.
+    const beyond = report.beyondBudgetPages || [];
     return ocrRotatablePagesOf(report).filter((pn) => {
+        if (beyond.indexOf(pn) !== -1) return false;
         const rot = ocrRotationOf(report.fileName, pn);
         return !_ocrTextCache.has(report.fileName + '#' + size + '#' + pn + '@' + rot);
     });
@@ -1346,8 +1665,42 @@ function ocrAiCandidates(maxN) {
             const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
             const read = {};
             (r.ocrPages || []).forEach((pn) => { read[pn] = true; });
-            // The original ordering, unchanged: pages that yielded nothing first.
-            let ordered = scanned.filter((pn) => !read[pn]).concat(scanned.filter((pn) => read[pn]));
+            // RANK BY LEAST USABLE TEXT (2026-09-20), not by "no text".
+            // The old rule was: pages that yielded NOTHING first, then pages that were
+            // read. That carried real signal while seven of ten pages yielded nothing.
+            // P-3 fixed OCR-1 and every page now yields text, so the "nothing" list went
+            // EMPTY, the ordering collapsed to plain document order, and the picker sent
+            // pages 1 and 2 of every file every time — choosing the first two pages and
+            // calling it a ranking (restudy §27.3).
+            // The ledger to do this properly was already being collected and ignored:
+            // pageChars holds the per-page character count and soupyPages holds the ones
+            // whose text came back garbled.
+            const chars = (r.pageChars || {});
+            const soupy = {};
+            (r.soupyPages || []).forEach((pn) => { soupy[pn] = true; });
+            // §48.3: a page past the budget also looks like "the reader got nothing",
+            // because nothing was asked of it. Its PLACE in the ranking is unchanged —
+            // it is genuinely unread, and an unread page is still the best thing to send
+            // — but the reason shown to the reviewer must not claim the reader tried.
+            const beyond = {};
+            (r.beyondBudgetPages || []).forEach((pn) => { beyond[pn] = true; });
+            let ordered = scanned.slice().sort((a, b) => {
+                // 1. A page the reader got NOTHING from is still the best thing to send.
+                //    Keeping this first means the old behaviour is preserved exactly
+                //    whenever it still applies.
+                const ua = read[a] ? 1 : 0, ub = read[b] ? 1 : 0;
+                if (ua !== ub) return ua - ub;
+                // 2. Then the pages whose text came back SOUPY. Forty garbled characters
+                //    are worse than four hundred clean ones, and the old rule could not
+                //    tell the difference — it saw both as "read".
+                const sa = soupy[a] ? 0 : 1, sb = soupy[b] ? 0 : 1;
+                if (sa !== sb) return sa - sb;
+                // 3. Then least usable text first.
+                const ca = Number(chars[a] || 0), cb = Number(chars[b] || 0);
+                if (ca !== cb) return ca - cb;
+                // 4. Document order, so the choice is stable across runs.
+                return a - b;
+            });
             let fallback = false;
             if (!ordered.length && r.numPages) {
                 fallback = true;
@@ -1360,8 +1713,14 @@ function ocrAiCandidates(maxN) {
                     reportIdx: ri,
                     fileName: r.fileName,
                     pageNum: pn,
+                    // The panel shows this, and it is the only place a reviewer can see
+                    // why a page was chosen. "among the weakest" was true when weakness
+                    // meant emptiness; now it can say which kind of weak.
                     reason: fallback ? 'first pages of a file with no photo-read pages'
-                        : (read[pn] ? 'read, but among the weakest' : 'the reader got nothing here'),
+                        : (beyond[pn] ? 'never scanned — past the chosen read depth'
+                            : (!read[pn] ? 'the reader got nothing here'
+                                : (soupy[pn] ? 'the text here came back garbled'
+                                    : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)'))),
                 });
             }
         }
@@ -1497,10 +1856,17 @@ async function renderOcrPagePreview() {
     const ctl = document.getElementById('ocrPreviewControls');
     if (ctl) {
         const pending = ocrPendingRereadPages(r).length;
+        // P-5(d): offering a control that provably cannot help is the same defect in
+        // button form. A page past the budget was never attempted, so turning it changes
+        // nothing a re-read could act on — the gate refuses it at any angle. Disabled
+        // rather than hidden, so the reviewer can see WHY the option is not theirs here.
+        const pastBudget = (r.beyondBudgetPages || []).indexOf(pn) !== -1;
         ctl.innerHTML =
             '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at <= 0 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(-1)">‹ prev</button>'
             + '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at >= pages.length - 1 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(1)">next ›</button>'
-            + '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewRotate()" title="Turn this page 90°. Nothing is re-read until you press Re-read.">⟳ turn this page</button>'
+            + (pastBudget
+                ? '<button type="button" class="btn btn-sm btn-outline-primary" disabled title="This page was never scanned — it is past the chosen read depth. Turning it cannot help; raise the depth below and press Re-scan.">⟳ turn this page</button>'
+                : '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewRotate()" title="Turn this page 90°. Nothing is re-read until you press Re-read.">⟳ turn this page</button>')
             + '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._ocrPreviewRotateFile()" title="Turn every scanned page of this file 90°">⟳ turn whole file</button>'
             + (pending > 0
                 ? '<button type="button" class="btn btn-sm btn-primary ms-auto" onclick="window._ocrPreviewReread()" title="Read the turned pages again — only these are re-read">Re-read ' + pending + ' page' + (pending === 1 ? '' : 's') + '</button>'
@@ -1750,7 +2116,12 @@ function mergeAiParsedIntoPreview(aiParsed) {
             el.value = shown;
             window._autofillAiAssisted[coreField] = true;
             try {
-                const td = el.closest ? el.closest('td') : (el.parentNode || null);
+                // The preview was a TABLE until Stage 1b turned it into a responsive
+                // grid; there are no <td> elements left, so this hunted for a cell that
+                // cannot exist and the badge silently never appeared (restudy §28.5).
+                // The old parentNode fallback was dead code too — the ternary asked
+                // whether el.closest EXISTS, not whether it MATCHED.
+                const td = (el.closest && (el.closest('.afp-cell') || el.closest('td'))) || el.parentNode || null;
                 if (td && !td.querySelector('[data-ai-marker]')) {
                     const badge = document.createElement('span');
                     badge.className = 'badge bg-info text-dark';
@@ -1767,11 +2138,133 @@ function mergeAiParsedIntoPreview(aiParsed) {
     return filled;
 }
 
+// Which preview boxes are still EMPTY — the fields the AI is actually being asked for.
+// The request used to carry images and nothing else, so the model was not even told
+// which boxes needed filling; it read whatever it read and the merge threw away
+// anything that landed on a box already holding a value (restudy §28.7).
+// ⚠ DELIBERATELY NAMES ONLY THE FIELDS, NEVER OUR OCR TEXT. The value of this tier is
+// that it is an INDEPENDENT read of the pixels: feeding it our transcription risks it
+// anchoring on our errors instead of looking, and destroys the ability to tell whether
+// it read the image or paraphrased us. On the very file that prompted this, our page-1
+// text says "4,834,297 5g" — the wrong value — and we would have handed it over.
+// Called by: _tryAiAssist*() before postAiSlices().
+function emptyPreviewFields() {
+    const out = [];
+    try {
+        for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+            const el = document.getElementById('previewInput-' + inputId);
+            if (!el) continue;
+            if (String(el.value || '').trim() === '') out.push(AUTOFILL_CORE_FIELDS[inputId]);
+        }
+    } catch (e) { /* the hint is best-effort — the call proceeds without it */ }
+    return out;
+}
+
+// Which pick-one note to show per field: the pooled disagreement, or the learned one.
+// PURE, and deliberately a named function rather than three lines inline, because the
+// three lines were WRONG and nothing could see it (restudy §32).
+//
+// The pooled _disagree object always carries ALL its keys, holding null where there is
+// no disagreement. So a plain Object.assign(learned, pooled) overwrote every learned
+// entry with null and the learned note could never render — in the app, ever.
+//
+// Two rules, and the second is the one that keeps the preview honest:
+//   1. a REAL pooled disagreement always wins. It has counts and files behind it; the
+//      learned one knows only that two approved phrases read differently.
+//   2. a learned disagreement is dropped for any field THE POOL RESOLVED, because the
+//      value in the box then came from the pool — offering two learned values, neither
+//      of which is what is displayed, would be worse than saying nothing.
+// Called by: runDocumentAutofill().
+function mergeDisagreements(learnedD, pooledD, pooledResolved) {
+    const out = {};
+    const learned = learnedD || {};
+    const pooled = pooledD || {};
+    const resolved = pooledResolved || {};
+    for (const k of Object.keys(learned)) {
+        if (!resolved[k] && learned[k]) out[k] = learned[k];
+    }
+    for (const k of Object.keys(pooled)) {
+        if (pooled[k]) out[k] = pooled[k];
+    }
+    return out;
+}
+
+// L-4 (2026-09-20) — HARVEST AT SUBMIT AS WELL AS AT APPLY.
+// harvestCorrections used to fire only from applyAutofillFromPreview, reading the
+// PREVIEW modal's boxes. A reviewer who pressed Apply and then fixed a field in the
+// create-project form itself taught the loop nothing — and that is very likely the
+// common human path: people correct things where they can see the whole form, not
+// inside a modal. Under the pilot's answer to F6 (real PMU projects, encoded by
+// staff) it is the path that matters most.
+// The richest corrections, made after seeing everything in context, were the ones the
+// loop never saw.
+// Reads the REAL form fields; AUTOFILL_CORE_FIELDS' keys are their ids, the same ones
+// the preview prefixes with 'previewInput-'.
+// Called by: the delegated submit listener below.
+function harvestCorrectionsFromForm() {
+    const core = getCore();
+    const normDate = (v) => {
+        try { return (core && core.parseToInputDate) ? (core.parseToInputDate(v) || v) : v; }
+        catch (e) { return v; }
+    };
+    const snapshot = {};
+    for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+        const el = document.getElementById(inputId);
+        if (!el) continue;
+        let v = String(el.value || '').trim();
+        if (v && (el.type === 'date' || inputId === 'plannedStartDate' || inputId === 'plannedEndDate')) v = normDate(v);
+        snapshot[AUTOFILL_CORE_FIELDS[inputId]] = v;
+    }
+    harvestCorrections(snapshot);
+}
+
+// Delegated and CAPTURING, so it runs whatever else the form does with the event —
+// including form-navigation.js dispatching a synthetic submit. Fire-and-forget: the
+// collect POST is keepalive, and a failure here must never block a submission.
+if (typeof document !== 'undefined') {
+    document.addEventListener('submit', function (e) {
+        try {
+            const f = e && e.target;
+            if (!f || f.id !== 'createProjectForm') return;
+            harvestCorrectionsFromForm();
+        } catch (err) { /* learning must never break creating a project */ }
+    }, true);
+}
+
+// Re-print the pooled vote tables on demand (2026-09-20).
+// console.table only draws while devtools is OPEN, so a run made with it closed left
+// the reviewer with the raw arrays in window._autofillVoteDebug and no readable table
+// — and reopening devtools cannot redraw what was never drawn. The rows survive in the
+// stash, so re-printing them is all that was ever needed.
+// ⚠ Deliberately NOT gated on window._parserDebug: this is asked for AFTER a run, by
+// someone who has just opened devtools and therefore could not have set the flag in
+// time. The stash is filled on EVERY preview (see the P2 note at the tip line), so the
+// data is there whether or not debug logging was on.
+// Usage: window._parserVoteTables()  or  window._parserVoteTables('abc')
+// Called by: the browser console only.
+window._parserVoteTables = function (field) {
+    const dbg = (typeof window !== 'undefined') ? window._autofillVoteDebug : null;
+    if (!dbg) {
+        console.log('[Parser] no vote data yet — run a preview first.');
+        return;
+    }
+    const fields = field ? [field] : Object.keys(dbg);
+    for (const f of fields) {
+        const rows = dbg[f] || [];
+        if (!rows.length) { console.log('[Parser] field:', f, '| no pooled finds'); continue; }
+        console.log('[Parser] field:', f, '| finds:', rows.length, '| winner:', rows[0] ? rows[0].value : null);
+        if (console.table) console.table(rows.map(r => ({
+            value: r.value, count: r.count, score: r.score, labeled: r.labeledCount,
+            patterns: (r.patterns || []).join(', '), files: (r.files || []).join(', '),
+        })));
+    }
+};
+
 // POST slices to parse-gemini (role-aware, one call). Returns parsed shape or null.
 // Stashes the server's message (mapped transport texts like quota/busy/dead-model)
 // so failure spots surface it instead of a generic line.
 // Called by: _tryAiAssist*().
-async function postAiSlices(slices) {
+async function postAiSlices(slices, need) {
     try { window._autofillAiLastError = null; window._autofillAiFallbackModel = null; } catch (e) {}
     const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
     if (path.indexOf('/contractor/') !== -1) return null;
@@ -1781,7 +2274,7 @@ async function postAiSlices(slices) {
     const res = await fetch(base + '/document/parse-gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
-        body: JSON.stringify({ images: slices }),
+        body: JSON.stringify({ images: slices, need: Array.isArray(need) ? need : [] }),
     });
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
@@ -1831,7 +2324,7 @@ window._tryAiAssist = async function () {
             window._autofillAiBusy = false;
             return;
         }
-        const parsed = await postAiSlices(slices);
+        const parsed = await postAiSlices(slices, emptyPreviewFields());
         if (runAtClick !== null && runAtClick !== _autofillRunId) return;
         if (!parsed) {
             try {
@@ -1879,7 +2372,7 @@ window._tryAiAssistFromWarning = async function () {
             window._autofillAiBusy = false;
             return;
         }
-        const parsed = await postAiSlices(slices);
+        const parsed = await postAiSlices(slices, emptyPreviewFields());
         if (!parsed) {
             if (typeof showToast === 'function') showToast(aiFailureMessage('The AI assistant could not read these pages either'), 'error');
             window._autofillAiBusy = false;
@@ -1904,6 +2397,10 @@ window._tryAiAssistFromWarning = async function () {
 };
 
 function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
+    // B-2: the create-in-place gate needs to know whether these values were READ OFF A
+    // PHOTOGRAPH or lifted from a text layer, and syncAutofillChoiceFields() runs later
+    // (and again on shown.bs.modal), so the flag is stashed rather than threaded.
+    try { window._autofillOcrUsed = !!ocrUsed; } catch (e) { /* best-effort */ }
     const modalEl = document.getElementById('autofillPreviewModal');
     if (!modalEl) {
         // No preview markup (should not happen) — fall back to direct apply
@@ -1919,21 +2416,32 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             return;
         }
     } catch (e) { /* guard is best-effort — render normally on any failure */ }
-
     // Phase 5: expanded fields — ABC standalone, Budget Source, Category.
     // Hardcoded value-keyword fallback (TITLE/CONTRACTOR) already merged into parsed.
+    // LAYOUT 2026-09-18: `w` is the Bootstrap column span this field gets on a
+    // medium-or-wider screen — 12 for free text that genuinely needs the width
+    // (title, location, description), 6 for everything short so it pairs up.
+    // Order is grouped by kind rather than by extraction order: the long text
+    // first, then what/who, then the money, then the schedule. Nothing downstream
+    // depends on this order (the L1 snapshot below is keyed by field name).
+    // `choices` names the LIVE form control whose options this field should offer.
+    // Rendered as a real <select> (the same dropdown the create form has), filled by
+    // syncAutofillChoiceFields() because those lists are fetched asynchronously. An
+    // extracted value that matches no option is kept as its own labelled option rather
+    // than dropped — and every option's VALUE is the NAME, because Apply and
+    // autofillFormFields() match these fields by name, not by id.
     const fields = [
-        { id: 'projectTitle', label: 'Project Title', value: parsed.title },
-        { id: 'projectLocation', label: 'Location', value: parsed.location },
-        { id: 'projectDescription', label: 'Description', value: parsed.description },
-        { id: 'projectCategory', label: 'Category', value: parsed.category },
-        { id: 'projectBudget', label: 'Contract Price', value: parsed.budget },
-        { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc },
-        { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource },
-        { id: 'plannedStartDate', label: 'Start Date', value: parsed.startDate },
-        { id: 'plannedEndDate', label: 'End Date', value: parsed.endDate },
-        { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration },
-        { id: 'contractorSelect', label: 'Contractor', value: parsed.contractor },
+        { id: 'projectTitle', label: 'Project Title', value: parsed.title, w: 12 },
+        { id: 'projectLocation', label: 'Location', value: parsed.location, w: 12 },
+        { id: 'projectDescription', label: 'Description', value: parsed.description, w: 12 },
+        { id: 'projectCategory', label: 'Category', value: parsed.category, w: 6, choices: 'projectCategory' },
+        { id: 'contractorSelect', label: 'Contractor', value: parsed.contractor, w: 6, choices: 'contractorSelect' },
+        { id: 'projectBudget', label: 'Contract Price', value: parsed.budget, w: 6 },
+        { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc, w: 6 },
+        { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource, w: 6, choices: 'projectBudgetSource' },
+        { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration, w: 6 },
+        { id: 'plannedStartDate', label: 'Start Date', value: parsed.startDate, w: 6 },
+        { id: 'plannedEndDate', label: 'End Date', value: parsed.endDate, w: 6 },
     ];
 
     const tbody = document.getElementById('autofillPreviewRows');
@@ -1973,21 +2481,39 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 return ' <span class="badge bg-info text-dark" data-ai-marker="1" title="Filled by the AI-assisted read — please verify">AI-assisted</span>';
             } catch (e) { return ''; }
         };
+        // One grid cell per field. Long text spans the row; short fields pair up.
+        // Choice fields render as a REAL <select> — the reviewer asked for the same
+        // dropdown the create form has. It is populated by syncAutofillChoiceFields()
+        // below rather than here, because the live Category / Budget Source lists are
+        // FETCHED asynchronously and are usually still empty at the moment this runs.
         tbody.innerHTML = fields.map(f => {
             const isDate = DATE_FIELDS.indexOf(f.id) !== -1;
             const value = isDate ? (core.parseToInputDate(f.value) || '') : (f.value || '');
+            const span = f.w === 12 ? 'col-12' : 'col-12 col-md-6';
+            const control = f.choices
+                // data-extracted remembers what the document said, so a re-sync that
+                // arrives after the options load can still select it (or keep it as its
+                // own option when it matches nothing).
+                ? `<select class="form-select form-select-sm" id="previewInput-${f.id}"
+                        data-choices-from="${escapeHtml(f.choices)}" data-extracted="${value ? escapeHtml(value) : ''}">
+                        ${value ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}</option>` : '<option value="">Loading options…</option>'}
+                   </select>`
+                : `<input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
+                        value="${value ? escapeHtml(value) : ''}"
+                        placeholder="${f.value ? '' : 'Not found — fill manually'}" />`;
             return `
-                <tr>
-                    <td class="autofill-preview-label">${escapeHtml(f.label)}</td>
-                    <td>
-                        <input type="${isDate ? 'date' : 'text'}" class="form-control form-control-sm" id="previewInput-${f.id}"
-                            value="${value ? escapeHtml(value) : ''}"
-                            placeholder="${f.value ? '' : 'Not found — fill manually'}" />
+                <div class="${span}">
+                    <div class="afp-cell">
+                        <label class="form-label autofill-preview-label mb-1" for="previewInput-${f.id}">${escapeHtml(f.label)}</label>
+                        ${control}
                         ${disagreeNoteFor(f.id)}${aiMarkerFor(f.id)}
-                    </td>
-                </tr>
+                    </div>
+                </div>
             `;
         }).join('');
+        // Fill the dropdowns now, and again when the modal is actually shown (below) —
+        // whichever happens after the option fetch lands is the one that sticks.
+        try { syncAutofillChoiceFields(); } catch (e) { /* dropdowns are best-effort */ }
         // L1 learning loop: snapshot what extraction guessed per CORE field, so Apply can
         // diff guesses vs user-kept values. Date-normalized exactly like the inputs above.
         // AI-3 emptyBaseline: the AI-from-warning flow opens a preview with no rule guesses —
@@ -2050,9 +2576,17 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const lines = reports.map((r, ri) => {
             const visited = r.pagesVisited || r.numPages || '?';
             const total = r.numPages || '?';
+            // P-4: a file read past the selected depth must SAY so, or the note reads as
+            // a contradiction ("12 of 12 scanned pages yielded text (10 per file
+            // selected)"). `limit` stays the number the reviewer chose; the extra clause
+            // reports the slack that carried this particular file to its end.
+            const fileBudget = Number(r.budget) || limit;
+            const depth = (fileBudget > limit)
+                ? limit + ' per file selected, ' + fileBudget + ' read to finish the file'
+                : limit + ' per file selected';
             const base = r.truncated
-                ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + limit + ' per file selected) — later pages were not scanned.'
-                : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + limit + ' per file selected) — scan complete.';
+                ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + depth + ') — later pages were not scanned.'
+                : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + depth + ') — scan complete.';
             // R2 + P-ROT (2026-09-07): per-page rotate buttons for ALL scanned pages
             // (scannedPageNums ledger, ocrPages fallback) — unread pages were previously
             // unactionable. Failed pages carry a "no text yet" badge. Index-indirected
@@ -2179,21 +2713,319 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     hideAutofillBanner();
 
     const instance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    // Re-fill the dropdowns once the dialog is actually on screen. The Category and
+    // Budget Source lists arrive over the network, so the render-time pass often runs
+    // before they exist; this is the second chance. Registered once (the flag guards
+    // against stacking a handler per preview) and harmless when the lists were already
+    // there. Also clears any spinner that survived to this point.
+    try {
+        if (!modalEl.dataset.afpSyncBound) {
+            modalEl.addEventListener('shown.bs.modal', function () {
+                try { syncAutofillChoiceFields(); } catch (e) { /* best-effort */ }
+                try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
+            });
+            // CLOSING the preview is the reviewer saying they are done with this read.
+            // Reported 2026-09-18: the spinner was still there after the modal was
+            // closed, so this is the reported moment itself, covered explicitly.
+            // P-6a (2026-09-20): ...but only when the reviewer is the one who closed it.
+            // When WE closed it in order to start another scan, a newer run has already
+            // begun and owns the indicator — zeroing the counter here killed it for the
+            // rest of that scan, which read as "Re-scan is not working" (§47.1).
+            // The run id is the exact test: runDocumentAutofill bumps it, so if it has
+            // moved since the close was issued, this teardown belongs to nobody.
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                const stamp = _autofillPreviewCloseStamp;
+                _autofillPreviewCloseStamp = null;
+                if (stamp !== null && stamp !== _autofillRunId) return;
+                _autofillScansInFlight = 0;
+                try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
+            });
+            modalEl.dataset.afpSyncBound = '1';
+        }
+    } catch (e) { /* binding is best-effort — the render-time pass still ran */ }
+    // P-6a: this preview is nobody's deliberate close yet. Clearing the stamp here is
+    // what keeps the 2026-09-18 fix working for the case it was written for — a
+    // reviewer pressing X never goes through closeAutofillPreview(), so a stamp left
+    // over from an earlier programmatic close would wrongly suppress their teardown.
+    _autofillPreviewCloseStamp = null;
     instance.show();
 }
 
+// WHICH RUN WAS LIVE WHEN WE CLOSED THE PREVIEW OURSELVES (P-6a, 2026-09-20).
+// null means "we did not close it" — i.e. the reviewer did, with the X or the
+// backdrop. See closeAutofillPreview() and the hidden.bs.modal handler for why
+// the difference is load-bearing.
+let _autofillPreviewCloseStamp = null;
+
+// Close the preview from code. Stamps the run id that was live at the moment of
+// closing, because instance.hide() is a CSS FADE (~150-300ms) and three callers
+// start another scan immediately afterwards — _rescanWithSelection (:Re-scan),
+// _ocrPreviewReread (Re-read) and _removeMismatchFiles (Remove & re-scan). The
+// new run paints its indicator before the fade ends, so without this stamp the
+// hidden.bs.modal handler tore down an indicator belonging to a run a tenth of a
+// second old, and it could never repaint (restudy §47.1, §48.4).
+// Called by: cancelDocumentAutofill, applyAutofill, and the three re-run paths.
 function closeAutofillPreview() {
     const modalEl = document.getElementById('autofillPreviewModal');
     if (modalEl) {
         const instance = bootstrap.Modal.getInstance(modalEl);
-        if (instance) instance.hide();
+        if (instance) {
+            // Stamp only when a hide is actually issued — an already-hidden modal
+            // fires no event, and a stamp left behind would suppress the next real close.
+            _autofillPreviewCloseStamp = _autofillRunId;
+            instance.hide();
+        }
     }
 }
 
 // Apply the previewed data to the form (Apply button in the preview modal).
 // Reads the (possibly edited) input values from the preview rows.
 // Phase 5: includes abc, budgetSource, category.
+
+// Fill the preview's Category / Budget Source / Contractor dropdowns from the LIVE
+// create-project controls, so they offer exactly the options the real form offers —
+// including anything added through the (+) buttons, which this file knows nothing about.
+//
+// WHY IT IS A SEPARATE PASS rather than part of the render: Category and Budget Source
+// are fetched over the network (see loadCategories in _create_project_modal.js), so at
+// the moment the preview renders those selects usually hold nothing but their
+// "-- Select --" placeholder. This runs at render AND again on shown.bs.modal; whichever
+// fires after the fetch lands is the one that sticks, and running twice is harmless.
+//
+// THE OPTION VALUE IS THE NAME, NOT THE ID — deliberately. applyAutofillFromPreview()
+// reads .value and autofillFormFields() matches these fields BY NAME, so yielding an id
+// here would silently break the fill. An extracted value that matches no option is kept
+// as its own option (marked) rather than dropped, which is the "do both" the reviewer
+// asked for: a real dropdown that still cannot lose what the document said.
+// Called by: showAutofillPreview() at render, and its shown.bs.modal handler.
+function syncAutofillChoiceFields() {
+    const selects = document.querySelectorAll('#autofillPreviewRows select[data-choices-from]');
+    selects.forEach((target) => {
+        const sourceId = target.getAttribute('data-choices-from');
+        const src = sourceId ? document.getElementById(sourceId) : null;
+        let names = [];
+        try {
+            if (src && src.options) {
+                names = Array.from(src.options)
+                    .map(o => String(o.textContent || '').trim())
+                    // Drop the source's own placeholder rows ("-- Select Category --").
+                    .filter(t => t && t.indexOf('--') !== 0);
+            }
+        } catch (e) { names = []; }
+        // What the document said, or what the reviewer has already chosen this session.
+        const extracted = (target.getAttribute('data-extracted') || '').trim();
+        const chosen = (target.value || '').trim();
+        const keep = chosen || extracted;
+        const html = [];
+        let matched = false;
+        names.forEach((n) => {
+            const isSel = keep && n.toLowerCase() === keep.toLowerCase();
+            if (isSel) matched = true;
+            html.push('<option value="' + escapeHtml(n) + '"' + (isSel ? ' selected' : '') + '>' + escapeHtml(n) + '</option>');
+        });
+        // Nothing in the list matches what we read — keep it, flagged, so Apply can still
+        // use it and the reviewer can see what the document actually said.
+        if (keep && !matched) {
+            html.unshift('<option value="' + escapeHtml(keep) + '" selected>' + escapeHtml(keep) + ' — from document (not in list)</option>');
+        }
+        html.unshift('<option value="">' + (names.length ? '— none —' : 'No options available') + '</option>');
+        target.innerHTML = html.join('');
+        // A blank placeholder must not win when we have something to select.
+        if (keep) { try { target.value = keep; } catch (e) { /* best-effort */ } }
+        // Q3(a) 2026-09-18 — A VALUE THE DOCUMENT GAVE US MUST NOT DIE BECAUSE NOBODY
+        // HAS ADDED IT YET. When the extracted name matches no option, offer to create
+        // it right here for the two fields where that is safe: Category and Budget
+        // Source are simple lookup tables with existing store endpoints and (+) buttons.
+        // CONTRACTOR IS DELIBERATELY EXCLUDED — a contractor is not a label, it is a
+        // record that logins, notifications, ratings and warranty submissions hang off,
+        // and minting one from OCR text would put a hollow record in the very table the
+        // pilot seeds with the PMU's real contractors. That case gets a loud note
+        // instead (see markUnmatchedChoice below).
+        renderChoiceCreateAction(target, sourceId, (keep && !matched) ? keep : '', names);
+    });
+}
+
+// Put (or remove) the "add a new …" action under a choice field.
+// Shown only when: the value came from the document, matches no option, the field is
+// one of the two safe ones, and THIS USER may create it — the capability flags mirror
+// the same policy that gates the (+) buttons, and the store routes are admin-only.
+//
+// B-2 (2026-09-20) — THREE CHANGES, because this control writes a PERMANENT ROW to a
+// lookup table on the strength of text a machine read off a photograph, and B-1 only
+// stopped the debris that LOOKS like debris. A value can be well-shaped and still
+// wrong: OCR confuses C and G, so GAA arrives as CAA, passes every check, and becomes
+// a near-duplicate row that silently splits every report that groups by source.
+//   1. NOT OFFERED AT ALL FOR A SCANNED DOCUMENT. These two fields are always filled by
+//      a LABEL match, so "labeled vs value-side guess" does not vary for them — what
+//      does vary is whether the text came from a PDF text layer or from OCR, and that
+//      is the axis the misreads actually live on. A scan still SHOWS its value and
+//      still fills the form; it just cannot mint a row. (See the note it renders.)
+//   2. THE REVIEWER TYPES THE NAME. The input starts EMPTY, with the document's text
+//      shown beside it for reference. Prefilling it would be a one-click button again,
+//      and typing is what turns a misread CAA into a correct GAA.
+//   3. A NEAR-MATCH IS NAMED BEFORE ANYTHING IS CREATED. What they type is checked
+//      against the rows that already exist, and anything within two edits is called
+//      out with a one-click way to use the existing row instead. It WARNS, never
+//      blocks — GAD really is one edit from GAA and really is a different fund.
+// Called by: syncAutofillChoiceFields().
+function renderChoiceCreateAction(target, sourceId, unmatchedValue, names) {
+    const HOLDER = 'afp-choice-action';
+    let holder = target.parentNode ? target.parentNode.querySelector('.' + HOLDER) : null;
+    const cfg = (typeof window !== 'undefined' && window._projectModalConfig) ? window._projectModalConfig : {};
+    const CREATABLE = {
+        projectCategory: { label: 'category', allowed: !!cfg.canCreateCategory },
+        projectBudgetSource: { label: 'budget source', allowed: !!cfg.canCreateBudgetSource },
+    };
+    const spec = CREATABLE[sourceId];
+    const show = !!unmatchedValue && !!spec && spec.allowed;
+    if (!show) {
+        if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+        return;
+    }
+    if (!holder) {
+        holder = document.createElement('div');
+        holder.className = HOLDER + ' mt-1';
+        target.insertAdjacentElement('afterend', holder);
+    }
+
+    // B-2(1): a value read off a photograph does not get to create a row. Say so — a
+    // control that vanishes without explanation reads as a bug.
+    const fromScan = !!(typeof window !== 'undefined' && window._autofillOcrUsed);
+    if (fromScan) {
+        holder.innerHTML = '<div class="small text-muted">'
+            + '<i class="bi bi-info-circle"></i> This was read from a SCAN, so it cannot be added as a new '
+            + escapeHtml(spec.label) + ' from here. The value above still applies to this project — '
+            + 'use the (+) button if it really is new.'
+            + '</div>';
+        return;
+    }
+
+    const inputId = HOLDER + '-in-' + sourceId;
+    holder.innerHTML = '<div class="small text-muted mb-1">'
+        + 'The document said "<strong>' + escapeHtml(unmatchedValue) + '</strong>", which is not in the list. '
+        + 'Type the ' + escapeHtml(spec.label) + ' name to add it:'
+        + '</div>'
+        + '<div class="d-flex gap-2 align-items-start">'
+        + '<input type="text" class="form-control form-control-sm afp-add-name" id="' + escapeHtml(inputId) + '" '
+        + 'placeholder="Type the ' + escapeHtml(spec.label) + ' name" autocomplete="off">'
+        + '<button type="button" class="btn btn-sm btn-outline-primary afp-add-choice" disabled>'
+        + '<i class="bi bi-plus-circle"></i> Add</button>'
+        + '</div>'
+        + '<div class="afp-add-near small mt-1"></div>';
+
+    const input = holder.querySelector('.afp-add-name');
+    const btn = holder.querySelector('.afp-add-choice');
+    const nearBox = holder.querySelector('.afp-add-near');
+    if (!input || !btn || !nearBox) return;
+
+    // B-2(3): re-checked on every keystroke, so the warning tracks what they will
+    // actually create rather than what the document happened to say.
+    const review = () => {
+        const typed = String(input.value || '').trim();
+        btn.disabled = typed.length < 2;
+        nearBox.innerHTML = '';
+        if (typed.length < 2) return;
+        let near = null;
+        try {
+            const core = getCore();
+            if (core && typeof core.nearestName === 'function') near = core.nearestName(typed, names || [], 2);
+        } catch (e) { near = null; }
+        if (!near) return;
+        if (near.distance === 0) {
+            // It already exists — creating it would duplicate a row outright.
+            btn.disabled = true;
+            nearBox.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> "'
+                + escapeHtml(near.name) + '" already exists — <a href="#" class="afp-use-near">select it</a> instead.</span>';
+        } else {
+            nearBox.innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> This is very close to "'
+                + escapeHtml(near.name) + '" — <a href="#" class="afp-use-near">use that</a> if you meant it.</span>';
+        }
+        const use = nearBox.querySelector('.afp-use-near');
+        if (use) {
+            use.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                try { target.value = near.name; } catch (e) { /* best-effort */ }
+                if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+            });
+        }
+    };
+    input.addEventListener('input', review);
+    btn.addEventListener('click', function () {
+        const typed = String(input.value || '').trim();
+        if (typed.length < 2) return;
+        createChoiceFromPreview(sourceId, typed, btn);
+    });
+    review();
+}
+
+// Create the missing category / budget source, then refresh the LIVE control and
+// re-sync the preview so the new row is selected. Nothing else in the form changes.
+// Called by: the "Add as new …" button rendered above.
+async function createChoiceFromPreview(sourceId, value, btn) {
+    const cfg = (typeof window !== 'undefined' && window._projectModalConfig) ? window._projectModalConfig : {};
+    const ROUTES = {
+        projectCategory: { url: cfg.categoriesStoreRoute, reload: 'loadProjectCategories', label: 'category' },
+        projectBudgetSource: { url: cfg.budgetSourcesStoreRoute, reload: 'loadBudgetSources', label: 'budget source' },
+    };
+    const spec = ROUTES[sourceId];
+    if (!spec || !spec.url || !value) return;
+    const original = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Adding…'; }
+    try {
+        const token = cfg.csrfToken
+            || (document.querySelector('meta[name="csrf-token"]') || {}).content
+            || '';
+        const res = await fetch(spec.url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({ name: value }),
+        });
+        if (!res.ok) {
+            // A duplicate name is the common case and is NOT a failure worth shouting
+            // about — the list reload below will surface the existing row either way.
+            let msg = 'Could not add the ' + spec.label + ' (' + res.status + ').';
+            try {
+                const body = await res.json();
+                if (body && body.message) msg = body.message;
+                else if (body && body.errors) msg = Object.values(body.errors).flat().join(' ');
+            } catch (e) { /* non-JSON error body */ }
+            if (btn) { btn.disabled = false; btn.innerHTML = original; }
+            alert(msg);
+            return;
+        }
+        // Refresh the real control from the server, then re-sync the preview so the
+        // freshly created row is both present and selected.
+        try {
+            const reload = (typeof window !== 'undefined') ? window[spec.reload] : null;
+            if (typeof reload === 'function') await reload();
+        } catch (e) { /* the option append below still covers the common case */ }
+        const live = document.getElementById(sourceId);
+        const known = live && live.options
+            ? Array.from(live.options).some(o => String(o.textContent || '').trim().toLowerCase() === value.toLowerCase())
+            : false;
+        if (live && !known) {
+            // The reload did not bring it (different role route, cache) — add it locally
+            // so the reviewer is not stuck. The next real load will agree.
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            live.appendChild(opt);
+        }
+        try { syncAutofillChoiceFields(); } catch (e) { /* best-effort */ }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = original; }
+        alert('Could not add the ' + spec.label + ' — check your connection and try again.');
+    }
+}
 function applyAutofillFromPreview() {
+    // Belt and braces for the stuck spinner: whatever path got us here, the reviewer
+    // is now acting on the result, so no scan is meaningfully "in progress" to them.
+    try { _autofillScansInFlight = 0; removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
     const read = (id) => {
         const el = document.getElementById('previewInput-' + id);
         return el ? el.value.trim() : '';
@@ -2250,9 +3082,11 @@ function harvestCorrections(applied) {
         // Multi-label desk: prefer the ranked survey list (up to 3 distinct gated labels
         // per correction) so approvers can pick novel phrasings; legacy single-label miner
         // is the fallback when the list helper is unavailable.
+        // The FIELD travels with the call so a text value containing a numeral is
+        // still anchored as text (core: TEXT_ANCHOR_FIELDS).
         const mineAll = (typeof core.mineCorrectionLabels === 'function')
-            ? (t, v) => (core.mineCorrectionLabels(t, v, 3) || [])
-            : (t, v) => { const m = core.mineCorrectionLabel(t, v); return m ? [m] : []; };
+            ? (t, v, f) => (core.mineCorrectionLabels(t, v, 3, f) || [])
+            : (t, v, f) => { const m = core.mineCorrectionLabel(t, v, f); return m ? [m] : []; };
         const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
         if (path.indexOf('/contractor/') !== -1) return;
         const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
@@ -2261,14 +3095,36 @@ function harvestCorrections(applied) {
         // AI-4 provenance (Decision A3: learn everything, but tag the origin): rows kept
         // from an AI-assisted read post with source 'AI-assisted' for the desk badge.
         const aiStamped = (typeof window !== 'undefined' && window._autofillAiAssisted) ? window._autofillAiAssisted : null;
+        // Per-session record of what has already been posted (see the L-4 note below).
+        const alreadySent = (typeof window !== 'undefined')
+            ? (window._autofillHarvestSent = window._autofillHarvestSent || {})
+            : {};
         const proposals = [];
+        const changed = [];
+        const unanchored = [];
         for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
             const field = AUTOFILL_CORE_FIELDS[inputId];
             const before = String((orig[field] ?? ''));
             const after = String(((applied || {})[field] ?? '')).trim();
             // Untouched, cleared, or too-short boxes teach nothing.
             if (!after || after === before || after.length < 3) continue;
-            for (const mined of mineAll(docText, after)) {
+            // L-4: the same correction can now arrive twice — once at Apply and once at
+            // submit — and one human decision must not count as two sightings. The
+            // occurrence counter is what drives auto-promotion at three, so inflating it
+            // would promote a phrase nobody saw three times.
+            if (alreadySent[field] === after) continue;
+            alreadySent[field] = after;
+            changed.push(field);
+            const minedRows = mineAll(docText, after, field);
+            // ⚠ A VALUE THE DOCUMENT DOES NOT CONTAIN TEACHES NOTHING, and that is by
+            // design, not a failure: the miner anchors a label by locating the corrected
+            // VALUE in the text (restudy §25.2). Typing an invented value produces no
+            // hits, so no proposal at all. This is the single most confusing thing about
+            // the loop from the outside — the reviewer corrects a box, nothing appears on
+            // the desk, and there is no way to tell a broken harvest from a value that
+            // was never in the document. Now there is.
+            if (!minedRows.length) unanchored.push(field);
+            for (const mined of minedRows) {
                 proposals.push({
                     field,
                     label: mined ? mined.label : null,
@@ -2281,6 +3137,18 @@ function harvestCorrections(applied) {
             }
             if (proposals.length >= 33) break;
         }
+        // The loop was entirely silent about its own work: a reviewer could not tell a
+        // harvest that never ran from one that ran and found nothing to anchor. Both look
+        // like "the desk is empty".
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try {
+                console.log('[Parser] harvest: ' + changed.length + ' changed box(es) ['
+                    + changed.join(', ') + '] -> ' + proposals.length + ' proposal(s)'
+                    + (unanchored.length
+                        ? ' | NOT ANCHORED (the typed value does not appear in the document text): ' + unanchored.join(', ')
+                        : ''));
+            } catch (e) {}
+        }
         if (!proposals.length) return;
         const token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||
             (((typeof document !== 'undefined') && document.querySelector('meta[name="csrf-token"]')) || {}).content || '';
@@ -2289,6 +3157,19 @@ function harvestCorrections(applied) {
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
             body: JSON.stringify({ proposals }),
             keepalive: true,
+        }).then((res) => {
+            // The SERVER's verdict, which the client cannot infer. A previously
+            // rejected phrase is refused on purpose, and that is indistinguishable
+            // from a broken harvest unless it says so.
+            if (typeof window === 'undefined' || !window._parserDebug || !res || !res.json) return;
+            return res.json().then((d) => {
+                if (!d) return;
+                const bits = [];
+                if (d.refusedRejected) bits.push(d.refusedRejected + ' refused (already rejected on the desk)');
+                if (d.wordless) bits.push(d.wordless + ' counted only (no wording)');
+                console.log('[Parser] harvest accepted by the server: ' + (d.stored || 0)
+                    + (bits.length ? ' \u2014 ' + bits.join(', ') : ''));
+            }).catch(() => {});
         }).catch(() => { /* collection is best-effort */ });
     } catch (e) { /* collection is best-effort — never break Apply */ }
 }
@@ -2456,8 +3337,52 @@ function tryMatchContractorDropdown(extractedName) {
         _markAutofilled('contractorSelect');
         showParseIndicator('contractorSelect', true);
     } else {
+        // Q3(b) 2026-09-18 — SAY WHAT WE READ, AND SAY IT LOUDLY.
+        // A contractor is never auto-created from a document: it is a record that
+        // logins, notifications, ratings and warranty submissions hang off, and one
+        // minted from OCR text would be hollow — no company details, no user account —
+        // in the very table the pilot seeds with the PMU's real contractors. Nor is the
+        // name stored as loose text: projects.contractor_id is an FK, and a project
+        // whose contractor exists only as a string would silently drop out of
+        // contractor-filtered views, ratings and notifications while LOOKING filled.
+        // So the honest outcome is: leave the field empty, and make sure the reviewer
+        // sees exactly what the document said so a human can decide. Previously this
+        // branch showed a bare "not parsed" indicator and the read was simply lost.
         showParseIndicator('contractorSelect', false);
+        setContractorMissNote(extractedName, bestOption, bestScore);
     }
+}
+
+// Name the contractor the document gave us, next to the field it could not fill.
+// Two cases worth telling apart: nothing resembled it at all, versus there IS a close
+// option we were not confident enough to choose for them (a near miss is exactly when
+// a human glance settles it in a second).
+// Called by: tryMatchContractorDropdown() on every unmatched read.
+function setContractorMissNote(extractedName, bestOption, bestScore) {
+    try {
+        const field = document.getElementById('contractorSelect');
+        if (!field) return;
+        const id = 'contractorMissNote';
+        let note = document.getElementById(id);
+        if (!extractedName) {
+            if (note && note.parentNode) note.parentNode.removeChild(note);
+            return;
+        }
+        if (!note) {
+            note = document.createElement('small');
+            note.id = id;
+            const anchor = field.closest('.input-group') || field;
+            anchor.insertAdjacentElement('afterend', note);
+        }
+        note.className = 'text-warning d-block mt-1';
+        const near = (bestOption && bestScore > 0)
+            ? ' Closest match: <strong>' + escapeHtml(String(bestOption.textContent || '').trim()) + '</strong>.'
+            : '';
+        note.innerHTML = '<i class="bi bi-exclamation-triangle"></i> The document says '
+            + '<strong>' + escapeHtml(extractedName) + '</strong>, which is not in the contractor list.'
+            + near
+            + ' Pick the right one, or add the contractor first — it is not created automatically.';
+    } catch (e) { /* the note is an aid, never a blocker */ }
 }
 
 /**
@@ -2556,23 +3481,128 @@ function tryMatchCategoryDropdown(extractedName) {
         }
     }
 }
-
 // ===================================================
 // UI BANNER — shown at the top of the current page
-// ===================================================
-function showAutofillScanning(message) {
-    const banner = getOrCreateAutofillBanner();
-    banner.className = 'alert alert-info autofill-banner d-flex align-items-center gap-2 mb-3';
-    banner.innerHTML = `
-        <span class="spinner-border spinner-border-sm flex-shrink-0" role="status" aria-hidden="true"></span>
-        <span class="flex-grow-1"><strong>${message}</strong> Extracting project information from your uploaded files.</span>
-        <button type="button" class="btn-close flex-shrink-0" aria-label="Dismiss" onclick="hideAutofillBanner()"></button>
-    `;
-    banner.style.display = 'flex';
+// THE SCAN INDICATOR (rebuilt 2026-09-18, third report of it sticking).
+//
+// It used to be the SAME <div> as the finished-run "Auto-fill notice" warning, told
+// apart by a data-state stamp. That sharing is what made clearing it conditional —
+// "hide it, but only if it is not currently a warning, and only if no newer run is
+// going" — and every one of those conditions leaked in a different way. Three fixes
+// failed against it.
+//
+// So the mechanism is replaced rather than patched again. This is its OWN element,
+// created when a scan starts and REMOVED FROM THE DOM when the scan stops. The rule
+// is now statable in one line and needs no conditions: IF IT IS ON SCREEN, A SCAN IS
+// RUNNING. There is no hidden-but-present state left to get stuck in, and the warning
+// banner (#autofillBanner) is a different element that this code never touches.
+//
+// It also reads differently on purpose (the reviewer asked for a different sign): a
+// slim strip beside the documents it is reading, naming the page it is on, so it
+// visibly MOVES while work is happening instead of spinning in place.
+const AUTOFILL_SCAN_STATUS_ID = 'autofillScanStatus';
+// Shorten a file name for the scan indicator without losing what identifies it.
+// Keeps the extension (so a reviewer still sees it is the PDF) and trims the stem,
+// because contractor file names are long and front-loaded with boilerplate —
+// "Rehabilitation-of-Canteen-Contract-FINAL-v3.pdf" must not push the page number
+// off the strip. Middle of the stem goes, not the end, so both the distinctive
+// start and the extension survive.
+function shortScanFileName(name, max) {
+    const s = String(name || '').trim();
+    const limit = (typeof max === 'number' && max > 8) ? max : 26;
+    if (!s || s.length <= limit) return s;
+    const dot = s.lastIndexOf('.');
+    const ext = (dot > 0 && (s.length - dot) <= 6) ? s.slice(dot) : '';
+    const stem = ext ? s.slice(0, dot) : s;
+    const keep = Math.max(6, limit - ext.length - 1);
+    return stem.slice(0, keep).trimEnd() + '…' + ext;
+}
+// Called by: runDocumentAutofill() at the start, ocrPage() per scanned page.
+// `message` is the activity ("Reading scanned page 7…"); the file being read is added
+// here from _autofillCurrentFile so no caller has to carry it.
+function showAutofillScanStatus(message) {
+    // Same gate as before: no run in flight, nothing to show. Kept because ocrPage()
+    // calls this per page and a late call must not be able to create the element.
+    if (_autofillScansInFlight <= 0) return;
+    let el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+    if (!el) {
+        const anchor = document.getElementById('documentsListContainer')
+            || document.querySelector('.form-page.active')
+            || document.getElementById('page1');
+        if (!anchor) return;
+        el = document.createElement('div');
+        el.id = AUTOFILL_SCAN_STATUS_ID;
+        el.className = 'afp-scan-status';
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+        // ABOVE the "Added Documents:" block, not below it — the indicator reads as a
+        // heading for the list it belongs to rather than as a footnote after it.
+        if (anchor.id === 'documentsListContainer') anchor.insertAdjacentElement('beforebegin', el);
+        else anchor.insertBefore(el, anchor.firstChild);
+    }
+    const file = shortScanFileName(_autofillCurrentFile);
+    el.innerHTML = '<span class="afp-scan-bar" aria-hidden="true"><i></i></span>'
+        + (file ? '<span class="afp-scan-file" title="' + escapeHtml(_autofillCurrentFile) + '">' + escapeHtml(file) + '</span>' : '')
+        + '<span class="afp-scan-text">' + escapeHtml(message) + '</span>';
+    _autofillSpinnerTick = Date.now();
+    armAutofillSpinnerWatchdog();
+}
+
+// SAY "STILL WORKING" WITHOUT REPAINTING (P-6b, 2026-09-20).
+// The watchdog below culls the indicator after six seconds of silence, but the only
+// thing that spoke was showAutofillScanStatus() ONCE PER PAGE (:915, before the whole
+// PSM ladder). A hard page costs up to six recognitions plus two re-renders, so it
+// out-waited its own watchdog and the indicator vanished mid-page, reappearing when
+// the next page started — the flicker the user reported (restudy §47.2).
+// This is the honest fix: the ladder's rungs tick the freshness clock as they work,
+// so the watchdog watches for silence from the WORKER rather than from the page loop.
+// Touch-only on purpose — showAutofillScanStatus would rewrite the element's HTML up
+// to six times a page for no visible change.
+// Called by: recognizeEnglish (per attempt), the scale-2 and crop fallbacks, and the
+// photo-read cache hit in ocrPage().
+function touchAutofillSpinner() {
+    try {
+        if (_autofillScansInFlight <= 0) return;
+        if (!document.getElementById(AUTOFILL_SCAN_STATUS_ID)) return;
+        _autofillSpinnerTick = Date.now();
+    } catch (e) { /* freshness is best-effort — the explicit removals still run */ }
+}
+
+// The only way this indicator goes away — and it is unconditional. Safe to call when
+// nothing is showing.
+function removeAutofillScanStatus() {
+    _autofillCurrentFile = '';
+    const el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    disarmAutofillSpinnerWatchdog();
+}
+
+// THE WATCHDOG stays as the last line of defence, now watching for the element rather
+// than a display style. While the indicator exists it checks once a second and removes
+// it when either no run is in flight, or nothing has refreshed it for STALE_MS — a live
+// scan refreshes per page, so silence that long means the work is over however it ended.
+// Self-disarming, so it costs nothing when idle.
+const AUTOFILL_SPINNER_STALE_MS = 6000;
+function armAutofillSpinnerWatchdog() {
+    if (_autofillSpinnerTimer) return;
+    try {
+        _autofillSpinnerTimer = setInterval(function () {
+            const el = document.getElementById(AUTOFILL_SCAN_STATUS_ID);
+            if (!el) { disarmAutofillSpinnerWatchdog(); return; }
+            const stale = (Date.now() - _autofillSpinnerTick) > AUTOFILL_SPINNER_STALE_MS;
+            if (_autofillScansInFlight <= 0 || stale) removeAutofillScanStatus();
+        }, 1000);
+    } catch (e) { /* watchdog is best-effort — the explicit removals still run */ }
+}
+function disarmAutofillSpinnerWatchdog() {
+    try { if (_autofillSpinnerTimer) clearInterval(_autofillSpinnerTimer); } catch (e) { /* best-effort */ }
+    _autofillSpinnerTimer = null;
 }
 
 function showAutofillWarning(message, opts) {
     const banner = getOrCreateAutofillBanner();
+    // The scan indicator is its own element now, so this warning cannot collide with it
+    // and needs no state stamp to protect it.
     banner.className = 'alert alert-warning autofill-banner d-flex align-items-start gap-2 mb-3';
     // F-COPY on empty runs: failures must stay diagnosable — offer the read text for chat
     // when any file yielded text (even unparsable). Engine-failure runs pass copy:false.

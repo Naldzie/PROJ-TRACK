@@ -56,7 +56,13 @@ class ParserKeywordProposalController extends Controller
             'proposals.*.source' => 'sometimes|string|in:correction,AI-assisted',
         ]);
 
+        // The caller could not tell a proposal that was RECORDED from one the server
+        // silently absorbed. A previously REJECTED phrase is refused on purpose
+        // (§31.2), and that is right — but it looked exactly like a broken harvest from
+        // the browser, and cost a whole test cycle to diagnose. Report the breakdown.
         $stored = 0;
+        $refusedRejected = 0;
+        $wordless = 0;
         foreach ($validated['proposals'] as $item) {
             $label = isset($item['label']) ? trim($item['label']) : null;
             if ($label === '') {
@@ -72,7 +78,36 @@ class ParserKeywordProposalController extends Controller
 
             $row = $query->first();
             if ($row) {
+                // The count is evidence and is always worth keeping — "this wording has
+                // now been seen eleven times" is exactly what would justify revisiting a
+                // refusal. But a REJECTED phrase must never climb back to proposed or
+                // live on its own: a reviewer decided, and three more sightings is not a
+                // rebuttal. Only the desk can undo a rejection.
                 $row->increment('occurrences');
+                if ($row->status === 'rejected') {
+                    $refusedRejected++;
+                    $stored++;
+                    continue;
+                }
+                // L-2 (2026-09-20) — A ROW WITH NO WORDING MUST NEVER GO LIVE.
+                // When the miner cannot anchor a correction it still posts a proposal,
+                // with label null, so the COUNT is kept — "47 corrections to contractor
+                // that we could not anchor" is exactly the evidence that would justify
+                // working on the anchor. But the dedup key is (field, label_phrase) with
+                // a whereNull branch, so EVERY unanchored correction for a field
+                // collapses into ONE row, and at three it used to auto-promote to 'live'
+                // with an EMPTY phrase.
+                // The reader skips empty phrases, so such a row teaches nothing. It sat
+                // in the desk reporting itself as a learned rule — the loop claiming
+                // credit precisely when it had learned nothing. On SCANNED documents,
+                // where anchoring usually fails, that is the normal path rather than the
+                // edge case.
+                // The count still rises. Only the promotion is refused.
+                if ($row->label_phrase === null) {
+                    $wordless++;
+                    $stored++;
+                    continue;
+                }
                 if ($row->occurrences >= 3 && $row->status === 'proposed') {
                     $row->update(['status' => 'live']);
                 }
@@ -92,6 +127,10 @@ class ParserKeywordProposalController extends Controller
         return response()->json([
             'success' => true,
             'stored' => $stored,
+            // Both are ordinary outcomes, not errors — but the browser cannot see them
+            // and a reviewer watching an empty desk deserves to know which happened.
+            'refusedRejected' => $refusedRejected,
+            'wordless' => $wordless,
         ], 201);
     }
 
@@ -113,7 +152,7 @@ class ParserKeywordProposalController extends Controller
         $this->ensureReviewer();
 
         $query = ParserKeywordProposal::orderByDesc('occurrences')->orderBy('field');
-        if (in_array($request->query('status'), ['proposed', 'live'], true)) {
+        if (in_array($request->query('status'), ['proposed', 'live', 'rejected'], true)) {
             $query->where('status', $request->query('status'));
         }
 
@@ -141,6 +180,17 @@ class ParserKeywordProposalController extends Controller
     {
         $this->ensureReviewer();
 
+        // L-2: the same rule the collector follows. A row with no wording carries a
+        // useful COUNT and nothing the reader can use, so approving it would put a
+        // rule into live vocabulary that cannot match anything — the button would
+        // appear to work and change nothing at all, which is worse than refusing.
+        if ($proposal->label_phrase === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This row records corrections we could not trace to any wording, so there is nothing to approve. It is kept only as a count.',
+            ], 422);
+        }
+
         $proposal->update(['status' => 'live']);
 
         $this->logActivity('Approve Parser Keyword', "Approved parser keyword '{$proposal->label_phrase}' for field {$proposal->field}");
@@ -153,14 +203,24 @@ class ParserKeywordProposalController extends Controller
     }
 
     /**
-     * Reject a proposal: soft-delete it (recoverable via restore, keeps history).
+     * Reject a proposal.
+     *
+     * 2026-09-20: this used to SOFT-DELETE, and that quietly cost us the judgement.
+     * A deleted row is invisible to the ordinary query, so collect() could not see that
+     * a phrase had already been refused — the same bad wording was re-proposed,
+     * re-reviewed and re-deleted with no memory that anyone had ever decided. (It also
+     * misled a reading of this very table: a check that omitted withTrashed() concluded
+     * the loop had never learned from a human, because the human's rows were deleted.)
+     * It now records status='rejected' and KEEPS the row, so the decision survives and
+     * collect() can honour it. Deletion remains available in the desk for genuine
+     * housekeeping; refusal is no longer spelled the same way.
      */
     public function destroy(ParserKeywordProposal $proposal)
     {
         $this->ensureReviewer();
 
         $label = $proposal->label_phrase;
-        $proposal->delete();
+        $proposal->update(['status' => 'rejected']);
 
         $this->logActivity('Reject Parser Keyword', "Rejected parser keyword '{$label}' for field {$proposal->field}");
 

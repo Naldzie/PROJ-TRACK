@@ -25,6 +25,9 @@
                         <button class="nav-link btn-sm" data-pkp-filter="live" onclick="pkpSetFilter('live')">Live</button>
                     </li>
                     <li class="nav-item">
+                        <button class="nav-link btn-sm" data-pkp-filter="rejected" onclick="pkpSetFilter('rejected')">Rejected</button>
+                    </li>
+                    <li class="nav-item">
                         <button class="nav-link btn-sm" data-pkp-filter="all" onclick="pkpSetFilter('all')">All</button>
                     </li>
                 </ul>
@@ -137,6 +140,38 @@ async function loadParserKeywordsForManagement() {
         const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
         const rows = await response.json();
 
+        // WORTH-APPROVING INDICATOR (2026-09-20). The desk showed a reviewer the phrase
+        // and asked them to judge it, without telling them the one thing that decides
+        // its worth: whether a BUILT-IN rule already covers that wording. On the test
+        // document one approved phrase restated a hardcoded rule and changed nothing,
+        // while the other found the only correct value — and they looked identical here.
+        // The core is lazily imported because this desk lives in the LAYOUTS (every
+        // page) while document-parser-core.js is only loaded by the create-project
+        // modal. Best-effort: if it cannot load, the column simply stays quiet.
+        let pkpCore = null;
+        try {
+            if (window.documentParserCore) {
+                pkpCore = window.documentParserCore;
+            } else {
+                const mod = await import('{{ asset('js/admin/projects/document-parser-core.js') }}');
+                pkpCore = (mod && mod.default) ? mod.default : null;
+            }
+        } catch (e) { pkpCore = null; }
+        const pkpWorth = (field, phrase) => {
+            if (!pkpCore || typeof pkpCore.builtInCoversPhrase !== 'function' || !phrase) return '';
+            let covered = null;
+            try { covered = pkpCore.builtInCoversPhrase(field, phrase); } catch (e) { return ''; }
+            if (covered === true) {
+                return '<br><small class="text-muted"><i class="bi bi-dash-circle"></i> '
+                    + 'A built-in rule already reads this wording — approving it adds nothing.</small>';
+            }
+            if (covered === false) {
+                return '<br><small class="text-success"><i class="bi bi-stars"></i> '
+                    + 'Finds a value no built-in rule does.</small>';
+            }
+            return ''; // null = cannot tell; say nothing rather than guess
+        };
+
         const tbody = document.getElementById('parserKeywordsList');
         tbody.innerHTML = '';
 
@@ -149,7 +184,10 @@ async function loadParserKeywordsForManagement() {
         rows.forEach((row) => {
             const badge = row.status === 'live'
                 ? '<span class="badge bg-success">Live</span>'
-                : '<span class="badge bg-warning text-dark">Proposed</span>';
+                : (row.status === 'rejected'
+                    // A rejection is a decision on the record, not an absence.
+                    ? '<span class="badge bg-secondary">Rejected</span>'
+                    : '<span class="badge bg-warning text-dark">Proposed</span>');
             // AI-4 origin badge: AI-assisted rows carry AI-taught wording (Decision A3).
             const origin = row.source === 'AI-assisted'
                 ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'
@@ -158,10 +196,12 @@ async function loadParserKeywordsForManagement() {
             const excerpt = row.excerpt
                 ? '<br><small class="text-muted" title="' + pkpEscapeHtml(row.excerpt) + '">' + pkpEscapeHtml(row.excerpt.substring(0, 90)) + (row.excerpt.length > 90 ? '…' : '') + '</small>'
                 : '';
-            const approveBtn = row.status === 'live' ? '' :
+            // L-2: a row with no wording has nothing to approve — it is kept only as a
+            // count. Hiding the button says so before the server has to.
+            const approveBtn = (row.status === 'live' || !row.label_phrase) ? '' :
                 '<button class="btn btn-sm btn-outline-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording"><i class="bi bi-check-lg"></i> Approve</button>';
             html += '<tr>' +
-                '<td>' + label + excerpt + '</td>' +
+                '<td>' + label + excerpt + pkpWorth(row.field, row.label_phrase) + '</td>' +
                 '<td>' + pkpEscapeHtml(pkpFieldLabel(row.field)) + '</td>' +
                 '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
                 '<td>' + origin + '</td>' +

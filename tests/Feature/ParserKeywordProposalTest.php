@@ -181,7 +181,51 @@ class ParserKeywordProposalTest extends TestCase
         $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$row->id}")
             ->assertOk()->assertJson(['success' => true]);
 
-        $this->assertSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+        // 2026-09-20: rejecting RECORDS A VERDICT, it does not delete the row. A
+        // soft-deleted row is invisible to the ordinary query, so collect() could not
+        // see that a phrase had already been refused and the same bad wording was
+        // re-proposed and re-judged forever with no memory of the decision.
+        $this->assertDatabaseHas('parser_keyword_proposals', ['id' => $row->id, 'status' => 'rejected']);
+        $this->assertNotSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+
+        // And the verdict holds: three more sightings must NOT promote it back.
+        for ($i = 0; $i < 3; $i++) {
+            $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+                'proposals' => [['field' => 'budget', 'label' => 'Bad Label']],
+            ])->assertSuccessful();
+        }
+        $after = $row->fresh();
+        $this->assertSame('rejected', $after->status, 'a rejected phrase must never climb back to live');
+        $this->assertGreaterThan(1, $after->occurrences, 'the count is still evidence and should keep rising');
+    }
+
+    public function test_a_wordless_row_never_goes_live_and_cannot_be_approved(): void
+    {
+        $admin = User::create([
+            'name' => 'Loop L2',
+            'email' => fake()->unique()->safeEmail(),
+            'role' => 'admin',
+            'is_active' => true,
+        ]);
+
+        // L-2: an UNANCHORED correction still records a proposal, with label null, so
+        // the COUNT is kept as evidence — but the reader skips empty phrases, so such a
+        // row can teach nothing and must never present itself as a learned rule.
+        for ($i = 0; $i < 4; $i++) {
+            $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+                'proposals' => [['field' => 'contractor', 'label' => null]],
+            ])->assertSuccessful();
+        }
+
+        $row = ParserKeywordProposal::where('field', 'contractor')->whereNull('label_phrase')->first();
+        $this->assertNotNull($row, 'the row is still created — the count is the point');
+        $this->assertSame(4, $row->occurrences, 'and it keeps rising');
+        $this->assertSame('proposed', $row->status, 'but four sightings must NOT promote it');
+
+        // Nor by hand: approving an empty phrase would add a rule that cannot match.
+        $this->actingAs($admin)->patchJson('/admin/parser-keyword-proposals/' . $row->id . '/approve')
+            ->assertStatus(422);
+        $this->assertSame('proposed', $row->fresh()->status);
     }
 
     // Contractors get nothing on review routes either (redirect by role middleware).

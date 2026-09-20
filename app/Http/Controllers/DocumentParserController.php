@@ -45,7 +45,13 @@ class DocumentParserController extends Controller
         try {
             $images = $this->resolveSlices($request);
 
-            $parsed = $this->parserService->parseProjectSlice($images);
+            // Which preview boxes the reviewer still has empty. Field NAMES only —
+            // never the client's OCR text (see buildPrompt). Unknown names are dropped
+            // inside the service, so this cannot be used to inject prompt text.
+            $need = $request->input('need');
+            $need = is_array($need) ? $need : [];
+
+            $parsed = $this->parserService->parseProjectSlice($images, $need);
 
             if ($parsed === null) {
                 throw new RuntimeException('The AI assistant could not extract project fields from these pages. Please fill in the fields manually.');

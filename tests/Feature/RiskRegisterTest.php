@@ -945,6 +945,12 @@ class RiskRegisterTest extends TestCase
 
     public function test_default_risk_baseline_returns_earliest_when_no_progress_or_current_month(): void
     {
+        // P3 (2026-09-20): same date-bomb as IssueLifecycleTest's twin — the fixtures
+        // include a 2026-09 baseline and the rule under test prefers a baseline matching
+        // TODAY'S month, so this began failing when the real calendar reached September
+        // 2026. Freeze the clock on a month the fixtures do not contain.
+        $this->travelTo(\Carbon\Carbon::parse('2026-07-01 09:00:00'));
+
         $first = ProjectBaselineSchedule::factory()->create([
             'project_id'   => $this->project->id,
             'month_label'  => '2026-04',

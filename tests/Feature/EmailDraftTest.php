@@ -167,6 +167,15 @@ class EmailDraftTest extends TestCase
             ->assertJsonPath('success', true);
 
         Mail::assertSent(AiAnalysisMail::class, function (AiAnalysisMail $mail) use ($draft) {
+            // P3 (2026-09-20): AiAnalysisMail sets its subject inside build(), and
+            // Mail::fake() captures the mailable BEFORE build() ever runs — so
+            // $mail->subject is null here and this closure could never match, which
+            // surfaced as the misleading "expected mailable was not sent". Invoking the
+            // build exercises the real subject rule (tracking->subject ?: a generated
+            // fallback) rather than asserting on the draft's own column, which would be
+            // circular.
+            $mail->build();
+
             return $mail->hasTo($this->contractorUser->email)
                 && $mail->tracking->is($draft)
                 && $mail->subject === 'Unsent draft subject';
@@ -206,8 +215,6 @@ class EmailDraftTest extends TestCase
 
         $response->assertOk()->assertJsonPath('resent', true);
 
-        fwrite(STDERR, "\nDEBUG RESPONSE: " . $response->getContent() . "\n");
-        fwrite(STDERR, "DEBUG MAIL SENT: " . print_r(Mail::sent(AiAnalysisMail::class), true) . "\n");
 
         $this->assertDatabaseHas('email_trackings', [
             'id'        => $sent->id,
@@ -220,6 +227,15 @@ class EmailDraftTest extends TestCase
         // Automatic re-send happened exactly once, carrying the revised content.
         Mail::assertSent(AiAnalysisMail::class, 1);
         Mail::assertSent(AiAnalysisMail::class, function (AiAnalysisMail $mail) use ($sent) {
+            // P3 (2026-09-20): AiAnalysisMail sets its subject inside build(), and
+            // Mail::fake() captures the mailable BEFORE build() ever runs — so
+            // $mail->subject is null here and this closure could never match, which
+            // surfaced as the misleading "expected mailable was not sent". Invoking the
+            // build exercises the real subject rule (tracking->subject ?: a generated
+            // fallback) rather than asserting on the draft's own column, which would be
+            // circular.
+            $mail->build();
+
             return $mail->hasTo($this->contractorUser->email)
                 && $mail->tracking->is($sent)
                 && $mail->subject === 'Corrected monthly report';
