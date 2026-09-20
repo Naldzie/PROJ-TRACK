@@ -26,10 +26,14 @@
      ⬛ STEP 4 ALSO PASSES (§49.10): CHS - Savings.pdf read ALL 12 PAGES at the
      default depth of 10 and said so — "(10 per file selected, 12 read to finish
      the file)" — while its 7-page sibling correctly got no slack clause.
-     ⬜ ONE SUB-CLAIM UNOBSERVED: P-5(d), the DISABLED turn button. P-4 removed
-     the condition from the CHS file, so exercising it needs the Buhi scan at
-     depth 10. Evidenced (it reads the same array as the proven badge), not
-     watched — recorded as such rather than rounded up.
+     ⬛ P-5(d) CONFIRMED 2026-09-20 on the Buhi scan at depth 10, page 11: the
+     "⟳ turn this page" control renders DISABLED while "⟳ turn whole file" stays
+     live. THE WHOLE P-4/P-5/P-6 BATCH IS NOW BROWSER-PROVEN — no claim in it
+     remains unobserved.
+     ➡ NEXT, PLANNED NOT BUILT: `textfiles/ai_slice_selection_plan.md` — the
+     §45.4 slice question, restudied. It found the "per-file allocation" item is
+     a LIVE DEFECT (the first file eats the whole budget) and that the consent
+     banner names no pages, so a reviewer presses "Try AI assist" blind.
      ⬛ MERGED TO `develop` 2026-09-20 on the user's order, with all five
      ancestor phase branches (23-27) carried in with it.
      The proposals as they stood before that work:
@@ -5324,6 +5328,51 @@
   ⇒ SCORECARD FOR THE BATCH: steps 1, 2, 3 (indicator), 4 (slack), 5 (badge) and
     6 (strip past 12) all confirmed on real documents. §48.2 confirmed. §48.3
     confirmed live. One sub-claim, P-5(d), evidenced but unobserved.
+
+===============================================================================
+  49.11 P-5(d) CONFIRMED — THE BATCH IS FULLY BROWSER-PROVEN (user, 2026-09-20)
+===============================================================================
+
+  The Buhi scan at depth 10, page 11 — the state §49.10 said could only be reached
+  on a file larger than the slack ceiling. The screenshot shows:
+    · the amber badge "not scanned — past the 10-page depth; use Re-scan with a
+      deeper setting to read it";
+    · "⟳ turn this page" rendered DISABLED (user: "confirmed they are disable");
+    · "⟳ turn whole file" still live, which is the deliberate asymmetry recorded
+      in §49.9 — the bulk control's job is the whole file, and the rotations it
+      stores for beyond-budget pages are inert because ocrPendingRereadPages
+      excludes them;
+    · the strip reading 1..10 clean and 11*✦ 12*✦ 13* … 18*, so the cap removal
+      and the beyond-budget marking are both visible in one row.
+
+  ⇒ NOTHING IN THE P-4 / P-5 / P-6 BATCH IS NOW UNOBSERVED. Six browser steps,
+    six passes, across two real documents (the CHS pair and the 18-page Buhi
+    scan). Merged to `develop` as 354c4a3.
+
+===============================================================================
+  50. WHERE THE AI SLICE QUESTION WENT
+===============================================================================
+
+  §45.4 raised it, §46.6 named the page that makes it concrete, §48.3 and §49.9
+  showed the ranking picking never-scanned pages on a truncated file, and the
+  user's 2026-09-20 screenshot of the CHS pair showed it picking
+  "Contract - CHS Savings.pdf p.4" and "p.7" — and p.7 IS the notarial
+  ACKNOWLEDGMENT page carrying government ID and licence numbers.
+
+  ⇒ IT HAS ITS OWN PLAN FILE NOW: `textfiles/ai_slice_selection_plan.md`
+    (2026-09-20, PLAN ONLY — nothing built, nothing ordered).
+    Eight verified findings, of which two were not part of the original ask:
+      · the ranking is PER-FILE AND GREEDY, so the first file consumes the whole
+        budget and the second is never looked at — that is the "per-file
+        allocation" item, and it is a defect rather than a refinement;
+      · the CONSENT SURFACE NAMES NO PAGES — the amber banner promises "at most 2
+        confusing pages" while the page list lives behind "See & straighten", so
+        the normal path is a blind consent.
+    Four steps in a deliberate order — name the pages, exclusion, allocation, the
+    count — on the principle CONTROLS BEFORE VOLUME.
+    The client question about whether notarial pages may go to a third-party model
+    at all is the user's to ask on pilot day, and NOTHING in that plan depends on
+    the answer.
 
 ===============================================================================
   END OF RESTUDY
