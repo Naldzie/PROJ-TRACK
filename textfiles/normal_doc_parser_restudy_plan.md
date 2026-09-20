@@ -23,8 +23,15 @@
      beyond-budget badge reads correctly on page 11 of the real 18-page Buhi
      scan, and the page strip now runs 1..18. §48.2 is confirmed by the same
      screenshot (page 11 was being VIEWED, so 13+ were never unreachable).
-     ⬜ STILL OPEN: step 4 (a 12-page file reading whole at depth 10 — CHS) and
-     one click to settle P-5(d)'s disabled turn button. Both in §49.9.
+     ⬛ STEP 4 ALSO PASSES (§49.10): CHS - Savings.pdf read ALL 12 PAGES at the
+     default depth of 10 and said so — "(10 per file selected, 12 read to finish
+     the file)" — while its 7-page sibling correctly got no slack clause.
+     ⬜ ONE SUB-CLAIM UNOBSERVED: P-5(d), the DISABLED turn button. P-4 removed
+     the condition from the CHS file, so exercising it needs the Buhi scan at
+     depth 10. Evidenced (it reads the same array as the proven badge), not
+     watched — recorded as such rather than rounded up.
+     ⬛ MERGED TO `develop` 2026-09-20 on the user's order, with all five
+     ancestor phase branches (23-27) carried in with it.
      The proposals as they stood before that work:
 
   THE THREE OPEN PROPOSALS — ALL DESIGNED, NONE BUILT, ALL AWAITING AN ORDER
@@ -5265,6 +5272,58 @@
     with the most surface — the indicator and the page strip — are confirmed on a
     real 18-page scan. Committed on that basis, with step 4 and the P-5(d) click
     still open and recorded as open.
+
+===============================================================================
+  49.10 STEP 4 PASSES — AND THE P-5(d) CHECK DISSOLVED ITSELF
+        (user, 2026-09-20, two more screenshots)
+===============================================================================
+
+  ⭐ STEP 4 — P-4 CONFIRMED ON THE REAL CHS PAIR, AT THE DEFAULT DEPTH.
+     The gray scan note, verbatim:
+       "In Contract - CHS Savings.pdf: visited all 7 pages; 7 of 7 scanned pages
+        yielded text (10 per file selected) — scan complete."
+       "In CHS - Savings.pdf: visited all 12 pages; 12 of 12 scanned pages
+        yielded text (10 PER FILE SELECTED, 12 READ TO FINISH THE FILE) —
+        scan complete."
+     Both halves of §49.3 in one screenshot:
+       · the 7-page file is UNDER the budget and gets NO slack clause — the
+         wording only appears when the slack actually did something;
+       · the 12-page file READ WHOLE at a depth of 10, and said so, in the exact
+         sentence §48.5a was written to avoid ("12 of 12 ... (10 per file
+         selected)" with no explanation would have read as a contradiction).
+     ⇒ THE CASE THAT MOTIVATED P-4 IS GONE. §45.3's complaint was that a reviewer
+       pays the full ten-page cost, still does not have the document, and must
+       then find a dropdown and pay again. On this file that no longer happens,
+       at no cost to anyone else: the 7-page file is untouched by the rule.
+     Also visible: the save-image row now runs p.1 … p.12 for the 12-page file.
+
+  ❓ P-5(d) WAS NOT TESTED — AND THE REASON IS ITSELF THE RESULT.
+     The second screenshot is CHS - Savings.pdf page 11 of 12, badged
+     "turned 90°" and "TEXT READ (1637 CHARACTERS)", with "⟳ turn this page"
+     ENABLED and a "Re-read 1 page" button offered.
+     THAT IS ALL CORRECT, and it is not the P-5(d) case. Page 11 of this file is
+     no longer beyond the budget — P-4 just read it. So:
+       · the turn button SHOULD be enabled (the page was genuinely read);
+       · the "Re-read 1 page" offer after turning it confirms the §49.4 guard is
+         correctly SCOPED — it excludes beyond-budget pages only, and a normally
+         read page still becomes pending when the reviewer turns it. That guard
+         was written blind against a regression; this is the first evidence it
+         does not over-exclude.
+     ⇒ AND IT IS §46.5's PREDICTION LANDING EXACTLY: "P-4 stops most 11-and-12
+       cases from happening at all; P-5 tells the truth about the ones that still
+       do." The two proposals were designed as a pair and they behave as a pair.
+     ⬜ P-5(d) — THE DISABLED TURN BUTTON — THEREFORE REMAINS THE ONE UNOBSERVED
+       CLAIM in this batch. To exercise it now takes a file that is still
+       truncated at the chosen depth: the Buhi 18-page scan at depth 10, page 11.
+       The badge on exactly that view IS proven (§49.9) and reads from the SAME
+       beyondBudgetPages array the button does, so the mechanism is evidenced —
+       but the button's disabled state has not been watched, and this file does
+       not claim it has been. Merged on that basis, deliberately and with the gap
+       named rather than rounded up.
+
+  ⇒ SCORECARD FOR THE BATCH: steps 1, 2, 3 (indicator), 4 (slack), 5 (badge) and
+    6 (strip past 12) all confirmed on real documents. §48.2 confirmed. §48.3
+    confirmed live. One sub-claim, P-5(d), evidenced but unobserved.
 
 ===============================================================================
   END OF RESTUDY
