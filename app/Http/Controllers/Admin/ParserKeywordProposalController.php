@@ -82,6 +82,24 @@ class ParserKeywordProposalController extends Controller
                     $stored++;
                     continue;
                 }
+                // L-2 (2026-09-20) — A ROW WITH NO WORDING MUST NEVER GO LIVE.
+                // When the miner cannot anchor a correction it still posts a proposal,
+                // with label null, so the COUNT is kept — "47 corrections to contractor
+                // that we could not anchor" is exactly the evidence that would justify
+                // working on the anchor. But the dedup key is (field, label_phrase) with
+                // a whereNull branch, so EVERY unanchored correction for a field
+                // collapses into ONE row, and at three it used to auto-promote to 'live'
+                // with an EMPTY phrase.
+                // The reader skips empty phrases, so such a row teaches nothing. It sat
+                // in the desk reporting itself as a learned rule — the loop claiming
+                // credit precisely when it had learned nothing. On SCANNED documents,
+                // where anchoring usually fails, that is the normal path rather than the
+                // edge case.
+                // The count still rises. Only the promotion is refused.
+                if ($row->label_phrase === null) {
+                    $stored++;
+                    continue;
+                }
                 if ($row->occurrences >= 3 && $row->status === 'proposed') {
                     $row->update(['status' => 'live']);
                 }
@@ -149,6 +167,17 @@ class ParserKeywordProposalController extends Controller
     public function approve(ParserKeywordProposal $proposal)
     {
         $this->ensureReviewer();
+
+        // L-2: the same rule the collector follows. A row with no wording carries a
+        // useful COUNT and nothing the reader can use, so approving it would put a
+        // rule into live vocabulary that cannot match anything — the button would
+        // appear to work and change nothing at all, which is worse than refusing.
+        if ($proposal->label_phrase === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This row records corrections we could not trace to any wording, so there is nothing to approve. It is kept only as a count.',
+            ], 422);
+        }
 
         $proposal->update(['status' => 'live']);
 

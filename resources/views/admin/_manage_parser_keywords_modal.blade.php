@@ -196,7 +196,9 @@ async function loadParserKeywordsForManagement() {
             const excerpt = row.excerpt
                 ? '<br><small class="text-muted" title="' + pkpEscapeHtml(row.excerpt) + '">' + pkpEscapeHtml(row.excerpt.substring(0, 90)) + (row.excerpt.length > 90 ? '…' : '') + '</small>'
                 : '';
-            const approveBtn = row.status === 'live' ? '' :
+            // L-2: a row with no wording has nothing to approve — it is kept only as a
+            // count. Hiding the button says so before the server has to.
+            const approveBtn = (row.status === 'live' || !row.label_phrase) ? '' :
                 '<button class="btn btn-sm btn-outline-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording"><i class="bi bi-check-lg"></i> Approve</button>';
             html += '<tr>' +
                 '<td>' + label + excerpt + pkpWorth(row.field, row.label_phrase) + '</td>' +

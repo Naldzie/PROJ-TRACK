@@ -265,7 +265,26 @@
     DO NOT lift it silently: it changes auto-fill behaviour on every document, so it
     needs its own branch, the suite re-run, and a browser check on a real file.
 
-  ── N2. GET REAL PMU SCANS BEFORE TUNING ANYTHING ELSE ───────────────────────  ⬜
+  ── N2. ⚠ MAY NEVER BE POSSIBLE — SAID BY THE USER 2026-09-20 ───────────────  ❌
+    "the request cant really be done, as it might be not possible even on the day the
+    pilot test starts".
+    ⇒ THIS IS NOT A BLOCKED TASK WAITING ITS TURN. Several items here and in the
+      restudy are written as though real scans will eventually arrive and settle
+      things. THEY MAY NOT. pdfdocstest5.pdf is the corpus, and probably all there
+      will be.
+    WHAT FOLLOWS, and it should shape decisions rather than be discovered later:
+      · suite-green carries more weight than the restudy has been giving it, because
+        the browser check that would have replaced it may never be available for the
+        cases the one document does not contain;
+      · THE PILOT ITSELF becomes the first real corpus. Under F6 the PMU encodes real
+        projects, so the evidence arrives as production use — which makes the learning
+        loop's honesty and coverage (restudy §39.2, §39.3) the mechanism that gathers
+        what nobody can hand us in advance;
+      · any fix that cannot be justified from ONE document plus the suites should not
+        be built at all. Fuzzy anchoring was already ranked last for risk; it is now
+        also the one with no prospect of a corpus to validate it.
+    THE ORIGINAL ITEM, kept:
+  ── N2 (as written). GET REAL PMU SCANS BEFORE TUNING ANYTHING ELSE ──────────  ⬜
     ⬆ RAISED IN PRIORITY 2026-09-18 by the N1 browser check and by the user's own note
     that there are not enough real files to prove steps 3-4 with. Everything now known
     about scanned behaviour comes from ONE team-made specimen (pdfdocstest5.pdf). It is

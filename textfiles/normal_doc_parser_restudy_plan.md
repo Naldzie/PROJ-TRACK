@@ -4068,5 +4068,78 @@
       untouched — which is the regression 38.2 describes, now pinned.
 
 ===============================================================================
+  39. L-2 AND L-4 BUILT (2026-09-20, ordered) — AND N2 MAY NEVER ARRIVE
+===============================================================================
+
+  39.1 ⚠ THE PLANNING FACT THAT CHANGES MOST — REAL PMU SCANS MAY NEVER COME
+
+      The user, asked to request real scans, said it "can't really be done, as it might
+      be not possible even on the day the pilot test starts".
+      ⇒ N2 IS NOT A BLOCKED TASK WAITING ITS TURN. It may never be satisfiable, and
+        several sections of this file and the pilot plan are written as though it will
+        be — "measure before tuning", "get their files first", "the B-queue proof waits
+        on N2". THAT PREMISE IS GONE.
+      WHAT FOLLOWS, and it should shape the next decisions rather than be discovered
+      later:
+        · pdfdocstest5.pdf IS THE CORPUS. One real ten-page scanned bundle is what the
+          normal-doc parser has ever been measured against, and probably all it will be.
+        · SUITE-GREEN CARRIES MORE WEIGHT THAN THIS FILE HAS BEEN GIVING IT, because the
+          browser check that would have replaced it may not be available for the cases
+          the one document does not contain.
+        · THE PILOT ITSELF BECOMES THE MEASUREMENT. Under F6 the PMU encodes real
+          projects, so the first real corpus arrives as production use — which makes the
+          loop's honesty (L-2) and its coverage (L-4) matter more, not less: they are
+          what will collect the evidence nobody can hand us in advance.
+        · Conversely, a fix that cannot be justified from ONE document and the suites
+          should not be built at all. §26.8 D (fuzzy anchoring) was already ranked last
+          for risk; it is now also the one with no prospect of a corpus to validate it.
+
+  39.2 L-2 — A ROW WITH NO WORDING NEVER GOES LIVE
+
+      When the miner cannot anchor a correction it still posts a proposal with label
+      null, so the COUNT is kept — "47 corrections to contractor we could not anchor" is
+      exactly the evidence that would justify working on the anchor. But the dedup key
+      is (field, label_phrase) with a whereNull branch, so EVERY unanchored correction
+      for a field collapses into ONE row, and at three it auto-promoted to 'live' with
+      an EMPTY phrase. The reader skips empty phrases, so the row taught nothing while
+      reporting itself as a learned rule — the loop claiming credit precisely when it
+      had learned nothing, and on SCANNED documents that is the normal path.
+      NOW: the count still rises; only the promotion is refused. A human cannot approve
+      one either — the endpoint returns 422 saying why, and the desk hides the button,
+      because a button that appears to work and changes nothing is worse than no button.
+      Verified against the live database and by a new feature test: four unanchored
+      corrections leave occurrences=4 and status='proposed', and the approve route
+      refuses with 422.
+
+  39.3 L-4 — HARVEST AT SUBMIT AS WELL AS AT APPLY
+
+      harvestCorrections fired only from applyAutofillFromPreview, reading the PREVIEW
+      modal's boxes. A reviewer who pressed Apply and then fixed a field in the
+      create-project form taught the loop nothing — and that is very likely the common
+      human path, since people correct things where they can see the whole form. Under
+      F6 it is the path that matters most, and 39.1 makes it the main way evidence will
+      ever be gathered.
+      A delegated, CAPTURING submit listener now harvests from the real form fields.
+      ⚠ THE RISK IT INTRODUCES, AND THE GUARD: the same correction now arrives twice —
+      once at Apply and once at submit — and ONE HUMAN DECISION MUST NOT COUNT AS TWO
+      SIGHTINGS, because the occurrence counter is what drives auto-promotion at three.
+      A per-session record of what has already been posted skips a repeat; a genuinely
+      new value still counts. Reset with the rest of the per-session state.
+      Falls back silently on any error: learning must never block creating a project.
+
+  39.4 VERIFICATION
+
+      JS 264/264/0 · PHP 1232 passed / 0 failed (a new feature test for L-2).
+      C:\temp\opencode\probe_l4_harvest.mjs — 5 checks against the REAL
+      harvestCorrections: Apply posts once, submit does not repeat it, a field corrected
+      ONLY in the form is posted (the path L-4 exists for), and changing the same field
+      to a genuinely new value still counts.
+      ⚠ A PROBE BUG WORTH RECORDING: the first harness stubbed mineCorrectionLabels
+      (plural) but harvestCorrections GUARDS on mineCorrectionLabel (singular), so it
+      returned early and posted nothing — and every assertion failed for a reason that
+      had nothing to do with the code. Fixed by stubbing both.
+      ⬜ BROWSER OWED: apply, then change a field in the form, then submit — the desk
+      should show the form-only correction. And a wordless row should offer no Approve.
+===============================================================================
   END OF RESTUDY
 ===============================================================================

@@ -123,6 +123,8 @@ function cancelDocumentAutofill() {
         // F-COPY/L1 stashes belong to the run that made them — never reuse across sessions.
         window._autofillDocTexts = [];
         window._autofillDocNames = [];
+        // L-4: what the loop has already been told this session.
+        window._autofillHarvestSent = {};
         window._autofillOriginal = null;
         // AI-3/AI-4 stashes: provenance stamps + busy/merged flags belong to the preview run.
         window._autofillAiAssisted = {};
@@ -2073,6 +2075,48 @@ function mergeDisagreements(learnedD, pooledD, pooledResolved) {
     return out;
 }
 
+// L-4 (2026-09-20) — HARVEST AT SUBMIT AS WELL AS AT APPLY.
+// harvestCorrections used to fire only from applyAutofillFromPreview, reading the
+// PREVIEW modal's boxes. A reviewer who pressed Apply and then fixed a field in the
+// create-project form itself taught the loop nothing — and that is very likely the
+// common human path: people correct things where they can see the whole form, not
+// inside a modal. Under the pilot's answer to F6 (real PMU projects, encoded by
+// staff) it is the path that matters most.
+// The richest corrections, made after seeing everything in context, were the ones the
+// loop never saw.
+// Reads the REAL form fields; AUTOFILL_CORE_FIELDS' keys are their ids, the same ones
+// the preview prefixes with 'previewInput-'.
+// Called by: the delegated submit listener below.
+function harvestCorrectionsFromForm() {
+    const core = getCore();
+    const normDate = (v) => {
+        try { return (core && core.parseToInputDate) ? (core.parseToInputDate(v) || v) : v; }
+        catch (e) { return v; }
+    };
+    const snapshot = {};
+    for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+        const el = document.getElementById(inputId);
+        if (!el) continue;
+        let v = String(el.value || '').trim();
+        if (v && (el.type === 'date' || inputId === 'plannedStartDate' || inputId === 'plannedEndDate')) v = normDate(v);
+        snapshot[AUTOFILL_CORE_FIELDS[inputId]] = v;
+    }
+    harvestCorrections(snapshot);
+}
+
+// Delegated and CAPTURING, so it runs whatever else the form does with the event —
+// including form-navigation.js dispatching a synthetic submit. Fire-and-forget: the
+// collect POST is keepalive, and a failure here must never block a submission.
+if (typeof document !== 'undefined') {
+    document.addEventListener('submit', function (e) {
+        try {
+            const f = e && e.target;
+            if (!f || f.id !== 'createProjectForm') return;
+            harvestCorrectionsFromForm();
+        } catch (err) { /* learning must never break creating a project */ }
+    }, true);
+}
+
 // Re-print the pooled vote tables on demand (2026-09-20).
 // console.table only draws while devtools is OPEN, so a run made with it closed left
 // the reviewer with the raw arrays in window._autofillVoteDebug and no readable table
@@ -2894,6 +2938,10 @@ function harvestCorrections(applied) {
         // AI-4 provenance (Decision A3: learn everything, but tag the origin): rows kept
         // from an AI-assisted read post with source 'AI-assisted' for the desk badge.
         const aiStamped = (typeof window !== 'undefined' && window._autofillAiAssisted) ? window._autofillAiAssisted : null;
+        // Per-session record of what has already been posted (see the L-4 note below).
+        const alreadySent = (typeof window !== 'undefined')
+            ? (window._autofillHarvestSent = window._autofillHarvestSent || {})
+            : {};
         const proposals = [];
         for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
             const field = AUTOFILL_CORE_FIELDS[inputId];
@@ -2901,6 +2949,12 @@ function harvestCorrections(applied) {
             const after = String(((applied || {})[field] ?? '')).trim();
             // Untouched, cleared, or too-short boxes teach nothing.
             if (!after || after === before || after.length < 3) continue;
+            // L-4: the same correction can now arrive twice — once at Apply and once at
+            // submit — and one human decision must not count as two sightings. The
+            // occurrence counter is what drives auto-promotion at three, so inflating it
+            // would promote a phrase nobody saw three times.
+            if (alreadySent[field] === after) continue;
+            alreadySent[field] = after;
             for (const mined of mineAll(docText, after)) {
                 proposals.push({
                     field,
