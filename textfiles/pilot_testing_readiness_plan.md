@@ -187,7 +187,15 @@
          (b) Several desktops, all pointed at ONE MySQL on the LAN — ✅ THIS ONE.
          (c) Several desktops, each self-contained — separate databases; rejected by the
              answer above.
-  F5 — CONTRACTOR GMAILS IN THE LIST vs CONTRACTOR LOGIN.  ❓ NEEDS YOUR ANSWER
+  F5 — CONTRACTOR GMAILS IN THE LIST vs CONTRACTOR LOGIN.  ✅ ANSWERED 2026-09-20
+       THE ANSWER: contractors CAN log in if they want to. Each contractor record carries
+       that contractor's Gmail address, and those accounts are permitted.
+       ⇒ CONTRACTOR-ROLE ACCESS IS THEREFORE IN SCOPE FOR THE PILOT, which reverses the
+         "treat it as OUT until said otherwise" placeholder below. What follows from it:
+         the contractor dashboard, the view-only project pages, the warranty submission
+         and profile-edit write paths are all pilot surface and need to be exercised, not
+         only the staff/admin side.
+       The original framing, kept:
        You said contractor Gmail addresses populate the contractor list but contractor
        ACCESS is uncertain. Worth being deliberate: with Google-only auth, whether those
        people can log in depends on how the app treats a Google account that matches a
@@ -197,7 +205,17 @@
        Decide which, and confirm it in the code rather than by intention. Not yet
        measured — deliberately, because it needs your answer first.
 
-  F6 — WHAT DATA DOES THE PILOT START WITH?  ❓ NEEDS YOUR ANSWER
+  F6 — WHAT DATA DOES THE PILOT START WITH?  ✅ ANSWERED 2026-09-20 — REAL PMU PROJECTS
+       THE ANSWER: the pilot starts with real PMU projects, not seeded demo data.
+       WHAT FOLLOWS (noted, not ordered):
+         - someone has to ENCODE them, which makes the create-project wizard and its
+           document parser the first thing real users touch — the B-queue work is on
+           the pilot's critical path, not beside it;
+         - CategorySeeder must have run on the pilot database (exactly 4 categories);
+         - the S-curve baselines come from real contractor Excel files, which is the
+           path that already works (§2 Fact 1);
+         - the seeders do NOT need the pass that option (b) would have required.
+       The original framing, kept:
        Real PMU projects, or seeded demo data? If real, someone has to encode them (and
        the category seeder must have run: exactly 4 categories via CategorySeeder). If
        seeded, the seeders need a pass of their own before staff judge the system by
@@ -336,7 +354,61 @@
       referenced by routes/web.php, ProjectController.php, ProjectSeeder.php and
       ProjectArchiveTest.php. Not urgent for a pilot; do not delete on the old claim.
 
-  P3. THE FIVE PRE-EXISTING TEST FAILURES.  ⬜  ✅ NO LONGER "CLAIMED" — VERIFIED BY
+  P3. THE FIVE PRE-EXISTING TEST FAILURES.  ✅ ALL FIVE FIXED 2026-09-20 on
+      phase-26-dead-route-and-red-suite. THE PHP SUITE IS GREEN: 1231 passed, 0 failed,
+      4592 assertions. It has not been green for the life of this plan file.
+      None of the five was flaky. Three distinct causes, and the first is an APP BUG:
+
+      (1) ⚠ A REAL DEFECT — SimulateDate WIPED A CLOCK IT DID NOT OWN.
+          DashboardOverdueInspectionTest › count badge matches ajax filter list.
+          app/Http/Middleware/SimulateDate.php ended every request with a bare
+          Carbon::setTestNow(), which CLEARS test-now whether or not the middleware had
+          set one. Carbon's test-now is process-wide global state and a feature test's
+          travelTo() IS that state, so the first HTTP call in a test silently reset the
+          clock and every request after it ran at REAL time.
+          That is exactly what the test caught: the dashboard request computed its badge
+          at the travelled-to date (correctly, 2), the middleware then wiped the clock,
+          and the follow-up filter request ran at today's date — where all three
+          fixtures were overdue, so the list returned 3 rows against a badge of 2.
+          THE TEST WAS RIGHT ALL ALONG. "count badge matches ajax filter list" is
+          precisely the invariant that was broken.
+          FIX: save the previous test-now and RESTORE it, undoing only what this
+          middleware did. Measured, not guessed — a throwaway probe printed now() inside
+          the test as 2026-09-20 (real) before the fix and 2026-08-06 (travelled) after.
+          ⚠ PRODUCTION IMPACT: none. Nothing outside tests sets Carbon test-now, so the
+          old clear was a no-op in the app. The defect was real but its blast radius was
+          the test suite.
+
+      (2) TWO DATE-BOMBS THAT DETONATED THIS MONTH.
+          IssueLifecycleTest › default baseline returns earliest baseline when no progress
+          and no current month; RiskRegisterTest › its twin.
+          Both create a fixture baseline labelled 2026-09 and then assert that the
+          EARLIEST baseline wins "when there is no current month". getDefaultIssueBaseline
+          prefers a baseline matching TODAY'S month — so the moment the real calendar
+          reached September 2026 the fixture WAS the current month, the premise in the
+          test's own name stopped being true, and it began returning baseline 3 instead
+          of 1.
+          FIX: travelTo a month the fixtures do not contain (2026-07), so the tests mean
+          what they say regardless of the calendar.
+          ⚠ WORTH NOTING: these would have started PASSING again in October, for the
+          wrong reason. A test that heals itself on the calendar is worse than one that
+          stays red.
+
+      (3) TWO ASSERTIONS ON A PROPERTY THAT DID NOT EXIST YET.
+          EmailDraftTest › sending a draft mails the contractor then locks it; and ›
+          editing a sent message marks it edited and auto resends.
+          AiAnalysisMail sets its subject inside build(), and Mail::fake() captures the
+          mailable BEFORE build() runs — so $mail->subject was null, the closure could
+          never match, and PHPUnit reported the misleading "The expected mailable was not
+          sent". The mail WAS sent: the sibling test that checks only hasTo() passed all
+          along.
+          FIX: invoke $mail->build() in the closure, which exercises the real subject
+          rule (tracking->subject ?: a generated fallback) rather than asserting on the
+          draft's own column, which would be circular.
+          ALSO REMOVED: three leftover fwrite(STDERR, "DEBUG ...") calls sitting in the
+          test file from an earlier investigation.
+
+      ORIGINAL NOTE, kept for the record — VERIFIED BY
       NAME 2026-09-20:
         DashboardOverdueInspectionTest › count badge matches ajax filter list
         EmailDraftTest › sending a draft mails the contractor then locks it
@@ -349,11 +421,29 @@
       permanently red suite hides the next real failure.
       ⭐ NEEDS NO SAMPLE DOCUMENTS.
 
-  P5. WHAT "TRY AI ASSIST" SHOULD DO WHEN THE AI IS DEAD.  ⬜  A press can cost the full
-      50-second budget and return nothing ~98% of the time (measured). Options: leave it,
-      shorten the budget for the pilot, hide the offer while the tier fails, or say in
-      the UI that the second opinion is unavailable. A decision, not a bug. Note this
-      lands in the same screens as §5 — worth deciding while N1/N4 are open.
+  P5. ⚠ CORRECTED 2026-09-20 BY THE USER — THE AI TIER IS NOT DEAD, AND THIS ITEM WAS
+      BUILT ON A MIS-SCOPED NUMBER.
+      WHAT I HAD: "134 answers in 549 calls over seven days, ONE in 59 over the last
+      two", carried from local_llm_parser_plan.md §4 and repeated in §2 of this file as
+      a pilot risk, with the conclusion that a reviewer pressing "Try AI assist" waits
+      50 seconds for nothing ~98% of the time.
+      WHAT THE USER SAYS: that failure rate is the PDF S-CURVE path only. For NORMAL
+      DOCUMENTS — which is the current priority and the path the pilot will actually
+      exercise — AI assist has almost no problem.
+      AND A SECOND CORRECTION TO THE CAUSE: the S-curve failures may not be Flash being
+      busy at all. They may be the FILE BEING SENT — the one-page full-page BUHI image
+      — and there may be a record of that in storage/logs/laravel.log.
+      ⇒ THE ITEM IS NOT A UX DECISION ABOUT HIDING A DEAD BUTTON. It is now:
+         (a) re-measure the ladder SPLIT BY PATH (normal-doc vs PDF S-curve) from the
+             log rather than in aggregate — the aggregate is what created the false
+             conclusion;
+         (b) check whether the S-curve failures correlate with the BUHI slice
+             specifically, which would make it a payload problem, not an availability one;
+         (c) only then decide whether anything in the UI should change — and on the
+             evidence so far, for normal documents, probably nothing should.
+      ⚠ §2's "A THIRD FACT ALREADY ON RECORD" IS SUPERSEDED BY THIS ENTRY. It states the
+      aggregate figure as a pilot risk without the path split, and should not be quoted
+      again in that form.
 
   P6. THE PILOT PACKAGE.  ⬜  Replaces the old "deployment dry run"; scoped by §3 to
       local desktops + a zip. Covers F1 (ship a non-dev env; dev routes off), F2 (a
