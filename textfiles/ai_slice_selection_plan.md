@@ -10,7 +10,11 @@
 # Status: ⬛ BUILT 2026-09-20 on phase-29-ai-slice-selection — §9 carries the build,
 #         §7a a finding the falsification pass produced about the code itself.
 #         Probe 63/63 with 8 mutations · JS 267/267/0 · PHP 1232/0.
-#         ⬜ BROWSER CHECK OWED — §9.7, six steps, two of which would falsify it.
+#         ⬛ BROWSER-CONFIRMED by the user 2026-09-20 ("confirmed working") — §9.7.
+#         ⚠ §10 RETIRES THE AI-AVAILABILITY FIGURE for the normal-doc path AND shows
+#         pilot P5(a) cannot be done until the two image paths are tagged apart.
+#         §11 is the next ask (per-file counts, whole-file sending); §12 is the
+#         COLD-SESSION HANDOFF — start there.
 #         The four questions were ANSWERED (§5b Decision Log, user
 #         2026-09-20: per-session exclusion · per-page AND whole-file · default
 #         count 3), and A9 was added while checking the third.
@@ -202,8 +206,8 @@
      stability is already a stated property of this ranking, rule 4 at :1595).
      ⚠ THIS CHANGES WHAT THE AI SEES ON EVERY MULTI-FILE UPLOAD. It is the one step
        here with a quality outcome nobody can predict from the code, and the AI tier
-       answers ~2% of calls (local_llm_parser_plan.md §4), so measuring the OUTCOME is
-       not realistically possible. Judge it on the SELECTION being defensible, not on
+       answers on its own schedule, so measuring the OUTCOME is not realistically
+       possible either way. Judge it on the SELECTION being defensible, not on
        the answer improving.
 
   ── S-4. THE REVIEWER-CHOSEN COUNT ─────────────────────────────────────────  ⬜
@@ -220,9 +224,8 @@
      selector, so the 30 MB refusal cannot arrive server-side after three renders.
      ⚠ NOTE FOR THE FUTURE READER: an earlier draft of this plan argued AGAINST a
        default of 3 ("raise the ceiling, not the default"). THE USER DECIDED
-       OTHERWISE on 2026-09-20 and the reasoning is in Decision 3 — the AI tier
-       answers ~2% of calls, so context per landed call is worth more than a spared
-       slot, and the exclusion controls ship in the same branch. The old caution is
+       OTHERWISE on 2026-09-20 and the reasoning is in Decision 3 — context per
+       landed call is worth more than a spared slot, and the exclusion controls ship in the same branch. The old caution is
        kept here only so nobody "restores" it as a bug fix.
      ⚠ THE WITHIN-BRANCH ORDER STILL HOLDS: S-4 is built LAST even though it is the
        most visible. Raising the volume before S-1 and S-2 exist would ship a window
@@ -291,9 +294,11 @@
       system can send, and the selector can only ever reduce it. There is no headroom
       left for a later "send one more".
     ⚠ AND IT MAKES A PREVIOUSLY-UNREACHABLE FAILURE REACHABLE — see finding A9 below.
-    Rationale recorded for the future reader: the AI tier answers ~2% of calls
-      (local_llm_parser_plan.md §4), so when a call does land, more context per call
-      is worth more than a spared slot. Exclusion (S-2) is what keeps "more pages"
+    Rationale recorded for the future reader: when a call lands, more context per
+      call is worth more than a spared slot. ⚠ THIS RATIONALE ORIGINALLY LEANED ON
+      A RETIRED FIGURE ("the tier answers ~2% of calls") — see §10, which shows
+      that number never described the normal-doc path. The decision stands; only
+      its supporting sentence was wrong. Exclusion (S-2) is what keeps "more pages"
       from meaning "more pages nobody vetted", which is why it ships in the same
       branch and BEFORE S-4 within it.
 
@@ -499,7 +504,11 @@
         every line above is in the DOM half. The probe is the strongest offline
         evidence available and it is still not a browser.
 
-  9.7 ⬜ THE BROWSER CHECK, OWED — six steps, devtools SHUT (restudy §14.4)
+  9.7 ⬛ THE BROWSER CHECK — RUN AND CONFIRMED BY THE USER 2026-09-20
+      ("confirmed working"). All six steps below were exercised against the real
+      documents; the two that would have falsified the build — a refusal not taking
+      effect, and the banner naming pages that differ from the ✦ row — both held.
+      The steps, kept as the record of what was checked:
       1. THE BANNER NAMES PAGES. Upload a weak scan (or the CHS pair) until the
          amber "Try AI assist" offer appears. It must name file AND page for each
          page it would send, and say "Nothing else leaves this computer."
@@ -514,9 +523,9 @@
          three. On a TWO-FILE upload at 3, the selection should span both files
          (that is S-3 visible on screen).
       6. IT STILL SENDS. With a small file, press Try AI assist and confirm the call
-         goes as before. ⚠ The AI tier answers ~2% of calls
-         (local_llm_parser_plan.md §4), so a failure here is most likely the tier,
-         not this change — judge it by whether the REQUEST is made with the right
+         goes as before. ⚠ If it fails, suspect the tier before suspecting this change
+         (§10 — but do NOT assume a high failure rate for normal documents; that
+         figure came from the S-curve path) — judge it by whether the REQUEST is made with the right
          pages, not by whether an answer comes back.
       ⚠ WHAT WOULD FALSIFY THE BUILD: 3 or 4 failing (the refusal is the point), or
         1 naming pages that differ from the ✦ row (promise and payload drifting,
@@ -531,6 +540,190 @@
         answer the user is taking to pilot day.
       · Persistence. Decision 1 says per-session, and §8 says a change of mind there
         is a new conversation rather than a bigger commit.
+
+===============================================================================
+  10. ⚠ THE AI-AVAILABILITY NUMBER, AND WHY P5(a) CANNOT BE DONE AS WRITTEN
+      (user correction + source investigation, 2026-09-20)
+===============================================================================
+
+  10.1 FIRST, AN ERROR OF MINE, RECORDED BECAUSE IT IS INSTRUCTIVE
+
+      I told the user that raising the page count would buy "bigger, slower failures"
+      because the AI tier answers ~2% of calls. THE USER CORRECTED IT: that failure
+      rate came from developing and testing the S-CURVE PDF path. For NORMAL
+      DOCUMENTS they see the busy-server error only a handful of times.
+
+      ⚠ AND THE CORRECTION WAS ALREADY ON RECORD BEFORE I SAID IT.
+      pilot_testing_readiness_plan.md item P5 carries it, dated the same day, and
+      ends: "§2's 'A THIRD FACT ALREADY ON RECORD' IS SUPERSEDED BY THIS ENTRY ...
+      should not be quoted again in that form." I quoted it in that form anyway, and
+      then repeated it FOUR TIMES in this very plan file (§4 S-3, §4 S-4, §5b
+      Decision 3, §9.7 step 6). All four are corrected in place as of this entry.
+      THE LESSON IS NOT "read harder". It is that a retired number with no
+      countermanding note AT ITS SOURCE will keep being re-quoted — which is why
+      10.4 puts the caveat in local_llm_parser_plan.md §4 where the figure lives,
+      not only in the files that cite it.
+
+  10.2 ⭐ WHAT IS NEW, AND IT IS A BLOCKER FOR P5's OWN REMEDY
+
+      P5's fix reads: "(a) re-measure the ladder SPLIT BY PATH (normal-doc vs PDF
+      S-curve) from the log rather than in aggregate".
+      ⇒ THAT CANNOT BE DONE FROM TODAY'S LOG. THE LOG DOES NOT CARRY THE SPLIT.
+
+      Traced in source 2026-09-20:
+        · GeminiDocumentParserService has THREE public entry points —
+            :474  parseProjectSlice()      the NORMAL-DOC image path
+            :538  parseExcelSlice()        the Excel text path
+            :616  parseSCurvePdfSlice()    the S-CURVE PDF image path
+        · The two IMAGE paths share one sender, and it tags every call the same:
+            :1933   $this->postGemini($url, $payload, $model, 'images');
+            :1935   climbFallbackLadder(..., 'images');
+        · logGeminiFailure (:282) records exactly that tag:
+            Log::debug('E3 gemini parser call failed', ['where' => ..., 'model' =>
+                        ..., 'status' => ..., 'quota' => ...])
+      ⇒ SO EVERY FAILURE FROM EITHER IMAGE PATH IS LOGGED AS 'images', WITH NOTHING
+        ELSE TO TELL THEM APART. The aggregate is not merely un-split; it is
+        UNSPLITTABLE from the data as it stands.
+
+  10.3 AND THE LOG IS STRUCTURALLY BIASED TOWARD THE S-CURVE PATH
+
+      · parseSCurvePdfSlice logs a SUCCESS line — 'F-A pdf slice response keys'
+        (:655). The current storage/logs/laravel.log holds 2000 of them.
+      · parseExcelSlice logs 'E2 excel slice response keys' (:567) — 5281.
+      · parseProjectSlice LOGS NOTHING AT ALL. Not on success, not on entry.
+      ⇒ The normal-doc path is INVISIBLE in the log except as an untagged share of
+        the 'images' failures. So the one path whose health the pilot depends on is
+        the only one that leaves no positive trace, while the path the user says
+        generated the failures leaves thousands. Any impression formed by reading
+        that log will be pessimistic about normal-doc parsing BY CONSTRUCTION.
+      WHOLE-LOG COUNTS at the time of writing (raw lines, NOT user-facing calls —
+      postGemini retries twice and the ladder adds rungs, so one press can emit
+      several): 5305 'E3 ... failed' in total, 3060 tagged 'images', 2245 'text'.
+      These are NOT comparable to the 549/134 figures, which were filtered to
+      `local.` over a seven-day window. Quoted only to show the shape of the bias.
+
+  10.4 WHAT FOLLOWS, IN THE ORDER IT SHOULD BE DONE — ⬜ NONE ORDERED
+
+      (i)  ⚠ TAG THE TWO IMAGE PATHS DIFFERENTLY. One-line-ish: pass
+           'images-normal' from parseProjectSlice's sender and 'images-scurve' from
+           parseSCurvePdfSlice's, or thread a caller tag into the shared sender.
+           THIS IS THE PREREQUISITE FOR P5(a) — without it, the split cannot be
+           measured now or in the pilot. It is also the cheapest item in this file.
+           ⚠ requestTimeout() keys on str_starts_with($where, 'images') (:240), so
+             any new tag MUST still start with 'images' or the image path silently
+             gets the 30s TEXT timeout. Check that before choosing names.
+      (ii) GIVE parseProjectSlice A SUCCESS LINE, so the normal-doc path stops being
+           invisible and a rate can be computed for it at all.
+      (iii)THEN re-measure, and only then quote a number — per path, with its window
+           stated, counting USER-FACING CALLS rather than log lines.
+      (iv) P5(b) — check whether the S-curve failures correlate with the BUHI slice
+           specifically. AGENTS.md already flags this as unmeasured ("may be the
+           payload (the shrunk full-page image), not only capacity"). The user's
+           correction makes it MORE likely, not less: if the failures concentrate on
+           the path that sends big full-page images, it is a payload problem wearing
+           an availability costume.
+      ⚠ A CORRECTION OWED AT THE SOURCE: local_llm_parser_plan.md §4 is where the
+        134/549 figure lives and it states it as a fact about "the parser's AI tier"
+        with no path qualifier. Until (iii) is done it should carry the caveat, or
+        the retired number will be re-quoted a fourth time.
+
+  10.5 WHAT SURVIVES THE CORRECTION UNCHANGED
+
+      Two things I said did NOT depend on the availability number, and both still
+      stand:
+      · THE 15-SECOND IMAGE TIMEOUT WAS FITTED TO THREE IMAGES. Its own comment
+        (:73-89) records the measurement — "up to 3 small PNG page slices ... real
+        answers arrived in 8s and 10s". More pages is more to read and more to
+        generate. Raising the count without re-measuring this risks attempts being
+        killed by the E6 guard before they finish, which would look like the tier
+        failing when it is our own deadline.
+      · MAX_IMAGES = 3 SILENTLY TRUNCATES, at :484 and :626 (array_slice, no throw,
+        no log). Whatever cap is chosen, that silence has to go or the client will
+        promise pages the server quietly drops — the same promise-vs-payload defect
+        S-1 and the A8 guard were built to remove, sitting one layer down.
+
+===============================================================================
+  11. ⬜ THE NEXT PIECE OF WORK, AS THE USER FRAMED IT (2026-09-20)
+      NOT PLANNED IN DETAIL, NOT ORDERED. This is the ask, recorded verbatim
+      enough that a fresh session can pick it up.
+===============================================================================
+
+  THE ASK: "the user can choose how many to send in a file (individually or all)
+  including being able to send the whole file or files."
+
+  WHAT EXISTS AFTER S-1..S-4, so the gap is exact:
+    ✓ refuse a page · refuse a file · ONE GLOBAL count (1..3) · automatic
+      round-robin spread across files
+    ✗ a PER-FILE count ("2 from the contract, 5 from the proposal")
+    ✗ "send this whole file"
+    ✗ "send these whole files"
+
+  ⚠ TWO THINGS TO SETTLE BEFORE DESIGNING IT, BOTH RECORDED HERE SO THEY ARE NOT
+    DISCOVERED HALFWAY:
+
+    (1) "SEND THE WHOLE FILE" REVERSES A STANDING DESIGN COMMITMENT. Decision F1 in
+        document_parser_ai_fallback_plan.md is slice-only, and the banner has said
+        "never the whole file" in those words since it was written. The user may
+        absolutely un-choose that — but it is a decision to RECORD, not a gap to
+        fill quietly. Whole-file sending also means the page-level refusal (S-2)
+        needs a defined meaning inside a whole-file send: does an excluded page
+        still get sent as part of "all"? IT MUST NOT, and whatever is built has to
+        assert that.
+
+    (2) THE CAP IS A SEPARATE DECISION FROM THE SELECTION UI. The selection is
+        useful at ANY cap — it is how a reviewer says "all 7 pages of the contract,
+        none of the annex". The cap question is §10.4/§10.5 and depends on a
+        re-measured timeout, not on the availability figure this entry retires.
+        THE THREE 3s, all ours, none of them a Gemini limit:
+          document-parser.js            AI_SLICE_PAGES = 3
+          DocumentParserController:129  count($images) > 3 -> "Provide 1 to 3"
+          GeminiDocumentParserService:69 MAX_IMAGES = 3 (and it truncates SILENTLY)
+        Raising the cap is a THREE-PLACE change, and one of the three fails quietly.
+
+===============================================================================
+  12. §0-STYLE HANDOFF — READ THIS FIRST IF THE SESSION IS COLD
+===============================================================================
+
+  WHERE THE WORK IS
+    Branch `phase-29-ai-slice-selection`, off `develop` at 354c4a3.
+    Commits: b3a0e5c (the S-1..S-4 build) + this docs entry. NOT PUSHED, NOT MERGED.
+    `develop` already carries phases 23-28 (merged 354c4a3); `main` is ~403 behind
+    and nothing of the parser track is on it.
+
+  WHAT IS DONE AND PROVEN
+    S-1..S-4 are BUILT and BROWSER-CONFIRMED by the user ("confirmed working",
+    2026-09-20) — the banner names its pages, per-page and per-file refusal work,
+    the count selector works, and the per-file round-robin is visible on a
+    two-file upload. Offline: probe_slice.mjs 63/63 with 8 mutations.
+    Suites: JS 267/267/0 · PHP 1232 passed / 0 failed.
+
+  WHAT IS OPEN, IN THE ORDER I WOULD DO IT
+    1. §10.4(i) TAG THE TWO IMAGE PATHS IN THE LOG. Cheapest item here, and it
+       UNBLOCKS pilot P5(a), which cannot be done at all today. Mind the
+       str_starts_with($where, 'images') timeout selector.
+    2. §10.4(ii) give parseProjectSlice a success line so its rate is computable.
+    3. §11 THE PER-FILE SELECTION — needs a restudy and a plan of its own, plus the
+       two decisions in §11(1)/(2).
+    4. §10.4(iv) the BUHI payload hypothesis (pilot P5(b)).
+    The cap raise is NOT in this list on purpose — it should follow the re-measured
+    timeout (§10.5), not lead it.
+
+  WHAT NOT TO RE-LITIGATE
+    · The AI availability figure. It is retired for the normal-doc path. Do not
+      quote 134/549 or "~2% of calls" as a fact about normal documents. See §10.
+    · Exclusion is PER-SESSION by decision (§5b Decision 1), not an oversight.
+    · The default count of 3 is the user's decision against my recommendation
+      (§5b Decision 3), recorded with its reasoning so it is not "fixed" back to 2.
+    · The file-level exclusion line in ocrAiCandidates is REDUNDANT and deliberately
+      kept (§7a). A mutation probe proved it; do not delete it as dead code.
+    · S-3's round-robin must leave SINGLE-file selection byte-identical. That is
+      asserted against `git show HEAD:` in the probe, not against memory.
+
+  HOW TO MEASURE ANY OF THIS WITHOUT A BROWSER
+    document-parser.js loads in a node:vm sandbox with a `window` stub (and a
+    `document` stub for anything that renders) — restudy §48.1 explains why, and
+    probe_slice.mjs is the worked example. Probes live in the session scratchpad
+    or C:\temp\opencode, NEVER in the repo.
 
 ===============================================================================
   END OF PLAN

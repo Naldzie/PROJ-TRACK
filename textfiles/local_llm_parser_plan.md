@@ -36,6 +36,22 @@
     ruled out paid services.
 
   THE ONE NUMBER THAT MATTERS
+    ⚠⚠ SCOPE CORRECTION 2026-09-20 — READ THIS BEFORE QUOTING THE NUMBER BELOW.
+    The user states that this failure rate is the S-CURVE PDF path, which is what was
+    being developed and tested through that window. For NORMAL DOCUMENTS they see the
+    busy-server error only a handful of times. So "the parser's AI tier is effectively
+    dead" is NOT a fact about normal-doc parsing — which is the pilot's priority path.
+    ⚠ AND THE SPLIT CANNOT BE RECOVERED FROM THE LOG AS IT STANDS. Both image paths
+    (parseProjectSlice, the normal doc; parseSCurvePdfSlice, the S-curve) go through
+    ONE sender tagged 'images' (GeminiDocumentParserService:1933), and that tag is all
+    logGeminiFailure records. Worse, parseSCurvePdfSlice logs a success line and
+    parseProjectSlice LOGS NOTHING, so the log is biased toward the S-curve path by
+    construction. Full trace: ai_slice_selection_plan.md §10.
+    ⇒ THE FIGURE STAYS HERE AS THE RECORD OF WHAT WAS MEASURED, but it must be quoted
+      as "the image paths in aggregate, dominated by S-curve PDF testing", never as a
+      normal-doc availability rate. Re-measuring needs the path tagging first
+      (ai_slice_selection_plan.md §10.4, and pilot plan P5(a) is blocked on it).
+    THE ORIGINAL NOTE, kept:
     Over seven days of real browser use the parser's AI tier answered 134 of 549
     calls. In the last two days: ONE response in 59 calls. The tier is effectively
     dead. (§4 has the full table and the failure causes.)

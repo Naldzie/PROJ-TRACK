@@ -470,6 +470,32 @@
       aggregate figure as a pilot risk without the path split, and should not be quoted
       again in that form.
 
+      ⚠⚠ UPDATE 2026-09-20 — (a) IS BLOCKED, AND THE BLOCK IS IN THE CODE, NOT THE DATA.
+      Step (a) above says to re-measure the ladder split by path FROM THE LOG. That
+      cannot be done: the log does not carry the split and never has.
+        · parseProjectSlice (normal doc, :474) and parseSCurvePdfSlice (S-curve, :616)
+          share ONE sender, which tags every call 'images'
+          (GeminiDocumentParserService:1933, and :1935 for the fallback ladder);
+        · logGeminiFailure (:282) records only that tag, the model, the status and the
+          quota id — nothing that distinguishes the two callers;
+        · and the bias runs the wrong way: parseSCurvePdfSlice logs a SUCCESS line
+          ('F-A pdf slice response keys', 2000 in the current log) while
+          parseProjectSlice LOGS NOTHING AT ALL, so the path the pilot depends on is
+          the only one leaving no positive trace.
+      ⇒ (a) NOW HAS A PREREQUISITE: tag the two image paths distinctly, and give the
+        normal-doc path a success line. Both are small. Detail, including the trap that
+        requestTimeout() keys on str_starts_with($where, 'images') so a new tag must
+        still start with that word: ai_slice_selection_plan.md §10.2-§10.4.
+      ⇒ THIS ALSO MATTERS FOR THE PILOT ITSELF, not just for settling an old number:
+        under F6 the PMU encodes real projects, so the pilot IS the first real corpus.
+        Without the tagging, the pilot will generate exactly the same unsplittable
+        aggregate and the question will still be open afterwards.
+      ⚠ AND IT HAPPENED AGAIN IN BETWEEN: the retired figure was re-quoted on
+        2026-09-20 (to the user, and four times inside ai_slice_selection_plan.md)
+        despite this entry already existing. The cause is that the SOURCE
+        (local_llm_parser_plan.md §4) carried no caveat — that has now been fixed at
+        the source, which is the only place a correction reliably survives.
+
   P6. THE PILOT PACKAGE.  ⬜  Replaces the old "deployment dry run"; scoped by §3 to
       local desktops + a zip. Covers F1 (ship a non-dev env; dev routes off), F2 (a
       defined zip content list; strip credentials, logs, transcripts, dumps), F4 (DB
