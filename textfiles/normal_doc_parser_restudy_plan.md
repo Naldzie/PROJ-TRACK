@@ -82,6 +82,19 @@
 #         ✅ THE USEFUL CONSEQUENCE: the devtools-CLOSED render is what real users get,
 #         and it is the BETTER one (4 pages, not 3). The open-devtools numbers are a
 #         developer artefact. All OCR-1 work goes against the CLOSED column (§14.4).
+#         ⬛ P-3a 2026-09-20 (§17): the gate work opened with a CORRECTION TO ITS OWN
+#         PREMISE — the stretch maps [lo,hi] onto [0,255], and with lo=0-2 and hi=255 it
+#         is the IDENTITY. Fixing the gate alone would have fired it and changed nothing,
+#         and read as "contrast does not help". The ENDPOINTS must go percentile too.
+#         Shipped: p75/p95/p99 and gain= in the debug line, reporting only.
+#         ⭐ OCR-1 SOLVED 2026-09-20 (§18): IT IS A CONTRAST PROBLEM. p5 (how dark the
+#         darkest 5% is) separates ALL TEN pages with NO exception — readers 69-108,
+#         dead 113-145 — including page 3 and page 9, which broke every earlier metric.
+#         Page 3 measured offline: the whole document lives in 120-180 (text ~135 on
+#         paper ~167, a 32-level separation), while lo=0 comes from the BINDER SHADOW
+#         (1% of pixels) and hi=255 from the PAGE MARGIN (5.8%). Seven percent of
+#         pixels, none of them text, disable the one mechanism built to rescue it.
+#         §18.4 has the fix's shape. NOT BUILT — it changes every scanned read.
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -2255,6 +2268,136 @@
       page 3 is the one page that breaks the correlation.
       NEXT, unchanged by this result: P-2 (look at page 3's image — no code) and then
       P-3 (the gate, which has still never fired on any page of this file).
+===============================================================================
+  17. P-3a — THE GATE WORK STARTS WITH A CORRECTION TO ITS OWN PREMISE
+      (2026-09-20, ordered: "proceed with the next open work")
+===============================================================================
+
+  17.1 ⚠ FIXING THE GATE ALONE WOULD HAVE DONE NOTHING
+
+      Found by reading the code before writing any, which is what sections 8 and 16
+      both say to do. The stretch is:
+        const range = (hi - lo) || 1;
+        v = ((g - lo) / range) * 255
+      IT MAPS [lo, hi] ONTO [0, 255]. On every page of the test scan lo is 0-2 and hi
+      is 255 — so the mapping is g -> g. THE STRETCH IS THE IDENTITY FUNCTION HERE.
+      ⇒ S2-4 and M-4 both proposed "make the washed gate percentile-based". That is
+        necessary and NOT SUFFICIENT: had the gate been corrected on its own, it would
+        have fired on these pages and then handed every one of them back UNCHANGED, and
+        the measurement would have read as "contrast stretching does not help" when in
+        fact nothing had been stretched.
+      ⇒ THE ENDPOINTS MUST STOP BEING lo/hi TOO. A percentile gate needs percentile
+        endpoints, for the same reason: one dark speck decides both today.
+      This is the same defect wearing two hats, and it nearly cost a wasted experiment.
+
+  17.2 WHAT SHIPPED — reporting only, no behaviour change
+
+      preprocessOcrCanvas()'s debug line gains:
+        p75 / p95 / p99 — the upper percentiles a percentile ENDPOINT would be chosen
+          from. p1/p5 already describe the ink; nothing described the background, and
+          the background is the other end of any mapping.
+        gain = 255 / (hi - lo) — what the CURRENT mapping multiplies contrast by.
+          1.00 means "this page would be handed back unchanged", so 17.1's no-op is
+          now visible in the ledger itself rather than only in this plan file.
+      The gate verdict, the stretch and the existing fields are all untouched, and the
+      lo/hi/mean prefix is still verbatim.
+      Verified: node --check clean; JS suite 231/231/0; probe_t3_stats.mjs still 26/26,
+      and its three synthetic pages now read gain=1.00, 1.00 and 3.19 — the two
+      full-range pages showing the identity and the genuinely washed one showing a real
+      stretch, which is 17.1 demonstrated rather than asserted.
+
+  17.3 WHAT IS OWED BEFORE THE STRETCH IS DESIGNED
+
+      ONE RUN, devtools SHUT (13.1's recipe), and the page-3 image from P-2 — they can
+      be done in one sitting.
+      WHAT THE NUMBERS WILL DECIDE: with p1/p5 (the ink) and p75/p95/p99 (the
+      background) for all ten pages, the endpoints can be chosen from data instead of
+      guessed. The question the run answers is how far apart the ink and the background
+      actually sit on the dead pages — if they are well separated, a percentile stretch
+      should rescue them; if they overlap, the page is not faint but BLURRED, and
+      contrast is the wrong lever entirely (local thresholding would be the next idea,
+      per M-4).
+      ⚠ NOT ORDERED, AND NOT YET DESIGNED. P-1 was built on a mechanism I had not
+      measured, and it was refuted. This time the endpoints get measured first.
+===============================================================================
+  18. OCR-1 IS SOLVED — IT IS A CONTRAST PROBLEM, AND p5 SEPARATES EVERY PAGE
+      (2026-09-20. P-3a's ledger + P-2's page-3 image, measured offline with GD.)
+===============================================================================
+
+  18.1 ⭐ p5 SEPARATES ALL TEN PAGES WITH NO EXCEPTION
+
+      p5 is "how dark is the darkest 5% of the page" — in a document photo, that is
+      the text strokes. From the devtools-SHUT run:
+        READS   page 4  p5= 69   4446 chars
+                page 6  p5= 75   1621
+                page 10 p5= 92   4108
+                page 9  p5=108   3075
+        ------------------------------------ the line falls between 108 and 113
+        DEAD    page 3  p5=113
+                page 2  p5=114
+                page 8  p5=121
+                page 1  p5=131
+                page 5  p5=143
+                page 7  p5=145
+      TEN OUT OF TEN. Not nine — every page, including PAGE 3 and PAGE 9, the two that
+      broke every earlier metric. Page 3 was "ink-rich and dead" under ink<128 (11.69%,
+      section 14.4's lone exception); under p5 it is simply the darkest of the dead pages
+      and sits on the correct side of the line. Page 9, the one that flips with devtools,
+      is the weakest reader and sits nearest the line — exactly where a flipper should be.
+      CONTRAST (p50 - p5) tells the same story: 95, 89, 74, 57 for the readers; 48, 52,
+      42, 40, 21 for the dead ones (page 5 excepted — see 18.4).
+      ⚠ ONE FILE, TEN PAGES. A perfect split on n=10 is a strong lead, not a law. It
+      needs their real scans (N2) before it is treated as a threshold.
+
+  18.2 WHAT PAGE 3 ACTUALLY LOOKS LIKE (the P-2 question, answered with numbers)
+
+      Measured from sampledocs/snapshot-pdfdocstest5.pdf-p3-rot0.png with GD
+      (C:\temp\opencode\measure_p3.php and tail_p3.php):
+        canvas 892 x 1263 · the photo fills 94.2% of it — margin is NOT page 3's problem
+        cumulative dark tail:  <40 = 1.05%   <100 = 3.76%   <128 = 11.97%   <160 = 41.58%
+        the bulk:  120-139 = 10.4%   140-159 = 23.7%   160-179 = 52.6%   >=240 = 5.78%
+        modal gray = 167
+      ⇒ THE ENTIRE DOCUMENT LIVES BETWEEN ~120 AND ~180. The paper is ~167 and the text
+        is ~120-155, so TEXT-TO-PAPER SEPARATION IS ABOUT 32 GRAY LEVELS out of 255.
+        A clean scan has black text (~30) on white paper (~245): separation ~215.
+        Page 3 is using 24% of the available dynamic range.
+      ⇒ AND THE TWO EXTREMES THAT DISABLE THE GATE ARE NOT THE DOCUMENT AT ALL:
+          lo ~= 0    is set by the BINDER SHADOW — 1.05% of pixels below 40
+          hi  = 255  is set by the PAGE MARGIN  — 5.78% of pixels at 240+
+        Between them they make `washed` false, and they make the stretch's own mapping
+        [lo,hi] -> [0,255] the identity (section 17.1). Seven percent of the pixels,
+        none of them part of the text, switch off the one mechanism built to rescue it.
+
+  18.3 ✅ A CAUTION I RAISED IS WITHDRAWN
+
+      Section 15.2 warned that the saved snapshot is rendered at scale 1.5 against the
+      read path's scale 3 and so is "a fair representation, not evidence about exact
+      pixels". On the numbers it is better than that: the snapshot gives p50=161,
+      p75=165, p95=255 and 5.78% pure white, and the browser's own page-3 line from the
+      OCR canvas gives p50=161, p75=165, p95=255. The distributions match. THE SNAPSHOT
+      IS USABLE EVIDENCE, and measuring it offline with GD is a route to page-level
+      numbers that costs the user nothing.
+
+  18.4 THE SHAPE OF THE FIX (proposed — NOT built, and it changes what the parser reads)
+
+      The gate and the endpoints must BOTH stop keying on lo/hi (17.1), and 18.2 says
+      what they should key on instead: the document's own band, not the page's extremes.
+        GATE      fire when the document band is narrow — e.g. (p95' - p5') small, or
+                  simply when contrast (p50 - p5) is below the 18.1 line.
+        ENDPOINTS map the document band onto [0,255] instead of [lo,hi]. For page 3 that
+                  is [~120, ~180] -> [0,255]: a gain of about 4.2x. Text at 135 lands
+                  near 64 and paper at 167 near 200, so separation goes from 32 to ~136.
+      ⚠ THE ENDPOINTS MUST IGNORE NEAR-WHITE PIXELS. Pages 1, 5 and 7 carry 25-50% page
+      margin (p75 or p50 = 255), so percentiles taken over the whole canvas are polluted
+      by margin exactly as lo/hi are polluted by it today. Computing them over the
+      non-white pixels only is what makes one rule work for both page 3 (94% photo) and
+      page 5 (over half margin).
+      ⚠ AND IT MUST NOT TOUCH THE PAGES THAT ALREADY WORK. Pages 4, 6, 9 and 10 have real
+      dark strokes (p5 = 69-108) and read cleanly on attempt 0. Any gate must leave them
+      alone; the 18.1 line is what a gate would be built around.
+      ⚠ THIS IS A BEHAVIOUR CHANGE ON EVERY SCANNED DOCUMENT. Own branch, own browser
+      proof, and the page-by-page ledger re-run as the acceptance test — the four
+      readers must still read, and the count must go up, or it is not a fix.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

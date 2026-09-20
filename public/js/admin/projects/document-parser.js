@@ -536,6 +536,15 @@ function preprocessOcrCanvas(canvas) {
             //          as close to "how much ink is on this page" as sampling gets.
             // A page carrying text normally shows a few percent of ink; a page that
             // yields nothing is expected to show far less. That comparison is the point.
+            //
+            // P-3a (2026-09-20) adds the UPPER percentiles and `gain`, for one reason:
+            // the stretch below maps [lo, hi] -> [0, 255], and on every page of the test
+            // scan lo is 0-2 and hi is 255, so THE STRETCH IS THE IDENTITY FUNCTION. It
+            // would change nothing even if the gate fired. Correcting the gate alone was
+            // therefore never going to help — the ENDPOINTS have to stop being lo/hi too,
+            // and p75/p95/p99 are what a percentile endpoint would be chosen from.
+            //   gain = 255 / (hi - lo) — what the CURRENT mapping multiplies contrast by.
+            //          1.00 means "this page would be handed back unchanged".
             // The lo/hi/mean prefix is kept verbatim so older ledgers stay comparable.
             try {
                 const pct = (frac) => {
@@ -549,7 +558,9 @@ function preprocessOcrCanvas(canvas) {
                 console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped')
                     + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))
                     + ' p1=' + pct(0.01) + ' p5=' + pct(0.05) + ' p50=' + pct(0.50)
-                    + ' ink<128=' + share(inkBelow(128)) + ' ink<160=' + share(inkBelow(160)));
+                    + ' p75=' + pct(0.75) + ' p95=' + pct(0.95) + ' p99=' + pct(0.99)
+                    + ' ink<128=' + share(inkBelow(128)) + ' ink<160=' + share(inkBelow(160))
+                    + ' gain=' + (255 / Math.max(1, hi - lo)).toFixed(2));
             } catch (e) {}
         }
         if (!washed) return;
