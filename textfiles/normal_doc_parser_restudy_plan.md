@@ -3472,5 +3472,56 @@
           observed. §28.7 predicted it should help; if the ABC comes back wrong on pages
           the AI can now actually see, that is the more interesting result.
 ===============================================================================
+  30. §29 CONFIRMED IN THE BROWSER, AND A GAP IN MY OWN B-5 (2026-09-20)
+===============================================================================
+
+  30.1 ⭐ ALL THREE AI CHANGES CONFIRMED
+
+      The panel now reads "AI assist would read: pdfdocstest5.pdf p.7 | pdfdocstest5.pdf
+      p.3" — pages 7 and 3, exactly as §29.1 predicted, and page 7 is the ABC page.
+      The AI-assisted badges render on the boxes the AI filled (Category and ABC).
+      The ABC comes back 4,834,297.59, correct.
+      ⚠ THE USER'S OWN READING, AND IT IS THE RIGHT ONE: AI assist was correct BEFORE
+      this batch and is correct after it. These changes removed a broken ranking, a
+      dead badge and a blind prompt — they did not fix the extraction, because the AI
+      path was never what broke it. The .00 came from the LEARNED-LABEL path (L-8).
+      Recorded plainly so nobody later reads §29 as having fixed the ABC.
+
+  30.2 ⚠ B-5 ONLY CLEANED HALF THE CONTRACTOR PATH — THE HALF THIS DOCUMENT DOES NOT USE
+
+      The same screenshot showed the contractor still reading
+          "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom"
+      B-5 (§24.2) wired stripEdgeDebris and cutAtEmbeddedLabel into extractContractor —
+      the LABELED path — and tested exactly that. But the contract page has no
+      "Contractor:" label on that line; the name sits mid-sentence and is found by
+      isContractorValueCandidate, the VALUE-SIDE heuristic, which I left untouched.
+      ⇒ THE UNIT TEST PASSED ON A PATH THE DOCUMENT NEVER TAKES. That is the same
+        lesson as §28.5 and §27.3 arriving a third time: the suite covers the pure core,
+        nothing covers which branch real input actually walks, and a green suite kept
+        saying so.
+      FIXED: the value-side path now tidies before its shape checks, exactly as the
+      labeled one does, so a recoverable name is recovered rather than refused.
+        value-side  "i SKYSCRAPER … NES : ELA fom" -> "SKYSCRAPER CONSTRUCTION & ENGINEERING"
+        bid row                                      -> null (still refused)
+        clean name                                   -> unchanged
+        hereinafter tail                             -> still stripped
+      Two new tests, one of them through parseProjectInfo with NO label anywhere, so
+      the value-side branch is the only one that can answer. JS 252/252/0.
+
+  30.3 WHAT IS STILL OPEN, AND IT IS THE ONE THAT BROKE EXTRACTION
+
+      L-8 (§28.3): two learned labels for one field compete by LIST ORDER. Approving
+      both ABC phrases makes the damaged one win on primary key, and the ABC reads
+      4,834,297.00 from page 1's "4,834,297 5g".
+      MY RECOMMENDATION, not ordered: stop taking the FIRST learned match and collect
+      them all; when two disagree, hand the choice to the reviewer through the pick-one
+      control that already exists for exactly this. An id is not a tie-break, and a
+      human looking at two candidates is the mechanism this app already trusts
+      everywhere else.
+      ⚠ NOTE THE INTERACTION: while the ABC blinding is ON the pooled track sleeps, so
+      the pick-one cannot render (§28.4). Any fix has to work with the pool awake, and
+      be checked with the blinding OFF.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================

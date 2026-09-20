@@ -1273,6 +1273,14 @@ const DocumentParserCore = (function () {
         let raw = String(line || '').trim();
         // Strip parenthetical tail for clean name
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
+        // B-5b (2026-09-20): tidy the VALUE-SIDE path too. B-5 wired stripEdgeDebris and
+        // cutAtEmbeddedLabel into extractContractor's LABELED path only, and the document
+        // that motivated the whole fix has no "Contractor:" label on that line — it is
+        // found by this heuristic. So the field still came back
+        // "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom" in the browser while
+        // the unit test of the labeled path passed. Tidying BEFORE the shape checks means
+        // a recoverable name is recovered rather than refused, exactly as it is there.
+        raw = stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(raw)));
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
         // B-4 / L3 PRECEDENCE FIX (2026-09-20). A '|' is a CELL BOUNDARY, and this check

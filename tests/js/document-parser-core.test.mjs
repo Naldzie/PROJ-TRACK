@@ -1118,3 +1118,36 @@ test('a clean document is not altered by the tidying', () => {
     assert.equal(p.location, 'Nabua, Camarines Sur');
     assert.equal(p.contractor, 'ACME BUILDERS AND CONSTRUCTION SUPPLY');
 });
+
+// ─── The VALUE-SIDE contractor path is tidied too (B-5b) ────────────────────
+// B-5 wired the tidying into extractContractor's LABELED path only, and the very
+// document that motivated it has no "Contractor:" label on that line — it is found
+// by the value-side heuristic. So the browser still showed
+// "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom" while the labeled-path
+// test passed. A green suite said nothing about the path actually in use.
+
+test('isContractorValueCandidate tidies what it returns', () => {
+    assert.equal(
+        core.isContractorValueCandidate('i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // The hereinafter tail is still stripped, and a clean name is untouched.
+    assert.equal(
+        core.isContractorValueCandidate('SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES (hereinafter called the "CONTRACTOR")'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES');
+    assert.equal(
+        core.isContractorValueCandidate('ACME BUILDERS AND CONSTRUCTION SUPPLY'),
+        'ACME BUILDERS AND CONSTRUCTION SUPPLY');
+    // And the bid-abstract row is still refused — tidying must not rescue a table row.
+    assert.equal(core.isContractorValueCandidate(BID_ROW), null);
+});
+
+test('the contractor reads clean through parseProjectInfo with no label at all', () => {
+    // The real shape: the name sits mid-sentence on the contract page, no "Contractor:"
+    // anywhere on the line, so only the value-side path can find it.
+    const text = [
+        'ES (hereinafter called the',
+        'i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom',
+        'CONTRACTOR"), duly represented by ENGR. ARCHIEVAL S. FRIANELA',
+    ].join('\n');
+    assert.equal(core.parseProjectInfo({ text }).contractor, 'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+});
