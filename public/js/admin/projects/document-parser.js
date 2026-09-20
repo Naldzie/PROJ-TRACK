@@ -18,6 +18,22 @@ function getCore() {
 }
 
 // ===================================================
+// M-1 — OSD ORIENTATION PATH DISABLED ON THIS BUILD (2026-09-20)
+// 'eng+osd' asks the LSTM-only tesseract core we load from the CDN
+// (tesseract.js-core v5.1.1) to load the legacy osd.traineddata, which that core
+// cannot run: every call throws "LSTM requested, but not present!!". The path could
+// therefore never straighten a page. What it did instead, every fresh modal session:
+// burn the first two scanned pages on an engine that cannot work, print two walls of
+// red stack trace, and then trip the session-wide 'eng' pin below - which is why the
+// SAME file read 3 pages one run and 4 the next.
+// Measured verbatim from the console: normal_doc_parser_restudy_plan.md 11.2-11.3.
+// The OSD machinery below is left INTACT and simply unreachable while this is false;
+// flip it to true if the core/traineddata pairing is ever fixed.
+// NOTE: this is AUTOMATIC orientation only. The reviewer's manual "See & straighten"
+// rotation (window._ocrRotations) is a different path and is unaffected.
+const OCR_OSD_ENABLED = false;
+
+// ===================================================
 // ENTRY POINT
 // Parses all pending PDFs and shows the preview modal
 // (Apply fills the form). Returns a Promise.
@@ -61,7 +77,10 @@ function cancelDocumentAutofill() {
         window._ocrRotateTargets = [];
         // OSD probe + engine-failure flag are per-session: a fresh popup re-probes once
         // (network conditions may have changed), never inheriting a pinned fallback.
-        window._ocrLangMode = null;
+        // M-1: while OCR_OSD_ENABLED is false there is nothing to probe, so the session
+        // starts already pinned to plain 'eng' - no run can take the broken path, and no
+        // run can inherit a pin from the run before it (that inheritance was OCR-2).
+        window._ocrLangMode = OCR_OSD_ENABLED ? null : 'eng';
         window._ocrOsdMisses = 0;
         window._ocrEngineFailed = false;
         // F-COPY/L1 stashes belong to the run that made them — never reuse across sessions.
@@ -740,7 +759,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     // data can fail with "LSTM requested, but not present" — retrying per page spams red errors
     // and doubles time. So: first page tries osd; any failure pins plain 'eng' for the session.
     // window._ocrLangMode: null = untried, 'osd' = working, 'eng' = pinned fallback.
-    const useOsd = (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
+    // M-1: the build-level switch is tested FIRST, so a page read before any modal reset
+    // has run (window._ocrLangMode still undefined) cannot slip onto the broken path.
+    const useOsd = OCR_OSD_ENABLED && (typeof window === 'undefined' || window._ocrLangMode === undefined || window._ocrLangMode === null || window._ocrLangMode === 'osd');
     const markEngineFailed = () => { try { window._ocrEngineFailed = true; } catch (e) {} };
     // Dead-page fallback chain (2026-09-07): proven path first, experiments as rungs —
     // uncropped ladder result → scale-2 re-render → cropped re-render. Each rung runs only while
