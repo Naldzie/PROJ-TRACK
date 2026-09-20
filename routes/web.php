@@ -558,9 +558,6 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
     Route::get('/projects/{id}/chart-data', [ProjectController::class, 'getChartData'])
     ->name('admin.projects.chart-data');
 
-    Route::get('/projects/{id}/alternative', [ProjectController::class, 'showAlternative'])
-        ->name('admin.projects.show-alternative');
-
     Route::get('/projects/{id}/data', [ProjectController::class, 'getProjectData'])
         ->name('admin.projects.getData');
 

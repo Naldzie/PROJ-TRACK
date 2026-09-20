@@ -307,7 +307,19 @@
       Method note for the next run: JS suite to a log file, then grep the FILE — piping
       node --test into grep|head has stalled a session.
 
-  P1. THE DEAD ROUTE THAT 500s.  ⬜  RE-VERIFIED 2026-09-20, and the open question in
+  P1. THE DEAD ROUTE THAT 500s.  ✅ DONE 2026-09-20 on phase-26-dead-route-and-red-suite.
+      REMOVED, two lines from routes/web.php, then route:clear.
+      WHAT WAS CHECKED FIRST (a deletion deserves the sweep, not the memory): no
+      showAlternative anywhere in app/; no reference to the route name in resources/,
+      public/js/, tests/ or routes/ — the only other hits were bootstrap/cache/routes-v7.php
+      (the stale cache, cleared), backup/routes/web.php (a dead copy) and AGENTS.md
+      (updated). The single 'alternative' hit in public/js/admin was the word in a
+      sentence about Excel files.
+      AFTER: route:list builds, 330 routes, the neighbours (chart-data, detail, getData)
+      intact. PHP suite 1226 passed / the same 5 failures by name. Assertions 4587 ->
+      4584 — three fewer, consistent with a test that ITERATES the route table; nothing
+      asserted this route's existence or it would have turned red.
+      ORIGINAL NOTE, kept: RE-VERIFIED 2026-09-20, and the open question in
       this item is now ANSWERED. routes/web.php:561-562 registers
       admin.projects.show-alternative → ProjectController::showAlternative;
       grep over app/ finds NO showAlternative method anywhere, and grep over resources/
