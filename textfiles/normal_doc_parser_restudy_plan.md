@@ -31,6 +31,57 @@
 #         page has full dynamic range, so the gate is correct. ⚠ And the user found a
 #         FOURTH mechanism — devtools OPEN reads 3 pages, CLOSED reads 4.
 #         ⚠ §9 CORRECTED: a dead page costs UP TO SEVEN recognitions, not ~3 (§10.4).
+#         ⬛ M-1 BUILT 2026-09-20 (ordered by the user): the broken OSD path is now
+#         UNREACHABLE — OCR_OSD_ENABLED = false in document-parser.js, the session starts
+#         already pinned to plain 'eng', and useOsd tests the switch FIRST so a page read
+#         before any modal reset cannot slip onto it. Suite-green + a 13-check
+#         falsification including a flag-flip mutation, then BROWSER-CHECKED — see the next
+#         entry and §12. Branch phase-24-ocr-osd-disable. M-2 / M-3 / M-4 unordered.
+#         ⬛ M-1 BROWSER-CHECKED 2026-09-20 (§12). It does what it claimed: ZERO LSTM
+#         errors, the pin never fires, pages 1-2 read on the same engine as the rest.
+#         ❌ But my "the page count may go up" caution is REFUTED — pages 1-2 still
+#         yield nothing, so the broken engine was never why they died. Reads are
+#         UNCHANGED at 3/10. ⚠ The devtools mechanism SURVIVES M-1 and is now narrowed
+#         to exactly ONE page (page 9), which answers half of M-3. ⚠ The determinism
+#         step is NOT proven: run 2 was a CACHE REPLAY, not a re-read. Two tests owed.
+#         ⬛ TEST A + TEST B RUN 2026-09-20 (§12.7-12.11). Reads are DETERMINISTIC:
+#         two genuine back-to-back reads are byte-identical, so §11.1's last three rows
+#         were a transcription slip, not drift. The "devtools" variable is CONFOUNDED
+#         with window._parserDebug, which is logging-only at all 14 sites and cannot
+#         change a read — the mechanism may not exist. ⚠ STRONGEST OCR-1 LEAD YET:
+#         page brightness tracks deadness (every page with mean >= 161 yields ZERO, 6 of
+#         6), and the washed-page gate that exists to rescue faint pages CANNOT FIRE
+#         because it keys on the MINIMUM gray, which one dark speck pins to 0.
+#         ⬛ T2 + T3 BUILT 2026-09-20 (§13), instrumentation only, no read-path change:
+#         the debug flag now survives a reload (localStorage), which dissolves the
+#         observation paradox; and the cleanup debug line now reports PERCENTILES and
+#         INK FRACTION beside lo/hi/mean, which is the statistic §12.9 needs. Suites
+#         green, 40 falsification checks incl. the gate-verdict preservation.
+#         ⬜ T1 (one closed-devtools run) is now owed WITH a full ledger — §13.4.
+#         ⬛ T1 RUN 2026-09-20 (§14) — THE DECISIVE MEASUREMENT. The fourth mechanism
+#         IS REAL: devtools CLOSED reads 4 pages, OPEN reads 3, and §12.8's guess that
+#         it might not exist is WRONG. It has a physical signature — the two renders
+#         produce DIFFERENT PIXELS, and the closed one has darker stroke cores on 10 of
+#         10 pages and reads MORE. Reads stay deterministic WITHIN a condition.
+#         ⚠ OCR-1: ink<128 separates 9 of 10 pages at ~7.7%; page 3 is the lone
+#         exception. §12.9 is SUPPORTED but is not the whole story.
+#         ⬛ P-1 BUILT 2026-09-20 (§15): every canvas on the OCR READ PATH now takes
+#         its 2D context from one helper with the backing DECLARED, instead of letting
+#         the browser choose — the browser's choice being §14.2's prime suspect. The
+#         three display / diagnostic / AI canvases are deliberately untouched. Suites
+#         green, 25 further falsification checks, and T3's probe re-passes through the
+#         new helper. ⬜ BROWSER CHECK OWED, and it is a REAL EXPERIMENT — §15.4 gives
+#         the decision table, including the outcome where the lever must be flipped.
+#         ❌ P-1 REFUTED 2026-09-20 (§16) — OUTCOME C, called in advance. Declaring
+#         the canvas backing changed NOTHING: every p1, every ink figure and every
+#         character count is identical to the pre-P-1 run, in BOTH conditions. The
+#         backing is not the variable and §14.2's mechanism guess is wrong. §15.4
+#         pre-committed to stopping here, and this stops here. ↩ P-1'S CODE IS
+#         REVERTED (user's call, §16.4 option (a)) — it never reaches history; §15 and
+#         §16 remain as the record of a refuted experiment.
+#         ✅ THE USEFUL CONSEQUENCE: the devtools-CLOSED render is what real users get,
+#         and it is the BETTER one (4 pages, not 3). The open-devtools numbers are a
+#         developer artefact. All OCR-1 work goes against the CLOSED column (§14.4).
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -1044,6 +1095,68 @@
     immediately: it removes two wasted page-reads per session, the error spam, and
     OCR-2's mechanism 1, and costs nothing that currently works.
 
+  2026-09-20 — M-1 BUILT: THE BROKEN OSD PATH IS NOW UNREACHABLE. APP CODE, one file.
+    ORDERED by the user ("lets go with m1") — the first item of §11.7. Branch
+    phase-24-ocr-osd-disable, cut off phase-23-abc-blinding-lift (Rule 12: a dependent
+    phase branches off its parent, not main).
+
+    WHAT CHANGED — public/js/admin/projects/document-parser.js, three sites, +23/-2:
+      :20-34    a build-level switch `const OCR_OSD_ENABLED = false`, with the reason
+                written beside it (the LSTM-core / legacy-osd.traineddata mismatch of
+                §11.3) so the next reader does not have to find this plan file to know
+                why a whole path is switched off.
+      :78-83    the per-session reset now sets window._ocrLangMode to 'eng' rather than
+                null while the switch is off. "Untried" is precisely what invited the
+                probe that cannot work.
+      :762-764  useOsd tests the switch FIRST. This is the site that closes the hole the
+                reset alone would leave: a page read before any modal reset has run sees
+                _ocrLangMode === undefined, and the old expression treated undefined as
+                "try OSD". §11.7 did not mention this; it would have been a silent gap.
+
+    WHY A SWITCH AND NOT A DELETION: §11.7's own wording — leave the machinery intact so
+    OSD can be re-enabled if the core/traineddata pairing is ever fixed. Flipping one
+    const restores today's behaviour exactly. Nothing was removed.
+
+    WHAT IT SHOULD DO — stated BEFORE the browser check, so the check can falsify it:
+      - no "LSTM requested, but not present!!" errors, at all;
+      - pages 1 and 2 of a fresh session read through the SAME engine as pages 3-10, so
+        they stop being sacrificed — they may now yield text they never had a chance to;
+      - "orientation read empty twice running" never fires, so OCR-2 mechanism 1 is gone
+        and a second run in the same session should match the first;
+      - two fewer recognitions per session.
+    WHAT IT DOES NOT DO: it does not touch OCR-1 (seven dead pages) and is not expected
+    to — that is M-4. It does not touch the reviewer's MANUAL "See & straighten" rotation
+    either; that is a different path (window._ocrRotations) and is unaffected.
+    ⚠ IT MAY MOVE THE PAGE COUNT. If pages 1-2 were dying because of the broken engine
+    rather than their own content, the read count goes UP — and §11.1's ledger stops
+    being the baseline. Re-measure; do not assume 3-vs-4 still means what it meant.
+
+    VERIFICATION DONE (none of it is a substitute for the browser)
+      node --check ....... clean.
+      JS suite ........... 231 tests / 231 pass / 0 fail — unchanged. The suite covers
+                           document-parser-core.js, NOT this file, so this says only
+                           "nothing else broke". It is not evidence that M-1 works.
+      Falsification ...... C:\temp\opencode\probe_m1_osd.mjs — 13 checks, all pass. It
+                           reads the REAL expressions out of the file rather than a
+                           retyped copy; proves OSD is unreachable from all four
+                           _ocrLangMode states (undefined / null / 'osd' / 'eng'); and
+                           MUTATES the switch back to true to prove the old behaviour
+                           returns in full, which is what demonstrates the machinery is
+                           intact rather than merely disabled.
+      Source audit ....... exactly ONE `eng+osd` call site exists (:781) and it sits
+                           inside `if (useOsd)`. Every other recognize() is plain 'eng'
+                           (:613, :614, :661, :690). The path closes completely.
+
+    ⬜ BROWSER CHECK OWED — three steps, and only these can prove it:
+      1. Re-upload pdfdocstest5.pdf with window._parserDebug = true, devtools OPEN.
+         Expect zero LSTM errors, no "orientation read empty twice" line, and a per-page
+         ledger to set beside §11.1.
+      2. Run it a SECOND time in the same modal session WITHOUT reloading. The counts
+         must match run 1 — that is the determinism claim, and run 1 alone cannot show it.
+      3. Repeat with devtools CLOSED (§11.5, M-3). If open and closed still disagree, the
+         fourth mechanism is independent of OSD and survives M-1.
+    Until 1-3 are done this is BUILT, not PROVEN.
+
 ===============================================================================
   9. OCR COST — WHY IT IS SLOW, HOW IT SCALES, AND WHAT CAN BE CUT
      Research, 2026-09-18, READ-ONLY. User: "the ocr parsing can take very long right?
@@ -1505,7 +1618,12 @@
 
   11.7 WHAT THIS CHANGES ABOUT THE ORDER (PROPOSED — nothing ordered, Rule 10)
 
-      M-1  TURN OFF THE OSD PATH ON THIS BUILD. It cannot work (11.3), it wastes the
+      M-1  ✅ ORDERED AND BUILT 2026-09-20 — see §8. What shipped is exactly the
+           "cheapest defensible form" below, with one addition the writing here missed:
+           defaulting the reset is NOT sufficient on its own, because useOsd also treats
+           an UNSET mode (undefined, before any reset has run) as "try OSD". The switch
+           is therefore tested first in useOsd as well.
+           TURN OFF THE OSD PATH ON THIS BUILD. It cannot work (11.3), it wastes the
            first two pages of every session, it spams errors, and it is the direct cause
            of OCR-2's mechanism 1. Cheapest defensible form: default window._ocrLangMode
            to 'eng' instead of null, leaving the existing machinery intact so OSD can be
@@ -1519,10 +1637,624 @@
            M-1 in place — it removes the whole class rather than today's instance.
       M-3  ESTABLISH WHICH PAGE THE DEVTOOLS-CLOSED RUN READS (11.5) before trusting any
            further measurement.
+           ⬛ HALF-ANSWERED 2026-09-20 (§12.4): the page is PAGE 9, and only page 9.
+           What remains is WHAT it yields there — §12.6 Test B, which also names the
+           way past the observation paradox (Chrome buffers a closed-devtools console).
       M-4  ONLY THEN look at why seven legible pages yield zero. The cleanup gate is
            exonerated (11.4); the next candidates are the actual pixels handed to
            tesseract ("Save page image ↓ p.7") and, if those look fine, faint-stroke
            handling — local/adaptive thresholding rather than the global stretch.
+===============================================================================
+  12. M-1'S BROWSER CHECK (user, 2026-09-20, _parserDebug on, pdfdocstest5.pdf)
+      The run section 8 asked for. M-1 is confirmed on its own terms, one of my own
+      cautions is refuted, and the devtools mechanism is narrowed to a single page.
+      Console output verbatim from the user.
+===============================================================================
+
+  12.1 CONFIRMED - WHAT M-1 DID
+
+      - ZERO "LSTM requested, but not present!!" errors in the entire log. Previously
+        two walls of red per session. The broken path is not merely avoided, it is
+        never entered.
+      - NO "orientation read empty twice running, using plain OCR for this session"
+        line. The pin never fires, so OCR-2 mechanism 1 is gone at the source.
+      - Pages 1 and 2 are read on the SAME engine as pages 3-10. They are no longer
+        spent on an engine that cannot work.
+      - Two fewer recognitions per session, as scoped.
+
+  12.2 REFUTED - THE CAUTION THAT DID NOT HAPPEN
+
+      Section 8 warned the read count might go UP, because pages 1-2 might have been
+      dying from the broken engine rather than from their own content. THEY STILL
+      YIELD ZERO:
+        page 1  lo=0 hi=255 mean=200 . scale-2 chars=0 . crop skipped full-bleed . 0
+        page 2  lo=2 hi=255 mean=171 . scale-2 chars=0 . crop skipped full-bleed . 0
+      So pages 1-2 are dead for whatever kills the other five (OCR-1), and the broken
+      OSD engine was never the reason. Section 11.1's ledger REMAINS the baseline.
+      NET EFFECT OF M-1 ON WHAT THE PARSER READS: none. 3 of 10, exactly as before.
+      That is what it was scoped to be - cost and noise removed, behaviour unchanged -
+      but it should be said plainly rather than dressed up as a win.
+
+  12.3 NOT PROVEN - THE DETERMINISM STEP. RUN 2 WAS A CACHE REPLAY
+
+      The user closed the PREVIEW modal, removed the PDF, re-uploaded it and previewed
+      again. It was "almost instant" and printed ONLY the per-page "yielded=" lines -
+      no cleanup line, no attempt line, no fallback line.
+      THAT IS THE PHOTO-READ CACHE, not a second read. ocrPage() returns the cached
+      text at :717-720, BEFORE any render or recognition, while the per-page log at
+      :940 still prints - so a replay is indistinguishable from a real read in the log
+      unless you notice the missing cleanup lines.
+      WHY THE CACHE SURVIVED: the key is name#size#page@rot (:904), identical for the
+      same file re-uploaded, and _ocrTextCache is cleared only by a CREATE-modal reset
+      (:60) or by the "Re-scan" button (:1695). Closing the preview modal clears
+      neither.
+      => Run 2 proves the cache is correct and consistent. It says NOTHING about
+         whether a genuine second read repeats. The determinism claim is still owed.
+
+  12.4 SURVIVED - THE DEVTOOLS MECHANISM, NOW NARROWED TO ONE PAGE
+
+      devtools OPEN   -> pages 4, 6, 10 read      (3 of 10)
+      devtools CLOSED -> pages 4, 6, 9, 10 read   (4 of 10)
+      This is M-3's question, and the user has ANSWERED HALF OF IT: the disputed page
+      is PAGE 9, and only page 9. The other nine pages agree in both conditions.
+      It was always expected to survive M-1 (it is independent of OSD), but it is now
+      a far smaller target than "the run wobbles".
+      WHAT PAGE 9 LOOKS LIKE IN THE OPEN RUN:
+        page 9  lo=1 hi=255 mean=161 . scale-2 chars=0 . crop degenerate kept=0.00 . 0
+      TWO CANDIDATE EXPLANATIONS, cheap to tell apart:
+        (a) THRESHOLD WOBBLE. Page 9 sits near the >=10-char bar and tesseract wobbles
+            run to run - the code's own comment at :909-911 already says photo-reading
+            does this. Then "devtools" is a coincidence over very few trials, and the
+            closed run's page 9 will show a SMALL yield.
+        (b) DIFFERENT PIXELS. Devtools open changes canvas rasterization, so the page
+            handed to tesseract genuinely differs. Then the closed run's page 9 will
+            show a LARGE clean yield, like the pages that work.
+      The discriminator is simply page 9's yielded= number in a closed run.
+
+  12.5 UNEXPLAINED - A DISCREPANCY WITH 11.1. DO NOT THEORISE ON IT YET
+
+      Pages 1-7's cleanup means match section 11.1 EXACTLY. Pages 8-10 do not:
+        page     11.1     2026-09-20
+        8        161      162
+        9        159      161
+        10       153      159
+      Either the render genuinely drifts on later pages (which would be a live lead for
+      BOTH the devtools mystery and OCR-1), or 11.1's last rows were mis-paired when the
+      ledger was transcribed - the log interleaves cleanup / attempt / yield lines and
+      the three columns are easy to slip by one. Note that today's p9/p10 means are
+      11.1's p8/p9 means, which is exactly what an off-by-one transcription looks like.
+      NOT RESOLVED, and deliberately not built on. Test A below settles it for free.
+
+  12.6 WHAT IS OWED (proposed - nothing ordered, Rule 10)
+
+      TEST A - DETERMINISM, AND THE 12.5 DISCREPANCY, IN ONE RUN.
+        devtools OPEN. Read once. Then press "Re-scan" in the gray scan note - NOT
+        re-upload. Re-scan is the deliberate fresh read: it drops the photo-read cache
+        at :1695, which re-upload does not.
+        Compare the two reads' per-page MEANS and YIELDS.
+          means stable + yields stable -> reads are deterministic, and 11.1's last rows
+                                          were a transcription slip.
+          means drift                  -> the render itself varies run to run, which is
+                                          a live lead for OCR-1 as well.
+      TEST B - WHAT PAGE 9 ACTUALLY YIELDS WITH DEVTOOLS CLOSED.
+        This is 11.5's observation paradox, and there is a way around it: Chrome BUFFERS
+        console messages logged while devtools is shut and shows them when it is opened
+        afterwards. So reload, leave devtools CLOSED, run the preview, and only THEN
+        open devtools and scroll back. ~40 lines, well inside the buffer.
+        Page 9's yielded= number decides between 12.4 (a) and (b).
+      NEITHER TEST CHANGES CODE. M-2 and M-4 remain unordered.
+
+  12.7 TEST A — DETERMINISM CONFIRMED, AND 12.5 RESOLVED
+
+      Two reads in one session, the second via "Re-scan" so the photo-read cache was
+      genuinely dropped (:1695). THE TWO LEDGERS ARE BYTE-IDENTICAL — every page's
+      cleanup line, every fallback line, every yielded= count:
+        p1 200/0 · p2 171/0 · p3 158/0 · p4 153/4312 · p5 218/0
+        p6 158/1627 · p7 191/0 · p8 162/0 · p9 161/0 · p10 159/3864
+      ⇒ A READ IS DETERMINISTIC. The render is deterministic too — the means repeat
+        exactly, so the pixels handed to tesseract do not vary run to run.
+      ⇒ 12.5 IS RESOLVED. Today's two runs agree with each other and both disagree with
+        §11.1 on pages 8-10 only. Since nothing drifts within a session, §11.1's last
+        three rows were a TRANSCRIPTION SLIP when that ledger was typed up — today's
+        p9/p10 means are §11.1's p8/p9 means, the off-by-one signature 12.5 predicted.
+        ⚠ §11.1's table should be trusted for pages 1-7 and treated as mis-paired for
+        8-10. The yields in it were never in doubt.
+      ⇒ OCR-2 is now fully accounted for: mechanism 1 was the OSD pin (M-1 removed it),
+        mechanism 2 (the cache key omitting the language mode) is unreachable while only
+        one engine exists, and there is no residual wobble inside a session.
+
+  12.8 TEST B — WHAT IT ACTUALLY SHOWED, AND WHY MY INSTRUCTION WAS WRONG
+
+      The closed-devtools run printed ONLY three lines: preview run 2, the vote-debug
+      tip, and the render line.
+      MY REASON WAS WRONG. I blamed Chrome's console buffer. The real reason is simpler:
+      window._parserDebug DOES NOT SURVIVE A RELOAD. Test B requires a reload, the flag
+      is set by hand in the console, and every per-page line is gated on it. The three
+      lines that did print are the run-level ones at :338/:341/:2262, which are UNGATED.
+      Nothing was buffered away; the lines were never emitted.
+
+      ⚠ WHAT THAT REFRAMES — THE "DEVTOOLS" VARIABLE IS CONFOUNDED.
+      In every open run the flag was ON; in every closed run it was OFF. So the
+      condition that has been called "devtools open/closed" is really "devtools open AND
+      debug logging on" versus "devtools closed AND debug logging off".
+      AND window._parserDebug IS LOGGING-ONLY. All 14 of its sites (:268, :482, :510,
+      :637, :663, :692, :739, :789, :939, :1225 and the comment sites) sit inside
+      console.log guards or a debug-report helper. It gates no branch, no threshold, no
+      rung. It CANNOT change what a page yields.
+      ⇒ Combined with 12.7 (reads are deterministic), the honest position is that THE
+        FOURTH MECHANISM MAY NOT EXIST. The "4 of 10" observation rests on runs whose
+        page ledger was never captured.
+      ⚠ THE MISSING DATUM: this Test B run's READ COUNT was not reported — only its
+        console. If it read 3, the mechanism dissolves. That single number is now the
+        cheapest thing in the whole restudy.
+      HOW TO GET THE CLOSED-CONDITION LEDGER WITHOUT THE CONSOLE: the PAGE STRIP already
+      shows per-page status in the UI ("page 7 of 10 — nothing at all — try turning it").
+      Paging through it records which pages read, with devtools shut and no code at all.
+
+  12.9 ⚠ THE STRONGEST LEAD YET FOR OCR-1: BRIGHTNESS TRACKS DEADNESS, AND THE GATE
+       THAT EXISTS TO FIX IT CANNOT FIRE
+
+      Sort the ten pages by the cleanup line's own mean:
+        mean  153  158  159 | 158  161  162  171  191  200  218
+        yield 4312 1627 3864|  0    0    0    0    0    0    0
+      EVERY page with mean >= 161 yields ZERO — six of six. Of the four pages at or
+      below 159, three read. The one exception is page 3 (mean 158, dead).
+      Brightness is not proof of faintness, but on this specimen it separates the two
+      groups almost perfectly, and it points straight at the ink.
+
+      NOW THE GATE (preprocessOcrCanvas, :465-492). It stretches contrast only when:
+        washed = (lo >= 100) && ((hi - lo) <= 140)
+      lo is the MINIMUM gray over the sampled pixels. Every page reports lo = 0-2, so
+      `lo >= 100` is false on all ten and THE STRETCH HAS NEVER RUN ON THIS FILE.
+      WHY lo IS ALWAYS ~0: one dark region anywhere pins it. Page 7's photo has a dark
+      binder edge down its left side, plainly visible in the preview. A page can be
+      almost entirely white with pale gray text and still report lo=0 hi=255.
+
+      ⚠ THIS CORRECTS §11.4, AND IT IS NOT THE SUSPECT I HAD BEFORE.
+      §11.4 refuted the claim "the stretch is APPLIED and damages pages" — that refutation
+      stands; the stretch is never applied. The new hypothesis is the opposite one: the
+      stretch NEVER RUNS WHEN IT SHOULD, because min/max is the wrong statistic for
+      "is this page's text faint". §11.4's conclusion that "the gate is correct to skip"
+      followed from full dynamic range, and full RANGE says nothing about STROKE contrast.
+      This is exactly what §10.6 S2-4 and §11.7 M-4 already proposed, now with evidence
+      behind it instead of code reading.
+
+      THE MEASUREMENT THAT WOULD SETTLE IT (proposed, pure instrumentation, no behaviour
+      change): extend the existing cleanup debug line with percentile statistics — the
+      5th-percentile gray and the INK FRACTION (share of sampled pixels below, say, 128).
+      One run then shows directly whether the dead pages are ink-poor and the reading
+      pages ink-rich. ONLY THEN is a gate change worth designing.
+      ⚠ THE DISCIPLINE THIS FILE ALREADY LEARNED (§8, 2026-09-18): measure the input
+      before theorising about the filter. The correlation above is a lead, not a cause.
+
+  12.10 THE ABC QUESTION (user, 2026-09-20) — AND U1 CONFIRMED ON A REAL REVIEWER
+
+      ASKED: the ABC blinding is lifted, so why is the ABC still not extracted from this
+      PDF? Is it because the photo is tilted?
+      ANSWER, PART 1 — THE BLINDING IS NOT INVOLVED. L3_TEST_BLIND_ABC is false
+      (document-parser-core.js:670) and the patterns, the corroborated reassignment and
+      the words-shape fallback are all live. The ABC sits on PAGE 7, page 7 yields ZERO
+      characters, and extraction is only ever handed text. Nothing to match against is
+      not the same as failing to match. This is OCR-1, start to finish.
+      ANSWER, PART 2 — IT IS ALMOST CERTAINLY NOT THE TILT. The page is off-square by a
+      couple of degrees; tesseract tolerates that. And the cure the UI offers cannot
+      address it anyway: "turn this page" rotates in 90° steps (:1498, :1356, :1377), so
+      it can fix a sideways page and can do nothing whatever about a 2° skew.
+      Page 7's own numbers point elsewhere: mean=191, one of the brightest in the file,
+      which is the 12.9 group.
+
+      ⚠ THIS IS FINDING U1 HAPPENING TO A REAL PERSON, AND IT SHOULD BE RECORDED AS SUCH.
+      U1 (stage 1) said the page badge names ONE cause and offers ONE cure regardless of
+      what actually went wrong. Here the badge said "nothing at all — try turning it" on
+      a page that is not meaningfully turned, and it led the system's own developer — who
+      knows the parser better than any PMU staff member will — to the wrong hypothesis.
+      If the UI can do that to him it will certainly do it to a reviewer during the pilot.
+      U1 is no longer a design opinion; it has a witness.
+
+  12.11 WHAT IS OWED NOW (proposed — nothing ordered, Rule 10)
+
+      T1  THE ONE MISSING NUMBER, zero code: re-run with devtools CLOSED and read the
+          RESULT — the count, and which pages the strip marks as read. If it is 3 of 10,
+          the fourth mechanism dissolves and §11.5/M-3 close.
+      T2  MAKE THE DEBUG FLAG SURVIVE A RELOAD (instrumentation only): read it from
+          localStorage at load as well as from window. Today the only way to turn logging
+          on is to open the console, which is the very condition under suspicion — the
+          observation paradox is an artefact of how the flag is set, not of devtools.
+          This dissolves it permanently and costs nothing.
+      T3  THE PERCENTILE / INK-FRACTION LINE (§12.9), instrumentation only. The highest-
+          value measurement available, because it aims at OCR-1 rather than at OCR-2's
+          leftovers.
+      T4  ONLY THEN consider the gate itself (S2-4 / M-4).
+      M-2 is now LOW value (12.7: no residual wobble, and one engine makes the cache-key
+      omission unreachable) — worth doing as hygiene, not as a fix.
+===============================================================================
+  13. T2 + T3 BUILT (2026-09-20) — INSTRUMENTATION ONLY
+      Ordered by the user ("then start") off section 12.11. Both are measurement
+      apparatus: neither may change what a page yields, and both were falsified
+      against that requirement rather than merely tested.
+      Branch: phase-24-ocr-osd-disable (kept with M-1 — same investigation, same read
+      path; they should land as TWO commits, M-1 first, not one mixed commit).
+===============================================================================
+
+  13.1 T2 — THE DEBUG FLAG SURVIVES A RELOAD
+
+      THE PROBLEM IT REMOVES (12.8): window._parserDebug could only be set by typing in
+      the console, so logging was ON exactly when devtools was OPEN. The condition under
+      investigation and the instrument for investigating it were the same switch.
+      WHAT SHIPPED — document-parser.js :36-71:
+        - PARSER_DEBUG_KEY = 'pmuParserDebug' and a load-time hydrator that sets
+          window._parserDebug from localStorage.
+        - window._parserDebugPersist(true|false) — writes the stored preference AND the
+          session flag in one console call, and returns a confirmation string.
+      THE DESIGN CHOICE WORTH RECORDING: the flag is hydrated ONTO window rather than
+      the ~14 guard sites being rewritten to call a helper. That is not laziness — the
+      PURE CORE also reads window._parserDebug (document-parser-core.js:138), so
+      hydrating the window flag covers BOTH halves of the parser, leaves every existing
+      guard and ocrDebugAffordances() untouched, and adds no new call surface.
+      ORDER OF PRECEDENCE: an explicit in-session `window._parserDebug = true` always
+      wins; the stored preference only fills an unset flag. Blocked/private-mode storage
+      is caught and ignored — debug logging is never load-bearing.
+
+      HOW TO USE IT (this is the recipe T1 needs):
+        1. console:  window._parserDebugPersist(true)
+        2. CLOSE devtools entirely. Reload the page.
+        3. Upload and preview as normal, devtools still shut.
+        4. Open devtools and scroll back — the full per-page ledger is there.
+        5. When finished:  window._parserDebugPersist(false)
+
+  13.2 T3 — THE CLEANUP LINE NOW DESCRIBES THE PAGE, NOT ITS EXTREMES
+
+      WHAT SHIPPED — preprocessOcrCanvas(), document-parser.js :503-564
+      (the histogram at :515, the diagnostics inside the debug branch):
+        - a 256-bin gray histogram filled in the EXISTING sampling pass (one array
+          increment per sample; the loop stays branch-free and unconditional);
+        - the debug line extended with p1 / p5 / p50 and ink<128 / ink<160, after the
+          existing "lo= hi= mean=" prefix, which is kept VERBATIM so every earlier
+          ledger in this file stays comparable.
+      WHY THESE NUMBERS: the washed gate keys on lo/hi, and one dark pixel — a binder
+      edge, a staple, a curl shadow — pins those to 0/255 on any page at all. A pale
+      scan therefore reports "full dynamic range" and is judged healthy. Percentiles and
+      ink fraction cannot be moved by a single speck.
+      THE VERDICT ITSELF IS UNTOUCHED. `washed = (lo >= 100) && ((hi - lo) <= 140)` is
+      byte-identical, the histogram is never read before it, and the percentile work
+      happens only inside the debug branch.
+
+  13.3 VERIFICATION
+
+      node --check .......... clean.
+      JS suite .............. 231 / 231 / 0, unchanged. As always it does not cover this
+                              file, so it only says nothing else broke.
+      C:\temp\opencode\probe_t3_stats.mjs — 26 checks, all pass. It EXTRACTS THE REAL
+        preprocessOcrCanvas() out of the file and runs it under Node against three
+        synthetic pages with hand-computed statistics:
+          "inky"   7 black rows on white  -> ink<128 = 10.94%, p5 = 0, gate skips.
+          "pale"   2 rows of gray(150) + an 8px black speck -> THE CASE 12.9 IS ABOUT:
+                   lo=0 hi=255 (reads as "full dynamic range") while ink<128 = 0.20%.
+                   This is the blind spot, demonstrated rather than argued.
+          "washed" text 120 on background 200 -> the gate STILL FIRES and the stretch
+                   STILL RUNS. That is the behaviour-preservation check.
+        Plus: the gate expression asserted verbatim, the histogram proven unread before
+        the verdict, and the log prefix proven unchanged.
+      C:\temp\opencode\probe_t2_debugflag.mjs — 14 checks, all pass. It runs the real
+        hydrator and setter against a fake window and localStorage, simulating a reload
+        by re-running the hydrator with a fresh window: stored preference survives a
+        reload, an unset store stays quiet, a hand-set session flag is never downgraded,
+        blocked storage neither throws nor enables anything, and the setter round-trips
+        on and off across reloads.
+
+  13.4 WHAT IS OWED — T1, NOW WITH A LEDGER
+
+      T1 was "get the one missing number". With T2 in place it can deliver far more than
+      a number: run the 13.1 recipe with devtools SHUT and the full per-page ledger will
+      be waiting, including the new ink statistics. That single run answers BOTH open
+      questions at once:
+        (a) DOES THE FOURTH MECHANISM EXIST? Compare the closed-devtools page list with
+            the open one (4, 6, 10). If it is the same three pages, 11.5 / M-3 close and
+            the mechanism was never real — which 12.7 and 12.8 both now predict.
+        (b) IS OCR-1 AN INK PROBLEM? Compare ink<128 on the three pages that read against
+            the seven that do not. A clear separation makes the gate (S2-4 / M-4) the
+            next target and tells us what a corrected gate should key on. No separation
+            kills the 12.9 hypothesis outright, which is just as valuable.
+      ⚠ STILL NOT ORDERED, and still no fix: 12.9 is a lead with a correlation behind it,
+      not a cause. This file has already recorded once (section 8, 2026-09-18) what comes
+      of theorising about the filter before measuring the input.
+===============================================================================
+  14. T1 — THE DECISIVE RUN (user, 2026-09-20, T2's persisted flag, pdfdocstest5.pdf)
+      The first time the closed-devtools condition has ever been measured with a
+      ledger. It settles the fourth mechanism, supports 12.9, and refutes 12.8.
+===============================================================================
+
+  14.1 THE FOURTH MECHANISM IS REAL — AND 12.8 WAS WRONG
+
+      devtools CLOSED -> pages 4, 6, 9, 10   (4 of 10)   4446 / 1621 / 3075 / 4108 chars
+      devtools OPEN   -> pages 4, 6, 10      (3 of 10)   4312 / 1627 /      / 3864 chars
+      12.8 argued the mechanism might not exist, because window._parserDebug is
+      logging-only and therefore cannot change a read. THE PREMISE WAS TRUE AND THE
+      CONCLUSION WAS WRONG. The flag is not the variable; the devtools WINDOW is. T2 is
+      what separated them — with the flag persisted, logging was ON in both conditions,
+      so the only remaining difference was devtools itself.
+      ⚠ AND IT IS NOT ONLY PAGE 9. The three pages that read in BOTH conditions yield
+      DIFFERENT CHARACTER COUNTS (4446 vs 4312, 1621 vs 1627, 4108 vs 3864). Every page
+      is being read differently. Page 9 is simply the one near enough the edge to flip
+      from "something" to "nothing".
+
+  14.2 THE PHYSICAL SIGNATURE — THE TWO RENDERS ARE NOT THE SAME PIXELS
+
+      lo / hi / mean agree almost exactly between the conditions (mean is identical on
+      9 of 10 pages). The new T3 statistics do not:
+        page    p1 closed / open     ink<128 closed / open
+        1         16 / 19              4.74% / 5.06%
+        2         61 / 68              7.67% / 7.83%
+        3         25 / 37             11.69% / 12.04%
+        4          5 / 24             12.93% / 13.77%
+        5         53 / 67              2.91% / 3.21%
+        6          9 / 20              9.14% / 9.60%
+        7         39 / 52              3.39% / 3.59%
+        8         33 / 47              5.80% / 5.93%
+        9         20 / 36              7.71% / 7.82%
+        10        23 / 47              9.56% / 10.31%
+      TWO PERFECT RUNS OF TEN. With devtools OPEN, p1 is HIGHER on every single page
+      (the darkest 1% is LIGHTER) while ink<128 is also HIGHER on every single page
+      (more pixels are dark-ish). Lighter extremes plus more dark-ish pixels is the
+      signature of a SOFTER RENDER: the same ink spread over more pixels, with no
+      pixel as dark at the core.
+      ⇒ The devtools-CLOSED render has CRISPER STROKES, and it reads better: one extra
+        page, and more characters on 2 of the 3 shared pages.
+      ⇒ THIS IS NOT ABOUT INK QUANTITY. Page 9 has MORE ink<128 in the open run (7.82%
+        vs 7.71%) and yields NOTHING there. What matters is stroke CONTRAST, for which
+        p1 is the better proxy.
+
+      WHERE IT CANNOT BE COMING FROM (checked, :801-818): the OCR render path is
+      window-independent. scale is the constant 3, the viewport comes only from the
+      PDF page's intrinsic size, the canvas is created off-document with
+      createElement, and nothing reads devicePixelRatio, innerWidth or any layout
+      measurement. The "OCR render capped" line does not appear in either log, so the
+      3000px cap never fired and the viewport was identical in both runs.
+      ⇒ The canvas DIMENSIONS are the same. What differs is how pdf.js rasterises INTO
+        it — i.e. the 2D context's backing (GPU-accelerated vs software), which Chrome
+        is known to switch when devtools is open. That is the one remaining candidate
+        and it fits the softness signature exactly.
+
+  14.3 12.7 AND 12.4 ARE NOW RECONCILED
+
+      Reads are DETERMINISTIC WITHIN A CONDITION and DIFFERENT BETWEEN CONDITIONS.
+      Today's open run reproduces the earlier open runs exactly (4312 / 1627 / 3864).
+      Nothing wobbles; two stable regimes were being compared without knowing it.
+      12.7's determinism finding stands. 12.4's mechanism stands. Only 12.8's
+      speculation falls.
+
+  14.4 OCR-1 — 12.9 IS SUPPORTED, WITH ONE CLEAR EXCEPTION
+
+      The closed run (the better one), sorted by ink<128:
+        page   mean   ink<128   ink<160   yield
+         5     218     2.91%    11.40%      0
+         7     191     3.39%     9.18%      0     <- the ABC page
+         1     200     4.74%    24.29%      0
+         8     162     5.80%    33.45%      0
+         2     171     7.67%    29.35%      0
+        ---------------------------------------- ~7.7% line
+         9     162     7.71%    31.55%   3075
+         6     158     9.14%    34.37%   1621
+        10     159     9.56%    35.01%   4108
+         3     158    11.69%    41.33%      0     <- THE EXCEPTION
+         4     153    12.93%    31.44%   4446
+      Every page below ~7.7% ink is dead, five for five. Above it, four of five read.
+      INK FRACTION SEPARATES 9 OF 10 PAGES — far better than mean brightness did, and
+      it is the statistic T3 was added to get.
+      ⚠ PAGE 3 BREAKS IT. It carries MORE ink than three of the four reading pages
+      (11.69%, and the highest ink<160 in the file at 41.33%) and still yields nothing.
+      So low ink explains most dead pages and cannot explain them all. Page 3 also logs
+      "crop degenerate kept=0.00", as pages 8 and 9 do — the auto-crop believes the
+      whole page is dark surround. A page that is ink-rich AND read as all-surround
+      sounds like a dark photograph or heavy shading rather than faint text.
+      ⚠ AND THE GATE NEVER FIRES ON ANY OF THEM. Every page still reports lo=0-2, so
+      `washed` is false ten times out of ten. The stretch has still never run.
+      THE ABC PAGE, for the record: page 7 is the SECOND most ink-poor page in the file
+      (3.39% ink<128, 9.18% ink<160). That is consistent with faint strokes and
+      inconsistent with the tilt hypothesis (12.10), which this now closes.
+
+  14.5 WHAT I WOULD DO NEXT (proposed — nothing ordered, Rule 10)
+
+      P-1  PIN THE CANVAS BACKING, AND SEE WHICH RENDER WE GET.
+           The context is created inline at :818 as canvas.getContext('2d') with no
+           attributes, and getImageData is then called on it repeatedly (the cleanup
+           pass, and the crop pass). Creating it ONCE as
+           getContext('2d', { willReadFrequently: true }) makes the backing explicit
+           instead of letting Chrome choose — and Chrome's choice is the prime suspect
+           in 14.2. Note the attribute must go on the FIRST getContext call, because a
+           second call on the same canvas returns the existing context and ignores its
+           attributes.
+           WHY IT IS WORTH DOING FIRST: if it pins the CRISP render, page 9 is gained
+           permanently, every page reads a little better, and the condition-dependence
+           disappears — three results from a two-line change.
+           ⚠ IT MAY PIN THE WRONG ONE. I do not know which backing devtools forces. If
+           both conditions then read 3 pages, we have determinism but have lost page 9,
+           and the lever should be flipped rather than kept. THE TEST IS THE SAME EITHER
+           WAY: run both conditions again and compare the p1 column against 14.2.
+           This is a hypothesis with a falsifiable outcome, not a fix.
+      P-2  LOOK AT PAGE 3 (no code). It is the one page that breaks 14.4, and the
+           preview's "Save page image" already exists. Ink-rich, all-surround and dead
+           is a different failure from faint-and-dead, and guessing at it is exactly
+           what section 8 warned against.
+      P-3  ONLY THEN THE GATE (S2-4 / M-4). It now has a measured threshold to key on
+           instead of lo/hi — but P-1 may move every number in 14.4, so designing a gate
+           before P-1 settles would be designing against the wrong render.
+      NOT WORTH DOING: M-2 (12.7 already showed there is no residual wobble).
+===============================================================================
+  15. P-1 BUILT (2026-09-20) — ONE DECLARED CANVAS BACKING ON THE READ PATH
+      ↩↩ REVERTED THE SAME DAY — READ §16 FIRST. Nothing below is in the code any
+      more. The experiment was run, refuted, and the machinery removed. The section is
+      kept because its design reasoning (above all: why the RENDER sites had to be
+      hinted, not only the pixel-reading ones) is what anyone re-attempting this needs,
+      and because a dead end that gets deleted gets re-proposed.
+      Ordered by the user ("then start") off section 14.5. This is an EXPERIMENT with
+      a falsifiable outcome, not a known fix, and section 15.4 says in advance what
+      each outcome means so the result cannot be read generously after the fact.
+===============================================================================
+
+  15.1 WHAT SHIPPED — document-parser.js
+
+      :74-95    the reasoning, and the switch:
+                const OCR_CANVAS_WILL_READ_FREQUENTLY = true;
+                Three-state on purpose — true declares frequent read-back (asking for a
+                CPU-friendly backing), false declares the opposite hint, and null omits
+                the attribute entirely, which is exactly today's browser-chooses
+                behaviour. 14.5 warned the lever might need flipping; this is the lever.
+      :108-117  ocrCanvasContext(canvas) — the one place a read-path context is made.
+                Falls back to an unhinted context if an engine rejects the attribute
+                object, because a working context matters more than the hint.
+      SEVEN CALL SITES ROUTED THROUGH IT, all on the read path:
+        :550  preprocessOcrCanvas   :631  autocropOcrCanvas
+        :677  the autocrop tmp canvas          :679  the autocrop write-back
+        :774  the scale-2 fallback render      :800  the crop fallback render
+        :863  the main ocrPage render
+      WHY THE RENDER SITES AND NOT ONLY THE PIXEL-READING ONES: context attributes apply
+      only on the FIRST getContext call for a canvas. A later call returns the existing
+      context and silently ignores its attributes — so hinting only in preprocessOcrCanvas
+      would have done nothing at all, since the render gets there first.
+      WHY ALL THE FALLBACK RUNGS TOO: a rung that rasterised differently from the main
+      pass would reintroduce exactly the variance this removes, one rung down.
+
+  15.2 WHAT WAS DELIBERATELY NOT TOUCHED
+
+      Three canvases still take a plain, unhinted context, and should:
+        _saveOcrPageImage()      the "Save page image" diagnostic — shown, never OCR'd
+        renderOcrPagePreview()   the See & straighten preview — shown, never OCR'd
+        buildAiSlices()          the image sent to the AI tier — sent, never OCR'd
+      Changing them would widen the blast radius past the question being asked, and
+      buildAiSlices in particular feeds a different consumer entirely.
+      ⚠ ONE CONSEQUENCE WORTH KNOWING FOR P-2: "Save page image" renders at scale 1.5
+      while the OCR path renders at scale 3, and now also with a different context
+      backing. The saved image was never pixel-identical to what tesseract is handed,
+      and is slightly less so now. It is a fair REPRESENTATION of the page, not evidence
+      about exact pixels.
+
+  15.3 VERIFICATION
+
+      node --check .......... clean.
+      JS suite .............. 231 / 231 / 0, unchanged.
+      C:\temp\opencode\probe_p1_backing.mjs — 25 checks, all pass. Runs the REAL
+        ocrCanvasContext against a canvas that records how its context was requested:
+        true declares willReadFrequently, false declares the opposite, null passes no
+        attributes at all, and an engine that throws on the attribute form gets a second,
+        unhinted call rather than an exception. Then it AUDITS THE CALL SITES — all seven
+        read-path sites routed, and all three display sites proven still unhinted, by
+        anchoring on each function's DEFINITION.
+      C:\temp\opencode\probe_t3_stats.mjs — re-run and still 26/26 after P-1, now pulling
+        the real helper into scope. That is the integration check: preprocessOcrCanvas
+        gets its context through the new helper and its statistics are unchanged.
+      ⚠ TWO PROBE BUGS WERE FOUND AND FIXED, both mine, neither in the app code: the
+      site audit first anchored on the first MENTION of each function (which matched the
+      helper's own comment naming them), and then used a 3000-character window too short
+      to reach renderOcrPagePreview's render call ~146 lines in. Recorded because a probe
+      that fails for its own reasons is exactly how a real failure gets waved through.
+
+  15.4 THE BROWSER CHECK — AND WHAT EACH OUTCOME MEANS (decide before running)
+
+      RUN: the 13.1 recipe, BOTH conditions — devtools open, and devtools closed.
+      READ: the p1 column, against section 14.2. p1 is the sharpness proxy; lower is
+      darker stroke cores.
+        OUTCOME A — p1 matches the CLOSED column in both conditions.
+          The crisp render is pinned. Expect 4 pages (4, 6, 9, 10) with devtools open
+          too. This is the win: page 9 gained permanently, every page a little better,
+          and the condition-dependence gone. KEEP true.
+        OUTCOME B — p1 matches the OPEN column in both conditions.
+          The soft render is pinned. Expect 3 pages in both. Determinism gained, page 9
+          lost. FLIP the switch to false and run again — that is what the third state is
+          for. If false is no better, set null and accept that the backing is not
+          controllable from here.
+        OUTCOME C — p1 still differs between conditions.
+          The backing is not the variable, and 14.2's conclusion is wrong. Then the
+          difference lies inside pdf.js's rasteriser or the compositor, neither of which
+          this codebase can address — and the honest move is to stop chasing it and
+          record that OCR results are browser-condition-dependent by nature.
+      ⚠ WHICHEVER OUTCOME: every number in 14.4's ink table was measured on the
+      unpinned render and may move. Re-read that table from the new run before any gate
+      work (P-3) is designed against it.
+===============================================================================
+  16. P-1'S RESULT — REFUTED, AND THE CHASE ENDS HERE (user, 2026-09-20)
+      Section 15.4 named three outcomes before the run. This is outcome C, and the
+      pre-commitment is honoured rather than reinterpreted.
+===============================================================================
+
+  16.1 P-1 IS A PERFECT NO-OP
+
+      With OCR_CANVAS_WILL_READ_FREQUENTLY = true, both conditions reproduce the
+      pre-P-1 ledgers EXACTLY — not approximately, identically, digit for digit:
+        devtools OPEN    p1 = 19 68 37 24 67 20 52 47 36 47   pages 4, 6, 10
+                         chars 4312 / 1627 / 3864
+        devtools CLOSED  p1 = 16 61 25  5 53  9 39 33 20 23   pages 4, 6, 9, 10
+                         chars 4446 / 1621 / 3075 / 4108
+      Every ink<128, every ink<160, every p5, every p50 and every mean also match
+      section 14.2 and 14.4 exactly.
+      ⇒ OUTCOME C. Declaring the context backing does not touch how pdf.js rasterises
+        into the canvas. 14.2's conclusion — "the variable is the 2D context's backing"
+        — IS WRONG.
+      TWO READINGS, ONE CONSEQUENCE: either Chrome ignored the hint for this canvas, or
+      it honoured it and the hint does not govern rasterisation. Nothing observable from
+      here separates them, and both mean the same thing — THIS IS NOT CONTROLLABLE FROM
+      THIS CODEBASE.
+
+  16.2 WHAT SURVIVES THE REFUTATION
+
+      The pixels really do differ. That part is not in doubt and does not depend on the
+      mechanism: p1 and ink<128 are computed by OUR code from the canvas BEFORE tesseract
+      is ever called, so a difference in those numbers is a difference in the pixels
+      handed to it. What is refuted is only my guess at WHY.
+      DETERMINISM IS NOW OVERWHELMING: three open runs and two closed runs, across a
+      code change, all byte-identical within their condition. Section 14.3 stands.
+
+  16.3 ✅ THE CONSEQUENCE THAT ACTUALLY MATTERS — AND IT IS GOOD NEWS
+
+      PMU STAFF WILL NEVER HAVE DEVTOOLS OPEN. The closed-devtools render is therefore
+      the PRODUCTION render, and it is the BETTER of the two: 4 pages instead of 3, and
+      more characters on the pages both conditions read.
+      ⇒ The parser in real use reads 4 of 10 on this file, not 3. Every earlier "3 of 10"
+        figure in this plan — including OCR-1's original framing, "SEVEN OF TEN PAGES
+        yield nothing" — was measured through a developer's open devtools and is
+        PESSIMISTIC BY ONE PAGE. The real figure is six of ten.
+      ⇒ The open-devtools column is a DEVELOPER ARTEFACT. It should not be used to judge
+        anything again. Section 14.4's ink table was already built from the closed run
+        and remains the right baseline.
+      ⇒ MEASURE WITH DEVTOOLS CLOSED FROM NOW ON. T2 exists exactly so that costs
+        nothing: persist the flag, shut devtools, run, then open it and read back.
+
+  16.4 THE DISPOSITION OF P-1's CODE — DECIDED: REVERTED (user, 2026-09-20)
+
+      THE USER CHOSE (a). P-1 is out of the tree and never enters history: the switch,
+      the ocrCanvasContext() helper and all seven re-routed call sites are back exactly
+      as they were. Verified after the revert by re-running EVERY probe (M-1 13/13,
+      T2 14/14, T3 26/26) and the JS suite (231/231/0).
+      C:\temp\opencode\probe_p1_backing.mjs is now OBSOLETE — it asserts against code
+      that no longer exists. probe_t3_stats.mjs was put back to extracting
+      preprocessOcrCanvas alone, since no helper needs to be in scope for it now.
+      The options as they were put, kept for the record:
+
+      The code is harmless and does nothing measurable. Three honest options:
+        (a) ✅ CHOSEN — REVERT IT. The hypothesis is dead and it bought nothing measurable. The
+            tree stays clean and the branch carries only work that earned its place.
+            RECOMMENDED — there is no evidence of benefit, and this file's own norm is
+            not to carry machinery on a "just in case".
+        (b) KEEP THE HELPER, DROP THE THREE-STATE SWITCH. willReadFrequently is the
+            documented-correct declaration for a canvas read back with getImageData
+            repeatedly, independent of the refuted hypothesis, and the helper does
+            centralise seven call sites. ⚠ But TIMING WAS NEVER MEASURED, so the
+            performance argument is from the documentation, not from this project.
+        (c) Leave it as built. NOT RECOMMENDED: the comment at :74-95 currently frames
+            it as a live experiment, which is now false.
+      ⚠ WHICHEVER IS CHOSEN, (c)'s comment must not survive unchanged — leaving a
+      refuted hypothesis described as an open question is a defect in its own right.
+
+  16.5 WHERE THE INVESTIGATION STANDS
+
+      CLOSED: OCR-2 (both mechanisms) · M-3 / the fourth mechanism — real, reproducible,
+        and not addressable from here; it is a developer-condition artefact that does not
+        affect users, who get the better render.
+      OPEN, and now the only thing worth pursuing: OCR-1. Against the CLOSED column,
+      six of ten pages yield nothing, ink<128 separates nine of those ten at ~7.7%, and
+      page 3 is the one page that breaks the correlation.
+      NEXT, unchanged by this result: P-2 (look at page 3's image — no code) and then
+      P-3 (the gate, which has still never fired on any page of this file).
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
