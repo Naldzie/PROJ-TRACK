@@ -1,4 +1,117 @@
 # NORMAL-DOC PARSER RESTUDY (SCANNED DOCUMENTS, UI FIRST)
+
+===============================================================================
+  §0. HANDOFF — READ THIS FIRST (written 2026-09-20 at the user's request)
+     A fresh session should be able to continue from this block alone.
+===============================================================================
+
+  WHERE THE WORK IS
+    Branch `phase-27-ai-assist-targeting`. 45 commits ahead of `develop`, 399 ahead
+    of `main`. NOTHING IS MERGED (Rule 12 — no merge without an explicit order).
+    Working tree clean. The recent commits are all `docs:` — THE LAST STRETCH OF
+    FINDINGS IS LOGGED BUT NOT ONE OF THE PROPOSALS IS BUILT.
+    Suites last measured GREEN: PHP 1232 passed / 0 failed · JS 267 / 267 / 0.
+    ABC blinding is OFF (`L3_TEST_BLIND_ABC = false`); the JS suite reads the switch
+    and is green either way.
+
+  THE THREE OPEN PROPOSALS — ALL DESIGNED, NONE BUILT, ALL AWAITING AN ORDER
+    P-4  §45.3  Read a file WHOLE when it is within ~3 pages of the page budget.
+                 Stopping 2 pages short of a 12-page document costs the full 10-page
+                 scan and still leaves the reviewer without the document.
+    P-5  §46.5  A page past the budget is labelled "nothing at all — try turning
+                 it". It was never attempted, and TURNING IT CAN NEVER WORK (the
+                 budget gate fires before any work, and cached pages spend budget
+                 slots on purpose). Record the third state; name Re-scan as the cure.
+                 Carries §47.4: `ocrListedPagesOf` .slice(0, 12) hides pages 13+.
+    P-6  §47.3  The scan indicator is zeroed by the preview's `hidden.bs.modal`
+                 handler ~150ms AFTER Re-scan has already started the next run, so it
+                 can never repaint — it reads as "Re-scan is not working". Plus the
+                 watchdog culls at 6s while the worker speaks only once per page.
+    → SUGGESTED ORDER: P-6(a) first (the one a reviewer actually feels), then P-4,
+      then P-5 + §47.4 together. All three are small. All touch the DOM half, so the
+      standing rule applies: BROWSER-PROVEN BEATS SUITE-GREEN — the JS suite covers
+      `document-parser-core.js` only and says nothing about any of them.
+
+  WHAT IS PROVEN AND MUST NOT BE RE-LITIGATED
+    · OCR-1 is FIXED (P-3, §§17-22). The contrast stretch took pdfdocstest5 from
+      4/10 to 10/10 readable pages. Every page now yields text.
+    · OCR-2 is FIXED (M-1, §12). The OSD path is structurally broken on this CDN
+      build and is now unreachable.
+    · P-1 (canvas backing) was MEASURED AND REFUTED (§§15-16) and reverted. Do not
+      re-propose it.
+    · The devtools-open/closed render difference is REAL, unfixable from this
+      codebase, and the CLOSED render is what users get — measure with it closed.
+    · §37.2 (the contract price offering the ABC) was a SYMPTOM OF OCR DAMAGE, not a
+      structural defect — §44.2 shows a clean read offers original vs revised
+      correctly. §38's exclusion stays as a guard, not a cure.
+
+  THE CORPUS — WHAT HAS ACTUALLY BEEN MEASURED (only four documents, ever)
+    ✓ pdfdocstest5.pdf (scan)             §§17-22, 37  — 10/10 pages after P-3
+    ✓ pdfdocstest5_selectable_text.pdf    §44           — all fields correct
+    ✓ CHS - Savings.pdf + Contract        §45           — ALL FIELDS CORRECT
+                                                         (10/12 pages = the BUDGET)
+    ✓ Three-Storey Acad Bldg, Buhi        §47.0         — 18/18 pages at depth 25
+                                                         (fields not yet reported)
+    ⬜ STILL UNMEASURED: Quantity Sheet - CHS Savings.pdf, Quantity Sheet
+      (Continuation).pdf, contract_test_sample.pdf, contract_test_sample_2.pdf,
+      pdfdocstest3.pdf, pdfdocstest4.pdf. The user was mid-way through testing these
+      when this handoff was written — ASK FOR THE LEDGERS AND READ TEXT, do not
+      assume the results.
+
+  HOW TO MEASURE WITHOUT A BROWSER (this worked — reuse it)
+    The user pastes the read text; feed it to the PURE core and report per field.
+      import core from 'file:///C:/Users/.../document-parser-core.js'
+      ⚠ A bare Windows path FAILS with ERR_UNSUPPORTED_ESM_URL_SCHEME — it must be
+        a file:// URL with %20 for the spaces in the project path.
+      core.parseProjectInfo({ text, fileName }, {})    → all single-parse fields
+      core.parseProjectInfoPooled([{fileName,text}...], {})
+                          → budget/abc/duration/dates + _disagree + _fileCounts
+    ⚠ The extract* functions take LINES, not text. `parseProjectInfo` is the entry
+      point; calling extractTitle(text) throws "(lines || []).map is not a function".
+    Probes live in the session scratchpad or C:\temp\opencode, NEVER in the repo.
+
+  OPEN QUESTIONS THE USER OWNS (do not decide these alone)
+    · §44.4  Should DESCRIPTION carry the full Scope of Work list, or stop at the
+             description sentence? USER DECIDED 2026-09-20: LEAVE AS IS for now, but
+             noted in case it comes back. One-line change if they change their mind
+             (add "scope of work" to DESCRIPTION_NEXT_FIELD).
+    · §45.4  The AI slice cap. The real ceiling is a SERVER HARD CAP OF 3
+             (DocumentParserController:129); the client sends 2, so one slot is
+             already unused, and the count of 2 is justified nowhere in the record.
+             The user wants a reviewer-chosen count, per-file allocation and file
+             EXCLUSION. ⚠ It would REPLACE a ranking that no longer functions
+             (AGENTS.md queue item 8), not decorate one that does.
+             The user will ASK THE CLIENT about the page-7 privacy question on PILOT
+             DAY (§46.6 — that page carries government ID and notary licence numbers).
+             DO NOT PRE-EMPT THAT ANSWER.
+    · Branch hygiene: five phase branches stacked, none merged. Needs Rule 12
+      confirmation before any merge.
+
+  STANDING CONSTRAINTS (violating these has cost this project time before)
+    · Rule 10: report at each phase boundary; nothing proceeds without an order.
+    · Rule 12: one feature branch per phase, `phase-<n>-<desc>`; no merge to main
+      without explicit confirmation.
+    · Log behavioural changes + browser results in `textfiles/` BEFORE committing.
+    · "commit" alone means NO PUSH unless "push" is said.
+    · Commit messages via `git commit -F` (PowerShell 5.1 mangles here-strings).
+    · `sampledocs/` is git-ignored — reference by name, NEVER commit.
+    · Run the JS suite TO A LOG FILE and grep the file; piping `node --test` into
+      `grep|head` has stalled a session.
+    · Never `git stash` for a clean tree while uncommitted work exists.
+
+  MISTAKES MADE IN THESE SESSIONS — DO NOT REPEAT
+    · An Eloquent query hid soft-deleted rows and produced a WRONG conclusion about
+      what the learning loop had stored. Use withTrashed() when asking that question.
+    · A conclusion was built on "there is no corpus to test against" when
+      `ls sampledocs/` would have refuted it in one command. CHECK THE DISK BEFORE
+      CONCLUDING SOMETHING IS UNPROVABLE.
+    · Browser-test instructions told the user to type an INVENTED value, which is
+      exactly the case that teaches nothing BY DESIGN (§41). A correction only
+      anchors when its value EXISTS in the document text.
+    · A fix was wired into the labelled branch of extractContractor when the real
+      document uses the value-side heuristic (B-5 → B-5b). Check WHICH branch a real
+      document actually takes before declaring a fix done.
+
 # Parent refs: textfiles/pilot_testing_readiness_plan.md (§2 Fact 2, §5 N1-N5 — why this
 #                is the pilot's first polish target; N1/N1a shipped on phase-23)
 #              textfiles/document_parser_learning_loop_plan.md (L1-L3 + §6 the OCR batch)
@@ -4720,6 +4833,11 @@
       50 pages, a fixed 12 is arbitrary. ocrRotatablePagesOf (:1305) is deliberately
       UNCAPPED, so the two already disagree by design, and the gap is now reachable.
       Small, and it belongs with P-5 (§46.5) since both are page-strip truth problems.
+      ⭐ BROWSER-CONFIRMED the same day, second screenshot: the header reads
+      "Three-Storey Acad Bldg, Buhi Campus.pdf page 11 of 18" while the Pages strip
+      below it ends "... 10 11 12 ✦". Eighteen pages read, twelve reachable. The
+      prev / next arrows walk that same strip, so pages 13-18 cannot be viewed,
+      turned or saved by ANY route in the UI.
 
 ===============================================================================
   END OF RESTUDY
