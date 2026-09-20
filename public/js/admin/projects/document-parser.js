@@ -2943,6 +2943,8 @@ function harvestCorrections(applied) {
             ? (window._autofillHarvestSent = window._autofillHarvestSent || {})
             : {};
         const proposals = [];
+        const changed = [];
+        const unanchored = [];
         for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
             const field = AUTOFILL_CORE_FIELDS[inputId];
             const before = String((orig[field] ?? ''));
@@ -2955,7 +2957,17 @@ function harvestCorrections(applied) {
             // would promote a phrase nobody saw three times.
             if (alreadySent[field] === after) continue;
             alreadySent[field] = after;
-            for (const mined of mineAll(docText, after)) {
+            changed.push(field);
+            const minedRows = mineAll(docText, after);
+            // ⚠ A VALUE THE DOCUMENT DOES NOT CONTAIN TEACHES NOTHING, and that is by
+            // design, not a failure: the miner anchors a label by locating the corrected
+            // VALUE in the text (restudy §25.2). Typing an invented value produces no
+            // hits, so no proposal at all. This is the single most confusing thing about
+            // the loop from the outside — the reviewer corrects a box, nothing appears on
+            // the desk, and there is no way to tell a broken harvest from a value that
+            // was never in the document. Now there is.
+            if (!minedRows.length) unanchored.push(field);
+            for (const mined of minedRows) {
                 proposals.push({
                     field,
                     label: mined ? mined.label : null,
@@ -2967,6 +2979,18 @@ function harvestCorrections(applied) {
                 if (proposals.length >= 33) break;
             }
             if (proposals.length >= 33) break;
+        }
+        // The loop was entirely silent about its own work: a reviewer could not tell a
+        // harvest that never ran from one that ran and found nothing to anchor. Both look
+        // like "the desk is empty".
+        if (typeof window !== 'undefined' && window._parserDebug) {
+            try {
+                console.log('[Parser] harvest: ' + changed.length + ' changed box(es) ['
+                    + changed.join(', ') + '] -> ' + proposals.length + ' proposal(s)'
+                    + (unanchored.length
+                        ? ' | NOT ANCHORED (the typed value does not appear in the document text): ' + unanchored.join(', ')
+                        : ''));
+            } catch (e) {}
         }
         if (!proposals.length) return;
         const token = (window._projectModalConfig && window._projectModalConfig.csrfToken) ||

@@ -3079,7 +3079,11 @@
       there is nothing to anchor to. THIS IS THE DOMINANT FINDING, and F6 ("the pilot
       starts with REAL PMU projects") makes it the common case rather than the exception.
 
-  26.2 ⚠ L-2. AN UNANCHORED CORRECTION STILL WRITES A ROW — AND THAT ROW GOES LIVE
+  26.2 ⚠⚠ PARTLY WRONG — SEE §41.1. A correction whose value appears NOWHERE in the
+       document posts NO proposal at all; the null-label row comes from the narrower
+       case where the value IS found but no label passes the gate.
+
+  26.2 L-2 AS I WRONGLY STATED IT — AN UNANCHORED CORRECTION STILL WRITES A ROW
 
       When the miner finds nothing, harvestCorrections STILL posts a proposal with
       label: null (the loop is written to record that a correction happened at all).
@@ -4190,6 +4194,76 @@
       ⚠ THE LESSON IS MINE: I wrote a planning conclusion from a premise I could have
       checked with `ls`. The user corrected it in one sentence. Before the next
       "this cannot be measured", list the directory.
+===============================================================================
+  41. THE TESTS DID NOT FAIL — MY TEST INSTRUCTIONS WERE WRONG (2026-09-20)
+===============================================================================
+
+  41.1 ⚠ §26.2 WAS WRONG, AND IT MISLED THE TEST I ASKED FOR
+
+      §26.2 said: "when the miner finds nothing, harvestCorrections STILL posts a
+      proposal with label: null". IT DOES NOT. mineCorrectionLabels returns [] when the
+      corrected value appears NOWHERE in the document text, and harvestCorrections loops
+      over that result — an empty list pushes no proposal at all.
+      MEASURED:
+        a value that IS in the document    -> [{label: "4. Revised Contract Amount Php"}]
+        a value that is NOT                -> []
+      The null-label row comes from a DIFFERENT case: the value IS found, but no
+      candidate label passes the F-GATE, so the miner falls back to
+      [{label: null, excerpt}]. That is rarer than §26.2 implied, and it means L-2
+      guards a narrower case than I described — still real, but not "the normal path on
+      scans".
+
+  41.2 SO BOTH BROWSER TESTS I WROTE WERE UNTESTABLE AS WRITTEN
+
+      I told the user to type an INVENTED location ("Zzz Nowhere Street") to trigger
+      L-2, and to change a form field to trigger L-4. An invented value is exactly the
+      case that produces NOTHING — by design, since the anchor needs the value to appear
+      in the text (§25.2). The user ran both, saw nothing learned, and reported it as a
+      failure. THE CODE BEHAVED CORRECTLY; THE INSTRUCTIONS WERE WRONG.
+      THE CORRECTED TESTS:
+        L-4  change a form field to a value that EXISTS in the document — e.g. set the
+             contract price to 4,323,196.77, the revised amount, which is in the text.
+        L-2  cannot be triggered by typing an invented value at all. It needs a value
+             present in the document whose surrounding line yields no gated label.
+             Easier to observe on the desk than to provoke deliberately.
+
+  41.3 THE LOOP WAS SILENT ABOUT ITS OWN WORK — FIXED
+
+      This is the deeper problem the confusion exposed: from the outside, a harvest that
+      never ran and a harvest that ran and found nothing to anchor look IDENTICAL — the
+      desk is simply empty. There was no way to tell a broken listener from a value that
+      was never in the document, which is why neither the user nor I could say what had
+      happened.
+      harvestCorrections now reports, under window._parserDebug:
+        [Parser] harvest: 2 changed box(es) [budget, location] -> 1 proposal(s)
+                 | NOT ANCHORED (the typed value does not appear in the document text): location
+      That single line answers all three questions at once: did it run, what did it see,
+      and why did a box teach nothing.
+      ⇒ AND IT IS WHAT THE NEXT TEST SHOULD USE. With _parserDebug on, the L-4 check is
+        no longer "did a row appear on the desk" but "did the harvest line name the
+        field I changed in the form".
+
+  41.4 ⬜ STILL UNRESOLVED — AUTOFILL AND THE DUPLICATE-TITLE GUARD
+
+      The user found that autofilling the form bypasses the duplicate project-name check
+      on Next. MY FIRST HYPOTHESIS WAS WRONG: setting .value programmatically does not
+      fire input events, so I expected the validator never to run — but the wiring is
+      already there. autofillFormFields calls titleValidator.validate() when a title was
+      filled (document-parser.js:3125), and form-navigation.js flushes it and waits for
+      the pending check before allowing Next (:180, :189).
+      So the mechanism exists and something else defeats it. Candidates, none confirmed:
+        · titleValidator is `let`-declared in _create_project_modal.js and ASSIGNED later
+          inside the modal init — before that assignment `typeof titleValidator` is
+          'undefined' and the call at :3125 is silently skipped;
+        · the 500ms debounce plus the async check racing the Next click, if the flush
+          path is not reached on every route through validatePage;
+        · the guard reads a CLASS (`is-invalid`) rather than the validator's own state,
+          so anything that clears the class re-opens the gate.
+      ⬜ ONE OBSERVATION WOULD SEPARATE THESE: type a known-duplicate title BY HAND and
+      confirm the red message appears; then autofill the same title and watch whether
+      the message appears at all. If it never appears after autofill, the validator did
+      not run (candidate 1 or 2). If it appears but Next still passes, the guard is
+      reading stale state (candidate 3).
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
