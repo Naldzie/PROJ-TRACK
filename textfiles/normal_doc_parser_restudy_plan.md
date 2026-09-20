@@ -4637,5 +4637,90 @@
       (§45.4).
 
 ===============================================================================
+  47. ⚠ THE SCAN INDICATOR DIES ON RE-SCAN — AND A FIX FOR ONE BUG CAUSED IT
+      (user, 2026-09-20: "appear at first, after some second disappear but did not
+      reappear ... up until the scan is complete")
+===============================================================================
+
+  47.0 FIRST, THE GOOD RESULT IN THE SAME SCREENSHOT
+
+      Three-Storey Acad Bldg, Buhi Campus.pdf at 25 pages per file:
+      "visited all 18 pages; 18 OF 18 SCANNED PAGES YIELDED TEXT — scan complete."
+      Eighteen for eighteen on an 18-page scan. The deepest clean read yet measured.
+
+  47.1 ⭐ THE REPORTED BUG, TRACED TO ONE LINE
+
+      showAutofillPreview() binds, once per modal (:2608):
+        modalEl.addEventListener('hidden.bs.modal', function () {
+            _autofillScansInFlight = 0;
+            removeAutofillScanStatus();
+        });
+      _rescanWithSelection() (:1880) then does, SYNCHRONOUSLY:
+        _ocrTextCache = new Map();
+        closeAutofillPreview();   → instance.hide() — A CSS FADE, ~150-300ms
+        runDocumentAutofill();    → _autofillScansInFlight++ (=1), paints the indicator
+      The new run starts and paints BEFORE the fade finishes. Then hidden.bs.modal
+      fires and sets the counter to 0 and removes the element — on a run that is
+      barely a tenth of a second old.
+      From then on every per-page call is swallowed by the gate at the top of
+      showAutofillScanStatus (:3371):
+        if (_autofillScansInFlight <= 0) return;
+      ⇒ THE INDICATOR CAN NEVER COME BACK for the rest of that scan. The scan itself
+        is unharmed — nothing else reads that counter — so it runs to completion and
+        the preview reopens, which is exactly the "it looks like Re-scan is not
+        working" the user first set out to report.
+      ⚠ _ocrPreviewReread() (:1870, the Re-read button) has the IDENTICAL shape and
+        therefore the identical bug.
+
+      THE HANDLER IS NOT WRONG IN ITSELF. Its comment records why it exists:
+      "Reported 2026-09-18: the spinner was still there after the modal was closed."
+      It is right for a reviewer closing the preview and walking away. It is wrong
+      when WE closed the preview in order to start another run. A fix for one bug
+      built the next one, which is worth writing down as such.
+
+  47.2 ⭐ AND THE FLICKER THE USER MENTIONED IN PASSING IS A SECOND, REAL DEFECT
+
+      "the loading indicator ... sometimes disappear then reappear as it scan the
+      next page" — that is the WATCHDOG, and the numbers do not fit:
+        · AUTOFILL_SPINNER_STALE_MS = 6000 (:3411); the watchdog culls the element
+          when nothing has refreshed it for six seconds.
+        · The indicator is refreshed ONCE PER PAGE, at :915 — after page.render() and
+          BEFORE preprocessOcrCanvas and the whole PSM ladder.
+        · A hard page can cost up to ~6 recognitions plus the scale-2 and crop
+          fallbacks, well over six seconds.
+      ⇒ So on a slow page the watchdog kills the indicator mid-page and the NEXT
+        page's call rebuilds it. The flicker is the watchdog reporting a hang that is
+        not happening. Its own comment says "silence that long means the work is over
+        however it ended" — that premise is false for a single slow page.
+      (Related: a cache hit returns at :879, before the :915 refresh, so a cached page
+      never ticks the watchdog either.)
+
+  47.3 ⬜ PROPOSED (P-6, not built)
+
+      (a) THE RE-SCAN KILL. Stamp the run id when the preview is hidden deliberately,
+          and have the hidden.bs.modal handler do nothing if a NEWER run has begun.
+          runDocumentAutofill already does `const myRunId = ++_autofillRunId` (:163),
+          so the comparison is exact and needs no new state beyond the stamp. Covers
+          Re-scan and Re-read with one change, and keeps the 2026-09-18 fix intact for
+          the case it was written for.
+      (b) THE FLICKER. Tick the watchdog from inside the OCR ladder, not once per page
+          — each rung already knows it is working. Failing that, raise
+          AUTOFILL_SPINNER_STALE_MS above the worst-case page, but (b1) is the honest
+          fix: the watchdog should watch for SILENCE FROM THE WORKER, and the worker
+          currently only speaks once a page.
+      Both are small. (a) is the user-visible one and should not ship without a browser
+      run, per the standing DOM rule.
+
+  47.4 ⬜ AND ONE MORE THING THE SAME SCREENSHOT SHOWS — THE 12-BUTTON CAP IS STALE
+
+      The Buhi file read 18 pages, but the snapshot row offers p.1 ... p.12 only.
+      ocrListedPagesOf (:1294) ends `.slice(0, 12)`. Pages 13-18 were read and have NO
+      save-image button and no per-page rotate — the surfaces silently stop at 12.
+      That cap predates the read-depth selector; once a reviewer can ask for 25, 40 or
+      50 pages, a fixed 12 is arbitrary. ocrRotatablePagesOf (:1305) is deliberately
+      UNCAPPED, so the two already disagree by design, and the gap is now reachable.
+      Small, and it belongs with P-5 (§46.5) since both are page-strip truth problems.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
