@@ -14,6 +14,19 @@
     ABC blinding is OFF (`L3_TEST_BLIND_ABC = false`); the JS suite reads the switch
     and is green either way.
 
+  ⬛ UPDATE 2026-09-20 — ALL THREE ARE NOW BUILT, ON BRANCH
+     `phase-28-scan-indicator-budget-truth` (off phase-27). Read §48 (the
+     pre-build restudy, which CORRECTED §47.4 and found two more defects of the
+     same family) and §49 (the build + what was measured). Suites: JS 267/267/0,
+     PHP 1232/0. Offline probes: 62 checks, 10 mutations, all caught.
+     ⭐ BROWSER-CHECKED 2026-09-20 (§49.9): the SCAN INDICATOR works, the
+     beyond-budget badge reads correctly on page 11 of the real 18-page Buhi
+     scan, and the page strip now runs 1..18. §48.2 is confirmed by the same
+     screenshot (page 11 was being VIEWED, so 13+ were never unreachable).
+     ⬜ STILL OPEN: step 4 (a 12-page file reading whole at depth 10 — CHS) and
+     one click to settle P-5(d)'s disabled turn button. Both in §49.9.
+     The proposals as they stood before that work:
+
   THE THREE OPEN PROPOSALS — ALL DESIGNED, NONE BUILT, ALL AWAITING AN ORDER
     P-4  §45.3  Read a file WHOLE when it is within ~3 pages of the page budget.
                  Stopping 2 pages short of a 12-page document costs the full 10-page
@@ -4838,6 +4851,420 @@
       below it ends "... 10 11 12 ✦". Eighteen pages read, twelve reachable. The
       prev / next arrows walk that same strip, so pages 13-18 cannot be viewed,
       turned or saved by ANY route in the UI.
+
+===============================================================================
+  48. THE PRE-BUILD RESTUDY OF P-4 / P-5 / P-6 (2026-09-20, ordered: "first do a
+      restudy of the codebase related to the planned implementations")
+      READ-ONLY. No app code written. Every line below was traced in source or
+      measured through a sandbox probe, not recalled from the proposals.
+===============================================================================
+
+  48.0 WHY THIS SECTION EXISTS
+
+      The user ordered the three proposals built "in one go", then asked for a
+      restudy of the code first. That is the same discipline the item-(3) restudy
+      used in the teach-grid plan, and it paid off here too: ONE PLAN CLAIM IS
+      WRONG, and TWO DEFECTS OF THE SAME FAMILY WERE NOT IN THE PROPOSALS AT ALL.
+
+  48.1 * A TEST HARNESS EXISTS AFTER ALL — document-parser.js LOADS IN NODE
+
+      The standing rule is that the JS suite covers document-parser-core.js only
+      and says nothing about the DOM half. That remains true of `npm run test:js`.
+      BUT the DOM half is loadable in a `node:vm` sandbox with a `window` stub:
+      both of its top-level blocks are guarded (`hydrateParserDebugFlag` returns
+      when `window` is undefined, :50-57; the submit listener is inside
+      `if (typeof document !== 'undefined')`, :2110), and nothing else executes at
+      load. With `{ window: {} }` and no `document`, the whole file evaluates and
+      every function declaration becomes callable.
+      => SO THE PURE-ISH PAGE-STRIP HELPERS CAN BE MEASURED OFFLINE — ocrPageWhy,
+        ocrListedPagesOf, ocrRotatablePagesOf, ocrPageFactsOf, ocrAiCandidates.
+        That does not replace the browser check (nothing here renders), but it
+        turns "browser-only" into "browser-only for the DOM parts", which is a
+        much smaller owed list. Probe: scratchpad `probe_baseline.mjs`.
+
+  48.2 X §47.4 IS WRONG — PAGES 13+ ARE REACHABLE, JUST NOT BY BUTTON
+
+      §47.4 concluded: "The prev / next arrows walk that same strip, so pages
+      13-18 cannot be viewed, turned or saved by ANY route in the UI."
+      THEY CAN. The two lists are different objects and the preview uses BOTH:
+        renderOcrPagePreview :1726   const pages = ocrRotatablePagesOf(r)  UNCAPPED
+        _ocrPreviewStep      :1843   walks that SAME uncapped list
+        the strip            :1768   ocrPageFactsOf(r) -> ocrListedPagesOf  CAPPED 12
+      Measured on an 18-page all-read report: rotatable = 1..18, listed = 1..12.
+      So 'next >' walks to page 18 and the turn button turns it. What is actually
+      lost at 13+ is narrower, and one part of it was never reported:
+        (a) no direct strip button — a reviewer must step through 13,14,15...;
+        (b) no save-image button (:2494 and :3462 both use ocrListedPagesOf);
+        (c) ! NEW — THE CAPTION LOSES ITS REASON. The caption looks its page up in
+            ocrPageFactsOf (:1739), so for page 13+ `fact` is undefined and the
+            badge falls back to a bare 'text read' / 'no text read yet' with NO
+            character count. The page is viewable but the strip's own explanation
+            of it is gone.
+      => THE FIX IS UNCHANGED (drop the .slice(0, 12)); only the justification and
+        the browser-check expectation change. Do not claim in the log that this
+        made unreachable pages reachable — it did not.
+
+  48.3 ! NEW — A THIRD CONSUMER OF THE MISSING BUDGET STATE: THE AI PICKER
+
+      Neither §46 nor the queue item mentions this. ocrAiCandidates (:1561) ranks
+      "a page the reader got NOTHING from" FIRST (rule 1, :1584). A beyond-budget
+      page is recorded with read=false and chars=0, so IT RANKS FIRST — and the
+      reason string it is given is a statement that is not true.
+      MEASURED on the CHS shape (12 pages, budget 10) through the sandbox:
+        [ { pageNum: 11, reason: 'the reader got nothing here' },
+          { pageNum: 12, reason: 'the reader got nothing here' } ]
+      The reader got nothing there because it was never asked. Two consequences:
+        - the reviewer is told a falsehood in the one place the ranking explains
+          itself (the AI row's tooltip, :1789);
+        - ! ON ANY LONG TRUNCATED FILE THE RANKING DEGENERATES AGAIN. With 50
+          pages and a budget of 10, pages 11-50 are all "unread", they tie on
+          chars=0, and the document-order tiebreak (:1595) picks 11 and 12. So
+          the picker sends THE FIRST TWO UNSCANNED PAGES, every time — the exact
+          §27.3 collapse that §29 was built to fix, in a second guise §29 did not
+          cover because it only had the all-pages-read case in front of it.
+      => FOLDS INTO P-5 AT NO EXTRA RISK. Once the third state is on the ledger,
+        the ranking keeps its order (unread still first; chars absent still sorts
+        as 0 — both consumers already tolerate a missing pageChars entry, checked)
+        and only the REASON changes to an honest one. Recommended, and deliberately
+        NOT a re-ranking: whether a never-scanned page is a good thing to send to
+        the AI is a judgement that belongs with the §45.4 slice-cap decision the
+        user owns, not a change to slip in here.
+
+  48.4 ! NEW — §47.3 NAMES TWO CALLERS OF THE RE-SCAN BUG; THERE ARE THREE
+
+      The close-then-immediately-rerun shape that defeats the `hidden.bs.modal`
+      handler appears at:
+        :1871  _ocrPreviewReread      (named in §47.1)
+        :1891  _rescanWithSelection   (named in §47.1)
+        :1911  _removeMismatchFiles   ! NOT NAMED ANYWHERE — same two lines,
+               closeAutofillPreview() then runDocumentAutofill(), so the mismatch
+               banner's "Remove & re-scan" button loses its indicator identically.
+      The other two callers do NOT re-run and must keep today's behaviour:
+        :143   cancelDocumentAutofill (teardown)
+        :2908  applyAutofill          (the reviewer accepted the read)
+      => THE STAMP GOES IN closeAutofillPreview() ITSELF, not in the three callers.
+        Stamp the run id being closed; the handler skips its work only when
+        _autofillRunId has MOVED since (i.e. a newer run began). A reviewer
+        pressing X never goes through closeAutofillPreview, so the stamp must be
+        cleared when the preview is shown, or a stale stamp could suppress the
+        2026-09-18 fix on the very case it was written for.
+
+  48.5 P-4's PLUMBING — THREE CONSTRAINTS THE PROPOSAL DID NOT KNOW ABOUT
+
+      (a) THE BUDGET IS READ IN TWO PLACES WITH TWO DIFFERENT MEANINGS.
+          ocrPageLimit() (:492) is consulted by the gate (:865), by the loop's
+          truncation test (:1060) AND by the gray note's wording (:2459, "(10 per
+          file selected)"). The first two want the EFFECTIVE budget for the file
+          being read; the third wants the number the reviewer SELECTED. A slack
+          rule that changes ocrPageLimit() itself would silently rewrite the
+          note's own account of what was asked for.
+          => the effective budget needs its own module variable, set per file in
+            extractTextFromPDF and read by the gate; ocrPageLimit() stays as-is.
+          => AND THE NOTE GOES STALE ANYWAY: a 12-page file read whole reports
+            "visited all 12 pages; 12 of 12 scanned pages yielded text (10 per
+            file selected) — scan complete", which reads as a contradiction. P-4
+            must carry the slack into the wording, or it trades a truncation
+            people notice for a sentence that does not add up.
+      (b) MEASURE THE SLACK AGAINST maxPages, NOT numPages. The walk is already
+          capped at `Math.min(pdf.numPages, 50)` (:1006), and the depth selector
+          tops out at 50. Keying the slack to numPages on a 52-page file would
+          set a budget of 52 that the loop can never spend.
+      (c) PER-FILE STATE IS SAFE. Files are read strictly sequentially — the
+          caller is `for (const doc of pdfDocs) { ... await extractTextFromPDF }`
+          (:220-227) — and _ocrPagesDone is already reset per file at :1010, so a
+          per-file budget variable cannot be crossed between two files.
+
+  48.6 P-5 — TWO CORRECTIONS TO THE PROPOSAL'S OWN PREMISE
+
+      (a) "pageChars = 0" IS NOT ALWAYS 0. §46.3 says a budget-skipped page gets
+          pageChars = 0. It gets the length of whatever the TEXT LAYER held, which
+          is whatever failed the `< 10` test at :1044 — so 0..9 characters. A
+          skipped page carrying 5 stray characters is badged "too little to use
+          (5 characters)" today, not "nothing at all". Both sentences are wrong
+          in the same way, so the fix does not change; the ledger claim does.
+      (b) LEAVING pageChars UNSET IS SAFE, and this was checked rather than
+          assumed. The only two consumers both tolerate absence already:
+          ocrPageFactsOf does `Number(chars[pn])` then `isFinite(...) ? n : null`
+          (:1342, :1347), and ocrAiCandidates does `Number(chars[a] || 0)`
+          (:1593). Neither needs a guard added.
+
+  48.7 P-6(b) — WHERE THE WATCHDOG TICK CAN ACTUALLY GO
+
+      Confirmed: the only refresh is showAutofillScanStatus at :915, after
+      page.render() and before preprocessOcrCanvas and the whole ladder, and
+      _autofillSpinnerTick is set inside it (:3392). The ladder below it is:
+        recognizeEnglish   up to FOUR awaited tesseract.recognize calls in one
+                           `for` loop (attempts = [{}, psm6, psm11, psm4])
+        ocrPageScale2Fallback   one more
+        ocrPageCropFallback     one more
+      => There is a clean loop head to tick from, so the honest fix (b1) is
+        available: a touch-only helper that bumps _autofillSpinnerTick WITHOUT
+        repainting innerHTML, called once per ladder rung. Repainting through
+        showAutofillScanStatus would work too but rewrites the element's HTML up
+        to six times a page for no visible change.
+      ! RESIDUAL, AND WORTH SAYING OUT LOUD: ticking between rungs bounds the
+        silence to ONE rung, not to zero. A single tesseract.recognize on a
+        3000px canvas on a slow PMU desktop could still exceed 6s by itself. If
+        the browser check shows a flicker survive, the remaining lever is
+        AUTOFILL_SPINNER_STALE_MS (:3410) — but raise it only on evidence.
+      Also noted, benign: a SUPERSEDED run's `finally` (:412-413) removes the
+      indicator unconditionally, so if two runs ever overlapped the older one
+      would blank the newer one's indicator until its next per-page paint
+      recreated it. No current path overlaps two runs (the preview only opens
+      after a run completes), so this is a watch-item, not a defect.
+
+  48.8 WHAT THIS RESTUDY CHANGES ABOUT THE BUILD
+
+      - P-6 grows one caller (48.4) and the fix moves into closeAutofillPreview.
+      - P-4 grows a wording obligation (48.5a) and a maxPages correction (48.5b).
+      - P-5 grows the AI reason string (48.3) and loses a false premise (48.6a).
+      - §47.4 keeps its fix and loses its justification (48.2).
+      - Offline falsification is possible for all of the strip helpers (48.1),
+        so the owed browser check shrinks to what actually renders: the indicator
+        across Re-scan / Re-read / Remove-&-re-scan, the strip past page 12, the
+        new badge wording, and a 12-page file reading whole.
+      NOTHING IS BUILT. Awaiting the order to proceed (Rule 10).
+
+===============================================================================
+  49. P-4 + P-5 + P-6 BUILT (2026-09-20, ordered: "lets start with the suggested
+      order ... do them all in one go", browser check deferred to the end)
+      Branch phase-28-scan-indicator-budget-truth, off phase-27-ai-assist-targeting.
+      ONE FILE: public/js/admin/projects/document-parser.js. No PHP, no Blade, no CSS.
+===============================================================================
+
+  49.1 P-6(a) — THE RE-SCAN KILL. The indicator survives its own re-run.
+
+      THE FIX IS ONE STAMP, AND IT LIVES IN closeAutofillPreview(), NOT IN THE
+      CALLERS — because the restudy found a third caller (§48.4). Closing the
+      preview from code records the run id that was live at that moment; the
+      hidden.bs.modal handler tears the indicator down only if the id has NOT
+      moved since. runDocumentAutofill bumps the id as its first act, so "a newer
+      run has begun" is an exact test, not a timing guess.
+        closeAutofillPreview()  ->  _autofillPreviewCloseStamp = _autofillRunId
+        hidden.bs.modal         ->  stamp !== null && stamp !== _autofillRunId ? return
+        showAutofillPreview()   ->  stamp = null, before instance.show()
+      That last line is what keeps the 2026-09-18 fix alive for the case it was
+      written for: a reviewer pressing X never goes through closeAutofillPreview,
+      so a stamp left over from an earlier programmatic close would have silently
+      suppressed THEIR teardown. Stamped only when a hide is actually issued, for
+      the same reason (an already-hidden modal fires no event).
+      COVERS ALL THREE RE-RUN PATHS AT ONCE: _rescanWithSelection (Re-scan),
+      _ocrPreviewReread (Re-read) and _removeMismatchFiles (Remove & re-scan) —
+      the third of which was never named in §47 and had the identical bug.
+
+  49.2 P-6(b) — THE FLICKER. The watchdog now watches the worker, not the page loop.
+
+      New touch-only helper touchAutofillSpinner(): bumps _autofillSpinnerTick and
+      NOTHING else — no repaint, since showAutofillScanStatus would rewrite the
+      element's HTML up to six times a page for no visible change. Gated on a run
+      being in flight AND the element existing, so it can never resurrect a
+      finished run's indicator.
+      FOUR TICK POINTS, one per thing that can be slow:
+        recognizeEnglish     inside the attempt loop, before each recognize (x4 PSMs)
+        ocrPageScale2Fallback    before its recognize
+        ocrPageCropFallback      before its recognize
+        ocrPage's cache hit      it returns before the per-page repaint at :915
+      AUTOFILL_SPINNER_STALE_MS is UNCHANGED at 6000. Raising it was the fallback
+      lever and it has not been needed; §48.7's residual stands — this bounds the
+      silence to ONE rung, not to zero, so if the browser check still shows a
+      flicker, the lever is there and the evidence for pulling it would be new.
+
+  49.3 P-4 — THE SLACK BUDGET. No file is abandoned within sight of its end.
+
+      OCR_PAGE_SLACK = 3. A new ocrFileBudget(pagesInFile) returns the selected
+      depth, or the file's own page count when the file ends within slack of it.
+      Set once per file in extractTextFromPDF as _ocrFileBudget, which is what the
+      gate in ocrPage and the truncation test now read.
+      ocrPageLimit() IS DELIBERATELY UNCHANGED and still means "what the reviewer
+      asked for" (§48.5a) — the gray note quotes it, and a slack rule that rewrote
+      it would have falsified the note's own account of the request.
+      KEYED TO maxPages, NOT numPages (§48.5b), so the budget can never exceed
+      what the walk (capped at 50) will actually visit.
+      Measured, with the default depth of 10:
+        10 -> 10    11 -> 11    12 -> 12    13 -> 13    14 -> 10    50 -> 10
+      So the CHS Savings pair (12 pages) now reads WHOLE on the first pass, and a
+      long annex still truncates and still gets the depth selector. The ceiling
+      rises from 10 to 13 pages per file — a bounded ~6s — and the DEFAULT budget
+      for everyone else is untouched.
+      AND THE NOTE TELLS THE TRUTH ABOUT IT. A stretched file now reads
+      "(10 per file selected, 12 read to finish the file)" instead of the
+      contradiction "12 of 12 scanned pages yielded text (10 per file selected)".
+
+  49.4 P-5 — THE THIRD STATE. A page nothing was asked of no longer gets blamed.
+
+      (a) LEDGERED. beyondBudgetPages[] is filled where ocrTruncated is set, and
+          the loop now SKIPS the page instead of calling ocrPage to be refused at
+          its gate. That removes the pointless call AND the §46.4 trap in one go:
+          the caller no longer writes a never-attempted empty into the photo-read
+          cache, so a reviewer who raises the depth and presses Re-read is not
+          served a fabricated empty from memory.
+      (b) pageChars IS LEFT UNSET for those pages. Zero is a measurement; this is
+          the absence of one. Both consumers already tolerated absence (checked in
+          §48.6b, not assumed).
+      (c) THE SENTENCE. ocrPageWhy gains the state and CHECKS IT FIRST, because it
+          is the only one of the states that is not a claim about the page's ink:
+            'not scanned — past the 10-page depth; use Re-scan with a deeper
+             setting to read it'
+          The old "nothing at all — try turning it" was wrong twice: it blamed the
+          page, and it prescribed the one remedy that provably cannot work.
+      (d) THE TURN BUTTON IS DISABLED on a beyond-budget page, with the reason in
+          its tooltip. Offering a control that cannot help is the same defect in
+          button form. Disabled rather than hidden, so the reviewer can see why.
+      ⚠ AND A REGRESSION P-5 WOULD OTHERWISE HAVE CAUSED, caught by the probe:
+        because (a) stops caching those empties, ocrPendingRereadPages would have
+        counted every beyond-budget page as "pending" on every render — the
+        Re-read button would have offered to re-read pages nothing had turned, and
+        re-reading could not have reached them anyway. They are now excluded: a
+        re-read is defined as what a TURN made stale; the budget is Re-scan's job.
+
+  49.5 §47.4 — THE 12-PER-FILE CAP IS GONE, with its justification corrected.
+
+      ocrListedPagesOf no longer does .slice(0, 12), so the page strip, the
+      per-page facts and the save-image buttons now cover every scanned page.
+      ⚠ THE LOG MUST NOT REPEAT §47.4'S CLAIM. Pages 13+ were NOT unreachable —
+      prev/next always walked the uncapped ocrRotatablePagesOf (§48.2). What they
+      lacked was a button, a save-image control, and — never previously reported —
+      A REASON: the caption looks its page up in ocrPageFactsOf, so past page 12
+      the badge fell back to a bare 'text read' with no character count. On the
+      18-page Buhi read, all 18 now carry their explanation.
+
+  49.6 §48.3 — THE AI PICKER STOPS CLAIMING IT TRIED.
+
+      A beyond-budget page looked exactly like "the reader got nothing here",
+      because nothing was asked of it. Its PLACE in the ranking is deliberately
+      unchanged — it is genuinely unread, and an unread page is still the best
+      thing to send — but the reason now reads 'never scanned — past the chosen
+      read depth'. Whether a never-scanned page SHOULD be the AI's first pick is a
+      judgement that belongs with the §45.4 slice-cap decision the user owns, and
+      it was not slipped in here.
+
+  49.7 WHAT WAS MEASURED (offline; the browser check is owed and listed in §49.8)
+
+      THE HARNESS IS §48.1's: document-parser.js loaded into a node:vm sandbox with
+      a window stub (and, for P-6, a DOM stub). Probes live in the session
+      scratchpad, never in the repo: probe_baseline.mjs (the pre-build reading),
+      probe_p456.mjs, probe_p6.mjs.
+        probe_p456  43 checks, 43 pass — P-4's budget table at three selector
+                    settings, P-5's five new sentences and its four old ones
+                    unchanged, the facts ledger, the 12-cap, the AI reason, the
+                    pending-reread guard, PLUS 7 MUTATIONS, all caught.
+        probe_p6    19 checks, 19 pass — the four teardown scenarios (Re-scan,
+                    X-close, Apply, stale stamp), all three re-run callers proven
+                    to route through closeAutofillPreview, the tick's two gates,
+                    its no-repaint property and its four sites, PLUS 3 MUTATIONS,
+                    all caught.
+      ⭐ BACKWARD COMPATIBILITY IS ASSERTED, NOT HOPED FOR. A scan report captured
+        before this work (no beyondBudgetPages, no budget) is exercised in both
+        probes and behaves EXACTLY as before — old sentence, old AI reason, no page
+        flagged. That matters because reports are stashed on window and a session
+        can outlive a reload.
+      SUITES: JS 267 / 267 / 0 (unchanged — the suite covers the pure core, which
+      this work does not touch). PHP 1232 passed / 0 failed / 4605 assertions /
+      65.6s — run for the record; no PHP file was touched.
+      Also checked: grep over public/, resources/ and tests/ finds NO reference to
+      ocrPageWhy, ocrListedPagesOf, ocrPageFactsOf or the new names outside
+      document-parser.js, so the blast radius is one file.
+
+  49.8 ⬜ THE BROWSER CHECK, OWED — and what each step should show
+
+      Standing rule: browser-proven beats suite-green for anything that renders,
+      and everything above renders. Run with devtools SHUT (§14.4), then reopen.
+        1. THE INDICATOR SURVIVES RE-SCAN. Upload a scan, let the preview open,
+           raise the depth, press Re-scan. The indicator must appear AND KEEP
+           NAMING PAGES for the whole run. Before: it painted once and died ~150ms
+           in. Repeat with Re-read after turning a page.
+        2. THE FLICKER. Watch a slow page. The indicator should not vanish and
+           return mid-page. If it still does, say so — §49.2 names the next lever.
+        3. AN X-CLOSE STILL CLEANS UP. Open a preview, press X, confirm no
+           indicator is left behind. This is the 2026-09-18 report; it must not
+           come back.
+        4. A 12-PAGE FILE READS WHOLE. CHS - Savings.pdf at the DEFAULT depth of
+           10 should now say "visited all 12 pages ... (10 per file selected, 12
+           read to finish the file) — scan complete", with no truncation note.
+        5. THE BEYOND-BUDGET BADGE. Needs a file of 14+ pages at depth 10 (the
+           Buhi file at depth 10 will do — it is 18). Page 11 should read "not
+           scanned — past the 10-page depth; use Re-scan with a deeper setting to
+           read it", and ⟳ turn this page should be DISABLED with its reason.
+        6. THE STRIP PAST PAGE 12. The Buhi file at depth 25: the Pages strip
+           should now run 1..18, and page 13+ should carry a character count in
+           its caption badge instead of a bare "text read".
+      ⚠ WHAT WOULD FALSIFY THE BUILD: any of 1, 4 or 5 failing. 2 is a quality
+        improvement with a named fallback; 3 is a guard against a regression; 6 is
+        cosmetic truth.
+
+===============================================================================
+  49.9 THE BROWSER RESULT (user, 2026-09-20, two screenshots + the indicator report)
+       FOUR OF THE SIX STEPS PASS. One is not yet run, one is unverifiable from
+       the pixels and is asked back.
+===============================================================================
+
+  ✅ STEP 1/2/3 — THE SCAN INDICATOR. Reported working by the user. That is the
+     step the whole of P-6 exists for, and it is the one a reviewer actually
+     feels: before this, Re-scan painted the indicator once and lost it ~150ms
+     later to a teardown belonging to the run it had just replaced, which read as
+     "Re-scan is not working" even though the scan completed normally.
+
+  ✅ STEP 5 — THE BEYOND-BUDGET BADGE, on the real file. The header reads
+     "Three-Storey Acad Bldg, Buhi Campus.pdf page 11 of 18" with the amber badge
+       "not scanned — past the 10-page depth; use Re-scan with a deeper setting
+        to read it"
+     That is P-5(c) verbatim on a real document at the default depth. The page it
+     is describing is an AFSS bill-of-quantities table a human reads at a glance —
+     exactly the case where the old "nothing at all — try turning it" sent the
+     reviewer to a dead end.
+
+  ✅ STEP 6 — THE STRIP PAST PAGE 12. The Pages strip now runs
+       1 2 3 4 5 6 7 8 9 10 11*✦ 12*✦ 13* 14* 15* 16* 17* 18*
+     Eighteen buttons where there were twelve. The `*` on 11-18 is the unread
+     marker and is correct — at depth 10 those eight pages were never scanned.
+     ⭐ AND IT CONFIRMS §48.2 RATHER THAN §47.4: page 11 is being VIEWED in the
+       screenshot, so pages 13+ were never unreachable. What the cap withheld was
+       the button, the save-image control and the caption's reason — which is what
+       came back.
+
+  ✅ §48.3 CONFIRMED LIVE, INCLUDING THE PART THAT WAS ONLY A PREDICTION. The
+     AI-assist row reads "Three-Storey Acad Bldg, Buhi Campus.pdf p.11" and
+     "p.12", and the ✦ marks sit on 11 and 12 in the strip. So the ranking does
+     put never-scanned pages first on a truncated file, exactly as the sandbox
+     predicted from the CHS shape — the restudy called this before any browser run
+     and the live file agrees. The ORDER is unchanged by design; only the reason
+     string is now honest ("never scanned — past the chosen read depth").
+     ⚠ IT ALSO MAKES THE §45.4 QUESTION CONCRETE. On this file the AI would be
+       sent two pages the reader never looked at, chosen because they tie at the
+       top of a ranking with nothing to separate them — the first two unscanned
+       pages of a truncated file, which is the §27.3 degeneracy in its second
+       guise (§48.3). That is the user's decision to make, not a defect to patch.
+
+  ⬜ STEP 4 — NOT YET RUN. A 12-page file at the DEFAULT depth of 10 should read
+     whole and say "(10 per file selected, 12 read to finish the file) — scan
+     complete", with no truncation note. CHS - Savings.pdf is the file. This is
+     the only P-4 claim with no browser evidence behind it; the budget table
+     itself is proven offline at three selector settings (§49.7).
+
+  ❓ P-5(d) — THE TURN BUTTON. CANNOT BE CALLED FROM THE SCREENSHOT, AND IS NOT
+     CLAIMED. "⟳ turn this page" is visible on the page-11 view, but a Bootstrap
+     `disabled` btn-outline-primary differs from an enabled one only by opacity,
+     which does not survive the screenshot reliably. The code path is the same
+     `beyondBudgetPages` array the badge above it just proved is present and
+     correct, so the mechanism is evidenced — but "the badge works therefore the
+     button works" is an inference, not an observation, and this project's habit
+     is to say which one it has.
+     TO SETTLE IT IN ONE ACTION: on that same page-11 view, click "⟳ turn this
+     page". If P-5(d) holds, nothing happens at all — no rotation badge appears
+     beside the file name, the picture does not turn, and hovering gives the
+     tooltip "This page was never scanned — it is past the chosen read depth.
+     Turning it cannot help; raise the depth below and press Re-scan."
+     ⚠ NOTE FOR WHOEVER RUNS IT: "⟳ turn whole file" is deliberately NOT disabled.
+     It turns every scanned page of the file, and on a truncated file that
+     includes pages the budget never reached. Harmless (the rotation is just
+     stored, and ocrPendingRereadPages excludes those pages so they are not
+     offered for re-read) but it is an asymmetry someone will notice; recorded
+     here rather than changed, because the bulk control's job is the whole file.
+
+  ⇒ VERDICT: nothing that was checked contradicts the build, and the two changes
+    with the most surface — the indicator and the page strip — are confirmed on a
+    real 18-page scan. Committed on that basis, with step 4 and the P-5(d) click
+    still open and recorded as open.
 
 ===============================================================================
   END OF RESTUDY

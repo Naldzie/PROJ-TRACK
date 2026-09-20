@@ -224,7 +224,7 @@ async function runDocumentAutofill() {
             _autofillCurrentFile = doc.fileName || "";
 
             try {
-                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages } = await extractTextFromPDF(doc.file, myRunId);
+                const { text, ocr, truncated, scannedTotal, scannedRead, ocrPages, allLandscape, scannedPageNums, landscapePages, pagesVisited, numPages, pageChars, soupyPages, beyondBudgetPages, budget } = await extractTextFromPDF(doc.file, myRunId);
                 if (ocr) ocrUsed = true;
                 // O2: remember files whose scan was cut short by the page budget.
                 if (truncated) truncatedFiles.push(doc.fileName);
@@ -232,7 +232,7 @@ async function runDocumentAutofill() {
                 // and the per-page rotate control (even uncut ones). allLandscape flags fully-
                 // sideways scans for the pre-preview straighten-all rescue.
                 if (ocr || (scannedTotal || 0) > 0) {
-                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages, pageChars: pageChars || {}, soupyPages: soupyPages || [] });
+                    scanReports.push({ fileName: doc.fileName, scannedTotal: scannedTotal || 0, scannedRead: scannedRead || 0, truncated: !!truncated, ocrPages: ocrPages || [], allLandscape: !!allLandscape, scannedPageNums: scannedPageNums || [], landscapePages: landscapePages || [], pagesVisited: pagesVisited || 0, numPages, pageChars: pageChars || {}, soupyPages: soupyPages || [], beyondBudgetPages: beyondBudgetPages || [], budget: budget || 0 });
                 }
                 if (text && text.trim().length > 0) {
                     const parsedSingle = getCore().parseProjectInfo({ text }, { learned: learnedKeywords });
@@ -489,10 +489,36 @@ let _ocrTextCache = new Map();
 // repeated at each call site — and the AI page picker caps its selection to it.
 const AI_SLICE_PAGES = 2;
 const OCR_PAGE_LIMIT = 10;
+// What the reviewer ASKED FOR — the read-depth selector's value (10/25/40/50), or the
+// default. This is the number the gray scan note quotes, and it must keep meaning that
+// even when a file is allowed to overrun it (see ocrFileBudget below).
 function ocrPageLimit() {
     const custom = (typeof window !== 'undefined') ? Number(window._ocrPageLimit) : NaN;
     if (isFinite(custom) && custom >= 1 && custom <= 50) return Math.floor(custom);
     return OCR_PAGE_LIMIT;
+}
+
+// P-4 (2026-09-20) — NEVER QUIT WITHIN SIGHT OF THE END OF A FILE.
+// Stopping two pages short of a twelve-page document is the worst place to stop: the
+// reviewer pays the FULL ten-page cost (~20s) and still does not have the document,
+// then has to notice a gray note, find a dropdown and pay ~24s again. Twelve pages is
+// the common shape here, not an outlier (restudy §45.3 — the CHS Savings pair).
+// So a file within SLACK pages of the budget is read WHOLE. The ceiling rises from 10
+// to 13 pages per file, a bounded ~6s; a genuinely long annex still truncates and
+// still gets the depth selector. This does not raise the default budget for everyone.
+const OCR_PAGE_SLACK = 3;
+// The budget in force for the file being read right now. Set per file by
+// extractTextFromPDF (files are read strictly sequentially, and _ocrPagesDone is
+// already reset per file, so this cannot be crossed between two files — §48.5c).
+let _ocrFileBudget = OCR_PAGE_LIMIT;
+// Decide that budget. `pagesInFile` must be the number of pages the walk will ACTUALLY
+// visit (min(numPages, 50)), not the raw page count — keying it to numPages on a
+// 52-page file would set a budget the loop can never spend (§48.5b).
+function ocrFileBudget(pagesInFile) {
+    const selected = ocrPageLimit();
+    const pages = Number(pagesInFile);
+    if (!isFinite(pages) || pages <= selected) return selected;
+    return (pages <= selected + OCR_PAGE_SLACK) ? Math.floor(pages) : selected;
 }
 // Warm the photo-reader script when the create-project popup opens (called from
 // resetModalToCreateMode). Downloads the reader code early so the first preview does not
@@ -765,6 +791,9 @@ async function recognizeEnglish(tesseract, canvas, markEngineFailed) {
             // F3': the PSM 4 rung is empty-pages-only — any text at all (even soupy) skips it.
             if (raw.emptyOnly && best.trim().length > 0) break;
         }
+        // P-6b: this rung is about to work — keep the indicator's clock fresh so the
+        // watchdog cannot mistake a slow recognition for a finished run.
+        touchAutofillSpinner();
         // Strip the control flag before handing options to tesseract (it is ours, not its).
         const options = {};
         for (const k of Object.keys(raw)) { if (k !== 'emptyOnly') options[k] = raw[k]; }
@@ -820,6 +849,7 @@ async function ocrPageScale2Fallback(page, tesseract, rotationDeg, markEngineFai
         canvas.height = viewport.height;
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         // NOTE: no preprocessOcrCanvas and no ladder — one default shot, like pre-group1.
+        touchAutofillSpinner(); // P-6b: a rung at work is not a hang.
         const ret = await tesseract.recognize(canvas, 'eng');
         const text = (ret && ret.data && ret.data.text) || '';
         if (typeof window !== 'undefined' && window._parserDebug) {
@@ -849,6 +879,7 @@ async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFaile
         if (!(kept > 0) || kept > 0.95) return '';
         // NOTE: no preprocessOcrCanvas here — the crop rung isolates the geometry variable;
         // the wash-gate already had its say on the uncropped canvas.
+        touchAutofillSpinner(); // P-6b: a rung at work is not a hang.
         const ret = await tesseract.recognize(canvas, 'eng');
         const text = (ret && ret.data && ret.data.text) || '';
         if (typeof window !== 'undefined' && window._parserDebug) {
@@ -862,7 +893,10 @@ async function ocrPageCropFallback(page, tesseract, rotationDeg, markEngineFaile
 }
 
 async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
-    if (_ocrPagesDone >= ocrPageLimit()) return '';
+    // The budget in force is the FILE's (P-4), which is the selected depth unless the
+    // file was within slack of the end. The caller no longer reaches this gate for a
+    // page it already knows is past the budget (P-5) — this stays as the backstop.
+    if (_ocrPagesDone >= _ocrFileBudget) return '';
     if (runId !== _autofillRunId) return '';
 
     // PHOTO-READ CACHE (2026-09-14). Re-reading a page at an angle it has already
@@ -878,6 +912,9 @@ async function ocrPage(page, runId, rotationDeg = 0, cacheKey = '') {
     // let later pages into a budget that was meant to be spent.
     if (cacheKey && _ocrTextCache.has(cacheKey)) {
         _ocrPagesDone++;
+        // P-6b: a cached page returns before the per-page repaint at the bottom of this
+        // function, so without this the watchdog hears nothing during a cached re-read.
+        touchAutofillSpinner();
         return _ocrTextCache.get(cacheKey);
     }
 
@@ -1008,6 +1045,10 @@ async function extractTextFromPDF(file, runId) {
     // O1: fair per-file budget — every file gets its own scanned pages regardless of
     // upload order (previously the 10-page cap was shared first-come-first-served).
     _ocrPagesDone = 0;
+    // P-4: and that budget now stretches to cover a file that ends within slack of it,
+    // rather than stopping two pages short of the document. Computed from maxPages (what
+    // this walk will really visit), so it can never exceed what the loop can spend.
+    _ocrFileBudget = ocrFileBudget(maxPages);
     let fullText = '';
     let ocrUsed = false;
     // O2/N3: truncation + real-count tracking — a file with more scanned pages than the
@@ -1031,6 +1072,13 @@ async function extractTextFromPDF(file, runId) {
     // and whether it looked like symbol salad. Feeds the page strip's explanation.
     const pageChars = {};
     const soupyPages = [];
+    // P-5 (2026-09-20): pages the budget refused BEFORE any work was done. Until now a
+    // budget-skipped page was recorded identically to an attempted-and-empty one, so the
+    // page strip told the reviewer "nothing at all — try turning it" about a page nothing
+    // had been asked of — and turning it can never succeed, because the gate fires before
+    // any work and a cached page spends a budget slot on purpose. The fact existed and was
+    // thrown away; this is the ledger that keeps it (restudy §46).
+    const beyondBudgetPages = [];
     let pagesVisited = 0;
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
@@ -1057,52 +1105,70 @@ async function extractTextFromPDF(file, runId) {
                     landscapePages.push(pageNum);
                 }
             } catch (e) { /* aspect is best-effort */ }
-            if (_ocrPagesDone >= ocrPageLimit()) ocrTruncated = true;
-            // R2: per-page manual rotation (degrees stashed by the rotate control).
-            const rotKey = file.name + '#' + pageNum;
-            const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
-            // Cache key carries the angle, so turning a page re-reads it for real
-            // while every untouched page comes back from memory (2026-09-14).
-            const cacheKey = file.name + '#' + (file.size || 0) + '#' + pageNum + '@' + rotDeg;
-            const ocrText = await ocrPage(page, runId, rotDeg, cacheKey);
-            // Cache the EMPTY result too. A dead page costs the most (the PSM
-            // ladder plus the scale-2 and crop fallbacks, up to ~6 recognitions),
-            // and those are exactly the pages a rotate-heavy session revisits.
-            // Tradeoff written down because it is real: photo-reading wobbles
-            // slightly run to run (learning-loop plan, §6 2026-09-07), so caching
-            // an empty forgoes the chance that an unchanged page reads next time.
-            // The read-depth "Re-scan" clears the cache, which is the deliberate
-            // way to ask for a genuinely fresh read.
-            if (cacheKey && runId === _autofillRunId) {
-                try { _ocrTextCache.set(cacheKey, ocrText || ''); } catch (e) { /* cache is best-effort */ }
-            }
-            if (ocrText && ocrText.trim().length >= 10) {
-                pageText = ocrText;
-                ocrUsed = true;
-                scannedRead++;
-                ocrPages.push(pageNum);
-            }
-            // Per-page yield, RECORDED not just logged (2026-09-14). The count was
-            // computed here all along and thrown away into a debug console line, so
-            // the page strip could say a page was unread but never WHY — "nothing at
-            // all" and "forty characters of garbage" are different problems with
-            // different remedies, and only the second is worth rotating for.
-            // Soupiness is re-scored from the page text rather than plumbed out of
-            // recognizeEnglish (which returns a bare string): the scorer is pure and
-            // cheap, so re-running it costs nothing and changes no signature.
-            try {
-                const yielded = (pageText || '').trim();
-                pageChars[pageNum] = yielded.length;
-                if (yielded.length > 0 && core && typeof core.scoreOcrSoup === 'function') {
-                    const s = core.scoreOcrSoup(yielded);
-                    if (s && s.soupy) soupyPages.push(pageNum);
+            // P-5: a page past the budget is RECORDED AND SKIPPED, not attempted. It used
+            // to fall through to ocrPage(), which returned '' at its gate before doing any
+            // work — and the caller then wrote that empty into the photo-read cache, so a
+            // reviewer who raised the depth and pressed Re-read (which reuses the cache)
+            // was served a never-attempted empty from memory (§46.4). Skipping here removes
+            // the pointless call and the bad cache write together.
+            // pageChars is deliberately LEFT UNSET for these pages: zero is a measurement,
+            // and this is the absence of one. Both consumers already tolerate absence.
+            if (_ocrPagesDone >= _ocrFileBudget) {
+                ocrTruncated = true;
+                beyondBudgetPages.push(pageNum);
+                if (typeof window !== 'undefined' && window._parserDebug) {
+                    try { console.log('[Parser] OCR page ' + pageNum + ': past the ' + _ocrFileBudget + '-page budget, not scanned'); } catch (e) {}
                 }
-            } catch (e) { /* instrumentation must never break a read */ }
-            if (typeof window !== 'undefined' && window._parserDebug) {
-                try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
-            }
+            } else {
+                // R2: per-page manual rotation (degrees stashed by the rotate control).
+                const rotKey = file.name + '#' + pageNum;
+                const rotDeg = (window._ocrRotations && window._ocrRotations[rotKey]) || 0;
+                // Cache key carries the angle, so turning a page re-reads it for real
+                // while every untouched page comes back from memory (2026-09-14).
+                const cacheKey = file.name + '#' + (file.size || 0) + '#' + pageNum + '@' + rotDeg;
+                const ocrText = await ocrPage(page, runId, rotDeg, cacheKey);
+                // Cache the EMPTY result too. A dead page costs the most (the PSM
+                // ladder plus the scale-2 and crop fallbacks, up to ~6 recognitions),
+                // and those are exactly the pages a rotate-heavy session revisits.
+                // Tradeoff written down because it is real: photo-reading wobbles
+                // slightly run to run (learning-loop plan, §6 2026-09-07), so caching
+                // an empty forgoes the chance that an unchanged page reads next time.
+                // The read-depth "Re-scan" clears the cache, which is the deliberate
+                // way to ask for a genuinely fresh read.
+                if (cacheKey && runId === _autofillRunId) {
+                    try { _ocrTextCache.set(cacheKey, ocrText || ''); } catch (e) { /* cache is best-effort */ }
+                }
+                if (ocrText && ocrText.trim().length >= 10) {
+                    pageText = ocrText;
+                    ocrUsed = true;
+                    scannedRead++;
+                    ocrPages.push(pageNum);
+                }
+                // Per-page yield, RECORDED not just logged (2026-09-14). The count was
+                // computed here all along and thrown away into a debug console line, so
+                // the page strip could say a page was unread but never WHY — "nothing at
+                // all" and "forty characters of garbage" are different problems with
+                // different remedies, and only the second is worth rotating for.
+                // Soupiness is re-scored from the page text rather than plumbed out of
+                // recognizeEnglish (which returns a bare string): the scorer is pure and
+                // cheap, so re-running it costs nothing and changes no signature.
+                try {
+                    const yielded = (pageText || '').trim();
+                    pageChars[pageNum] = yielded.length;
+                    if (yielded.length > 0 && core && typeof core.scoreOcrSoup === 'function') {
+                        const s = core.scoreOcrSoup(yielded);
+                        if (s && s.soupy) soupyPages.push(pageNum);
+                    }
+                } catch (e) { /* instrumentation must never break a read */ }
+                if (typeof window !== 'undefined' && window._parserDebug) {
+                    try { console.log('[Parser] OCR page ' + pageNum + ': yielded=' + (pageText || '').trim().length + ' rot=' + (rotDeg || 0)); } catch (e) {}
+                }
+            } // end of the within-budget branch (P-5)
         }
 
+        // Every page still contributes its text layer, including a page the budget
+        // refused — that is a sub-10-character remnant, but leaving it out would change
+        // the concatenated text the extractors see for no reason connected to P-5.
         fullText += pageText + '\n\n';
 
         // Full-scan default (no early break): EVERY page reads up to the per-file budget,
@@ -1111,7 +1177,10 @@ async function extractTextFromPDF(file, runId) {
         // text. Text pages cost ~nothing; scanned pages stay capped by the per-file budget.
     }
 
-    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited, pageChars, soupyPages };
+    // budget = what this file was actually allowed (P-4); beyondBudgetPages = the pages
+    // that allowance did not reach (P-5). Both travel on the scan report so every page
+    // surface can tell "never asked" from "asked and got nothing".
+    return { text: fullText, ocr: ocrUsed, truncated: ocrTruncated, scannedTotal, scannedRead, numPages: pdf.numPages, ocrPages, allLandscape: scannedTotal > 0 && landscapeCount >= scannedTotal, scannedPageNums, landscapePages, pagesVisited, pageChars, soupyPages, beyondBudgetPages, budget: _ocrFileBudget };
 }
 
 // ===================================================
@@ -1289,19 +1358,25 @@ window._copyExtractedText = function () {
 // showAutofillWarning, and the page-preview panel.
 
 // Pages a file offers for rotating or snapshotting: the scanned ledger when we
-// have one, else whatever actually yielded text. The 12-per-file cap is the one
-// both surfaces have always applied — kept so this factoring changes nothing.
+// have one, else whatever actually yielded text.
+// THE 12-PER-FILE CAP IS GONE (2026-09-20, §47.4). It predated the read-depth
+// selector: once a reviewer can ask for 25, 40 or 50 pages, a fixed 12 is
+// arbitrary, and on an 18-page read it silently stopped the page strip, the
+// per-page facts and the save-image buttons at page 12 while the reader had
+// read all eighteen. ocrRotatablePagesOf was always uncapped, so the two
+// disagreed; they now agree. What this does NOT fix is a reachability problem —
+// prev/next always walked the uncapped list, so pages 13+ were viewable and
+// turnable all along; what they lacked was a button and an explanation (§48.2).
 function ocrListedPagesOf(report) {
     if (!report) return [];
     const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
     const read = (report.ocrPages && report.ocrPages.length) ? report.ocrPages : [];
-    return (scanned || read).slice(0, 12);
+    return (scanned || read).slice();
 }
 
-// Every page a file can be rotated through — UNCAPPED, unlike ocrListedPagesOf.
-// The distinction is real and was previously implicit: the surfaces show at most
-// 12 buttons per file, but "rotate all" has always turned every scanned page,
-// including ones with no button. Kept that way; named so it reads as deliberate.
+// Every page a file can be rotated through. Historically this differed from
+// ocrListedPagesOf, which capped at 12 — now they agree, and this one is kept as
+// the name the rotate paths ask by.
 function ocrRotatablePagesOf(report) {
     if (!report) return [];
     const scanned = (report.scannedPageNums && report.scannedPageNums.length) ? report.scannedPageNums : null;
@@ -1336,9 +1411,15 @@ function ocrPageFactsOf(report) {
     const landscape = (report.landscapePages && report.landscapePages.length) ? report.landscapePages : null;
     const chars = report.pageChars || {};
     const soupy = report.soupyPages || [];
+    // P-5: the third state, and the budget to name in the sentence. A report captured
+    // before this ledger existed simply has no beyond-budget pages, which is the right
+    // answer for it — it predates the skip-without-attempting path.
+    const beyond = report.beyondBudgetPages || [];
+    const budget = Number(report.budget) || (typeof ocrPageLimit === 'function' ? ocrPageLimit() : 10);
     return ocrListedPagesOf(report).map((pn) => {
         const read = !ocrPageIsUnread(report, pn);
         const n = Number(chars[pn]);
+        const past = beyond.indexOf(pn) !== -1;
         return {
             pageNum: pn,
             rotation: ocrRotationOf(report.fileName, pn),
@@ -1346,7 +1427,8 @@ function ocrPageFactsOf(report) {
             landscape: landscape ? landscape.indexOf(pn) !== -1 : !!report.allLandscape,
             chars: isFinite(n) ? n : null,
             soupy: soupy.indexOf(pn) !== -1,
-            why: ocrPageWhy(read, isFinite(n) ? n : null, soupy.indexOf(pn) !== -1),
+            beyondBudget: past,
+            why: ocrPageWhy(read, isFinite(n) ? n : null, soupy.indexOf(pn) !== -1, past, budget),
         };
     });
 }
@@ -1355,7 +1437,18 @@ function ocrPageFactsOf(report) {
 // and "forty characters of garbage" are different problems: the first is usually
 // orientation or a dark scan, the second usually means the page WAS read and is
 // simply not worth reading. Only the first is worth turning the page for.
-function ocrPageWhy(read, chars, soupy) {
+// P-5 (2026-09-20) adds the third state, and it goes FIRST because it is the only
+// one of the three that is not a statement about the page's ink. A page past the
+// budget was never attempted, so "nothing at all — try turning it" blamed the page
+// for a silence nobody asked it to break, and prescribed the one remedy that can
+// never work: the budget gate fires before any work, and a cached page spends a
+// budget slot on purpose, so turn-then-re-read returns empty at any angle, forever.
+// Re-scan is the only action that reaches it, and it is now the one named.
+function ocrPageWhy(read, chars, soupy, beyondBudget, budget) {
+    if (beyondBudget) {
+        const n = Number(budget);
+        return 'not scanned — past the ' + (isFinite(n) && n > 0 ? n : 'chosen') + '-page depth; use Re-scan with a deeper setting to read it';
+    }
     if (read && soupy) return 'read, but the text looks garbled';
     if (read) return chars ? 'text read (' + chars + ' characters)' : 'text read';
     if (chars === null || chars === 0) return 'nothing at all — try turning it';
@@ -1398,7 +1491,14 @@ function ocrPendingRereadPages(report) {
         const files = window._autofillPdfFiles || [];
         for (const f of files) { if (f && f.fileName === report.fileName) { size = (f.file && f.file.size) || 0; break; } }
     } catch (e) { /* best-effort */ }
+    // P-5 consequence, and it would have been a live defect: a beyond-budget page no
+    // longer writes an empty into the cache (that write was the §46.4 trap), so without
+    // this it would report as "pending" on every render — the Re-read button would offer
+    // to re-read pages nothing had turned, and re-reading them could not reach them
+    // anyway. A re-read is defined as what a TURN made stale; the budget is Re-scan's job.
+    const beyond = report.beyondBudgetPages || [];
     return ocrRotatablePagesOf(report).filter((pn) => {
+        if (beyond.indexOf(pn) !== -1) return false;
         const rot = ocrRotationOf(report.fileName, pn);
         return !_ocrTextCache.has(report.fileName + '#' + size + '#' + pn + '@' + rot);
     });
@@ -1578,6 +1678,12 @@ function ocrAiCandidates(maxN) {
             const chars = (r.pageChars || {});
             const soupy = {};
             (r.soupyPages || []).forEach((pn) => { soupy[pn] = true; });
+            // §48.3: a page past the budget also looks like "the reader got nothing",
+            // because nothing was asked of it. Its PLACE in the ranking is unchanged —
+            // it is genuinely unread, and an unread page is still the best thing to send
+            // — but the reason shown to the reviewer must not claim the reader tried.
+            const beyond = {};
+            (r.beyondBudgetPages || []).forEach((pn) => { beyond[pn] = true; });
             let ordered = scanned.slice().sort((a, b) => {
                 // 1. A page the reader got NOTHING from is still the best thing to send.
                 //    Keeping this first means the old behaviour is preserved exactly
@@ -1611,9 +1717,10 @@ function ocrAiCandidates(maxN) {
                     // why a page was chosen. "among the weakest" was true when weakness
                     // meant emptiness; now it can say which kind of weak.
                     reason: fallback ? 'first pages of a file with no photo-read pages'
-                        : (!read[pn] ? 'the reader got nothing here'
-                            : (soupy[pn] ? 'the text here came back garbled'
-                                : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)')),
+                        : (beyond[pn] ? 'never scanned — past the chosen read depth'
+                            : (!read[pn] ? 'the reader got nothing here'
+                                : (soupy[pn] ? 'the text here came back garbled'
+                                    : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)'))),
                 });
             }
         }
@@ -1749,10 +1856,17 @@ async function renderOcrPagePreview() {
     const ctl = document.getElementById('ocrPreviewControls');
     if (ctl) {
         const pending = ocrPendingRereadPages(r).length;
+        // P-5(d): offering a control that provably cannot help is the same defect in
+        // button form. A page past the budget was never attempted, so turning it changes
+        // nothing a re-read could act on — the gate refuses it at any angle. Disabled
+        // rather than hidden, so the reviewer can see WHY the option is not theirs here.
+        const pastBudget = (r.beyondBudgetPages || []).indexOf(pn) !== -1;
         ctl.innerHTML =
             '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at <= 0 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(-1)">‹ prev</button>'
             + '<button type="button" class="btn btn-sm btn-outline-secondary" ' + (at >= pages.length - 1 ? 'disabled ' : '') + 'onclick="window._ocrPreviewStep(1)">next ›</button>'
-            + '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewRotate()" title="Turn this page 90°. Nothing is re-read until you press Re-read.">⟳ turn this page</button>'
+            + (pastBudget
+                ? '<button type="button" class="btn btn-sm btn-outline-primary" disabled title="This page was never scanned — it is past the chosen read depth. Turning it cannot help; raise the depth below and press Re-scan.">⟳ turn this page</button>'
+                : '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewRotate()" title="Turn this page 90°. Nothing is re-read until you press Re-read.">⟳ turn this page</button>')
             + '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._ocrPreviewRotateFile()" title="Turn every scanned page of this file 90°">⟳ turn whole file</button>'
             + (pending > 0
                 ? '<button type="button" class="btn btn-sm btn-primary ms-auto" onclick="window._ocrPreviewReread()" title="Read the turned pages again — only these are re-read">Re-read ' + pending + ' page' + (pending === 1 ? '' : 's') + '</button>'
@@ -2462,9 +2576,17 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         const lines = reports.map((r, ri) => {
             const visited = r.pagesVisited || r.numPages || '?';
             const total = r.numPages || '?';
+            // P-4: a file read past the selected depth must SAY so, or the note reads as
+            // a contradiction ("12 of 12 scanned pages yielded text (10 per file
+            // selected)"). `limit` stays the number the reviewer chose; the extra clause
+            // reports the slack that carried this particular file to its end.
+            const fileBudget = Number(r.budget) || limit;
+            const depth = (fileBudget > limit)
+                ? limit + ' per file selected, ' + fileBudget + ' read to finish the file'
+                : limit + ' per file selected';
             const base = r.truncated
-                ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + limit + ' per file selected) — later pages were not scanned.'
-                : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + limit + ' per file selected) — scan complete.';
+                ? 'In ' + escapeHtml(r.fileName) + ': visited ' + visited + ' of ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages read (' + depth + ') — later pages were not scanned.'
+                : 'In ' + escapeHtml(r.fileName) + ': visited all ' + total + ' pages; ' + r.scannedRead + ' of ' + r.scannedTotal + ' scanned pages yielded text (' + depth + ') — scan complete.';
             // R2 + P-ROT (2026-09-07): per-page rotate buttons for ALL scanned pages
             // (scannedPageNums ledger, ocrPages fallback) — unread pages were previously
             // unactionable. Failed pages carry a "no text yet" badge. Index-indirected
@@ -2605,21 +2727,54 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             // CLOSING the preview is the reviewer saying they are done with this read.
             // Reported 2026-09-18: the spinner was still there after the modal was
             // closed, so this is the reported moment itself, covered explicitly.
+            // P-6a (2026-09-20): ...but only when the reviewer is the one who closed it.
+            // When WE closed it in order to start another scan, a newer run has already
+            // begun and owns the indicator — zeroing the counter here killed it for the
+            // rest of that scan, which read as "Re-scan is not working" (§47.1).
+            // The run id is the exact test: runDocumentAutofill bumps it, so if it has
+            // moved since the close was issued, this teardown belongs to nobody.
             modalEl.addEventListener('hidden.bs.modal', function () {
+                const stamp = _autofillPreviewCloseStamp;
+                _autofillPreviewCloseStamp = null;
+                if (stamp !== null && stamp !== _autofillRunId) return;
                 _autofillScansInFlight = 0;
                 try { removeAutofillScanStatus(); } catch (e) { /* best-effort */ }
             });
             modalEl.dataset.afpSyncBound = '1';
         }
     } catch (e) { /* binding is best-effort — the render-time pass still ran */ }
+    // P-6a: this preview is nobody's deliberate close yet. Clearing the stamp here is
+    // what keeps the 2026-09-18 fix working for the case it was written for — a
+    // reviewer pressing X never goes through closeAutofillPreview(), so a stamp left
+    // over from an earlier programmatic close would wrongly suppress their teardown.
+    _autofillPreviewCloseStamp = null;
     instance.show();
 }
 
+// WHICH RUN WAS LIVE WHEN WE CLOSED THE PREVIEW OURSELVES (P-6a, 2026-09-20).
+// null means "we did not close it" — i.e. the reviewer did, with the X or the
+// backdrop. See closeAutofillPreview() and the hidden.bs.modal handler for why
+// the difference is load-bearing.
+let _autofillPreviewCloseStamp = null;
+
+// Close the preview from code. Stamps the run id that was live at the moment of
+// closing, because instance.hide() is a CSS FADE (~150-300ms) and three callers
+// start another scan immediately afterwards — _rescanWithSelection (:Re-scan),
+// _ocrPreviewReread (Re-read) and _removeMismatchFiles (Remove & re-scan). The
+// new run paints its indicator before the fade ends, so without this stamp the
+// hidden.bs.modal handler tore down an indicator belonging to a run a tenth of a
+// second old, and it could never repaint (restudy §47.1, §48.4).
+// Called by: cancelDocumentAutofill, applyAutofill, and the three re-run paths.
 function closeAutofillPreview() {
     const modalEl = document.getElementById('autofillPreviewModal');
     if (modalEl) {
         const instance = bootstrap.Modal.getInstance(modalEl);
-        if (instance) instance.hide();
+        if (instance) {
+            // Stamp only when a hide is actually issued — an already-hidden modal
+            // fires no event, and a stamp left behind would suppress the next real close.
+            _autofillPreviewCloseStamp = _autofillRunId;
+            instance.hide();
+        }
     }
 }
 
@@ -3391,6 +3546,26 @@ function showAutofillScanStatus(message) {
         + '<span class="afp-scan-text">' + escapeHtml(message) + '</span>';
     _autofillSpinnerTick = Date.now();
     armAutofillSpinnerWatchdog();
+}
+
+// SAY "STILL WORKING" WITHOUT REPAINTING (P-6b, 2026-09-20).
+// The watchdog below culls the indicator after six seconds of silence, but the only
+// thing that spoke was showAutofillScanStatus() ONCE PER PAGE (:915, before the whole
+// PSM ladder). A hard page costs up to six recognitions plus two re-renders, so it
+// out-waited its own watchdog and the indicator vanished mid-page, reappearing when
+// the next page started — the flicker the user reported (restudy §47.2).
+// This is the honest fix: the ladder's rungs tick the freshness clock as they work,
+// so the watchdog watches for silence from the WORKER rather than from the page loop.
+// Touch-only on purpose — showAutofillScanStatus would rewrite the element's HTML up
+// to six times a page for no visible change.
+// Called by: recognizeEnglish (per attempt), the scale-2 and crop fallbacks, and the
+// photo-read cache hit in ocrPage().
+function touchAutofillSpinner() {
+    try {
+        if (_autofillScansInFlight <= 0) return;
+        if (!document.getElementById(AUTOFILL_SCAN_STATUS_ID)) return;
+        _autofillSpinnerTick = Date.now();
+    } catch (e) { /* freshness is best-effort — the explicit removals still run */ }
 }
 
 // The only way this indicator goes away — and it is unconditional. Safe to call when
