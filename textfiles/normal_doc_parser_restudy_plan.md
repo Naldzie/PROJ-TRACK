@@ -95,6 +95,19 @@
 #         (1% of pixels) and hi=255 from the PAGE MARGIN (5.8%). Seven percent of
 #         pixels, none of them text, disable the one mechanism built to rescue it.
 #         §18.4 has the fix's shape. NOT BUILT — it changes every scanned read.
+#         ⬛ P-3 BUILT 2026-09-20 (§19) on branch phase-25-ocr-contrast-stretch — the
+#         document-band stretch. Gate and mapping both stop keying on lo/hi. On REAL
+#         page-3 pixels: separation 49 -> 212, gain 1.00 -> 4.32, strokes landing at
+#         p5=13. Suites green; a probe caught a gate keyed to the wrong percentile
+#         population before it shipped (§19.3). ⬜ BROWSER CHECK OWED — §19.4 states the
+#         per-page prediction and the three acceptance conditions IN ADVANCE.
+#         ⭐ P-3 PROVED 2026-09-20 (§20): 4 of 10 -> 10 OF 10. All six stretched pages
+#         went from ZERO to real text, the four untouched ones returned their predicted
+#         counts TO THE CHARACTER, and §19.4's per-page prediction held exactly.
+#         PAGE 7 NOW READS, so THE ABC IS FILLED — the field that started the restudy.
+#         OCR-1 IS CLOSED. ⚠ Second-order: six newly-read pages also bring their
+#         misreads. Budget source now accepts "Accor, Fost =" AND offers to create it as
+#         a DB row — its validator is a LENGTH CHECK ONLY (core :869/:341). See §20.3.
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -2398,6 +2411,160 @@
       ⚠ THIS IS A BEHAVIOUR CHANGE ON EVERY SCANNED DOCUMENT. Own branch, own browser
       proof, and the page-by-page ledger re-run as the acceptance test — the four
       readers must still read, and the count must go up, or it is not a fix.
+===============================================================================
+  19. P-3 BUILT — THE DOCUMENT-BAND CONTRAST STRETCH (2026-09-20, ordered)
+      Branch phase-25-ocr-contrast-stretch, off phase-24 (Rule 12). This CHANGES WHAT
+      THE PARSER READS on every scanned document, so section 19.4 states the expected
+      result page by page BEFORE the run.
+===============================================================================
+
+  19.1 WHAT SHIPPED — preprocessOcrCanvas(), rewritten whole (Rule 2)
+
+      Both the DECISION and the MAPPING stop keying on lo/hi.
+        THE MAPPING now uses the DOCUMENT BAND: percentiles taken over pixels below
+          OCR_BAND_WHITE_FLOOR (240), so the white page margin cannot drag the paper end
+          to 255 the way it drags `hi` to 255 today. Band low = the strokes, band high =
+          the paper. Values outside the band clamp, which is the point and not a side
+          effect: the binder shadow goes to black, the margin to white, and the document
+          gets the whole range to itself.
+        THE GATE now uses the whole-canvas p5 against OCR_BAND_STROKES_DARK_ENOUGH (110)
+          — see 19.3, this was nearly wrong.
+        THREE REFUSALS, each naming itself in the ledger: almost no document (<5% of the
+          canvas), a band too narrow to stretch without amplifying sensor noise (<12
+          levels), and strokes already dark enough. "skipped" with no reason is what made
+          the old gate unreadable.
+      OCR_CLEANUP_MODE = 'band' ships. 'legacy' restores the old lo/hi gate EXACTLY, and
+      'off' disables cleanup entirely. Every threshold is a named constant, because they
+      come from ONE FILE and real PMU scans (pilot §5 N2) are what should set them.
+
+  19.2 THE RESULT ON REAL PAGE-3 PIXELS
+
+      Not a synthetic approximation — the probe rebuilds a canvas carrying page 3's
+      ACTUAL gray distribution, dumped from its saved snapshot with GD, and runs the real
+      function on it:
+        before   p5=112  p50=161   text/paper separation 49    gain 1.00 (the identity)
+        after    p5= 13  p50=225   text/paper separation 212   gain 4.32
+      The strokes land at p5=13 — far inside the reading range (69-108) rather than just
+      over the line. Separation improves 4.3x, from "barely distinguishable" to the sort
+      of contrast a clean scan has.
+
+  19.3 ⚠ THE DEFECT THE PROBE CAUGHT BEFORE IT SHIPPED
+
+      The first build gated on the BAND's p5. Section 18.1 measured its ten-page
+      separation on the WHOLE-CANVAS p5, and those are different numbers: excluding the
+      margin moves the same percentile further down the dark tail. On page 3 the band p5
+      is 109 against a whole-canvas 112 — so with a threshold of 110 the rule SKIPPED THE
+      VERY PAGE IT WAS BUILT FOR, and would have shipped as a silent no-op on the
+      motivating case.
+      Fixed by gating on the quantity that was actually validated across ten pages, and
+      using the band only for the mapping. The reasoning is written into the code beside
+      the gate so it cannot be "simplified" back.
+      THE LESSON, and it is the same one section 8 recorded: a statistic is not
+      transferable just because it has the same name. p5 over one population is not p5
+      over another.
+
+  19.4 VERIFICATION, AND THE PREDICTION THE BROWSER RUN MUST MATCH
+
+      node --check clean · JS suite 231/231/0 · every earlier probe still green
+      (M-1 13/13, T2 14/14, T3 rewritten for the new function and passing).
+      C:\temp\opencode\probe_p3_band.mjs — real page-3 pixels, the two guards, all three
+      modes, and the proof that a page which already reads is left BYTE-IDENTICAL.
+
+      PREDICTED PER-PAGE OUTCOME, from each page's measured p5 against the 110 line:
+        STRETCHED  pages 1 (131) · 2 (114) · 3 (113) · 5 (143) · 7 (145) · 8 (121)
+        UNTOUCHED  pages 4 (69) · 6 (75) · 9 (108) · 10 (92)
+      ACCEPTANCE — all three must hold or this is not a fix:
+        (a) THE FOUR UNTOUCHED PAGES MUST RETURN THE SAME CHARACTER COUNTS, EXACTLY:
+            4446 / 1621 / 3075 / 4108. They are handed byte-identical pixels, so anything
+            else means the stretch is reaching pages it must not reach.
+        (b) The ledger must show why=band on the six, and a named refusal on the four.
+        (c) THE READ COUNT MUST GO UP from 4 of 10. If every stretched page still yields
+            nothing, contrast was the wrong lever and the honest next move is M-4's other
+            candidate — local/adaptive thresholding rather than a global stretch.
+      ⚠ A PARTIAL RESULT IS STILL A RESULT. Page 7 carries the ABC and is the faintest
+      page in the file (p5=145, separation 21); if only it reads, the pilot gains the
+      field that started this whole restudy.
+      RUN IT WITH DEVTOOLS SHUT (13.1's recipe). Section 16.3: the open-devtools render
+      is a developer artefact and reads one page fewer.
+===============================================================================
+  20. P-3'S RESULT — 10 OF 10, AND THE PREDICTION HELD PAGE FOR PAGE
+      (user, 2026-09-20, devtools shut)
+===============================================================================
+
+  20.1 ⭐ ALL THREE ACCEPTANCE CONDITIONS MET
+
+      READ COUNT: 4 of 10  ->  10 OF 10. Every page of the scan now yields text.
+      Six pages were stretched and all six went from ZERO to real text:
+        page 1  band= 55..171  gain 2.20  doc=53.0%   0 -> 1338 chars
+        page 2  band=107..174  gain 3.81  doc=85.0%   0 -> 2397
+        page 3  band=110..168  gain 4.40  doc=94.2%   0 ->  989
+        page 5  band= 94..171  gain 3.31  doc=37.2%   0 -> 1030
+        page 7  band=127..168  gain 6.22  doc=67.3%   0 ->  683
+        page 8  band=118..169  gain 5.00  doc=93.6%   0 -> 1673
+      (a) THE FOUR UNTOUCHED PAGES RETURNED THEIR EXACT PREDICTED COUNTS —
+          4446 / 1621 / 3075 / 4108, to the character. The stretch reached nothing it
+          was not supposed to reach.
+      (b) why=band on the six; a named refusal on the four, each quoting the p5 that
+          earned it: 69, 75, 108, 92.
+      (c) The per-page PREDICTION of 19.4 was exactly right: stretched 1,2,3,5,7,8 and
+          untouched 4,6,9,10. Ten for ten on the decision as well as the outcome.
+
+  20.2 ⭐ THE FIELD THAT STARTED THE RESTUDY IS NOW FILLED
+
+      PAGE 7 CARRIES THE ABC, and page 7 was the faintest page in the file (p5=145,
+      text-to-paper separation 21, the second most ink-poor). It now reads, and the
+      ABC field comes back populated — 4,834,297.00 / 4,834,297.59 offered as the two
+      candidates the pick-one control exists for.
+      Section 12.10 asked why the ABC was missing when the blinding had been lifted. The
+      answer was never the blinding and never the tilt: it was that 70% of the document
+      was invisible to the reader. It is visible now.
+
+  20.3 ⚠ THE SECOND-ORDER CONSEQUENCE — MORE TEXT MEANS MORE NOISE
+
+      This is the honest other half of the result, and it is not a regression in P-3:
+      six pages that used to contribute NOTHING now contribute everything they carry,
+      including their misreads. Visible in the preview from this run:
+        BUDGET SOURCE  "Accor, Fost =" — offered as a value, AND offered for creation
+                       as a new budget source (the Q3 create-in-place control).
+        TITLE          a leading "]" artifact.
+        LOCATION       "... Camarines Sur Polytechnic Colleges Date: 05142005" — a
+                       stray "Date: ..." glued onto the end of the real location.
+        CONTRACTOR     a pipe-joined run of several names. Not yet diagnosed — it may be
+                       a DB option label rather than a parse, so it is NOT claimed as a
+                       defect here (Rule 1: measure before asserting).
+
+      THE BUDGET SOURCE ONE IS THE WORST, AND THE CAUSE IS EXACT.
+      extractBudgetSource (document-parser-core.js:869) matches a funding-source label
+      and then validates the captured tail with lenRange(2, 100) — which is a LENGTH
+      CHECK AND NOTHING ELSE (:341). Any 2-to-100-character string following a matching
+      label is accepted as a budget source. It never fired before because the pages
+      carrying those labels were unreadable.
+      ⚠ WHY IT MATTERS MORE THAN THE OTHER TWO: Q3 (phase-23) added CREATE-IN-PLACE for
+      budget sources. A reviewer under time pressure clicks "Add" and a junk row enters
+      the budget_sources table permanently. Garbage in a text box is a nuisance; garbage
+      offered as a database row is a pilot problem.
+
+  20.4 A BENIGN WARNING, RECORDED SO IT IS NOT RE-DIAGNOSED
+
+      Page 8 logged "Image too small to scale!! (2x36 vs min width of 3)" and "Line
+      cannot be recognized!!" from the tesseract core. The page still yielded 1673
+      characters. It is tesseract declining one sliver of a line, not a failure.
+
+  20.5 WHAT IS OPEN NOW
+
+      OCR-1 IS CLOSED. Six of ten pages yielded nothing because the document's own
+      contrast band was being ignored in favour of two outlier pixels. It is fixed, the
+      fix was predicted before it was run, and the prediction held exactly.
+      ⚠ STILL ONE FILE. The thresholds are named constants precisely so real PMU scans
+      (pilot §5 N2) can move them. A rule validated on ten pages of one document is a
+      good rule, not a finished one.
+      NEXT, in the order the damage justifies:
+        B-1  The budget-source validator — a shape test, not a length test. Pure core,
+             so the JS suite can cover it, and the learning loop already has the
+             machinery for a reviewer to correct a miss.
+        B-2  Whether create-in-place should be offered at all for a low-confidence value.
+        B-3  The title bracket and the location tail — cosmetic beside B-1.
+        B-4  Diagnose the contractor field before calling it anything.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

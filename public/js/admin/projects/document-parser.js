@@ -489,16 +489,49 @@ function warmTesseract() {
     } catch (e) { /* best-effort */ }
 }
 
+// ===================================================
+// P-3 — THE DOCUMENT-BAND CONTRAST STRETCH (2026-09-20)
+// WHAT WAS WRONG, measured rather than guessed (restudy §17.1, §18):
+//   The old gate keyed on lo/hi — the darkest and lightest pixel on the canvas — and
+//   the stretch mapped [lo, hi] onto [0, 255]. On a photographed document lo is set by
+//   the BINDER SHADOW and hi by the white PAGE MARGIN, neither of which is the
+//   document. On the test scan that was 1.05% and 5.78% of the pixels: seven percent,
+//   none of it text, both disabling the gate AND making the mapping the identity
+//   function, so the stretch could not have helped even if it had fired.
+//   Meanwhile the document itself lived between gray 120 and 180 — paper ~167, text
+//   ~135, a separation of 32 levels out of 255 where a clean scan has ~215.
+// WHAT THIS DOES INSTEAD: takes both the decision and the mapping from the page's OWN
+//   band — percentiles computed over the document pixels, ignoring the near-white
+//   margin — so a speck of shadow and a strip of margin can no longer decide either.
+// THE MEASURED SEPARATOR: p5 of the document band ("how dark are the darkest strokes")
+//   split all ten pages of the test scan with no exception — the four that read sat at
+//   69-108, the six that yielded nothing at 113-145.
+// ⚠ THOSE THRESHOLDS COME FROM ONE FILE. They are deliberately named constants, not
+//   inline numbers, because real PMU scans (pilot plan §5 N2) are what should set them.
+// ===================================================
+const OCR_CLEANUP_MODE = 'band';        // 'band' = this rule · 'legacy' = the old lo/hi
+                                        // gate, unchanged · 'off' = no cleanup at all
+const OCR_BAND_WHITE_FLOOR = 240;       // at or above this is page margin, not document
+const OCR_BAND_LOW_PCT = 0.05;          // the ink end of the band — the text strokes
+const OCR_BAND_HIGH_PCT = 0.95;         // the paper end of the band
+const OCR_BAND_STROKES_DARK_ENOUGH = 110; // whole-canvas p5 at or below this already
+                                        // reads fine, so the page is left alone
+                                        // (the §18.1 line, in the gap 108..113)
+const OCR_BAND_MIN_WIDTH = 12;          // a band narrower than this cannot be stretched
+                                        // without amplifying sensor noise into strokes
+const OCR_BAND_MIN_DOC_SHARE = 0.05;    // a canvas that is almost all margin has no
+                                        // document to take statistics from
+
 // OCR group 1: light canvas cleanup (no new library) — grayscale + contrast stretch via
 // plain 2D canvas APIs, so washed-out photocopies reach the reader with fuller blacks.
 // Runs on the already-rendered canvas, in place, best-effort (any failure keeps the original).
-// F2 conditional gate (2026-09-07): the global stretch is applied ONLY to washed-out pages
-// (no deep blacks to anchor on + compressed tonal range) and SKIPPED on already-clean pages,
-// restoring pre-group1 behavior exactly where pixels look healthy. An unconditional remap
-// calibrated to outlier specks (stamps, glare) can crush faint cell text into the background —
-// the prime suspect for test4 p1 @0° + p2 @90° yielding 0 on upright, human-crisp pixels.
-// Decision is logged under window._parserDebug (applied/skipped + sampled range, plus
-// the T3 percentile/ink-fraction diagnostics that say whether the range is meaningful).
+// The F2 conditional gate (2026-09-07) still holds in spirit — a page whose strokes are
+// already dark is left EXACTLY alone, because an unconditional remap calibrated to outlier
+// specks can crush faint text into the background (the old suspect for test4 p1 @0° + p2
+// @90° yielding 0 on upright, human-crisp pixels). What changed is what "already dark"
+// means: it is now read from the document's own band, not from two outlier pixels.
+// Decision is logged under window._parserDebug (applied/skipped, the sampled range, the
+// band and its verdict, plus the T3 percentile/ink-fraction diagnostics).
 // Called by: ocrPage() once per scanned page, before any recognize() attempt.
 function preprocessOcrCanvas(canvas) {
     try {
@@ -507,11 +540,9 @@ function preprocessOcrCanvas(canvas) {
         const d = img.data;
         let lo = 255, hi = 0, sum = 0, n = 0;
         // T3: a 256-bin gray histogram filled in the SAME pass — one array increment per
-        // sample, so it costs nothing measurable. It is what lets the debug line below
-        // report percentiles and ink fraction: statistics that describe the PAGE, unlike
-        // the lo/hi the washed gate keys on, which a single dark speck decides
-        // (restudy §12.9). Filled unconditionally to keep this loop branch-free; only
-        // the reporting below is gated on the debug flag.
+        // sample, so it costs nothing measurable. Everything below (the band, the
+        // percentiles, the ink fractions) is read out of this one histogram rather than
+        // by walking the pixels again.
         const hist = new Uint32Array(256);
         for (let i = 0; i < d.length; i += 16) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
@@ -521,53 +552,88 @@ function preprocessOcrCanvas(canvas) {
             hist[g | 0]++;
         }
         if (hi - lo < 8) return;
-        // F2 gate: stretch only washed-out pages (faded gray text, no true blacks, narrow
-        // range). Clean pages (real black text, healthy range) skip untouched — the stretch
-        // is near-identity for them at best and outlier-calibrated damage at worst.
-        const washed = (lo >= 100) && ((hi - lo) <= 140);
+
+        // Percentile over ALL sampled pixels — used for the diagnostics only.
+        const pct = (frac) => {
+            const want = Math.max(1, Math.round(n * frac));
+            let acc = 0;
+            for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= want) return v; }
+            return 255;
+        };
+        const inkBelow = (t) => { let acc = 0; for (let v = 0; v < t; v++) acc += hist[v]; return acc; };
+
+        // THE DOCUMENT BAND. Percentiles taken over the document pixels only — everything
+        // below the white floor — so the page margin cannot drag the paper end up to 255
+        // the way it drags `hi` up to 255 today. This is what makes one rule work for a
+        // page that is 94% photo and a page that is half blank margin.
+        let docN = 0;
+        for (let v = 0; v < OCR_BAND_WHITE_FLOOR; v++) docN += hist[v];
+        const bandPct = (frac) => {
+            const want = Math.max(1, Math.round(docN * frac));
+            let acc = 0;
+            for (let v = 0; v < OCR_BAND_WHITE_FLOOR; v++) { acc += hist[v]; if (acc >= want) return v; }
+            return OCR_BAND_WHITE_FLOOR - 1;
+        };
+        const docShare = docN / Math.max(1, n);
+        const dLo = docN ? bandPct(OCR_BAND_LOW_PCT) : 0;
+        const dHi = docN ? bandPct(OCR_BAND_HIGH_PCT) : 255;
+
+        // THE GATE QUANTITY IS THE WHOLE-CANVAS PERCENTILE, NOT THE BAND ONE, AND THE
+        // DIFFERENCE MATTERS. §18.1 measured its ten-page separation (readers 69-108,
+        // dead 113-145) on the whole-canvas p5, and the band p5 is a DIFFERENT NUMBER:
+        // excluding the margin moves the same percentile further down the dark tail.
+        // On page 3 that is 109 against 112 — enough to fall the wrong side of the line
+        // and skip the very page the rule exists for. So the gate keys on the quantity
+        // that was actually validated; only the MAPPING uses the band.
+        const strokeDark = pct(OCR_BAND_LOW_PCT);
+
+        // THE DECISION. Each refusal carries its own reason so the ledger says WHY a page
+        // was left alone — "skipped" with no reason is what made the old gate unreadable.
+        const legacyWashed = (lo >= 100) && ((hi - lo) <= 140);
+        let apply = false, sLo = lo, sHi = hi, why = '';
+        if (OCR_CLEANUP_MODE === 'off') {
+            why = 'disabled';
+        } else if (OCR_CLEANUP_MODE === 'legacy') {
+            apply = legacyWashed; why = legacyWashed ? 'legacy washed' : 'legacy clean';
+        } else if (docShare < OCR_BAND_MIN_DOC_SHARE) {
+            why = 'band: almost no document (' + (docShare * 100).toFixed(1) + '% )';
+        } else if ((dHi - dLo) < OCR_BAND_MIN_WIDTH) {
+            why = 'band: too narrow to stretch (' + (dHi - dLo) + ')';
+        } else if (strokeDark <= OCR_BAND_STROKES_DARK_ENOUGH) {
+            why = 'band: strokes already dark (' + strokeDark + ')';
+        } else {
+            apply = true; sLo = dLo; sHi = dHi; why = 'band';
+        }
+
         if (typeof window !== 'undefined' && window._parserDebug) {
-            // T3 diagnostics — REPORTING ONLY, the gate's verdict above is untouched.
-            // Why these numbers: the gate keys on lo/hi, and ONE dark pixel (a binder
-            // edge, a staple, a curl shadow) pins those to 0/255 on any page at all — so
-            // a pale scan reports "full dynamic range" and is judged healthy. These
-            // describe the page rather than its extremes:
-            //   pN   = the Nth-percentile gray — how dark the darkest N% actually is
-            //   ink< = the share of sampled pixels below a darkness threshold, which is
-            //          as close to "how much ink is on this page" as sampling gets.
-            // A page carrying text normally shows a few percent of ink; a page that
-            // yields nothing is expected to show far less. That comparison is the point.
-            //
-            // P-3a (2026-09-20) adds the UPPER percentiles and `gain`, for one reason:
-            // the stretch below maps [lo, hi] -> [0, 255], and on every page of the test
-            // scan lo is 0-2 and hi is 255, so THE STRETCH IS THE IDENTITY FUNCTION. It
-            // would change nothing even if the gate fired. Correcting the gate alone was
-            // therefore never going to help — the ENDPOINTS have to stop being lo/hi too,
-            // and p75/p95/p99 are what a percentile endpoint would be chosen from.
-            //   gain = 255 / (hi - lo) — what the CURRENT mapping multiplies contrast by.
-            //          1.00 means "this page would be handed back unchanged".
-            // The lo/hi/mean prefix is kept verbatim so older ledgers stay comparable.
+            // Diagnostics. The gate keys on the band now, but lo/hi/mean are still
+            // reported FIRST and unchanged so every earlier ledger in the restudy plan
+            // stays directly comparable against a new run.
+            //   pN   = the Nth-percentile gray over the whole canvas
+            //   ink< = the share of sampled pixels below a darkness threshold
+            //   band = the document's own [ink .. paper] range, margin excluded
+            //   gain = what the chosen mapping multiplies contrast by (1.00 = unchanged)
             try {
-                const pct = (frac) => {
-                    const want = Math.max(1, Math.round(n * frac));
-                    let acc = 0;
-                    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= want) return v; }
-                    return 255;
-                };
-                const inkBelow = (t) => { let acc = 0; for (let v = 0; v < t; v++) acc += hist[v]; return acc; };
                 const share = (c) => ((c / Math.max(1, n)) * 100).toFixed(2) + '%';
-                console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped')
+                console.log('[Parser] OCR cleanup ' + (apply ? 'applied' : 'skipped')
                     + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))
                     + ' p1=' + pct(0.01) + ' p5=' + pct(0.05) + ' p50=' + pct(0.50)
                     + ' p75=' + pct(0.75) + ' p95=' + pct(0.95) + ' p99=' + pct(0.99)
                     + ' ink<128=' + share(inkBelow(128)) + ' ink<160=' + share(inkBelow(160))
-                    + ' gain=' + (255 / Math.max(1, hi - lo)).toFixed(2));
+                    + ' | band=' + dLo + '..' + dHi + ' doc=' + (docShare * 100).toFixed(1) + '%'
+                    + ' gain=' + (255 / Math.max(1, sHi - sLo)).toFixed(2)
+                    + ' why=' + why);
             } catch (e) {}
         }
-        if (!washed) return;
-        const range = (hi - lo) || 1;
+
+        if (!apply) return;
+        // Map the chosen range onto the full scale. Values outside it clamp, which is the
+        // point rather than a side effect: the binder shadow goes to black and the page
+        // margin to white, and the document's own band gets the whole range to itself.
+        const range = (sHi - sLo) || 1;
         for (let i = 0; i < d.length; i += 4) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
-            const v = Math.max(0, Math.min(255, Math.round(((g - lo) / range) * 255)));
+            const v = Math.max(0, Math.min(255, Math.round(((g - sLo) / range) * 255)));
             d[i] = v; d[i + 1] = v; d[i + 2] = v;
         }
         ctx.putImageData(img, 0, 0);
