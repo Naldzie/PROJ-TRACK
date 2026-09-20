@@ -4006,5 +4006,58 @@
       stash is filled on every preview regardless.
 
 ===============================================================================
+  38. CROSS-FIELD EXCLUSION BUILT (2026-09-20, ordered) — AND SCOPED DOWN AFTER
+      THE FIRST VERSION REGRESSED A REAL CASE
+===============================================================================
+
+  38.1 WHAT SHIPPED
+
+      The ABC is no longer offered as the alternative CONTRACT PRICE. When the budget
+      pool's runner-up is exactly the ABC's winner, that row is dropped from the pair
+      the pick-one control is built from.
+      THE WINNER IS NEVER FILTERED. rows[0] is the value in the box, and a bid at
+      exactly the ceiling is legitimately both figures — it must not be struck out of
+      its own field.
+
+  38.2 ⚠ THE FIRST VERSION WAS GENERAL, AND THAT WAS WRONG
+
+      It read: no field may offer another field's winner as its alternative. Clean
+      rule, and the suite caught it immediately — an existing L-9 test went red.
+      WHY: on a document with NO contract price at all, the budget pool is entirely
+      ABC leakage, so its winner is one of the ABC's own readings. The general rule
+      then struck that reading out of the ABC's own pick-one and SILENCED the
+      .59-vs-.00 note — the exact note L-8, L-9 and the independence fix were built to
+      produce. A fix for one field's contamination broke another field's correctness.
+      THE ASYMMETRY IS EVIDENCE, NOT PREFERENCE:
+        · the ABC pool's members are competing READINGS OF ONE FIGURE, so filtering
+          them against another field can remove a legitimate alternative;
+        · the budget pool legitimately holds DIFFERENT FIGURES — original, revised —
+          plus whatever leaks in, and a runner-up equal to the ABC's winner is the ABC
+          leaking rather than a second reading of the price.
+      Only the second case has been observed, so only it is handled. Scoping to the
+      evidence is the same discipline §11 and §15 recorded the hard way.
+
+  38.3 ⚠ WHAT IT ACHIEVES, STATED HONESTLY
+
+      It REMOVES A WRONG ANSWER. It does not supply a right one. Measured on a fixture
+      reproducing the real pool shape:
+        budget rows   4204128.84=3.5   4834297.59=2.0   4323196.77=1.5
+        unfiltered    3.5 < 2x2.0  -> the note WOULD fire, offering the ABC
+        filtered      3.5 < 2x1.5  -> false -> the note falls SILENT
+      So the contract price keeps its correct winner and stops being offered a figure
+      from another field, but the reviewer is not handed the revised amount instead.
+      §37.3 said this in advance and it held.
+
+  38.4 VERIFICATION
+
+      JS 264/264/0 · PHP 1231 passed / 0 failed.
+      Three new tests, and the first one guards against a fixture that proves nothing:
+      it ASSERTS THE UNFILTERED PAIR WOULD HAVE FIRED (first.score < 2 x second.score)
+      before checking that it does not, so a future change that merely lowers a score
+      cannot make the test pass for the wrong reason. The others cover a bid equal to
+      the ceiling (the winner survives in its own field) and the ABC note being
+      untouched — which is the regression 38.2 describes, now pinned.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================

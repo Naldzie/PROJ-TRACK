@@ -1998,6 +1998,50 @@ const DocumentParserCore = (function () {
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
         const dbgFor = (f) => f === 'budget' ? bDbg : f === 'abc' ? aDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg;
+
+        // CROSS-FIELD EXCLUSION (2026-09-20) — A VALUE THAT HAS ALREADY WON ANOTHER
+        // FIELD IS NOT THIS FIELD'S SECOND OPINION.
+        // The user noticed the CONTRACT PRICE pick-one had started offering
+        // 4,834,297.59 as its alternative. That is the ABC. It reached the budget pool
+        // because P-3 made six more pages readable and the ABC figure appears on several
+        // of them, so it accumulated enough finds to pass the genuine revised amount.
+        // The winner was still right; the ALTERNATIVE was a different field's answer
+        // wearing this field's label.
+        // ⚠ ONLY THE ALTERNATIVES ARE FILTERED, NEVER THE WINNER. rows[0] is the value
+        // in the box, and it must stay in the pair whatever else claims it — a number
+        // that is legitimately both the ABC and the contract price (a bid at exactly the
+        // ceiling) must not be struck out of its own field.
+        // ⚠ AND THIS REMOVES A WRONG ANSWER WITHOUT SUPPLYING A RIGHT ONE. With the ABC
+        // gone the runner-up here is an OCR ghost scoring too low to speak, so the note
+        // falls SILENT rather than switching to the revised amount. That is honest —
+        // there is a clear winner — but it is not the original-vs-revised choice the
+        // user remembers. The revised figure is a different FACT about the project, not
+        // a competing reading of the same one, and the form has one box for it.
+        // ⚠ SCOPED TO ONE DIRECTION, DELIBERATELY: the ABC is struck out of the
+        // CONTRACT PRICE's alternatives, and nothing else is filtered anywhere.
+        // A general "no field may offer another field's winner" rule was written first
+        // and REGRESSED a real case: on a document with no contract price at all, the
+        // budget pool is entirely ABC leakage, its winner is one of the ABC's own
+        // readings, and the general rule then struck that reading out of the ABC's own
+        // pick-one — silencing exactly the .59-vs-.00 note that L-8, L-9 and the
+        // independence fix exist to produce.
+        // The asymmetry is the evidence, not a preference. The ABC pool's members are
+        // competing READINGS OF ONE FIGURE, so filtering them against another field can
+        // remove a legitimate alternative. The budget pool legitimately holds DIFFERENT
+        // FIGURES — original, revised — plus whatever leaks in, and a runner-up that is
+        // exactly the ABC's winner is the ABC leaking rather than a second reading of
+        // the price. Only the second case has been observed, so only it is handled.
+        const disagreeFor = (field) => {
+            const rows = (dbgFor(field) || {}).rows || [];
+            if (field !== 'budget' || rows.length < 2) return pooledDisagree(rows);
+            const abcWinner = (dbgFor('abc') || {}).winner;
+            if (!abcWinner) return pooledDisagree(rows);
+            const claimed = normalizeForPool(abcWinner);
+            // rows[0] is the value in the box and always stays: a bid at exactly the
+            // ceiling is legitimately both, and must not be struck out of its own field.
+            const kept = [rows[0]].concat(rows.slice(1).filter(r => r.norm !== claimed));
+            return pooledDisagree(kept);
+        };
         const fileCounts = {};
         for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
             fileCounts[f] = {};
@@ -2014,11 +2058,11 @@ const DocumentParserCore = (function () {
             _debug: { budget: bDbg.rows, abc: aDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
             _fileCounts: fileCounts,
             _disagree: {
-                budget: pooledDisagree(bDbg.rows),
-                abc: pooledDisagree(aDbg.rows),
-                duration: pooledDisagree(dDbg.rows),
-                startDate: pooledDisagree(sDbg.rows),
-                endDate: pooledDisagree(eDbg.rows),
+                budget: disagreeFor('budget'),
+                abc: disagreeFor('abc'),
+                duration: disagreeFor('duration'),
+                startDate: disagreeFor('startDate'),
+                endDate: disagreeFor('endDate'),
             },
         };
     }

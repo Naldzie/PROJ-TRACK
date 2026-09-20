@@ -1280,3 +1280,69 @@ test('a probe value that identifies itself yields "cannot tell", not a false pos
     assert.equal(core.builtInCoversPhrase('duration', 'Zqxj Control Label'), false);
     assert.notEqual(core.builtInCoversPhrase('duration', 'MY OWN TAUGHT WORDING'), true);
 });
+
+// ─── Cross-field exclusion: another field's winner is not this field's alternative ──
+// The CONTRACT PRICE pick-one had started offering 4,834,297.59 — which is the ABC.
+// It reached the budget pool because P-3 made six more pages readable and the ABC
+// figure appears on several of them, accumulating enough finds to pass the genuine
+// revised amount. The winner was still right; the ALTERNATIVE was a different
+// field's answer wearing this field's label.
+
+const CROSS_FIELD_DOC = [
+    'Contract Price: Php 4,204,128.84',
+    'in the amount of FOUR MILLION TWO HUNDRED FOUR THOUSAND PESOS (P 4,204,128.84).',
+    '3. Original Contract Amount Php4,204,128.84',
+    'Contract Amount: PhP 4,204,128.84',
+    'Approved Budget for the Contract: P 4,834,297.59',
+    '| TOTAL ESTIMATED PROJECT COST P 4,834,297.59 |',
+    'Sub-Total P 4,834,297.59',
+    '4. Revised Contract Amount Php4,323,196.77',
+].join('\n');
+
+test('the ABC is never offered as the alternative CONTRACT PRICE', () => {
+    const p = core.parseProjectInfoPooled([{ text: CROSS_FIELD_DOC, fileName: 'd.pdf' }]);
+    assert.equal(p.budget, '4204128.84', 'the winner must still be the contract price');
+    assert.equal(p.abc, '4834297.59', 'and the ABC must still be the ABC');
+
+    // The fixture has to actually reproduce the problem, or this proves nothing: the
+    // unfiltered top two must satisfy pooledDisagree's condition (first < 2 x second).
+    const [first, second] = p._debug.budget;
+    assert.equal(second.value, '4834297.59', 'the ABC must really be the runner-up by score');
+    assert.ok(first.score < 2 * second.score, 'unfiltered, the note WOULD have fired offering the ABC');
+
+    // And it does not, because the ABC is claimed by another field.
+    const note = p._disagree.budget;
+    if (note) {
+        assert.notEqual(note.runnerUp.value, '4834297.59', 'the ABC must not be the alternative');
+        assert.notEqual(note.winner.value, '4834297.59');
+    }
+});
+
+test('excluding a claimed value never removes the field its own winner', () => {
+    // A bid at exactly the ceiling: the same number is legitimately both. The winner
+    // must survive in its own field even though another field claims it.
+    const text = [
+        'Approved Budget for the Contract: P 4,834,297.59',
+        'Contract Price: Php 4,834,297.59',
+        'Contract Amount: PhP 4,834,297.59',
+    ].join('\n');
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }]);
+    assert.equal(p.budget, '4834297.59', 'the contract price is still itself');
+    assert.equal(p.abc, '4834297.59', 'and so is the ABC');
+});
+
+test('the ABC pick-one is untouched by the exclusion', () => {
+    // The .59 vs .00 result must survive — it is what L-8, L-9 and the independence
+    // fix were built for, and the budget winner is a different number, so nothing in
+    // the ABC pair is claimed elsewhere.
+    const text = [
+        'Approved Budget for the Contract; PB 4,834,297 5g',
+        '| TOTAL ESTIMATED PROJECT COST P 4,834, 297.59',
+        'Contract Price: Php 4,204,128.84',
+    ].join('\n');
+    const learned = { learned: { labels: { abc: ['Approved Budget for the Contract; PB', '| TOTAL ESTIMATED PROJECT COST P'] } } };
+    const p = core.parseProjectInfoPooled([{ text, fileName: 'd.pdf' }], learned);
+    const values = p._debug.abc.map(r => r.value);
+    assert.ok(values.includes('4834297.59'));
+    assert.ok(values.includes('4834297.00'));
+});
