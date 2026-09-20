@@ -108,6 +108,30 @@
 #         OCR-1 IS CLOSED. ⚠ Second-order: six newly-read pages also bring their
 #         misreads. Budget source now accepts "Accor, Fost =" AND offers to create it as
 #         a DB row — its validator is a LENGTH CHECK ONLY (core :869/:341). See §20.3.
+#         ⬛ B-1 BUILT 2026-09-20 (§21): the budget source is validated by SHAPE
+#         (asSourceName), not by length. "Accor, Fost =" is refused; thirteen real
+#         sources still accepted. JS suite 234/234/0 with three new tests, mutation-
+#         falsified. ⚠ §21.4: extractCategory has the IDENTICAL hole and identical
+#         create-in-place risk — B-1b, not ordered, not done.
+#         ⬛ B-1 CONFIRMED + B-4 BUILT 2026-09-20 (§22): the contractor was reading an
+#         ABSTRACT OF BIDS row — four bidders in one field — because the rule asked only
+#         for 5-150 chars with a construction word. asCompanyName refuses a value
+#         carrying a '|' (a cell boundary) and tightens 3..150 to 5..100; a fallback
+#         that returned the raw text whatever the validator said is closed too.
+#         Suite 237/237/0, mutation-falsified. ⚠ §22.4 names the gap it does NOT close.
+#         ⬛ B-2 BUILT 2026-09-20 (§23): create-in-place is no longer one click — not
+#         offered at all for a SCANNED document, the reviewer TYPES the name into an
+#         empty box, and a near-duplicate is named before anything is created (distance
+#         0 disables Add; 1-2 warns but permits, because GAD really is one edit from GAA).
+#         editDistance/nearestName are in the pure core; suite 241/241/0, mutation-
+#         falsified. ⬜ Browser check owed — §23.4 lists the five DOM paths.
+#         ⬛ B-1b + B-3 + B-5 BUILT 2026-09-20 (§24): the category validated by shape;
+#         and one cure for three symptoms — values that ran into the next column. The
+#         cut is scoped to location/contractor, NOT the title ("Phase 2: Completion" is
+#         a real title). Suite 250/250/0 incl. a CLEAN-document-unchanged test.
+#         ⚠ §24.5: NO browser check is possible — no further sample documents exist, and
+#         B-1 empties the budget source on the one file we have, so no create control
+#         renders at all. N2 (get real PMU scans) is now BLOCKING the whole B-queue.
 #         Stage 3 (EXTRACTION) · Stage 4 (LEARNING LOOP) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -2565,6 +2589,333 @@
         B-2  Whether create-in-place should be offered at all for a low-confidence value.
         B-3  The title bracket and the location tail — cosmetic beside B-1.
         B-4  Diagnose the contractor field before calling it anything.
+===============================================================================
+  21. B-1 — THE BUDGET SOURCE IS VALIDATED BY SHAPE, NOT BY LENGTH
+      (2026-09-20, ordered. Branch phase-25-ocr-contrast-stretch, with P-3.)
+===============================================================================
+
+  21.1 THE DEFECT, AND WHY IT SURFACED NOW
+
+      extractBudgetSource (document-parser-core.js) validated the captured tail with
+      lenRange(2, 100) — a LENGTH CHECK AND NOTHING ELSE. Any 2-to-100-character string
+      following a funding-source label was accepted as a budget source.
+      It never bit while most scanned pages went unread. P-3 made six more pages of a
+      real scan readable, and one of them carried a misread tail: "Accor, Fost =", which
+      is thirteen characters and therefore passed.
+      ⚠ THE HARM IS NOT THE TEXT BOX. Q3 (phase-23) added CREATE-IN-PLACE for budget
+      sources, so the preview offered "Add \"Accor, Fost =\" as a new budget source". A
+      reviewer under time pressure clicks it and a junk row enters budget_sources
+      permanently. What this validator lets through can become a database record.
+
+  21.2 WHAT SHIPPED — asSourceName()
+
+      A source is a NAME, and a name has a shape. The checks, each for a reason:
+        length 2-60                 a source name is short; 100 was a sentence's worth
+        name punctuation only       '=', '|', '_', '*', '<', '>', '#', '@', '"', ':' are
+                                    OCR debris or a label bleeding in, never part of a
+                                    name. This alone is what kills "Accor, Fost ="
+        opens on letter/digit/'('   the leading DIGIT is deliberate: "20% Development
+                                    Fund" is a real LGU source
+        closes on letter/digit/')'/'.'/'%'   catches a dangling "GAA," or "Fund -"
+        two consecutive letters     "05142005" and "3 1" carry no word at all
+        at most six words           "General Appropriations Act (GAA) FY 2025" is
+                                    already generous; nine words is a clause
+        first word is not a         a fragment caught mid-sentence opens on "the", "of",
+        function word               "in", "with"; a name does not
+        punctuation under 25%       debris even when every character is permitted
+      ⚠ DELIBERATELY BIASED TOWARDS REJECTING, and the asymmetry is the argument: a
+      rejected value leaves the field empty for the reviewer to type, and the L1-L3
+      learning loop lets them TEACH it so the next document fills free. An accepted
+      misread invites a row nobody unmakes. Failing closed costs a keystroke; failing
+      open costs a database.
+      The value is refused outright rather than slid past — findLabeledValue stops
+      rather than sliding (Step 1i-1), so the field comes back empty and honest.
+
+  21.3 VERIFICATION
+
+      JS suite 234 / 234 / 0 — three NEW tests in tests/js/document-parser-core.test.mjs,
+      which is where a pure-core rule belongs rather than in a one-off probe:
+        · thirteen real sources accepted, including the acronyms, the hyphenated and
+          slashed forms, the parenthesised long form and the leading-digit LGU fund
+        · eleven pieces of debris rejected, "Accor, Fost =" named explicitly as the one
+          that prompted the work
+        · extractBudgetSource end-to-end: takes "GAA", refuses the misread
+      MUTATION-FALSIFIED: putting lenRange(2, 100) back fails exactly one test — the
+      end-to-end one — and restoring returns the suite to green. The tests are not
+      vacuous, they catch this specific regression.
+      A CORRECTION TO MY OWN EXPECTATION, worth recording: I first listed "Fund -" as
+      something to reject and "20% Development Fund" as something to accept, and got both
+      wrong. cleanValue already strips trailing punctuation, so "Fund -" arrives as
+      "Fund" and is a fair source; and my opening rule required a letter, which rejected
+      a real fund name. The second was a genuine defect in the first build.
+
+  21.4 ⚠ THE SAME HOLE IS STILL OPEN NEXT DOOR — B-1b, NOT DONE
+
+      extractCategory validates with lenRange(3, 50), which is the identical weakness,
+      and Q3 gave CATEGORY create-in-place too. So a misread category can still become a
+      permanent categories row by exactly the same route.
+      IT IS A ONE-LINE CHANGE now that asSourceName exists, but it was NOT ordered and is
+      NOT done — the order was B-1, the budget source. Flagged here so it is not lost.
+      (Category names are a slightly different shape from funding sources — "Renovation",
+      "New Construction" — so whether asSourceName is reused as-is or given a sibling is
+      a real question, not a copy-paste.)
+      STILL OPEN from 20.5: B-2 (should create-in-place be offered at all for a
+      low-confidence value), B-3 (the title's leading "]" and the location's trailing
+      "Date: ..."), B-4 (diagnose the contractor field before naming it).
+===============================================================================
+  22. B-1 CONFIRMED, AND B-4 — THE CONTRACTOR WAS READING A BID-ABSTRACT ROW
+      (user browser check + build, 2026-09-20)
+===============================================================================
+
+  22.1 ✅ B-1 CONFIRMED IN THE BROWSER
+
+      The budget source now comes back "— none —" instead of offering
+      "Add \"Accor, Fost =\" as a new budget source". The junk value is gone AND the
+      invitation to make it a database row with it.
+
+  22.2 THE CONTRACTOR DEFECT — DIAGNOSED BY THE USER, CONFIRMED IN THE SOURCE
+
+      SYMPTOM: the contractor field came back
+        "DONBER CONSTRUCTION | 301 ENGINEERS | SKYSCRAPER CONS.& | CH..."
+      when the real contractor is SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES, named
+      on the contract page as "hereinafter called the CONTRACTOR".
+      CAUSE: page 3 of the bundle is an ABSTRACT OF BIDS, which prints every bidder
+      across ONE table row. isContractorValueCandidate accepted any 5-to-150-character
+      line carrying a construction word — and a row of four construction companies
+      answers that loudly. extractContractor's labeled path was no better: lenRange(3,150),
+      length and nothing else.
+      ⚠ IT IS THE SAME SHAPE OF DEFECT AS B-1, AND THE SAME TRIGGER. The rule was always
+      this loose; the bid-abstract page was simply unreadable until P-3, so the row never
+      reached the vote. The user's read of it was right from the screenshot alone.
+      A SECOND HOLE FOUND WHILE FIXING IT: extractContractor ended with
+        return normalized || cleanValue(cut);
+      so when the validator REJECTED a value the raw text was returned anyway. A stricter
+      validator alone would have changed nothing. Now it returns null.
+
+  22.3 WHAT SHIPPED — asCompanyName()
+
+      A contractor field holds ONE company.
+        a '|' is a CELL BOUNDARY — the line reconstructor joining columns, or tesseract
+          reading a table's printed vertical rule. Never part of a company's name.
+        length 5..100 (was 3..150) — 150 was a table row's worth.
+      Used by BOTH the labeled path and the value-side heuristic, and the fallback hole
+      above is closed.
+
+  22.4 WHICH RULE ACTUALLY CATCHES WHAT — measured, because the mutation surprised me
+
+      Removing the pipe check failed only ONE of the two new tests, not both. The reason
+      is worth writing down rather than explaining away: THIS document's bid row is 131
+      characters, so the length ceiling catches it even with the pipe rule gone. The two
+      rules cover different shapes:
+        131ch piped row (this document)   -> refused by EITHER rule
+         25ch piped row                   -> refused by the PIPE rule alone
+        111ch borderless row              -> refused by the LENGTH rule alone
+         23ch borderless row              -> ⚠ REFUSED BY NEITHER. Accepted today.
+      ⚠ SO THE GAP IS NAMED: a SHORT bidder list in a table drawn WITHOUT vertical rules
+      still gets through. No such page exists in this bundle, and inventing a rule for a
+      case nobody has seen is how the last three dead ends started — but it is a known
+      hole, not an oversight, and real PMU scans (pilot §5 N2) are what should decide
+      whether it needs closing.
+
+  22.5 VERIFICATION
+
+      JS suite 237 / 237 / 0 — three new tests: the row refused by asCompanyName and by
+      both extraction paths, the real contractor still read with its "(hereinafter called
+      the CONTRACTOR)" tail stripped, and "Awarded to: ACME BUILDERS" still working.
+      MUTATION-FALSIFIED: removing the pipe check fails the asCompanyName test and
+      restoring returns the suite to green (see 22.4 for why only one test moved).
+      ⬜ BROWSER CHECK OWED: the contractor should return to SKYSCRAPER CONSTRUCTION &
+      ENGINEERING SERVICES, which is what it read before the bid-abstract page became
+      readable. If it comes back EMPTY instead, the contract page's own line is not being
+      accepted either and that is the next thing to look at, not a reason to loosen this.
+
+  22.5b ✅ B-4 CONFIRMED IN THE BROWSER, WITH ONE LEFTOVER (new item B-5)
+
+      The contractor is back to SKYSCRAPER CONSTRUCTION & ENGINEERING — the bid-abstract
+      row no longer wins, and the contract page's own line does. B-4 is proven.
+      ⚠ THE VALUE STILL CARRIES OCR DEBRIS AT BOTH ENDS:
+        "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom"
+      against a true name of SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES. A stray
+      "i " leads it and "NES : ELA fom" trails it — "SERVICES" misread, most likely with
+      the red RECEIVED stamp bleeding into the same line.
+      WHY IT IS A REAL COST AND NOT ONLY UGLY: contractor is an FK and is deliberately
+      never auto-created (Q3), so this CANNOT become a junk row — that risk is absent
+      here. What it costs is the AUTO-MATCH: a clean name would select an existing
+      contractor from the list, and a dirty one falls through to "not in list" and makes
+      the reviewer pick by hand.
+      B-5 (NOT BUILT, NOT ORDERED). The principled cure is the one B-3 needs too: a value
+      that has run into neighbouring text should be CUT WHERE THE NEXT THING BEGINS — at
+      an embedded label, or at leading/trailing single-character debris. A name is one
+      phrase; anything after a colon inside it belongs to something else.
+
+  22.6 STILL OPEN
+      B-1b  extractCategory has B-1's identical hole and identical create-in-place risk.
+      B-2   whether create-in-place should be offered at all for a low-confidence value.
+      B-3   the title's leading "]" and the location's trailing "Date: 05142005" — the
+            location one is the same class again: two table columns OCR'd into one line,
+            but joined by a SPACE rather than a pipe, so 22.3's rule does not see it.
+===============================================================================
+  23. B-2 — CREATE-IN-PLACE IS NO LONGER ONE CLICK (2026-09-20, ordered)
+      The user chose ALL THREE options put in §20.5 / the B-2 explanation: gate on
+      confidence, make the reviewer type it, and warn on a near match.
+===============================================================================
+
+  23.1 WHY THIS CONTROL DESERVED THREE CHANGES AND NOT ONE
+
+      renderChoiceCreateAction writes a PERMANENT ROW to a lookup table on the strength
+      of text a machine read off a photograph, in one click.
+      B-1 stopped the values that LOOK like debris. The residue is the dangerous half: a
+      value can be perfectly well-shaped and still wrong. OCR confuses C and G, so GAA
+      arrives as CAA, passes every check asSourceName makes, and becomes a near-duplicate
+      row — after which every report that groups by budget source is quietly split in two
+      and nobody can tell from the numbers that it happened.
+
+  23.2 WHAT SHIPPED
+
+      (1) NOT OFFERED AT ALL FOR A SCANNED DOCUMENT.
+          ⚠ AN HONEST DEPARTURE FROM THE WORDING. The option was put as "offer only for
+          a labeled match, not a value-side heuristic guess". For THESE TWO FIELDS that
+          distinction does not vary: extractBudgetSource and extractCategory are
+          label-only — the value-side keyword dictionaries exist for title and contractor
+          and nothing else. So the literal rule would have changed nothing.
+          What DOES vary, and is where the misreads actually live, is whether the text
+          came from a PDF TEXT LAYER or from OCR. That is the axis gated: ocrUsed is
+          stashed by showAutofillPreview and the create control is replaced by a note
+          saying why. The scanned value still shows and still fills the form; it just
+          cannot mint a row.
+      (2) THE REVIEWER TYPES THE NAME. The input starts EMPTY, with the document's text
+          shown beside it for reference. Prefilling would be a one-click button wearing a
+          disguise — and typing is exactly what turns a misread CAA into a correct GAA.
+          The Add button stays disabled under two characters.
+      (3) A NEAR MATCH IS NAMED BEFORE ANYTHING IS CREATED, and re-checked on every
+          keystroke so it tracks what will actually be created rather than what the
+          document happened to say.
+            distance 0  the row already exists → Add is DISABLED and the existing row is
+                        offered for selection. Creating it would duplicate outright.
+            distance 1-2  "this is very close to X — use that if you meant it", with a
+                        one-click way to take the existing row.
+          ⚠ IT WARNS, IT NEVER BLOCKS (except at distance 0). GAD is one edit from GAA
+          and is a genuinely different fund; a rule that refused it would be wrong. The
+          helper returns a DISTANCE, not a verdict, precisely so the caller can ask
+          rather than decide.
+
+  23.3 WHERE THE PIECES LIVE, AND WHY
+
+      editDistance() and nearestName() are in the PURE CORE, not in the DOM half, so the
+      JS suite tests the part that can be wrong in a quiet way. Normalisation folds case
+      and collapses whitespace, because "Trust  fund" and "Trust Fund" are the same row
+      to a human and must not become two.
+      The gate, the form and the warning are DOM, and carry a browser check.
+
+  23.4 VERIFICATION
+
+      node --check clean on both files · JS suite 241 / 241 / 0 with four new tests:
+      single edits counted in each direction, the misread found, case and spacing folded,
+      silence when nothing is close, and the explicit assertion that a real neighbouring
+      source comes back as a distance rather than a refusal.
+      MUTATION-FALSIFIED: removing the case-folding from nearestName fails the
+      "finds the row a misread was meant to be" test; restoring returns the suite to
+      green.
+      ⬜ BROWSER CHECK OWED — all three are DOM:
+        · a SCANNED document shows the note and NO create control
+        · a TEXT-LAYER document shows the type-it form, Add disabled until two characters
+        · typing an existing name disables Add and offers to select that row
+        · typing something one edit away warns and still permits creation
+        · "use that"/"select it" puts the existing row in the field and clears the form
+
+  23.5 STILL OPEN
+      B-1b  extractCategory still validates by length. NOTE it is now partly shielded:
+            a scanned document can no longer create a category at all (23.2 item 1), so
+            the DB-pollution route is closed for scans. A text-layer misread can still
+            reach the typing form — but a human now types the name, which is most of the
+            defence. Its best fix remains matching against the FOUR known categories.
+      B-3   the title's leading "]" and the location's trailing "Date: 05142005".
+      B-5   the contractor's "i " prefix and "NES : ELA fom" tail — same cure as B-3.
+===============================================================================
+  24. B-1b, B-3 AND B-5 — THE REST OF THE NOISE P-3 EXPOSED
+      (2026-09-20, ordered: "lets continue". No browser check is possible on any of
+      this yet — see 24.5.)
+===============================================================================
+
+  24.1 B-1b — THE CATEGORY IS VALIDATED BY SHAPE
+
+      extractCategory validated with lenRange(3, 50): length and nothing else, exactly
+      what the budget source had before B-1. A category is not an ordinary label —
+      CategorySeeder defines exactly four and the dashboards GROUP BY this column, so a
+      junk fifth category does not sit quietly in a table, it splits every figure that
+      counts projects by type.
+      asCategoryName differs from asSourceName deliberately: a funding source is often an
+      acronym and may open on a digit ("20% Development Fund"), while a category is an
+      ordinary English noun phrase. So this one opens on a LETTER, takes no percent sign,
+      and allows five words rather than six. It also refuses a '|', which is B-4's cell
+      boundary arriving in a third field.
+      ⚠ THE STRONGER FIX IS STILL NOT THIS ONE. With only four valid values, matching the
+      extracted text against the live list (nearestName already exists) beats any shape
+      test — but that list is in the DB and the core is pure, so it would have to be
+      plumbed through parseProjectInfo's opts. Noted, not done.
+
+  24.2 B-3 + B-5 — ONE CAUSE, THREE SYMPTOMS, ONE CURE
+
+      A scanned page has no columns, only a PICTURE of them, so OCR reads a printed row
+      as one line and whatever sat to the right arrives glued on. B-4 caught the version
+      that carries a '|'; these carry only a space, so something else has to mark the
+      edge.
+        title       "] Rehabilitation/Refurbishment of Canteen..."   a leading artifact
+        location    "...Polytechnic Colleges Date: 05142005"          the next column
+        contractor  "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom"   both ends
+      stripEdgeDebris — a one-character token at either end that is not a word is a
+        speck, a bracket or a margin mark, never part of a name.
+      cutAtEmbeddedLabel — a "Word:" inside a value means the NEXT FIELD started there.
+      ⚠ SCOPED ON PURPOSE, AND THE SCOPING IS THE INTERESTING PART. The cut is applied to
+      LOCATION and CONTRACTOR, where a colon is never part of the value, and NOT to the
+      TITLE, where "Phase 2: Completion" is a real title and cutting it would destroy
+      content. The title gets edge-debris stripping only. A rule that is right for one
+      field is not automatically right for its neighbour.
+      RESULT, end to end through parseProjectInfo:
+        title       "Rehabilitation/Refurbishment of Canteen at Food Laboratory Building"
+        location    "Nabua Campus, Camarines Sur Polytechnic Colleges"
+        contractor  "SKYSCRAPER CONSTRUCTION & ENGINEERING"
+      The contractor is RECOVERED rather than refused: the tidying runs BEFORE
+      asCompanyName, so a name that only needed cleaning is cleaned instead of dropped.
+      (It still loses "SERVICES", which OCR destroyed outright. Nothing in the text can
+      bring that back — B-2's typing form and the L1-L3 loop are where that is fixed.)
+
+  24.3 ⚠ A DEFECT IN MY FIRST VERSION, CAUGHT BY TRYING IT
+
+      cutAtEmbeddedLabel first matched a label of ONE OR TWO words before the colon.
+      Against the real strings that was wrong in both directions at once:
+        "…& ENGINEERING NES :"   read "ENGINEERING NES" as the label and cut at
+                                 ENGINEERING  -> lost "& ENGINEERING"
+        "…Colleges Date:"        read "Colleges Date" as the label and cut at Colleges
+                                 -> lost "Colleges"
+      Each swallowed a word of the answer. Matching the MINIMUM — the single word
+      immediately before the colon — is correct, and two tests now pin that down
+      explicitly so the "improvement" of allowing two words cannot be reintroduced.
+      ACCEPTED RESIDUE: a genuinely two-word label ("Project Location:") leaves its first
+      word on the value. A stray word is not a lost one, and the trade is the right way
+      round.
+
+  24.4 VERIFICATION
+
+      JS suite 250 / 250 / 0 (from 244). Nine new tests across the three items,
+      including two end-to-end through parseProjectInfo: the dirty document cleaned in
+      all three fields, and A CLEAN DOCUMENT PROVEN UNCHANGED — which is the assertion
+      that matters most, because every one of these rules could quietly damage a good
+      parse.
+      MUTATION-FALSIFIED: putting lenRange(3, 50) back in extractCategory fails exactly
+      the B-1b end-to-end test; restoring returns the suite to green.
+
+  24.5 ⬜ NO BROWSER CHECK IS POSSIBLE YET, AND WHY
+
+      The user has no further sample documents. Worse, the obvious file cannot exercise
+      any of this: B-1 already makes the budget source come back EMPTY on
+      pdfdocstest5.pdf, so there is no unmatched value, so no create control renders at
+      all — the scanned path included. B-2's five DOM paths and these three fields all
+      need a document that has not been seen yet.
+      ⇒ THIS RAISES N2 (pilot §5), "get real PMU scans", from a good idea to the
+        BLOCKING ITEM for the whole B-queue. Four changes now sit suite-green and
+        browser-unproven, and the suite does not cover the DOM half at all.
+      ⇒ Until then, treat B-1/B-1b/B-2/B-3/B-4/B-5 as BUILT AND UNPROVEN, not as done.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================

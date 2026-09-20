@@ -299,16 +299,24 @@
   Retained from the 2026-09-18 first draft, re-ranked by §3/§4. VERIFIED = checked
   against the code; CLAIMED = from AGENTS.md, still to confirm (Rule 1).
 
-  P0. ESTABLISH THE REAL BASELINE.  ⬜  Re-run both suites and record the numbers here.
-      AGENTS.md's figures (PHP 1226 / 5 pre-existing failures; JS 230 / 228 + 2 intended)
-      predate commits 9545cc1 and 89beb2f. Run the JS suite to a log file and grep the
-      file — piping node --test into grep|head has stalled a session. N1 changes the JS
-      expectation, so take the baseline BEFORE it.
+  P0. ESTABLISH THE REAL BASELINE.  ✅ DONE 2026-09-20, on phase-25-ocr-contrast-stretch.
+        PHP  1226 passed / 5 failed / 4587 assertions / 64.5s
+        JS   250 passed / 250 / 0 failed  (was 231 before the B-queue's new tests)
+      THE FIVE PHP FAILURES ARE NOW VERIFIED BY NAME, not claimed — see P3. No PHP file
+      has been touched by any parser work, so these are the same five as ever.
+      Method note for the next run: JS suite to a log file, then grep the FILE — piping
+      node --test into grep|head has stalled a session.
 
-  P1. THE DEAD ROUTE THAT 500s.  ⬜  VERIFIED: routes/web.php:561 registers
-      admin.projects.show-alternative → ProjectController::showAlternative, and no such
-      method exists. Remove the route (confirm nothing builds the URL by name) or
-      implement it. A pilot user CAN reach a 500 here.
+  P1. THE DEAD ROUTE THAT 500s.  ⬜  RE-VERIFIED 2026-09-20, and the open question in
+      this item is now ANSWERED. routes/web.php:561-562 registers
+      admin.projects.show-alternative → ProjectController::showAlternative;
+      grep over app/ finds NO showAlternative method anywhere, and grep over resources/
+      and app/ finds NOTHING that builds the URL by name.
+      ⇒ SO IT IS A SAFE TWO-LINE DELETION, not a choice between deleting and
+        implementing. Needs route:clear afterwards (bootstrap/cache/routes-v7.php goes
+        stale on route changes — the recurring incident).
+      ⭐ AND IT NEEDS NO SAMPLE DOCUMENTS, which as of 2026-09-20 is what distinguishes
+        the work that can proceed from the work that cannot (see the session log).
 
   P2. THE LEGACY MILESTONE CODE — VERIFY BEFORE REMOVING.  ⬜  AGENTS.md CLAIMS it is
       dead and removable. Checked 2026-09-18: MilestoneController is at
@@ -316,9 +324,18 @@
       referenced by routes/web.php, ProjectController.php, ProjectSeeder.php and
       ProjectArchiveTest.php. Not urgent for a pilot; do not delete on the old claim.
 
-  P3. THE FIVE PRE-EXISTING TEST FAILURES.  ⬜  CLAIMED: 1 DashboardOverdueInspection,
-      2 EmailDraft, 2 default-baseline. None is a regression, but a red suite hides the
-      next real one. Fix or document each with its reason.
+  P3. THE FIVE PRE-EXISTING TEST FAILURES.  ⬜  ✅ NO LONGER "CLAIMED" — VERIFIED BY
+      NAME 2026-09-20:
+        DashboardOverdueInspectionTest › count badge matches ajax filter list
+        EmailDraftTest › sending a draft mails the contractor then locks it
+        EmailDraftTest › editing a sent message marks it edited and auto resends
+        IssueLifecycleTest › default baseline returns earliest baseline when no progress
+                             and no current month
+        RiskRegisterTest › default risk baseline returns earliest when no progress or
+                           current month
+      None is a regression. Still to do: fix or DOCUMENT each with its reason, because a
+      permanently red suite hides the next real failure.
+      ⭐ NEEDS NO SAMPLE DOCUMENTS.
 
   P5. WHAT "TRY AI ASSIST" SHOULD DO WHEN THE AI IS DEAD.  ⬜  A press can cost the full
       50-second budget and return nothing ~98% of the time (measured). Options: leave it,
@@ -370,6 +387,25 @@
 ===============================================================================
   8. SESSION LOG
 ===============================================================================
+
+  2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
+    Everything this session happened in the normal-doc parser (restudy §§12-24). The
+    short version for this file:
+      ✅ OCR-1 IS CLOSED. The test scan went from 4 of 10 pages read to 10 OF 10, and the
+        ABC now fills — §5 N2's premise ("developer samples are not representative") is
+        untouched, but the parser is far better than it was this morning.
+      ✅ P0 done, P1 and P3 upgraded from claimed to verified (above).
+      ⚠ SIX PARSER FIXES ARE BUILT AND BROWSER-UNPROVEN (B-1..B-5 + B-1b, restudy §§21-24).
+        They cannot be proven with what exists: there are no further sample documents,
+        and on the one file we have, B-1 now empties the budget source, so the very
+        control B-2 rewrote never renders.
+      ⇒ §5 ITEM N2 ("get real PMU scans") IS NO LONGER JUST THE NEXT PARSER STEP. It now
+        BLOCKS the proof of six shipped changes as well as N3/N4/N5. It is the single
+        highest-value thing the user can do for the parser track, and it costs a request
+        rather than a day's work.
+    WHAT THIS MEANS FOR ORDERING: the pilot work that needs NO sample documents — P1, P3,
+    P6, and the F1/F2 decisions — is now the queue that can actually move. Marked
+    ⭐ above where that applies.
 
   2026-09-18 — FILE CREATED, then EXPANDED with the pilot scoping. No app code, no
   behavioural change.
