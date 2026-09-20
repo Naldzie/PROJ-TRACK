@@ -34,6 +34,43 @@ function getCore() {
 const OCR_OSD_ENABLED = false;
 
 // ===================================================
+// T2 — THE DEBUG FLAG SURVIVES A RELOAD (2026-09-20)
+// window._parserDebug gates every per-page OCR log, and it could only be set by typing
+// into the console. That meant debug logging was ON exactly when devtools was OPEN and
+// OFF when it was shut — so the "devtools open reads 3 pages, closed reads 4" question
+// could never be measured, because measuring it required the console. The flag is
+// logging-only at all of its sites (restudy §12.8), so it cannot change what a page
+// yields; the confound was in how it gets SET, not in what it does.
+// Hydrating the same flag from localStorage at load dissolves that: turn logging on
+// once, close devtools, reload, run, then reopen devtools and read the log back.
+// The pure core reads window._parserDebug too (document-parser-core.js:138), so
+// hydrating the window flag covers both halves of the parser with no other change.
+// Called by: nothing — the hydrator runs once at script load.
+const PARSER_DEBUG_KEY = 'pmuParserDebug';
+(function hydrateParserDebugFlag() {
+    try {
+        if (typeof window === 'undefined') return;
+        // An explicit in-session override always wins over the stored preference.
+        if (window._parserDebug) return;
+        if (localStorage.getItem(PARSER_DEBUG_KEY) === '1') window._parserDebug = true;
+    } catch (e) { /* storage can be blocked or absent; debug logging is never load-bearing */ }
+})();
+
+// Turn parser debug logging on or off ACROSS RELOADS in one console call.
+// Usage: window._parserDebugPersist(true) → reload → run with devtools shut → reopen
+// devtools and scroll back. window._parserDebugPersist(false) clears it again.
+// Called by: the browser console only.
+window._parserDebugPersist = function (on) {
+    const want = (on !== false);
+    try {
+        if (want) localStorage.setItem(PARSER_DEBUG_KEY, '1');
+        else localStorage.removeItem(PARSER_DEBUG_KEY);
+    } catch (e) { /* fall through — the window flag below still serves this session */ }
+    try { window._parserDebug = want; } catch (e) {}
+    return 'parser debug ' + (want ? 'ON' : 'OFF') + ' (persists across reloads)';
+};
+
+// ===================================================
 // ENTRY POINT
 // Parses all pending PDFs and shows the preview modal
 // (Apply fills the form). Returns a Promise.
@@ -460,7 +497,8 @@ function warmTesseract() {
 // restoring pre-group1 behavior exactly where pixels look healthy. An unconditional remap
 // calibrated to outlier specks (stamps, glare) can crush faint cell text into the background —
 // the prime suspect for test4 p1 @0° + p2 @90° yielding 0 on upright, human-crisp pixels.
-// Decision is logged under window._parserDebug (applied/skipped + sampled range).
+// Decision is logged under window._parserDebug (applied/skipped + sampled range, plus
+// the T3 percentile/ink-fraction diagnostics that say whether the range is meaningful).
 // Called by: ocrPage() once per scanned page, before any recognize() attempt.
 function preprocessOcrCanvas(canvas) {
     try {
@@ -468,11 +506,19 @@ function preprocessOcrCanvas(canvas) {
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const d = img.data;
         let lo = 255, hi = 0, sum = 0, n = 0;
+        // T3: a 256-bin gray histogram filled in the SAME pass — one array increment per
+        // sample, so it costs nothing measurable. It is what lets the debug line below
+        // report percentiles and ink fraction: statistics that describe the PAGE, unlike
+        // the lo/hi the washed gate keys on, which a single dark speck decides
+        // (restudy §12.9). Filled unconditionally to keep this loop branch-free; only
+        // the reporting below is gated on the debug flag.
+        const hist = new Uint32Array(256);
         for (let i = 0; i < d.length; i += 16) {
             const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
             if (g < lo) lo = g;
             if (g > hi) hi = g;
             sum += g; n++;
+            hist[g | 0]++;
         }
         if (hi - lo < 8) return;
         // F2 gate: stretch only washed-out pages (faded gray text, no true blacks, narrow
@@ -480,7 +526,31 @@ function preprocessOcrCanvas(canvas) {
         // is near-identity for them at best and outlier-calibrated damage at worst.
         const washed = (lo >= 100) && ((hi - lo) <= 140);
         if (typeof window !== 'undefined' && window._parserDebug) {
-            try { console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped') + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))); } catch (e) {}
+            // T3 diagnostics — REPORTING ONLY, the gate's verdict above is untouched.
+            // Why these numbers: the gate keys on lo/hi, and ONE dark pixel (a binder
+            // edge, a staple, a curl shadow) pins those to 0/255 on any page at all — so
+            // a pale scan reports "full dynamic range" and is judged healthy. These
+            // describe the page rather than its extremes:
+            //   pN   = the Nth-percentile gray — how dark the darkest N% actually is
+            //   ink< = the share of sampled pixels below a darkness threshold, which is
+            //          as close to "how much ink is on this page" as sampling gets.
+            // A page carrying text normally shows a few percent of ink; a page that
+            // yields nothing is expected to show far less. That comparison is the point.
+            // The lo/hi/mean prefix is kept verbatim so older ledgers stay comparable.
+            try {
+                const pct = (frac) => {
+                    const want = Math.max(1, Math.round(n * frac));
+                    let acc = 0;
+                    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= want) return v; }
+                    return 255;
+                };
+                const inkBelow = (t) => { let acc = 0; for (let v = 0; v < t; v++) acc += hist[v]; return acc; };
+                const share = (c) => ((c / Math.max(1, n)) * 100).toFixed(2) + '%';
+                console.log('[Parser] OCR cleanup ' + (washed ? 'applied' : 'skipped')
+                    + ': lo=' + Math.round(lo) + ' hi=' + Math.round(hi) + ' mean=' + Math.round(sum / Math.max(1, n))
+                    + ' p1=' + pct(0.01) + ' p5=' + pct(0.05) + ' p50=' + pct(0.50)
+                    + ' ink<128=' + share(inkBelow(128)) + ' ink<160=' + share(inkBelow(160)));
+            } catch (e) {}
         }
         if (!washed) return;
         const range = (hi - lo) || 1;
