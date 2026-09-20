@@ -4464,5 +4464,94 @@
       2, pdfdocstest3 and pdfdocstest4. Eight documents, none of them ever run.
 
 ===============================================================================
+  45. THE CHS SAVINGS PAIR (user, 2026-09-20) — AND THE "10 OF 12" IS A BUDGET
+===============================================================================
+
+  45.1 ⭐ MEASURED, NOT ASSUMED — EVERY FIELD IS CORRECT
+
+      parseProjectInfo run against the user's pasted read text for both files
+      (probe3.mjs). Not a browser run; the SAME pure core the browser calls, fed the
+      exact text OCR produced.
+
+      CHS - Savings.pdf                    Contract - CHS Savings.pdf
+        title   Construction of Four-Storey  title   (same, no stray space)   ✓
+                Academic Building (College
+                of Health Sciences) -Savings ✓
+        location CAMARINES SUR POLYTECHNIC   location null (not stated)       ✓
+                 COLLEGES, NABUA, CAM. SUR ✓
+        contractor JURASSIC CONSTRUCTION      contractor JURASSIC CONSTRUCTION
+                   AND SUPPLIES            ✓              & SUPPLIES         ✓
+        budget    6495049.29              ✓  budget    6495049.29           ✓
+        duration  90                      ✓  duration  90                   ✓
+        startDate 2024-12-09              ✓  startDate null                 ✓
+        endDate   2025-03-09              ✓  endDate   null                 ✓
+        abc / category / budgetSource / description  ALL null ✓ — none of the four
+        is stated in either document, and the parser invented none of them.
+
+      Pooled across both files: budget 6495049.29 with NO disagreement (6 finds in
+      each file), duration 90 (3 and 3), start 2024-12-09, end 2025-03-09.
+      ⇒ THE ABC IS CORRECTLY ABSENT. This document says "Original Contract Amount",
+        never "Approved Budget for the Contract". The blinding is OFF and
+        collectAbcCandidates still found nothing, which is the right answer.
+
+      Cosmetic only: the CHS title carries a stray space ("Sciences) -Savings")
+      because OCR read "Sciences) - Savings" with the hyphen loose. The contract's
+      copy is clean. Not worth a rule.
+
+  45.2 ⭐ "10 OF 12 PAGES READ" IS NOT A FAILURE — IT IS THE SELECTED BUDGET
+
+      OCR_PAGE_LIMIT = 10 (document-parser.js:491). Pages 11 and 12 were never
+      scanned at all — not scanned badly, NOT SCANNED. The ledger already says so
+      ("(10 per file selected) — later pages were not scanned") and the gray note
+      already carries a 10/25/40/50 selector with a Re-scan button (:2504, :1880).
+      So the immediate answer is: pick 25 and re-scan. Nothing is broken.
+
+  45.3 ⚠ BUT STOPPING TWO PAGES SHORT IS THE WORST PLACE TO STOP
+
+      The reviewer pays the FULL ten-page cost (~20s) and still does not have the
+      document, then has to notice a gray note, find a dropdown, and pay ~24s again.
+      A 12-page file is the common shape here, not an outlier.
+      AND PAGE 12 IS NOT JUNK: the snapshot shows the accomplishment report's last
+      row, TOTAL CONTRACT AMOUNT 6,495,049.29. It cost nothing THIS time only because
+      the same figure appears on pages 4 and 7 and in the contract.
+      ⬜ PROPOSED (P-4, not built): a SLACK rule — if a file has at most
+        limit + 3 pages, read it whole instead of truncating. 12 <= 13, so CHS reads
+        completely on the first pass. The ceiling rises from 10 to 13 pages per file,
+        a bounded ~6s. A genuinely long annex still truncates and still gets the
+        selector. It does not raise the default budget for everyone; it only refuses
+        to quit within sight of the end.
+
+  45.4 THE AI SLICE CAP — WHAT IT ACTUALLY IS (user asked)
+
+      The user recalled the two-image limit as a PRIVACY decision. The record is
+      mixed, and the binding constraint is neither privacy nor session budget:
+        · SERVER HARD CAP OF 3 (DocumentParserController:129, "Provide 1 to 3 page
+          images"), plus 10 MB per slice and 30 MB total. The client sends 2 of a
+          possible 3, so ONE slot is already unused.
+        · Decision F1 in the AI fallback plan is about OPT-IN and QUOTA — "Clean files
+          never call AI: no quota spent, no waiting, nothing leaves the server."
+          The privacy wording is real, but it justifies "only on request", not
+          "only two pages". THE COUNT OF 2 IS NOT JUSTIFIED ANYWHERE.
+        · A per-page override ALREADY EXISTS — the preview strip's "+ this page /
+          − this page" toggle (:1786). What is missing is a COUNT, a per-file
+          allocation, and file EXCLUSION.
+
+      ⚠ AND THE USER IS ONLY MOSTLY RIGHT ABOUT SENSITIVITY. These documents are
+      largely public procurement records, and amounts are not secret. But PAGE 7 OF
+      THE CONTRACT is a notarial acknowledgment carrying GOVERNMENT ID NUMBERS
+      ("ID No. Admin 182", a CTC number), the notary's roll, IBP and MCLE numbers,
+      and signatures. That is personal data, and it is exactly the page a
+      send-everything policy would include.
+      ⇒ WHICH ARGUES FOR THE USER'S OWN SECOND IDEA. The protection worth having is
+        EXCLUSION ("never send this page / this file"), not a low global count. A cap
+        of 2 protects nothing in particular; it just makes the tool weaker.
+
+      ⬜ AND IT LANDS ON TOP OF A KNOWN DEFECT — queue item 8 / §27.3. P-3 made every
+        page yield text, so the "unread pages first" ranking has no unread pages to
+        rank, collapses to document order, and sends pages 1 and 2 of every file every
+        time. A reviewer-chosen count and allocation would REPLACE a ranking that no
+        longer functions, rather than decorate one that does.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
