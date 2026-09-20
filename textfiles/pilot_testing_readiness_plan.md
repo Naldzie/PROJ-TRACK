@@ -286,7 +286,13 @@
     ONE BROWSER RUN SETTLES THE HYPOTHESIS and decides the design of the rest — see the
     restudy's §5 UI-1. Stages 2-4 (read path, extraction, learning loop) not started.
 
-  ── N3. THE OCR PAGE RANKING (deferred item, now a real candidate) ───────────  ⬜
+  ── N3. THE OCR PAGE RANKING — ⚠ ESCALATED 2026-09-20: IT IS NOW BROKEN ─────  ⬜
+    P-3 fixed OCR-1 (4 of 10 pages read → 10 of 10), and in doing so removed the only
+    signal this ranking had. It orders "pages that yielded NOTHING first"; nothing now
+    yields nothing, so it sends PAGES 1 AND 2 of every file, every time. The user
+    noticed it before I did. This is no longer "cheap to fix, do it if it bites" — it
+    bites on every AI-assist press. See normal_doc_parser_restudy_plan.md §27.3.
+    THE ORIGINAL NOTE, kept:
     The AI page picker ranks pages by "which pages OCR handled worst", with no notion of
     whether a page HOLDS the fields — so a blank or signature page ranks first precisely
     because it yielded nothing. The per-page char-count and soupiness ledger ALREADY
