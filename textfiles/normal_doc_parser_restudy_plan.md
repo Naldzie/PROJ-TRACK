@@ -4071,7 +4071,11 @@
   39. L-2 AND L-4 BUILT (2026-09-20, ordered) — AND N2 MAY NEVER ARRIVE
 ===============================================================================
 
-  39.1 ⚠ THE PLANNING FACT THAT CHANGES MOST — REAL PMU SCANS MAY NEVER COME
+  39.1 ⚠⚠ SUPERSEDED BY §40 — ITS PREMISE WAS FALSE. sampledocs/ already holds real
+       project documents, including a TEXT-LAYER TWIN of the scanned bundle. Read §40
+       before acting on anything below.
+
+  39.1 THE PLANNING FACT AS I WRONGLY STATED IT — REAL PMU SCANS MAY NEVER COME
 
       The user, asked to request real scans, said it "can't really be done, as it might
       be not possible even on the day the pilot test starts".
@@ -4140,6 +4144,52 @@
       had nothing to do with the code. Fixed by stubbing both.
       ⬜ BROWSER OWED: apply, then change a field in the form, then submit — the desk
       should show the form-only correction. And a wordless row should offer no Approve.
+===============================================================================
+  40. ⚠ §39.1 WAS WRONG — THERE IS A CORPUS, AND IT WAS SITTING IN sampledocs/
+      (user correction, 2026-09-20)
+===============================================================================
+
+  40.1 WHAT I GOT WRONG
+
+      §39.1 concluded "pdfdocstest5.pdf IS THE CORPUS ... and probably all it will be",
+      and built a planning position on it: trust the suites more, expect no browser
+      proof, do not build what one document cannot justify.
+      THE PREMISE WAS FALSE AND I NEVER CHECKED IT. The user pointed at sampledocs/,
+      which has held real project documents all along:
+        Completed Project/  CHS - Savings.pdf (2.5 MB) · Contract - CHS Savings.pdf
+                            (2.2 MB) · Quantity Sheet - CHS Savings.pdf
+        Ongoing Project/    Three-Storey Acad Bldg, Buhi Campus.pdf (4.6 MB) ·
+                            Quantity Sheet (Continuation).pdf
+        plus contract_test_sample.pdf, contract_test_sample_2.pdf, pdfdocstest3.pdf,
+        pdfdocstest4.pdf, estimate_only page.pdf, test_page_6.pdf
+      These are CSPC projects, not invented specimens. I had been reading "sample files
+      live in git-ignored sampledocs/" in AGENTS.md as a note about S-curve fixtures and
+      never listed the folder.
+
+  40.2 ⭐ AND ONE OF THEM UNBLOCKS WORK I CALLED IMPOSSIBLE
+
+      pdfdocstest5_selectable_text.pdf is the TEXT-LAYER TWIN of the scanned bundle:
+        pdfdocstest5.pdf                  1,418,703 bytes   /Font markers: 0
+        pdfdocstest5_selectable_text.pdf     91,138 bytes   /Font markers: 19
+      §24.5 said B-2's create-in-place paths "cannot be proven with what exists" because
+      a scan suppresses the control by design and no text-layer document was available.
+      ONE WAS, AND IT IS THE SAME DOCUMENT, which makes it the ideal comparison: the
+      same content through both readers.
+
+  40.3 WHAT THE CORRECTED POSITION IS
+
+      N2's real content survives, narrowed. What may never arrive is a FRESH batch of
+      PMU scans chosen for the test — "half a dozen, ideally including one bad one".
+      What exists is a handful of real documents that have not been systematically run
+      through the parser and measured. THAT IS A MEASUREMENT NOBODY HAS DONE, and it
+      costs uploads rather than a request to the PMU.
+      ⇒ §39.1's conclusions are WITHDRAWN except one: the pilot will still be the first
+        broad corpus, so the loop's honesty and coverage still matter for gathering
+        evidence. But "do not build what one document cannot justify" was too strict,
+        and "expect no browser proof" was simply false.
+      ⚠ THE LESSON IS MINE: I wrote a planning conclusion from a premise I could have
+      checked with `ls`. The user corrected it in one sentence. Before the next
+      "this cannot be measured", list the directory.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
