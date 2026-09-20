@@ -3942,5 +3942,69 @@
       exists to make, and it is a flip away in either direction.
 
 ===============================================================================
+  37. THE ABC PICK-ONE WORKS — AND A CROSS-FIELD LEAK IT REVEALED
+      (user, 2026-09-20, blinding OFF, 9 of 10 pages read with devtools open)
+===============================================================================
+
+  37.1 ⭐ THE PAYOFF: THE CORRECT ABC NOW WINS, AND THE NOTE APPEARS
+
+      From the run's own vote data:
+        4834297.59  count 2  score 1.19  ['abc-line','f-b1-budget','learned:| total estimated project cost p']
+        4834297.00  count 1  score 0.85  ['abc-line','f-b1-budget','learned:approved budget for the contract']
+        834297.59   count 1  score 0.85  ['words-shape']
+      .59 wins on TWO INDEPENDENT LINES — the funds certificate and the TOTAL line —
+      while .00 has one. That is L-8, L-9 and the independence fix together: the
+      taught phrase is visibly part of the winning row, the damaged reading is beaten
+      rather than silenced, and the reviewer is still offered both.
+      ⚠ NOTE ROW 3, a defect nobody has chased: 834297.59 is the words-shape rule
+      reading the funds certificate with "FOUR MILLION" lost — OCR split it across
+      lines ("FOUR MILLION | | EIGHT HUNDRED"). It scored 0.85 and lost, so it costs
+      nothing today, but a words-shape find that drops the leading magnitude is wrong
+      by four million pesos and would win on a document where the numeral is absent.
+
+  37.2 ⚠ THE CONTRACT PRICE NOW OFFERS THE ABC AS ITS ALTERNATIVE
+
+      The user noticed the pick-one for CONTRACT PRICE used to offer the ORIGINAL
+      against the REVISED amount, and now offers the original against 4,834,297.59 —
+      which is the ABC, not a contract price at all. The budget pool explains it:
+        4204128.84  2.35  generic,paren-php,bare-php   <- winner, the original price
+        4834297.59  1.70  generic,paren-php,p-prefix   <- THE ABC, now the runner-up
+        4204126.00  1.00  generic                      <- an OCR ghost of the winner
+        4323196.77  1.00  revised,generic,bare-php     <- the revised amount, 4th
+      WHY IT CHANGED, and it is not the learning work: P-3 made six more pages
+      readable, and the ABC figure appears on several of them. It accumulated enough
+      budget-pool finds to pass the revised amount. The WINNER is still correct — the
+      original contract price — so ongoing and new projects are unaffected, exactly as
+      the user said. What broke is the ALTERNATIVE offered, which matters for a
+      COMPLETED project where the revised figure is the one a reviewer wants.
+
+  37.3 THE FIX I WOULD MAKE, AND WHAT IT DOES AND DOES NOT ACHIEVE (not built)
+
+      A value that has already WON ANOTHER FIELD should not be offered as this
+      field's alternative. The ABC is claimed; offering it as a second contract price
+      is cross-field contamination and is simply wrong.
+      ⚠ BUT IT WILL NOT RESTORE WHAT THE USER REMEMBERS, and that should be said
+      before it is built. pooledDisagree only speaks when first.score < 2 x second.
+      With the ABC excluded the runner-up becomes 4204126.00 at 1.00, and
+      2.35 >= 2.00, so THE NOTE GOES SILENT rather than switching to the revised
+      amount. That is honest — there is a clear winner — but it is silence, not the
+      original-vs-revised choice.
+      ⇒ THE REVISED AMOUNT IS A DIFFERENT QUESTION. 4,323,196.77 is not a competing
+        reading of the contract price; it is a DIFFERENT FACT about the project, and
+        the form has one box. Surfacing it belongs with extensions and variation
+        orders, not with the pick-one control, and pretending otherwise is what let
+        the ABC in. A parser cannot fix a missing field.
+
+  37.4 window._parserVoteTables() — BUILT
+
+      console.table only draws while devtools is OPEN, so a run made with it closed
+      left the raw arrays and no readable table, and reopening devtools cannot redraw
+      what was never drawn. The rows survive in the stash, so re-printing them is all
+      that was needed: window._parserVoteTables() for every field, or ('abc') for one.
+      Deliberately NOT gated on _parserDebug — it is asked for AFTER a run by someone
+      who has just opened devtools and could not have set the flag in time, and the
+      stash is filled on every preview regardless.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================

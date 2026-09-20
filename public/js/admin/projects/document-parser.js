@@ -388,7 +388,7 @@ async function runDocumentAutofill() {
             console.log('[Parser] preview run ' + myRunId + ': files=[' + perFileData.map(e => e.fileName).join(', ') + '] mismatch=' + (!!mismatchInfo.hasMismatch));
             // P2: the vote tables are stashed on EVERY preview (flag or not) — this hint line
             // means nobody has to memorize the recovery command or re-upload for tables.
-            console.log('[Parser] tip: type window._autofillVoteDebug in the console to inspect all finds (values, patterns, excerpts, files).');
+            console.log('[Parser] tip: window._parserVoteTables() re-prints these tables at any time — including after closing and reopening devtools. window._autofillVoteDebug holds the raw rows.');
             // R-reach: scan reports stashed per run so the straighten-all rescue can name
             // sideways files even from the preview path.
             window._autofillScanReports = scanReports.slice();
@@ -2072,6 +2072,35 @@ function mergeDisagreements(learnedD, pooledD, pooledResolved) {
     }
     return out;
 }
+
+// Re-print the pooled vote tables on demand (2026-09-20).
+// console.table only draws while devtools is OPEN, so a run made with it closed left
+// the reviewer with the raw arrays in window._autofillVoteDebug and no readable table
+// — and reopening devtools cannot redraw what was never drawn. The rows survive in the
+// stash, so re-printing them is all that was ever needed.
+// ⚠ Deliberately NOT gated on window._parserDebug: this is asked for AFTER a run, by
+// someone who has just opened devtools and therefore could not have set the flag in
+// time. The stash is filled on EVERY preview (see the P2 note at the tip line), so the
+// data is there whether or not debug logging was on.
+// Usage: window._parserVoteTables()  or  window._parserVoteTables('abc')
+// Called by: the browser console only.
+window._parserVoteTables = function (field) {
+    const dbg = (typeof window !== 'undefined') ? window._autofillVoteDebug : null;
+    if (!dbg) {
+        console.log('[Parser] no vote data yet — run a preview first.');
+        return;
+    }
+    const fields = field ? [field] : Object.keys(dbg);
+    for (const f of fields) {
+        const rows = dbg[f] || [];
+        if (!rows.length) { console.log('[Parser] field:', f, '| no pooled finds'); continue; }
+        console.log('[Parser] field:', f, '| finds:', rows.length, '| winner:', rows[0] ? rows[0].value : null);
+        if (console.table) console.table(rows.map(r => ({
+            value: r.value, count: r.count, score: r.score, labeled: r.labeledCount,
+            patterns: (r.patterns || []).join(', '), files: (r.files || []).join(', '),
+        })));
+    }
+};
 
 // POST slices to parse-gemini (role-aware, one call). Returns parsed shape or null.
 // Stashes the server's message (mapped transport texts like quota/busy/dead-model)
