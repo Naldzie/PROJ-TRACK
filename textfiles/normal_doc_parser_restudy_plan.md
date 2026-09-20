@@ -3591,5 +3591,72 @@
         · reject a proposal and confirm it moves to the Rejected tab rather than
           vanishing, and that re-uploading the same document does not resurrect it.
 ===============================================================================
+  32. "IS THE LEARNED KEYWORD PART OF THE POOL NOW?" — NO, AND THE QUESTION
+      FOUND A BUG IN §31 (user, 2026-09-20)
+===============================================================================
+
+  32.1 THE ANSWER: NO. IT IS A PARALLEL CHANNEL, NOT POOL MEMBERSHIP
+
+      §31 did NOT add learned values to the vote. What it added is a second
+      disagreement map that happens to use the same SHAPE, merged into the same UI
+      channel. Concretely, a learned find still:
+        · never enters pile.abc, so it has no score, no count, no files, no section
+          weight, and cannot be outvoted or corroborated by a hardcoded find;
+        · never appears in the vote inspector (_autofillVoteDebug), so it is invisible
+          to the one tool built for diagnosing this;
+        · is still overridden wholesale by `if (pooled[f]) parsed[f] = pooled[f]`.
+      Two adjudication mechanisms, not one. The user's question is the right one.
+
+  32.2 ⚠ AND THE QUESTION EXPOSED THAT §31 DID NOT WORK AT ALL IN THE APP
+
+      The pooled _disagree object ALWAYS carries all five keys, holding null where there
+      is no disagreement (core: budget/abc/duration/startDate/endDate, each
+      pooledDisagree(...) or null).
+      §31's wrapper merge was Object.assign({}, learnedD, pooledDisagreeInfo || {}).
+      So `abc: null` OVERWROTE the learned entry every time the pooled parse ran — which
+      is every run with a PDF in it. THE LEARNED PICK-ONE NOTE COULD NEVER RENDER.
+      The core change was right and its test passed; the wrapper destroyed the result
+      three lines later, and nothing covered the wrapper. That is the FOURTH time this
+      session a green suite has certified a path the input does not take (§27.3 the AI
+      ranking, §28.5 the AI badge, §30.2 the contractor value-side, now this).
+      I shipped it and called it done. It was not.
+
+  32.3 THE FIX, AND WHY IT IS A NAMED FUNCTION
+
+      mergeDisagreements(learnedD, pooledD, pooledResolved) — pure, exported to nothing,
+      but EXTRACTABLE, which is the point. The three lines it replaces were wrong and
+      nothing could see it; now a probe can.
+      TWO RULES:
+        1. a REAL pooled disagreement always wins — it has counts and files behind it,
+           where the learned one knows only that two approved phrases read differently;
+        2. a learned disagreement is DROPPED for any field the pool RESOLVED, because
+           the value in the box then came from the pool. Offering two learned values,
+           neither of which is displayed, is worse than saying nothing — and that second
+           incoherence was also live in §31, separately from the null bug.
+      C:\temp\opencode\probe_merge_disagree.mjs — 6 checks, all pass, the first being
+      the exact case §31 got wrong. JS 252/252/0.
+
+  32.4 THE REAL DESIGN QUESTION THE USER IS CIRCLING (proposed, NOT built)
+
+      Should a learned label be a FULL POOL MEMBER — collected as a candidate row with
+      a pattern tag, scored, voted, visible in the inspector, able to corroborate a
+      hardcoded find or be outvoted by one?
+      THE CASE FOR: one mechanism instead of two. Corroboration becomes visible — today,
+      a learned label and a hardcoded rule agreeing on the same value is a fact nobody
+      records. And the inspector would finally show learned finds.
+      ⚠ THE CASE AGAINST, AND IT IS A POLICY CHANGE, NOT A REFACTOR: L3's documented
+      rule is that learned vocabulary is consulted as the LOWEST-PRIORITY FALLBACK ONLY
+      — "every hardcoded rule runs first, so an empty table reproduces today's behaviour
+      exactly". Full pool membership breaks the second half of that: a populated table
+      could then change fields the hardcoded rules already filled correctly, by
+      outvoting them. An empty table would still be safe; a well-populated one would
+      not be, in a way nobody has measured.
+      ⇒ THAT IS THE USER'S CALL, not mine. It trades a guarantee for a mechanism.
+      IF IT IS DONE: it wants a collectLearnedCandidates() feeding the same pile with
+      its own pattern tag and a weight BELOW the hardcoded patterns, so learned finds
+      can corroborate and disagree without being able to outrank. That keeps the
+      documented precedence while ending the two-mechanism split — and it is the only
+      version of this I would recommend.
+===============================================================================
   END OF RESTUDY
 ===============================================================================

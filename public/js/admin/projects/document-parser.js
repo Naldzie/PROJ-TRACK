@@ -286,6 +286,7 @@ async function runDocumentAutofill() {
         // Step 1g-2 Choice B: per-field winner/runnerUp pairs from the pooled vote
         // (null when one clear winner). Set inside the pooled block below.
         let pooledDisagreeInfo = null;
+        const pooledResolvedFields = {};
         try {
             const core = getCore();
             if (core && typeof core.parseProjectInfoPooled === 'function' && perFileData.length > 0) {
@@ -294,7 +295,9 @@ async function runDocumentAutofill() {
                 // Override only fields the pool resolved (budget/abc/duration/dates);
                 // keep voted title/contractor/location/etc. from per-file vote.
                 for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
-                    if (pooled[f]) parsed[f] = pooled[f];
+                    // Remembered so the pick-one note can describe the track that
+                    // actually produced the value in the box (see mergeDisagreements).
+                    if (pooled[f]) { parsed[f] = pooled[f]; pooledResolvedFields[f] = true; }
                 }
                 // Step 1f-2 vote inspector: stash + log every find and the winner.
                 // How to use: in the browser console run `window._parserDebug = true`,
@@ -356,12 +359,8 @@ async function runDocumentAutofill() {
         // This is what stops an insertion id deciding the ABC silently (restudy §31).
         try {
             const learnedD = (parsed && parsed._learnedDisagree) ? parsed._learnedDisagree : null;
-            if (learnedD) {
-                const merged = Object.assign({}, learnedD, pooledDisagreeInfo || {});
-                window._autofillDisagree = merged;
-            } else {
-                window._autofillDisagree = pooledDisagreeInfo;
-            }
+            const merged = mergeDisagreements(learnedD, pooledDisagreeInfo, pooledResolvedFields);
+            window._autofillDisagree = Object.keys(merged).length ? merged : pooledDisagreeInfo;
         } catch (e) { window._autofillDisagree = pooledDisagreeInfo; }
 
         // AI-3 opt-in trigger (Tier 3, very last): offer only when the local pipeline admits
@@ -2040,6 +2039,35 @@ function emptyPreviewFields() {
             if (String(el.value || '').trim() === '') out.push(AUTOFILL_CORE_FIELDS[inputId]);
         }
     } catch (e) { /* the hint is best-effort — the call proceeds without it */ }
+    return out;
+}
+
+// Which pick-one note to show per field: the pooled disagreement, or the learned one.
+// PURE, and deliberately a named function rather than three lines inline, because the
+// three lines were WRONG and nothing could see it (restudy §32).
+//
+// The pooled _disagree object always carries ALL its keys, holding null where there is
+// no disagreement. So a plain Object.assign(learned, pooled) overwrote every learned
+// entry with null and the learned note could never render — in the app, ever.
+//
+// Two rules, and the second is the one that keeps the preview honest:
+//   1. a REAL pooled disagreement always wins. It has counts and files behind it; the
+//      learned one knows only that two approved phrases read differently.
+//   2. a learned disagreement is dropped for any field THE POOL RESOLVED, because the
+//      value in the box then came from the pool — offering two learned values, neither
+//      of which is what is displayed, would be worse than saying nothing.
+// Called by: runDocumentAutofill().
+function mergeDisagreements(learnedD, pooledD, pooledResolved) {
+    const out = {};
+    const learned = learnedD || {};
+    const pooled = pooledD || {};
+    const resolved = pooledResolved || {};
+    for (const k of Object.keys(learned)) {
+        if (!resolved[k] && learned[k]) out[k] = learned[k];
+    }
+    for (const k of Object.keys(pooled)) {
+        if (pooled[k]) out[k] = pooled[k];
+    }
     return out;
 }
 
