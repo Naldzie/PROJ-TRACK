@@ -99,6 +99,12 @@ function cancelDocumentAutofill() {
     // A page choice belongs to the documents it was made against — a new session
     // must fall back to the system's own ranking rather than an orphaned pick.
     try { window._ocrAiPick = null; } catch (e) { /* best-effort */ }
+    // S-2: a refusal belongs to the documents it was made against, and by decision
+    // it does not outlive the popup (plan §5b Decision 1). S-4: the chosen count
+    // goes with it, so a fresh popup starts at the default rather than inheriting
+    // a number nobody can see.
+    try { window._ocrAiExclude = { pages: [], files: [] }; } catch (e) { /* best-effort */ }
+    try { window._ocrAiCount = null; } catch (e) { /* best-effort */ }
     // S3: fresh-popup-fresh-state — clear saved vote/disagreement/scan state AND remove
     // the dynamically built banner/note boxes, so no previous run can linger on screen
     // (stale-banner bug: old red banner survived modal close/reopen into single-file runs).
@@ -487,7 +493,59 @@ let _ocrTextCache = new Map();
 // How many pages the AI assist may ever be shown. Slice-only is a standing rule
 // of this feature (never the whole file), so the number is named rather than
 // repeated at each call site — and the AI page picker caps its selection to it.
-const AI_SLICE_PAGES = 2;
+// S-4 (2026-09-20): this is now the CEILING AND the default, and the two are the
+// same number on purpose — 3 is the server's own hard limit
+// (DocumentParserController:128, "Provide 1 to 3 page images"), so the reviewer's
+// selector can only ever reduce it. Decision 3 in ai_slice_selection_plan.md §5b
+// records why the default was raised from 2, against my own earlier advice: the AI
+// tier answers ~2% of calls, so context per LANDED call is worth more than a
+// spared slot — and the exclusion controls (S-2) ship in the same change, so
+// "more pages" cannot mean "more pages nobody could refuse".
+const AI_SLICE_PAGES = 3;
+
+// How many pages THIS reviewer has asked for, 1..AI_SLICE_PAGES. Reading through a
+// function rather than the raw stash keeps every call site (the ✦ row, the manual
+// pick cap, both send paths and the banner) agreeing on one number.
+function aiSliceCount() {
+    try {
+        const n = Number(window._ocrAiCount);
+        if (isFinite(n) && n >= 1 && n <= AI_SLICE_PAGES) return Math.floor(n);
+    } catch (e) { /* fall through to the default */ }
+    return AI_SLICE_PAGES;
+}
+
+// S-2 — PAGES AND FILES THE REVIEWER HAS REFUSED TO SEND.
+// { pages: [{fileName, pageNum}], files: [fileName] }. Per modal session by
+// decision (plan §5b Decision 1): file NAME is the only durable handle available
+// and it is a weak one — two contracts can share a name, and a re-upload under a
+// new name would silently lose the refusal. A per-session rule cannot be wrong
+// about which document it is refusing. Cleared in cancelDocumentAutofill beside
+// _ocrAiPick.
+// ⚠ EVERY READ OF THIS FAILS CLOSED. An exclusion is never dropped because its
+// file cannot be matched to a current scan report — unlike _ocrAiPick, which is
+// validated away on purpose. Sending a page the reviewer refused is the failure
+// that matters here; keeping a refusal that no longer applies costs nothing.
+function ocrAiExclusions() {
+    try {
+        const x = window._ocrAiExclude;
+        if (x && typeof x === 'object') {
+            return { pages: Array.isArray(x.pages) ? x.pages : [], files: Array.isArray(x.files) ? x.files : [] };
+        }
+    } catch (e) { /* best-effort */ }
+    return { pages: [], files: [] };
+}
+
+// Is this whole file refused?
+function ocrAiFileExcluded(fileName) {
+    return ocrAiExclusions().files.indexOf(fileName) !== -1;
+}
+
+// Is this page refused — either on its own, or because its whole file is?
+function ocrAiPageExcluded(fileName, pageNum) {
+    const x = ocrAiExclusions();
+    if (x.files.indexOf(fileName) !== -1) return true;
+    return x.pages.some((p) => p && p.fileName === fileName && p.pageNum === pageNum);
+}
 const OCR_PAGE_LIMIT = 10;
 // What the reviewer ASKED FOR — the read-depth selector's value (10/25/40/50), or the
 // default. This is the number the gray scan note quotes, and it must keep meaning that
@@ -1655,13 +1713,37 @@ window._rotateAllScanned = function (reportIdx) {
 // it cannot be fixed from the inside: only the person looking at the page knows.
 // So the ranking is now shown with its reason, and can be overridden.
 // Pure over the stashes. Called by: buildAiSlices() and the preview panel.
+// S-3 (2026-09-20) — RANK EACH FILE, THEN TAKE ROUND-ROBIN.
+// This used to be one greedy walk whose OUTER and INNER loops were both bounded by
+// `out.length < maxN`, so the FIRST file consumed every slot and the second was
+// never looked at. Confirmed live on the CHS pair: a two-file upload sent p.4 and
+// p.7 of file 1 and nothing at all from the 12-page file 2, however weak its pages
+// were (plan §2 finding A2). A reviewer uploading a contract AND a proposal got an
+// AI opinion informed by one of them.
+// Now: each file is ranked as before, then the weakest page of file 1, the weakest
+// of file 2, … and only then the second-weakest of file 1.
+// ⚠ A SINGLE-FILE UPLOAD IS BYTE-IDENTICAL TO THE OLD BEHAVIOUR — with one list to
+// draw from, round-robin degenerates to taking that list in order. That is the
+// acceptance condition, not a happy accident (plan §8).
 function ocrAiCandidates(maxN) {
     const out = [];
     try {
         const reports = window._autofillScanReports || [];
-        for (let ri = 0; ri < reports.length && out.length < maxN; ri++) {
+        // Pass 1 — rank within each file, and drop everything the reviewer refused.
+        const perFile = [];
+        for (let ri = 0; ri < reports.length; ri++) {
             const r = reports[ri];
             if (!r || !r.fileName) continue;
+            // S-2: a refused file is not ranked at all, so it cannot be suggested and
+            // cannot occupy a round-robin turn that another file could use.
+            // ⚠ THIS LINE IS NOT THE ENFORCEMENT POINT, and a mutation probe proved it
+            // (plan §7a): ocrAiPageExcluded() already answers true for every page of a
+            // refused file, so the per-page filter below would drop them all and the
+            // empty-ordered guard would skip the file anyway. Removing this line alone
+            // changes NO behaviour. It is kept for two honest reasons — it states the
+            // intent where a reader looks for it, and it avoids ranking a whole file's
+            // pages only to throw the result away. Do not mistake it for the guard.
+            if (ocrAiFileExcluded(r.fileName)) continue;
             const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
             const read = {};
             (r.ocrPages || []).forEach((pn) => { read[pn] = true; });
@@ -1707,22 +1789,47 @@ function ocrAiCandidates(maxN) {
                 ordered = [];
                 for (let p = 1; p <= Math.min(r.numPages, 2) && ordered.length < 2; p++) ordered.push(p);
             }
-            for (let k = 0; k < ordered.length && out.length < maxN; k++) {
-                const pn = ordered[k];
+            // S-2: and a refused PAGE is dropped from its file's ranking. Done after
+            // the sort rather than before it so the ordering logic stays untouched.
+            ordered = ordered.filter((pn) => !ocrAiPageExcluded(r.fileName, pn));
+            if (!ordered.length) continue;
+            perFile.push({
+                reportIdx: ri,
+                fileName: r.fileName,
+                ordered: ordered,
+                // Everything the reason string needs, carried rather than recomputed.
+                reasonFor: (pn) => (fallback ? 'first pages of a file with no photo-read pages'
+                    : (beyond[pn] ? 'never scanned — past the chosen read depth'
+                        : (!read[pn] ? 'the reader got nothing here'
+                            : (soupy[pn] ? 'the text here came back garbled'
+                                : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)')))),
+            });
+        }
+        // Pass 2 — round-robin. Depth k takes the k-th best page of every file in
+        // file order before any file gets its (k+1)-th, so with 3 slots and 2 files
+        // the split is 2+1 rather than 3+0, and file order decides the tie. File
+        // order is the upload order and does not change within a run, so the
+        // selection stays stable across re-renders — a property the ranking's own
+        // rule 4 already promised and this must not break.
+        let depth = 0;
+        let took = true;
+        while (out.length < maxN && took) {
+            took = false;
+            for (let f = 0; f < perFile.length && out.length < maxN; f++) {
+                const pn = perFile[f].ordered[depth];
+                if (pn === undefined) continue;
+                took = true;
                 out.push({
-                    reportIdx: ri,
-                    fileName: r.fileName,
+                    reportIdx: perFile[f].reportIdx,
+                    fileName: perFile[f].fileName,
                     pageNum: pn,
                     // The panel shows this, and it is the only place a reviewer can see
                     // why a page was chosen. "among the weakest" was true when weakness
                     // meant emptiness; now it can say which kind of weak.
-                    reason: fallback ? 'first pages of a file with no photo-read pages'
-                        : (beyond[pn] ? 'never scanned — past the chosen read depth'
-                            : (!read[pn] ? 'the reader got nothing here'
-                                : (soupy[pn] ? 'the text here came back garbled'
-                                    : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)'))),
+                    reason: perFile[f].reasonFor(pn),
                 });
             }
+            depth++;
         }
     } catch (e) { /* selection is best-effort */ }
     return out;
@@ -1739,6 +1846,14 @@ function ocrAiSelection(maxN) {
             const valid = [];
             for (const p of picked) {
                 if (!p || valid.length >= maxN) continue;
+                // S-2, THE SECOND GATE. A refusal is applied to the reviewer's own
+                // picks too, not only to the ranking — a pick made BEFORE a page was
+                // excluded must not survive as a way past the exclusion. Deliberately
+                // duplicated rather than trusted to the ranking: these are the pages
+                // where a second path is worth the repetition.
+                // Note this test runs BEFORE the report lookup below, so it holds even
+                // when the file cannot be matched — the fail-closed rule (plan A6).
+                if (ocrAiPageExcluded(p.fileName, p.pageNum)) continue;
                 const ri = reports.findIndex((r) => r && r.fileName === p.fileName);
                 if (ri === -1) continue;
                 if (ocrRotatablePagesOf(reports[ri]).indexOf(p.pageNum) === -1) continue;
@@ -1760,25 +1875,164 @@ window._ocrAiTogglePage = function () {
         const r = reports[_ocrPreview.reportIdx];
         if (!r) return;
         const pn = _ocrPreview.pageNum;
+        // S-2: adding a page the reviewer has refused would put it straight back on
+        // the send list. Removing one is always allowed.
+        const alreadyOn = Array.isArray(window._ocrAiPick)
+            && window._ocrAiPick.some((p) => p && p.fileName === r.fileName && p.pageNum === pn);
+        if (!alreadyOn && ocrAiPageExcluded(r.fileName, pn)) return;
         let list = Array.isArray(window._ocrAiPick) && window._ocrAiPick.length
             ? window._ocrAiPick.slice()
-            : ocrAiSelection(AI_SLICE_PAGES).map((c) => ({ fileName: c.fileName, pageNum: c.pageNum }));
-        const at = list.findIndex((p) => p && p.fileName === r.fileName && p.pageNum === pn);
-        if (at !== -1) list.splice(at, 1);
+            : ocrAiSelection(aiSliceCount()).map((c) => ({ fileName: c.fileName, pageNum: c.pageNum }));
+        const at2 = list.findIndex((p) => p && p.fileName === r.fileName && p.pageNum === pn);
+        if (at2 !== -1) list.splice(at2, 1);
         else {
             list.push({ fileName: r.fileName, pageNum: pn });
             // Oldest choice makes way — the cap is what keeps this slice-only.
-            while (list.length > AI_SLICE_PAGES) list.shift();
+            // S-4: the cap is the reviewer's CHOSEN count now, not the constant, so
+            // picking a third page at a setting of 3 no longer silently drops the
+            // first one (plan §2 finding A4).
+            while (list.length > aiSliceCount()) list.shift();
         }
         window._ocrAiPick = list.length ? list : null;
     } catch (e) { /* best-effort */ }
     renderOcrPagePreview();
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
 };
 
 // Back to the system's own ranking.
 window._ocrAiResetPick = function () {
     window._ocrAiPick = null;
     renderOcrPagePreview();
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
+};
+
+// S-2 — REFUSE THE PAGE ON SCREEN, or take the refusal back.
+// The case this exists for is concrete: page 7 of the CHS contract is a notarial
+// ACKNOWLEDGMENT carrying both parties' government ID numbers and the notary's
+// roll, IBP, MCLE and PTR numbers — and the ranking picks it, correctly, because
+// it is one of the sparsest pages in the set. Only the person looking at it knows
+// that it must not leave the building.
+// Excluding also removes the page from the current pick list, so a page that was
+// already chosen cannot stay chosen after being refused.
+// Called by: the AI row's "never send" button.
+window._ocrAiToggleExcludePage = function () {
+    try {
+        if (!_ocrPreview) return;
+        const reports = window._autofillScanReports || [];
+        const r = reports[_ocrPreview.reportIdx];
+        if (!r) return;
+        const pn = _ocrPreview.pageNum;
+        const x = ocrAiExclusions();
+        const at = x.pages.findIndex((p) => p && p.fileName === r.fileName && p.pageNum === pn);
+        if (at !== -1) x.pages.splice(at, 1);
+        else {
+            x.pages.push({ fileName: r.fileName, pageNum: pn });
+            // A refused page cannot remain on the send list.
+            try {
+                if (Array.isArray(window._ocrAiPick)) {
+                    const kept = window._ocrAiPick.filter((p) => !(p && p.fileName === r.fileName && p.pageNum === pn));
+                    window._ocrAiPick = kept.length ? kept : null;
+                }
+            } catch (e) { /* best-effort */ }
+        }
+        window._ocrAiExclude = x;
+    } catch (e) { /* best-effort */ }
+    renderOcrPagePreview();
+    // The banner names the pages it would send, so a refusal has to move it.
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
+};
+
+// S-2 — REFUSE A WHOLE FILE. Per Decision 2 both affordances exist: the notarial
+// page is one page of a contract whose other pages are exactly what the AI should
+// read, but a reviewer who judges a whole document sensitive should not have to
+// refuse it a page at a time.
+// Index-indirected like every other per-file control (quote-safe: file names reach
+// inline onclick attributes otherwise).
+// Called by: the "never send this file" button in the gray scan note.
+window._ocrAiToggleExcludeFile = function (reportIdx) {
+    try {
+        const targets = window._ocrRotateTargets || [];
+        const fileName = targets[reportIdx];
+        if (!fileName) return;
+        const x = ocrAiExclusions();
+        const at = x.files.indexOf(fileName);
+        if (at !== -1) x.files.splice(at, 1);
+        else {
+            x.files.push(fileName);
+            try {
+                if (Array.isArray(window._ocrAiPick)) {
+                    const kept = window._ocrAiPick.filter((p) => !(p && p.fileName === fileName));
+                    window._ocrAiPick = kept.length ? kept : null;
+                }
+            } catch (e) { /* best-effort */ }
+        }
+        window._ocrAiExclude = x;
+    } catch (e) { /* best-effort */ }
+    // Both surfaces can show this state, so both are refreshed.
+    try { renderOcrPagePreview(); } catch (e) { /* best-effort */ }
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
+};
+
+// S-1 (2026-09-20) — THE BANNER SAYS WHICH PAGES IT WOULD SEND.
+// Until now the button a reviewer actually presses lived in this banner and promised
+// only a COUNT ("Sends at most 2 confusing pages"), while the list of WHICH pages
+// lived in the preview panel behind "See & straighten" — a screen most reviewers
+// never open. So the normal path was a blind consent, and on the CHS pair the thing
+// being consented to blindly was a notarial page of ID numbers (plan §2 finding A3).
+// The list is built from the SAME ocrAiSelection() the slicer calls, so what is
+// promised here and what is actually sent cannot drift apart.
+// Called by: showAutofillPreview (first render) and refreshAutofillAiBanner().
+function autofillAiBannerHtml() {
+    let named = '';
+    let openBtn = '';
+    try {
+        const sel = ocrAiSelection(aiSliceCount());
+        if (sel.length) {
+            named = 'Would send ' + sel.length + ' page' + (sel.length === 1 ? '' : 's') + ': '
+                + sel.map((c) => '<strong>' + escapeHtml(c.fileName) + ' p.' + c.pageNum + '</strong>').join(', ')
+                + '. Nothing else leaves this computer.';
+            // The panel is rendered by the gray scan note above this banner, so it
+            // exists whenever there were scanned pages. When there were none (a weak
+            // text-layer read), there is nothing to open and no button is offered.
+            if (document.getElementById('ocrPagePreview')) {
+                openBtn = ' <button type="button" class="btn btn-sm btn-outline-secondary"'
+                    + ' onclick="window._ocrPreviewShow(' + sel[0].reportIdx + ',' + sel[0].pageNum + ')"'
+                    + ' title="See these pages, change which ones go, or mark any of them never-send">See or change these</button>';
+            }
+        } else {
+            named = 'No pages are selected to send.';
+        }
+    } catch (e) {
+        // Never let the naming break the offer itself — fall back to the old wording.
+        named = 'Sends at most ' + aiSliceCount() + ' confusing pages (never the whole file).';
+    }
+    return '<i class="bi bi-magic"></i><span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> '
+        + named + '</span>'
+        + openBtn
+        + ' <button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">Try AI assist</button>';
+}
+
+// Repaint the banner in place after the selection changes — excluding a page or
+// changing the count must move the named list, or the promise goes stale while the
+// reviewer is looking at it. No-op when the banner is not on screen.
+function refreshAutofillAiBanner() {
+    try {
+        const el = document.getElementById('autofillPreviewAi');
+        // Only the offer banner is repainted; a banner carrying an error message from
+        // a finished attempt is left alone.
+        if (!el || el.querySelector('[data-ai-error]')) return;
+        el.innerHTML = autofillAiBannerHtml();
+    } catch (e) { /* best-effort */ }
+}
+
+// S-4 — the reviewer's chosen page count, from the AI row's selector.
+window._ocrAiSetCount = function (n) {
+    try {
+        const v = Number(n);
+        window._ocrAiCount = (isFinite(v) && v >= 1 && v <= AI_SLICE_PAGES) ? Math.floor(v) : null;
+    } catch (e) { /* best-effort */ }
+    renderOcrPagePreview();
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
 };
 
 // R2 manual per-page rotation: cycle 0→90→180→270→0 for one photo-read page.
@@ -1875,7 +2129,7 @@ async function renderOcrPagePreview() {
 
     // Page strip — what the reader got from each page, and which ones the AI
     // would be shown. A ✦ marks a page in the current AI selection.
-    const sel = ocrAiSelection(AI_SLICE_PAGES);
+    const sel = ocrAiSelection(aiSliceCount());
     const inSel = (fileName, pageNum) => sel.some((c) => c.fileName === fileName && c.pageNum === pageNum);
     const strip = document.getElementById('ocrPreviewStrip');
     if (strip) {
@@ -1896,16 +2150,44 @@ async function renderOcrPagePreview() {
     if (aiRow) {
         const mine = Array.isArray(window._ocrAiPick) && window._ocrAiPick.length;
         const chosen = inSel(r.fileName, pn);
+        // S-2: a refused page is stated as refused and cannot be added back until
+        // the refusal is lifted, so the + control is replaced rather than left to
+        // fail silently.
+        const refused = ocrAiPageExcluded(r.fileName, pn);
+        const fileRefused = ocrAiFileExcluded(r.fileName);
+        const count = aiSliceCount();
+        const countOpts = [];
+        for (let n = 1; n <= AI_SLICE_PAGES; n++) {
+            countOpts.push('<option value="' + n + '"' + (n === count ? ' selected' : '') + '>' + n + ' page' + (n === 1 ? '' : 's') + '</option>');
+        }
         aiRow.innerHTML = '<span class="text-muted" style="font-size:0.8em;">✦ AI assist would read:</span> '
             + (sel.length
                 ? sel.map((c) => '<span class="badge bg-light text-dark border" title="' + escapeHtml(c.reason) + '">'
                     + escapeHtml(c.fileName) + ' p.' + c.pageNum + '</span>').join(' ')
                 : '<span class="text-muted" style="font-size:0.8em;">nothing yet</span>')
-            + ' <button type="button" class="btn btn-sm ' + (chosen ? 'btn-outline-danger' : 'btn-outline-secondary') + '"'
-            + ' style="padding:1px 8px;font-size:0.75em;" onclick="window._ocrAiTogglePage()"'
-            + ' title="' + (chosen ? 'Do not send this page' : 'Send this page instead — at most ' + AI_SLICE_PAGES + ' are ever sent') + '">'
-            + (chosen ? '− this page' : '+ this page') + '</button>'
-            + (mine ? ' <button type="button" class="btn btn-sm btn-link" style="padding:1px 4px;font-size:0.75em;" onclick="window._ocrAiResetPick()">use the suggestion</button>' : '');
+            + (refused
+                ? ' <span class="badge bg-danger" title="' + (fileRefused ? 'The whole of this file is marked never-send.' : 'This page is marked never-send.') + '">⃠ never sent</span>'
+                : ' <button type="button" class="btn btn-sm ' + (chosen ? 'btn-outline-danger' : 'btn-outline-secondary') + '"'
+                    + ' style="padding:1px 8px;font-size:0.75em;" onclick="window._ocrAiTogglePage()"'
+                    + ' title="' + (chosen ? 'Do not send this page' : 'Send this page instead — at most ' + count + ' are ever sent') + '">'
+                    + (chosen ? '− this page' : '+ this page') + '</button>')
+            // S-2: the refusal control itself. Hidden when the WHOLE FILE is refused,
+            // because un-refusing one page of a refused file would say nothing true.
+            + (fileRefused ? ''
+                : ' <button type="button" class="btn btn-sm ' + (refused ? 'btn-danger' : 'btn-outline-danger') + '"'
+                    + ' style="padding:1px 8px;font-size:0.75em;" onclick="window._ocrAiToggleExcludePage()"'
+                    + ' title="' + (refused
+                        ? 'Allow this page to be sent again'
+                        : 'Never send this page to the AI. Use this for pages carrying ID numbers, signatures or anything personal.') + '">'
+                    + (refused ? '↺ allow this page' : '⃠ never send this page') + '</button>')
+            + (mine ? ' <button type="button" class="btn btn-sm btn-link" style="padding:1px 4px;font-size:0.75em;" onclick="window._ocrAiResetPick()">use the suggestion</button>' : '')
+            // S-4: how many pages go. The ceiling is the server's own limit, so this
+            // selector can only ever reduce what is sent.
+            + ' <span class="ms-auto d-inline-flex align-items-center gap-1" style="font-size:0.75em;">'
+            + '<span class="text-muted">Send</span>'
+            + '<select class="form-select form-select-sm" style="width:auto;padding:1px 18px 1px 6px;font-size:0.95em;"'
+            + ' title="How many pages the AI may be shown. Three is the most the system will ever send."'
+            + ' onchange="window._ocrAiSetCount(this.value)">' + countOpts.join('') + '</select></span>';
     }
 
     // The page itself. Token-guarded so a fast prev/next cannot paint out of order.
@@ -2088,6 +2370,56 @@ async function buildAiSlices(maxN) {
         }
     } catch (e) { /* slicing is best-effort */ }
     return out;
+}
+
+// S-4 (2026-09-20) — CHECK THE PAYLOAD BEFORE IT LEAVES, and say what is wrong in
+// terms of the control that fixes it. Two problems, both made reachable by the
+// default rising to three pages (plan §5b Decision 3):
+//
+//   A8  buildAiSlices SILENTLY SKIPS a candidate whose PDF will not open, whose page
+//       is out of range, whose render exceeds the 4000px guard or whose canvas will
+//       not serialise. The caller only ever reacted to an EMPTY result, so "3 pages"
+//       could quietly become 1 with nothing said. Harmless while the banner promised
+//       a vague count; not harmless now that it NAMES the pages (S-1).
+//
+//   A9  THE SERVER'S 30 MB TOTAL BECOMES REACHABLE AT THREE PAGES. At two the worst
+//       case is 20 MB against a 10 MB-per-image cap, so the total could not be hit by
+//       construction; at three it lands exactly on the boundary — and buildAiSlices
+//       renders PNG, the worst format for a noisy scan. The server's refusal
+//       ("The page images exceed the total size budget. Send fewer pages.") arrives
+//       AFTER three renders and an upload, and names no control.
+//
+// Returns { ok, message }. A message with ok:true is a confirm(), ok:false is a stop.
+// Called by: _tryAiAssist() and _tryAiAssistFromWarning(), before postAiSlices.
+const AI_TOTAL_BYTE_BUDGET = 31457280; // mirrors DocumentParserController::MAX_TOTAL_BYTES
+function checkAiSlicePayload(slices, asked) {
+    const got = (slices || []).length;
+    if (!got) return { ok: false, message: '' }; // the callers already handle empty
+    // Measure what the SERVER measures: the base64 payload, not the data: prefix.
+    let total = 0;
+    try {
+        for (const s of slices) {
+            const d = String((s && s.data) || '');
+            const comma = d.indexOf(',');
+            total += (comma >= 0 ? d.length - comma - 1 : d.length);
+        }
+    } catch (e) { /* if it cannot be measured, let the server have the last word */ }
+    if (total > AI_TOTAL_BYTE_BUDGET) {
+        const mb = (n) => Math.round(n / 1048576);
+        return {
+            ok: false,
+            message: got + ' pages come to about ' + mb(total) + ' MB, over the ' + mb(AI_TOTAL_BYTE_BUDGET)
+                + ' MB limit. Lower "Send" to fewer pages in the AI row and try again.',
+        };
+    }
+    if (got < asked) {
+        return {
+            ok: true,
+            message: (asked - got) + ' of the ' + asked + ' chosen pages could not be turned into an image. Send the remaining '
+                + got + ' page' + (got === 1 ? '' : 's') + ' anyway?',
+        };
+    }
+    return { ok: true, message: '' };
 }
 
 // Merge AI values into EMPTY preview boxes + stamp provenance (Decision A3).
@@ -2316,10 +2648,19 @@ window._tryAiAssist = async function () {
     window._autofillAiBusy = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Asking AI…'; }
     try {
-        const slices = await buildAiSlices(AI_SLICE_PAGES);
+        const asked = aiSliceCount();
+        const slices = await buildAiSlices(asked);
         if (runAtClick !== null && runAtClick !== _autofillRunId) return;
         if (!slices.length) {
             if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
+            window._autofillAiBusy = false;
+            return;
+        }
+        // S-4: the promise on the banner has to match the payload (A8/A9).
+        const guard = checkAiSlicePayload(slices, asked);
+        if (!guard.ok || (guard.message && !window.confirm(guard.message))) {
+            if (!guard.ok && guard.message && typeof showToast === 'function') showToast(guard.message, 'error');
             if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
             window._autofillAiBusy = false;
             return;
@@ -2366,9 +2707,17 @@ window._tryAiAssistFromWarning = async function () {
     window._autofillAiBusy = true;
     if (typeof showToast === 'function') showToast('Asking the AI assistant to read the weakest pages…', 'info');
     try {
-        const slices = await buildAiSlices(AI_SLICE_PAGES);
+        const asked = aiSliceCount();
+        const slices = await buildAiSlices(asked);
         if (!slices.length) {
             if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
+            window._autofillAiBusy = false;
+            return;
+        }
+        // S-4: same guard on the empty-warning path — it sends the same payload.
+        const guard = checkAiSlicePayload(slices, asked);
+        if (!guard.ok || (guard.message && !window.confirm(guard.message))) {
+            if (!guard.ok && guard.message && typeof showToast === 'function') showToast(guard.message, 'error');
             window._autofillAiBusy = false;
             return;
         }
@@ -2598,12 +2947,23 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 const pages = ocrRotatablePagesOf(r);
                 if (pages.length) {
                     const unread = pages.filter((pn) => ocrPageIsUnread(r, pn)).length;
+                    // S-2: whole-file refusal lives here, beside the file it refuses —
+                    // a reviewer who judges a whole document sensitive should not have
+                    // to refuse it a page at a time (plan §5b Decision 2).
+                    const fileOff = ocrAiFileExcluded(r.fileName);
                     rotBtns = '<div class="d-flex gap-1 flex-wrap mt-1 align-items-center">'
                         + '<span style="font-size:0.85em;" class="text-muted">Pages read from a photo:</span>'
                         + '<button type="button" class="btn btn-sm btn-outline-primary" onclick="window._ocrPreviewShow(' + ri + ',' + pages[0] + ')" title="See these pages, straighten any that are sideways, then read them again">'
                         + '👁 See &amp; straighten'
                         + (unread ? ' <span class="badge bg-warning text-dark">' + unread + ' unread</span>' : '')
-                        + '</button></div>';
+                        + '</button>'
+                        + '<button type="button" class="btn btn-sm ' + (fileOff ? 'btn-danger' : 'btn-outline-danger') + '"'
+                        + ' onclick="window._ocrAiToggleExcludeFile(' + ri + ')"'
+                        + ' title="' + (fileOff
+                            ? 'Allow pages of this file to be sent to the AI again'
+                            : 'Never send any page of this file to the AI assist') + '">'
+                        + (fileOff ? '↺ allow this file' : '⃠ never send this file') + '</button>'
+                        + '</div>';
                 }
             } catch (e) { rotBtns = ''; /* buttons are best-effort */ }
             // Stash this report's identity for the rotate handler (quote-safe indirection).
@@ -2697,8 +3057,7 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 const aiEl = document.createElement('div');
                 aiEl.id = 'autofillPreviewAi';
                 aiEl.className = 'alert alert-warning d-flex align-items-center gap-2 flex-wrap mt-3';
-                aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> Sends at most 2 confusing pages (never the whole file).</span>' +
-                    '<button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">Try AI assist</button>';
+                aiEl.innerHTML = autofillAiBannerHtml();
                 const container = modalEl.querySelector('.modal-body') || modalEl;
                 container.appendChild(aiEl);
             }

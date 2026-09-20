@@ -7,13 +7,17 @@
 #                availability; §4 F2 — what must not leave a PMU desktop)
 #              AGENTS.md future-queue item 8
 # Date: September 20, 2026
-# Status: 🔄 PLAN READY — the four questions are ANSWERED (§5b Decision Log, user
+# Status: ⬛ BUILT 2026-09-20 on phase-29-ai-slice-selection — §9 carries the build,
+#         §7a a finding the falsification pass produced about the code itself.
+#         Probe 63/63 with 8 mutations · JS 267/267/0 · PHP 1232/0.
+#         ⬜ BROWSER CHECK OWED — §9.7, six steps, two of which would falsify it.
+#         The four questions were ANSWERED (§5b Decision Log, user
 #         2026-09-20: per-session exclusion · per-page AND whole-file · default
-#         count 3). NOTHING BUILT, BUILD NOT YET ORDERED.
-#         §2 carries EIGHT verified findings (A1-A8), all traced in source today.
-#         §4 is the proposed build in four steps with a deliberate ORDER.
-#         §5 carries the four questions the user owns. Rule 10: nothing proceeds
-#         without an explicit order.
+#         count 3), and A9 was added while checking the third.
+#         §2 carries the findings A1-A8 (A9 is in §5b), all traced in source.
+#         §4 is the build in four steps with a deliberate ORDER — controls first.
+#         §5 carries the questions; §5b the answers. Rule 10 still binds anything
+#         not yet ordered.
 # Branch on build: phase-29-ai-slice-selection (Rule 12).
 
 ===============================================================================
@@ -379,6 +383,154 @@
   · If exclusion turns out to need persistence to be useful in the pilot (Q1 answered
     the other way), S-2 grows a storage decision and that is a new conversation, not a
     bigger commit.
+
+===============================================================================
+  7a. ONE FINDING THE BUILD PRODUCED ABOUT ITSELF (2026-09-20)
+      A mutation probe refused to go red, and it was right to.
+===============================================================================
+
+  The falsification pass removed `if (ocrAiFileExcluded(r.fileName)) continue;` from
+  the top of ocrAiCandidates' per-file loop and expected the refused file's pages to
+  come back. THEY DID NOT. The mutation survived.
+
+  WHY, and it is not a defect: ocrAiPageExcluded() answers true for every page of a
+  refused file (it tests the files list first), so the per-page filter below already
+  drops all of them, and the `if (!ordered.length) continue;` guard then skips the
+  file. REMOVING THE FILE-LEVEL LINE ALONE CHANGES NO BEHAVIOUR.
+
+  ⇒ SO THAT LINE IS NOT THE ENFORCEMENT POINT, and the source now says so in place.
+    It is kept for two honest reasons — it states the intent where a reader looks for
+    it, and it avoids ranking a whole file's pages only to discard the result — but a
+    future reader must not mistake it for the guard.
+  ⇒ THE PROBE WAS CORRECTED RATHER THAN THE CODE. Two mutations now stand in its
+    place: one removing BOTH enforcement points (which does go red, proving the PAIR
+    is load-bearing), and one removing only the page-level check (which goes red on
+    the SELECTION gate, where a stale pick would otherwise slip a refused page
+    through). A mutation that cannot fail proves nothing, and the honest response is
+    to fix the assertion, not to delete it.
+
+===============================================================================
+  9. BUILT — S-1 … S-4 (2026-09-20, ordered "yes proceed")
+     Branch phase-29-ai-slice-selection, off develop at 354c4a3 (+ the two docs
+     commits). ONE FILE: public/js/admin/projects/document-parser.js.
+     NO SERVER CHANGE, as §7 predicted — the controller already accepts 1 to 3.
+===============================================================================
+
+  9.1 SHARED STATE (both new stashes die with the popup, per Decision 1)
+      AI_SLICE_PAGES  2 -> 3, and it is now BOTH the default and the ceiling,
+                      because 3 is the server's own limit. The selector can only
+                      ever reduce what is sent.
+      aiSliceCount()  the reviewer's 1..3, clamped, with the ceiling as default.
+      window._ocrAiExclude = { pages: [{fileName,pageNum}], files: [fileName] },
+                      read through ocrAiExclusions / ocrAiFileExcluded /
+                      ocrAiPageExcluded.
+      window._ocrAiCount
+      Both cleared in cancelDocumentAutofill beside _ocrAiPick.
+
+  9.2 S-1 — THE BANNER NAMES WHAT IT WOULD SEND
+      autofillAiBannerHtml() builds the offer from the SAME ocrAiSelection() the
+      slicer calls, so the promise and the payload cannot drift. It reads:
+        "Try AI assist? Would send 3 pages: Contract - CHS Savings.pdf p.4,
+         CHS - Savings.pdf p.11, Contract - CHS Savings.pdf p.7. Nothing else
+         leaves this computer."   [See or change these] [Try AI assist]
+      "See or change these" opens the existing preview panel AT THE FIRST NAMED
+      PAGE, and is offered only when that panel exists (a weak text-layer read has
+      no scanned pages and therefore no panel — checked, not assumed).
+      refreshAutofillAiBanner() repaints it whenever the selection moves, so an
+      exclusion or a count change cannot leave a stale promise on screen. It
+      deliberately does NOT repaint a banner carrying a finished attempt's error.
+
+  9.3 S-2 — EXCLUSION, PER-PAGE AND PER-FILE (Decision 2)
+      Per-page: a "⃠ never send this page" control in the AI row, beside + / −.
+      Per-file: a "⃠ never send this file" control in the gray scan note, next to
+                that file's "See & straighten" button, index-indirected like every
+                other per-file control.
+      ENFORCED IN TWO INDEPENDENT PLACES, on purpose:
+        · ocrAiCandidates — a refused page is never ranked, so it is never suggested;
+        · ocrAiSelection  — a refused page is stripped from the REVIEWER'S OWN picks,
+                            so a pick made before the refusal cannot outlive it.
+      ⚠ AND IT FAILS CLOSED. The exclusion test runs BEFORE the report lookup in
+        ocrAiSelection, so an exclusion whose file cannot be matched to a current
+        scan report still blocks — unlike _ocrAiPick, which is validated away on
+        purpose. Asserted directly (§9.6), because it is the assert that separates
+        this from a privacy bug wearing the costume of consistency.
+      Excluding a page also removes it from the pick list in the same action, and
+      the + control refuses to add a refused page back.
+
+  9.4 S-3 — PER-FILE ALLOCATION (the A2 defect)
+      ocrAiCandidates was one greedy walk whose outer and inner loops were both
+      bounded by `out.length < maxN`, so the first file consumed every slot. It is
+      now two passes: rank within each file exactly as before, then take ROUND-ROBIN
+      by depth — the weakest page of file 1, the weakest of file 2, then the
+      second-weakest of file 1.
+      MEASURED: 2 slots / 2 files -> one page each (was 2+0). 3 slots / 2 files ->
+      2+1. 3 slots / 3 files -> one each. A one-page file does not stall the others.
+      ⭐ AND THE ACCEPTANCE CONDITION FROM §8 HOLDS, tested against the COMMITTED
+        FILE rather than against my memory of it: a SINGLE-file upload produces a
+        byte-identical selection to the version before this change, while the
+        multi-file case provably differs. That is the whole point of the step, and
+        both halves are asserted.
+
+  9.5 S-4 — THE COUNT, AND TWO GUARDS THE COUNT MADE NECESSARY
+      A 1/2/3 selector in the AI row; both send paths and the manual-pick cap read
+      aiSliceCount(), so a reviewer can finally express three picks (A4 — adding a
+      third used to silently drop the first).
+      checkAiSlicePayload() runs before either send:
+        A8  fewer slices than pages asked for -> CONFIRM, naming both numbers,
+            instead of quietly sending a shorter request;
+        A9  over the server's 30 MB total -> STOP, naming the control that fixes it
+            ("Lower \"Send\" to fewer pages in the AI row"), instead of paying for
+            three renders and an upload to be refused server-side.
+      The check measures what the SERVER measures — the base64 payload with the
+      data: prefix excluded — so the two cannot disagree about what 30 MB means.
+
+  9.6 WHAT WAS MEASURED
+      probe_slice.mjs (session scratchpad, never the repo): 63 checks, 63 pass,
+      including EIGHT MUTATIONS — round-robin reverted to greedy, each of the two
+      exclusion gates removed singly, both removed together, the count ignored, the
+      size check disabled, and the banner made to stop naming pages.
+      ⭐ The single-file regression is checked against `git show HEAD:` of the same
+        file, following the standing rule about not stashing for a clean tree.
+      Prior batch re-run and still green: probe_p456 43/43, probe_p6 19/19.
+      SUITES: JS 267 / 267 / 0. PHP 1232 passed / 0 failed / 4605 assertions.
+      Grep confirms no reference to ocrAiCandidates, ocrAiSelection, AI_SLICE_PAGES
+      or _ocrAiExclude anywhere outside document-parser.js.
+      ⚠ WHAT THE SUITES DO NOT COVER: all of it. The JS suite tests the pure core;
+        every line above is in the DOM half. The probe is the strongest offline
+        evidence available and it is still not a browser.
+
+  9.7 ⬜ THE BROWSER CHECK, OWED — six steps, devtools SHUT (restudy §14.4)
+      1. THE BANNER NAMES PAGES. Upload a weak scan (or the CHS pair) until the
+         amber "Try AI assist" offer appears. It must name file AND page for each
+         page it would send, and say "Nothing else leaves this computer."
+      2. "SEE OR CHANGE THESE" opens the preview panel at the first named page.
+      3. REFUSE A PAGE. In the AI row press "⃠ never send this page" on a page the
+         ✦ row currently lists. The ✦ must move to another page, the badge must
+         read "⃠ never sent", and THE BANNER ABOVE MUST UPDATE TO MATCH.
+      4. REFUSE A FILE. In the gray note press "⃠ never send this file". Every page
+         of that file must leave the selection; the other file should fill the slots.
+         Pressing it again must restore them.
+      5. THE COUNT. Set "Send" to 1 — the banner must name one page. Set it to 3 —
+         three. On a TWO-FILE upload at 3, the selection should span both files
+         (that is S-3 visible on screen).
+      6. IT STILL SENDS. With a small file, press Try AI assist and confirm the call
+         goes as before. ⚠ The AI tier answers ~2% of calls
+         (local_llm_parser_plan.md §4), so a failure here is most likely the tier,
+         not this change — judge it by whether the REQUEST is made with the right
+         pages, not by whether an answer comes back.
+      ⚠ WHAT WOULD FALSIFY THE BUILD: 3 or 4 failing (the refusal is the point), or
+        1 naming pages that differ from the ✦ row (promise and payload drifting,
+        which is the one property S-1 exists to guarantee).
+
+  9.8 KNOWINGLY LEFT ALONE
+      · The JPEG option for A9 (plan §5b). Not chosen: it changes what the model is
+        shown and deserves its own measurement, not a tweak smuggled into S-4.
+      · Whether a never-scanned page SHOULD be the AI's first pick. The ranking's
+        ORDER is untouched by this whole change; only who may be in it, how many,
+        and how they are spread across files. That question sits with the client
+        answer the user is taking to pilot day.
+      · Persistence. Decision 1 says per-session, and §8 says a change of mind there
+        is a new conversation rather than a bigger commit.
 
 ===============================================================================
   END OF PLAN
