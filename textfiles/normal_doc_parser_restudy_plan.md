@@ -4396,5 +4396,73 @@
       two fields — and it is the demonstration worth keeping for the defence.
 
 ===============================================================================
+  44. THE SELECTABLE TWIN (user, 2026-09-20) — A SECOND DOCUMENT AT LAST
+      pdfdocstest5_selectable_text.pdf: same content, text layer instead of images.
+===============================================================================
+
+  44.1 ⭐ WHAT IT READ, AND IT IS NEARLY ALL CORRECT
+
+      LOCATION      Nabua Campus, Camarines Sur Polytechnic Colleges, Nabua,
+                    Camarines Sur                                          ✓
+      CONTRACTOR    SkyScraper Construction and Engineering Services        ✓
+      ABC           4,834,297.59, NO disagreement                          ✓
+      CONTRACT      4,204,128.84, offering 4,204,128.84 vs 4,323,196.77    ✓✓
+      DURATION      185, offering 185 vs 205                               ✓
+      CATEGORY      none — correct, the document never states one
+      BUDGET SOURCE none — correct, the document never states one
+
+  44.2 ⭐ THE CONTRACT-PRICE PICK-ONE IS THE ONE THE USER WANTED, AND IT CAME BACK BY
+       ITSELF
+
+      §37.2 recorded that the contract price had started offering the ABC instead of
+      the REVISED amount, and §38 removed the wrong answer without supplying the right
+      one. ON THE CLEAN READ IT OFFERS ORIGINAL vs REVISED — exactly what the user
+      said it used to do and wanted back.
+      WHY: on the text layer 4,323,196.77 appears cleanly three times (pages 5, 9, 10)
+      and out-scores any ABC leakage. On the SCAN, OCR fragmented it — 4323196.00 and
+      4323196.77 voted as different values — while the ABC figure survived on more
+      pages, so the ABC took the runner-up slot.
+      ⇒ §37.2 WAS A SYMPTOM OF OCR DAMAGE, NOT A STRUCTURAL DEFECT. The parser was
+        never confused about what a contract price is; it was voting on damaged
+        evidence. §38's exclusion stays as a guard, but it is a safety net rather than
+        the cure, and nothing further is needed here.
+
+  44.3 ⚠ AND A NUANCE ABOUT THE LEARNING LOOP WORTH BEING HONEST ABOUT
+
+      The ABC reads 4,834,297.59 here with NO learned keyword at all — the clean line
+      "Approved Budget for the Contract: Php 4,834,297.59" is read by the hardcoded
+      abc-line rule. The taught phrase that §43.2 showed to be decisive is decisive
+      ONLY ON THE DAMAGED SCAN.
+      ⇒ THAT IS STILL THE CASE THAT MATTERS — the PMU's documents are scanned (Fact 2)
+        — but the loop's value should be stated precisely: IT RESCUES DAMAGED READS.
+        It is not needed on documents the rules already read, which is exactly what
+        §35's worth-approving indicator now tells a reviewer.
+
+  44.4 ⚠ ONE THING TO DECIDE — THE DESCRIPTION SWALLOWS THE SCOPE OF WORK
+
+      DESCRIPTION came back as "Rehabilitation/Refurbishment of Canteen at Food
+      Laboratory Building Scope of Work 1. Removal of existing structures ..." — the
+      project description run together with the whole 30-item scope list.
+      It is not a bug: extractDescription collects prose until a KNOWN FIELD LABEL
+      starts, and "Scope of Work" is a description START label, not a terminator. So
+      it reads the scope as a continuation of the description, which is a defensible
+      reading of the document.
+      ❓ IT IS A QUESTION FOR THE USER, NOT A FIX TO GUESS AT: should the project's
+      DESCRIPTION field carry the full scope of work, or stop at the description
+      sentence? Only the PMU knows what that box is for. If it should stop, adding
+      "scope of work" to DESCRIPTION_NEXT_FIELD is a one-line change.
+
+  44.5 WHAT THIS RUN IS WORTH
+
+      It is the SECOND document the normal-doc parser has been measured against, and
+      the first with a text layer. Everything the B-queue tightened — the budget-source
+      and category shape rules, the contractor cleaning, the location tidy — behaved
+      correctly on a layout it had never seen, and two fields it had no business
+      filling were correctly left empty.
+      ⬜ STILL UNMEASURED: the Completed Project set (CHS Savings contract, quantity
+      sheet), the Ongoing Project set (Buhi three-storey), contract_test_sample 1 and
+      2, pdfdocstest3 and pdfdocstest4. Eight documents, none of them ever run.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
