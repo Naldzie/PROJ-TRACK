@@ -857,7 +857,7 @@ const DocumentParserCore = (function () {
     // section 5, item N1, and the learning-loop plan section 6.
     // TO RE-BLIND FOR A DEMO: set this back to true and expect two INTENDED JS failures
     // (F-B1 conditional, L3 hardcoded-ABC) plus the sleep-asserting fixtures to flip back.
-    const L3_TEST_BLIND_ABC = true;
+    const L3_TEST_BLIND_ABC = false;
 
     // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
     // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.

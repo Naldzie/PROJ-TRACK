@@ -3902,5 +3902,45 @@
       Contract; PB" reads as already-covered while "| TOTAL ESTIMATED PROJECT COST P"
       reads as a discovery.
 ===============================================================================
+  36. BLINDING LIFTED AGAIN (user, 2026-09-20) — AND THE DESK LABELS APPEAR
+===============================================================================
+
+  36.1 WHY THE LABELS WERE BLANK, AND WHY THAT WAS CORRECT
+
+      The user opened the desk and asked where the discovery labels were. They were
+      absent because the ABC blinding was ON: extractABC's patterns were empty, so
+      builtInCoversPhrase could not tell whether a phrase was already covered, and
+      §35.3(b) makes it return NULL rather than guess. Both ABC rows therefore showed
+      nothing — the honest answer, and exactly the case the test pins.
+      ⚠ WORTH NOTING: had it guessed, it would have labelled BOTH phrases as
+      discoveries, including the one that is pure dead weight. The silence was the
+      feature working.
+
+  36.2 ⬛ BLINDING NOW OFF (L3_TEST_BLIND_ABC = false), at the user's request
+
+      Measured immediately after the flip, on the two real phrases:
+        'Approved Budget for the Contract; PB'   -> true   → "already covered"
+        '| TOTAL ESTIMATED PROJECT COST P'       -> false  → "finds a value no
+                                                             built-in rule does"
+      Which is §34.5b's finding, now visible on the approval screen instead of buried
+      in a plan file.
+      SUITES, both green without edits, because the suite reads the switch (§26 header):
+        JS 261/261/0 · PHP 1231 passed / 0 failed.
+
+  36.3 ⭐ WHAT LIFTING IT UNBLOCKS
+
+      The ABC pool is awake again, so three checks that were impossible while blinded
+      can now be done — §31.4 and §33.6 were both waiting on exactly this:
+        · the pick-one note for the ABC now comes from the POOL, and with the
+          independence fix (§34.2) it should offer .00 vs .59 rather than being
+          silenced by false corroboration;
+        · corroboration between a hardcoded rule and a taught phrase is exercisable;
+        · the precedence guarantee — a taught phrase must not change a field the
+          hardcoded rules already fill — can be seen rather than only asserted.
+      ⚠ AND THE LEARNING-LOOP DEMO STOPS WORKING while it is off: a clean file now
+      FILLS the ABC, so there is no miss to teach from. That is the trade the switch
+      exists to make, and it is a flip away in either direction.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
