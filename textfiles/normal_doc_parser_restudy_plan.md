@@ -4048,6 +4048,15 @@
       from another field, but the reviewer is not handed the revised amount instead.
       §37.3 said this in advance and it held.
 
+  38.5 ⭐ BROWSER-PROVEN (user, 2026-09-20), AND THE PREDICTION HELD EXACTLY
+
+      CONTRACT PRICE  4204128.84, and the amber note is GONE — no alternative offered.
+      ABC             4834297.59, still offering .59 vs .00.
+      Both are what §38.3 said would happen before it was built: the wrong answer is
+      removed, no right one is supplied in its place, and the ABC pair is untouched.
+      ⇒ THIS CLOSES THE SESSION'S PARSER WORK IN THE BROWSER except for one item: the
+        reject flow (§31.4) has still never been clicked.
+
   38.4 VERIFICATION
 
       JS 264/264/0 · PHP 1231 passed / 0 failed.
