@@ -4376,6 +4376,18 @@
       gated label still records a wordless row, kept purely as a count. It can never
       go live and can never be approved (§39.2), and the desk labels it.
 
+  43.3b ⭐ BROWSER-CONFIRMED (user, 2026-09-20)
+
+      The user repeated the exact case that produced the junk row: apply the
+      extraction as-is, then change the PROJECT TITLE in the form to a value that is
+      not in the document, then create the project.
+      THE WORDLESS PROJECT TITLE ROW NO LONGER APPEARS. §42's text-anchoring fix is
+      doing what §43.3 said it would: a title whose value is absent from the document
+      teaches nothing at all, rather than mining a label off a stray digit.
+      Note what this ALSO proves, since it is easy to miss: the harvest still RAN on
+      that form correction — L-4 is working — and it correctly produced nothing. The
+      two are different outcomes and both are now correct.
+
   43.4 VERIFICATION
 
       JS 267/267/0 · PHP 1232 passed / 0 failed.
