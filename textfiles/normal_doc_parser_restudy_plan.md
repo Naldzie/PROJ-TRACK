@@ -157,6 +157,13 @@
 #         and P-3 SILENTLY BROKE THE AI PAGE PICKER — it ranks "pages that yielded
 #         nothing" first, and now nothing yields nothing, so it always sends pages 1-2
 #         (§27.3). AGENTS.md future-queue item 8 is no longer optional.
+#         ⭐ §28 — THE READ TEXT SETTLES THE .00: OCR turned ".59" into " 5g" on page 1,
+#         so the parser read 4,834,297 faithfully. NOT a parser bug. ⚠ §28.1 CORRECTS
+#         §27.1 — I queried without withTrashed() and missed the two 'correction' rows;
+#         the manual test DID record, and mined the SAME two phrases. NEW: two learned
+#         labels for one field compete by LIST ORDER, not quality (L-8, §28.3); and the
+#         "AI-assisted" badge CANNOT render because Stage 1b replaced the <td> grid it
+#         hunts for (§28.5) — the second UI-rewrite casualty this session.
 #         Stage 3 (EXTRACTION) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -3260,6 +3267,126 @@
       settings rather than forbidding them.
       NOT ORDERED. 27.3 should land first — sending MORE of the wrong pages is not an
       improvement, and fixing the ranking may well make 2 pages enough.
+===============================================================================
+  28. THE READ TEXT SETTLES IT — AND FOUR MORE FINDINGS
+      (user, 2026-09-20: the raw OCR text, the approve-both test, two questions)
+===============================================================================
+
+  28.1 ⚠ A CORRECTION TO §27.1 — I READ THE DATABASE WRONG
+
+      §27.1 said both stored rows were source='AI-assisted' and concluded "on this file
+      the loop is learning from the model, not from the reviewer". THAT WAS WRONG, and
+      the user said so.
+      My query used the Eloquent model, whose SoftDeletes global scope HIDES deleted
+      rows. With withTrashed() there are FOUR:
+        #80  abc  live  correction   DELETED  'Approved Budget for the Contract; PB'
+        #81  abc  live  correction   DELETED  '| TOTAL ESTIMATED PROJECT COST P'
+        #82  abc  live  AI-assisted           'Approved Budget for the Contract; PB'
+        #83  abc  live  AI-assisted           '| TOTAL ESTIMATED PROJECT COST P'
+      ⇒ THE MANUAL TYPING TEST DID RECORD, with source='correction', and it mined THE
+        SAME TWO LABEL PHRASES the AI-assisted run later mined. That agreement between
+        two independent routes is a genuinely good sign for the miner.
+      ⇒ THE LESSON IS ABOUT THE QUERY, NOT THE LOOP: any future check of this table must
+        use withTrashed(), or a deleted row will look like a row that never existed.
+
+  28.2 ⭐ THE .00 IS SOLVED, AND IT IS NOT A PARSER BUG
+
+      From the raw read text, page 1 (the Abstract of Bids) reads:
+          Approved Budget for the Contract; PB 4,834,297 5g
+      OCR TURNED ".59" INTO " 5g". The label 'Approved Budget for the Contract; PB'
+      matches that line, the tail is "4,834,297 5g", and "5g" is not a number — so the
+      value reads 4,834,297 and the ABC comes back as 4,834,297.00.
+      THE PARSER READ EXACTLY WHAT IT WAS GIVEN. There is nothing to fix in extraction.
+      Meanwhile the other label matches page 7:
+          | TOTAL ESTIMATED PROJECT COST P 4,834, 297.59
+      where only the SPACING is damaged, glueMoneyFragments repairs it, and the value
+      reads 4,834,297.59 correctly.
+      ⚠ §25.2 SAID THIS IN ADVANCE, in a different context: the numeric path is
+      "tolerant of punctuation damage, NOT of digit damage". Here is the same boundary
+      deciding which of two labels tells the truth.
+      ⚠ AND NOTE WHAT THE DOCUMENT ITSELF SAYS: the funds certificate (page 5) carries
+      "(Php 4,834,297.59)" cleanly, and the contract (page 2) carries 4,204,128.84 which
+      is the CONTRACT PRICE, not the ABC. The true ABC is 4,834,297.59, so the label that
+      won is the one reading the damaged copy.
+
+  28.3 ⚠ NEW FINDING L-8 — TWO LEARNED LABELS FOR ONE FIELD COMPETE BY LIST ORDER
+
+      With BOTH labels approved to live, the ABC resolved to 4,834,297.00 — the damaged
+      one. Not because it is better, but because tryLearnedLabel walks the phrase list
+      and the FIRST match wins, and the list arrives in row order (#82 before #83).
+      ⇒ THE LOOP HAS NO NOTION OF WHICH LEARNED LABEL YIELDS A BETTER VALUE. Teach it two
+        phrases for one field and the winner is decided by insertion order.
+      ⇒ THAT IS A REAL DESIGN GAP, and it gets worse as the loop succeeds: the more a
+        field is taught, the more likely two phrases disagree, and the tie-break is an
+        id. §26.8's ranking should gain this as a new item.
+      POSSIBLE SHAPES, none ordered: prefer the label whose captured value passes the
+      field's normalizer most cleanly; prefer the one with more occurrences; or let the
+      POOL adjudicate rather than first-match (see 28.4, which is why it could not here).
+
+  28.4 WHY THE TWO COMPETING VALUES DID NOT APPEAR — EXPECTED, NOT A DEFECT
+
+      The user noticed the pick-one control ("I found two different values") did not
+      activate this time, though it did before the blinding.
+      That is the blinding doing exactly what it is for. collectAbcCandidates SLEEPS
+      while L3_TEST_BLIND_ABC is true, and that collector is what feeds the ABC POOL.
+      No pool, no two candidates, no pick-one. Turn the blinding off and the control
+      returns.
+      ⚠ WORTH SEEING CLEARLY: while blinded, the ABC is decided by a SINGLE first-match
+      learned label with no second opinion. That is a fine demo configuration and a poor
+      production one, which is the same thing the blinding has always been.
+
+  28.5 ⚠ NEW FINDING — THE "AI-ASSISTED" BADGE CANNOT RENDER ANY MORE
+
+      The user noticed the AI-assisted label did not appear on the AI-assist run. It
+      cannot. mergeAiIntoEmptyBoxes stamps the field and then tries to hang the badge:
+          const td = el.closest ? el.closest('td') : (el.parentNode || null);
+          if (td && !td.querySelector('[data-ai-marker]')) { ...append... }
+      STAGE 1b (phase-23) REPLACED THE PREVIEW'S FIELD TABLE WITH A RESPONSIVE GRID.
+      There are now ZERO <td> elements in the file — the cells are <div class="afp-cell">
+      — so el.closest('td') returns null, `td` is null, and the badge is never appended.
+      The ternary tests whether el.closest EXISTS (it always does), so the parentNode
+      fallback beside it is dead code and never runs.
+      ⇒ The RENDER-time path still works (aiMarkerFor is in the grid template), but the
+        AI merge happens AFTER the grid is drawn and relies solely on the dynamic path.
+      ⇒ THE PROVENANCE IS STILL RECORDED — the DB rows carry source='AI-assisted'
+        correctly (28.1), and the desk badge shows. Only the in-preview per-field marker
+        is missing, which is the one a reviewer sees at the moment of deciding.
+      FIX IS ONE LINE: el.closest('.afp-cell') || el.closest('td') || el.parentNode.
+      ⚠ THIS IS A SECOND-ORDER CASUALTY OF A UI REWRITE, and it is the second one this
+      session (P-3 broke the AI page picker, §27.3). Both were invisible because nothing
+      tests the DOM half.
+
+  28.6 THE USER'S TWO PROPOSALS
+
+      (a) A REJECT BUTTON ON THE KEYWORD DESK — status 'rejected' rather than deletion.
+          GOOD, AND CHEAP. Today the only way to refuse a proposal is to delete it, which
+          soft-deletes the row — and 28.1 just showed what that costs: a deleted row is
+          invisible to the ordinary query, so the same bad phrase can be re-proposed,
+          re-reviewed and re-deleted forever with no memory that it was already judged.
+          A 'rejected' status keeps the judgement, and the collector could skip
+          re-proposing a phrase already rejected — which is the real prize, not the
+          button. Needs: the enum widened, the desk filter, and collect() to respect it.
+      (b) LET THE REVIEWER CHOOSE HOW MANY PAGES GO TO THE AI — see §27.5, unchanged.
+
+  28.7 ⚠ SHOULD THE AI BE SHOWN WHAT OCR READ? — A SPLIT ANSWER
+
+      The user asks whether sending the OCR text along with the images would give the
+      model context about where the system needs help.
+      SENDING THE MISSING FIELD NAMES: YES, and it is nearly free. The request body today
+      is { images: slices } and nothing else — the model is not even told which boxes are
+      empty. Telling it "we need abc and budgetSource" focuses the read without
+      suggesting an answer, and would likely improve the hit rate on exactly the case
+      that matters.
+      SENDING OUR OCR TEXT: NO, or at least not without care, for a reason this very
+      session demonstrates. The whole value of the AI tier is that it is an INDEPENDENT
+      read of the pixels. Feed it our transcription and two things happen: it may anchor
+      on our error instead of looking (had we sent page 1's text here, it would have seen
+      "4,834,297 5g" — the wrong value), and we lose the ability to tell whether it READ
+      the image or paraphrased our text, which is what makes a second opinion worth
+      having at all.
+      ⇒ IF IT IS TRIED ANYWAY, send the text as something to CHECK rather than to trust
+        — "our reader produced X for this field; confirm or correct from the image" — and
+        keep the field-level provenance so a disagreement is visible rather than merged.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
