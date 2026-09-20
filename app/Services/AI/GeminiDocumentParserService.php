@@ -471,7 +471,7 @@ class GeminiDocumentParserService
      *
      * Called by: DocumentParserController::parseWithGemini()
      */
-    public function parseProjectSlice(array $images): ?array
+    public function parseProjectSlice(array $images, array $need = []): ?array
     {
         $images = array_values(array_filter($images, function ($img) {
             return is_array($img) && !empty($img['data']);
@@ -490,7 +490,7 @@ class GeminiDocumentParserService
         // With no ladder configured this is byte-identical to the 2026-09-10
         // behaviour: Lite, once.
         $raw = $this->callGeminiWithImages(
-            $this->buildPrompt(),
+            $this->buildPrompt($need),
             $images,
             [...$this->parserFallbackModels(), $this->backupModel()]
         );
@@ -1831,9 +1831,26 @@ class GeminiDocumentParserService
      *
      * Called by: parseProjectSlice()
      */
-    private function buildPrompt(): string
+    /**
+     * Build the slice prompt.
+     *
+     * $need is the list of preview boxes the reviewer still has EMPTY. Naming them
+     * focuses the read without suggesting an answer, and costs a single sentence.
+     * Before this the request carried images and nothing else, so the model was not
+     * even told which fields were wanted (restudy section 28.7).
+     *
+     * NOTE, deliberately: the caller sends FIELD NAMES ONLY and never our OCR text.
+     * This tier is worth having because it reads the pixels INDEPENDENTLY; handing it
+     * our transcription risks it echoing our errors, and removes any way to tell
+     * whether it read the page or paraphrased us.
+     *
+     * Unknown names are dropped rather than trusted, so a stale client cannot inject
+     * text into the prompt.
+     */
+    private function buildPrompt(array $need = []): string
     {
         $keys = implode(', ', self::FIELDS);
+        $wanted = array_values(array_intersect(self::FIELDS, array_map('strval', $need)));
 
         return 'You are reading Philippine construction project document pages (bidding papers,'
             . ' contracts, accomplishment reports, estimates, statements — any layout). '
@@ -1841,7 +1858,12 @@ class GeminiDocumentParserService
             . $keys . '. Rules: dates as YYYY-MM-DD; amounts as plain numbers with two decimals '
             . 'and no commas or currency symbols (e.g. 4834297.59); duration as integer days '
             . '(e.g. 185); use null for any field you cannot find. Return ONLY the JSON object, '
-            . 'no explanations, no markdown fences.';
+            . 'no explanations, no markdown fences.'
+            . ($wanted
+                ? ' The reviewer already has values for the other fields and still needs these: '
+                    . implode(', ', $wanted)
+                    . '. Give those your closest attention, but still return every key.'
+                : '');
     }
 
     /**

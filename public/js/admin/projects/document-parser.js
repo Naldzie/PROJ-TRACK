@@ -1550,8 +1550,36 @@ function ocrAiCandidates(maxN) {
             const scanned = (r.scannedPageNums && r.scannedPageNums.length) ? r.scannedPageNums : [];
             const read = {};
             (r.ocrPages || []).forEach((pn) => { read[pn] = true; });
-            // The original ordering, unchanged: pages that yielded nothing first.
-            let ordered = scanned.filter((pn) => !read[pn]).concat(scanned.filter((pn) => read[pn]));
+            // RANK BY LEAST USABLE TEXT (2026-09-20), not by "no text".
+            // The old rule was: pages that yielded NOTHING first, then pages that were
+            // read. That carried real signal while seven of ten pages yielded nothing.
+            // P-3 fixed OCR-1 and every page now yields text, so the "nothing" list went
+            // EMPTY, the ordering collapsed to plain document order, and the picker sent
+            // pages 1 and 2 of every file every time — choosing the first two pages and
+            // calling it a ranking (restudy §27.3).
+            // The ledger to do this properly was already being collected and ignored:
+            // pageChars holds the per-page character count and soupyPages holds the ones
+            // whose text came back garbled.
+            const chars = (r.pageChars || {});
+            const soupy = {};
+            (r.soupyPages || []).forEach((pn) => { soupy[pn] = true; });
+            let ordered = scanned.slice().sort((a, b) => {
+                // 1. A page the reader got NOTHING from is still the best thing to send.
+                //    Keeping this first means the old behaviour is preserved exactly
+                //    whenever it still applies.
+                const ua = read[a] ? 1 : 0, ub = read[b] ? 1 : 0;
+                if (ua !== ub) return ua - ub;
+                // 2. Then the pages whose text came back SOUPY. Forty garbled characters
+                //    are worse than four hundred clean ones, and the old rule could not
+                //    tell the difference — it saw both as "read".
+                const sa = soupy[a] ? 0 : 1, sb = soupy[b] ? 0 : 1;
+                if (sa !== sb) return sa - sb;
+                // 3. Then least usable text first.
+                const ca = Number(chars[a] || 0), cb = Number(chars[b] || 0);
+                if (ca !== cb) return ca - cb;
+                // 4. Document order, so the choice is stable across runs.
+                return a - b;
+            });
             let fallback = false;
             if (!ordered.length && r.numPages) {
                 fallback = true;
@@ -1564,8 +1592,13 @@ function ocrAiCandidates(maxN) {
                     reportIdx: ri,
                     fileName: r.fileName,
                     pageNum: pn,
+                    // The panel shows this, and it is the only place a reviewer can see
+                    // why a page was chosen. "among the weakest" was true when weakness
+                    // meant emptiness; now it can say which kind of weak.
                     reason: fallback ? 'first pages of a file with no photo-read pages'
-                        : (read[pn] ? 'read, but among the weakest' : 'the reader got nothing here'),
+                        : (!read[pn] ? 'the reader got nothing here'
+                            : (soupy[pn] ? 'the text here came back garbled'
+                                : 'read, but the least text on this file (' + Number(chars[pn] || 0) + ' chars)')),
                 });
             }
         }
@@ -1954,7 +1987,12 @@ function mergeAiParsedIntoPreview(aiParsed) {
             el.value = shown;
             window._autofillAiAssisted[coreField] = true;
             try {
-                const td = el.closest ? el.closest('td') : (el.parentNode || null);
+                // The preview was a TABLE until Stage 1b turned it into a responsive
+                // grid; there are no <td> elements left, so this hunted for a cell that
+                // cannot exist and the badge silently never appeared (restudy §28.5).
+                // The old parentNode fallback was dead code too — the ternary asked
+                // whether el.closest EXISTS, not whether it MATCHED.
+                const td = (el.closest && (el.closest('.afp-cell') || el.closest('td'))) || el.parentNode || null;
                 if (td && !td.querySelector('[data-ai-marker]')) {
                     const badge = document.createElement('span');
                     badge.className = 'badge bg-info text-dark';
@@ -1971,11 +2009,33 @@ function mergeAiParsedIntoPreview(aiParsed) {
     return filled;
 }
 
+// Which preview boxes are still EMPTY — the fields the AI is actually being asked for.
+// The request used to carry images and nothing else, so the model was not even told
+// which boxes needed filling; it read whatever it read and the merge threw away
+// anything that landed on a box already holding a value (restudy §28.7).
+// ⚠ DELIBERATELY NAMES ONLY THE FIELDS, NEVER OUR OCR TEXT. The value of this tier is
+// that it is an INDEPENDENT read of the pixels: feeding it our transcription risks it
+// anchoring on our errors instead of looking, and destroys the ability to tell whether
+// it read the image or paraphrased us. On the very file that prompted this, our page-1
+// text says "4,834,297 5g" — the wrong value — and we would have handed it over.
+// Called by: _tryAiAssist*() before postAiSlices().
+function emptyPreviewFields() {
+    const out = [];
+    try {
+        for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
+            const el = document.getElementById('previewInput-' + inputId);
+            if (!el) continue;
+            if (String(el.value || '').trim() === '') out.push(AUTOFILL_CORE_FIELDS[inputId]);
+        }
+    } catch (e) { /* the hint is best-effort — the call proceeds without it */ }
+    return out;
+}
+
 // POST slices to parse-gemini (role-aware, one call). Returns parsed shape or null.
 // Stashes the server's message (mapped transport texts like quota/busy/dead-model)
 // so failure spots surface it instead of a generic line.
 // Called by: _tryAiAssist*().
-async function postAiSlices(slices) {
+async function postAiSlices(slices, need) {
     try { window._autofillAiLastError = null; window._autofillAiFallbackModel = null; } catch (e) {}
     const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
     if (path.indexOf('/contractor/') !== -1) return null;
@@ -1985,7 +2045,7 @@ async function postAiSlices(slices) {
     const res = await fetch(base + '/document/parse-gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
-        body: JSON.stringify({ images: slices }),
+        body: JSON.stringify({ images: slices, need: Array.isArray(need) ? need : [] }),
     });
     let data = null;
     try { data = await res.json(); } catch (e) { data = null; }
@@ -2035,7 +2095,7 @@ window._tryAiAssist = async function () {
             window._autofillAiBusy = false;
             return;
         }
-        const parsed = await postAiSlices(slices);
+        const parsed = await postAiSlices(slices, emptyPreviewFields());
         if (runAtClick !== null && runAtClick !== _autofillRunId) return;
         if (!parsed) {
             try {
@@ -2083,7 +2143,7 @@ window._tryAiAssistFromWarning = async function () {
             window._autofillAiBusy = false;
             return;
         }
-        const parsed = await postAiSlices(slices);
+        const parsed = await postAiSlices(slices, emptyPreviewFields());
         if (!parsed) {
             if (typeof showToast === 'function') showToast(aiFailureMessage('The AI assistant could not read these pages either'), 'error');
             window._autofillAiBusy = false;

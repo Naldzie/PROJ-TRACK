@@ -164,6 +164,13 @@
 #         labels for one field compete by LIST ORDER, not quality (L-8, §28.3); and the
 #         "AI-assisted" badge CANNOT render because Stage 1b replaced the <td> grid it
 #         hunts for (§28.5) — the second UI-rewrite casualty this session.
+#         ⬛ AI-ASSIST BATCH 2026-09-20 (§29) on phase-27-ai-assist-targeting: the page
+#         ranking now uses the pageChars/soupyPages ledger it was already collecting, so
+#         on the real file the pick moves from pages 1,2 to PAGES 7,3 — and page 7 is the
+#         ABC page. The AI-assisted badge can render again (it hunted for a <td> Stage 1b
+#         had removed). And the request now NAMES THE EMPTY BOXES — field names only,
+#         never our OCR text, because our own page-1 text says "4,834,297 5g".
+#         Suites green; 9-check probe on the real ledger. ⬜ Browser + live-AI check owed.
 #         Stage 3 (EXTRACTION) — not started.
 #         ⬛ STAGE 1b BUILT 2026-09-18 (the user clarified that "UI improvement" meant
 #         LAYOUT AND DESIGN): preview modal widened to modal-xl, table replaced by a
@@ -3387,6 +3394,83 @@
       ⇒ IF IT IS TRIED ANYWAY, send the text as something to CHECK rather than to trust
         — "our reader produced X for this field; confirm or correct from the image" — and
         keep the field-level provenance so a disagreement is visible rather than merged.
+===============================================================================
+  29. THE AI-ASSIST BATCH (2026-09-20, ordered: "for the ai lets go with your
+      recommendation"). Branch phase-27-ai-assist-targeting.
+      Three changes, in the order §27.5 argued for: fix WHICH pages go before
+      offering to send MORE of them.
+===============================================================================
+
+  29.1 THE PAGE RANKING NOW USES THE LEDGER IT WAS ALREADY COLLECTING
+
+      ocrAiCandidates ordered "pages that yielded NOTHING first, then pages that were
+      read". P-3 emptied the first group, so the ordering collapsed to document order and
+      the picker sent pages 1 and 2 of every file, every time (§27.3).
+      The sort now falls through three real signals, and the first one preserves the old
+      behaviour exactly wherever it still applies:
+        1. a page the reader got NOTHING from — still the best thing to send;
+        2. then pages whose text came back SOUPY. Forty garbled characters are worth
+           less than four hundred clean ones, and the old rule saw both as "read";
+        3. then least usable text first, by pageChars;
+        4. document order as a tie-break, so the choice is stable across runs.
+      THE PANEL NOW SAYS WHICH KIND OF WEAK a page is — "the text here came back
+      garbled", or "read, but the least text on this file (683 chars)". That string is
+      the only place a reviewer can see why a page was chosen.
+      ⭐ ON THE REAL LEDGER FROM §20.1 THE PICK CHANGES FROM PAGES 1,2 TO PAGES 7,3 —
+      and PAGE 7 IS THE ABC PAGE, the thinnest read in the file at 683 characters. The
+      ranking now sends the page the user had to go looking for by hand.
+
+  29.2 THE "AI-ASSISTED" BADGE CAN RENDER AGAIN
+
+      One line. el.closest('td') became
+      (el.closest && (el.closest('.afp-cell') || el.closest('td'))) || el.parentNode,
+      so it finds Stage 1b's grid cell, still finds a <td> if one ever returns, and the
+      parentNode fallback is reachable now rather than dead (§28.5).
+
+  29.3 THE REQUEST NAMES THE EMPTY BOXES — AND NOTHING ELSE
+
+      The body was { images: slices } and the model was not told which fields were
+      wanted. It now carries need: [...], the core names of the preview boxes still
+      empty at the moment the button is pressed.
+      ⚠ FIELD NAMES ONLY, NEVER OUR OCR TEXT, and §28.2 is the argument: our page-1 text
+      says "4,834,297 5g" — the wrong value — so handing over the transcription would
+      have offered the model our own error to agree with. This tier earns its place by
+      reading the pixels INDEPENDENTLY; the moment it sees our text we can no longer
+      tell whether it read the page or paraphrased us.
+      SERVER SIDE: the controller reads `need`, the service takes it as a second
+      argument, and buildPrompt appends one sentence naming the fields.
+      ⚠ UNKNOWN NAMES ARE DROPPED, not trusted — array_intersect against self::FIELDS.
+      A stale or hostile client cannot use this to write into the prompt. Verified: a
+      payload of ['abc', '; IGNORE ALL PREVIOUS INSTRUCTIONS', 'notAField'] produces a
+      prompt containing "needs these: abc." and neither of the other two.
+      AND WITH AN EMPTY LIST THE PROMPT IS BYTE-IDENTICAL TO BEFORE, so a client that
+      never sends the hint gets exactly today's behaviour.
+
+  29.4 VERIFICATION
+
+      JS 250/250/0 · PHP 1231 passed / 0 failed · both files lint clean.
+      C:\temp\opencode\probe_ai_ranking.mjs — 9 checks, all pass. It extracts the REAL
+      ocrAiCandidates and runs it against the ACTUAL post-P-3 ledger for
+      pdfdocstest5.pdf: the thinnest two pages are chosen, the full ordering is ascending
+      by characters, the pre-P-3 shape still puts unread pages first, a soupy page
+      outranks a longer clean one, and the no-scanned-pages fallback is untouched.
+      Prompt behaviour checked directly through reflection (29.3).
+      ⚠ A PROBE BUG WORTH RECORDING: my first fixture gave UNREAD pages a character
+      count, and the ranking duly sorted them by it. Real unread pages record 0. The
+      failure was mine, not the code's — but it is exactly the shape of mistake that
+      would have made me "fix" working code, and it was only visible because the
+      expectation was written down before the run.
+
+  29.5 ⬜ WHAT IS OWED
+
+      All three are DOM or live-AI paths and the suites cannot speak for any of them:
+        · press AI assist on the scanned file and confirm the panel now offers pages 7
+          and 3 (not 1 and 2), with the new reason strings;
+        · confirm the AI-assisted badge appears on the boxes the AI filled;
+        · confirm the answer is no worse than before now that the prompt names the
+          missing fields — this one is a LIVE MODEL call, so it cannot be asserted, only
+          observed. §28.7 predicted it should help; if the ABC comes back wrong on pages
+          the AI can now actually see, that is the more interesting result.
 ===============================================================================
   END OF RESTUDY
 ===============================================================================
