@@ -875,3 +875,219 @@ test('L3: empty learned table reproduces default behavior exactly', () => {
         core.parseProjectInfo({ text }));
 });
 
+
+// ─── Budget source shape (B-1) ──────────────────────────────────────────────
+// The preview offers an unmatched budget source for CREATION as a budget_sources
+// row, so what this validator lets through can become a permanent database record.
+// It is deliberately biased towards rejecting: a rejected value leaves the field
+// empty for the reviewer (and the L1-L3 loop lets them teach it), while an accepted
+// misread invites a junk row nobody unmakes.
+
+test('asSourceName accepts real funding sources', () => {
+    for (const ok of [
+        'GAA', 'CHED', 'DPWH', 'LGU', 'GAD',
+        'Trust Fund', 'Special Trust Fund', 'CHED-HEDF', 'DPWH/LGU',
+        'General Appropriations Act (GAA)', 'GAA 2025', '2025 GAA',
+        '20% Development Fund',            // a real LGU source, hence the leading digit
+    ]) {
+        assert.equal(core.asSourceName(ok), ok, `should accept ${ok}`);
+    }
+});
+
+test('asSourceName rejects OCR debris', () => {
+    // The one that prompted this: a misread tail from a scanned funds certificate,
+    // which the old lenRange(2, 100) accepted because it is 13 characters long.
+    assert.equal(core.asSourceName('Accor, Fost ='), null);
+    for (const bad of [
+        '=', 'a', '-- ', '...,,,--',      // punctuation and scraps
+        '05142005', '3 1', 'A-1',         // no real word in them
+        'of Funds', 'the contract in accordance with the provisions of', // sentence fragments
+        'Source | Fund_2',                // characters that never appear in a name
+        'a'.repeat(61),                   // longer than any source is
+    ]) {
+        assert.equal(core.asSourceName(bad), null, `should reject ${JSON.stringify(bad)}`);
+    }
+});
+
+test('extractBudgetSource takes the name and refuses the misread', () => {
+    const from = (t) => core.extractBudgetSource(core.buildLinesFromText(t));
+    assert.equal(from('Source of Funds: GAA'), 'GAA');
+    assert.equal(from('Funding Source: General Appropriations Act (GAA)'), 'General Appropriations Act (GAA)');
+    // Was accepted before B-1, and was then offered for creation as a database row.
+    assert.equal(from('Source of Funds: Accor, Fost ='), null);
+});
+
+// ─── Contractor shape (B-4) ─────────────────────────────────────────────────
+// An Abstract of Bids prints every bidder across ONE row. Once the contrast fix
+// made that page readable, the row outranked the contract page's real contractor,
+// because the old rule asked only "is this 5-150 characters with a construction
+// word in it" — and a row of four construction companies answers yes loudly.
+
+const BID_ROW = "DONBER CONSTRUCTION AND SUPPLY | 301 ENGINEERS | SKYSCRAPER CONS. & ENGINEERING SERVICES | CHRISTINAJOY CONSTRUCTION AND DEV'T CORP";
+const REAL_CONTRACTOR = 'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES';
+
+test('asCompanyName refuses a table row and keeps a company', () => {
+    assert.equal(core.asCompanyName(BID_ROW), null);          // a pipe is a cell boundary
+    assert.equal(core.asCompanyName('A | B'), null);
+    assert.equal(core.asCompanyName(REAL_CONTRACTOR), REAL_CONTRACTOR);
+    assert.equal(core.asCompanyName('ACME BUILDERS'), 'ACME BUILDERS');
+    assert.equal(core.asCompanyName('ACME'), null);           // too short to be a name
+    assert.equal(core.asCompanyName('x'.repeat(101)), null);  // longer than any company
+});
+
+test('the bid-abstract row never becomes the contractor', () => {
+    assert.equal(core.isContractorValueCandidate(BID_ROW), null);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Contractor: ' + BID_ROW)), null);
+});
+
+test('the real contractor still reads, with its hereinafter tail stripped', () => {
+    const withTail = REAL_CONTRACTOR + ' (hereinafter called the "CONTRACTOR")';
+    assert.equal(core.isContractorValueCandidate(withTail), REAL_CONTRACTOR);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Contractor: ' + withTail)), REAL_CONTRACTOR);
+    assert.equal(core.extractContractor(core.buildLinesFromText('Awarded to: ACME BUILDERS')), 'ACME BUILDERS');
+});
+
+// ─── Near-match against existing rows (B-2) ─────────────────────────────────
+// The preview can CREATE a category or budget source. B-1 stopped values that LOOK
+// like debris; this catches the ones that look fine and are still wrong — OCR turns
+// GAA into CAA, which passes every shape check and becomes a near-duplicate row that
+// silently splits every report grouping by source.
+
+const EXISTING = ['GAA', 'CHED', 'DPWH', 'LGU', 'GAD', 'Trust Fund', 'Special Trust Fund'];
+
+test('editDistance counts single edits', () => {
+    assert.equal(core.editDistance('GAA', 'GAA'), 0);
+    assert.equal(core.editDistance('CAA', 'GAA'), 1);      // substitution — the OCR case
+    assert.equal(core.editDistance('GA', 'GAA'), 1);       // deletion
+    assert.equal(core.editDistance('GAAX', 'GAA'), 1);     // insertion
+    assert.equal(core.editDistance('', 'GAA'), 3);
+    assert.equal(core.editDistance('Bananas', 'GAA'), 7);
+});
+
+test('nearestName finds the row a misread was meant to be', () => {
+    assert.deepEqual(core.nearestName('CAA', EXISTING, 2), { name: 'GAA', distance: 1 });
+    assert.deepEqual(core.nearestName('Speclal Trust Fund', EXISTING, 2), { name: 'Special Trust Fund', distance: 1 });
+    // Case and spacing are not differences a human would accept as two separate rows.
+    assert.deepEqual(core.nearestName('TRUST FUND', EXISTING, 2), { name: 'Trust Fund', distance: 0 });
+    assert.deepEqual(core.nearestName('Trust  fund', EXISTING, 2), { name: 'Trust Fund', distance: 0 });
+});
+
+test('nearestName stays quiet when nothing is close', () => {
+    assert.equal(core.nearestName('Bananas', EXISTING, 2), null);
+    assert.equal(core.nearestName('', EXISTING, 2), null);
+    assert.equal(core.nearestName('GAA', [], 2), null);
+    assert.equal(core.nearestName('GAA', null, 2), null);
+});
+
+test('a real neighbouring source is still only a WARNING, not a block', () => {
+    // GAD (Gender and Development) is one edit from GAA and is a genuinely different
+    // fund. The caller must warn and let the reviewer proceed — which is why this
+    // returns a distance rather than a verdict.
+    const near = core.nearestName('GAD', ['GAA', 'CHED'], 2);
+    assert.equal(near.name, 'GAA');
+    assert.equal(near.distance, 1);
+    assert.ok(near.distance > 0, 'a non-zero distance is a question, not an answer');
+});
+
+// ─── Category shape (B-1b) ──────────────────────────────────────────────────
+// Same hole as B-1, next door. A category is not an ordinary label: CategorySeeder
+// defines exactly four and the dashboards GROUP BY this column, so a junk fifth
+// category does not sit quietly in a table — it splits every figure counting
+// projects by type.
+
+test('asCategoryName accepts the seeded categories and their kin', () => {
+    for (const ok of [
+        'New Construction', 'Renovation', 'Repair', 'Maintenance',   // the seeded four
+        'Rehabilitation/Refurbishment', 'Repair & Maintenance',
+    ]) {
+        assert.equal(core.asCategoryName(ok), ok, `should accept ${ok}`);
+    }
+});
+
+test('asCategoryName rejects debris', () => {
+    for (const bad of [
+        'Accor, Fost =',      // the budget-source misread, for good measure
+        '05142005',           // no word in it
+        'A | B',              // a table row — B-4's cell boundary
+        'of the project', 'the Works',   // sentence fragments
+        'x',                  // too short
+        'Cat: 3',             // a label bled into the value
+    ]) {
+        assert.equal(core.asCategoryName(bad), null, `should reject ${JSON.stringify(bad)}`);
+    }
+});
+
+test('extractCategory takes the name and refuses the misread', () => {
+    const from = (t) => core.extractCategory(core.buildLinesFromText(t));
+    assert.equal(from('Category: Renovation'), 'Renovation');
+    assert.equal(from('Type of Project: New Construction'), 'New Construction');
+    assert.equal(from('Category: Accor, Fost ='), null);
+});
+
+// ─── Values that ran into their neighbours (B-3 / B-5) ──────────────────────
+// A scanned page has no columns, only a picture of them, so OCR reads a printed ROW
+// as one line and whatever sat to the right is glued on. B-4 caught the version
+// carrying a '|'; these carry only a space, so something else has to mark the edge.
+
+test('stripEdgeDebris drops specks without touching the name', () => {
+    assert.equal(core.stripEdgeDebris(']  Rehabilitation/Refurbishment of Canteen'), 'Rehabilitation/Refurbishment of Canteen');
+    assert.equal(core.stripEdgeDebris('i SKYSCRAPER CONSTRUCTION'), 'SKYSCRAPER CONSTRUCTION');
+    assert.equal(core.stripEdgeDebris('ACME BUILDERS'), 'ACME BUILDERS');
+    assert.equal(core.stripEdgeDebris('New Construction'), 'New Construction');   // keeps a real first word
+    assert.equal(core.stripEdgeDebris('ACME BUILDERS —'), 'ACME BUILDERS');
+});
+
+test('cutAtEmbeddedLabel stops where the next field starts', () => {
+    assert.equal(
+        core.cutAtEmbeddedLabel('Nabua Campus, Camarines Sur Polytechnic Colleges Date: 05142005'),
+        'Nabua Campus, Camarines Sur Polytechnic Colleges');
+    assert.equal(
+        core.cutAtEmbeddedLabel('SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // Nothing to cut.
+    assert.equal(core.cutAtEmbeddedLabel('Nabua Campus, Camarines Sur'), 'Nabua Campus, Camarines Sur');
+    // A leading label is the value's own, not an embedded one — index 0 never cuts.
+    assert.equal(core.cutAtEmbeddedLabel('Location: Nabua'), 'Location: Nabua');
+});
+
+test('cutAtEmbeddedLabel matches ONE word, because two swallowed real content', () => {
+    // With an optional second word the pattern read "& ENGINEERING NES :" as the label
+    // and cut at ENGINEERING, and "Colleges Date:" and cut at Colleges — each losing a
+    // word of the answer. These two assertions are what pin that down.
+    assert.ok(core.cutAtEmbeddedLabel('A B & ENGINEERING NES : x').endsWith('ENGINEERING'));
+    assert.ok(core.cutAtEmbeddedLabel('X Y Colleges Date: 1').endsWith('Colleges'));
+});
+
+test('the contractor is recovered rather than refused', () => {
+    const from = (t) => core.extractContractor(core.buildLinesFromText('Contractor: ' + t));
+    assert.equal(from('i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+    // A clean name is untouched by the tidying.
+    assert.equal(from('SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES'),
+        'SKYSCRAPER CONSTRUCTION & ENGINEERING SERVICES');
+    assert.equal(from('ACME BUILDERS'), 'ACME BUILDERS');
+});
+
+test('parseProjectInfo cleans all three fields that ran into neighbours', () => {
+    const text = [
+        'Project: ]  Rehabilitation/Refurbishment of Canteen at Food Laboratory Building',
+        'Location: Nabua Campus, Camarines Sur Polytechnic Colleges Date: 05142005',
+        'Contractor: i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom',
+    ].join('\n');
+    const p = core.parseProjectInfo({ text });
+    assert.equal(p.title, 'Rehabilitation/Refurbishment of Canteen at Food Laboratory Building');
+    assert.equal(p.location, 'Nabua Campus, Camarines Sur Polytechnic Colleges');
+    assert.equal(p.contractor, 'SKYSCRAPER CONSTRUCTION & ENGINEERING');
+});
+
+test('a clean document is not altered by the tidying', () => {
+    const text = [
+        'Project: Construction of Two-Storey Academic Building',
+        'Location: Nabua, Camarines Sur',
+        'Contractor: ACME BUILDERS AND CONSTRUCTION SUPPLY',
+    ].join('\n');
+    const p = core.parseProjectInfo({ text });
+    assert.equal(p.title, 'Construction of Two-Storey Academic Building');
+    assert.equal(p.location, 'Nabua, Camarines Sur');
+    assert.equal(p.contractor, 'ACME BUILDERS AND CONSTRUCTION SUPPLY');
+});

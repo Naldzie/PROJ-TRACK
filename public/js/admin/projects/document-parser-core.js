@@ -339,6 +339,193 @@ const DocumentParserCore = (function () {
 
     // Normalizer helpers used by the field extractors.
     const lenRange = (min, max) => (v) => (v && v.length >= min && v.length <= max) ? v : null;
+    // B-1 (2026-09-20) — a funding source is a NAME, and a name has a shape.
+    // WHY THIS EXISTS: extractBudgetSource validated with lenRange(2, 100), which is a
+    // length check and nothing else, so ANY 2-to-100-character tail following a funding
+    // label was accepted. It never bit while most scanned pages went unread; the moment
+    // the contrast fix made six more pages of a real scan readable, a misread tail
+    // arrived as "Accor, Fost =" — and the preview does not merely SHOW a budget source,
+    // it offers to CREATE it as a row in budget_sources. Garbage in a text box is a
+    // nuisance; garbage offered as a permanent database row is a different matter.
+    // WHAT A SOURCE LOOKS LIKE: a short name or acronym — GAA, CHED, DPWH, LGU, GAD,
+    // "Trust Fund", "CHED-HEDF", "General Appropriations Act (GAA)", "20% Development
+    // Fund". Never a sentence, never an equation, never a bare number.
+    // DELIBERATELY BIASED TOWARDS REJECTING. A rejected value leaves the field empty for
+    // the reviewer to type, and the L1-L3 learning loop lets them teach it so the next
+    // document fills free. An accepted misread invites a junk row nobody unmakes.
+    // Called by: extractBudgetSource().
+    const SOURCE_STOP_WORDS = new Set(['the', 'in', 'of', 'and', 'with', 'for', 'to',
+        'from', 'at', 'by', 'as', 'is', 'are', 'was', 'were', 'that', 'this', 'which',
+        'shall', 'said', 'per', 'such', 'any', 'all']);
+    function asSourceName(v) {
+        const t = cleanValue(v || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 2 || t.length > 60) return null;
+        // Name punctuation only. '=', '|', '_', '*', '<', '>', '#', '@', '"', ':' and the
+        // rest are OCR debris or a label bleeding in — never part of a source's name.
+        if (!/^[A-Za-z0-9 .,&()\-\/'%]+$/.test(t)) return null;
+        // A name opens on a letter, a digit or a bracket and closes on a letter, digit,
+        // bracket, full stop or percent. The leading digit is deliberate: "20% Development
+        // Fund" is a real LGU source. It costs nothing, because a purely numeric misread
+        // like "05142005" is caught by the two-consecutive-letters rule just below.
+        if (!/^[A-Za-z0-9(]/.test(t) || !/[A-Za-z0-9).%]$/.test(t)) return null;
+        // At least one real word, so "3 1" and "05142005" are out.
+        if (!/[A-Za-z]{2}/.test(t)) return null;
+        // A source is a name, not a clause. Six words is already generous for
+        // "General Appropriations Act (GAA) FY 2025".
+        const words = t.split(' ').filter(Boolean);
+        if (words.length > 6) return null;
+        // A fragment caught mid-sentence starts on a function word; a name does not.
+        if (SOURCE_STOP_WORDS.has(words[0].toLowerCase().replace(/[^a-z]/g, ''))) return null;
+        // Punctuation-heavy strings are debris even when every character is allowed.
+        const compact = t.replace(/\s/g, '');
+        const punct = (compact.match(/[.,&()\-\/'%]/g) || []).length;
+        if (punct / compact.length > 0.25) return null;
+        return t;
+    }
+    // B-4 (2026-09-20) — a contractor field holds ONE company, not a table row.
+    // WHY THIS EXISTS: the contractor was validated by length alone (3..150), and the
+    // value-side heuristic accepts any 5-to-150-character line carrying a construction
+    // word. An ABSTRACT OF BIDS lists every bidder across one printed row, so once the
+    // contrast fix made that page readable the row itself became the best-looking
+    // candidate and won: "DONBER CONSTRUCTION | 301 ENGINEERS | SKYSCRAPER CONS. &
+    // ENGINEERING SERVICES | CHRISTINAJOY ..." — four companies in the field, and the
+    // real contractor (SKYSCRAPER, named on the contract page as "hereinafter called the
+    // CONTRACTOR") demoted. Before that page could be read, the contract page won and
+    // the field was right.
+    // THE SIGNAL IS THE PIPE. A '|' in this text is a CELL BOUNDARY — either the line
+    // reconstructor joining columns, or tesseract reading a table's printed vertical
+    // rule. It is never part of a company's name, so a candidate carrying one is a ROW.
+    // ⚠ WHAT THIS DOES NOT CATCH: a bidder table drawn WITHOUT vertical rules, whose
+    // cells OCR into one pipe-less line. The length ceiling below is the only guard
+    // against that, and it is a weak one. Noted rather than papered over.
+    // Called by: extractContractor(), isContractorValueCandidate().
+    function asCompanyName(v) {
+        const t = cleanValue(v || '').trim();
+        if (t.length < 5 || t.length > 100) return null;
+        if (t.indexOf('|') !== -1) return null;
+        return t;
+    }
+    // B-2 (2026-09-20) — how close is this value to a row that already exists?
+    // WHY: the preview can CREATE a missing category or budget source. B-1 stopped
+    // obvious debris, but a value can be well-shaped and still wrong — OCR confuses C
+    // and G, so GAA arrives as CAA, passes every shape check, and becomes a near-
+    // duplicate row that silently splits every report grouping by source.
+    // Returns { name, distance } for the closest existing name within `max` edits, or
+    // null. Case- and space-insensitive, because "Trust  fund" and "Trust Fund" are the
+    // same row to a human and should not become two.
+    // Pure, so the suite tests it; the preview does the warning.
+    // Called by: renderChoiceCreateAction() in document-parser.js.
+    function editDistance(a, b) {
+        const s1 = String(a || ''), s2 = String(b || '');
+        if (s1 === s2) return 0;
+        if (!s1.length) return s2.length;
+        if (!s2.length) return s1.length;
+        // Two rolling rows rather than the full matrix — these are short names.
+        let prev = new Array(s2.length + 1);
+        let cur = new Array(s2.length + 1);
+        for (let j = 0; j <= s2.length; j++) prev[j] = j;
+        for (let i = 1; i <= s1.length; i++) {
+            cur[0] = i;
+            for (let j = 1; j <= s2.length; j++) {
+                const cost = s1.charAt(i - 1) === s2.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+            }
+            const t = prev; prev = cur; cur = t;
+        }
+        return prev[s2.length];
+    }
+    function nearestName(value, names, max) {
+        const norm = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const v = norm(value);
+        if (!v) return null;
+        const limit = (typeof max === 'number') ? max : 2;
+        let best = null;
+        for (const raw of (names || [])) {
+            const n = norm(raw);
+            if (!n) continue;
+            const d = editDistance(v, n);
+            // An exact match is not a near miss — the caller wants "did you mean", and
+            // distance 0 means the value IS that row and no creation is in question.
+            if (d > limit) continue;
+            if (!best || d < best.distance) best = { name: String(raw), distance: d };
+            if (best.distance === 0) break;
+        }
+        return best;
+    }
+    // B-1b (2026-09-20) — the same hole B-1 closed, next door.
+    // extractCategory validated with lenRange(3, 50): length and nothing else, exactly
+    // what extractBudgetSource had. The preview can CREATE a missing category, and a
+    // category is not an ordinary label — CategorySeeder defines exactly four, and the
+    // dashboards and reports GROUP BY them. A junk fifth category does not merely sit
+    // in a table; it splits every figure that counts projects by type.
+    // B-2 already shields the worst route (a SCANNED document can no longer create
+    // anything, and a human now types the name), so this is the remaining layer rather
+    // than the only one.
+    // HOW IT DIFFERS FROM asSourceName: a funding source is often an acronym and can
+    // legitimately open on a digit ("20% Development Fund"); a CATEGORY is an ordinary
+    // English noun phrase — New Construction, Renovation, Repair, Maintenance. So this
+    // opens on a letter, takes no percent sign, and allows fewer words.
+    // ⚠ THE STRONGER FIX IS STILL NOT THIS ONE. With only four valid values, matching
+    // the extracted text against the live list (nearestName already exists for it) beats
+    // any shape test — but the list lives in the DB and the core is pure, so it would
+    // have to be plumbed through parseProjectInfo's opts. Noted, not done.
+    // Called by: extractCategory().
+    function asCategoryName(v) {
+        const t = cleanValue(v || '').replace(/\s+/g, ' ').trim();
+        if (t.length < 3 || t.length > 50) return null;
+        // No pipe: that is a table cell boundary, as B-4 found for the contractor.
+        if (!/^[A-Za-z0-9 .,&()\-\/']+$/.test(t)) return null;
+        if (!/^[A-Za-z]/.test(t) || !/[A-Za-z0-9).]$/.test(t)) return null;
+        if (!/[A-Za-z]{2}/.test(t)) return null;
+        const words = t.split(' ').filter(Boolean);
+        if (words.length > 5) return null;
+        if (SOURCE_STOP_WORDS.has(words[0].toLowerCase().replace(/[^a-z]/g, ''))) return null;
+        const compact = t.replace(/\s/g, '');
+        const letters = (compact.match(/[A-Za-z]/g) || []).length;
+        if (letters / compact.length < 0.6) return null;
+        return t;
+    }
+    // B-3 / B-5 (2026-09-20) — a value that ran into its neighbours.
+    // THREE SYMPTOMS, ONE CAUSE. A scanned page has no columns, only a picture of them,
+    // so OCR reads a printed ROW as one line and whatever sat to the right is glued on:
+    //   title       "] Rehabilitation/Refurbishment of Canteen..."  (a leading artifact)
+    //   location    "...Polytechnic Colleges Date: 05142005"       (the next column)
+    //   contractor  "i SKYSCRAPER CONSTRUCTION & ENGINEERING NES : ELA fom"  (both ends)
+    // B-4 caught the version of this that carries a '|'. These carry only a space, so
+    // the cell boundary is invisible and something else has to mark it.
+    //
+    // stripEdgeDebris: a one-character token at either end that is not a word is a
+    // speck, a bracket, a margin mark — never part of a name. "i " and "]" go.
+    // cutAtEmbeddedLabel: a "Word:" inside a value means the NEXT FIELD started there.
+    //   ⚠ SCOPED ON PURPOSE. This is applied to LOCATION and CONTRACTOR, where a colon
+    //   is never part of the value, and NOT to the title, where "Phase 2: Completion"
+    //   is a real title and cutting it would destroy content. A rule that is right for
+    //   one field is not automatically right for its neighbour.
+    // Called by: extractLocation(), extractContractor(), extractTitle() (debris only).
+    function stripEdgeDebris(v) {
+        let t = String(v || '').trim();
+        // Leading: a lone non-word character, or a single letter followed by a space and
+        // then a real word (the OCR speck that reads as "i" or "l").
+        t = t.replace(/^[^A-Za-z0-9(]+/, '').trim();
+        t = t.replace(/^[A-Za-z]\s+(?=[A-Z0-9])/, '').trim();
+        // Trailing: punctuation and lone characters left behind by a cut.
+        t = t.replace(/[^A-Za-z0-9).%]+$/, '').trim();
+        return t;
+    }
+    function cutAtEmbeddedLabel(v) {
+        const t = String(v || '').trim();
+        // A label is the SINGLE word immediately before a colon, somewhere past the
+        // start. The first one wins, because everything after it belongs to another field.
+        // ⚠ ONE WORD, NOT TWO, and the difference is not cosmetic: allowing an optional
+        // second word let the pattern swallow real content as part of the label —
+        // "…& ENGINEERING NES :" cut at ENGINEERING and "…Colleges Date:" cut at
+        // Colleges. Both lost a word of the answer. Matching the minimum is correct here.
+        // RESIDUE, accepted: a genuinely two-word label ("Project Location:") leaves its
+        // first word behind on the value. That is a stray word, not a lost one.
+        const m = t.match(/\s+[A-Za-z][A-Za-z.]{1,14}\s*:/);
+        if (!m || m.index <= 0) return t;
+        return t.slice(0, m.index).trim();
+    }
     const asDate = (v) => parseToInputDate(v);
     const asDays = (v) => parseDurationToDays(v);
     // Placeholder tokens mean "intentionally empty" (bundle "xxx" for no revision,
@@ -611,9 +798,12 @@ const DocumentParserCore = (function () {
     // Keep only project-specific: location, project site/site address, project location, barangay/brgy.
     // CSPC campus value is often just "CSPC" or "CSPC - Buhi Campus" (geotag deferred).
     function extractLocation(lines) {
+        // B-3: a scanned page reads a printed ROW as one line, so the column to the right
+        // arrives glued on ("…Polytechnic Colleges Date: 05142005"). Cut where the next
+        // field starts, then drop any speck left at either end, THEN validate length.
         return findLabeledValue(lines, [
             /(?:location|project\s*site|site\s*address|project\s*location|barangay|brgy\.?|project\s*address)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 200));
+        ], (v) => lenRange(3, 200)(stripEdgeDebris(cutAtEmbeddedLabel(v))));
     }
 
     // Labels that start another field — used to terminate a prose description
@@ -866,18 +1056,23 @@ const DocumentParserCore = (function () {
     // Budget Source / Funding Source — new in Phase 5.
     // Maps to budget_sources table (9 seeded: GAA, CHED, DPWH, LGU, GAD...).
     // Table lookup is done in document-parser.js (Option A: admin-only warning).
+    // B-1: validated by SHAPE (asSourceName) rather than by length. The preview offers
+    // an unmatched value for CREATION as a budget_sources row, so a misread accepted
+    // here becomes a permanent junk record — see asSourceName for the full reasoning.
     function extractBudgetSource(lines) {
         return findLabeledValue(lines, [
             /(?:source\s*of\s*funds?|funding\s*source|budget\s*source|fund\s*source|funding\s*agency|source\s*of\s*financing)\s*[:\-]\s*(.*)/i,
-        ], lenRange(2, 100));
+        ], asSourceName);
     }
 
     // Category / Project Type — new in Phase 5.
     // Maps to categories table (4 seeded: New Construction, Renovation, Repair, Maintenance).
+    // B-1b: validated by SHAPE (asCategoryName) rather than by length, because the
+    // preview can create a missing category and the reports group by this column.
     function extractCategory(lines) {
         return findLabeledValue(lines, [
             /(?:category|project\s*category|project\s*type|type\s*of\s*project|nature\s*of\s*project|classification)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 50));
+        ], asCategoryName);
     }
 
     // Contract / Project Start Date.
@@ -981,7 +1176,7 @@ const DocumentParserCore = (function () {
     function extractContractor(lines) {
         let raw = findLabeledValue(lines, [
             /(?:contractor|contractor\s*name|awarded\s*to|winning\s*bidder|proponent|company\s*name|firm\s*name)\s*[:\-]\s*(.*)/i,
-        ], lenRange(3, 150));
+        ], asCompanyName);
         if (!raw) return null;
         // Try labeled with next-two-lines already handled by findLabeledValue, but also handle inline wrap:
         // If contractor name is bold ALL-CAPS across 2 lines, findLabeledValue already joins next line.
@@ -991,8 +1186,14 @@ const DocumentParserCore = (function () {
         const cut = raw.split(/\s*\(hereinafter.*/i)[0].trim();
         // Also cut at " — hereinafter" etc. and trailing " (hereinafter called the "CONTRACTOR")"
         const cleaned = cut.replace(/\s*\(.*$/, '').trim();
-        const normalized = lenRange(3, 150)(cleanValue(cleaned || cut));
-        return normalized || cleanValue(cut);
+        // B-4: try the paren-stripped name, then the uncut form — the second chance is
+        // for a name that stripping made too short. If NEITHER is a company name the
+        // field stays empty: the old `|| cleanValue(cut)` returned the raw text whatever
+        // the validator said, which meant a rejected row came back regardless.
+        // B-5: strip the OCR speck and cut anything that ran in from the next column
+        // BEFORE validating, so a recoverable name is recovered rather than refused.
+        const tidy = (x) => stripEdgeDebris(cutAtEmbeddedLabel(stripEdgeDebris(x || '')));
+        return asCompanyName(tidy(cleaned || cut)) || asCompanyName(tidy(cut)) || null;
     }
 
     // ─── VALUE-SIDE KEYWORD DICTIONARIES (HARDCODED Phase 5) ───────────────────
@@ -1074,6 +1275,9 @@ const DocumentParserCore = (function () {
         raw = raw.split(/\s*\(hereinafter.*/i)[0].trim().split(/\s*\(.*$/)[0].trim();
         const s = raw.toLowerCase().trim();
         if (s.length < 5 || s.length > 150) return null;
+        // B-4: a row of a bid abstract carries construction words in abundance and would
+        // otherwise be the strongest-looking candidate on the page. Shape first.
+        if (!asCompanyName(raw)) return null;
         if (CONTRACTOR_VALUE_KEYWORDS.some(kw => s.includes(kw))) {
             if (!/\b(construction|engineering|builders|enterprises|corporation|supply|contractor|trading|development)\b/i.test(s)) return null;
             return cleanValue(raw);
@@ -1677,7 +1881,10 @@ const DocumentParserCore = (function () {
             return findLabeledValue(lines, patterns, norm);
         };
         // Label-based extraction
-        let title = extractTitle(lines, text, learnedFor('title'));
+        // B-3: the title keeps its own colons — "Phase 2: Completion" is a real title —
+        // so only EDGE DEBRIS is stripped here, never an embedded label. A scanned
+        // underline read as a bracket ("] Rehabilitation/…") is what this removes.
+        let title = stripEdgeDebris(extractTitle(lines, text, learnedFor('title')) || '') || null;
         let contractor = extractContractor(lines);
         let valueKeywordHits = 0;
 
@@ -1799,6 +2006,13 @@ const DocumentParserCore = (function () {
         extractBudget,
         extractABC,
         extractBudgetSource,
+        asSourceName,
+        asCategoryName,
+        asCompanyName,
+        stripEdgeDebris,
+        cutAtEmbeddedLabel,
+        editDistance,
+        nearestName,
         extractCategory,
         extractStartDate,
         extractEndDate,

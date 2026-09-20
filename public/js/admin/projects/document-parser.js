@@ -2108,6 +2108,10 @@ window._tryAiAssistFromWarning = async function () {
 };
 
 function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
+    // B-2: the create-in-place gate needs to know whether these values were READ OFF A
+    // PHOTOGRAPH or lifted from a text layer, and syncAutofillChoiceFields() runs later
+    // (and again on shown.bs.modal), so the flag is stashed rather than threaded.
+    try { window._autofillOcrUsed = !!ocrUsed; } catch (e) { /* best-effort */ }
     const modalEl = document.getElementById('autofillPreviewModal');
     if (!modalEl) {
         // No preview markup (should not happen) — fall back to direct apply
@@ -2507,15 +2511,34 @@ function syncAutofillChoiceFields() {
         // and minting one from OCR text would put a hollow record in the very table the
         // pilot seeds with the PMU's real contractors. That case gets a loud note
         // instead (see markUnmatchedChoice below).
-        renderChoiceCreateAction(target, sourceId, (keep && !matched) ? keep : '');
+        renderChoiceCreateAction(target, sourceId, (keep && !matched) ? keep : '', names);
     });
 }
 
-// Put (or remove) the "Add as new …" action under a choice field.
+// Put (or remove) the "add a new …" action under a choice field.
 // Shown only when: the value came from the document, matches no option, the field is
 // one of the two safe ones, and THIS USER may create it — the capability flags mirror
 // the same policy that gates the (+) buttons, and the store routes are admin-only.
-function renderChoiceCreateAction(target, sourceId, unmatchedValue) {
+//
+// B-2 (2026-09-20) — THREE CHANGES, because this control writes a PERMANENT ROW to a
+// lookup table on the strength of text a machine read off a photograph, and B-1 only
+// stopped the debris that LOOKS like debris. A value can be well-shaped and still
+// wrong: OCR confuses C and G, so GAA arrives as CAA, passes every check, and becomes
+// a near-duplicate row that silently splits every report that groups by source.
+//   1. NOT OFFERED AT ALL FOR A SCANNED DOCUMENT. These two fields are always filled by
+//      a LABEL match, so "labeled vs value-side guess" does not vary for them — what
+//      does vary is whether the text came from a PDF text layer or from OCR, and that
+//      is the axis the misreads actually live on. A scan still SHOWS its value and
+//      still fills the form; it just cannot mint a row. (See the note it renders.)
+//   2. THE REVIEWER TYPES THE NAME. The input starts EMPTY, with the document's text
+//      shown beside it for reference. Prefilling it would be a one-click button again,
+//      and typing is what turns a misread CAA into a correct GAA.
+//   3. A NEAR-MATCH IS NAMED BEFORE ANYTHING IS CREATED. What they type is checked
+//      against the rows that already exist, and anything within two edits is called
+//      out with a one-click way to use the existing row instead. It WARNS, never
+//      blocks — GAD really is one edit from GAA and really is a different fund.
+// Called by: syncAutofillChoiceFields().
+function renderChoiceCreateAction(target, sourceId, unmatchedValue, names) {
     const HOLDER = 'afp-choice-action';
     let holder = target.parentNode ? target.parentNode.querySelector('.' + HOLDER) : null;
     const cfg = (typeof window !== 'undefined' && window._projectModalConfig) ? window._projectModalConfig : {};
@@ -2534,15 +2557,75 @@ function renderChoiceCreateAction(target, sourceId, unmatchedValue) {
         holder.className = HOLDER + ' mt-1';
         target.insertAdjacentElement('afterend', holder);
     }
-    holder.innerHTML = '<button type="button" class="btn btn-sm btn-outline-primary afp-add-choice">'
-        + '<i class="bi bi-plus-circle"></i> Add "' + escapeHtml(unmatchedValue) + '" as a new ' + escapeHtml(spec.label)
-        + '</button>';
-    const btn = holder.querySelector('.afp-add-choice');
-    if (btn) {
-        btn.addEventListener('click', function () {
-            createChoiceFromPreview(sourceId, unmatchedValue, btn);
-        });
+
+    // B-2(1): a value read off a photograph does not get to create a row. Say so — a
+    // control that vanishes without explanation reads as a bug.
+    const fromScan = !!(typeof window !== 'undefined' && window._autofillOcrUsed);
+    if (fromScan) {
+        holder.innerHTML = '<div class="small text-muted">'
+            + '<i class="bi bi-info-circle"></i> This was read from a SCAN, so it cannot be added as a new '
+            + escapeHtml(spec.label) + ' from here. The value above still applies to this project — '
+            + 'use the (+) button if it really is new.'
+            + '</div>';
+        return;
     }
+
+    const inputId = HOLDER + '-in-' + sourceId;
+    holder.innerHTML = '<div class="small text-muted mb-1">'
+        + 'The document said "<strong>' + escapeHtml(unmatchedValue) + '</strong>", which is not in the list. '
+        + 'Type the ' + escapeHtml(spec.label) + ' name to add it:'
+        + '</div>'
+        + '<div class="d-flex gap-2 align-items-start">'
+        + '<input type="text" class="form-control form-control-sm afp-add-name" id="' + escapeHtml(inputId) + '" '
+        + 'placeholder="Type the ' + escapeHtml(spec.label) + ' name" autocomplete="off">'
+        + '<button type="button" class="btn btn-sm btn-outline-primary afp-add-choice" disabled>'
+        + '<i class="bi bi-plus-circle"></i> Add</button>'
+        + '</div>'
+        + '<div class="afp-add-near small mt-1"></div>';
+
+    const input = holder.querySelector('.afp-add-name');
+    const btn = holder.querySelector('.afp-add-choice');
+    const nearBox = holder.querySelector('.afp-add-near');
+    if (!input || !btn || !nearBox) return;
+
+    // B-2(3): re-checked on every keystroke, so the warning tracks what they will
+    // actually create rather than what the document happened to say.
+    const review = () => {
+        const typed = String(input.value || '').trim();
+        btn.disabled = typed.length < 2;
+        nearBox.innerHTML = '';
+        if (typed.length < 2) return;
+        let near = null;
+        try {
+            const core = getCore();
+            if (core && typeof core.nearestName === 'function') near = core.nearestName(typed, names || [], 2);
+        } catch (e) { near = null; }
+        if (!near) return;
+        if (near.distance === 0) {
+            // It already exists — creating it would duplicate a row outright.
+            btn.disabled = true;
+            nearBox.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> "'
+                + escapeHtml(near.name) + '" already exists — <a href="#" class="afp-use-near">select it</a> instead.</span>';
+        } else {
+            nearBox.innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle"></i> This is very close to "'
+                + escapeHtml(near.name) + '" — <a href="#" class="afp-use-near">use that</a> if you meant it.</span>';
+        }
+        const use = nearBox.querySelector('.afp-use-near');
+        if (use) {
+            use.addEventListener('click', function (ev) {
+                ev.preventDefault();
+                try { target.value = near.name; } catch (e) { /* best-effort */ }
+                if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+            });
+        }
+    };
+    input.addEventListener('input', review);
+    btn.addEventListener('click', function () {
+        const typed = String(input.value || '').trim();
+        if (typed.length < 2) return;
+        createChoiceFromPreview(sourceId, typed, btn);
+    });
+    review();
 }
 
 // Create the missing category / budget source, then refresh the LIVE control and
