@@ -56,7 +56,13 @@ class ParserKeywordProposalController extends Controller
             'proposals.*.source' => 'sometimes|string|in:correction,AI-assisted',
         ]);
 
+        // The caller could not tell a proposal that was RECORDED from one the server
+        // silently absorbed. A previously REJECTED phrase is refused on purpose
+        // (§31.2), and that is right — but it looked exactly like a broken harvest from
+        // the browser, and cost a whole test cycle to diagnose. Report the breakdown.
         $stored = 0;
+        $refusedRejected = 0;
+        $wordless = 0;
         foreach ($validated['proposals'] as $item) {
             $label = isset($item['label']) ? trim($item['label']) : null;
             if ($label === '') {
@@ -79,6 +85,7 @@ class ParserKeywordProposalController extends Controller
                 // rebuttal. Only the desk can undo a rejection.
                 $row->increment('occurrences');
                 if ($row->status === 'rejected') {
+                    $refusedRejected++;
                     $stored++;
                     continue;
                 }
@@ -97,6 +104,7 @@ class ParserKeywordProposalController extends Controller
                 // edge case.
                 // The count still rises. Only the promotion is refused.
                 if ($row->label_phrase === null) {
+                    $wordless++;
                     $stored++;
                     continue;
                 }
@@ -119,6 +127,10 @@ class ParserKeywordProposalController extends Controller
         return response()->json([
             'success' => true,
             'stored' => $stored,
+            // Both are ordinary outcomes, not errors — but the browser cannot see them
+            // and a reviewer watching an empty desk deserves to know which happened.
+            'refusedRejected' => $refusedRejected,
+            'wordless' => $wordless,
         ], 201);
     }
 

@@ -3002,6 +3002,19 @@ function harvestCorrections(applied) {
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': token },
             body: JSON.stringify({ proposals }),
             keepalive: true,
+        }).then((res) => {
+            // The SERVER's verdict, which the client cannot infer. A previously
+            // rejected phrase is refused on purpose, and that is indistinguishable
+            // from a broken harvest unless it says so.
+            if (typeof window === 'undefined' || !window._parserDebug || !res || !res.json) return;
+            return res.json().then((d) => {
+                if (!d) return;
+                const bits = [];
+                if (d.refusedRejected) bits.push(d.refusedRejected + ' refused (already rejected on the desk)');
+                if (d.wordless) bits.push(d.wordless + ' counted only (no wording)');
+                console.log('[Parser] harvest accepted by the server: ' + (d.stored || 0)
+                    + (bits.length ? ' \u2014 ' + bits.join(', ') : ''));
+            }).catch(() => {});
         }).catch(() => { /* collection is best-effort */ });
     } catch (e) { /* collection is best-effort — never break Apply */ }
 }

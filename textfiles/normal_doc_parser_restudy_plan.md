@@ -4327,5 +4327,62 @@
       both times.
 
 ===============================================================================
+  43. THREE ANSWERS, AND THE STRONGEST EVIDENCE YET FOR THE LOOP (2026-09-20)
+===============================================================================
+
+  43.1 ⚠ I WAS WRONG ABOUT THE CONTRACT PRICE — IT WAS THE REJECTION, NOT THE ANCHOR
+
+      I said the contract price taught nothing because the typed value was not in the
+      document. The user pointed out it was the SAME value that had taught
+      successfully in an earlier test, and then found the real cause: the rows from
+      that earlier test had been REJECTED. collect() refuses to resurrect a rejected
+      phrase (§31.2) — by design, and correct. After deleting the rows it worked.
+      ⇒ THE FEATURE WORKED PERFECTLY AND LOOKED EXACTLY LIKE A BUG. From the browser,
+        a proposal that is posted and silently absorbed is indistinguishable from a
+        harvest that never ran. §41.3's client-side line even said "1 proposal(s)",
+        which was true and useless — the client cannot see the server's verdict.
+      FIXED: collect() now reports refusedRejected and wordless alongside stored, and
+      the browser logs it under _parserDebug:
+        [Parser] harvest accepted by the server: 1 — 1 refused (already rejected on
+        the desk)
+      A designed refusal should say it is a refusal.
+
+  43.2 ⭐ "THE ISSUE IS BACK" — BECAUSE THE FIX WAS DELETED
+
+      The ABC reverted to 4,834,297.00 with 834,297.59 as its alternative, and the
+      contract price began offering the ABC again. Both follow from emptying the
+      keyword table. MEASURED on the three real ABC-bearing lines:
+        WITHOUT the taught phrase   winner 4834297.00  (.59 at count 1, score 0.68)
+        WITH it approved            winner 4834297.59  count 2, score 1.19
+      Those are §37.1's real numbers exactly. The taught phrase
+      '| TOTAL ESTIMATED PROJECT COST P' IS what makes this document read correctly —
+      no hardcoded rule knows that wording, and without it the parser sees only the
+      OCR-damaged "4,834,297 5g".
+      AND THE CONTRACT PRICE FOLLOWS FROM IT: with .59 no longer the ABC winner it is
+      no longer CLAIMED, so §38's cross-field exclusion correctly stops excluding it.
+      Every symptom traces to one deleted row.
+      ⇒ THIS IS THE STRONGEST ARGUMENT THE LEARNING LOOP HAS PRODUCED. Not "it might
+        help one day": a single approved phrase is the difference between the parser
+        reading this document right and reading it wrong, and deleting it broke two
+        fields at once. Re-approving it restores both.
+
+  43.3 "SHOULD IT TEACH AT ALL WHEN THE VALUE IS NOT IN THE FILE?" — IT NO LONGER DOES
+
+      The user asked whether a manual value absent from the document should teach
+      anything. It should not, and as of §42 it does not: a text field is anchored as
+      TEXT, so a title with " 2" appended finds no match and produces NO row at all.
+      The junk "(field count only)" row they saw was the pre-fix digit-matching bug.
+      ⚠ ONE CASE REMAINS BY DESIGN: a value that IS present but whose line yields no
+      gated label still records a wordless row, kept purely as a count. It can never
+      go live and can never be approved (§39.2), and the desk labels it.
+
+  43.4 VERIFICATION
+
+      JS 267/267/0 · PHP 1232 passed / 0 failed.
+      ⬜ BROWSER OWED: re-approve '| TOTAL ESTIMATED PROJECT COST P' and confirm the
+      ABC returns to 4,834,297.59 AND the contract price stops offering it. One action,
+      two fields — and it is the demonstration worth keeping for the defence.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
