@@ -4553,5 +4553,89 @@
         longer functions, rather than decorate one that does.
 
 ===============================================================================
+  46. ⚠ THE PAGE LABEL PRESCRIBES THE ONE ACTION THAT CANNOT WORK
+      (user screenshot, 2026-09-20: "CHS - Savings.pdf page 11 of 12 — nothing at
+      all — try turning it")
+===============================================================================
+
+  46.1 WHAT THE BADGE SAYS, AND WHY IT IS WRONG TWICE
+
+      ocrPageWhy(read, chars, soupy) (document-parser.js:1358) ends with:
+        if (chars === null || chars === 0) return 'nothing at all — try turning it';
+      Page 11 was NEVER ATTEMPTED — it is past the 10-page budget. The badge
+        (a) blames the page for yielding nothing when nothing was asked of it, and
+        (b) prescribes TURNING IT, which is the one remedy that cannot possibly work.
+      The reviewer's screenshot is a reviewer being sent down a dead end.
+
+  46.2 ⭐ AND THE DEAD END IS AIRTIGHT — TURNING CAN NEVER SUCCEED
+
+      Traced, not assumed:
+        · ocrPage() returns '' at :865 when _ocrPagesDone >= ocrPageLimit(), BEFORE
+          doing any work.
+        · The cache hit at :879 increments _ocrPagesDone and returns — deliberately,
+          so a cached run spends the budget identically to an uncached one (:872).
+        · Therefore on a Re-read, pages 1-10 come from cache, EACH SPENDING A BUDGET
+          SLOT, and _ocrPagesDone is already 10 by the time page 11 is reached.
+        · Turning page 11 changes rotDeg, so its cacheKey misses — but the budget gate
+          fires first and returns '' anyway.
+      ⇒ TURN + RE-READ RETURNS EMPTY FOREVER, at any number of attempts. The ONLY
+        action that reaches page 11 is Re-scan at a deeper setting, which clears the
+        cache — and the badge never mentions it.
+      This is not a cosmetic wording bug. It is a label that hides the working remedy
+      behind a broken one.
+
+  46.3 WHY THE CODE CANNOT CURRENTLY TELL THE TWO APART
+
+      A budget-skipped page is recorded EXACTLY like an attempted-and-empty one:
+        scannedTotal++ and scannedPageNums.push(pageNum)   :1048-1049
+        ocrTruncated = true      — a FILE-level flag, no page recorded   :1060
+        ...and the loop does NOT continue; it calls ocrPage anyway, which
+           short-circuits to '' inside.
+        pageChars[pageNum] = 0   :1095 — written for a page never attempted
+        ocrPageIsUnread()        :1324 — true for BOTH cases
+      So ocrPageWhy receives read=false, chars=0 in both cases and has no third state
+      to report. THE FACT EXISTS AT :1060 AND IS THROWN AWAY.
+
+  46.4 ⚠ A SECOND-ORDER TRAP IN THE SAME PATH
+
+      The caller caches the empty result (:1077) for a page that was never attempted.
+      Re-SCAN clears the cache so it recovers; RE-READ reuses it. A reviewer who
+      raises the depth and then presses Re-read rather than Re-scan is served the
+      never-attempted empty from memory. Worth fixing in the same change: do not
+      cache a result the budget gate produced.
+
+  46.5 ⬜ PROPOSED (P-5, not built) — RECORD THE THIRD STATE AND NAME THE RIGHT CURE
+
+      (a) Ledger it. Push pageNum into a beyondBudgetPages array where ocrTruncated is
+          set (:1060), carry it on the scan report beside soupyPages, and `continue`
+          instead of calling ocrPage for a page already past the budget — which also
+          removes the pointless call and the bad cache write in 46.4.
+      (b) Leave pageChars UNSET for those pages rather than 0. Zero is a measurement;
+          this is the absence of one.
+      (c) ocrPageWhy gains the state and the ACTIONABLE wording:
+            'not scanned — past the ' + limit + '-page budget; Re-scan deeper to read it'
+          The page strip's amber warning colour stays; only the sentence and the
+          remedy change.
+      (d) Hide or disable ⟳ turn for a beyond-budget page. Offering a control that
+          provably cannot help is the same defect in button form.
+      ⇒ PAIRS NATURALLY WITH P-4 (§45.3). P-4 stops most 11-and-12 cases from
+        happening at all; P-5 tells the truth about the ones that still do.
+
+  46.6 THE PAGE THE USER ASKED ABOUT — "which is this? But page 7 of the contract?"
+
+      Page 7 of Contract - CHS Savings.pdf, the last page, headed ACKNOWLEDGMENT. It
+      is in the user's own pasted read text. It carries:
+        · "AMADO A. OLIVA, JR., Ph.D., with ID No. Admin 182 issued at CSPC on
+          November 24, 2023"
+        · "MR. ALEXANDER B. GAITE, with ID No/CTC No. 02%AY50) issued at ..."
+        · the notary's COMMISSION 23-08, ROLL NO. 49916, IBP # 393570,
+          MCLE VII-0007556, PTR #, and a street address
+        · both parties' signatures
+      Government ID numbers and a professional's licence numbers. Not secret exactly,
+      but personal data, and precisely the page a "send everything" AI policy would
+      sweep up. It is the concrete argument for EXCLUSION over a low global count
+      (§45.4).
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================
