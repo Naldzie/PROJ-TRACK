@@ -212,18 +212,24 @@ function validatePage(pageNum) {
                             return;
                         }
                         
-                        // Check if project code has validation errors (is-invalid class)
+                        // Ask the VALIDATOR, not the field's CSS class: clearFieldErrors()
+                        // at the top of this function strips is-invalid from everything,
+                        // so the class is absent until an async call restores it.
                         // Don't show duplicate error - AJAX validation already shows the message
-                        if (codeField.classList.contains('is-invalid')) {
+                        if (codeValidator.verdict() === 'invalid' || codeField.classList.contains('is-invalid')) {
                             showError('Please fix the project code error before proceeding');
                             resolve(false);
                             return;
                         }
                     }
                     
-                    // Validate project title is not a duplicate
+                    // Validate project title is not a duplicate.
+                    // THE VERDICT IS THE SOURCE OF TRUTH. Reading the is-invalid class
+                    // here let a duplicate title through on a second, rapid Next click:
+                    // clearFieldErrors() had just removed the class, the re-check had not
+                    // finished restoring it, and an absent class read as "fine".
                     // Don't show duplicate error - AJAX validation already shows the message
-                    if (titleField && titleField.classList.contains('is-invalid')) {
+                    if (titleField && (titleValidator.verdict() === 'invalid' || titleField.classList.contains('is-invalid'))) {
                         showError('Please fix the project title error before proceeding');
                         resolve(false);
                         return;

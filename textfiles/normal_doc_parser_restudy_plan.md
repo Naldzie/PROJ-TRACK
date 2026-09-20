@@ -4265,5 +4265,67 @@
       not run (candidate 1 or 2). If it appears but Next still passes, the guard is
       reading stale state (candidate 3).
 ===============================================================================
+  42. L-4 IS WORKING — AND THE SCREENSHOTS FOUND TWO REAL DEFECTS (2026-09-20)
+===============================================================================
+
+  42.1 ⭐ L-4 CONFIRMED, BY A ROW NOBODY WAS LOOKING FOR
+
+      The desk grew a PROJECT TITLE row with origin 'Correction', and the user had
+      changed the title in the CREATE-PROJECT FORM — not the preview — because the
+      autofilled title was a duplicate. That is exactly the path L-4 added and the
+      loop had never seen before. It works.
+      The CONTRACT PRICE taught nothing in the same run because the value typed was
+      not in the document (§41.1). Two different outcomes, one correct mechanism.
+
+  42.2 ⚠ DEFECT: A TEXT VALUE WITH A NUMERAL IN IT WAS ANCHORED BY THE NUMERAL
+
+      That title row read "(field count only — no wording found) = 1 | Ea Page; of12
+      | _ (LA" — junk. The cause:
+      mineCorrectionLabels chose its matching strategy from "does this value contain a
+      digit", which is right for money and durations and WRONG for everything else.
+      Appending " 2" to disambiguate a duplicate title turned the whole title into a
+      DIGIT match: digitSig = "2", under four characters, so the short-token rule
+      hunted a bare 2 anywhere in the document, found one, and mined "Amount" as the
+      label FOR A PROJECT TITLE.
+      REPRODUCED AND FIXED: the FIELD now decides. Text fields (title, location,
+      description, contractor, budgetSource, category) anchor by text whatever
+      characters they contain; money and durations keep digit matching. Callers that
+      pass no field keep the old behaviour, so nothing else moves.
+        title + " 2", no field  -> "Amount"        (the junk)
+        title + " 2", as title  -> nothing         (honest: it is not in the document)
+        title, as title         -> "Project Name"  (correct)
+        4204128.84, as budget   -> "Original Contract Amount Php"  (unchanged)
+      ⚠ THE TRAP IS GENERAL: "Brgy. 3", "301 Engineers", "Phase 2" — any text value
+      with a numeral was being matched on the numeral.
+
+  42.3 ⚠ DEFECT: A DUPLICATE TITLE COULD PASS ON A SECOND, RAPID NEXT CLICK
+
+      The user's report was precise: the first Next click correctly refused, and
+      clicking again in quick succession got through — with the duplicate warning
+      visible on screen.
+      ROOT CAUSE, and §41.4's three candidates are settled by it: validatePage calls
+      clearFieldErrors() AT THE TOP, which strips `is-invalid` from every field in the
+      form. The gate then checked for that same class. So the guard was reading state
+      ITS OWN CALLER HAD JUST DESTROYED, and whether it came back in time depended on
+      an async API call. A second click arriving inside that window saw a clean field
+      and read it as "fine".
+      A CLASS IS PRESENTATION; THE VERDICT IS THE FACT. createFieldValidator now
+      remembers what the server last said ('unknown' | 'valid' | 'invalid') and
+      exposes verdict(). The gate consults that first and falls back to the class, so
+      a verdict of 'invalid' blocks regardless of what clearFieldErrors did to the
+      styling. Applied to the project CODE gate as well, which had the same shape.
+      ⚠ WORTH SAYING: this was never a parser bug. It is a validation-state bug that
+      autofill made reachable, because autofill fills the title without anyone typing
+      and the reviewer then clicks straight through.
+
+  42.4 VERIFICATION
+
+      JS 267/267/0 (three new miner tests) · PHP 1232 passed / 0 failed.
+      The miner tests pin the OLD behaviour too — without a field the junk label is
+      still produced — so the fix is shown to be the field, not a coincidence.
+      ⬜ BROWSER OWED: click Next twice quickly on a duplicate title; it must refuse
+      both times.
+
+===============================================================================
   END OF RESTUDY
 ===============================================================================

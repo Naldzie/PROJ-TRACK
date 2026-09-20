@@ -1346,3 +1346,37 @@ test('the ABC pick-one is untouched by the exclusion', () => {
     assert.ok(values.includes('4834297.59'));
     assert.ok(values.includes('4834297.00'));
 });
+
+// ─── A text value is anchored as TEXT, numerals and all ─────────────────────
+// The strategy used to be chosen by "does this value contain a digit", which is
+// right for money and wrong for everything else. A reviewer disambiguating a
+// duplicate title by appending " 2" turned the whole title into a DIGIT match: the
+// miner looked for a bare "2" anywhere, found one in an unrelated line, and mined
+// "Amount" as the label for a project title.
+
+const MINER_DOC = [
+    'Sheet 1 of 12 | Ea Page; of12 | _ (LA',
+    'Project Name: Rehabilitation/Refurbishment of Canteen at Food Laboratory Building',
+    'Amount 2 items',
+    'Original Contract Amount Php4,204,128.84',
+].join('\n');
+const labelOf = (v, field) => (core.mineCorrectionLabels(MINER_DOC, v, 1, field)[0] || {}).label;
+const TITLE = 'Rehabilitation/Refurbishment of Canteen at Food Laboratory Building';
+
+test('a title containing a numeral is not anchored by the numeral', () => {
+    // Without the field, the old behaviour: the bare "2" wins and mines nonsense.
+    assert.equal(labelOf(TITLE + ' 2'), 'Amount');
+    // With it, the digit is just part of the text — and that text is not in the
+    // document, so there is honestly nothing to learn. Silence beats "Amount".
+    assert.equal(labelOf(TITLE + ' 2', 'title'), undefined);
+});
+
+test('the same title without a numeral still anchors correctly', () => {
+    assert.equal(labelOf(TITLE, 'title'), 'Project Name');
+});
+
+test('money and durations still anchor by their digits', () => {
+    assert.equal(labelOf('4204128.84', 'budget'), 'Original Contract Amount Php');
+    // A location with a numeral in it is TEXT, not a number hunt.
+    assert.equal(core.mineCorrectionLabels('Site: Brgy. 3 Nabua\nPage 3 of 9', 'Brgy. 3 Nabua', 1, 'location')[0].label, 'Site');
+});

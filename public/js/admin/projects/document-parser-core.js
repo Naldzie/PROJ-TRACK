@@ -1776,11 +1776,25 @@ const DocumentParserCore = (function () {
     // label — when nothing gated exists, a single count-only {label: null} row is returned
     // (preserves today's harvest behavior for unanchorable values).
     // Called by: document-parser.js harvestCorrections() at Apply. Pure (no DOM).
-    function mineCorrectionLabels(docText, finalValue, cap) {
+    // TEXT FIELDS ANCHOR BY TEXT, WHATEVER CHARACTERS THEY HAPPEN TO CONTAIN
+    // (2026-09-20). The strategy used to be chosen by "does this value contain a
+    // digit", which is right for money and durations and wrong for everything else. A
+    // reviewer who disambiguated a duplicate title by appending " 2" turned the whole
+    // title into a DIGIT match: the miner looked for a bare "2" anywhere in the
+    // document, found one in an unrelated line, and mined "Amount" as the label for a
+    // project title. The user saw the result on the desk as
+    // "(field count only — no wording found) = 1 | Ea Page; of12 | _ (LA".
+    // The same trap catches "Brgy. 3", "301 Engineers", "Phase 2" — any text value
+    // with a numeral in it.
+    // The field now decides. Callers that pass no field keep the old behaviour, so
+    // existing tests and the legacy single-label wrapper are unaffected.
+    const TEXT_ANCHOR_FIELDS = ['title', 'location', 'description', 'contractor', 'budgetSource', 'category'];
+    function mineCorrectionLabels(docText, finalValue, cap, field) {
         const raw = String(finalValue || '').trim();
         if (raw.length < 3) return [];
         const lines = buildLinesFromText(docText || '');
-        const hasDigit = /\d/.test(raw);
+        const anchorAsText = field ? TEXT_ANCHOR_FIELDS.indexOf(field) !== -1 : false;
+        const hasDigit = !anchorAsText && /\d/.test(raw);
         const digitSig = raw.replace(/\D/g, '');
         const lowerVal = raw.toLowerCase();
         // M1: short digit strings anchor whole tokens only — bounded by non-digit AND
@@ -1846,11 +1860,11 @@ const DocumentParserCore = (function () {
         return [{ label: null, excerpt: best.excerpt }];
     }
 
-    function mineCorrectionLabel(docText, finalValue) {
+    function mineCorrectionLabel(docText, finalValue, field) {
         // Legacy single-label wrapper: returns the survey winner (or null when unanchored).
         // Kept so existing callers and fixtures behave exactly as before multi-label.
         // Called by: document-parser.js harvestCorrections() fallback; tests.
-        const rows = mineCorrectionLabels(docText, finalValue, 1);
+        const rows = mineCorrectionLabels(docText, finalValue, 1, field);
         return rows.length ? rows[0] : null;
     }
 

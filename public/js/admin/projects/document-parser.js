@@ -2927,9 +2927,11 @@ function harvestCorrections(applied) {
         // Multi-label desk: prefer the ranked survey list (up to 3 distinct gated labels
         // per correction) so approvers can pick novel phrasings; legacy single-label miner
         // is the fallback when the list helper is unavailable.
+        // The FIELD travels with the call so a text value containing a numeral is
+        // still anchored as text (core: TEXT_ANCHOR_FIELDS).
         const mineAll = (typeof core.mineCorrectionLabels === 'function')
-            ? (t, v) => (core.mineCorrectionLabels(t, v, 3) || [])
-            : (t, v) => { const m = core.mineCorrectionLabel(t, v); return m ? [m] : []; };
+            ? (t, v, f) => (core.mineCorrectionLabels(t, v, 3, f) || [])
+            : (t, v, f) => { const m = core.mineCorrectionLabel(t, v, f); return m ? [m] : []; };
         const path = (typeof window !== 'undefined' && window.location) ? window.location.pathname || '' : '';
         if (path.indexOf('/contractor/') !== -1) return;
         const base = path.indexOf('/staff/') !== -1 ? '/staff' : '/admin';
@@ -2958,7 +2960,7 @@ function harvestCorrections(applied) {
             if (alreadySent[field] === after) continue;
             alreadySent[field] = after;
             changed.push(field);
-            const minedRows = mineAll(docText, after);
+            const minedRows = mineAll(docText, after, field);
             // ⚠ A VALUE THE DOCUMENT DOES NOT CONTAIN TEACHES NOTHING, and that is by
             // design, not a failure: the miner anchors a label by locating the corrected
             // VALUE in the text (restudy §25.2). Typing an invented value produces no
