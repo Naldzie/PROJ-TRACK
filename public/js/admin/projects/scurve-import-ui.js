@@ -3,12 +3,14 @@
  *
  * "Import from S-curve" for the Set Up Baseline modal (Phase 2).
  *
- * Two entry points:
- *   1. Create-project wizard: an uploaded Schedule-type Excel/PDF in the
- *      pending-documents list becomes an import button. Excel imports the
- *      curve; PDF shows a friendly notice (PDF S-curves are chart-only).
- *   2. Project detail > Baseline tab: reads a stored Schedule-type document
- *      from the server and preloads the modal in save-immediately mode.
+ * Three entry points — each asks WHICH file to read through one picker
+ * (scurvePickFile; 2026-09-21, textfiles/scurve_import_original_baseline_plan.md).
+ * Every Excel/PDF is a candidate; the document type only ranks them:
+ *   1. Create-project wizard: any pending Excel/PDF upload → import button.
+ *   2. Project detail > Baseline tab (no baseline yet): a stored project
+ *      document → setup modal in save-immediately mode.
+ *   3. Edit Original Baseline (setup modal): a revised S-curve merged into the
+ *      original baseline for review (scurveImportIntoOriginal).
  *
  * The server returns cumulative planned % per month_index (1..12). The real
  * planned_date is derived here from the project's planned start/end dates,
@@ -907,6 +909,221 @@ function scurveCaptureHeaders(kind, source, extra) {
     } catch (e) { /* capture is best-effort */ }
 }
 
+/* ─── Confirm (the app's warning modal, not the browser dialog) ────────────── */
+// Promise wrapper around showWarningConfirm (components/warning-confirm-modal,
+// included on every page that imports an S-curve; z-index 1080, so it sits above
+// the setup modal). Resolves true on Confirm, false when closed/cancelled. Falls
+// back to window.confirm only if that component is missing on a page.
+// messageHtml is HTML — callers pass only their own text plus numbers.
+function scurveConfirm(title, messageHtml) {
+    return new Promise(function (resolve) {
+        var modalEl = document.getElementById('warningConfirmModal');
+        if (typeof showWarningConfirm !== 'function' || !modalEl) {
+            resolve(window.confirm(String(messageHtml).replace(/<[^>]+>/g, '')));
+            return;
+        }
+        var settled = false;
+        modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            if (!settled) { settled = true; resolve(false); }
+        });
+        showWarningConfirm(title, messageHtml, function () {
+            if (!settled) { settled = true; resolve(true); }
+        });
+    });
+}
+
+/* ─── File picker (every "Import from S-curve") ───────────────────────────── */
+// Decisions S-D4 / S-D5 (2026-09-21, textfiles/scurve_import_original_baseline_plan.md):
+// every import asks WHICH file to read — the project may hold a preliminary AND a
+// revised S-curve — and the picker shows even with one candidate, so the reviewer
+// always sees which file was read. The document type only ranks (preselects);
+// it never hides a file.
+//
+// Candidates arrive normalized: { name, ext, typeName, uploadedAt, isScheduleType,
+// nameHint, ref } — ref is the caller's own object (server document or pending upload).
+// Returns a Promise of the chosen candidate, or null when cancelled.
+
+// Server candidate (App\Services\SCurveSourceFinder) → picker candidate
+function scurveCandidateFromServer(c) {
+    return {
+        name: c.name, ext: c.ext, typeName: c.type_name || '', uploadedAt: c.uploaded_at || '',
+        isScheduleType: !!c.is_schedule_type, nameHint: !!c.name_hint, ref: c,
+    };
+}
+
+// Ranked pending upload (scurve-import-core rankSCurveCandidates) → picker candidate
+function scurveCandidateFromPending(d) {
+    return {
+        name: d.fileName, ext: d.ext, typeName: d.typeName || '', uploadedAt: 'not uploaded yet',
+        isScheduleType: !!d.isScheduleType, nameHint: !!d.nameHint, ref: d,
+    };
+}
+
+function scurvePickFile(candidates, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+        if (!candidates || candidates.length === 0) {
+            scurveToast('No Excel or PDF file is uploaded for this project yet. Upload the S-curve in the Documents tab first.', 'warning');
+            resolve(null);
+            return;
+        }
+
+        var el = document.getElementById('scurveFilePickerModal');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'scurveFilePickerModal';
+            el.className = 'modal fade';
+            el.tabIndex = -1;
+            el.setAttribute('aria-hidden', 'true');
+            // Above the setup modal it may open from (stacked modal)
+            el.style.zIndex = '1070';
+            el.innerHTML =
+                '<div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content" style="border-radius:12px;">' +
+                '<div class="modal-header"><h5 class="modal-title" style="font-weight:700;"><i class="bi bi-file-earmark-spreadsheet"></i> <span data-role="title"></span></h5>' +
+                '<button type="button" class="btn-close" data-role="cancel" aria-label="Close"></button></div>' +
+                '<div class="modal-body"><div data-role="intro" style="font-size:13px;color:#475569;margin-bottom:10px;"></div>' +
+                '<div data-role="list" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow:auto;"></div>' +
+                '<div data-role="note" style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin-top:12px;display:none;"></div></div>' +
+                '<div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-role="cancel">Cancel</button>' +
+                '<button type="button" class="btn btn-primary" data-role="ok"><i class="bi bi-cloud-arrow-up-fill"></i> Read this file</button></div>' +
+                '</div></div>';
+            document.body.appendChild(el);
+        }
+
+        el.querySelector('[data-role="title"]').textContent = opts.title || 'Choose the S-curve file';
+        el.querySelector('[data-role="intro"]').textContent = candidates.length === 1
+            ? 'This is the only Excel or PDF file uploaded for this project. It will be read as the S-curve:'
+            : 'This project has ' + candidates.length + ' Excel / PDF files. Choose the S-curve to read (the most likely one is preselected):';
+        var note = el.querySelector('[data-role="note"]');
+        note.textContent = opts.note || '';
+        note.style.display = opts.note ? '' : 'none';
+
+        // One radio row per file — built with textContent, file names are user data
+        var list = el.querySelector('[data-role="list"]');
+        list.innerHTML = '';
+        candidates.forEach(function (c, i) {
+            var label = document.createElement('label');
+            label.style.cssText = 'display:flex;gap:10px;align-items:flex-start;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;cursor:pointer;';
+            var radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'scurvePickerChoice';
+            radio.value = String(i);
+            radio.checked = i === 0;
+            radio.style.marginTop = '3px';
+            var body = document.createElement('div');
+            body.style.cssText = 'flex:1;min-width:0;';
+            var name = document.createElement('div');
+            name.style.cssText = 'font-weight:600;color:#0f172a;word-break:break-all;';
+            name.textContent = c.name;
+            var meta = document.createElement('div');
+            meta.style.cssText = 'font-size:12px;color:#64748b;margin-top:2px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;';
+            var parts = [String(c.ext || '').toUpperCase(), c.typeName ? 'Type: ' + c.typeName : '', c.uploadedAt ? 'Uploaded ' + c.uploadedAt : ''];
+            meta.textContent = parts.filter(Boolean).join('  ·  ');
+            var badge = function (text, bg, fg) {
+                var b = document.createElement('span');
+                b.style.cssText = 'font-size:11px;font-weight:600;padding:1px 8px;border-radius:10px;background:' + bg + ';color:' + fg + ';';
+                b.textContent = text;
+                meta.appendChild(b);
+            };
+            if (i === 0 && candidates.length > 1) badge('Suggested', '#dcfce7', '#166534');
+            if (c.ext === 'pdf') badge('PDF — read from the print', '#f1f5f9', '#475569');
+            body.appendChild(name);
+            body.appendChild(meta);
+            label.appendChild(radio);
+            label.appendChild(body);
+            list.appendChild(label);
+        });
+
+        var bs = bootstrap.Modal.getOrCreateInstance(el);
+        var settled = false;
+        var finish = function (value) {
+            if (settled) return;
+            settled = true;
+            bs.hide();
+            resolve(value);
+        };
+        el.querySelectorAll('[data-role="cancel"]').forEach(function (b) { b.onclick = function () { finish(null); }; });
+        el.querySelector('[data-role="ok"]').onclick = function () {
+            var picked = el.querySelector('input[name="scurvePickerChoice"]:checked');
+            finish(picked ? candidates[parseInt(picked.value, 10)] : null);
+        };
+        el.addEventListener('hidden.bs.modal', function onHidden() {
+            el.removeEventListener('hidden.bs.modal', onHidden);
+            if (!settled) { settled = true; resolve(null); }
+        });
+        // Dim whatever modal is underneath: lift this modal's backdrop above it
+        el.addEventListener('shown.bs.modal', function onShown() {
+            el.removeEventListener('shown.bs.modal', onShown);
+            var backdrops = document.querySelectorAll('.modal-backdrop');
+            if (backdrops.length > 1) backdrops[backdrops.length - 1].style.zIndex = '1065';
+        });
+        bs.show();
+    });
+}
+
+/* ─── Import a (revised) S-curve INTO THE ORIGINAL BASELINE ───────────────── */
+// The "Import revised S-curve" button inside the setup modal in Edit Original
+// Baseline mode (user ask 2026-09-21: the PMU may request a revised S-curve after
+// the project starts). Reads the chosen file, refuses months past the ORIGINAL end
+// date (S-D2 — extension months belong to the extension flow; they are separate
+// rows this mode does not show), then hands the months to the setup modal, which
+// merges them for REVIEW (inspected months kept, S-D1; activities by name, S-D3).
+// Nothing is saved until "Save Original Baseline".
+// Sources: window.__scurveSources (components/tabs/baseline-schedule.blade.php).
+window.scurveImportIntoOriginal = async function (btn) {
+    var src = window.__scurveSources || {};
+    var core = window.scurveImportCore;
+    if (!core || typeof window.applyImportToOriginalBaseline !== 'function') return;
+
+    var chosen = await scurvePickFile((src.candidates || []).map(scurveCandidateFromServer), {
+        title: 'Import a revised S-curve into the original baseline',
+        note: 'Months that already have a recorded inspection keep their recorded values. ' +
+            'Nothing is saved until you click "Save Original Baseline".',
+    });
+    if (!chosen) return;
+
+    var label = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Reading…';
+    }
+    try {
+        var data;
+        if (chosen.ext === 'pdf') {
+            var file = await scurveFetchDocument(chosen.ref.download_url, chosen.name);
+            data = await importPDFSCurve(file);
+        } else {
+            data = await parseSCurveDocument(chosen.ref.id, src.parseUrl);
+        }
+        if (!data || !data.months || data.months.length === 0) {
+            throw new Error('The file contains no baseline months.');
+        }
+
+        var endDate = src.originalEndDate || src.endDate || '';
+        var split = core.splitSCurveMonthsAtEnd(data.months, src.startDate || '', endDate);
+        var months = core.normalizeSCurveMonths(split.inRange, src.startDate || '', endDate);
+        if (months.length === 0) {
+            throw new Error('None of this file\'s months falls within the project\'s original dates.');
+        }
+
+        scurveStashWarnings(data, months);
+        window.applyImportToOriginalBaseline(months, {
+            sourceName: chosen.name,
+            refused: split.refused,
+            warnings: window._scurveImportWarnings || [],
+        });
+        window._scurveImportWarnings = [];
+    } catch (err) {
+        scurveToast(err.message, 'danger');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = label;
+        }
+    }
+};
+
 /* ─── Create-project wizard wiring ────────────────────────────────────────── */
 
 function refreshSCurveImportButton() {
@@ -917,7 +1134,9 @@ function refreshSCurveImportButton() {
     var core = window.scurveImportCore;
     if (!core) return;
 
-    var candidates = pending.filter(core.isSCurveCandidate);
+    // Every pending .xls/.xlsx/.pdf is a candidate; the type/name only rank them
+    // (S-D4). The click opens the picker; this only decides whether to show the button.
+    var candidates = core.rankSCurveCandidates ? core.rankSCurveCandidates(pending) : pending.filter(core.isSCurveCandidate);
 
     if (candidates.length === 0) {
         btn.style.display = 'none';
@@ -925,18 +1144,8 @@ function refreshSCurveImportButton() {
         return;
     }
 
-    var excel = candidates.filter(core.isSCurveExcel);
-    if (excel.length > 0) {
-        window._scurvePendingFile = excel[0].file;
-        btn.dataset.mode = 'excel';
-        btn.textContent = 'Import baseline from S-curve file';
-        btn.style.display = '';
-    } else {
-        window._scurvePendingFile = candidates[0].file;
-        btn.dataset.mode = 'pdf';
-        btn.textContent = 'Import baseline from S-curve file (PDF)';
-        btn.style.display = '';
-    }
+    btn.textContent = 'Import baseline from S-curve file';
+    btn.style.display = '';
 }
 
 /* ─── PDF import helpers ───────────────────────────────────────────────────── */
@@ -1003,7 +1212,6 @@ function initCreateWizardSCurveImport() {
     if (!btn) return;
 
     btn.addEventListener('click', async function () {
-        var mode = btn.dataset.mode;
         var parseUrl = btn.dataset.parseUrl;
         var startEl = document.getElementById('plannedStartDate');
         var endEl = document.getElementById('plannedEndDate');
@@ -1011,6 +1219,14 @@ function initCreateWizardSCurveImport() {
         var endDate = endEl && endEl.value ? endEl.value : '';
         var core = window.scurveImportCore;
         if (!core) return;
+
+        // Which pending file? Always ask (S-D4 / S-D5) — the ranked best is preselected
+        var pending = (typeof getPendingDocuments === 'function') ? getPendingDocuments() : [];
+        var ranked = core.rankSCurveCandidates ? core.rankSCurveCandidates(pending) : [];
+        var chosen = await scurvePickFile(ranked.map(scurveCandidateFromPending), { title: 'Import baseline from an S-curve file' });
+        if (!chosen) return;
+        window._scurvePendingFile = chosen.ref.file;
+        var mode = chosen.ext === 'pdf' ? 'pdf' : 'excel';
 
         var file = window._scurvePendingFile;
         if (!file) {
@@ -1044,9 +1260,11 @@ function initCreateWizardSCurveImport() {
             }
 
             if (window._baselineSetupMonths && window._baselineSetupMonths.length > 0) {
-                var ok = window.confirm(
-                    'This replaces the current in-memory baseline (' +
-                    window._baselineSetupMonths.length + ' months). Continue?'
+                // The app's warning modal (was the browser's confirm dialog)
+                var ok = await scurveConfirm(
+                    'Replace the baseline?',
+                    'This replaces the baseline you already set up (<strong>' +
+                    window._baselineSetupMonths.length + ' months</strong>) with the months read from the S-curve file. Continue?'
                 );
                 if (!ok) return;
             }
@@ -1110,11 +1328,21 @@ function initProjectDetailSCurveImport() {
 
     btn.addEventListener('click', async function () {
         var parseUrl = btn.dataset.parseUrl;
-        var documentId = btn.dataset.documentId;
         var startDate = btn.dataset.startDate || '';
         var endDate = btn.dataset.endDate || '';
         var core = window.scurveImportCore;
         if (!core) return;
+
+        // Which stored file? Always ask (S-D4 / S-D5). Candidates come from
+        // App\Services\SCurveSourceFinder via window.__scurveSources — every
+        // Excel/PDF of the project, whatever its document type.
+        var sources = (window.__scurveSources && window.__scurveSources.candidates) || [];
+        var chosen = await scurvePickFile(sources.map(scurveCandidateFromServer), { title: 'Import baseline from an S-curve file' });
+        if (!chosen) return;
+        var documentId = chosen.ref.id;
+        var docType = chosen.ext === 'pdf' ? 'pdf' : chosen.ext;
+        var downloadUrl = chosen.ref.download_url || '';
+        var documentName = chosen.name;
 
         btn.disabled = true;
         var originalLabel = btn.textContent;
@@ -1124,8 +1352,8 @@ function initProjectDetailSCurveImport() {
 
         try {
             var data;
-            if (btn.dataset.docType === 'pdf') {
-                var file = await scurveFetchDocument(btn.dataset.downloadUrl, btn.dataset.documentName || 's-curve.pdf');
+            if (docType === 'pdf') {
+                var file = await scurveFetchDocument(downloadUrl, documentName || 's-curve.pdf');
                 try { window._scurveDetailFile = file; } catch (e) {}
                 data = await importPDFSCurve(file);
             } else {
@@ -1158,7 +1386,7 @@ function initProjectDetailSCurveImport() {
                 'success'
             );
             // Cross-check source mirrors the import source (fetched PDF file or stored document).
-            var xCtx = (btn.dataset.docType === 'pdf' && window._scurveDetailFile)
+            var xCtx = (docType === 'pdf' && window._scurveDetailFile)
                 ? { kind: 'file', file: window._scurveDetailFile }
                 : { kind: 'document', documentId: documentId };
             xCtx.parseUrl = parseUrl;
@@ -1168,14 +1396,14 @@ function initProjectDetailSCurveImport() {
             xCtx.btn = btn;
             // Cross-check is Excel-only (it replays the Excel endpoint, which
             // declines PDFs) — PDF flows get the PDF AI link instead.
-            if (btn.dataset.docType !== 'pdf') {
+            if (docType !== 'pdf') {
                 scurveOfferCrossCheck(xCtx);
             }
             // F-C: every parseable PDF document keeps the in-modal AI link (strong
             // reads included — see the wizard branch note; weak only re-words it).
             try {
                 var pdfCore2 = window.scurvePdfParserCore || null;
-                if (btn.dataset.docType === 'pdf') {
+                if (docType === 'pdf') {
                     var weak2 = (pdfCore2 && typeof pdfCore2.isWeakPdfCurve === 'function')
                         ? pdfCore2.isWeakPdfCurve(data) : null;
                     window._scurvePdfAiCtx = { kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn, weak: !!(weak2 && weak2.weak) };
@@ -1187,14 +1415,14 @@ function initProjectDetailSCurveImport() {
             // E2: same assist offer on the detail flow (stored Excel documents only).
             // E1-1: same failure silently stashes the header block (server resolves
             // the contractor via Document→project).
-            if (err && err.isNoTable && btn.dataset.docType !== 'pdf') {
+            if (err && err.isNoTable && docType !== 'pdf') {
                 scurveOfferAiAssist({ kind: 'document', documentId: documentId, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn });
                 scurveCaptureHeaders('document', documentId);
             }
             // F-C: unreadable PDF documents offer the PDF assist beside the
             // button (sliced client-side from the fetched file — the endpoint
             // takes images only, never document_id).
-            if (btn.dataset.docType === 'pdf' && window._scurveDetailFile) {
+            if (docType === 'pdf' && window._scurveDetailFile) {
                 scurveOfferPdfAiAssist({ kind: 'file', file: window._scurveDetailFile, parseUrl: parseUrl, startDate: startDate, endDate: endDate, flow: 'detail', btn: btn }, scurvePdfFailureNote(err));
                 // E1-PDF: document_id rides along so the server can scope the
                 // capture to this project's contractor (it is never read as a source).

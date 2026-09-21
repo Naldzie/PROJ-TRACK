@@ -106,6 +106,22 @@ class Document extends Model
         });
     }
 
+    /**
+     * True when $user may read this document: it belongs to a project the user
+     * may view (ProjectPolicy::view — admin/staff any project, a contractor only
+     * their own). Used before a document is read by id outside the documents
+     * pages, e.g. the S-curve import endpoints (textfiles/
+     * scurve_import_original_baseline_plan.md, F-3).
+     */
+    public function isViewableBy(?\App\Models\User $user): bool
+    {
+        if (!$user || !$this->project) {
+            return false;
+        }
+
+        return \Illuminate\Support\Facades\Gate::forUser($user)->allows('view', $this->project);
+    }
+
     // === HELPERS ===
     /**
      * Generate storage path for a document

@@ -16,6 +16,32 @@
     window._progressRecordData = @json($project->progressHistory->load('recordedBy')->load('attachments')->each->setAppends(['recorded_by_name', 'activity_names'])->keyBy('id'));
 </script>
 
+{{--
+    S-curve import sources (2026-09-21, textfiles/scurve_import_original_baseline_plan.md):
+    every Excel/PDF of the project, ranked by SCurveSourceFinder, for the file picker
+    of "Import from S-curve" (setup) and "Import revised S-curve" (Edit Original).
+    The document type only RANKS a file — renaming or removing "Schedule" hides nothing.
+    Admin/staff only: the parse routes exist for those roles alone.
+--}}
+@php
+    $scurveSources = null;
+    if (in_array(auth()->user()->role, ['admin', 'staff'], true) && \Illuminate\Support\Facades\Route::has($routePrefix . '.s-curve.parse')) {
+        $scurveSources = [
+            'candidates'      => app(\App\Services\SCurveSourceFinder::class)->candidatesFor($project),
+            'parseUrl'        => route($routePrefix . '.s-curve.parse'),
+            'startDate'       => ($project->original_planned_start_date ?? $project->planned_start_date)?->toDateString() ?? '',
+            'endDate'         => $project->planned_end_date?->toDateString() ?? '',
+            // Edit Original: months past the ORIGINAL completion are refused (S-D2)
+            'originalEndDate' => ($project->original_planned_end_date ?? $project->planned_end_date)?->toDateString() ?? '',
+        ];
+    }
+@endphp
+@if($scurveSources)
+<script>
+    window.__scurveSources = @json($scurveSources);
+</script>
+@endif
+
 <!-- Load Baseline Schedule Utilities -->
 <script src="{{ asset('js/admin/projects/baseline-schedule-utils.js') }}"></script>
 
@@ -53,23 +79,17 @@
         <div style="display: flex; gap: 8px;">
             @php
                 $hasBaseline = $project->baselineSchedules()->exists();
-                $scheduleDoc = $project->documents()->byTypeName('Schedule')->latest()->first();
             @endphp
             @can('update', $project)
                 @if(!$hasBaseline)
                     <button class="btn-primary" onclick="openSetupBaselineModal()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
                         <i class="bi bi-flag"></i> Set Up Baseline
                     </button>
-                    @php
-                        $scheduleExt = strtolower($scheduleDoc->file_extension ?? '');
-                    @endphp
-                    @if($scheduleDoc && in_array($scheduleExt, ['xls', 'xlsx', 'pdf']))
+                    {{-- Any uploaded Excel/PDF can be the S-curve; the click opens the file
+                         picker (was: only the newest "Schedule"-typed document, silently) --}}
+                    @if(!empty($scurveSources['candidates']))
                         <button id="scurveImportBtnDetail" class="btn-primary"
                                 data-parse-url="{{ route($routePrefix . '.s-curve.parse') }}"
-                                data-document-id="{{ $scheduleDoc->id }}"
-                                data-doc-type="{{ $scheduleExt }}"
-                                data-download-url="{{ $scheduleExt === 'pdf' ? route(auth()->user()->role . '.documents.download', $scheduleDoc->id) : '' }}"
-                                data-document-name="{{ $scheduleDoc->document_name }}"
                                 data-start-date="{{ $project->planned_start_date?->toDateString() ?? '' }}"
                                 data-end-date="{{ $project->planned_end_date?->toDateString() ?? '' }}"
                                 style="padding: 8px 16px; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; transition: all 0.2s;">
