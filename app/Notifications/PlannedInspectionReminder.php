@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -12,9 +14,10 @@ use Illuminate\Notifications\Notification;
  * Fires once per (project, month) on the exact day the inspection is scheduled.
  * Dedupe key: planned_inspection:{project_id}:{month_label}
  */
-class PlannedInspectionReminder extends Notification
+class PlannedInspectionReminder extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,

@@ -1,15 +1,21 @@
 {{-- In-app notification bell (gaps #12). Included in the .profile-section of all three
      role layouts. Self-contained: inline SVG icon (no icon-font/CDN dependency), own
      open/close state, and viewport-safe positioning so it can never be cut off or stuck
-     open. Mark-read / mark-all-read post to the role-scoped routes. --}}
+     open. Mark-read / mark-all-read post to the role-scoped routes.
+     2026-09-21 (restudy P-5): labels come from App\Services\NotificationPresenter, and
+     public/js/notifications/notification-bell.js refreshes the badge + list every 60 s
+     and when the tab regains focus (it re-renders from /notifications/recent). --}}
 @php
     $notifUser = auth()->user();
     $unreadCount = $notifUser->unreadNotifications()->count();
     $recentNotifs = $notifUser->unreadNotifications()->latest()->take(5)->get();
     $rolePrefix = $notifUser->role; // admin | staff | contractor
+    $notifPresenter = app(\App\Services\NotificationPresenter::class);
+    $bellJs = 'js/notifications/notification-bell.js';
 @endphp
 
-<div class="notification-dropdown" id="notification-dropdown">
+<div class="notification-dropdown" id="notification-dropdown"
+     data-recent-url="{{ route($rolePrefix . '.notifications.recent') }}">
     <button type="button" class="notification-bell" id="notification-bell"
             aria-expanded="false" title="Notifications">
         <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"
@@ -17,71 +23,33 @@
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
         </svg>
-        @if($unreadCount > 0)
-            <span class="notification-badge">{{ $unreadCount > 99 ? '99+' : $unreadCount }}</span>
-        @endif
+        <span class="notification-badge" id="notification-badge" @if($unreadCount === 0) hidden @endif>{{ $unreadCount > 99 ? '99+' : $unreadCount }}</span>
     </button>
 
     <div class="notification-menu" id="notification-menu">
         <div class="notification-menu-header">
             <span>Notifications</span>
-            @if($unreadCount > 0)
-                <button type="button" class="notification-mark-all"
-                        data-url="{{ route($rolePrefix . '.notifications.readAll') }}">
-                    Mark all read
-                </button>
-            @endif
+            <button type="button" class="notification-mark-all" id="notification-mark-all"
+                    data-url="{{ route($rolePrefix . '.notifications.readAll') }}"
+                    @if($unreadCount === 0) hidden @endif>
+                Mark all read
+            </button>
         </div>
 
-        <div class="notification-menu-body">
+        <div class="notification-menu-body" id="notification-menu-body">
             @forelse($recentNotifs as $n)
-                @php
-                    $d = $n->data;
-                    $nPid = $d['project_id'] ?? null;
-                    $nRoute = match ($rolePrefix) {
-                        'staff'      => 'staff.projects.detail',
-                        'contractor' => 'projects.show',
-                        default      => 'admin.projects.detail',
-                    };
-                    $nAnchor = match (true) {
-                        str_contains($n->type, 'ExtensionStatusChanged')      => '#extensions',
-                        str_contains($n->type, 'IssueReported')              => '#issues',
-                        str_contains($n->type, 'RiskReported')               => '#risks',
-                        str_contains($n->type, 'OverdueInspectionReminder')  => '#baseline-schedule',
-                        default => '#overview',
-                    };
-                    $nUrl = $nPid ? route($nRoute, $nPid) . $nAnchor : '';
-                @endphp
+                @php $p = $notifPresenter->present($n, $rolePrefix); @endphp
                 <div class="notification-item {{ $n->read_at ? '' : 'unread' }}"
                      data-id="{{ $n->id }}"
                      data-url="{{ route($rolePrefix . '.notifications.read', $n->id) }}"
-                     data-navigate-url="{{ $nUrl }}">
+                     data-navigate-url="{{ $p['url'] }}">
                     <div class="notification-item-title">
-                        @php
-                            $notifLabel = match(true) {
-                                $n->type === \App\Notifications\DeadlineReminder::class
-                                    => $d['bucket'] === 'overdue'
-                                        ? 'Project overdue'
-                                        : 'Deadline in ' . ($d['days_remaining'] ?? 0) . ' days',
-                                $n->type === \App\Notifications\PlannedInspectionReminder::class
-                                    => 'Inspection scheduled today',
-                                $n->type === \App\Notifications\MonthEndInspectionReminder::class
-                                    => 'Month ending — inspect now',
-                                $n->type === \App\Notifications\OverdueInspectionReminder::class
-                                    => 'Inspection overdue',
-                                $n->type === \App\Notifications\ExtensionStatusChanged::class
-                                    => 'Extension ' . ucfirst($d['status'] ?? ''),
-                                $n->type === \App\Notifications\RiskLevelChanged::class
-                                    => 'Risk level: ' . ($d['current_level'] ?? ''),
-                                default => 'Issue reported',
-                            };
-                        @endphp
-                        {{ $notifLabel }}
+                        {{ $p['label'] }}
                         @if(!$n->read_at)
                             <span class="notification-dot"></span>
                         @endif
                     </div>
-                    <div class="notification-item-meta">{{ $d['project_title'] ?? '' }}{{ in_array($n->type, [\App\Notifications\OverdueInspectionReminder::class, \App\Notifications\PlannedInspectionReminder::class, \App\Notifications\MonthEndInspectionReminder::class]) ? ' · ' . ($d['month_display'] ?? $d['month_label'] ?? '') : '' }} · {{ $n->created_at?->diffForHumans() }}</div>
+                    <div class="notification-item-meta">{{ $p['meta'] }} · {{ $p['created'] }}</div>
                 </div>
             @empty
                 <div class="notification-empty">No unread notifications</div>
@@ -138,6 +106,8 @@
         border-radius: 999px;
         box-shadow: 0 0 0 2px rgba(26,37,64,0.6);
     }
+    /* The badge / "Mark all read" stay in the DOM so polling can show them again */
+    .notification-badge[hidden], .notification-mark-all[hidden] { display: none; }
 
     .notification-menu {
         display: none;
@@ -233,76 +203,4 @@
     .notification-view-all:hover { text-decoration: underline; }
 </style>
 
-<script>
-(function () {
-    var dropdown = document.getElementById('notification-dropdown');
-    if (!dropdown) return;
-
-    var bell = document.getElementById('notification-bell');
-    var menu = document.getElementById('notification-menu');
-
-    function open() {
-        dropdown.classList.add('open');
-        bell.setAttribute('aria-expanded', 'true');
-    }
-
-    function close() {
-        dropdown.classList.remove('open');
-        bell.setAttribute('aria-expanded', 'false');
-    }
-
-    bell.addEventListener('click', function (e) {
-        e.stopPropagation();
-        if (dropdown.classList.contains('open')) {
-            close();
-        } else {
-            open();
-        }
-    });
-
-    document.addEventListener('click', function (e) {
-        if (!dropdown.contains(e.target)) {
-            close();
-        }
-    });
-
-    document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' || e.keyCode === 27) {
-            close();
-        }
-    });
-
-    dropdown.querySelectorAll('.notification-item').forEach(function (item) {
-        item.addEventListener('click', function () {
-            var url = item.dataset.url;
-            var navigateUrl = item.dataset.navigateUrl;
-            if (!url) return;
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json'
-                }
-            }).then(function () {
-                if (navigateUrl) {
-                    window.location.href = navigateUrl;
-                } else {
-                    location.reload();
-                }
-            });
-        });
-    });
-
-    dropdown.querySelectorAll('.notification-mark-all').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            fetch(btn.dataset.url, {
-                method: 'POST',
-                headers: {
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                    'Accept': 'application/json'
-                }
-            }).then(function () { location.reload(); });
-        });
-    });
-})();
-</script>
+<script src="{{ asset($bellJs) }}?v={{ filemtime(public_path($bellJs)) }}"></script>

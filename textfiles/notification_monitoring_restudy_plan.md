@@ -2,7 +2,8 @@
 # Parent refs: textfiles/bugs_and_behavior_adjustments.md (notification history),
 #              AGENTS.md → System Modules 4 (Automated Notification and Reminder)
 # Date: September 21, 2026
-# Status: ⬜ RESTUDY DONE — NOTHING BUILT. Findings §3, proposals §4, decisions §5.
+# Status: ✅ BUILT + BROWSER-CONFIRMED 2026-09-21 (§7), merged into develop. Findings §3,
+#         proposals §4, decisions §5.
 # Branch: phase-42-notification-monitoring-restudy (from develop be09bf7).
 
 ===============================================================================
@@ -230,3 +231,175 @@
   2026-09-21 — P-4 DONE: AGENTS.md dev-stack note corrected (notifications + AI report
     emails are inline; the worker is for the calendar sync; how to queue safely);
     SendNotifications.php docblock no longer claims ShouldQueue / an 'emails' worker.
+  2026-09-21 — USER: "yes for email queue, go ahead" (N-D3 = QUEUE THE EMAIL; build the
+    queued list). The previous session ran out of tokens mid-build; this session
+    picked it up from the uncommitted tree. State found: P-1, the QueuesMailOnly
+    trait on all 8 classes, the 5 in-app classes, WarrantyMonitor and the 4 scan
+    checks were written and green; nothing rendered them, nothing sent the event
+    notices, there were no tests for them and no log. Build log: §7.
+
+===============================================================================
+  7. BUILD LOG — phase-42 (2026-09-21) — 🔄 BUILT, SUITES GREEN, BROWSER CHECK OWED
+===============================================================================
+
+  N-D3 EMAIL QUEUE ✅ (the three conditions of the Bug 7/8 entry in §6)
+    · app/Notifications/Concerns/QueuesMailOnly.php — viaConnections():
+      database → 'sync', mail → config('queue.default'); $tries = 3,
+      $backoff = [60, 300]. All 8 classes `implements ShouldQueue` +
+      `use Queueable, QueuesMailOnly`.
+    · tests/Feature/NotificationQueueContractTest.php — every class in
+      app/Notifications (auto-discovered) must implement ShouldQueue and use
+      Queueable + QueuesMailOnly. With a REAL database queue: the in-app row
+      exists before any worker runs, exactly ONE job on queue 'default' carrying
+      channels ['mail'] with tries 3; dedupe still stops a 2nd notice AND a 2nd
+      email; in-app-only notices queue nothing.
+    · ⚠ CONSEQUENCE: the queue worker is now REQUIRED for notification emails
+      (composer dev runs it; the pilot server PC must too). AiAnalysisMail (the AI
+      monthly report) is not a notification and is still sent inline — unchanged.
+
+  P-1 ONE OVERDUE-INSPECTION NOTICE PER PROJECT ✅
+    · OverdueInspectionReminder carries `months` (all uninspected, oldest first) +
+      `month_count`, and is identified by the LATEST month (key
+      overdue_inspection:{project}:{latest}). Same months → no repeat; a newly
+      overdue month → one new notice with the full list. Old single-month rows
+      still render.
+    · LIVE DRY RUN (rolled back + Notification::fake; 342 rows / 0 jobs before
+      and after): overdue-inspection notices today 45 → 12; project #165 33 → 3.
+
+  P-7..P-10 MONITORING NOTICES — IN-APP ONLY, admins + ASSIGNED staff ✅
+    · Base app/Notifications/InAppNotice.php (via ['database']). Audience helper
+      NotificationService::internalRecipientsFor($project, $except) — moved there
+      from the scan so the controllers share it; $except = the person who acted.
+    · Scan (SendNotifications, each check in its own try):
+        WarrantyReminder — App\Services\WarrantyMonitor (ONE rule set for the
+          page and the scan): end date ≤ 30 days → 'expiring', past → 'expired',
+          mid-year / final inspection ≤ 14 days → 'due'. A passed inspection date
+          sends nothing (it may be the date it was done). Key
+          warranty:{id}:{kind}:{date}.
+        ProjectNotStartedReminder — status Planned, not archived, planned start
+          < today. Key not_started:{project}:{start} (moving the start re-alerts).
+        PendingExtensionReminder — pending ≥ 30 days; the key carries the month
+          count, so it reminds at 30, 60, 90… days. The submit-time notice is
+          unchanged.
+        IssueAgingReminder — Open / In Progress ≥ 30 days, project not archived and
+          not Completed. Key issue_aging:{issue} (once).
+      LIVE DRY RUN: Not started 14 (6 Planned projects, all past their start);
+      Warranty 0 (both end in 2027, no inspection dates); Pending extension 0
+      (#70 is on ARCHIVED project 7, #174 is 19 days old); Issue aging 0 (the only
+      30-day issue, #12, is on archived project 7). All four zeros are explained.
+    · Events (ProjectUpdateNotice, key update:{kind}:{ref}):
+        issue_resolved   — IssueController::update, only on the transition INTO
+                           Resolved/Closed; ref carries resolved_at, so reopen +
+                           re-resolve notifies again.
+        ai_report_review — AIReportSendingService::stageProjectForReview; says the
+                           date it goes out; links to the Email page.
+        project_assigned — ProjectController store()/update() →
+                           notifyAssignmentChanges(): the staff and/or contractor
+                           id changed; the NEW staff is among the recipients.
+        baseline_revised — BaselineScheduleController::saveEditedOriginalBaseline,
+                           after COMMIT; not on a "No changes detected" save.
+
+  INDICATORS ✅
+    · Warranty record page (warranty/preview.blade.php — admin, staff AND the
+      public /warranty/preview): pill under the warranty period and each inspection
+      date — expired (red), expiring / due (amber), "Date passed" (grey).
+      Partial: warranty/partials/watch_pill.blade.php.
+    · Project page "Notifications & Alerts" (ProjectOverviewService::getAlerts):
+      not yet started, warranty expiring / due; the pending-extension line now
+      names an oldest request waiting ≥ 30 days.
+    · Projects list (projects/index.blade.php): "Not yet started" badge.
+
+  P-5 BELL AUTO-REFRESH ✅
+    · public/js/notifications/notification-bell.js (moved out of the partial,
+      filemtime-versioned): polls /notifications/recent every 60 s while the tab
+      is visible, and on focus (≥ 10 s apart). The badge and "Mark all read" stay
+      in the DOM (hidden) so they can reappear. While the menu is OPEN only the
+      badge updates (the list swaps on close). Item clicks are delegated.
+
+  P-6 INBOX ✅
+    · All / Unread tabs, type filter (?type=slug), project filter (?project=id).
+      The dropdowns list only what this user has; plain GET links; pagination
+      keeps the filters.
+    · "Clear read (N)": POST {role}/notifications/clear-read → sets cleared_at.
+      ⚠ DECISION: cleared notices are HIDDEN, NOT DELETED. Dedupe looks for the
+      existing row, so deleting a read overdue / warranty / not-started notice
+      would make the next daily scan send it again. Migration
+      2026_09_21_100001_add_cleared_at_to_notifications_table — RUN on pmu_system4
+      (it was the only pending migration; rollback: migrate:rollback --step=1).
+
+  ONE PRESENTER ✅
+    · app/Services/NotificationPresenter.php — label (bell), title + detail lines
+      (inbox), icon, tone, link and filter slugs for all 13 types. The bell
+      partial, the inbox list and NotificationController::recent() all use it
+      (they carried three separate match() blocks). The wording of the original 8
+      types is unchanged EXCEPT: RiskReported in the bell now says "High risk
+      reported" (the bell's default arm had labelled it "Issue reported").
+    · NotificationService::describeNotification() — Activity Log lines for the 5
+      new types + the multi-month overdue notice.
+
+  TESTS
+    · New: NotificationQueueContractTest (4), NotificationMonitoringTest (16),
+      NotificationUiTest +7, AdminOriginalBaselineEditTest +1; NotificationScanTest
+      P-1 tests (2, rewritten).
+    · Test traps found: NotificationUiTest::createNotification() returns
+      latest('id'), but notification ids are UUIDs, so that is a RANDOM row — the
+      new tests select by data instead. A User::create() without 'is_active' is
+      skipped by notifyUnique() (the attribute is not loaded).
+    · Suites: PHP 1340 passed / 0 failed; JS 279 / 279 / 0. The new classes ran
+      green 6 times in a row.
+
+  ⬜ BROWSER CHECKS OWED (DOM, not covered by the suite)
+    1. Bell: leave a page open, create an issue as another user → badge and list
+       update within 60 s (or on switching back to the tab); opening the menu
+       mid-refresh does not jump.
+    2. Inbox: tabs, type + project dropdowns, Reset filters, Clear read (confirm
+       dialog; unread stay).
+    3. Warranty record page pills (set a warranty end date ~2 weeks out).
+    4. Project page alerts + the projects-list "Not yet started" badge on a
+       Planned project past its start.
+    5. Email queue: with composer dev running, report an issue → the page returns
+       without the 6-10 s wait; the email arrives once the worker picks it up.
+       Stop the worker → the in-app notice is still immediate, the email waits in
+       `jobs`.
+    6. Dev widget "Run Notification Scan" → the Monitoring line in its output.
+
+  FILES
+    new:     app/Notifications/Concerns/QueuesMailOnly.php, InAppNotice.php,
+             WarrantyReminder.php, ProjectNotStartedReminder.php,
+             PendingExtensionReminder.php, IssueAgingReminder.php,
+             ProjectUpdateNotice.php; app/Services/WarrantyMonitor.php,
+             NotificationPresenter.php; public/js/notifications/notification-bell.js;
+             resources/views/warranty/partials/watch_pill.blade.php; the migration;
+             tests NotificationQueueContractTest, NotificationMonitoringTest.
+    changed: the 8 notification classes, SendNotifications, NotificationService,
+             NotificationController, routes/web.php (3 clear-read routes),
+             notifications/partials/bell + _list, warranty/preview, projects/index,
+             ProjectOverviewService, IssueController, ProjectController,
+             BaselineScheduleController, AIReportSendingService; tests
+             NotificationScanTest, NotificationUiTest, AdminOriginalBaselineEditTest.
+
+  2026-09-21 — USER BROWSER RESULTS: #2 inbox ✅, #3 warranty pills ✅, #5 email
+    queue ✅ CONFIRMED. #1, #4, #6 explained (how to observe them), awaiting results.
+    DEFECT FOUND (#1 screenshot): the dashboard banner (search box, New Project /
+    All Projects buttons) was drawn OVER the open bell menu. Cause (pre-existing,
+    all 3 layouts): `.topbar > * { position: relative; z-index: 2 }` and the
+    `.topbar` itself has no z-index, so the bell's z-index 2 competes at page level
+    with `.db-hero { z-index: 30 }` (dashboard.css) and loses. The taller list of
+    long "Not yet started" titles made it visible. FIX (notification-bell.js):
+    while the menu is open the whole `.topbar` gets inline z-index 1040 (above the
+    banner / dashboard pop-ups, below Bootstrap modals 1050+); cleared on close.
+    ⬜ browser re-check owed.
+  2026-09-21 — USER: #1 bell auto-refresh ✅, #6 dev scan Monitoring line ✅, #4
+    project-page alerts ✅ + warranty alert ✅ CONFIRMED. #4 projects-list badge NOT
+    SEEN: the user was on the TABLE view; the badge had only been added to the CARD
+    view. FIX: projects/index.blade.php table "Health" column — a Planned project
+    past its start shows an amber "Not yet started" (table-health-badge at-risk,
+    hover = planned start) INSTEAD of the grey "PLANNED" badge. +2 tests
+    (NotificationMonitoringTest: badge shown past start / absent for a future
+    start). ⬜ browser re-check owed.
+  2026-09-21 — USER: bell-over-banner fix ✅ and table "Not yet started" badge ✅
+    CONFIRMED — ALL SIX BROWSER CHECKS DONE. Ordered: commit, push, merge into
+    develop.
+
+  STILL OPEN (not asked for this round): P-11 settings screen / per-user email
+    opt-out; APP_URL for the pilot (checklist); F-7 every admin gets every notice.

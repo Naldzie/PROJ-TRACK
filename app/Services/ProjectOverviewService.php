@@ -258,6 +258,41 @@ class ProjectOverviewService
     {
         $alerts = [];
 
+        // 0. Planned project whose start date has passed (restudy F-9, 2026-09-21 —
+        //    the same condition the daily scan's ProjectNotStartedReminder uses)
+        if ($project->status === 'Planned' && $project->planned_start_date) {
+            $today = \App\Support\DateHelper::now()->copy()->startOfDay();
+            $start = $project->planned_start_date->copy()->startOfDay();
+            if ($start->lt($today)) {
+                $daysLate = (int) $start->diffInDays($today);
+                $alerts[] = [
+                    'type'  => 'not_started',
+                    'title' => 'Not yet started — planned start passed ' . $daysLate . ' ' . ($daysLate === 1 ? 'day' : 'days') . ' ago',
+                    'meta'  => 'Planned start ' . $start->format('M d, Y') . ' · status is still Planned',
+                    'color' => 'var(--orange)',
+                ];
+            }
+        }
+
+        // 0b. Warranty needing attention (App\Services\WarrantyMonitor — same rules
+        //     as the warranty record page and the daily WarrantyReminder)
+        $monitor = app(\App\Services\WarrantyMonitor::class);
+        foreach (\App\Models\Warranty::where('project_id', $project->id)->get() as $warranty) {
+            $status = $monitor->statusFor($warranty);
+            foreach (['expiry', 'mid_year', 'final'] as $check) {
+                $c = $status[$check];
+                if ($c && in_array($c['state'], ['expired', 'expiring', 'due'], true)) {
+                    $what = $check === 'expiry' ? '' : ($check === 'mid_year' ? 'Mid-year warranty ' : 'Final warranty ');
+                    $alerts[] = [
+                        'type'  => 'warranty_' . $check,
+                        'title' => $what . ($what ? lcfirst($c['label']) : $c['label']),
+                        'meta'  => 'Warranty · ' . \Carbon\Carbon::parse($c['date'])->format('M d, Y'),
+                        'color' => $c['state'] === 'expired' ? 'var(--red)' : 'var(--orange)',
+                    ];
+                }
+            }
+        }
+
         // 1. Next pending inspection month
         if ($project->status !== 'Completed') {
             $recordedMonths = $project->progressHistory()->pluck('month_label');
@@ -297,11 +332,17 @@ class ProjectOverviewService
         // 3. Pending extension requests
         $pendingExtensions = $project->extensions()->where('status', 'pending')->count();
         if ($pendingExtensions > 0) {
+            // Oldest request waiting 30+ days is named (same threshold as the
+            // PendingExtensionReminder in the daily scan, restudy F-10)
+            $oldest = $project->extensions()->where('status', 'pending')->min('created_at');
+            $oldestDays = $oldest ? (int) Carbon::parse($oldest)->diffInDays(\App\Support\DateHelper::now()) : 0;
             $alerts[] = [
                 'type'  => 'pending_extensions',
                 'title' => $pendingExtensions . ' extension request'
                     . ($pendingExtensions > 1 ? 's' : '') . ' awaiting approval',
-                'meta'  => 'Pending · Action required',
+                'meta'  => $oldestDays >= 30
+                    ? 'Pending · oldest waiting ' . $oldestDays . ' days'
+                    : 'Pending · Action required',
                 'color' => 'var(--blue)',
             ];
         }

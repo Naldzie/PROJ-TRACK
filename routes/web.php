@@ -369,6 +369,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('staff.notifications.readAll');
 
+    // Hide read notifications from the inbox (kept for dedupe) — restudy P-6
+    Route::post('/notifications/clear-read', [NotificationController::class, 'clearRead'])
+        ->name('staff.notifications.clearRead');
+
     // === REPORT EXPORT ROUTES ===
     Route::get('/projects/{project}/reports/progress.xlsx', [ReportExportController::class, 'progressExcel'])
         ->name('staff.projects.exports.progress');
@@ -524,6 +528,10 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
 
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('contractor.notifications.readAll');
+
+    // Hide read notifications from the inbox (kept for dedupe) — restudy P-6
+    Route::post('/notifications/clear-read', [NotificationController::class, 'clearRead'])
+        ->name('contractor.notifications.clearRead');
 
 });
 
@@ -921,6 +929,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])
         ->name('admin.notifications.readAll');
+
+    // Hide read notifications from the inbox (kept for dedupe) — restudy P-6
+    Route::post('/notifications/clear-read', [NotificationController::class, 'clearRead'])
+        ->name('admin.notifications.clearRead');
 
     // === DOCUMENT TYPE MANAGEMENT ROUTES ===
     Route::get('/document-types/all', [DocumentTypeController::class, 'getAllForManagement'])

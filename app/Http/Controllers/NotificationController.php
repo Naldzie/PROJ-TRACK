@@ -2,39 +2,85 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\NotificationPresenter;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * In-app notifications UI (gaps #12).
+ * In-app notifications UI (gaps #12; filters + clear + presenter 2026-09-21,
+ * restudy P-5/P-6 — textfiles/notification_monitoring_restudy_plan.md).
  *
- * index()   — full paginated list for the current user.
- * recent()  — latest 5 unread for the topbar bell dropdown.
- * read()    — mark a single notification read (owner-only).
- * readAll() — mark all of the current user's notifications read.
+ * index()      — paginated inbox for the current user, with filters:
+ *                ?status=unread, ?type=<slug>, ?project=<id>.
+ * recent()     — latest 5 unread + unread count for the topbar bell (the bell
+ *                polls it, so it must stay cheap).
+ * read()       — mark a single notification read (owner-only).
+ * readAll()    — mark all of the current user's notifications read.
+ * clearRead()  — hide every READ notification from the inbox (cleared_at; the
+ *                rows stay so dedupe never re-sends them).
+ *
+ * All wording comes from App\Services\NotificationPresenter.
  */
 class NotificationController extends Controller
 {
+    public function __construct(private NotificationPresenter $presenter)
+    {
+    }
+
     public function index(Request $request)
     {
-        $notifications = Auth::user()
-            ->notifications()
-            ->latest()
-            ->paginate(20);
+        $user = Auth::user();
+        $status = $request->query('status') === 'unread' ? 'unread' : 'all';
+        $typeSlug = $request->query('type');
+        $typeClass = NotificationPresenter::classForSlug($typeSlug);
+        $projectId = $request->filled('project') ? (int) $request->query('project') : null;
 
-        $view = match (Auth::user()->role) {
+        // Base query: never show cleared rows
+        $query = $user->notifications()->whereNull('cleared_at');
+        if ($status === 'unread') {
+            $query->whereNull('read_at');
+        }
+        if ($typeClass) {
+            $query->where('type', $typeClass);
+        }
+        if ($projectId) {
+            $query->where('data->project_id', $projectId);
+        }
+
+        $notifications = $query->latest()->paginate(20)->withQueryString();
+
+        // Filter choices: only the types / projects this user actually has
+        $visible = $user->notifications()->whereNull('cleared_at')->get(['type', 'data']);
+        $typeOptions = collect(NotificationPresenter::typeOptions())
+            ->filter(fn ($label, $slug) => $visible->contains('type', NotificationPresenter::classForSlug($slug)))
+            ->all();
+        $projectOptions = $visible
+            ->filter(fn ($n) => !empty($n->data['project_id']))
+            ->mapWithKeys(fn ($n) => [(int) $n->data['project_id'] => $n->data['project_title'] ?? ('Project #' . $n->data['project_id'])])
+            ->sort()
+            ->all();
+
+        $filters = [
+            'status'  => $status,
+            'type'    => $typeClass ? $typeSlug : null,
+            'project' => $projectId,
+        ];
+        $readCount = $user->notifications()->whereNull('cleared_at')->whereNotNull('read_at')->count();
+
+        $view = match ($user->role) {
             'staff'      => 'notifications.index_staff',
             'contractor' => 'notifications.index_contractor',
             default      => 'notifications.index_admin',
         };
 
-        return view($view, compact('notifications'));
+        return view($view, compact('notifications', 'filters', 'typeOptions', 'projectOptions', 'readCount'));
     }
 
     public function recent()
     {
-        $notifications = Auth::user()
+        $user = Auth::user();
+        $notifications = $user
             ->unreadNotifications()
             ->latest()
             ->take(5)
@@ -42,8 +88,8 @@ class NotificationController extends Controller
 
         return response()->json([
             'success'       => true,
-            'unread_count'  => Auth::user()->unreadNotifications()->count(),
-            'notifications' => $notifications->map(fn ($n) => $this->format($n)),
+            'unread_count'  => $user->unreadNotifications()->count(),
+            'notifications' => $notifications->map(fn ($n) => $this->format($n, $user->role)),
         ]);
     }
 
@@ -73,55 +119,42 @@ class NotificationController extends Controller
     }
 
     /**
-     * Shape a notification for JSON (dropdown + inline AJAX).
+     * Hide every read notification of the current user from the inbox. Unread
+     * ones are never touched. Rows are kept (cleared_at) so NotificationService's
+     * dedupe still sees them and daily scans do not re-send them.
      */
-    private function format(DatabaseNotification $n): array
+    public function clearRead()
     {
-        $data = $n->data;
+        $cleared = Auth::user()->notifications()
+            ->whereNotNull('read_at')
+            ->whereNull('cleared_at')
+            ->update(['cleared_at' => now()]);
+
+        return response()->json([
+            'success' => true,
+            'cleared' => $cleared,
+            'message' => $cleared . ' read ' . ($cleared === 1 ? 'notification' : 'notifications') . ' cleared',
+        ]);
+    }
+
+    /**
+     * Shape a notification for JSON (bell polling + inline AJAX).
+     */
+    private function format(DatabaseNotification $n, string $role): array
+    {
+        $p = $this->presenter->present($n, $role);
 
         return [
-            'id'        => $n->id,
-            'type'      => $this->humanType($n->type),
-            'title'     => $this->title($n->type, $data),
-            'meta'      => $data['project_title'] ?? '',
-            'read'      => $n->read_at !== null,
-            'created'   => $n->created_at?->diffForHumans(),
-            'created_at' => $n->created_at?->format('M d, Y h:i A'),
+            'id'         => $p['id'],
+            'type'       => $p['type'],
+            'title'      => $p['title'],
+            'label'      => $p['label'],
+            'meta'       => $p['meta'],
+            'url'        => $p['url'],
+            'read_url'   => route($role . '.notifications.read', $n->id),
+            'read'       => $p['read'],
+            'created'    => $p['created'],
+            'created_at' => $p['created_at'],
         ];
-    }
-
-    private function humanType(string $class): string
-    {
-        return match ($class) {
-            \App\Notifications\DeadlineReminder::class            => 'Deadline Reminder',
-            \App\Notifications\PlannedInspectionReminder::class   => 'Inspection Scheduled',
-            \App\Notifications\MonthEndInspectionReminder::class  => 'Month-End Inspection',
-            \App\Notifications\OverdueInspectionReminder::class   => 'Overdue Inspection',
-            \App\Notifications\ExtensionStatusChanged::class      => 'Extension Update',
-            \App\Notifications\IssueReported::class               => 'Issue Reported',
-            \App\Notifications\RiskReported::class                => 'Risk Reported',
-            \App\Notifications\RiskLevelChanged::class            => 'Risk Level Changed',
-            default => 'Notification',
-        };
-    }
-
-    private function title(string $class, array $data): string
-    {
-        $project = $data['project_title'] ?? '';
-        $month = $data['month_display'] ?? $data['month_label'] ?? '';
-
-        return match ($class) {
-            \App\Notifications\DeadlineReminder::class => $data['bucket'] === 'overdue'
-                    ? ($project ? "Project {$project} is overdue" : 'Project is overdue')
-                    : "Project deadline in {$data['days_remaining']} days",
-            \App\Notifications\PlannedInspectionReminder::class => 'Inspection scheduled today for ' . $month,
-            \App\Notifications\MonthEndInspectionReminder::class => 'Month ending soon — inspect ' . $month,
-            \App\Notifications\OverdueInspectionReminder::class => 'Inspection overdue for ' . $month,
-            \App\Notifications\ExtensionStatusChanged::class => 'Extension ' . ($data['status'] ?? '') . ($data['extension_number'] ? " #{$data['extension_number']}" : ''),
-            \App\Notifications\IssueReported::class => 'Issue reported' . ($data['severity'] ? " ({$data['severity']})" : ''),
-            \App\Notifications\RiskReported::class => 'High risk: ' . ($data['risk_name'] ?? ''),
-            \App\Notifications\RiskLevelChanged::class => 'Risk level changed: ' . ($data['previous_level'] ?? '') . ' → ' . ($data['current_level'] ?? ''),
-            default => 'Notification',
-        };
     }
 }

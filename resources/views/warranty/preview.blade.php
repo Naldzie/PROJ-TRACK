@@ -249,6 +249,25 @@
 
         .cell-empty { color: var(--border-light); text-align: center; }
 
+        /* Warranty due / expiring indicator (WarrantyMonitor) */
+        .watch-pill {
+            display: block;
+            width: fit-content;
+            margin: 4px auto 0;
+            padding: 1px 8px;
+            border-radius: 999px;
+            font-size: 10.5px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .watch-pill.expired  { background: #fee2e2; color: #b91c1c; }
+        .watch-pill.expiring,
+        .watch-pill.due      { background: #fef3c7; color: #b45309; }
+        .watch-pill.passed   { background: #f1f5f9; color: #64748b; font-weight: 600; }
+        @media print {
+            .watch-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+
         .empty-state {
             padding: 60px 24px;
             text-align: center;
@@ -289,7 +308,10 @@
     </div>
 
     @php
-        $rows = $warranties->map(function ($w) {
+        // Due / expiring indicators (restudy F-8 / P-7, 2026-09-21): the SAME rules
+        // as the daily WarrantyReminder, from App\Services\WarrantyMonitor
+        $warrantyMonitor = app(\App\Services\WarrantyMonitor::class);
+        $rows = $warranties->map(function ($w) use ($warrantyMonitor) {
             $contractorName = $w->contractor ? $w->contractor->company_name : 'N/A';
             $completionDate = $w->completion_date ? \Carbon\Carbon::parse($w->completion_date) : null;
             $warrantyEnd = $w->end_date ? \Carbon\Carbon::parse($w->end_date) : null;
@@ -307,6 +329,7 @@
                 'mid_year' => $w->mid_year_inspection ? \Carbon\Carbon::parse($w->mid_year_inspection)->format('F j, Y') : null,
                 'final' => $w->final_inspection ? \Carbon\Carbon::parse($w->final_inspection)->format('F j, Y') : null,
                 'remarks' => $w->remarks,
+                'watch' => $warrantyMonitor->statusFor($w),
             ];
         });
 
@@ -368,10 +391,14 @@
                             <td class="contractor-cell">{{ $r['budget'] }}</td>
                             <td class="contractor-cell">{{ $r['location'] }}</td>
                             <td class="date-cell">{{ $r['completion_date'] ?? '—' }}</td>
-                            <td class="period-cell">{{ $r['warranty_period'] ?? '—' }}</td>
+                            <td class="period-cell">
+                                {{ $r['warranty_period'] ?? '—' }}
+                                @include('warranty.partials.watch_pill', ['check' => $r['watch']['expiry']])
+                            </td>
                             <td class="insp-cell">
                                 @if($r['mid_year'])
                                     {{ $r['mid_year'] }}
+                                    @include('warranty.partials.watch_pill', ['check' => $r['watch']['mid_year']])
                                 @else
                                     <span class="cell-empty">—</span>
                                 @endif
@@ -379,6 +406,7 @@
                             <td class="insp-cell">
                                 @if($r['final'])
                                     {{ $r['final'] }}
+                                    @include('warranty.partials.watch_pill', ['check' => $r['watch']['final']])
                                 @else
                                     <span class="cell-empty">—</span>
                                 @endif

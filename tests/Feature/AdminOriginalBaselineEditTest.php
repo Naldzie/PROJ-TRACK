@@ -239,6 +239,31 @@ class AdminOriginalBaselineEditTest extends TestCase
         ]);
     }
 
+    /**
+     * A saved revision notifies the other admins + the assigned staff in-app
+     * (never the editor); a no-change save notifies nobody (restudy F-11, 2026-09-21).
+     */
+    public function test_revising_the_original_baseline_sends_an_in_app_notice(): void
+    {
+        $otherAdmin = User::create(['name' => 'Other Admin', 'email' => fake()->unique()->safeEmail(), 'role' => 'admin', 'is_active' => true]);
+        $project = $this->projectBetween('2026-01-15', '2026-06-15');
+        $project->update(['assigned_project_manager' => (string) $this->staff->id]);
+        $m1 = $this->originalRow($project, '2026-01', '2026-01-15', 40);
+        $m2 = $this->originalRow($project, '2026-02', '2026-02-15', 100);
+
+        // Nothing changed → no notice
+        $this->saveOriginal($project, ['months' => [$this->monthPayload($m1, 40), $this->monthPayload($m2, 100)]])->assertOk();
+        $this->assertSame(0, $this->staff->notifications()->count());
+
+        $this->saveOriginal($project, ['months' => [$this->monthPayload($m1, 30), $this->monthPayload($m2, 100)]])->assertOk();
+
+        $type = \App\Notifications\ProjectUpdateNotice::class;
+        $this->assertSame(1, $this->staff->notifications()->where('type', $type)->count());
+        $this->assertSame(1, $otherAdmin->notifications()->where('type', $type)->count());
+        $this->assertSame(0, $this->admin->notifications()->count(), 'the editor is not told');
+        $this->assertSame(\App\Notifications\ProjectUpdateNotice::BASELINE_REVISED, $this->staff->notifications()->first()->data['kind']);
+    }
+
     public function test_admin_can_add_new_original_month_with_activities(): void
     {
         $project = $this->projectBetween('2026-01-15', '2026-06-15');

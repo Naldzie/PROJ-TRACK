@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -13,9 +15,10 @@ use Illuminate\Notifications\Notification;
  * Dedupe key includes status, so a staff resubmission (back to pending) and
  * a later approve/reject are distinct events, each firing exactly once.
  */
-class ExtensionStatusChanged extends Notification
+class ExtensionStatusChanged extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public const SUBMITTED = 'submitted';
     public const APPROVED  = 'approved';

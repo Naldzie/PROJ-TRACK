@@ -106,7 +106,7 @@ class AIReportSendingService
             ->where('status', EmailTracking::STATUS_PENDING_REVIEW)
             ->delete();
 
-        EmailTracking::create([
+        $staged = EmailTracking::create([
             'contractor_id'   => $contractor->id,
             'project_id'      => $project->id,
             'ai_solution_id'  => $aiSolution->id,
@@ -118,6 +118,8 @@ class AIReportSendingService
             'sent_at'         => null,
         ]);
 
+        $this->notifyReviewWindowOpened($project, $staged);
+
         return [
             'success' => true,
             'project' => $project->code,
@@ -125,6 +127,35 @@ class AIReportSendingService
                 ? 'Staged for 5-day review (replaced older staged draft)'
                 : 'Staged for 5-day review',
         ];
+    }
+
+    /**
+     * Tell admins + the assigned staff that a contractor report is waiting in
+     * Email → In review (in-app only; restudy F-11, 2026-09-21). Before, staff had
+     * to remember to look, and an unreviewed draft simply went out on day 5.
+     * A failure here never blocks staging.
+     */
+    private function notifyReviewWindowOpened(Project $project, EmailTracking $staged): void
+    {
+        try {
+            $service = app(NotificationService::class);
+            $service->notifyMany(
+                $service->internalRecipientsFor($project),
+                new \App\Notifications\ProjectUpdateNotice(
+                    $project->id,
+                    $project->title,
+                    \App\Notifications\ProjectUpdateNotice::AI_REPORT_REVIEW,
+                    'AI report ready for review',
+                    (string) $staged->id,
+                    'Sends to the contractor on ' . $staged->review_until->format('M d, Y') . ' unless edited first (Email → In review).'
+                )
+            );
+        } catch (\Throwable $e) {
+            Log::warning('AI report review notice failed', [
+                'project_id' => $project->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

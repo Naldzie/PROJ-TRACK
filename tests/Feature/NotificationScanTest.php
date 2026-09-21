@@ -241,7 +241,12 @@ class NotificationScanTest extends TestCase
         $this->assertSame(1, $this->admin->notifications()->count());
     }
 
-    public function test_overdue_inspection_alert_fires_for_each_overdue_month(): void
+    /**
+     * Several uninspected months → ONE notice per person listing all of them
+     * (restudy P-1, 2026-09-21; was one notice per month per person — a project
+     * with 11 such months sent 33 notices + 33 emails in one run).
+     */
+    public function test_overdue_inspection_alert_is_one_notice_listing_every_overdue_month(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00'));
 
@@ -256,18 +261,49 @@ class NotificationScanTest extends TestCase
 
         $this->runScan();
 
-        $this->assertSame(3, $this->admin->notifications()->count());
-        $this->assertSame(3, $this->staff->notifications()->count());
+        $this->assertSame(1, $this->admin->notifications()->count());
+        $this->assertSame(1, $this->staff->notifications()->count());
         $this->assertSame(0, $this->contractorUser->notifications()->count());
 
-        $rows = $this->admin->notifications()->get()->sortBy(fn ($n) => $n->data['month_label'])->values();
+        $row = $this->admin->notifications()->first();
+        $this->assertSame('overdue_inspection', $this->typeOf($row->type));
+        // Identified by the LATEST overdue month…
+        $this->assertSame('2026-07', $row->data['month_label']);
+        $this->assertSame('July-2026', $row->data['month_display']);
+        $this->assertSame('2026-07-31', $row->data['planned_date']);
+        // …and lists all of them, oldest first
+        $this->assertSame(3, $row->data['month_count']);
+        $this->assertSame(['2026-05', '2026-06', '2026-07'], array_column($row->data['months'], 'label'));
+        $this->assertSame(['May-2026', 'June-2026', 'July-2026'], array_column($row->data['months'], 'display'));
+    }
 
-        $this->assertSame('overdue_inspection', $this->typeOf($rows[0]->type));
-        $this->assertSame('2026-05', $rows[0]->data['month_label']);
-        $this->assertSame('May-2026', $rows[0]->data['month_display']);
-        $this->assertSame('2026-05-31', $rows[0]->data['planned_date']);
-        $this->assertSame('June-2026', $rows[1]->data['month_display']);
-        $this->assertSame('July-2026', $rows[2]->data['month_display']);
+    /**
+     * A later scan with the SAME overdue months sends nothing; one more overdue
+     * month re-alerts once with the full list.
+     */
+    public function test_overdue_inspection_realerts_only_when_another_month_becomes_overdue(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-10 08:00:00'));
+
+        $project = $this->projectForInspection();
+        foreach (['2026-06' => '2026-06-30', '2026-07' => '2026-07-31', '2026-08' => '2026-08-31'] as $label => $planned) {
+            ProjectBaselineSchedule::factory()->create([
+                'project_id'   => $project->id,
+                'month_label'  => $label,
+                'planned_date' => $planned,
+            ]);
+        }
+
+        $this->runScan();
+        $this->runScan();
+        $this->assertSame(1, $this->admin->notifications()->count(), 'Same months → no repeat');
+
+        Carbon::setTestNow(Carbon::parse('2026-09-05 08:00:00')); // August now overdue too
+        $this->runScan();
+
+        $this->assertSame(2, $this->admin->notifications()->count());
+        $latest = $this->admin->notifications()->latest()->first();
+        $this->assertSame(['2026-06', '2026-07', '2026-08'], array_column($latest->data['months'], 'label'));
     }
 
     public function test_completed_project_gets_no_inspection_alert(): void
