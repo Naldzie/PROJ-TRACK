@@ -404,3 +404,69 @@
       card + green Recommendations card (purple AI badges); email draft and Project
       Summary PDF show no JSON / no marker; laravel.log shows ONE "AI analysis: Gemini
       call" line per Regenerate.
+  2026-09-21 — STEP 5, USER RUN on project 142 (PRJ-2026-00037). Compared ai_solutions
+    #33 (2026-09-14, old code), #34 (2026-09-21 16:00, old code, same data) and #35
+    (16:30:49, new code), plus the Project Summary PDF generated from #35.
+    · LOG ✅: exactly ONE "AI analysis: Gemini call" for the Regenerate (200, 6 782 ms,
+      prompt 5 839, answer 6 539 chars) + "recommendations resolved": asked, block found,
+      4 AI recs, source ai. (The 16:20:39 project-7 line is the measurement script — it
+      calls callGemini only, so it has no "resolved" line.)
+    · PDF ✅ for this change: no JSON and no [RECOMMENDATIONS_JSON] marker anywhere; the
+      AI RECOMMENDATIONS table shows the 4 recs from #35.
+    · CONSISTENCY ✅ (the point of the merge): #34 shows the old contradiction — its
+      analysis calls the project "stable … low overall risk", while the separate recs call
+      open with "Immediately intervene … chronic schedule slippage" at PRIORITY 1. In #35
+      each rec corresponds to a Mitigation bullet (material log → rec 1; contractor
+      supervision → rec 2; bi-weekly reviews to close the 2% gap → rec 3; near-term
+      forecast → rec 4), and the analysis itself now names the contractor record.
+    · F-1 VISIBLE ✅: #33/#34 never quote a reliability score (#34 even calls confidence
+      "high across the individual methodologies"); #35 cites 75/100, 84/100, 85/100 and
+      method agreement 60/100.
+    · BONUS: #33/#34 quoted the gibberish issue name "asadsadsasdsadadasds1123" in Risk
+      AND Mitigation; #35 does not — the appended gibberish-text rule carried over to the
+      analysis half.
+    · ⚠ SIDE EFFECT CONFIRMED (question open for the user): #35's contractor-facing
+      analysis cites the contractor's 1.00/5 rating, 20.00% on-time rate and 7.20-day
+      average delay (Report, Possible Risk, Mitigation, Performance) and the class
+      standing ("above the 75th percentile of similar projects").
+    · Minor: #35's Report paragraph 2 recites the reliability factor scores (horizon
+      100/100, history 84/100) — more technical for a contractor audience; a consequence
+      of F-1 (the data now arrives), not of the merge.
+    · PRE-EXISTING, NOT FROM THIS CHANGE (found while reading the PDF):
+      (a) the PDF's AI ANALYSIS box prints the raw [SECTION:…] / [/SECTION] markers —
+          reports/project-summary.blade.php prints analysis_text with nl2br (§2.3).
+      (b) every project-summary PDF since 2026-08-05 starts with a UTF-8 BOM (EF BB BF)
+          before %PDF-, so strict readers reject it (browsers tolerate it). Source:
+          bootstrap/app.php is saved WITH a BOM, so every response body gets those 3
+          bytes. Also BOM-saved: resources/views/auth/login.blade.php,
+          projects/project_detail/components/modals/issues_modal.blade.php.
+      Neither fixed — both need an order.
+    · Still to confirm by the user: the email draft (review window) shows no JSON.
+  2026-09-21 — USER: email draft ✅ CONFIRMED (no JSON). PDF items (a) + (b) above are
+    PARKED by the user for a later PDF improvement pass ("include this fix later") — do
+    them together with that work. User order: "make the ai analysis not technical".
+  2026-09-21 — PLAIN-LANGUAGE STYLE BLOCK ✅ BUILT.
+    · AIExplanationService::buildPlainLanguageAppendix(), appended right AFTER the
+      original closing paragraph, in BOTH modes (with or without the recommendations
+      appendix, so young/completed projects and the monthly job get it too), and BEFORE
+      the recommendations appendix. The original analysis prompt text is still untouched.
+    · Content: plain language for a contractor/site engineer; USE the technical inputs
+      (reliability + factor scores, R², method/equation, method agreement, horizon,
+      accuracy %, class standing) to decide what to say, but do NOT quote scores,
+      percentiles or terms; example translations given; keep concrete facts (progress %,
+      dates, days, issue names/counts, extension days). Scope: the 5 sections only — the
+      recommendation JSON/rules are unchanged.
+    · Live, project 142, no DB write (3 calls, 5.2-5.4 s each):
+      run 1 (without the percentile example) — no /100 scores, no factor names, but
+      "ranks above the 75th percentile" twice (the class-standing label is a percentile).
+      Added the example "progress is ahead of most similar projects (never write the word
+      percentile or a percentile number)". Runs 2 + 3 — none of percentile, /100, R²,
+      polynomial, regression, method agreement, horizon, reliability score, equation in
+      the sections. Reliability now reads e.g. "past forecasts have generally been close
+      to what was actually achieved"; the finish-date spread as "disagree by about three
+      months".
+    · Contractor stats (1.00/5, 20% on-time, 7.2-day delay) still appear in plain words in
+      the analysis — that question (§ side effect above) is still OPEN with the user.
+    · Test: test_plain_language_block_is_appended_in_both_modes (closing paragraph
+      immediately followed by the block, both modes; block before RECS_OPEN). Mutation:
+      block removed → 1 red. PHP suite 1280 passed / 0 failed.

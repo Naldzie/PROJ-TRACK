@@ -339,11 +339,47 @@ OUTPUT FORMAT — Use exactly these 5 section markers (wrap each section title i
 
 Do NOT mention that you are an AI or that this is an AI-generated analysis. Write as a human project analyst reporting to the contractor. Avoid management jargon - write directly for the contractor who is executing the work.";
 
+        // Plain-language guidance, appended after the unchanged prompt in
+        // BOTH modes (user, 2026-09-21: once the reliability scores reached
+        // the prompt, the analysis started reciting them — "too technical").
+        $prompt .= $this->buildPlainLanguageAppendix();
+
         if (!$withRecommendations) {
             return $prompt;
         }
 
         return $prompt . $this->buildRecommendationsAppendix($project, $prediction);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Plain-Language Appendix
+     * ------------------------------------------------------------------------
+     *
+     * Tells the model to USE the technical inputs (reliability scores, fit
+     * quality, method agreement…) to decide what to say and how confident to
+     * sound, but to write the 5 sections in words a contractor or site
+     * engineer reads without a statistics background. Concrete project facts
+     * (progress %, dates, days, issue names) stay.
+     *
+     * Scope: the 5 analysis sections only — the recommendations appendix
+     * and the standalone recommendation prompt are unchanged.
+     *
+     * Appended AFTER the original prompt so the original text stays
+     * verbatim (a test pins the closing paragraph followed by this block).
+     *
+     * Called by: buildPrompt()
+     */
+    private function buildPlainLanguageAppendix(): string
+    {
+        return "
+
+WRITING STYLE FOR THE 5 SECTIONS — keep them non-technical:
+- Write in plain language that a contractor or site engineer understands without any statistics background.
+- Use the technical data above (forecast reliability and its factor scores, curve fit / R², regression method and equation, method agreement, forecast horizon, prediction-accuracy percentages, class standing) only to decide what to say and how confident to sound. Do NOT quote those scores, percentiles or terms in the text.
+- Say what they mean in everyday words instead, for example: \"the forecast for next month is fairly dependable\", \"the finish-date estimates disagree by about three months, so the end date is still uncertain\", \"past forecasts have usually been close to what was actually achieved\", \"progress is ahead of most similar projects\" (never write the word percentile or a percentile number).
+- Keep the concrete project facts: progress percentages (actual, planned, next month's expected), dates, days remaining, issue names and counts, extension days.
+- Prefer short sentences and bullet points over long statistical explanations.";
     }
 
     /**

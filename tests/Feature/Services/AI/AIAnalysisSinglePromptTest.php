@@ -220,6 +220,41 @@ class AIAnalysisSinglePromptTest extends TestCase
 
     /**
      * ------------------------------------------------------------------------
+     * Plain-language style block follows the unchanged closing paragraph,
+     * in BOTH modes, and comes before the recommendations appendix
+     * ------------------------------------------------------------------------
+     *
+     * User, 2026-09-21: the analysis became "too technical" once the
+     * reliability scores reached the prompt. The fix is appended, never
+     * edited into the original text.
+     */
+    public function test_plain_language_block_is_appended_in_both_modes(): void
+    {
+        $project = $this->createProjectWithHistory(8);
+        $prediction = app(AIPredictionService::class)->generatePrediction($project);
+
+        $closing = 'write directly for the contractor who is executing the work.';
+        $style = "\n\nWRITING STYLE FOR THE 5 SECTIONS — keep them non-technical:";
+
+        foreach ([false, true] as $withRecs) {
+            $prompt = $this->callPrivate('buildPrompt', $project, $prediction, $withRecs);
+
+            // The original closing paragraph, then immediately the style block
+            $this->assertStringContainsString($closing . $style, $prompt);
+            $this->assertStringContainsString('Do NOT quote those scores, percentiles or terms in the text.', $prompt);
+            $this->assertStringContainsString('Keep the concrete project facts', $prompt);
+        }
+
+        // Style block sits before the recommendations appendix
+        $combined = $this->callPrivate('buildPrompt', $project, $prediction, true);
+        $this->assertLessThan(
+            strpos($combined, AIExplanationService::RECS_OPEN),
+            strpos($combined, 'WRITING STYLE FOR THE 5 SECTIONS')
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * The appendix carries the recommendation data, format, rules and the
      * consistency rule
      * ------------------------------------------------------------------------
