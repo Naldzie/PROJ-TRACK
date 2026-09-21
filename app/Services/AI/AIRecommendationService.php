@@ -94,6 +94,50 @@ class AIRecommendationService
     ];
 
     /**
+     * ------------------------------------------------------------------------
+     * Recommendation JSON Shape
+     * ------------------------------------------------------------------------
+     *
+     * The example object the model is asked to return. Shared by this
+     * service's standalone prompt and the combined analysis prompt
+     * (AIExplanationService), so parseRecommendations() reads the same shape
+     * from either.
+     */
+    public const RECOMMENDATION_JSON_SHAPE = <<<'TEXT'
+[
+  {
+    "message": "Actionable suggestion (1-2 sentences, specific to this project)",
+    "category": "escalation|corrective|monitoring|administrative",
+    "reason": "Why this applies — reference specific data points",
+    "priority": 1
+  }
+]
+TEXT;
+
+    /**
+     * ------------------------------------------------------------------------
+     * Recommendation Rules
+     * ------------------------------------------------------------------------
+     *
+     * The recommendation RULES list, shared by both prompts. Each prompt adds
+     * its own closing rule(s) about where the JSON goes: the standalone one
+     * "Return ONLY the JSON array", the combined one "between the markers".
+     */
+    public const RECOMMENDATION_RULES = <<<'TEXT'
+- Generate 3-6 recommendations (quality over quantity)
+- Priority 1 = urgent (Critical risk, imminent deadline miss)
+- Priority 2 = important (High risk, performance concerns)
+- Priority 3 = notable (Moderate risk, pattern detection)
+- Priority 4 = informational (Low risk, best practices)
+- Priority 5 = routine (admin, data quality)
+- Each recommendation MUST be unique — no duplicates
+- Each recommendation MUST reference specific project data
+- Use FORECAST RELIABILITY (not R²) to assess how much to trust predictions
+- If any text field appears to be gibberish or placeholder text (random characters, no meaningful words), ignore it entirely and do not base recommendations on it
+- Do NOT mention AI or that this is AI-generated
+TEXT;
+
+    /**
      * Text quality filter — detects gibberish/placeholder text so the
      * AI prompt only receives meaningful data.
      *
@@ -145,6 +189,31 @@ class AIRecommendationService
             return [];
         }
 
+        return $this->parseRecommendations($raw);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Parse Recommendations
+     * ------------------------------------------------------------------------
+     *
+     * Turns a raw model answer (a JSON array, optionally code-fenced) into the
+     * validated recommendation list: invalid entries dropped, priority clamped
+     * to 1-5, category lower-cased, tagged ai_generated, sorted by priority,
+     * capped. Returns [] when nothing valid remains.
+     *
+     * Used By
+     * -------
+     * generate() — the standalone recommendation prompt
+     * AIExplanationService::generate() — the recommendations block cut out of
+     *   the combined analysis answer (merge plan step 3)
+     *
+     * Calls
+     * -----
+     * parseResponse(), validateRecommendation()
+     */
+    public function parseRecommendations(string $raw): array
+    {
         $recs = $this->parseResponse($raw);
 
         if (empty($recs)) {
@@ -220,6 +289,130 @@ class AIRecommendationService
         $lastAssessment = !empty($assessment) ? end($assessment) : null;
         $riskLevel = $lastAssessment['risk_level'] ?? 'Unknown';
         $trend = $this->determineTrend($assessment);
+
+        // Project context shared with the combined analysis prompt
+        $context = $this->contextParts($project, $prediction);
+        $expectedProgress = $context['expected_progress'];
+        $progressGap = $context['progress_gap'];
+        $daysRemaining = $context['days_remaining'];
+        $categoryName = $context['category'];
+        $contractorText = $context['contractor'];
+        $issuesText = $context['issues'];
+        $extensionsText = $context['extensions'];
+        $progressRemarksText = $context['progress_remarks'];
+        $classText = $context['class_standing'];
+        $carryoverText = $context['carryovers'];
+
+        // Reliability score — the actual trust indicator for predictions
+        $reliability = $prediction['reliability'] ?? null;
+        $reliabilityText = $this->buildReliabilityText($reliability);
+
+        // Output format + rules, shared with the combined analysis prompt
+        $jsonShape = self::RECOMMENDATION_JSON_SHAPE;
+        $rules = self::RECOMMENDATION_RULES;
+
+        return "You are a construction project management analyst. Given the following project data, generate 3-6 prioritized, actionable recommendations.
+
+Each recommendation MUST reference specific data from the project. Do NOT generate generic advice.
+
+IMPORTANT: Do NOT use R-squared (R²) as evidence that predictions are accurate. R² only measures how well the curve fits PAST data points — it says nothing about whether future predictions will be correct. A curve can fit past data almost perfectly (R² = 0.999) yet predict the wrong direction entirely. Use the FORECAST RELIABILITY score instead — it is the honest trust indicator based on backtesting, data sufficiency, forecast horizon, and method agreement.
+
+PROJECT CONTEXT:
+- Title: {$project->title}
+- Status: {$project->status}
+- Current Progress: {$currentProgress}%
+- Expected Progress: {$expectedProgress}% (gap: {$progressGap}%)
+- Days Remaining: {$daysRemaining}
+- Category: {$categoryName}
+
+REGRESSION MODEL:
+- Curve Fit Quality (matches past data only): R² = {$rSquared} ({$fitQuality})
+- Based on {$obsCount} monthly progress observations
+{$reliabilityText}
+
+RISK ASSESSMENT:
+- Risk Level: {$riskLevel}
+- Trend: {$trend}
+
+CONTRACTOR PERFORMANCE:
+- {$contractorText}
+
+{$issuesText}
+
+{$extensionsText}
+
+{$progressRemarksText}
+
+CROSS-PROJECT CONTEXT:
+- Class Standing: {$classText}
+- Carryovers: {$carryoverText}
+
+OUTPUT FORMAT — Return ONLY a valid JSON array (no markdown, no explanation):
+{$jsonShape}
+
+RULES:
+{$rules}
+- Return ONLY the JSON array, no other text";
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Recommendation Context (for the combined analysis prompt)
+     * ------------------------------------------------------------------------
+     *
+     * The data blocks only the recommendation prompt carries — expected
+     * progress + gap, days remaining, category, contractor performance, the
+     * open-issue breakdown, approved extensions, the latest inspections, class
+     * standing and carryovers. AIExplanationService appends this to the
+     * analysis prompt so ONE Gemini call can write both the analysis and the
+     * recommendations (merge plan step 3, finding F-3). Built from the same
+     * contextParts() as this service's own prompt, so the two never drift.
+     *
+     * Used By
+     * -------
+     * AIExplanationService::buildPrompt()
+     */
+    public function buildRecommendationContext(Project $project, array $prediction): string
+    {
+        $c = $this->contextParts($project, $prediction);
+
+        return "ADDITIONAL PROJECT CONTEXT (for the recommendations):
+- Expected Progress: {$c['expected_progress']}% (gap: {$c['progress_gap']}%)
+- Days Remaining: {$c['days_remaining']}
+- Category: {$c['category']}
+
+CONTRACTOR PERFORMANCE:
+- {$c['contractor']}
+
+{$c['issues']}
+
+{$c['extensions']}
+
+{$c['progress_remarks']}
+
+CROSS-PROJECT CONTEXT:
+- Class Standing: {$c['class_standing']}
+- Carryovers: {$c['carryovers']}";
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Context Parts
+     * ------------------------------------------------------------------------
+     *
+     * Computes the project-specific text pieces used by buildPrompt() and
+     * buildRecommendationContext(): expected progress + gap, days remaining,
+     * category, contractor performance, issues, extensions, inspection
+     * remarks, class standing and carryovers.
+     *
+     * Calls
+     * -----
+     * calculateExpectedProgress(), calculateDaysRemaining(),
+     * buildIssuesSection(), buildExtensionsSection(), buildProgressRemarksText()
+     */
+    private function contextParts(Project $project, array $prediction): array
+    {
+        $currentProgress = ($prediction['current_state'] ?? [])['progress'] ?? 0;
 
         // Progress gap
         $expectedProgress = $this->calculateExpectedProgress($project);
@@ -300,69 +493,18 @@ class AIRecommendationService
             }
         }
 
-        // Reliability score — the actual trust indicator for predictions
-        $reliability = $prediction['reliability'] ?? null;
-        $reliabilityText = $this->buildReliabilityText($reliability);
-
-        return "You are a construction project management analyst. Given the following project data, generate 3-6 prioritized, actionable recommendations.
-
-Each recommendation MUST reference specific data from the project. Do NOT generate generic advice.
-
-IMPORTANT: Do NOT use R-squared (R²) as evidence that predictions are accurate. R² only measures how well the curve fits PAST data points — it says nothing about whether future predictions will be correct. A curve can fit past data almost perfectly (R² = 0.999) yet predict the wrong direction entirely. Use the FORECAST RELIABILITY score instead — it is the honest trust indicator based on backtesting, data sufficiency, forecast horizon, and method agreement.
-
-PROJECT CONTEXT:
-- Title: {$project->title}
-- Status: {$project->status}
-- Current Progress: {$currentProgress}%
-- Expected Progress: {$expectedProgress}% (gap: {$progressGap}%)
-- Days Remaining: {$daysRemaining}
-- Category: {$categoryName}
-
-REGRESSION MODEL:
-- Curve Fit Quality (matches past data only): R² = {$rSquared} ({$fitQuality})
-- Based on {$obsCount} monthly progress observations
-{$reliabilityText}
-
-RISK ASSESSMENT:
-- Risk Level: {$riskLevel}
-- Trend: {$trend}
-
-CONTRACTOR PERFORMANCE:
-- {$contractorText}
-
-{$issuesText}
-
-{$extensionsText}
-
-{$progressRemarksText}
-
-CROSS-PROJECT CONTEXT:
-- Class Standing: {$classText}
-- Carryovers: {$carryoverText}
-
-OUTPUT FORMAT — Return ONLY a valid JSON array (no markdown, no explanation):
-[
-  {
-    \"message\": \"Actionable suggestion (1-2 sentences, specific to this project)\",
-    \"category\": \"escalation|corrective|monitoring|administrative\",
-    \"reason\": \"Why this applies — reference specific data points\",
-    \"priority\": 1
-  }
-]
-
-RULES:
-- Generate 3-6 recommendations (quality over quantity)
-- Priority 1 = urgent (Critical risk, imminent deadline miss)
-- Priority 2 = important (High risk, performance concerns)
-- Priority 3 = notable (Moderate risk, pattern detection)
-- Priority 4 = informational (Low risk, best practices)
-- Priority 5 = routine (admin, data quality)
-- Each recommendation MUST be unique — no duplicates
-- Each recommendation MUST reference specific project data
-- Use FORECAST RELIABILITY (not R²) to assess how much to trust predictions
-- If any text field appears to be gibberish or placeholder text (random characters, no meaningful words), ignore it entirely and do not base recommendations on it
-- Do NOT mention AI or that this is AI-generated
-- Return ONLY the JSON array, no other text";
+        return [
+            'expected_progress' => $expectedProgress,
+            'progress_gap'      => $progressGap,
+            'days_remaining'    => $daysRemaining,
+            'category'          => $categoryName,
+            'contractor'        => $contractorText,
+            'issues'            => $issuesText,
+            'extensions'        => $extensionsText,
+            'progress_remarks'  => $progressRemarksText,
+            'class_standing'    => $classText,
+            'carryovers'        => $carryoverText,
+        ];
     }
 
     /**
@@ -571,8 +713,9 @@ RULES:
      * Renders the forecast-reliability block into a prompt-friendly summary.
      * This is the actual trust indicator for predictions — NOT R².
      *
-     * Format matches AIExplanationService::buildReliabilityText() for
-     * consistency across AI prompts.
+     * Delegates to ReliabilityPromptText, the one renderer shared with the
+     * analysis prompt (AIExplanationService). This prompt keeps its own,
+     * more emphatic heading.
      *
      * Used By
      * -------
@@ -580,53 +723,10 @@ RULES:
      */
     private function buildReliabilityText(?array $reliability): string
     {
-        if (empty($reliability)) {
-            return "\nFORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate";
-        }
-
-        $lines = ['FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):'];
-
-        if (isset($reliability['next_prediction'])) {
-            $next = $reliability['next_prediction'];
-            $lines[] = sprintf(
-                '- Next-month forecast: %s (%d/100)',
-                $next['level'],
-                $next['score']
-            );
-        }
-
-        if (isset($reliability['completion']) && $reliability['completion'] !== null) {
-            $comp = $reliability['completion'];
-            $lines[] = sprintf(
-                '- Completion estimate: %s (%d/100)',
-                $comp['level'],
-                $comp['score']
-            );
-        }
-
-        $factorTitles = [
-            'backtest'  => 'Prediction history',
-            'data'      => 'Data',
-            'horizon'   => 'Forecast horizon',
-            'agreement' => 'Method agreement',
-        ];
-
-        $source = $reliability['next_prediction'] ?? $reliability['completion'] ?? [];
-
-        foreach ($factorTitles as $key => $title) {
-            $factor = $source['factors'][$key] ?? null;
-            if (!$factor) {
-                continue;
-            }
-            $lines[] = sprintf(
-                '- %s: %d/100 — %s',
-                $title,
-                $factor['score'],
-                $factor['detail']
-            );
-        }
-
-        return "\n" . implode("\n", $lines);
+        return ReliabilityPromptText::render(
+            $reliability,
+            'FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):'
+        );
     }
 
     /**

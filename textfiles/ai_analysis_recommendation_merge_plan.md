@@ -1,13 +1,13 @@
-# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (PLAN, NOT BUILT)
+# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (STEPS 1-4 BUILT; BROWSER CHECK OWED)
 # Parent refs: textfiles/ai_recommendation_plan.md (Phase 10 — why the recommendation
 #                prompt was added as a SEPARATE Gemini call; its Decision Log 1-10)
 #              textfiles/active_reference/AI_MODULE_HANDOVER.md (the AI module map)
 #              textfiles/pilot_testing_readiness_plan.md (the active pilot queue)
 # Date: September 21, 2026
-# Status: ⬜ PLANNED, DECISIONS MADE, NOTHING BUILT. The user answered D1-D5 on
-#         2026-09-21 (§6 — all five as recommended) and asked for the docs to be made
-#         handoff-ready BEFORE any build. The build needs its own "go" (Rule 10).
-#         START AT §0 BELOW IF THE SESSION IS COLD.
+# Status: 🔄 STEPS 1-4 BUILT + TESTED (2026-09-21) on phase-37-ai-analysis-recs-single-prompt;
+#         step 5 (browser check) owed by the user, then the merge question. §8 has the
+#         build log. (Was: planned, D1-D5 answered — all five as recommended.)
+#         START AT §0 BELOW IF THE SESSION IS COLD, then read the LAST §8 entries.
 # Branch on build: phase-37-ai-analysis-recs-single-prompt (Rule 12) — cut from the
 #         branch the user names (see §0 "WHERE TO BRANCH FROM").
 
@@ -66,6 +66,8 @@
     · The monthly job (GenerateMonthlyAiReports) also goes through
       AIExplanationService::generate() — it inherits the change automatically.
 
+  ✅ RESOLVED 2026-09-21: the user chose "merge 34-36 into develop first". Done; phase-37
+     was cut from develop 433a6c5. The block below is the pre-decision record.
   WHERE TO BRANCH FROM (state at 2026-09-21 close)
     · Working branch: phase-36-create-project-modal-ui (contains phase-34 and phase-35).
     · phase-34 / 35 / 36 are BROWSER-CONFIRMED but NOT MERGED to develop and NOT
@@ -309,3 +311,210 @@
     order with a cold-session handoff (§0). Docs updated for handoff: AGENTS.md,
     ai_recommendation_plan.md, AI_MODULE_HANDOVER.md, pilot_testing_readiness_plan.md.
     STILL NO CODE CHANGED — the build waits for the user's "go".
+  2026-09-21 — "GO" given. User order: merge 34-36 into develop first, then branch.
+    Done: phase-34 → 35 → 36 merged into develop (--no-ff, one merge commit each, no
+    conflicts; NOT pushed). Branch phase-37-ai-analysis-recs-single-prompt cut from
+    develop 433a6c5.
+  2026-09-21 — STEP 1 (D4 / F-1) ✅ BUILT.
+    · New app/Services/AI/ReliabilityPromptText.php — ONE renderer for the reliability
+      block, reading the REAL shape (reliability['next_prediction'|'completion'] →
+      level / score / factors[backtest|data|horizon|agreement]). Both services' private
+      buildReliabilityText() now delegate to it; each passes its own heading, so the
+      analysis prompt still says "FORECAST RELIABILITY:" and the recommendation prompt
+      keeps "FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):".
+    · One small deliberate change beyond the port: when BOTH results are null (the
+      report's default shape for too little data) the block now says "N/A —
+      insufficient data…" instead of a bare heading. Before, this happened in both
+      prompts (the recommendation copy too).
+    · Measured on the live DB, 8 projects, "now" frozen: all 8 RECOMMENDATION prompts
+      are byte-identical before/after; all 8 ANALYSIS prompts differ ONLY by the added
+      reliability data lines (project 7: Next-month Medium 78, Completion Medium 77,
+      four factor lines). No instruction wording changed.
+    · Test fixture fixed to the real shape (AIExplanationServiceTest), +3 tests (both-null
+      N/A; factors follow next-month; factors fall back to completion). Mutation: the old
+      buildReliabilityText put back → 4 tests red.
+    · PHP suite 1259 passed / 0 failed.
+  2026-09-21 — STEP 2 (D3 / F-2) ✅ BUILT.
+    · RecommendationEngine: generate() and the new generateRuleBased() share one private
+      build(project, prediction, ?aiSource). The AI source is a closure, so generate()
+      still calls Gemini only AFTER the guards (completed / 0 obs / few obs) — same order
+      as before; generate()'s AI-first contract is unchanged.
+    · AIPredictionPresenter (the "Recommendations (saved or fresh)" block) now calls
+      generateRuleBased() — a page view can no longer wait on Gemini. Stored recs are
+      still preferred exactly as before.
+    · Side effect worth knowing: ProjectController::regenerateAnalysis() falls back to
+      the presenter when the analysis call fails; that fallback used to make a SECOND
+      Gemini call (for recs) right after the first had failed. It no longer does.
+    · New tests/Feature/Services/AI/AIAnalysisSinglePromptTest.php (Http::fake +
+      preventStrayRequests): positive control (generate() does send 1 call), rules-only
+      sends nothing and equals the no-AI engine's output, container-built presenter
+      render sends nothing. Mutation: presenter back on generate() → render test red.
+    · PHP suite 1262 passed / 0 failed.
+  2026-09-21 — STEPS 3 + 4 (combined prompt, one call, split, tests) ✅ BUILT.
+    Committed together — the tests are the proof of the code, not a later phase.
+    · AIRecommendationService: context computation moved to private contextParts();
+      new PUBLIC buildRecommendationContext() (the F-3 data blocks), public constants
+      RECOMMENDATION_JSON_SHAPE + RECOMMENDATION_RULES (shared by both prompts), new
+      PUBLIC parseRecommendations() (parse + validate + clamp + tag + sort + cap, lifted
+      out of generate()). The standalone prompt is BYTE-IDENTICAL on 8 live projects.
+    · RecommendationEngine: + generateFromAiCandidates() (guards, then the caller's AI
+      recs, else rules — never a second call, D2) and + acceptsAiRecommendations() (true
+      when not Completed and obs > ai.recommendations.min_observations — exactly when
+      build() reaches the AI step).
+    · AIExplanationService: ONE call. buildPrompt(…, $withRecommendations) returns the
+      original prompt unchanged and, when the engine would use AI recs, APPENDS
+      buildRecommendationsAppendix(): the extra data, the shared JSON shape + rules, the
+      D5 consistency rule, and the markers [RECOMMENDATIONS_JSON] … [/RECOMMENDATIONS_JSON]
+      (constants RECS_OPEN / RECS_CLOSE). The standalone rule "Return ONLY the JSON array,
+      no other text" is NOT carried over (it contradicts the 5 sections); replaced by
+      "nothing but the JSON array between the markers, nothing after the close".
+      When the engine would not use AI recs (Completed / too few observations) the prompt
+      is exactly the original analysis prompt.
+    · splitCombinedAnswer(): cuts every block (plus a code fence wrapped around it) out of
+      the answer; an unclosed block takes the rest of the answer; with NO markers, a JSON
+      array after the last [/SECTION] is treated as the block (so raw JSON can never reach
+      analysis_text, which the PDF prints raw); prose after the sections is left alone.
+      An answer with nothing but a block → '' → the controller's static fallback.
+    · callGemini() now logs one line per call ("AI analysis: Gemini call": ms, status,
+      model, prompt/answer chars — never the URL, which carries the key); generate() logs
+      "AI analysis: recommendations resolved" (asked / block_found / ai_recs / source).
+    · Tests: AIAnalysisSinglePromptTest now 20 tests — verbatim-prefix guard + the four
+      original instruction passages; appendix contents; 8 splitter cases; one-call end-to-
+      end (row has no marker, recs ai_generated); no block → rules; malformed JSON and
+      zero-valid recs → rules; young project → no appendix in the sent prompt and the
+      data-focused recs saved; 503 → nothing saved, 1 call; block-only answer → nothing
+      saved; POST admin.projects.regenerate-analysis → exactly 1 Gemini call.
+    · Mutations (each restored): ignore the block → 2 red; do not cut → 10 red; never
+      append → 3 red; second AI call for recs → 3 red; drop the consistency rule → 1 red;
+      drop the unmarked-JSON fallback → 1 red.
+    · PHP suite 1279 passed / 0 failed. JS untouched (no JS changed).
+    · LIVE MEASUREMENT (one call, project 7, no DB write): model gemini-flash-lite-latest,
+      6.6 s, prompt 5 681 chars, answer 6 145 chars; block found, 4 valid recs, analysis
+      clean. Well inside the 30 s timeout — left at 30 s. The recommendations turned the
+      Mitigation bullets into concrete prioritized actions (supplier sourcing, re-
+      sequencing, weekly review, extension paperwork) — consistent, not duplicated.
+    · ⚠ SIDE EFFECT TO RAISE WITH THE USER: the analysis half now SEES the appended data
+      too, so its Possible Risk section cited the contractor's rating (1.00/5), on-time
+      20%, avg delay and the 4 extensions. The analysis is written for the CONTRACTOR
+      (email section 02), so this is new contractor-visible content. The prompt text is
+      unchanged; it is the data that is new.
+    · Known data gap carried over unchanged: EXTENSIONS "Reasons: : 4" when
+      reason_category is empty (was already in the standalone recommendation prompt).
+    · ⬜ STEP 5 — browser check owed (user): Regenerate on a real project; tab analysis
+      card + green Recommendations card (purple AI badges); email draft and Project
+      Summary PDF show no JSON / no marker; laravel.log shows ONE "AI analysis: Gemini
+      call" line per Regenerate.
+  2026-09-21 — STEP 5, USER RUN on project 142 (PRJ-2026-00037). Compared ai_solutions
+    #33 (2026-09-14, old code), #34 (2026-09-21 16:00, old code, same data) and #35
+    (16:30:49, new code), plus the Project Summary PDF generated from #35.
+    · LOG ✅: exactly ONE "AI analysis: Gemini call" for the Regenerate (200, 6 782 ms,
+      prompt 5 839, answer 6 539 chars) + "recommendations resolved": asked, block found,
+      4 AI recs, source ai. (The 16:20:39 project-7 line is the measurement script — it
+      calls callGemini only, so it has no "resolved" line.)
+    · PDF ✅ for this change: no JSON and no [RECOMMENDATIONS_JSON] marker anywhere; the
+      AI RECOMMENDATIONS table shows the 4 recs from #35.
+    · CONSISTENCY ✅ (the point of the merge): #34 shows the old contradiction — its
+      analysis calls the project "stable … low overall risk", while the separate recs call
+      open with "Immediately intervene … chronic schedule slippage" at PRIORITY 1. In #35
+      each rec corresponds to a Mitigation bullet (material log → rec 1; contractor
+      supervision → rec 2; bi-weekly reviews to close the 2% gap → rec 3; near-term
+      forecast → rec 4), and the analysis itself now names the contractor record.
+    · F-1 VISIBLE ✅: #33/#34 never quote a reliability score (#34 even calls confidence
+      "high across the individual methodologies"); #35 cites 75/100, 84/100, 85/100 and
+      method agreement 60/100.
+    · BONUS: #33/#34 quoted the gibberish issue name "asadsadsasdsadadasds1123" in Risk
+      AND Mitigation; #35 does not — the appended gibberish-text rule carried over to the
+      analysis half.
+    · ⚠ SIDE EFFECT CONFIRMED (question open for the user): #35's contractor-facing
+      analysis cites the contractor's 1.00/5 rating, 20.00% on-time rate and 7.20-day
+      average delay (Report, Possible Risk, Mitigation, Performance) and the class
+      standing ("above the 75th percentile of similar projects").
+    · Minor: #35's Report paragraph 2 recites the reliability factor scores (horizon
+      100/100, history 84/100) — more technical for a contractor audience; a consequence
+      of F-1 (the data now arrives), not of the merge.
+    · PRE-EXISTING, NOT FROM THIS CHANGE (found while reading the PDF):
+      (a) the PDF's AI ANALYSIS box prints the raw [SECTION:…] / [/SECTION] markers —
+          reports/project-summary.blade.php prints analysis_text with nl2br (§2.3).
+      (b) every project-summary PDF since 2026-08-05 starts with a UTF-8 BOM (EF BB BF)
+          before %PDF-, so strict readers reject it (browsers tolerate it). Source:
+          bootstrap/app.php is saved WITH a BOM, so every response body gets those 3
+          bytes. Also BOM-saved: resources/views/auth/login.blade.php,
+          projects/project_detail/components/modals/issues_modal.blade.php.
+      Neither fixed — both need an order.
+    · Still to confirm by the user: the email draft (review window) shows no JSON.
+  2026-09-21 — USER: email draft ✅ CONFIRMED (no JSON). PDF items (a) + (b) above are
+    PARKED by the user for a later PDF improvement pass ("include this fix later") — do
+    them together with that work. User order: "make the ai analysis not technical".
+  2026-09-21 — PLAIN-LANGUAGE STYLE BLOCK ✅ BUILT.
+    · AIExplanationService::buildPlainLanguageAppendix(), appended right AFTER the
+      original closing paragraph, in BOTH modes (with or without the recommendations
+      appendix, so young/completed projects and the monthly job get it too), and BEFORE
+      the recommendations appendix. The original analysis prompt text is still untouched.
+    · Content: plain language for a contractor/site engineer; USE the technical inputs
+      (reliability + factor scores, R², method/equation, method agreement, horizon,
+      accuracy %, class standing) to decide what to say, but do NOT quote scores,
+      percentiles or terms; example translations given; keep concrete facts (progress %,
+      dates, days, issue names/counts, extension days). Scope: the 5 sections only — the
+      recommendation JSON/rules are unchanged.
+    · Live, project 142, no DB write (3 calls, 5.2-5.4 s each):
+      run 1 (without the percentile example) — no /100 scores, no factor names, but
+      "ranks above the 75th percentile" twice (the class-standing label is a percentile).
+      Added the example "progress is ahead of most similar projects (never write the word
+      percentile or a percentile number)". Runs 2 + 3 — none of percentile, /100, R²,
+      polynomial, regression, method agreement, horizon, reliability score, equation in
+      the sections. Reliability now reads e.g. "past forecasts have generally been close
+      to what was actually achieved"; the finish-date spread as "disagree by about three
+      months".
+    · Contractor stats (1.00/5, 20% on-time, 7.2-day delay) still appear in plain words in
+      the analysis — that question (§ side effect above) is still OPEN with the user.
+    · Test: test_plain_language_block_is_appended_in_both_modes (closing paragraph
+      immediately followed by the block, both modes; block before RECS_OPEN). Mutation:
+      block removed → 1 red. PHP suite 1280 passed / 0 failed.
+  2026-09-21 — USER: contractor stats in the analysis → "leave it as is" (decided).
+    User browser-tested the plain-language version (row #36). USER CONCERN: before the
+    merge the recommendations covered every category; after it they are mostly
+    corrective / monitoring. Is that expected?
+    · MEASURED on project 142, every ai_solutions row: #30-#34 (old, two calls) — ALL
+      FOUR categories in every row; #35 corr/moni only; #36 corr/moni only and just 3
+      recs, with the contractor's record listed in Possible Risk but no rec acting on it
+      and "Increase weekly output" labelled monitoring.
+    · CAUSE (mine, not the merge as such): the consistency rule said "each should turn a
+      risk or mitigation point into a concrete action", and the ORIGINAL prompt defines
+      Mitigation as "closer monitoring or preventive measures" — so every rec inherited
+      that scope. Escalation (a PMU decision / formal notice) and administrative
+      (records, extensions) are PMU-side actions with no Mitigation bullet to hang on.
+      Neither prompt, old or new, ever DEFINED the four categories. Shows most on
+      low-risk projects (project 7, Critical, still got all four).
+    · TRIAL (in-memory rule swap, no code change): candidate wording gave all four
+      categories on p142 × 2 and p7 × 2.
+  2026-09-21 — CATEGORY RULE ✅ BUILT (user: "yes lets try it").
+    · Recommendations appendix only (original analysis prompt and standalone
+      recommendation prompt untouched): the consistency rule is now "the recs are for
+      the PMU; consistent with Possible Risk + Mitigation — never contradict or merely
+      repeat — and every Possible Risk point gets at least one rec"; + one-line
+      definitions of escalation / corrective / monitoring / administrative; + "include
+      escalation or administrative actions whenever the data warrants them; do not add a
+      category just to fill it"; + "write numbers as digits" (one plain-language run had
+      spelled out "one hundred ninety days").
+    · Plain-language block: + "call the model simply 'the forecast' — not 'the regression
+      model' or its method name" (two runs had said "the regression model"; the ORIGINAL
+      Performance instruction asks about "regression model reliability", which stays).
+    · LIVE (real code, no DB write), 9 runs: categories p142 esca1 corr2 moni3 ·
+      esca1 moni2 admi2 corr2 · esca2 moni2 admi3 · esca1 corr2 moni2 admi3; p7 esca1 moni1
+      corr2 admi3 · esca1 corr1 moni2 admi3 — escalation in every run, administrative in
+      most, contractor record now ACTED ON (formal reminder / recovery schedule), labels fit.
+      Numbers as digits in every run. 5.0-6.7 s per call.
+    · Residual: "75th percentile" still appeared in the analysis in 1 of the last 4 runs —
+      the model copies the class-standing DATA line ("Above 75th percentile …"). A
+      deterministic fix would reword that data line; not done (it is shared with the
+      standalone prompt) — raised with the user.
+    · Tests: appendix test now pins the risk-coverage rule, the four definitions, the
+      "whenever the data warrants / not to fill" line, the digits rule, and that the old
+      narrowing wording is gone. Mutation: old wording restored → 1 red.
+      PHP suite 1280 passed / 0 failed.
+  2026-09-21 — USER: the "75th percentile" residual → LEAVE AS IS for now (noted, not
+    fixed). If it is picked up later: reword the class-standing DATA line built in
+    AIRecommendationService::contextParts() (e.g. "ahead of most similar projects"
+    instead of the tier label "Above 75th percentile") — deterministic, but it also
+    changes the standalone recommendation prompt, so decide that knowingly.
+    User order: merge phase-37 into develop.

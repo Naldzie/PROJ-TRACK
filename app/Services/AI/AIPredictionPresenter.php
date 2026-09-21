@@ -685,16 +685,22 @@ class AIPredictionPresenter
         |--------------------------------------------------------------------------
         |
         | Prefer saved recommendations from the latest ai_solutions record.
-        | Falls back to generating fresh recommendations when:
+        | Falls back to fresh RULE-BASED recommendations when:
         | - No ai_solutions record exists yet
         | - Legacy record without recommendations column (null)
+        |
+        | Rules only on render (merge plan decision D3, 2026-09-21): this used
+        | to call the AI-first generate(), so opening the tab could wait up to
+        | 30 s on Gemini — on every view until someone pressed Regenerate.
+        | AI recommendations are produced only by "Regenerate Analysis" and
+        | the monthly job, and stored with the analysis.
         |
         */
 
         if ($latestAi && !empty($latestAi->recommendations)) {
             $structuredRecs = $latestAi->recommendations;
         } else {
-            $structuredRecs = $this->recommendationEngine->generate($project, $prediction);
+            $structuredRecs = $this->recommendationEngine->generateRuleBased($project, $prediction);
         }
         $recommendations = array_column($structuredRecs, 'message');
 

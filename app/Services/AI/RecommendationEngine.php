@@ -105,7 +105,8 @@ class RecommendationEngine
      *
      * Used By
      * -------
-     * AIPredictionPresenter::presentNormal() (Phase 7.3)
+     * Anything that wants AI-first recommendations. Page renders use
+     * generateRuleBased() instead (merge plan D3, 2026-09-21).
      *
      * Depends On
     ----------
@@ -114,6 +115,99 @@ class RecommendationEngine
      * assessMonitoring(), assessAdministrative(), mergeAndSort()
      */
     public function generate(Project $project, array $prediction): array
+    {
+        // AI source is a closure so the Gemini call still happens only after
+        // the guards in build() have passed — exactly the old order.
+        $aiSource = $this->aiRecommendationService !== null
+            ? fn () => $this->aiRecommendationService->generate($project, $prediction)
+            : null;
+
+        return $this->build($project, $prediction, $aiSource);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Generate Rule-Based Recommendations (no AI)
+     * ------------------------------------------------------------------------
+     *
+     * Same guards and same rule-based output as generate(), but never calls
+     * Gemini. For paths that must not wait on an external API — a page view
+     * above all (merge plan decision D3: rendering the AI Prediction tab used
+     * to make an up-to-30 s Gemini call whenever no stored recommendations
+     * existed, repeated on every view).
+     *
+     * Used By
+     * -------
+     * AIPredictionPresenter::presentNormal()
+     */
+    public function generateRuleBased(Project $project, array $prediction): array
+    {
+        return $this->build($project, $prediction, null);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Generate From AI Candidates
+     * ------------------------------------------------------------------------
+     *
+     * Same guards as generate(), but the AI recommendations are supplied by
+     * the caller instead of fetched. Used by the combined analysis prompt,
+     * which already has the model's recommendations in its one answer. An
+     * empty candidate list falls back to the rule-based engine — never to a
+     * second Gemini call (merge plan decision D2).
+     *
+     * Used By
+     * -------
+     * AIExplanationService::generate()
+     *
+     * @param  array  $aiRecs  Validated recs (AIRecommendationService::parseRecommendations()), or []
+     */
+    public function generateFromAiCandidates(Project $project, array $prediction, array $aiRecs): array
+    {
+        return $this->build($project, $prediction, fn () => $aiRecs);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Accepts AI Recommendations
+     * ------------------------------------------------------------------------
+     *
+     * True when build() would reach the AI step for this project — i.e. it is
+     * not Completed and has more than the minimum observations. Otherwise the
+     * guards answer on their own (nothing, or the data-focused pair) and any
+     * AI recommendations would be discarded.
+     *
+     * Lets AIExplanationService leave the recommendations request out of the
+     * combined prompt when it could never be used.
+     *
+     * Used By
+     * -------
+     * AIExplanationService::generate()
+     */
+    public function acceptsAiRecommendations(Project $project, array $prediction): bool
+    {
+        if ($project->status === 'Completed') {
+            return false;
+        }
+
+        // Same observation count build() reads via extractFactors()
+        $observationCount = (int) (($prediction['regression'] ?? [])['observation_count'] ?? 0);
+
+        return $observationCount > config('ai.recommendations.min_observations');
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Recommendations
+     * ------------------------------------------------------------------------
+     *
+     * Shared body of generate() / generateRuleBased(): guards first, then the
+     * AI candidates (when a source is given and it returns any), otherwise the
+     * rule-based engine.
+     *
+     * @param  callable|null  $aiSource  Returns AI recommendations ([] = none); null = rules only
+     */
+    private function build(Project $project, array $prediction, ?callable $aiSource): array
     {
         // Skip completed projects — no active monitoring needed
         if ($project->status === 'Completed') {
@@ -132,9 +226,9 @@ class RecommendationEngine
             return $this->generateDataFocusedRecommendations($factors);
         }
 
-        // Phase 10: Try AI-powered recommendations first (when service is injected)
-        if ($this->aiRecommendationService !== null) {
-            $aiRecs = $this->aiRecommendationService->generate($project, $prediction);
+        // Phase 10: AI-powered recommendations first (when a source is given)
+        if ($aiSource !== null) {
+            $aiRecs = $aiSource();
             if (!empty($aiRecs)) {
                 return $aiRecs;
             }

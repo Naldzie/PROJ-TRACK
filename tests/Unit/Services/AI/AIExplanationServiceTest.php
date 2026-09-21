@@ -99,35 +99,35 @@ class AIExplanationServiceTest extends TestCase
             ],
             'statistics' => ['observation_count' => 8],
             'completion_multi' => [],
+            // The REAL shape AIPredictionService::buildReliabilityBlock()
+            // returns (ForecastReliabilityService results). This fixture used
+            // to invent its own shape ('next_reliability', 'label', a factors
+            // list keyed 'backtest_accuracy'…), which is why the always-empty
+            // analysis reliability block never failed a test (merge plan F-1).
             'reliability' => [
-                'next_reliability' => ['score' => 69, 'label' => 'Medium'],
-                'completion_reliability' => ['score' => 75, 'label' => 'Medium'],
-                'factors' => [
-                    [
-                        'key' => 'backtest_accuracy',
-                        'label' => 'Backtest accuracy',
-                        'score' => 60,
-                        'detail' => 'No prediction history yet',
-                    ],
-                    [
-                        'key' => 'data_sufficiency',
-                        'label' => 'Data sufficiency',
-                        'score' => 70,
-                        'detail' => '5 real progress records',
-                    ],
-                    [
-                        'key' => 'forecast_horizon',
-                        'label' => 'Forecast horizon',
-                        'score' => 100,
-                        'detail' => '1 month ahead',
-                    ],
-                    [
-                        'key' => 'method_agreement',
-                        'label' => 'Method agreement',
-                        'score' => 100,
-                        'detail' => 'All 2 methods agree (High, spread 15 days)',
+                'next_prediction' => [
+                    'level'   => 'Medium',
+                    'score'   => 69,
+                    'floors'  => ['blocked' => false, 'reason' => null],
+                    'factors' => [
+                        'backtest'  => ['score' => 60, 'detail' => 'No prediction history yet'],
+                        'data'      => ['score' => 70, 'detail' => '5 real progress records'],
+                        'horizon'   => ['score' => 100, 'detail' => '1 month ahead'],
+                        'agreement' => ['score' => 100, 'detail' => 'All 2 methods agree (High, spread 15 days)'],
                     ],
                 ],
+                'completion' => [
+                    'level'   => 'Medium',
+                    'score'   => 75,
+                    'floors'  => ['blocked' => false, 'reason' => null],
+                    'factors' => [
+                        'backtest'  => ['score' => 60, 'detail' => 'No prediction history yet'],
+                        'data'      => ['score' => 70, 'detail' => '5 real progress records'],
+                        'horizon'   => ['score' => 90, 'detail' => '3 months to completion'],
+                        'agreement' => ['score' => 100, 'detail' => 'All 2 methods agree (High, spread 15 days)'],
+                    ],
+                ],
+                'fit_quality_label' => 'Curve Fit Quality',
             ],
         ];
 
@@ -233,6 +233,66 @@ class AIExplanationServiceTest extends TestCase
             'N/A — insufficient data for a reliability estimate',
             $prompt
         );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Both results null (the report's default shape) is N/A, not a bare heading
+     * ------------------------------------------------------------------------
+     *
+     * AIPredictionService always carries a 'reliability' key; with too little
+     * data both results are null. The block must still say something.
+     */
+    public function test_prompt_reports_na_when_both_reliability_results_are_null(): void
+    {
+        $project = Project::factory()->create();
+        $prediction = $this->predictionReport();
+        $prediction['reliability'] = [
+            'next_prediction'   => null,
+            'completion'        => null,
+            'fit_quality_label' => 'Curve Fit Quality',
+        ];
+
+        $prompt = $this->buildPrompt($project, $prediction);
+
+        $this->assertStringContainsString(
+            "FORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate",
+            $prompt
+        );
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Factor lines come from the next-month result when both exist
+     * ------------------------------------------------------------------------
+     *
+     * The completion result's horizon (90, "3 months to completion") must not
+     * leak into the breakdown while a next-month result is present.
+     */
+    public function test_prompt_factors_follow_next_month_result(): void
+    {
+        $project = Project::factory()->create();
+        $prompt = $this->buildPrompt($project, $this->predictionReport());
+
+        $this->assertStringNotContainsString('3 months to completion', $prompt);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * With only a completion result, its factors are used
+     * ------------------------------------------------------------------------
+     */
+    public function test_prompt_factors_fall_back_to_completion_result(): void
+    {
+        $project = Project::factory()->create();
+        $prediction = $this->predictionReport();
+        $prediction['reliability']['next_prediction'] = null;
+
+        $prompt = $this->buildPrompt($project, $prediction);
+
+        $this->assertStringNotContainsString('Next-month forecast:', $prompt);
+        $this->assertStringContainsString('Completion estimate: Medium (75/100)', $prompt);
+        $this->assertStringContainsString('Forecast horizon: 90/100 — 3 months to completion', $prompt);
     }
 
     /*
