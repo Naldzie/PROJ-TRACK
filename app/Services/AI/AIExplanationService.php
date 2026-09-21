@@ -275,58 +275,17 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
      * AI; R² is intentionally demoted to a "curve fit, matches past data only"
      * note so the model never treats curve fit as forecast accuracy.
      *
+     * Delegates to ReliabilityPromptText, the one renderer shared with the
+     * recommendation prompt. The copy that lived here read a shape
+     * ForecastReliabilityService never returns, so this block was always an
+     * empty heading (fixed 2026-09-21, merge plan F-1 / decision D4). The
+     * heading text is unchanged.
+     *
      * Uses: reliability array from AIPredictionService
      */
     private function buildReliabilityText(?array $reliability): string
     {
-        if (empty($reliability)) {
-            return "\nFORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate";
-        }
-
-        $factorTitles = [
-            'backtest_accuracy' => 'Prediction history',
-            'data_sufficiency'  => 'Data',
-            'forecast_horizon'  => 'Forecast horizon',
-            'method_agreement'  => 'Method agreement',
-        ];
-
-        $lines = ['FORECAST RELIABILITY:'];
-
-        if (isset($reliability['next_reliability'])) {
-            $lines[] = sprintf(
-                '- Next-month forecast: %s (%d/100)',
-                $reliability['next_reliability']['label'],
-                $reliability['next_reliability']['score']
-            );
-        }
-
-        if (isset($reliability['completion_reliability'])) {
-            $lines[] = sprintf(
-                '- Completion estimate: %s (%d/100)',
-                $reliability['completion_reliability']['label'],
-                $reliability['completion_reliability']['score']
-            );
-        }
-
-        $byKey = [];
-        foreach ($reliability['factors'] ?? [] as $factor) {
-            $byKey[$factor['key']] = $factor;
-        }
-
-        foreach ($factorTitles as $key => $title) {
-            $factor = $byKey[$key] ?? null;
-            if (!$factor) {
-                continue;
-            }
-            $lines[] = sprintf(
-                '- %s: %d/100 — %s',
-                $title,
-                $factor['score'],
-                $factor['detail']
-            );
-        }
-
-        return "\n" . implode("\n", $lines);
+        return ReliabilityPromptText::render($reliability, 'FORECAST RELIABILITY:');
     }
 
     /**

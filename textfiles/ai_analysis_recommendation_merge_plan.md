@@ -309,3 +309,26 @@
     order with a cold-session handoff (§0). Docs updated for handoff: AGENTS.md,
     ai_recommendation_plan.md, AI_MODULE_HANDOVER.md, pilot_testing_readiness_plan.md.
     STILL NO CODE CHANGED — the build waits for the user's "go".
+  2026-09-21 — "GO" given. User order: merge 34-36 into develop first, then branch.
+    Done: phase-34 → 35 → 36 merged into develop (--no-ff, one merge commit each, no
+    conflicts; NOT pushed). Branch phase-37-ai-analysis-recs-single-prompt cut from
+    develop 433a6c5.
+  2026-09-21 — STEP 1 (D4 / F-1) ✅ BUILT.
+    · New app/Services/AI/ReliabilityPromptText.php — ONE renderer for the reliability
+      block, reading the REAL shape (reliability['next_prediction'|'completion'] →
+      level / score / factors[backtest|data|horizon|agreement]). Both services' private
+      buildReliabilityText() now delegate to it; each passes its own heading, so the
+      analysis prompt still says "FORECAST RELIABILITY:" and the recommendation prompt
+      keeps "FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):".
+    · One small deliberate change beyond the port: when BOTH results are null (the
+      report's default shape for too little data) the block now says "N/A —
+      insufficient data…" instead of a bare heading. Before, this happened in both
+      prompts (the recommendation copy too).
+    · Measured on the live DB, 8 projects, "now" frozen: all 8 RECOMMENDATION prompts
+      are byte-identical before/after; all 8 ANALYSIS prompts differ ONLY by the added
+      reliability data lines (project 7: Next-month Medium 78, Completion Medium 77,
+      four factor lines). No instruction wording changed.
+    · Test fixture fixed to the real shape (AIExplanationServiceTest), +3 tests (both-null
+      N/A; factors follow next-month; factors fall back to completion). Mutation: the old
+      buildReliabilityText put back → 4 tests red.
+    · PHP suite 1259 passed / 0 failed.

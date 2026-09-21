@@ -571,8 +571,9 @@ RULES:
      * Renders the forecast-reliability block into a prompt-friendly summary.
      * This is the actual trust indicator for predictions — NOT R².
      *
-     * Format matches AIExplanationService::buildReliabilityText() for
-     * consistency across AI prompts.
+     * Delegates to ReliabilityPromptText, the one renderer shared with the
+     * analysis prompt (AIExplanationService). This prompt keeps its own,
+     * more emphatic heading.
      *
      * Used By
      * -------
@@ -580,53 +581,10 @@ RULES:
      */
     private function buildReliabilityText(?array $reliability): string
     {
-        if (empty($reliability)) {
-            return "\nFORECAST RELIABILITY:\n- N/A — insufficient data for a reliability estimate";
-        }
-
-        $lines = ['FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):'];
-
-        if (isset($reliability['next_prediction'])) {
-            $next = $reliability['next_prediction'];
-            $lines[] = sprintf(
-                '- Next-month forecast: %s (%d/100)',
-                $next['level'],
-                $next['score']
-            );
-        }
-
-        if (isset($reliability['completion']) && $reliability['completion'] !== null) {
-            $comp = $reliability['completion'];
-            $lines[] = sprintf(
-                '- Completion estimate: %s (%d/100)',
-                $comp['level'],
-                $comp['score']
-            );
-        }
-
-        $factorTitles = [
-            'backtest'  => 'Prediction history',
-            'data'      => 'Data',
-            'horizon'   => 'Forecast horizon',
-            'agreement' => 'Method agreement',
-        ];
-
-        $source = $reliability['next_prediction'] ?? $reliability['completion'] ?? [];
-
-        foreach ($factorTitles as $key => $title) {
-            $factor = $source['factors'][$key] ?? null;
-            if (!$factor) {
-                continue;
-            }
-            $lines[] = sprintf(
-                '- %s: %d/100 — %s',
-                $title,
-                $factor['score'],
-                $factor['detail']
-            );
-        }
-
-        return "\n" . implode("\n", $lines);
+        return ReliabilityPromptText::render(
+            $reliability,
+            'FORECAST RELIABILITY (use this, NOT R², to assess prediction trust):'
+        );
     }
 
     /**
