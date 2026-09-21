@@ -51,13 +51,30 @@ class ReportExportController extends Controller
         return $this->service->issuesExcel($project);
     }
 
+    // Project report as PDF download; ?period=YYYY-MM (default: latest month)
     public function summaryPdf(Project $project)
     {
-        return $this->service->summaryPdf($project);
+        return $this->service->summaryPdf($project, $this->period(request()));
     }
 
+    // Project report as inline PDF for the viewer modal (not audit-logged)
     public function summaryPdfView(Project $project)
     {
-        return $this->service->summaryPdfView($project);
+        return $this->service->summaryPdfView($project, $this->period(request()));
+    }
+
+    // Project report as an editable Word document; same ?period
+    public function reportDocx(Project $project)
+    {
+        return $this->service->projectReportDocx($project, $this->period(request()));
+    }
+
+    // The requested reporting month; an unknown month falls back to the latest
+    // inside ProjectReportDataService::resolvePeriod()
+    private function period(Request $request): ?string
+    {
+        $period = $request->query('period');
+
+        return is_string($period) && preg_match('/^\d{4}-\d{2}$/', $period) ? $period : null;
     }
 }

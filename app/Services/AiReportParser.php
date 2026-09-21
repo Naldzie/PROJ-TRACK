@@ -63,6 +63,133 @@ class AiReportParser
         return $parsedSections;
     }
 
+    /**
+     * ------------------------------------------------------------------------
+     * Parse To Blocks (plain text, for document writers)
+     * ------------------------------------------------------------------------
+     *
+     * Same section extraction as parse(), but each section's content comes back
+     * as plain-text blocks instead of HTML, so a Word/PDF writer can lay it out
+     * itself:
+     *   [['title' => 'Report', 'blocks' => [
+     *       ['type' => 'paragraph', 'text' => '…'],
+     *       ['type' => 'list', 'ordered' => false, 'items' => ['…', '…']],
+     *   ]], …]
+     *
+     * Text without any [SECTION:] marker becomes one 'Analysis' section, like
+     * parse(). Nothing is HTML-escaped here — the writer escapes for its format.
+     *
+     * Called by: Reports\ProjectReportDataService (project report, Word + PDF)
+     */
+    public function parseToBlocks(?string $text): array
+    {
+        $text = (string) $text;
+        if (trim($text) === '') {
+            return [];
+        }
+
+        $sections = [];
+        foreach ($this->extractSections($text) as $section) {
+            $sections[] = [
+                'title'  => $section['title'],
+                'blocks' => $this->contentToBlocks($section['content']),
+            ];
+        }
+
+        if (empty($sections)) {
+            $sections[] = ['title' => 'Analysis', 'blocks' => $this->contentToBlocks($text)];
+        }
+
+        return $sections;
+    }
+
+    /**
+     * Raw (unformatted) sections in the fixed order parse() uses.
+     * Mirrors parse()'s marker walk exactly; parse() itself is left unchanged.
+     */
+    private function extractSections(string $text): array
+    {
+        $keys = ['Report', 'Possible Risk', 'Mitigation', 'Performance', 'AI Comment', 'Next Steps', 'Progress'];
+
+        $found = [];
+        $remainingText = $text;
+
+        foreach ($keys as $key) {
+            $startMarker = '[SECTION:' . $key . ']';
+            $startIdx = strpos($remainingText, $startMarker);
+            if ($startIdx === false) {
+                continue;
+            }
+
+            $contentStart = $startIdx + strlen($startMarker);
+            $endIdx = strpos($remainingText, '[/SECTION]', $contentStart);
+            if ($endIdx === false) {
+                continue;
+            }
+
+            $content = trim(substr($remainingText, $contentStart, $endIdx - $contentStart));
+            if ($content !== '') {
+                $found[] = ['title' => $key, 'content' => $content];
+            }
+
+            $remainingText = substr($remainingText, $endIdx + strlen('[/SECTION]'));
+        }
+
+        return $found;
+    }
+
+    /**
+     * Split section text into paragraph / list blocks (plain text).
+     * Same bullet and numbering rules as formatContent().
+     */
+    private function contentToBlocks(string $content): array
+    {
+        $blocks = [];
+        $paragraph = [];
+        $list = null;
+
+        $flushParagraph = function () use (&$blocks, &$paragraph) {
+            // Blank lines separate paragraphs, as in formatParagraphs()
+            foreach (preg_split('/\n\s*\n/', implode("\n", $paragraph)) as $p) {
+                $p = trim(preg_replace('/\s*\n\s*/', ' ', $p));
+                if ($p !== '') {
+                    $blocks[] = ['type' => 'paragraph', 'text' => $p];
+                }
+            }
+            $paragraph = [];
+        };
+        $flushList = function () use (&$blocks, &$list) {
+            if ($list !== null && !empty($list['items'])) {
+                $blocks[] = $list;
+            }
+            $list = null;
+        };
+
+        foreach (explode("\n", $content) as $line) {
+            $trimmed = trim($line);
+            $isBullet = (bool) preg_match('/^[-*•]\s+/u', $trimmed);
+            $isNumbered = (bool) preg_match('/^\d+[.)]\s+/', $trimmed);
+
+            if ($isBullet || $isNumbered) {
+                $flushParagraph();
+                if ($list === null || $list['ordered'] !== $isNumbered) {
+                    $flushList();
+                    $list = ['type' => 'list', 'ordered' => $isNumbered, 'items' => []];
+                }
+                $list['items'][] = trim(preg_replace($isNumbered ? '/^\d+[.)]\s+/' : '/^[-*•]\s+/u', '', $trimmed));
+                continue;
+            }
+
+            $flushList();
+            $paragraph[] = $line;
+        }
+
+        $flushParagraph();
+        $flushList();
+
+        return $blocks;
+    }
+
     public function parseToHtml(string $text): string
     {
         $sections = $this->parse($text);

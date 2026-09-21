@@ -330,7 +330,7 @@ class ReportExportTest extends TestCase
 
         $this->assertTrue($response->isSuccessful());
         $this->assertEquals('application/pdf', $response->headers->get('Content-Type'));
-        $this->assertStringContainsString('project-summary.pdf', $response->headers->get('Content-Disposition'));
+        $this->assertMatchesRegularExpression('/_project-report_\d{4}-\d{2}\.pdf/', $response->headers->get('Content-Disposition'));
         $this->assertStringStartsWith('%PDF-', $body, 'PDF payload should start with the PDF magic header');
         $this->assertGreaterThan(500, strlen($body), 'PDF body should be non-trivial');
 
@@ -354,27 +354,19 @@ class ReportExportTest extends TestCase
 
     // === PDF SUMMARY CONTENT FIXES ===
 
-    private function renderSummaryView(): string
+    /**
+     * Render the PDF layout of the Project Monitoring Report (overhauled
+     * 2026-09-21: reports/project-report, fed by ProjectReportDataService —
+     * it replaced reports/project-summary).
+     */
+    private function renderSummaryView(?string $period = null): string
     {
-        $detailService = app(\App\Services\ProjectDetailService::class);
-        $exportService = app(\App\Services\ReportExportService::class);
+        $report = app(\App\Services\Reports\ProjectReportDataService::class)
+            ->build($this->project, $period, 'Test Admin');
 
-        $data = $detailService->prepareProjectData($this->project);
-        $chartData = $detailService->prepareChartData($this->project);
-
-        $method = new \ReflectionMethod(\App\Services\ReportExportService::class, 'buildSvgChart');
-        $method->setAccessible(true);
-        $svgChart = $method->invoke($exportService, $chartData);
-
-        $latestAi = $this->project->aiSolutions()->first();
-
-        return view('reports.project-summary', [
-            'project'     => $this->project,
-            'data'        => $data,
-            'chartData'   => $chartData,
-            'svgChart'    => $svgChart,
-            'generatedAt' => now()->format('F j, Y g:i A'),
-            'latestAi'    => $latestAi,
+        return view('reports.project-report', [
+            'report'   => $report,
+            'chartImg' => app(\App\Services\Reports\ScurveChartRenderer::class)->svgImgTag($report['chart']),
         ])->render();
     }
 
@@ -384,12 +376,11 @@ class ReportExportTest extends TestCase
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringContainsString('₱', $html, 'Peso sign must be present in the markup.');
-        $this->assertStringContainsString('value peso', $html, 'Budget cell must carry the peso font class.');
+        $this->assertStringContainsString('₱ 10,000,000.00', $html, 'Peso sign must be present in the markup.');
         $this->assertStringContainsString('DejaVu Sans', $html, 'A Unicode font supporting U+20B1 must be declared.');
     }
 
-    public function test_summary_view_selects_latest_inspection_not_first(): void
+    public function test_summary_view_status_uses_latest_inspection_not_first(): void
     {
         ProjectProgressHistory::factory()->create([
             'project_id'               => $this->project->id,
@@ -412,9 +403,14 @@ class ReportExportTest extends TestCase
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringContainsString('2026-07', $html, 'Latest inspection month must be rendered.');
-        $this->assertStringContainsString('July inspection', $html, 'Latest inspection remarks must be rendered.');
-        $this->assertStringNotContainsString('2026-06-15', $html, 'First inspection date must not be shown as the latest.');
+        // The report is "as of" the latest inspection (July), not the first
+        $this->assertStringContainsString('Reporting period: <b>July 2026</b>', $html);
+        $this->assertStringContainsString('As of: <b>July 15, 2026</b>', $html);
+        // Status at a glance uses July's planned 55% / actual 50% / slippage -5%
+        $this->assertMatchesRegularExpression('/class="v">55%<\/td>\s*<td class="v">50%<\/td>/', $html);
+        // …while the monthly table lists every inspection
+        $this->assertStringContainsString('June inspection', $html);
+        $this->assertStringContainsString('July inspection', $html);
     }
 
     public function test_summary_view_embeds_scurve_as_data_uri_image(): void
@@ -728,9 +724,9 @@ class ReportExportTest extends TestCase
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringContainsString('AI Analysis', $html);
+        $this->assertStringContainsString('9. Analysis', $html);
         $this->assertStringContainsString('The project is currently at 45% progress with a declining trend.', $html);
-        $this->assertStringContainsString('AI-Generated Analysis', $html);
+        $this->assertStringContainsString('System-generated analysis dated', $html);
     }
 
     public function test_summary_view_includes_recommendations_when_present(): void
@@ -760,7 +756,7 @@ class ReportExportTest extends TestCase
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringContainsString('AI Recommendations', $html);
+        $this->assertStringContainsString('10. Recommendations', $html);
         $this->assertStringContainsString('Address open material issues immediately', $html);
         $this->assertStringContainsString('Escalate chronic slippage to management', $html);
         $this->assertStringContainsString('Corrective', $html);
@@ -768,12 +764,15 @@ class ReportExportTest extends TestCase
         $this->assertStringContainsString('There are 2 open material issues.', $html);
     }
 
-    public function test_summary_view_omits_ai_sections_when_no_solution(): void
+    public function test_summary_view_says_so_when_no_analysis_exists(): void
     {
         $html = $this->renderSummaryView();
 
-        $this->assertStringNotContainsString('AI Analysis', $html);
-        $this->assertStringNotContainsString('AI Recommendations', $html);
+        // The sections stay (the report layout is fixed) but say plainly
+        // that nothing was generated
+        $this->assertStringContainsString('No analysis has been generated for this period.', $html);
+        $this->assertStringContainsString('No recommendations for this period.', $html);
+        $this->assertStringNotContainsString('System-generated analysis dated', $html);
     }
 
     public function test_summary_view_omits_ai_sections_when_empty_analysis(): void
@@ -788,25 +787,36 @@ class ReportExportTest extends TestCase
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringNotContainsString('AI Analysis', $html);
-        $this->assertStringNotContainsString('AI Recommendations', $html);
+        $this->assertStringContainsString('No analysis has been generated for this period.', $html);
+        $this->assertStringNotContainsString('System-generated analysis dated', $html);
     }
 
-    public function test_summary_view_uses_nl2br_for_analysis_text(): void
+    /**
+     * The analysis is split into headed sections — the raw [SECTION:] markers
+     * are never printed (the old PDF printed them; parked defect (a) of
+     * 2026-09-21, fixed by the report overhaul).
+     */
+    public function test_summary_view_renders_analysis_sections_not_raw_markers(): void
     {
         \App\Models\AiSolution::create([
             'project_id'          => $this->project->id,
-            'analysis_text'       => "Paragraph one.\n\nParagraph two.\n- Bullet point",
+            'analysis_text'       => "[SECTION:Report]\nParagraph one.\n\nParagraph two.\n[/SECTION]\n\n"
+                . "[SECTION:Possible Risk]\n- Material delay\n- Rain\n[/SECTION]\n\n"
+                . "[SECTION:AI Comment]\nBottom line.\n[/SECTION]",
             'model_used'          => 'gemini-1.5-flash',
             'regression_snapshot' => ['r_squared' => 0.95],
         ]);
 
         $html = $this->renderSummaryView();
 
-        $this->assertStringContainsString('Paragraph one.', $html);
-        $this->assertStringContainsString('Paragraph two.', $html);
-        // nl2br converts \n to <br />
-        $this->assertStringContainsString('<br />', $html);
+        $this->assertStringNotContainsString('[SECTION:', $html);
+        $this->assertStringNotContainsString('[/SECTION]', $html);
+        $this->assertStringContainsString('<h3>Report</h3>', $html);
+        $this->assertStringContainsString('<p>Paragraph one.</p>', $html);
+        $this->assertStringContainsString('<p>Paragraph two.</p>', $html);
+        $this->assertStringContainsString('<li>Material delay</li>', $html);
+        // "AI Comment" reads "Overall Comment" in the report
+        $this->assertStringContainsString('<h3>Overall Comment</h3>', $html);
     }
 
     public function test_summary_view_renders_recommendation_priority_and_reason(): void
