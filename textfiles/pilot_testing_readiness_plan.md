@@ -560,6 +560,10 @@
         (b) ProjectObserver / BaselineScheduleObserver queue a SyncProjectCalendar
             job on every project/baseline save, so F4's "ONE queue worker on the
             admin desktop" is no longer optional for calendar correctness.
+    · ✅ P5's PREREQUISITE BUILT (user order, same day): the two AI image paths now
+      log under 'images-normal' / 'images-scurve', and normal-doc answers leave an
+      'N-A normal slice response' line — so the pilot's own log can answer P5(a).
+      Branch phase-31-parser-ai-log-tagging; detail in ai_slice_selection_plan §10.4.
     · User's stated next order of work: UI improvements (front-end design) of the
       parser keyword management modal. P6 (the pilot package) is "not yet".
 

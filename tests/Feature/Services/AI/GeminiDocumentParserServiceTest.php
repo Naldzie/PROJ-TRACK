@@ -5,6 +5,7 @@ namespace Tests\Feature\Services\AI;
 use App\Services\AI\GeminiDocumentParserService;
 use App\Services\AI\GeminiTransportException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
@@ -1852,8 +1853,80 @@ class GeminiDocumentParserServiceTest extends TestCase
 
         $this->assertSame(15, $timeout->invoke($service, 'images'));
         $this->assertSame(15, $timeout->invoke($service, 'images-fallback'));
+        // The per-caller tags (2026-09-21) must keep the IMAGE timeout — the
+        // selector keys on the 'images' prefix, and a tag that lost it would
+        // silently get the text value.
+        $this->assertSame(15, $timeout->invoke($service, 'images-normal'));
+        $this->assertSame(15, $timeout->invoke($service, 'images-normal-fallback'));
+        $this->assertSame(15, $timeout->invoke($service, 'images-scurve'));
+        $this->assertSame(15, $timeout->invoke($service, 'images-scurve-fallback'));
         $this->assertSame(30, $timeout->invoke($service, 'text'));
         $this->assertSame(30, $timeout->invoke($service, 'text-fallback'));
+    }
+
+    /* ─── Per-path log tags (2026-09-21, ai_slice_selection_plan §10.4) ─── */
+
+    // Both image paths share callGeminiWithImages(); before this, every failure
+    // from either was logged as 'images' and the split was unrecoverable. The
+    // normal-doc path also gets a success line so its rate is computable.
+    // Called by: parseProjectSlice() -> callGeminiWithImages(..., 'images-normal').
+    public function test_normal_doc_calls_are_logged_under_their_own_tag(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+        Log::spy();
+        Http::fake(['*generativelanguage*' => Http::sequence()
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push('slow down', 429, ['Retry-After' => 0])
+            ->push(['candidates' => [['content' => ['parts' => [['text' => json_encode([
+                'title' => 'Canteen Works Project Title Here',
+            ])]]]]]], 200),                                  // Lite rescues
+        ]);
+
+        $out = (new GeminiDocumentParserService())->parseProjectSlice($this->sliceImages());
+        $this->assertNotNull($out);
+
+        Log::shouldHaveReceived('debug')->withArgs(
+            fn ($msg, $ctx = []) => $msg === 'E3 gemini parser call failed' && ($ctx['where'] ?? null) === 'images-normal'
+        )->atLeast()->once();
+        Log::shouldHaveReceived('debug')->withArgs(
+            fn ($msg, $ctx = []) => $msg === 'N-A normal slice response'
+                && ($ctx['fields'] ?? null) === 1 && ($ctx['model'] ?? null) === 'lite-model'
+        )->once();
+        Log::shouldNotHaveReceived('debug', [
+            'E3 gemini parser call failed', \Mockery::on(fn ($ctx) => ($ctx['where'] ?? null) === 'images'),
+        ]);
+    }
+
+    // The S-curve PDF path must log under its own tag, never the old shared one.
+    // Called by: parseSCurvePdfSlice() -> callGeminiWithImages(..., 'images-scurve').
+    public function test_scurve_pdf_calls_are_logged_under_their_own_tag(): void
+    {
+        config([
+            'services.gemini.key' => 'main-key',
+            'services.gemini.model' => 'lite-model',
+            'services.gemini.parser_key' => 'parser-key',
+            'services.gemini.parser_model' => 'flash-model',
+        ]);
+        Log::spy();
+        Http::fake(['*generativelanguage*' => Http::response('slow down', 429, ['Retry-After' => 0])]);
+
+        try {
+            (new GeminiDocumentParserService())->parseSCurvePdfSlice($this->sliceImages(1));
+        } catch (\Throwable $e) {
+            // Flash-or-nothing: an exhausted call surfaces its failure — expected.
+        }
+
+        Log::shouldHaveReceived('debug')->withArgs(
+            fn ($msg, $ctx = []) => $msg === 'E3 gemini parser call failed' && ($ctx['where'] ?? null) === 'images-scurve'
+        )->atLeast()->once();
+        Log::shouldNotHaveReceived('debug', [
+            'N-A normal slice response', \Mockery::any(),
+        ]);
     }
 
     // A typo in the env must not disable the guard by making the slot absurd.
