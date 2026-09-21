@@ -401,5 +401,64 @@
     CONFIRMED — ALL SIX BROWSER CHECKS DONE. Ordered: commit, push, merge into
     develop.
 
+  2026-09-22 — FOLLOW-UP REVIEW ("what else to adjust"), read-only, nothing changed:
+    A1 ⚠ DATE SIMULATOR × QUEUE (defect in phase-42): 25 mail jobs wait in `jobs`
+       (DeadlineReminder / OverdueInspectionReminder / RiskLevelChanged), created by
+       dev-widget scans at SIMULATED dates 2027-02-11 / 2027-04-01. The database
+       queue stamps available_at from Carbon::now() (= the simulated date), the
+       worker runs on real time → they will not send until Feb–Apr 2027, then go
+       out stale. Same root cause delays SyncProjectCalendar when a project is saved
+       under a future simulated date. Proposed fix: a database-queue connector that
+       stamps jobs with REAL time (time(), not Carbon), or send mail sync while a
+       simulated date is active. Plus: clear the 25 stale jobs (user's go).
+    A2 SCHEDULER NEEDS THE PC ON AT FIXED TIMES: notifications:scan 07:00 daily,
+       reports:generate-ai-monthly 25th 08:00, reports:send-ai-monthly 08:05.
+       schedule:work does not catch up a missed time — a desktop switched on at
+       08:30 never runs that day's scan, and a missed 25th (or a weekend 25th with
+       the PC off) skips the month's AI reports. Proposed: scan hourly 07:00–17:00
+       (dedupe makes repeats free); generate on 25th–28th until done that month.
+    A3 STATUS IS MANUAL: nothing turns Planned → Ongoing. Every scan check and most
+       dashboard counts read status = 'Ongoing' only, so a project left Planned gets
+       no deadline / inspection / risk reminders at all. The new not-started notice
+       now flags it; live: the 6 Planned projects have 0 progress rows (no data lost).
+       Options: leave as is (the notice suffices) or prompt "Start project?" on it.
+    A4 Failed notification emails now land in failed_jobs (0 today) with no screen
+       showing them; before, failures were a laravel.log warning.
+    CHECKED, FINE: bell polling cannot defeat the 20-min idle logout (client-side,
+       counts only user input; hidden tabs do not poll); `queue:listen --tries=1`
+       does not override the notification's own tries = 3.
+    Still open from before: APP_URL (email links → 127.0.0.1), F-7 every admin gets
+       every notice, P-11 settings / email opt-out, 342+ test notices in the live DB
+       (start the pilot clean?).
+
+  2026-09-22 — USER DECISIONS on the review:
+    · A1 (simulator × queue): NOT fixed for now. The system is to be deployed and
+      users do not know the simulator hotkey; setting APP_ENV=production at
+      deployment removes /dev/* entirely. NOTED: if the simulator is used again on
+      a machine with a queue worker, mail queued under a future simulated date waits
+      until that real date (and SyncProjectCalendar likewise). Fix when needed: stamp
+      queue jobs with real time.
+    · A2 (scheduler times), A3 (manual Planned → Ongoing), A4 (failed_jobs has no
+      screen): AS IS for now, noted. A2 is also written into the pilot setup guide.
+    · F-7 (every admin gets every notice) and P-11 (settings / email opt-out): AS IS.
+    · Email links → a separate offline setup guide:
+      textfiles/pilot_setup_server_address_and_email_links.md.
+      ⚠ CORRECTION to F-2: the 8 notification emails contain NO links (text only);
+      the restudy's "View project buttons in all 8 emails" was wrong. The emails
+      that DO carry the address: contractor-account + login-link emails
+      (url('/login') = the ADMIN's browsing address) and the AI report tracking
+      image (APP_URL). Found while writing the guide, and more serious than the
+      email links: GOOGLE_REDIRECT_URI=http://127.0.0.1:8000/... means Google login
+      fails on every PC except the server; Google does not accept raw-IP / plain-
+      http redirect URIs (except localhost), so a LAN-IP pilot needs a domain +
+      HTTPS or a tunnel. Also: `php artisan serve` without --host=0.0.0.0 is
+      unreachable from other PCs, and public/hot (npm run dev) breaks styling on
+      other PCs. All in the guide.
+    · CLEAN-UP DONE: notifications 385 → 0 and jobs 25 → 0 (the 25 stuck
+      simulated-date mails) on pmu_system4, after a verified backup to
+      storage/app/backups/notifications_2026-09-22.json + jobs_2026-09-22.json.
+      Consequence: dedupe history is gone, so the next scan re-creates today's
+      reminders (in-app + queued emails) once.
+
   STILL OPEN (not asked for this round): P-11 settings screen / per-user email
     opt-out; APP_URL for the pilot (checklist); F-7 every admin gets every notice.

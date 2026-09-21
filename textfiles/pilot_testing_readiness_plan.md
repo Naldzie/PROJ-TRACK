@@ -1048,3 +1048,13 @@
 ===============================================================================
   END OF PLAN
 ===============================================================================
+
+2026-09-22 — SERVER ADDRESS / LOGIN / EMAIL LINKS: offline setup guide written —
+  textfiles/pilot_setup_server_address_and_email_links.md. New pilot finding
+  (goes with F3): GOOGLE_REDIRECT_URI is http://127.0.0.1:8000/auth/google/callback,
+  so Google login fails on every PC except the server until it is changed AND
+  registered in Google Cloud Console; Google rejects raw-IP / plain-http redirect
+  URIs (localhost excepted), so a LAN-IP pilot needs a domain + HTTPS or a tunnel.
+  Also: serve --host=0.0.0.0, npm run build + delete public/hot, queue:work
+  (notification emails are queued since phase-42) + schedule:work, firewall rule.
+  F1 (APP_ENV=production, APP_DEBUG=false) is included as a recommended step.
