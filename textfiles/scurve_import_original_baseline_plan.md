@@ -1,4 +1,4 @@
-# S-CURVE IMPORT INTO "EDIT ORIGINAL BASELINE" + CHOOSING THE FILE (PLAN, NOT BUILT)
+# S-CURVE IMPORT INTO "EDIT ORIGINAL BASELINE" + CHOOSING THE FILE (BUILT — BROWSER CHECK OWED)
 # Parent refs: textfiles/document_parser_and_scurve_import_plan.md (the import feature)
 #              AGENTS.md → Document Parser Libraries (S-curve Excel/PDF readers)
 # Date: September 21, 2026
