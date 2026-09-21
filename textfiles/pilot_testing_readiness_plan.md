@@ -541,6 +541,28 @@
   8. SESSION LOG
 ===============================================================================
 
+  2026-09-21 — FOLDER MOVE + CALENDAR MERGE; AI PER-FILE SELECTION PARKED.
+    · THE WORKING FOLDER IS NOW `merge ver19.5\PMU_System` (the teammate's copy).
+      develop = phases 23-29 + the teammate's Google Calendar sync
+      (phase-30-google-calendar-sync), merged with no conflicts and PUSHED.
+      Suites on develop: PHP 1238 passed / 0 failed · JS 267 / 267 / 0.
+    · ⏸ PARKED by the user: ai_slice_selection_plan.md §11 (per-file AI counts,
+      whole-file sending, the cap raise). Reason: it sidetracks pilot readiness.
+      The built S-1..S-4 stay in. P5's log-tagging prerequisite (§10.4(i)+(ii)
+      there) is NOT parked but NOT ordered either — offered as optional
+      pre-pilot instrumentation.
+    · ⚠ NEW PILOT CONSEQUENCES OF THE CALENDAR MERGE (noted, not ordered — they
+      belong to P6):
+        (a) Login now requests Google's calendar.events scope. Every pilot user —
+            contractors too, since F5 put them in scope — sees that consent. If the
+            Google Cloud app is still in Testing mode, each pilot Gmail must be a
+            listed test user or sign-in is warned/blocked. This sharpens F3.
+        (b) ProjectObserver / BaselineScheduleObserver queue a SyncProjectCalendar
+            job on every project/baseline save, so F4's "ONE queue worker on the
+            admin desktop" is no longer optional for calendar correctness.
+    · User's stated next order of work: UI improvements (front-end design) of the
+      parser keyword management modal. P6 (the pilot package) is "not yet".
+
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
     short version for this file:

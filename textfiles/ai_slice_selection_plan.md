@@ -13,8 +13,11 @@
 #         ⬛ BROWSER-CONFIRMED by the user 2026-09-20 ("confirmed working") — §9.7.
 #         ⚠ §10 RETIRES THE AI-AVAILABILITY FIGURE for the normal-doc path AND shows
 #         pilot P5(a) cannot be done until the two image paths are tagged apart.
-#         §11 is the next ask (per-file counts, whole-file sending); §12 is the
+#         §11 (per-file counts, whole-file sending) is ⏸ PARKED 2026-09-21 by the
+#         user — pilot readiness first; see §11's PARKED note. §12 is the
 #         COLD-SESSION HANDOFF — start there.
+#         2026-09-21: phase-29 is MERGED into develop and PUSHED (working folder
+#         moved to merge ver19.5 — see AGENTS.md).
 #         The four questions were ANSWERED (§5b Decision Log, user
 #         2026-09-20: per-session exclusion · per-page AND whole-file · default
 #         count 3), and A9 was added while checking the third.
@@ -643,10 +646,26 @@
         S-1 and the A8 guard were built to remove, sitting one layer down.
 
 ===============================================================================
-  11. ⬜ THE NEXT PIECE OF WORK, AS THE USER FRAMED IT (2026-09-20)
-      NOT PLANNED IN DETAIL, NOT ORDERED. This is the ask, recorded verbatim
-      enough that a fresh session can pick it up.
+  11. ⏸ PARKED 2026-09-21 — THE PER-FILE SELECTION (the user's 2026-09-20 ask)
+      NOT PLANNED IN DETAIL, NOT ORDERED, AND NOW PARKED. This is the ask,
+      recorded verbatim enough that a fresh session can pick it up.
 ===============================================================================
+
+  ⏸ PARKED (user, 2026-09-21): "parking the AI file include for now as additional
+    feature later on as im getting sidetracked with the priority to make things
+    pilot test ready."
+    WHAT IS PARKED: everything in this section — per-file counts, "send this whole
+      file", "send these whole files" — and the cap raise (§10.5) that rides with it.
+    WHAT IS NOT PARKED: S-1..S-4 (§9) stay in the app. They are built,
+      browser-confirmed, merged and pushed; parking means "no further build", not
+      "remove".
+    STILL A LOOSE END, UNORDERED: §10.4(i)+(ii) — tag the two image paths in the log
+      and give parseProjectSlice a success line. Not part of the park; offered to the
+      user 2026-09-21 as optional pre-pilot instrumentation (see pilot plan P5).
+    UN-PARK CONDITION: the pilot is running (pilot plan P6 done), AND either pilot
+      use shows reviewers needing more than the global 1..3 count, or the user
+      re-orders it. Do not re-open on momentum. When it is re-opened, settle §11(1)
+      and §11(2) below FIRST — they are decisions, not gaps.
 
   THE ASK: "the user can choose how many to send in a file (individually or all)
   including being able to send the whole file or files."
@@ -686,9 +705,12 @@
 
   WHERE THE WORK IS
     Branch `phase-29-ai-slice-selection`, off `develop` at 354c4a3.
-    Commits: b3a0e5c (the S-1..S-4 build) + this docs entry. NOT PUSHED, NOT MERGED.
-    `develop` already carries phases 23-28 (merged 354c4a3); `main` is ~403 behind
-    and nothing of the parser track is on it.
+    Commits: b3a0e5c (the S-1..S-4 build) + this docs entry.
+    ✅ 2026-09-21: MERGED into `develop` (fast-forward) and PUSHED, in the working
+    folder `merge ver19.5\PMU_System` (the old `merge ver15` folder is retired).
+    `develop` carries phases 23-29 plus the teammate's Google Calendar merge;
+    `main` is still far behind and nothing of the parser track is on it.
+    ⏸ §11 IS PARKED (2026-09-21) — item 3 below is not next; pilot readiness is.
 
   WHAT IS DONE AND PROVEN
     S-1..S-4 are BUILT and BROWSER-CONFIRMED by the user ("confirmed working",
@@ -702,8 +724,8 @@
        UNBLOCKS pilot P5(a), which cannot be done at all today. Mind the
        str_starts_with($where, 'images') timeout selector.
     2. §10.4(ii) give parseProjectSlice a success line so its rate is computable.
-    3. §11 THE PER-FILE SELECTION — needs a restudy and a plan of its own, plus the
-       two decisions in §11(1)/(2).
+    3. ⏸ PARKED 2026-09-21 — §11 THE PER-FILE SELECTION — needs a restudy and a plan
+       of its own, plus the two decisions in §11(1)/(2). See §11's un-park condition.
     4. §10.4(iv) the BUHI payload hypothesis (pilot P5(b)).
     The cap raise is NOT in this list on purpose — it should follow the re-measured
     timeout (§10.5), not lead it.
