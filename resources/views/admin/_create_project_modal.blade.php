@@ -23,7 +23,8 @@
                 <div class="cpm-header-icon"><i class="bi bi-plus-circle" id="projectModalIcon"></i></div>
                 <div class="cpm-header-text">
                     <h5 class="cpm-title" id="projectModalTitle"><span id="projectModalTitleText">Create Project</span></h5>
-                    <p class="cpm-subtitle">Add the project documents first — the details can be read from them for you.</p>
+                    {{-- Text switched per mode by _create_project_modal.js (create / edit). --}}
+                    <p class="cpm-subtitle" id="projectModalSubtitle">Add the project documents first — the details can be read from them for you.</p>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>

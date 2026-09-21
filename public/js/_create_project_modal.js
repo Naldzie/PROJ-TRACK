@@ -166,6 +166,8 @@ function resetModalToCreateMode() {
     // Update modal title and button
     document.getElementById('projectModalIcon').className = 'bi bi-plus-circle';
     document.getElementById('projectModalTitleText').textContent = 'Create Project';
+    const createSubtitle = document.getElementById('projectModalSubtitle');
+    if (createSubtitle) createSubtitle.textContent = 'Add the project documents first — the details can be read from them for you.';
     const submitBtn = document.getElementById('submitBtn');
     if (submitBtn) {
         submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Create Project';
@@ -260,7 +262,18 @@ async function openEditProjectModal(projectId, showModal = false) {
     
     // Switch the wizard to its 4-step edit layout (Documents removed)
     applyWizardMode();
-    
+
+    // Show the first EDIT page now, before the data fetch below (2026-09-21). The
+    // show handler returns early for edit and relies on this function, and the page
+    // switch used to happen only after the fetch — so for that moment the create
+    // wizard's page 1 (Documents upload) was still the active page and flashed on
+    // screen. Fields fill in when the data arrives; the later updatePageDisplay()
+    // call is unchanged and simply re-renders the same step.
+    currentFormPage = 1;
+    const currentPageInput = document.getElementById('currentPage');
+    if (currentPageInput) currentPageInput.value = 1;
+    if (typeof updatePageDisplay === 'function') updatePageDisplay();
+
     // Only show modal if explicitly requested (e.g., from URL parameter)
     // When triggered by button click, modal is already shown via data-bs-toggle
     if (showModal) {
@@ -275,6 +288,10 @@ async function openEditProjectModal(projectId, showModal = false) {
     // Update modal title and button
     document.getElementById('projectModalIcon').className = 'bi bi-pencil-square';
     document.getElementById('projectModalTitleText').textContent = 'Edit Project';
+    // The create-mode subtitle talks about uploading documents, which edit mode has no
+    // step for. Optional element — older copies of the modal have no subtitle id.
+    const editSubtitle = document.getElementById('projectModalSubtitle');
+    if (editSubtitle) editSubtitle.textContent = 'Update the project details. Documents are managed on the project page.';
     const submitBtn = document.getElementById('submitBtn');
     if (submitBtn) {
         submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save Changes';

@@ -826,6 +826,17 @@
         the contractor warning) and 5 (no notes) fit with NO scroll; step 5 with all
         parse notes needs ~25 px of scroll for the bottom of the baseline card; step 6
         (four fields) has space left. PHP 1256/0.
+      EDIT-MODE FLASH FIXED (user report, same day, screenshot): clicking Edit showed
+        the Documents upload page for a moment before Project Info. CAUSE (pre-existing,
+        not from the redesign): the modal's show handler hands edit off to
+        openEditProjectModal() and returns early, and that function switched pages only
+        AFTER `await loadProjectCategories()` and the project-data fetch — so until they
+        returned, page 1 was still the active page. FIX: openEditProjectModal() now sets
+        step 1 and calls updatePageDisplay() in its synchronous part, right after
+        applyWizardMode() — before the first await, and so before the dialog paints.
+        The later call after the fetch is unchanged. ALSO: the header subtitle now has
+        an id (#projectModalSubtitle) and switches with the mode — edit mode no longer
+        says "Add the project documents first".
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a
