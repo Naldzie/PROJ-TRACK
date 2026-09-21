@@ -98,3 +98,27 @@
     hidden (routes, controller, model, migration-kept table, notification type,
     tests) — a separate, deliberate change.
   · Old "Risk Reported" notifications stay visible in inboxes (history).
+
+===============================================================================
+  5. SESSION LOG
+===============================================================================
+
+  2026-09-21 — ✅ BROWSER-CONFIRMED by the user (register hidden, tab "Issues").
+  2026-09-21 — ADDITIONAL FIX (user): "close the modal for creating an issue after a
+    successful save."
+    · ROOT CAUSE: the addIssueForm submit handler (public/js/admin/projects/
+      issues-modal.js) closed bootstrap.Modal.getInstance(#addIssueModal) — but no
+      element has that id; the create form lives in #issuesModal. getInstance(null)
+      threw inside a try/catch that swallowed it, so the modal never closed. It also
+      ran BEFORE the save, so had it worked, a validation error would have closed
+      the form and lost the typed input.
+    · FIX: the handler takes the modal that contains the form (this.closest('.modal'))
+      and hides it only in the SUCCESS branch, after the attachments are uploaded and
+      the list refreshed; on error the modal stays open with the input intact.
+      The Edit modal's flow is unchanged (not part of the ask).
+    · issues_modal.blade.php: issues-modal.js and issues-modal.css are now versioned
+      with ?v=filemtime (they had no version, so a browser could keep the old script
+      — the recurring "ghost JS" incident in AGENTS.md).
+    · node --check OK; ProjectsRenderTest 17/17. DOM behaviour — not covered by the
+      JS suite; ⬜ browser check owed: create an issue → the modal closes and the
+      list refreshes; submit an invalid one → it stays open with the input kept.

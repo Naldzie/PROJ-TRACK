@@ -490,11 +490,13 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
     formData.delete('resolution_attachment_files[]');
     
     const apiUrl = getIssuesApiUrl();
-    
-    try {
-        var addModal = bootstrap.Modal.getInstance(document.getElementById('addIssueModal'));
-        if (addModal) addModal.hide();
-    } catch (err) {}
+
+    // The modal that holds this form (#issuesModal). It closes only after a
+    // SUCCESSFUL save, so a validation error leaves the typed input in place.
+    // (This used to look up '#addIssueModal', an id that does not exist, so the
+    // modal never closed — fixed 2026-09-21, risk_register_hide_plan.md §5.)
+    const formModalEl = this.closest('.modal');
+
     if (window.ProjTrackPreloader && window.ProjTrackPreloader.show) {
         window.ProjTrackPreloader.show('Saving issue&hellip;');
     }
@@ -534,6 +536,10 @@ document.getElementById('addIssueForm')?.addEventListener('submit', function(e) 
             loadTabIssues();
         }
         if (window.ProjTrackPreloader && window.ProjTrackPreloader.hide) window.ProjTrackPreloader.hide();
+        // Saved — close the create modal
+        if (formModalEl) {
+            bootstrap.Modal.getOrCreateInstance(formModalEl).hide();
+        }
         showSuccessMessage('Issue created successfully');
     })
     .catch(error => {
