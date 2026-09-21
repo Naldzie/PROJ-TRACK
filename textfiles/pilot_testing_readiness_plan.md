@@ -731,6 +731,9 @@
         Deleted tab); as admin, restore it (back in Rejected), delete again, delete
         permanently (gone; a re-import then captures it fresh). Also: older rejected
         layouts should now be visible in the admin's Deleted tab.
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("all browser checks confirmed") —
+        covers BOTH phase-34 (the layouts desk overhaul) and phase-35 (this entry).
+        Neither is merged to develop yet (no merge order given).
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
