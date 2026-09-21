@@ -31,8 +31,9 @@
                         the built-in rules could not find. <strong>Approve</strong> trusts the layout for
                         its contractor. <strong>Teach</strong> lets you point at its columns yourself — it
                         saves a variant, so alternating formats both keep working.
-                        <strong>Reject</strong> discards the capture; a future failed import can capture it
-                        again. Approved layouts only ever fill in when the built-in rules miss — nothing
+                        <strong>Reject</strong> moves it to the Rejected tab, and the same layout is not
+                        captured again; a rejected layout can be deleted to tidy the list and still stays
+                        rejected. Approved layouts only ever fill in when the built-in rules miss — nothing
                         approved here can override them.
                     </div>
                 </details>
@@ -46,9 +47,20 @@
                         <button type="button" class="sch-segment" data-sch-filter="live" onclick="schSetFilter('live')">
                             Live <span class="sch-count" data-sch-count="live">0</span>
                         </button>
+                        <button type="button" class="sch-segment" data-sch-filter="rejected" onclick="schSetFilter('rejected')">
+                            Rejected <span class="sch-count" data-sch-count="rejected">0</span>
+                        </button>
                         <button type="button" class="sch-segment" data-sch-filter="all" onclick="schSetFilter('all')">
                             All <span class="sch-count" data-sch-count="all">0</span>
                         </button>
+                        {{-- Admin-only: deleted rejected layouts (restore / permanent delete).
+                             The endpoints are admin-only on the server too; this only hides the tab. --}}
+                        @if(auth()->check() && auth()->user()->role === 'admin')
+                            <span class="sch-segment-sep" aria-hidden="true"></span>
+                            <button type="button" class="sch-segment sch-segment-deleted" data-sch-filter="deleted" onclick="schSetFilter('deleted')">
+                                <i class="bi bi-trash3"></i> Deleted <span class="sch-count" data-sch-count="deleted">0</span>
+                            </button>
+                        @endif
                     </div>
 
                     <div class="sch-search">
@@ -265,6 +277,9 @@ function schMiniGrid(text) {
 // every row, which is also what the Teach modal's lookup-by-id needs.
 // ===================================================
 let _schSearch = '';
+let _schDeleted = [];
+// Admin sees the Deleted tab (2026-09-21). Display only — the server enforces it.
+const SCH_IS_ADMIN = @json(auth()->check() && auth()->user()->role === 'admin');
 
 function schSetFilter(status) {
     _schFilter = status;
@@ -301,10 +316,20 @@ async function loadScurveHeadersForManagement() {
         list.innerHTML = schEmptyState('bi-hourglass-split', 'Loading layouts…', '');
     }
     try {
-        const response = await fetch(schBase() + '/scurve-header-proposals/all', { headers: { 'Accept': 'application/json' } });
+        const [response, deletedResponse] = await Promise.all([
+            fetch(schBase() + '/scurve-header-proposals/all', { headers: { 'Accept': 'application/json' } }),
+            // Deleted layouts are an admin-only list, always under /admin.
+            SCH_IS_ADMIN ? fetch('/admin/scurve-header-proposals/deleted', { headers: { 'Accept': 'application/json' } }) : null,
+        ]);
         const rows = await response.json();
-        // Cache rows for the teach modal (lookup by id, no extra endpoint).
+        // Cache rows for the teach modal (lookup by id, no extra endpoint). Deleted
+        // rows are kept apart: they cannot be taught until restored.
         _schRowsCache = Array.isArray(rows) ? rows : [];
+        let deleted = [];
+        if (deletedResponse && deletedResponse.ok) {
+            try { deleted = await deletedResponse.json(); } catch (e) { deleted = []; }
+        }
+        _schDeleted = Array.isArray(deleted) ? deleted : [];
         schRender();
     } catch (error) {
         console.error('Error loading S-curve layouts:', error);
@@ -322,13 +347,16 @@ function schRender() {
     if (!list) return;
     const rows = _schRowsCache || [];
 
-    const counts = { proposed: 0, live: 0, all: rows.length };
+    // "All" means everything ON THE DESK — deleted layouts live only in their own tab.
+    const counts = { proposed: 0, live: 0, rejected: 0, all: rows.length, deleted: _schDeleted.length };
     rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
     document.querySelectorAll('#manageScurveHeadersModal [data-sch-count]').forEach(el => {
         el.textContent = counts[el.getAttribute('data-sch-count')] || 0;
     });
 
-    const inStatus = _schFilter === 'all' ? rows : rows.filter(r => r.status === _schFilter);
+    const inStatus = _schFilter === 'deleted'
+        ? _schDeleted.map(r => Object.assign({}, r, { _deleted: true }))
+        : (_schFilter === 'all' ? rows : rows.filter(r => r.status === _schFilter));
     const shown = !_schSearch ? inStatus : inStatus.filter(r =>
         (r.contractor ? String(r.contractor) : 'any contractor global').toLowerCase().includes(_schSearch));
 
@@ -342,6 +370,8 @@ function schRender() {
         const empty = {
             proposed: ['bi-inbox', 'Nothing waiting for review', 'S-curve files the built-in rules cannot read will have their layout captured here.'],
             live: ['bi-check2-circle', 'No approved layouts yet', 'Approved and taught layouts move here and are used when the built-in rules miss.'],
+            rejected: ['bi-x-circle', 'Nothing rejected', 'Rejected layouts are kept here so the same layout is not captured again.'],
+            deleted: ['bi-trash3', 'Nothing deleted', 'Rejected layouts that someone deleted appear here. Restore them, or delete them permanently.'],
             all: ['bi-inbox', 'No layouts yet', 'S-curve files the built-in rules cannot read will have their layout captured here.'],
         }[_schFilter] || ['bi-inbox', 'No layouts', ''];
         list.innerHTML = schEmptyState(empty[0], empty[1], empty[2]);
@@ -393,14 +423,17 @@ function schMapSummary(row) {
 // One layout card. Headline = whose layout it is; the READINESS line says whether
 // approving it would let the reader use it; the header block stays collapsed.
 function schRowHtml(row) {
-    const status = row.status === 'live' ? 'live' : 'proposed';
+    // A deleted row is shown as its own state (admin's Deleted tab only).
+    const status = row._deleted ? 'deleted'
+        : (['live', 'rejected'].includes(row.status) ? row.status : 'proposed');
 
     // E1-PDF: PDF captures land in this same desk; the two file kinds are read by
     // different engines, so a reviewer should know which one they are teaching.
     const kind = row.source_type === 'pdf'
         ? '<span class="sch-pill kind-pdf" title="Captured from a PDF schedule"><i class="bi bi-file-earmark-pdf"></i> PDF</span>'
         : '<span class="sch-pill kind-excel" title="Captured from an Excel workbook"><i class="bi bi-file-earmark-spreadsheet"></i> Excel</span>';
-    const statusPill = '<span class="sch-pill is-' + status + '">' + (status === 'live' ? 'Live' : 'Proposed') + '</span>';
+    const statusPill = '<span class="sch-pill is-' + status + '">'
+        + ({ proposed: 'Proposed', live: 'Live', rejected: 'Rejected', deleted: 'Deleted' }[status]) + '</span>';
 
     const contractor = row.contractor
         ? '<div class="sch-contractor">' + schEscapeHtml(row.contractor) + '</div>'
@@ -451,14 +484,39 @@ function schRowHtml(row) {
     // something (2026-09-14). The server refuses these independently; this only
     // stops the wasted click.
     const unreadable = !row.has_map || unnumbered;
-    const approveBtn = status === 'live' ? ''
+    const approveLabel = status === 'rejected' ? 'Approve instead' : 'Approve';
+    const approveBtn = (status === 'live' || status === 'deleted') ? ''
         : (unreadable
             ? '<button class="btn btn-sm btn-outline-secondary" disabled'
                 + ' title="There is nothing here the reader can use yet — teach this layout\'s columns first,'
-                + ' then approve."><i class="bi bi-check-lg"></i> Approve</button>'
-            : '<button class="btn btn-sm btn-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>');
-    const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
-    const rejectBtn = '<button class="btn btn-sm btn-outline-danger" data-sch-reject="' + row.id + '" title="Discard this capture"><i class="bi bi-x-lg"></i> Reject</button>';
+                + ' then approve."><i class="bi bi-check-lg"></i> ' + approveLabel + '</button>'
+            : '<button class="btn btn-sm btn-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> ' + approveLabel + '</button>');
+    // Teach stays on rejected rows (teaching is how a rejected capture becomes
+    // useful); a deleted row must be restored before it can be taught.
+    const teachBtn = status === 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
+    const rejectBtn = (status === 'rejected' || status === 'deleted') ? '' :
+        '<button class="btn btn-sm btn-outline-danger" data-sch-reject="' + row.id + '" title="Stop using and capturing this layout"><i class="bi bi-x-lg"></i> Reject</button>';
+    // 2026-09-21, parity with the keyword desk: tidy rejected rows away (the refusal
+    // still holds on the server); admins restore or erase deleted ones.
+    const trashBtn = status !== 'rejected' ? '' :
+        '<button class="btn btn-sm btn-outline-secondary" data-sch-trash="' + row.id + '" title="Remove from the desk — it stays rejected">'
+        + '<i class="bi bi-trash3"></i> Delete</button>';
+    const restoreBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-primary" data-sch-restore="' + row.id + '" title="Put it back in the Rejected tab">'
+        + '<i class="bi bi-arrow-counterclockwise"></i> Restore</button>';
+    const forceBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-danger" data-sch-force="' + row.id + '" title="Erase it for good">'
+        + '<i class="bi bi-trash3-fill"></i> Delete permanently</button>';
+    // When it was deleted, for the Deleted tab's meta line.
+    let deletedOn = '';
+    if (status === 'deleted' && row.deleted_at) {
+        const d = new Date(row.deleted_at);
+        if (!isNaN(d)) {
+            deletedOn = '<span title="When it was deleted"><i class="bi bi-clock-history"></i> Deleted '
+                + schEscapeHtml(d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })) + '</span>';
+        }
+    }
 
     return '<div class="sch-item is-' + status + '">'
         + '<div class="sch-item-main">'
@@ -467,11 +525,12 @@ function schRowHtml(row) {
         +   '<div class="sch-meta">'
         +     '<span title="How many failed imports produced these headers"><i class="bi bi-arrow-repeat"></i> Seen ' + seen + (seen === 1 ? ' time' : ' times') + '</span>'
         +     origin
+        +     deletedOn
         +   '</div>'
-        +   ready
+        +   (status === 'deleted' ? '' : ready)
         +   grid
         + '</div>'
-        + '<div class="sch-actions">' + approveBtn + teachBtn + rejectBtn + '</div>'
+        + '<div class="sch-actions">' + approveBtn + teachBtn + rejectBtn + trashBtn + restoreBtn + forceBtn + '</div>'
         + '</div>';
 }
 
@@ -483,7 +542,8 @@ function schToggleGrid(btn) {
     if (!box) return;
     const open = box.hasAttribute('hidden');
     if (open && !box.hasChildNodes()) {
-        const row = (_schRowsCache || []).find(r => String(r.id) === String(id));
+        // Deleted rows live in _schDeleted, apart from the Teach cache.
+        const row = (_schRowsCache || []).concat(_schDeleted || []).find(r => String(r.id) === String(id));
         try {
             box.innerHTML = row ? schMiniGrid(row.header_rows_text) : '';
         } catch (e) {
@@ -513,6 +573,22 @@ document.addEventListener('click', function (e) {
     const teachBtn = e.target.closest ? e.target.closest('[data-sch-teach]') : null;
     if (teachBtn) {
         schTeachColumns(teachBtn.getAttribute('data-sch-teach'));
+        return;
+    }
+    // Deleted-layout actions (2026-09-21).
+    const trashBtn = e.target.closest ? e.target.closest('[data-sch-trash]') : null;
+    if (trashBtn) {
+        schTrashProposal(trashBtn.getAttribute('data-sch-trash'));
+        return;
+    }
+    const restoreBtn = e.target.closest ? e.target.closest('[data-sch-restore]') : null;
+    if (restoreBtn) {
+        schRestoreProposal(restoreBtn.getAttribute('data-sch-restore'));
+        return;
+    }
+    const forceBtn = e.target.closest ? e.target.closest('[data-sch-force]') : null;
+    if (forceBtn) {
+        schForceDeleteProposal(forceBtn.getAttribute('data-sch-force'));
         return;
     }
     // Show/hide a card's captured header block (2026-09-21).
@@ -550,7 +626,7 @@ async function schApproveProposal(id) {
 function schRejectProposal(id) {
     showDeleteConfirmation(
         'Reject Layout',
-        'Discard this captured header block?<br><small style="color:#6b7280;">Future failed imports can capture it again.</small>',
+        'Reject this layout?<br><small style="color:#6b7280;">It moves to the Rejected tab, the reader stops using it, and the same layout is not captured again. You can still approve or teach it from there.</small>',
         async () => {
             try {
                 const response = await fetch(schBase() + '/scurve-header-proposals/' + encodeURIComponent(id), {
@@ -575,6 +651,56 @@ function schRejectProposal(id) {
                 showToast('Network error — failed to reject layout', 'error');
             }
         }
+    );
+}
+
+// ===================================================
+// DELETE / RESTORE / PERMANENT DELETE (2026-09-21, parity with the keyword desk)
+// Delete: admin + staff, rejected layouts only; the layout STAYS refused.
+// Restore (back to Rejected) + permanent delete: admin only (server-enforced).
+// ===================================================
+
+// Shared request for the three actions: toast the outcome, then reload the desk.
+async function schSend(method, url, okMessage, failMessage) {
+    try {
+        const response = await fetch(url, { method: method, headers: schHeaders() });
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) {
+            showToast(schExtractErrorMessage(data, failMessage), 'error');
+            return;
+        }
+        showToast(okMessage, 'success');
+        loadScurveHeadersForManagement();
+    } catch (error) {
+        console.error(failMessage, error);
+        showToast('Network error — ' + failMessage.toLowerCase(), 'error');
+    }
+}
+
+// Soft-delete a rejected layout after confirmation.
+function schTrashProposal(id) {
+    showDeleteConfirmation(
+        'Delete Rejected Layout',
+        'Remove this rejected layout from the list?<br><small style="color:#6b7280;">It stays rejected and will not be captured again. An admin can restore it.</small>',
+        () => schSend('DELETE', schBase() + '/scurve-header-proposals/' + encodeURIComponent(id) + '/trash',
+            'Rejected layout deleted', 'Failed to delete layout')
+    );
+}
+
+// Put a deleted layout back on the desk (it returns to Rejected). Undoable, so no confirm.
+function schRestoreProposal(id) {
+    schSend('PATCH', '/admin/scurve-header-proposals/' + encodeURIComponent(id) + '/restore',
+        'Restored to Rejected', 'Failed to restore layout');
+}
+
+// Erase a deleted layout for good, after a confirmation that says what is lost.
+function schForceDeleteProposal(id) {
+    showDeleteConfirmation(
+        'Delete Permanently',
+        'Permanently delete this layout?<br><small style="color:#6b7280;">This cannot be undone. The system forgets it was ever rejected, so the next failed import of the same file will capture it again.</small>',
+        () => schSend('DELETE', '/admin/scurve-header-proposals/' + encodeURIComponent(id) + '/force',
+            'Layout permanently deleted', 'Failed to delete layout permanently')
     );
 }
 

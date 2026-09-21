@@ -496,7 +496,9 @@ class ScurveHeaderProposalTest extends TestCase
         $this->assertSame('live', $unnumbered->fresh()->status);
     }
 
-    // Reject soft-deletes (history preserved, recoverable).
+    // Reject RECORDS A VERDICT and keeps the row (2026-09-21). It used to soft-delete,
+    // which collect() could not see — so the next failed import re-captured the same
+    // layout as a fresh Proposed row, with no memory that anyone had decided.
     // Called by: DELETE from the review modal Reject button.
     public function test_admin_can_reject_capture(): void
     {
@@ -509,7 +511,204 @@ class ScurveHeaderProposalTest extends TestCase
         $this->actingAs($admin)->deleteJson("/admin/scurve-header-proposals/{$row->id}")
             ->assertOk()->assertJson(['success' => true]);
 
+        $this->assertNotSoftDeleted('scurve_header_proposals', ['id' => $row->id]);
+        $this->assertSame('rejected', $row->fresh()->status);
+    }
+
+    /* ─── Rejected tab + deleting rejected layouts (2026-09-21) ─────────────── */
+
+    // Capture the near-miss workbook once through collect() and return its row, so
+    // the tests below exercise the real hash / type / contractor identity.
+    private function captureNearMiss(User $user, string $path): ScurveHeaderProposal
+    {
+        $prefix = $user->role === 'admin' ? '/admin' : '/staff';
+        $this->actingAs($user)
+            ->post($prefix . '/scurve-header-proposals/collect', ['file' => new UploadedFile($path, 'weird.xlsx', null, null, true)])
+            ->assertCreated();
+
+        return ScurveHeaderProposal::withTrashed()->latest('id')->first();
+    }
+
+    // A rejected layout is never re-proposed or auto-promoted by repeats: the count
+    // still rises (it is evidence), no second row appears, and it stays rejected.
+    // Called by: collect() after a reviewer rejected the capture.
+    public function test_a_rejected_layout_stays_rejected_when_captured_again(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $staff = $this->makeUser('staff');
+        $row = $this->captureNearMiss($staff, $path);
+
+        $this->actingAs($staff)->deleteJson("/staff/scurve-header-proposals/{$row->id}")->assertOk();
+
+        for ($i = 0; $i < 3; $i++) {
+            $this->actingAs($staff)
+                ->post('/staff/scurve-header-proposals/collect', ['file' => new UploadedFile($path, 'weird.xlsx', null, null, true)])
+                ->assertCreated()->assertJson(['refused' => true]);
+        }
+
+        $this->assertSame(1, ScurveHeaderProposal::withTrashed()->count(), 'no second row');
+        $this->assertSame('rejected', $row->fresh()->status, 'three repeats would normally auto-live it');
+        $this->assertSame(4, $row->fresh()->occurrences, 'the count still rises');
+        $this->actingAs($staff)->getJson('/staff/scurve-header-proposals/all?status=rejected')
+            ->assertOk()->assertJsonCount(1);
+
+        unlink($path);
+    }
+
+    // Staff may delete a REJECTED layout; proposed and live ones are refused.
+    // Called by: DELETE /staff/scurve-header-proposals/{id}/trash.
+    public function test_only_rejected_layouts_can_be_deleted(): void
+    {
+        $staff = $this->makeUser('staff');
+        foreach (['proposed', 'live'] as $i => $status) {
+            $row = ScurveHeaderProposal::create([
+                'header_rows_text' => 'X', 'header_hash' => hash('sha256', "keep-{$i}"), 'status' => $status,
+            ]);
+            $this->actingAs($staff)->deleteJson("/staff/scurve-header-proposals/{$row->id}/trash")->assertStatus(422);
+            $this->assertNotSoftDeleted('scurve_header_proposals', ['id' => $row->id]);
+        }
+
+        $rejected = ScurveHeaderProposal::create([
+            'header_rows_text' => 'X', 'header_hash' => hash('sha256', 'gone'), 'status' => 'rejected',
+        ]);
+        $this->actingAs($staff)->deleteJson("/staff/scurve-header-proposals/{$rejected->id}/trash")
+            ->assertOk()->assertJson(['success' => true]);
+        $this->assertSoftDeleted('scurve_header_proposals', ['id' => $rejected->id]);
+        $this->actingAs($staff)->getJson('/staff/scurve-header-proposals/all')->assertOk()->assertJsonCount(2);
+    }
+
+    // THE KEY INVARIANT: deleting a rejection must not forget it.
+    // Called by: collect() after a reviewer deleted the rejected capture.
+    public function test_a_deleted_rejection_is_still_refused_by_collect(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $admin = $this->makeUser('admin');
+        $row = $this->captureNearMiss($admin, $path);
+        $row->update(['status' => 'rejected']);
+        $row->delete();
+
+        $this->actingAs($admin)
+            ->post('/admin/scurve-header-proposals/collect', ['file' => new UploadedFile($path, 'weird.xlsx', null, null, true)])
+            ->assertCreated()->assertJson(['refused' => true]);
+
+        $this->assertSame(1, ScurveHeaderProposal::withTrashed()->count(), 'no fresh Proposed row');
+        $this->assertSame(0, ScurveHeaderProposal::count(), 'still off the desk');
+
+        unlink($path);
+    }
+
+    // Rejects made BEFORE 2026-09-21 were soft-deletes, and a later failed import may
+    // already have re-captured the block as a second, ACTIVE row. The lookup must
+    // count that active row, not bump the dead one.
+    // Called by: ScurveHeaderProposal::findForCapture() from collect().
+    public function test_capture_prefers_an_active_row_over_an_old_soft_deleted_twin(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $admin = $this->makeUser('admin');
+        $old = $this->captureNearMiss($admin, $path);
+        $old->delete();                                   // the pre-2026-09-21 "reject"
+        $twin = ScurveHeaderProposal::create([            // what the next import made
+            'contractor_id' => $old->contractor_id, 'source_type' => $old->source_type,
+            'header_rows_text' => $old->header_rows_text, 'header_hash' => $old->header_hash,
+            'column_map' => $old->column_map, 'occurrences' => 1, 'status' => 'proposed',
+        ]);
+
+        $this->actingAs($admin)
+            ->post('/admin/scurve-header-proposals/collect', ['file' => new UploadedFile($path, 'weird.xlsx', null, null, true)])
+            ->assertCreated()->assertJsonMissing(['refused' => true]);
+
+        $this->assertSame(2, $twin->fresh()->occurrences, 'the active twin was counted');
+        $this->assertSame(1, ScurveHeaderProposal::onlyTrashed()->find($old->id)->occurrences, 'the dead row was not');
+
+        unlink($path);
+    }
+
+    // An AI answer must not quietly un-reject a layout by backfilling it to proposed.
+    // Called by: ScurveHeaderProposal::storeAiDerived().
+    public function test_an_ai_numbering_does_not_unreject_a_rejected_layout(): void
+    {
+        $hash = hash('sha256', 'rejected-roof-block');
+        $row = ScurveHeaderProposal::create([
+            'contractor_id' => null, 'source_type' => 'pdf',
+            'header_rows_text' => 'COLUMNS: A,B | HEADER: column labels', 'header_hash' => $hash,
+            'column_map' => null, 'occurrences' => 2, 'status' => 'rejected', 'source' => 'auto-capture',
+        ]);
+        $numbered = ['v' => 1, 'kind' => 'pdf', 'pages' => [
+            ['monthCols' => [['index' => 1, 'x' => 0.5, 'xEnd' => 0.7], ['index' => 2, 'x' => 0.7, 'xEnd' => 0.9]]],
+        ]];
+
+        ScurveHeaderProposal::storeAiDerived(null, $hash, 'ignored', $numbered, 'pdf');
+
+        $this->assertSame(1, ScurveHeaderProposal::withTrashed()->where('header_hash', $hash)->count());
+        $fresh = $row->fresh();
+        $this->assertSame('rejected', $fresh->status);
+        $this->assertNull($fresh->column_map, 'the verdict holds; nothing was backfilled');
+    }
+
+    // The Deleted tab, restore and permanent delete are admin-only.
+    public function test_staff_cannot_see_restore_or_destroy_deleted_layouts(): void
+    {
+        $staff = $this->makeUser('staff');
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'X', 'header_hash' => hash('sha256', 'z'), 'status' => 'rejected',
+        ]);
+        $row->delete();
+
+        $this->actingAs($staff)->getJson('/staff/scurve-header-proposals/deleted')->assertStatus(404);
+        $this->actingAs($staff)->getJson('/admin/scurve-header-proposals/deleted')->assertRedirect(route('unauthorized'));
+        $this->actingAs($staff)->patchJson("/admin/scurve-header-proposals/{$row->id}/restore")->assertRedirect(route('unauthorized'));
+        $this->actingAs($staff)->deleteJson("/admin/scurve-header-proposals/{$row->id}/force")->assertRedirect(route('unauthorized'));
         $this->assertSoftDeleted('scurve_header_proposals', ['id' => $row->id]);
+    }
+
+    // Admin lists deleted layouts and restores one — ALWAYS as Rejected, even a
+    // pre-2026-09-21 row whose status still reads live.
+    // Called by: the admin's Deleted tab (GET deleted, PATCH restore).
+    public function test_admin_restores_a_deleted_layout_as_rejected(): void
+    {
+        $admin = $this->makeUser('admin');
+        $row = ScurveHeaderProposal::create([
+            'header_rows_text' => 'X', 'header_hash' => hash('sha256', 'legacy'), 'status' => 'live',
+        ]);
+        $row->delete();                                   // legacy soft-delete "reject"
+
+        $this->actingAs($admin)->getJson('/admin/scurve-header-proposals/deleted')
+            ->assertOk()->assertJsonCount(1)->assertJsonPath('0.id', $row->id);
+
+        $this->actingAs($admin)->patchJson("/admin/scurve-header-proposals/{$row->id}/restore")->assertOk();
+
+        $this->assertNotSoftDeleted('scurve_header_proposals', ['id' => $row->id]);
+        $this->assertSame('rejected', $row->fresh()->status, 'never straight back in front of the reader');
+        $this->actingAs($admin)->patchJson("/admin/scurve-header-proposals/{$row->id}/restore")->assertStatus(422);
+    }
+
+    // Permanent delete is two-step (only trashed rows) and makes the loop forget:
+    // the next failed import captures the layout again as a new Proposed row.
+    // Called by: DELETE /admin/scurve-header-proposals/{id}/force.
+    public function test_admin_permanent_delete_lets_the_layout_be_captured_again(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        $this->makeNearMissWorkbook($path);
+        $admin = $this->makeUser('admin');
+        $row = $this->captureNearMiss($admin, $path);
+        $row->update(['status' => 'rejected']);
+
+        $this->actingAs($admin)->deleteJson("/admin/scurve-header-proposals/{$row->id}/force")->assertStatus(422);
+        $this->assertNotNull(ScurveHeaderProposal::find($row->id), 'a row still on the desk cannot be destroyed in one click');
+
+        $row->delete();
+        $this->actingAs($admin)->deleteJson("/admin/scurve-header-proposals/{$row->id}/force")->assertOk();
+        $this->assertSame(0, ScurveHeaderProposal::withTrashed()->count());
+
+        $this->actingAs($admin)
+            ->post('/admin/scurve-header-proposals/collect', ['file' => new UploadedFile($path, 'weird.xlsx', null, null, true)])
+            ->assertCreated()->assertJsonMissing(['refused' => true]);
+        $this->assertSame('proposed', ScurveHeaderProposal::first()->status);
+
+        unlink($path);
     }
 
     // Contractors get nothing on review routes either (redirect by role middleware).

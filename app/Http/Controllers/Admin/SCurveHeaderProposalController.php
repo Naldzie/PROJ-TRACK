@@ -146,17 +146,19 @@ class SCurveHeaderProposalController extends Controller
 
         // Scoped by TYPE as well as hash: an Excel row and a PDF row must never
         // merge into each other, since every reader keys off source_type.
-        $query = ScurveHeaderProposal::where('header_hash', $hash)
-            ->where('source_type', $isPdf ? 'pdf' : 'excel');
-        if ($contractorId === null) {
-            $query->whereNull('contractor_id');
-        } else {
-            $query->where('contractor_id', $contractorId);
-        }
-
-        $row = $query->first();
+        // findForCapture (2026-09-21) also sees DELETED rows, preferring an active one.
+        $row = ScurveHeaderProposal::findForCapture($hash, $isPdf ? 'pdf' : 'excel', $contractorId);
         if ($row) {
             $row->increment('occurrences');
+            // A REJECTED layout — or one deleted after rejection — stays refused
+            // (2026-09-21, parity with the keyword desk). It used to be soft-deleted
+            // on Reject, which this lookup could not see, so the very next failed
+            // import re-captured it as a fresh Proposed row and the reviewer judged
+            // it again with no memory of the decision. The count still rises (it is
+            // evidence); nothing else changes. Only the desk can undo a rejection.
+            if ($row->isRefused()) {
+                return response()->json(['success' => true, 'stored' => 1, 'refused' => true], 201);
+            }
             // Phase-B absolute: ai-derived rows NEVER auto-live (a hallucinated layout
             // must not self-trust into baselines) — only human approval flips them.
             //
@@ -210,7 +212,7 @@ class SCurveHeaderProposalController extends Controller
     }
 
     /**
-     * List captures for the review screen (?status=proposed|live, default all).
+     * List captures for the review screen (?status=proposed|live|rejected, default all).
      * Most-seen first so the highest-value layouts are reviewed first.
      */
     public function getAllForManagement(Request $request)
@@ -218,7 +220,7 @@ class SCurveHeaderProposalController extends Controller
         $this->ensureReviewer();
 
         $query = ScurveHeaderProposal::with('contractor')->orderByDesc('occurrences')->orderBy('id');
-        if (in_array($request->query('status'), ['proposed', 'live'], true)) {
+        if (in_array($request->query('status'), ['proposed', 'live', 'rejected'], true)) {
             $query->where('status', $request->query('status'));
         }
 
@@ -292,20 +294,157 @@ class SCurveHeaderProposalController extends Controller
     }
 
     /**
-     * Reject a capture: soft-delete it (recoverable via restore, keeps history).
+     * Reject a capture: record the verdict (status 'rejected') and KEEP the row.
+     *
+     * 2026-09-21: this used to soft-delete, the same mistake the keyword desk fixed
+     * on 2026-09-20 — collect() could not see a deleted row, so the next failed
+     * import re-captured the layout as a new Proposed row. The row now stays in the
+     * Rejected tab and collect() keeps refusing it. A live layout rejected here
+     * stops being consulted by the reader (it only reads status 'live').
      */
     public function destroy(ScurveHeaderProposal $proposal)
     {
         $this->ensureReviewer();
 
         $id = $proposal->id;
-        $proposal->delete();
+        $proposal->update(['status' => 'rejected']);
 
         $this->logActivity('Reject S-Curve Header', "Rejected S-curve header capture #{$id}");
 
         return response()->json([
             'success' => true,
             'message' => 'Header rejected successfully',
+        ]);
+    }
+
+    /* ─── Deleting rejected layouts (2026-09-21, parity with the keyword desk) ──
+     * Delete (admin + staff) SOFT-deletes a REJECTED row: it leaves the desk, but
+     * collect() still sees it (findForCapture) and keeps refusing the layout. The
+     * Deleted tab, Restore (back to Rejected) and Permanent delete are ADMIN-only.
+     * Permanent delete is the one action after which a capture may come back.
+     * ────────────────────────────────────────────────────────────────────── */
+
+    // Admin-only gate for the Deleted tab's endpoints (the role middleware turns
+    // staff away first; this is the second gate).
+    protected function ensureAdmin()
+    {
+        if (auth()->user()->role !== 'admin') {
+            abort(response()->json(['message' => 'Only an admin can manage deleted layouts.'], 403));
+        }
+    }
+
+    /**
+     * Soft-delete a rejected layout (tidies the desk; the refusal still holds).
+     * Called by: the Delete button on a Rejected card in the review modal.
+     */
+    public function trash(ScurveHeaderProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        // Only a decided refusal may be tidied away — a proposed row would skip
+        // review, and a live one would silently stop being read.
+        if ($proposal->status !== 'rejected') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only rejected layouts can be deleted. Reject it first.',
+            ], 422);
+        }
+
+        $proposal->delete();
+
+        $this->logActivity('Delete S-Curve Header', "Deleted rejected S-curve header capture #{$proposal->id}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rejected layout deleted',
+        ]);
+    }
+
+    /**
+     * List soft-deleted layouts for the admin's Deleted tab (newest deletion first).
+     * Same row shape as getAllForManagement() plus deleted_at.
+     * Called by: loadScurveHeadersForManagement() when the viewer is an admin.
+     */
+    public function getDeleted()
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        $rows = ScurveHeaderProposal::onlyTrashed()->with('contractor')
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'contractor_id' => $row->contractor_id,
+                    'contractor' => $row->contractor
+                        ? ($row->contractor->company_name ?: $row->contractor->contractor_name)
+                        : '',
+                    'source_type' => $row->source_type,
+                    'header_rows_text' => $row->header_rows_text ?? '',
+                    'column_map' => $row->column_map,
+                    'occurrences' => $row->occurrences,
+                    'status' => $row->status,
+                    'source' => $row->source ?? 'auto-capture',
+                    'has_map' => $row->column_map !== null,
+                    'deleted_at' => $row->deleted_at,
+                ];
+            });
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Restore a deleted layout to the desk. It ALWAYS returns as Rejected: rows
+     * deleted before 2026-09-21 were rejected by soft-delete while their status
+     * still read proposed or live, and restoring one of those must not silently
+     * put a layout back in front of the reader.
+     * Called by: the Restore button on the admin's Deleted tab.
+     */
+    public function restore(ScurveHeaderProposal $proposal)
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        if (!$proposal->trashed()) {
+            return response()->json(['success' => false, 'message' => 'This layout is not deleted.'], 422);
+        }
+
+        $proposal->restore();
+        $proposal->update(['status' => 'rejected']);
+
+        $this->logActivity('Restore S-Curve Header', "Restored S-curve header capture #{$proposal->id} to Rejected");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Layout restored to Rejected',
+        ]);
+    }
+
+    /**
+     * Permanently delete a soft-deleted layout. The loop forgets it, so the next
+     * failed import of the same file captures it again as a new Proposed row.
+     * Called by: the Delete permanently button on the admin's Deleted tab.
+     */
+    public function forceDestroy(ScurveHeaderProposal $proposal)
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        // Two-step on purpose: only something already in the Deleted tab can be
+        // destroyed, so no single click erases a row still on the desk.
+        if (!$proposal->trashed()) {
+            return response()->json(['success' => false, 'message' => 'Delete the layout first; only deleted layouts can be removed permanently.'], 422);
+        }
+
+        $id = $proposal->id;
+        $proposal->forceDelete();
+
+        $this->logActivity('Permanently Delete S-Curve Header', "Permanently deleted S-curve header capture #{$id}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Layout permanently deleted',
         ]);
     }
 

@@ -58,6 +58,44 @@ class ScurveHeaderProposal extends Model
     }
 
     /**
+     * A reviewer's verdict against this layout: rejected, or deleted after rejection.
+     * Such a row must never be re-proposed, backfilled or auto-promoted by repeats
+     * or by an AI answer — only the desk (approve / teach / restore) can undo it.
+     */
+    public function isRefused(): bool
+    {
+        return $this->status === 'rejected' || $this->trashed();
+    }
+
+    /**
+     * Find the stored row for one capture identity (hash + type + contractor).
+     *
+     * 2026-09-21: rejected rows are KEPT and deleted rejections stay refused, so the
+     * lookup must see soft-deleted rows too. It prefers an ACTIVE row and falls back
+     * to a deleted one only when none exists: rejects made before 2026-09-21 were
+     * soft-deletes, and a later failed import may already have re-captured the same
+     * block as a second, active row — that live-on-the-desk row is the one to count.
+     *
+     * Called by: SCurveHeaderProposalController::collect(), storeAiDerived().
+     */
+    public static function findForCapture(string $hash, string $sourceType, ?int $contractorId): ?self
+    {
+        $scope = function ($query) use ($hash, $sourceType, $contractorId) {
+            $query->where('header_hash', $hash)->where('source_type', $sourceType);
+            if ($contractorId === null) {
+                $query->whereNull('contractor_id');
+            } else {
+                $query->where('contractor_id', $contractorId);
+            }
+
+            return $query;
+        };
+
+        return $scope(static::query())->orderBy('id')->first()
+            ?? $scope(static::onlyTrashed())->orderBy('id')->first();
+    }
+
+    /**
      * Is this PDF map geometry WITHOUT a numbering?
      *
      * An ambiguous capture (positional wording — the roof prints "30 days" six
@@ -120,15 +158,14 @@ class ScurveHeaderProposal extends Model
         string $sourceType = 'excel'
     ): self {
         $sourceType = in_array($sourceType, self::SOURCE_TYPES, true) ? $sourceType : 'excel';
-        $query = static::where('header_hash', $hash)->where('source_type', $sourceType);
-        if ($contractorId === null) {
-            $query->whereNull('contractor_id');
-        } else {
-            $query->where('contractor_id', $contractorId);
-        }
-
-        $row = $query->first();
+        $row = static::findForCapture($hash, $sourceType, $contractorId);
         if ($row) {
+            // A REJECTED (or deleted-after-rejection) layout is a reviewer's verdict
+            // (2026-09-21). An AI answer must not quietly backfill it back to
+            // proposed — that would un-reject it without anyone deciding to.
+            if ($row->isRefused()) {
+                return $row;
+            }
             // A map-LESS row was always backfilled. An UNNUMBERED one must be too,
             // and 2026-09-14 is when that stopped being theoretical: once the
             // ai-derived block became the same merged grid the capture builds, the
