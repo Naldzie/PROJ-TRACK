@@ -388,3 +388,20 @@
     ⏸ POSSIBLE FEATURES (parked): R-D3 C (letterhead/logo settings), R-D7 inspection
       photos, R-D8 the PMU's own report form, a Word preview in the modal (Mammoth
       drops headers/footers — the PDF preview is used instead).
+  2026-09-21 — ✅ USER CONFIRMED: after the P0 BOM fix the Excel exports open
+    correctly. The August "corrupt Excel" report (report_generation_plan.md §6.4) is
+    explained — the UTF-8 BOM in bootstrap/app.php — and the Excel freeze is lifted.
+    User is considering NOT offering the Excel exports at all (commented out until the
+    client or panel asks for them); discussion + proposal in the session, no change yet.
+  2026-09-21 — ✅ BROWSER-CONFIRMED by the user: "the word and pdf is working
+    beautifully" (Project Report modal, Word and PDF downloads).
+  2026-09-21 — EXCEL EXPORTS HIDDEN (user decision, after discussion). The four
+    "(Excel)" items in the header Reports menu are wrapped in a Blade comment in
+    components/header.blade.php, with the reason and how to re-enable. NOT removed:
+    the routes, ReportExportService's Excel methods and ReportExportTest stay, so they
+    keep being tested and can be switched back on by removing the comment when the
+    client or panel asks. What the report does NOT carry that Excel did (raised with
+    the user): the full baseline schedule as a table (the report shows it only as the
+    S-curve), the full issue history (the report lists issues open at the period end
+    and those resolved within it), and admin columns (recorded by, evidence count,
+    extension reviewer / rejection reason). Suites unchanged (report tests 44/44).

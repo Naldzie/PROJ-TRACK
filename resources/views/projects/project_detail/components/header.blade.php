@@ -167,6 +167,14 @@
                                 <i class="bi bi-file-earmark-text"></i> Project Report (Word / PDF)…
                             </button>
                         </li>
+                        {{--
+                            Excel exports HIDDEN (user decision, 2026-09-21) until the client or
+                            panel asks for them — the Project Report above covers progress,
+                            extensions and issues. They WORK (the "corrupt file" was the UTF-8
+                            BOM, fixed on phase-38); routes, ReportExportService and
+                            ReportExportTest stay in place. To re-enable, remove this comment
+                            wrapper. See textfiles/project_report_overhaul_plan.md §8.
+
                         <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.progress', $project->id) }}">
                             <i class="bi bi-file-earmark-excel"></i> Progress History (Excel)</a></li>
                         <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.baseline', $project->id) }}">
@@ -175,6 +183,7 @@
                             <i class="bi bi-file-earmark-excel"></i> Extensions (Excel)</a></li>
                         <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.issues', $project->id) }}">
                             <i class="bi bi-file-earmark-excel"></i> Issues (Excel)</a></li>
+                        --}}
                     </ul>
                 </div>
                 @include('projects.project_detail.components.modals._project_report_modal')
