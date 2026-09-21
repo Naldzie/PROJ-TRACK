@@ -1,4 +1,4 @@
-﻿<!-- ISSUES MODAL -->
+<!-- ISSUES MODAL -->
 @php
     $baselines = $project->baselineSchedules()->orderBy('planned_date')->get();
     $defaultBaselineId = app(\App\Services\ProjectOverviewService::class)->getDefaultIssueBaseline($project)?->id;

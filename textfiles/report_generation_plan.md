@@ -324,7 +324,15 @@ NOT touched:
    reports, gate contractor exports off entirely.
 3. **PDF S-Curve fidelity** — inline SVG is close to the browser chart but
    simpler (no tooltips/interaction). Acceptable for a printed report.
-4. **Excel corruption report (BLOCKING Excel work)** — a client reported a
+4. **🔎 LIKELY ROOT CAUSE FOUND 2026-09-21 — awaiting the user's Excel check.**
+   `bootstrap/app.php` was saved with a UTF-8 BOM, so every HTTP response began
+   with EF BB BF; a downloaded `prj-2026-00050_progress.xlsx` (2026-09-17) starts
+   `ef bb bf 50 4b` — BOM, then the ZIP's "PK". Excel treats that as a corrupt
+   file. Local reproductions passed because the tests read the stream body, not
+   the HTTP output. Fixed on `phase-38-remove-utf8-bom` (+ `NoUtf8BomTest`).
+   See `project_report_overhaul_plan.md` §8. If the user confirms Excel opens
+   clean, lift the freeze below.
+   **Excel corruption report (BLOCKING Excel work)** — a client reported a
    downloaded `.xlsx` as corrupt, but every local reproduction round-trips
    through `IOFactory::load` cleanly (tests pass; `PK\x03\x04` magic verified;
    cells assert correctly). Root cause never identified. **Decision: Excel

@@ -1,4 +1,4 @@
-﻿// Initialize issues on modal open
+// Initialize issues on modal open
 document.addEventListener('DOMContentLoaded', function() {
     const issuesModal = document.getElementById('issuesModal');
     if (issuesModal) {
