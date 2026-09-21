@@ -61,6 +61,13 @@ function updatePageDisplay() {
         submitBtn.classList.add('d-none');
     }
     
+    // Footer "Step X of N" (2026-09-21 redesign). Optional element — pages that
+    // carry an older copy of the modal simply have nothing to write to.
+    const stepCount = document.getElementById('cpmStepCount');
+    if (stepCount) {
+        stepCount.textContent = 'Step ' + currentFormPage + ' of ' + totalPages;
+    }
+
     // Scroll to top of modal
     const modalBody = document.querySelector('#addProjectModal .modal-body');
     if (modalBody) {

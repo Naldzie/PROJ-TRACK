@@ -394,7 +394,8 @@
 {{-- FORM VALIDATOR JS FUNCTION(CREATE/EDIT FORM VALIDATION) --}}
 <script src="{{ asset('js/admin/projects/field-validation.js') }}"></script>
 {{-- CREATE/EDIT PROJECTS MODAL MULTI PAGE FORM NAVIGATION JS FUNCTION --}}
-<script src="{{ asset('js/admin/projects/form-navigation.js') }}"></script>
+{{-- mtime-versioned (2026-09-21): an unversioned tag is the recurring stale-script incident. --}}
+    <script src="{{ asset('js/admin/projects/form-navigation.js') }}?v={{ filemtime(public_path('js/admin/projects/form-navigation.js')) }}"></script>
 
 {{-- PRELOADER SCRIPT --}}
 <script src="{{ asset('js/components/preloader.js') }}"></script>

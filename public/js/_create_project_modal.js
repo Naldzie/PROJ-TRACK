@@ -155,6 +155,11 @@ let titleValidator;
 function resetModalToCreateMode() {
     window._projectModalMode = 'create';
     window._editingProjectId = null;
+
+    // Abandon any edit load still in flight and clear its loading state — Create
+    // must never open locked, or be filled later by a late edit response.
+    _editLoadTicket++;
+    setEditProjectLoading(false);
     
     // Reset the autofill "already applied" flag so a new modal session
     // starts fresh (Next will re-run the document scan again).
@@ -166,6 +171,8 @@ function resetModalToCreateMode() {
     // Update modal title and button
     document.getElementById('projectModalIcon').className = 'bi bi-plus-circle';
     document.getElementById('projectModalTitleText').textContent = 'Create Project';
+    const createSubtitle = document.getElementById('projectModalSubtitle');
+    if (createSubtitle) createSubtitle.textContent = 'Add the project documents first — the details can be read from them for you.';
     const submitBtn = document.getElementById('submitBtn');
     if (submitBtn) {
         submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Create Project';
@@ -252,6 +259,28 @@ function resetModalToCreateMode() {
 }
 
 // ===================================================
+// EDIT-MODE LOADING STATE (2026-09-21)
+// While openEditProjectModal() fetches a project the page shows an overlay and
+// the footer buttons are disabled — otherwise the reviewer sees the previous
+// project's values (or empty fields) and could press Next / Save on them.
+// _editLoadTicket numbers each load: only the LATEST load may fill the form or
+// clear the overlay, so a slow response for a project whose modal was closed
+// (or replaced by another Edit) is ignored instead of overwriting the new one.
+// ===================================================
+let _editLoadTicket = 0;
+
+// Show or hide the loading overlay and lock/unlock the footer buttons.
+// Called by: openEditProjectModal(), resetModalToCreateMode(), the hidden handler.
+function setEditProjectLoading(isLoading) {
+    const overlay = document.getElementById('cpmEditLoading');
+    if (overlay) overlay.hidden = !isLoading;
+    ['prevPageBtn', 'nextPageBtn', 'submitBtn'].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !!isLoading;
+    });
+}
+
+// ===================================================
 // OPEN MODAL FOR EDITING A PROJECT
 // ===================================================
 async function openEditProjectModal(projectId, showModal = false) {
@@ -260,7 +289,22 @@ async function openEditProjectModal(projectId, showModal = false) {
     
     // Switch the wizard to its 4-step edit layout (Documents removed)
     applyWizardMode();
-    
+
+    // Show the first EDIT page now, before the data fetch below (2026-09-21). The
+    // show handler returns early for edit and relies on this function, and the page
+    // switch used to happen only after the fetch — so for that moment the create
+    // wizard's page 1 (Documents upload) was still the active page and flashed on
+    // screen. Fields fill in when the data arrives; the later updatePageDisplay()
+    // call is unchanged and simply re-renders the same step.
+    currentFormPage = 1;
+    const currentPageInput = document.getElementById('currentPage');
+    if (currentPageInput) currentPageInput.value = 1;
+    if (typeof updatePageDisplay === 'function') updatePageDisplay();
+
+    // Loading state until the project arrives (see setEditProjectLoading above).
+    const loadTicket = ++_editLoadTicket;
+    setEditProjectLoading(true);
+
     // Only show modal if explicitly requested (e.g., from URL parameter)
     // When triggered by button click, modal is already shown via data-bs-toggle
     if (showModal) {
@@ -275,6 +319,10 @@ async function openEditProjectModal(projectId, showModal = false) {
     // Update modal title and button
     document.getElementById('projectModalIcon').className = 'bi bi-pencil-square';
     document.getElementById('projectModalTitleText').textContent = 'Edit Project';
+    // The create-mode subtitle talks about uploading documents, which edit mode has no
+    // step for. Optional element — older copies of the modal have no subtitle id.
+    const editSubtitle = document.getElementById('projectModalSubtitle');
+    if (editSubtitle) editSubtitle.textContent = 'Update the project details. Documents are managed on the project page.';
     const submitBtn = document.getElementById('submitBtn');
     if (submitBtn) {
         submitBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save Changes';
@@ -305,15 +353,25 @@ async function openEditProjectModal(projectId, showModal = false) {
         }
         
         const result = await response.json();
-        
+
+        // A newer load (another Edit, or a switch to Create) has taken over — this
+        // answer belongs to a modal session that no longer exists. Drop it.
+        if (loadTicket !== _editLoadTicket) return;
+
         if (result.success) {
             populateFormWithProjectData(result.project);
         } else {
             showError('Failed to load project data: ' + (result.message || 'Unknown error'));
         }
     } catch (error) {
+        if (loadTicket !== _editLoadTicket) return;
         console.error('Error loading project:', error);
         showError('Error loading project data: ' + error.message);
+    } finally {
+        // Only the latest load clears the overlay (a stale one must not hide the
+        // spinner of the load that replaced it). On a failed load the buttons are
+        // unlocked too, so the reviewer can still Cancel or retry.
+        if (loadTicket === _editLoadTicket) setEditProjectLoading(false);
     }
 }
 
@@ -426,7 +484,11 @@ function showError(message) {
     const errorDiv = document.getElementById('createProjectError');
     const errorMsg = document.getElementById('createProjectErrorMessage');
     errorMsg.textContent = message;
-    errorDiv.classList.remove('d-none');
+    // Two hiding classes are in play: hideError() adds d-none, while the markup and
+    // document-manager.js hide with utility-none. Removing only d-none (as this did
+    // until 2026-09-21) left utility-none on, so a validation message such as "Please
+    // fill in all required fields on this page" was set but never shown.
+    errorDiv.classList.remove('d-none', 'utility-none');
     errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -567,6 +629,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof cancelDocumentAutofill === 'function') {
                 cancelDocumentAutofill();
             }
+            // Closing mid-load abandons that edit load: a late answer must not fill
+            // the closed form, and the next open must not start locked.
+            _editLoadTicket++;
+            setEditProjectLoading(false);
             // Small delay to allow any redirects to happen first
             setTimeout(() => {
                 // Reset form page to 1

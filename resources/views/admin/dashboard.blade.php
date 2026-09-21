@@ -74,7 +74,10 @@
                 <div id="db-search-results" class="db-search-results" hidden></div>
             </div>
             <div class="db-hero-actions">
-                <a href="{{ route($projectsIndex) }}" class="db-header-btn light">
+                {{-- ?create=1 opens the Create Project modal on arrival (handled in
+                     admin/_create_project_modal.blade.php). The modal lives on the projects
+                     page with everything it needs, so it is not duplicated here. --}}
+                <a href="{{ route($projectsIndex, ['create' => 1]) }}" class="db-header-btn light">
                     <i class="bi bi-plus-circle"></i> New Project
                 </a>
                 <a href="{{ route($projectsIndex) }}" class="db-header-btn outline">

@@ -87,7 +87,8 @@
                 <button type="button" class="tl-toggle-btn" data-range="quarter">This quarter</button>
                 <button type="button" class="tl-toggle-btn active" data-range="year">This year</button>
             </div>
-            <a href="{{ route($projectsIndex) }}" class="tl-btn primary">
+            {{-- ?create=1 opens the Create Project modal on arrival (see dashboard.blade.php). --}}
+            <a href="{{ route($projectsIndex, ['create' => 1]) }}" class="tl-btn primary">
                 <i class="bi bi-plus-circle"></i> New project
             </a>
             <a href="{{ route($projectsIndex) }}" class="tl-btn">

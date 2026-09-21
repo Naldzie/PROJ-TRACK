@@ -734,6 +734,145 @@
       ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("all browser checks confirmed") —
         covers BOTH phase-34 (the layouts desk overhaul) and phase-35 (this entry).
         Neither is merged to develop yet (no merge order given).
+    · 🔄 CREATE PROJECT MODAL OVERHAUL + DEBUG BUTTONS + DASHBOARD "NEW PROJECT" (user
+      order, same day) on `phase-36-create-project-modal-ui` (off phase-35) — browser
+      check OWED (user).
+      (1) FIXED-SIZE REDESIGN — resources/views/admin/_create_project_modal.blade.php +
+        a new "CPM" section in public/css/admin/projects/_create_project_modal.css.
+        THE COMPLAINT: the dialog grew and shrank as the scan strip, the result banner
+        and error messages appeared. ROOT CAUSE: the body had max-height:70vh and
+        everything the parser inserts (showAutofillScanStatus above the document list,
+        getOrCreateAutofillBanner at the top of the active page, per-field notes) went
+        into content that sized the dialog. NOW: height min(760px, viewport − 3.5rem);
+        header, step bar, error strip and footer are fixed; only .modal-body (the page
+        area — form-navigation.js still scrolls it to the top per step) scrolls, so
+        inserted elements scroll inside it. Measured 752 px in six states (blank,
+        scan strip + error, result banner, step 5, phone width).
+        LAYOUT: header with icon + one-line subtitle; step bar outside the scroll;
+        each page opens with an icon + title + hint; fields grouped on white cards
+        (Budget / Contractor & Status; Contract period / Actual dates (optional) /
+        Monthly Progress Targets); footer "Step X of N" (new #cpmStepCount, written by
+        updatePageDisplay()). Stale text fixed: "Project Information(admin)" and the
+        default title "Create Project1". The baseline block's inline styling moved to
+        classes; the inline display:none/flex the scripts toggle stays inline.
+        EVERY id, name, onclick and Blade condition the scripts use is unchanged
+        (checked against every getElementById in the seven scripts that touch it).
+      (2) A LATENT BUG FIXED ON THE WAY: showError() revealed #createProjectError by
+        removing d-none, but the markup hides it with utility-none — so validation
+        messages ("Please fill in all required fields on this page") were set and
+        NEVER SHOWN (field-level red borders still appeared). showError() now clears
+        both classes; document-manager.js's reset keeps the strip's cpm-error class.
+        With the fixed layout the strip takes room from the page area, not the dialog.
+      (3) DEBUG BUTTONS COMMENTED OUT (not removed), in document-parser.js — four
+        blocks, each with a note on how to restore: the preview modal's "Copy read
+        text" and "Save page image: ⤓ p.N", and the SAME two on the create modal's
+        result banner ("Copy what was read", "⤓ file p.N"). They were already gated on
+        ocrDebugAffordances(), but debug mode persists in localStorage, which is why
+        the user still saw them. window._copyExtractedText / _saveOcrPageImage and
+        the rotate-target stash are untouched.
+      (4) DASHBOARD "NEW PROJECT" — both buttons (hero + timeline widget) now link to
+        the projects page with ?create=1, and a script in the modal file opens the
+        modal on arrival and strips the flag from the address bar. CHOSEN OVER
+        embedding the modal in the dashboard: it needs contractors/admins/staff/
+        document types from the controller, five supporting modals, Chart.js and
+        ~600 KB of parser scripts — all already on the projects page. TRAP FOUND AND
+        FIXED: ProjectController::index() paginates withQueryString(), so every page
+        and filter link would have carried create=1 and reopened the modal — index()
+        now drops the flag from the request first.
+      ALSO: form-navigation.js is now mtime-versioned in both layouts (it was an
+        unversioned tag — the recurring stale-script incident).
+      VERIFIED: view:cache compiles; node --check on the four edited scripts; NEW
+        tests/Feature/CreateProjectEntryTest.php (2 tests — both dashboard buttons
+        carry the flag; no link on the projects page carries it onward; removing the
+        controller's drop turns it red); JS 267/267/0; PHP 1254/0 before the new file
+        (1256 with it); headless screenshots of the modal in six states.
+      SECOND PASS (user, same day, after a screenshot of step 4 scrolling on a short
+        screen: "the goal is to not make the user scroll as much as possible … increase
+        the size of the modal and try fitting the input fields"):
+        - modal-xl (up to 1140 px) and nearly full height: min(900px, viewport − 2rem),
+          1rem top/bottom margin instead of Bootstrap's 1.75rem;
+        - compact header (one-line subtitle, smaller icon), compact step bar (24 px
+          dots), tighter body/card/footer padding, gy-2 row spacing;
+        - the per-page section head (icon + title + hint) is GONE — the step bar
+          already names the page; page 1 keeps its instructions as the card hint
+          (ProjectsRenderTest pins "Choose the document type first");
+        - fields three to a row: Code | Category | Location; ABC | Contract Price |
+          Budget Source; Contractor (wide) | Status; Start | Duration | End; Actual
+          start | Actual end; the two budget/contractor cards merged into one;
+        - short help moved BESIDE the label (.cpm-label-note: "winning bid",
+          "or an end date", "auto-calculated", …) instead of a line under the field;
+          #projectCodeHelp stays under its field because the scripts rewrite it with a
+          longer sentence per mode;
+        - Monthly Progress Targets is one row (text left, buttons right);
+        - showParseIndicator() notes SHORTENED to fit one line ("Auto-filled — please
+          review." / "Not found in the document — fill in manually."), full sentence
+          kept as the tooltip; notes, banner and scan strip get compact spacing.
+        MEASURED at a 1100×620 window: steps 1, 2 (error strip + result banner), 4 (all
+        eight parse notes showing), 5 and 6 fit with NO scroll. PHP 1256/0, JS 267/267.
+      THIRD PASS (user, same day, with screenshots of every step: three-to-a-row "looked
+        too empty … make it into two column layout again"):
+        - back to TWO columns; dialog narrowed to 960 px so the columns do not stretch;
+        - page 2: Title (full) · Code | Category · Location (full);
+        - page 4: ONE card — ABC | Contract Price · Budget Source | Status · Contractor
+          full width (its "not in the contractor list" warning is long);
+        - page 5: ONE card — Start | Duration · Planned End, then a thin "Actual dates
+          (optional)" divider (.cpm-card-divider) · Actual start | Actual end; the
+          baseline card below;
+        - header: title and subtitle share one line (a row saved on every page);
+        - description box height tracks the screen, clamp(170px, 100vh − 360px, 360px).
+        Kept from the second pass: compact header/step bar/footer, label notes, one-line
+        parse notes, one-row baseline block.
+        MEASURED at 1340×600 (the user's screen size): steps 2, 3, 4 (all parse notes +
+        the contractor warning) and 5 (no notes) fit with NO scroll; step 5 with all
+        parse notes needs ~25 px of scroll for the bottom of the baseline card; step 6
+        (four fields) has space left. PHP 1256/0.
+      EDIT-MODE FLASH FIXED (user report, same day, screenshot): clicking Edit showed
+        the Documents upload page for a moment before Project Info. CAUSE (pre-existing,
+        not from the redesign): the modal's show handler hands edit off to
+        openEditProjectModal() and returns early, and that function switched pages only
+        AFTER `await loadProjectCategories()` and the project-data fetch — so until they
+        returned, page 1 was still the active page. FIX: openEditProjectModal() now sets
+        step 1 and calls updatePageDisplay() in its synchronous part, right after
+        applyWizardMode() — before the first await, and so before the dialog paints.
+        The later call after the fetch is unchanged. ALSO: the header subtitle now has
+        an id (#projectModalSubtitle) and switches with the mode — edit mode no longer
+        says "Add the project documents first".
+      EDIT LOADING STATE (user order, same day): while openEditProjectModal() loads
+        the categories and the project, an overlay (#cpmEditLoading — spinner +
+        "Loading project details…") covers the page area and Previous / Next / Save
+        are disabled (Cancel stays live); setEditProjectLoading(). It hides the
+        previous project's stale values too. RACE GUARD: _editLoadTicket numbers each
+        load; only the latest may fill the form or clear the overlay, and switching to
+        Create or closing the modal abandons the load in flight (ticket bump + unlock),
+        so a slow answer can never fill the wrong session or leave Create locked.
+        A failed load unlocks the buttons and shows the error strip as before.
+        VERIFIED offline: the real _create_project_modal.js in a node vm with a stub DOM
+        and hand-released fetches — locked while pending / unlocked + filled after; a
+        late answer for project A ignored while B is still loading, B then fills; a
+        Create reset mid-load unlocks at once and the late answer is ignored. Headless
+        screenshot of the overlay; PHP 1256/0.
+        ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("the loading state is confirmed").
+    · NEXT ASK (study only, no build): combine the AI analysis and recommendation
+      prompts — plan written to textfiles/ai_analysis_recommendation_merge_plan.md
+      (two Gemini calls today; the analysis prompt's reliability block is silently
+      empty — finding F-1).
+      ✅ DECISIONS MADE by the user, same day, all as recommended: D1 UI stays split ·
+      D2 rule-based fallback · D3 no Gemini on page render · D4 fix F-1 first · D5 keep
+      Mitigation. The user then asked for the docs to be made handoff-ready (AGENTS.md
+      "START HERE" box, the plan's §0, ai_recommendation_plan.md, AI_MODULE_HANDOVER.md)
+      — done. NOTHING BUILT; the build waits for the user's "go", and the user should
+      be asked where to branch from (merge phase-34/35/36 into develop first, or branch
+      from phase-36).
+    · STATE AT SESSION CLOSE (2026-09-21): branch phase-36-create-project-modal-ui,
+      clean tree. phase-34/35/36 browser-confirmed, NOT merged, NOT pushed. develop is
+      8 commits ahead of origin (phase 31-33 merges) — NOT pushed. PHP 1256/0 on
+      phase-36; JS 267/267/0.
+      ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
+        modal on the projects page, and page 2 / a filter does not reopen it; walk all
+        six steps (Next/Previous, the step count, the modal never changes size); run a
+        scan on a scanned PDF (strip + banner scroll inside); trigger a validation
+        error (the red strip now shows); Edit an existing project (5 steps, clickable
+        step bar, "Save Changes"); the preview modal shows no Copy/Save-image buttons.
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
