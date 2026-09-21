@@ -512,3 +512,9 @@
       "whenever the data warrants / not to fill" line, the digits rule, and that the old
       narrowing wording is gone. Mutation: old wording restored → 1 red.
       PHP suite 1280 passed / 0 failed.
+  2026-09-21 — USER: the "75th percentile" residual → LEAVE AS IS for now (noted, not
+    fixed). If it is picked up later: reword the class-standing DATA line built in
+    AIRecommendationService::contextParts() (e.g. "ahead of most similar projects"
+    instead of the tier label "Above 75th percentile") — deterministic, but it also
+    changes the standalone recommendation prompt, so decide that knowingly.
+    User order: merge phase-37 into develop.
