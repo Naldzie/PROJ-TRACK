@@ -32,6 +32,12 @@ class AuthController extends Controller
         // parameter (Google echoes it back unchanged in the callback URL), so
         // the callback still knows this was a popup login even if the session
         // flash is consumed/lost between the redirect and the callback.
+        // NOTE (2026-09-21 revert): calendar scopes were requested here, but
+        // the sensitive calendar.events scope forces Google app verification
+        // and 403 access_denied for anyone not on the tester list while the
+        // app is in testing mode. Login stays on basic profile scopes so
+        // sign-in works for everyone; calendar consent lives only in the
+        // optional per-user connect flow (GoogleCalendarController@connect).
         return Socialite::driver('google')
             ->with([
                 'prompt' => 'select_account',
@@ -100,10 +106,13 @@ class AuthController extends Controller
             $firstName = $nameParts[0] ?? null;
             $lastName  = count($nameParts) > 1 ? end($nameParts) : null;
 
+            // Calendar tokens are stored via the shared helper so a missing
+            // refresh token (Google only sends it on first consent) never
+            // wipes an existing one.
+            \App\Http\Controllers\GoogleCalendarController::storeTokens($user, $googleUser);
+            $user->refresh();
             $user->update([
-                'google_id'     => $googleUser->getId(),
                 'name'          => $fullName,
-                'profile_photo' => $googleUser->getAvatar(),
             ]);
 
             // ── Login ──────────────────────────────────────────────────────

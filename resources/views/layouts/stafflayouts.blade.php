@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     {{--  DIRECT CSS--}}
     <link rel="stylesheet" href="{{ asset('css/dashboard/dashboard.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/dashboard/dashboard-widgets.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/dashboard/dashboard-widgets.css') }}?v=20260921f">
     <link rel="stylesheet" href="{{ asset('css/dashboard/timeline.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/project-detail.css') }}">
     <link rel="stylesheet" href="{{ asset('css/admin/projects/projects.css') }}">

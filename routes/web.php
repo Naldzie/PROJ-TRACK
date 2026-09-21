@@ -1009,6 +1009,34 @@ Route::middleware(['auth'])->delete('/projects/{id}', [ProjectController::class,
 
 /*
 |--------------------------------------------------------------------------
+| GOOGLE CALENDAR (project dates auto-sync + dashboard calendar)
+|--------------------------------------------------------------------------
+|
+| Login requests calendar consent up front (AuthController); these cover
+| already-logged-in users (connect without re-login), status/disconnect,
+| per-project manual re-sync, and the no-consent .ics fallback used by the
+| dashboard calendar modal and the project header.
+|
+*/
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/calendar/google/connect', [App\Http\Controllers\GoogleCalendarController::class, 'connect'])
+        ->name('calendar.google.connect');
+    Route::get('/calendar/google/callback', [App\Http\Controllers\GoogleCalendarController::class, 'callback'])
+        ->name('calendar.google.callback');
+    Route::get('/calendar/google/status', [App\Http\Controllers\GoogleCalendarController::class, 'status'])
+        ->name('calendar.google.status');
+    Route::post('/calendar/google/disconnect', [App\Http\Controllers\GoogleCalendarController::class, 'disconnect'])
+        ->name('calendar.google.disconnect');
+
+    Route::post('/calendar/projects/{project}/sync', [App\Http\Controllers\GoogleCalendarController::class, 'sync'])
+        ->name('calendar.project.sync');
+    Route::get('/calendar/projects/{project}/ics', [App\Http\Controllers\GoogleCalendarController::class, 'ics'])
+        ->name('calendar.project.ics');
+});
+
+/*
+|--------------------------------------------------------------------------
 | GMAIL API
 |--------------------------------------------------------------------------
 */

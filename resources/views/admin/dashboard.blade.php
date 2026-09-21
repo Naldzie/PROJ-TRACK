@@ -85,6 +85,20 @@
     </div>
 </header>
 
+{{-- ══ GOOGLE CALENDAR CONNECT BANNER ══
+     Project start / deadline / inspection dates auto-sync to the Google
+     Calendars of connected users (all admins + assigned staff + the
+     contractor). Shown only until this user connects. --}}
+@if(!auth()->user()->hasGoogleCalendar())
+<div class="db-alert-bar" style="border:1px dashed var(--blue-300,#93c5fd);background:var(--blue-50,#eff6ff);">
+    <span class="db-alert-label" style="color:var(--brand-dark,#1D4ED8);"><i class="bi bi-calendar-plus"></i> Google Calendar</span>
+    <span style="font-size:12px;color:#334155;">Project start, deadline &amp; inspection dates sync automatically once connected.</span>
+    <a href="{{ route('calendar.google.connect') }}" class="alert-pill info" style="text-decoration:none;">
+        <i class="bi bi-google"></i><span>Connect my calendar</span>
+    </a>
+</div>
+@endif
+
 {{-- ══ ALERT BAR ══
      Pills filter the dashboard table in-place via AJAX.
      Clicking a pill fetches ALL matching projects from the server.
@@ -159,9 +173,11 @@
     <button class="db-tab-btn" data-target="tab-calendar" onclick="dbSwitchTab(this)">
         <i class="bi bi-calendar3"></i> Calendar
     </button>
+    {{-- Campus Map tab HIDDEN for now (2026-09-21, per user request) — restore by uncommenting this button + the tab-map pane below.
     <button class="db-tab-btn" data-target="tab-map" onclick="dbSwitchTab(this)">
         <i class="bi bi-geo-alt"></i> Campus Map
     </button>
+    --}}
 </div>
 
 
@@ -406,15 +422,16 @@
 </div>
 
 {{-- ════════════════════════════════
-     TAB 4 — CAMPUS MAP
+     TAB 4 — CAMPUS MAP — HIDDEN for now (2026-09-21, per user request).
+     Restore by uncommenting.
      Source: dashboard/partials/campus-map-widget.blade.php
-     Includes: map HTML + map JS
-════════════════════════════════ --}}
+════════════════════════════════
 <div id="tab-map" class="db-tab-pane">
     <div class="db-widget-shell">
         @include('dashboard.partials.campus-map-widget')
     </div>
 </div>
+════════════════════════════════ --}}
 
 </div>{{-- /db-page --}}
 

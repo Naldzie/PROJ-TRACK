@@ -359,36 +359,42 @@
 .event-dot.status-on-track { background: var(--blue-600); }
 .event-dot.status-completed { background: #10b981; }
 
-/* tooltip on dot hover */
-.event-dot:hover::after {
-    content: attr(data-tooltip);
+/* dot shapes — one per date kind (start = blue square, inspection = ring) */
+.event-dot.kind-start { border-radius: 2px; background: #2563eb; border: none; }
+.event-dot.kind-inspection { outline: 1.5px dashed #8b5cf6; outline-offset: 1px; }
+
+/* bigger, easier-to-hit dots (7px was too fiddly on dense months) */
+.event-dot { width: 9px; height: 9px; }
+.month-calendar.full-month .event-dot { width: 11px; height: 11px; }
+.event-dots-container { padding: 2px 0; }
+
+/* day hover preview — lists that date's events (text from data-daytip).
+   Dots deliberately show NO popup (no ::after/::before rules). */
+.calendar-day.has-events:hover::after {
+    content: attr(data-daytip);
     position: absolute;
-    bottom: 115%;
+    bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    background: var(--gray-800);
-    color: white;
-    padding: 4px 9px;
-    border-radius: 5px;
+    background: var(--gray-800, #1f2937);
+    color: #fff;
+    padding: 6px 10px;
+    border-radius: 6px;
     font-size: 10px;
-    white-space: nowrap;
-    z-index: 200;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: pre-line;
+    z-index: 300;
     pointer-events: none;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    min-width: max-content;
+    max-width: 230px;
+    text-align: left;
 }
 
-.event-dot:hover::before {
-    content: '';
-    position: absolute;
-    bottom: 111%;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 4px solid var(--gray-800);
-    z-index: 200;
-    pointer-events: none;
-}
+/* NOTE: dots show NO popup on hover by design (no ::after/::before
+   rules here) — the day cell carries the preview instead. */
+
 
 /* ── CALENDAR POPUP MODAL ── */
 .modal-overlay {

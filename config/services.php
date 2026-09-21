@@ -22,6 +22,15 @@ return [
     'client_id' => env('GOOGLE_CLIENT_ID'),
     'client_secret' => env('GOOGLE_CLIENT_SECRET'),
     'redirect' => env('GOOGLE_REDIRECT_URI'),
+    // Calendar push (project start / due / inspection auto-sync).
+    // Login keeps working when these are empty — pushes are skipped and
+    // the UI falls back to one-click "Add to Google Calendar" links.
+    'calendar_scopes' => [
+        'openid',
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/calendar.events',
+    ],
 ],
 
     'resend' => [
