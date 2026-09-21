@@ -388,6 +388,10 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
         ->name('staff.projects.exports.summary.view');
 
+    // Project Monitoring Report as an editable Word document (?period=YYYY-MM)
+    Route::get('/projects/{project}/reports/report.docx', [ReportExportController::class, 'reportDocx'])
+        ->name('staff.projects.exports.report.docx');
+
 });
 
 /*
@@ -503,6 +507,10 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
 
     Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
         ->name('contractor.projects.exports.summary.view');
+
+    // Project Monitoring Report as an editable Word document (?period=YYYY-MM)
+    Route::get('/projects/{project}/reports/report.docx', [ReportExportController::class, 'reportDocx'])
+        ->name('contractor.projects.exports.report.docx');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])
@@ -896,6 +904,10 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::get('/projects/{project}/reports/summary/view', [ReportExportController::class, 'summaryPdfView'])
         ->name('admin.projects.exports.summary.view');
+
+    // Project Monitoring Report as an editable Word document (?period=YYYY-MM)
+    Route::get('/projects/{project}/reports/report.docx', [ReportExportController::class, 'reportDocx'])
+        ->name('admin.projects.exports.report.docx');
 
     // === NOTIFICATION ROUTES ===
     Route::get('/notifications', [NotificationController::class, 'index'])

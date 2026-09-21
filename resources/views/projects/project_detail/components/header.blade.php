@@ -162,14 +162,9 @@
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><span class="dropdown-header">Export</span></li>
                         <li>
-                            <button type="button" class="dropdown-item" onclick="openDocumentViewer({
-                                name: '{{ Str::slug($project->code ?? $project->id) }}_project-summary.pdf',
-                                type: 'Report',
-                                size: 'PDF',
-                                viewUrl: '{{ route($reportRole . '.projects.exports.summary.view', $project->id) }}',
-                                downloadUrl: '{{ route($reportRole . '.projects.exports.summary', $project->id) }}'
-                            })">
-                                <i class="bi bi-file-earmark-pdf"></i> Project Summary (PDF)
+                            {{-- Project Monitoring Report: pick a month, then preview / Word / PDF --}}
+                            <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#projectReportModal">
+                                <i class="bi bi-file-earmark-text"></i> Project Report (Word / PDF)…
                             </button>
                         </li>
                         <li><a class="dropdown-item" href="{{ route($reportRole . '.projects.exports.progress', $project->id) }}">
@@ -182,6 +177,7 @@
                             <i class="bi bi-file-earmark-excel"></i> Issues (Excel)</a></li>
                     </ul>
                 </div>
+                @include('projects.project_detail.components.modals._project_report_modal')
 
                 @can('update', $project)
                     <button type="button" class="header-badge-btn"

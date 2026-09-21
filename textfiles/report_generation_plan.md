@@ -1,5 +1,12 @@
 # REPORT GENERATION — PDF / Excel Exports (Gap #10)
 
+> **2026-09-21 — the PDF Project Summary (R2/R3 below) is SUPERSEDED** by the
+> Project Monitoring Report (Word + PDF, month picker) on
+> `phase-39-project-report-overhaul` — see `textfiles/project_report_overhaul_plan.md`.
+> `reports/project-summary.blade.php` is deleted there; the S-curve code moved to
+> `app/Services/Reports/ScurveChartRenderer.php` (byte-identical SVG). The Excel
+> exports are unchanged.
+
 CSPC PMU System — textfiles/gaps_and_features_missing.txt item #10
 
 Status: ✅ COMPLETE — R1 (Excel exports), R2 (PDF summary), R3 (S-Curve viewer)

@@ -5,9 +5,10 @@
 #                defects: raw [SECTION:] markers + the UTF-8 BOM)
 #              textfiles/active_reference/project_context_and_development_rules.txt
 # Date: September 21, 2026
-# Status: RESTUDY DONE. P0 (BOM fix) BUILT on phase-38-remove-utf8-bom — the user is
-#         checking whether it also fixes the Excel "corruption". Decisions R-D1, R-D2,
-#         R-D4..R-D8 answered 2026-09-21 (§6); R-D3 explained, answer pending.
+# Status: 🔄 BUILT on phase-39-project-report-overhaul (from phase-38) — browser check
+#         owed by the user. P0 (BOM fix) on phase-38-remove-utf8-bom; the user is
+#         checking whether it also fixes the Excel "corruption". All decisions R-D1..R-D8
+#         answered 2026-09-21 (§6). Build log: §8.
 # Branch on build: phase-39-project-report-overhaul (Rule 12) — phase-38 went to the
 #         BOM fix, which ships on its own.
 
@@ -249,7 +250,11 @@
   R-D1  CONTENT — §2 as proposed ("lets go with that"). Sections 11 (photos) and 12
         (signatories) change per R-D7 / R-D6 below.
   R-D2  PERIOD — BOTH: a month picker, defaulting to the latest month.
-  R-D3  LAYOUT — user asked for an explanation + recommendation first. PENDING.
+  R-D3  LAYOUT — ✅ A: BUILT IN CODE (user, 2026-09-21, after the A/B/C explanation).
+        ⏸ POSSIBLE LATER CHANGE → C (hybrid): keep the code-built layout but let
+        the PMU set a few things in the app (office name / letterhead lines / logo).
+        The report data service stays the same either way, so C (or even B) can be
+        added without redoing the content work.
   R-D4  FORMATS — BOTH: Word (.docx, editable) AND PDF, rendered from the SAME report
         model (§3.1) so they cannot drift. (No server-side DOCX→PDF — no LibreOffice.)
   R-D5  CONTRACTOR COPY — the same document for every role, for now.
@@ -308,3 +313,78 @@
     · ⬜ OWED (user): download an Excel export and open it in Excel. If it opens clean,
       the August "corruption" (report_generation_plan.md §6.4) is explained and the
       Excel freeze can be lifted; also re-download the summary PDF (should start %PDF-).
+  2026-09-21 — User: R-D3 = A (built in code), note C as a possible later change;
+    "start the implementation". Branch phase-39-project-report-overhaul cut from
+    phase-38-remove-utf8-bom (a Word file needs the BOM fix too; phase-38 is unmerged).
+  2026-09-21 — ✅ BUILT (phase-39). Dependency: phpoffice/phpword ^1.4 (1.4.0 +
+    phpoffice/math 0.3; nothing else changed in composer.lock).
+    NEW app/Services/Reports/
+      · ProjectReportDataService — the report CONTENT for a project + period:
+        availablePeriods() (inspection months, newest first; none → current month),
+        resolvePeriod() (unknown → latest), build() → meta, project (19 rows), status,
+        chart, progress, work, issues, extensions, forecast, analysis, recommendations,
+        closing. "As of" rules: inspections ≤ period; issue open if not resolved by the
+        period end (resolved later → "Open"), resolved-in-period listed with the
+        resolution; extensions filed by the period end, a decision made after it reads
+        "Pending", approved totals/revised completion use decisions made by then
+        (latest period: the project's current end date); analysis = latest for the
+        latest period, else the latest created before the NEXT inspection was
+        recorded; forecast only for the latest period (plain language from the
+        presenter — no R², method or /100); recommendations from that analysis, else
+        (latest period) the presenter's rule-based ones — never Gemini; chart actual
+        line cut at the period end; the adjusted plan follows the chart's own flag for
+        the latest period (= the Progress tab) and, for an earlier period, needs an
+        extension approved by then. Status = ProjectStatusService::getRiskLevel(gap) +
+        "Overdue" past the revised date. Presenter computed once per build (~160 ms).
+      · ScurveChartRenderer — the chart geometry once, painted as SVG (PDF) or PNG
+        via GD + dompdf's DejaVuSans.ttf (Word). The SVG is BYTE-IDENTICAL to the old
+        buildSvgChart() on all 30 live projects (checked before the move);
+        ReportExportService::buildSvgChart() now delegates. PNG keeps edge labels
+        inside the image ("March 2027" was clipped in the first cut).
+      · ProjectReportDocxRenderer — PhpWord layout: title block, headings 1-10 +
+        closing, tables with repeating header rows, the chart as a 480 pt PNG, running
+        header from page 2, footer "code · title · period · Page X of Y" on every page.
+        Two PhpWord defaults had to be overridden: image size is px unless unit=pt
+        (the chart would have been 12.7 cm), and every cell is noWrap=true (Word would
+        not wrap long descriptions and the table would run off the page) — now
+        noWrap=false + fixed table layout.
+      · ReportFormat — number/percent/slippage/days/colour formatting shared by both.
+    NEW resources/views/reports/project-report.blade.php (PDF, same report array) —
+      replaces reports/project-summary.blade.php (deleted). dompdf canvas header (page
+      2+) + footer with page X of Y. Fixes parked defect (a): the analysis is parsed
+      into headed sections, never printed raw.
+    NEW AiReportParser::parseToBlocks() — the same sections as plain paragraph/list
+      blocks for document writers; parse()/parseToHtml() unchanged.
+    ROUTES +3: {role}.projects.exports.report.docx (GET …/reports/report.docx). The
+      PDF keeps its routes/names (…exports.summary / .summary.view); all three take
+      ?period=YYYY-MM. Filenames {code}_project-report_{YYYY-MM}.pdf/.docx. Downloads
+      audit-logged ("PDF/Word Project Report (September 2026)"); preview is not.
+    UI: header Reports menu "Project Report (Word / PDF)…" → new modal
+      (components/modals/_project_report_modal.blade.php + public/js/admin/projects/
+      project-report-modal.js): month select (latest preselected), Preview (PDF in the
+      shared document viewer), Download PDF, Download Word. The modal moves itself
+      under <body> on load.
+    TESTS: new tests/Feature/ProjectReportTest.php (19): periods, fallback, past-period
+      cut, risk ladder, issue/extension/analysis/chart "as of" rules, carryovers,
+      plain-language forecast, recommendation sources + no HTTP, a real .docx (zip
+      header, all 10 section headings, values, XML escaping of user text, embedded
+      PNG, no noWrap, fixed layout, audit log), ?period honoured, contractor 403,
+      routes for all roles, PNG validity/size, parseToBlocks. ReportExportTest updated
+      to the new template (latest-inspection test now asserts the as-of date + status;
+      the nl2br test inverted into "markers are never printed raw").
+      Mutations (each restored): resolved-later issue treated as resolved, late
+      extension decision not pending, analysis bound removed, chart not cut, noWrap
+      back, forecast on a past period → each turns exactly one test red.
+    SUITES: PHP 1300 passed / 0 failed; JS 267 / 267 / 0. All Blade views compile.
+    LIVE (project 142, no DB write): data 160 ms; Word 0.2 s / 36 KB; PDF 0.7 s /
+      56 KB, 4 pages. Word checked only through its XML and a PhpWord→HTML→PDF
+      approximation — NOT yet opened in Word.
+    ⬜ BROWSER CHECK OWED (user): Reports → Project Report…; month picker defaults to
+      the latest; Preview shows the PDF; Download Word opens in Word (tables fit the
+      page, chart full width, ₱ shows, page X of Y in the footer, page 1 has no running
+      header), edit a line and Save as PDF; Download PDF; pick an earlier month and
+      confirm the forecast note + as-of dates; a contractor account can export its
+      own project.
+    ⏸ POSSIBLE FEATURES (parked): R-D3 C (letterhead/logo settings), R-D7 inspection
+      photos, R-D8 the PMU's own report form, a Word preview in the modal (Mammoth
+      drops headers/footers — the PDF preview is used instead).

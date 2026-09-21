@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\ActivityLog;
 use App\Models\Project;
-use Carbon\Carbon;
+use App\Services\Reports\ProjectReportDataService;
+use App\Services\Reports\ProjectReportDocxRenderer;
+use App\Services\Reports\ScurveChartRenderer;
 use Dompdf\Dompdf;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Response;
@@ -24,7 +26,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * -------
  * Generate on-demand Excel / PDF exports of project-monitoring data for the
  * PMU. Covers gap #10 (report generation) — progress history, baseline
- * schedule, extensions, issues, and a stakeholder PDF project summary.
+ * schedule, extensions, issues — and the per-project Project Monitoring
+ * Report in PDF and editable Word (overhauled 2026-09-21,
+ * textfiles/project_report_overhaul_plan.md).
  *
  * Called by
  * ---------
@@ -32,14 +36,17 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  *
  * Calls
  * -----
- * ProjectDetailService::prepareProjectData() / prepareChartData() — reused as
- * the single source of truth for PDF summary + S-Curve SVG.
+ * Reports\ProjectReportDataService — the report content for a period
+ * Reports\ProjectReportDocxRenderer — Word layout
+ * Reports\ScurveChartRenderer — the S-curve (SVG for PDF, PNG for Word)
  *
  * Notes
  * -----
- * - No storage writes: every file is streamed to the client (php://output).
- * - Each export records an ActivityLog entry (audit trail).
- * - Excel via PhpOffice\PhpSpreadsheet; PDF via Dompdf\Dompdf.
+ * - No storage writes: every file is streamed to the client (the Word file
+ *   passes through a temp file that is deleted after streaming).
+ * - Each download records an ActivityLog entry (audit trail); previews do not.
+ * - Excel via PhpOffice\PhpSpreadsheet; PDF via Dompdf\Dompdf; Word via
+ *   PhpOffice\PhpWord.
  */
 class ReportExportService
 {
@@ -207,69 +214,92 @@ class ReportExportService
         return $this->streamSpreadsheet($spreadsheet, $this->fileName($project, 'issues.xlsx'));
     }
 
-    // === PDF: PROJECT SUMMARY ===
+    // === PROJECT MONITORING REPORT (PDF + WORD) ===
+    //
+    // One report, two formats (textfiles/project_report_overhaul_plan.md):
+    // ProjectReportDataService builds the content for a reporting period;
+    // the PDF (Blade + dompdf) and the Word file (PhpWord) only lay it out.
+    // The routes keep their August names (…exports.summary / .summary.view)
+    // so existing links keep working; ?period=YYYY-MM picks the month.
 
-    public function summaryPdf(Project $project): StreamedResponse
+    /**
+     * Download the project report as PDF (audit-logged).
+     */
+    public function summaryPdf(Project $project, ?string $period = null): StreamedResponse
     {
         $this->authorize($project);
 
-        $dompdf = $this->buildSummaryDompdf($project);
+        $report = $this->buildReport($project, $period);
+        $dompdf = $this->buildReportDompdf($report);
 
-        $this->logExport($project, 'PDF Summary Report');
-
-        $filename = $this->fileName($project, 'project-summary.pdf');
+        $this->logExport($project, 'PDF Project Report (' . $report['meta']['period_label'] . ')');
 
         return Response::streamDownload(function () use ($dompdf) {
             echo $dompdf->output();
-        }, $filename, [
+        }, $this->reportFileName($report, 'pdf'), [
             'Content-Type' => 'application/pdf',
         ]);
     }
 
     /**
-     * Preview the project-summary PDF inline (no audit-log entry; the viewer
-     * modal iframe loads this, and only an actual download via summaryPdf()
-     * records the audit trail).
+     * Preview the project report PDF inline (no audit-log entry; the viewer
+     * modal iframe loads this, and only an actual download records the audit
+     * trail).
      */
-    public function summaryPdfView(Project $project): StreamedResponse
+    public function summaryPdfView(Project $project, ?string $period = null): StreamedResponse
     {
         $this->authorize($project);
 
-        $dompdf = $this->buildSummaryDompdf($project);
-
-        $filename = $this->fileName($project, 'project-summary.pdf');
+        $report = $this->buildReport($project, $period);
+        $dompdf = $this->buildReportDompdf($report);
 
         return Response::streamDownload(function () use ($dompdf) {
             echo $dompdf->output();
-        }, $filename, [
+        }, $this->reportFileName($report, 'pdf'), [
             'Content-Type' => 'application/pdf',
         ], 'inline');
+    }
+
+    /**
+     * Download the project report as an editable Word document (audit-logged).
+     * The temp file is removed once it has been streamed.
+     */
+    public function projectReportDocx(Project $project, ?string $period = null): StreamedResponse
+    {
+        $this->authorize($project);
+
+        $report = $this->buildReport($project, $period);
+        $path = app(ProjectReportDocxRenderer::class)->render($report);
+
+        $this->logExport($project, 'Word Project Report (' . $report['meta']['period_label'] . ')');
+
+        return Response::streamDownload(function () use ($path) {
+            readfile($path);
+            @unlink($path);
+        }, $this->reportFileName($report, 'docx'), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ]);
     }
 
     // === PRIVATE HELPERS ===
 
     /**
-     * Assemble the shared dompdf instance for the project-summary PDF.
+     * The report content for a project + period, stamped with the current user.
      */
-    private function buildSummaryDompdf(Project $project): Dompdf
+    private function buildReport(Project $project, ?string $period): array
     {
-        // Reuse the project-detail assembly as the single source of truth.
-        $detailService = app(ProjectDetailService::class);
-        $data = $detailService->prepareProjectData($project);
-        $chartData = $detailService->prepareChartData($project);
+        return app(ProjectReportDataService::class)->build($project, $period, Auth::user()?->name);
+    }
 
-        $svgChart = $this->buildSvgChart($chartData);
-
-        // Load latest AI analysis and recommendations (Phase 11)
-        $latestAi = $project->aiSolutions()->first();
-
-        $html = view('reports.project-summary', [
-            'project'   => $project,
-            'data'      => $data,
-            'chartData' => $chartData,
-            'svgChart'  => $svgChart,
-            'generatedAt' => now()->format('F j, Y g:i A'),
-            'latestAi'  => $latestAi,
+    /**
+     * Render the report array to a dompdf instance: the Blade layout, the
+     * shared vector S-curve, and a footer with page X of Y on every page.
+     */
+    private function buildReportDompdf(array $report): Dompdf
+    {
+        $html = view('reports.project-report', [
+            'report'   => $report,
+            'chartImg' => app(ScurveChartRenderer::class)->svgImgTag($report['chart']),
         ])->render();
 
         $dompdf = new Dompdf();
@@ -277,7 +307,32 @@ class ReportExportService
         $dompdf->setPaper('A4');
         $dompdf->render();
 
+        // Header (office — from page 2; page 1 carries it in the title block)
+        // and footer (project · period · page X of Y) on every page, drawn on
+        // the canvas so they repeat without HTML tricks.
+        $canvas = $dompdf->getCanvas();
+        $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans');
+        $grey = [0.39, 0.45, 0.55];
+        $m = $report['meta'];
+        $office = $m['office'];
+        $canvas->page_script(function ($pageNumber, $pageCount, $canvas) use ($office, $font, $grey) {
+            if ($pageNumber > 1) {
+                $canvas->text(48, 28, $office, $font, 7, $grey);
+            }
+        });
+        $canvas->page_text(48, $canvas->get_height() - 34,
+            $m['project_code'] . '  ·  ' . $m['title'] . '  ·  ' . $m['period_label'] . '  ·  Page {PAGE_NUM} of {PAGE_COUNT}',
+            $font, 7, $grey);
+
         return $dompdf;
+    }
+
+    /**
+     * {project_code}_project-report_{YYYY-MM}.{ext}
+     */
+    private function reportFileName(array $report, string $ext): string
+    {
+        return Str::slug($report['meta']['project_code'] ?: 'project') . '_project-report_' . $report['meta']['period'] . '.' . $ext;
     }
 
     /**
@@ -353,204 +408,15 @@ class ReportExportService
     }
 
     /**
-     * Build an inline SVG S-Curve (planned vs actual vs adjusted planned) from
-     * ProjectChartService chart data. Returns an empty container div when the
-     * project has no baseline data (the view hides it).
+     * Inline SVG S-Curve as a dompdf-safe <img> tag.
      *
-     * Called by: summaryPdf()
+     * The chart code moved to Reports\ScurveChartRenderer (2026-09-21) so the
+     * PDF (SVG) and the Word report (PNG) share one geometry; this wrapper
+     * keeps the old entry point (byte-identical output, checked on all 30
+     * live projects before the move).
      */
     private function buildSvgChart(array $chartData): string
     {
-        if (empty($chartData['ready']) || empty($chartData['labels'])) {
-            return '<div class="no-chart">No baseline schedule data for chart.</div>';
-        }
-
-        $width = 820;
-        $height = 340;
-        $padLeft = 55;
-        $padRight = 25;
-        $padTop = 45;
-        $padBottom = 45;
-
-        $labels = $chartData['labels'];
-        $n = count($labels);
-        $plotW = $width - $padLeft - $padRight;
-        $plotH = $height - $padTop - $padBottom;
-
-        // Determine value range (0..100 unless data exceeds it).
-        $maxY = 100;
-        $maxY = max($maxY, (float) ($chartData['y_max'] ?? 0));
-
-        // Linear millisecond-timestamp X-axis spanning the baseline ticks AND
-        // every plotted point (frozen / adjusted / actual), mirroring the tab's
-        // Chart.js linear scale. A raw timestamp scale (instead of a fixed
-        // 0..n-1 index grid) lets actual records that fall after the last
-        // baseline month render at their true calendar position instead of
-        // clamping onto the final planned column.
-        $ticks = $chartData['tick_timestamps'] ?? [];
-        $allXs = $ticks;
-        foreach (['frozen_planned_data', 'adjusted_planned_data', 'actual_data'] as $seriesKey) {
-            foreach (($chartData[$seriesKey] ?? []) as $pt) {
-                if (is_array($pt) && isset($pt['x'])) {
-                    $allXs[] = (float) $pt['x'];
-                }
-            }
-        }
-        $xMin = !empty($allXs) ? min($allXs) : 0;
-        $xMax = !empty($allXs) ? max($allXs) : 0;
-        if ($xMax <= $xMin) {
-            $xMax = $xMin + 1;
-        }
-
-        $xFor = function (float $ts) use ($padLeft, $plotW, $xMin, $xMax) {
-            return $padLeft + (($ts - $xMin) / ($xMax - $xMin)) * $plotW;
-        };
-        $yFor = fn (float $v) => $padTop + (1 - min(max($v, 0), $maxY) / $maxY) * $plotH;
-
-        // Convert {x: ms-timestamp, y: value} points to SVG coordinates. A null
-        // y (e.g. extension months in the frozen plan) is a gap — skip it like
-        // Chart.js spanGaps:false instead of drawing a 0% point that plunges the
-        // line to the bottom of the chart.
-        $points = function (array $values) use ($xFor, $yFor, $ticks) {
-            $pts = [];
-            foreach ($values as $i => $v) {
-                if ($v === null) {
-                    continue;
-                }
-                if (is_array($v)) {
-                    if (!isset($v['y']) || $v['y'] === null) {
-                        continue;
-                    }
-                    $y = (float) $v['y'];
-                    $x = $xFor((float) ($v['x'] ?? ($ticks[$i] ?? 0)));
-                } else {
-                    $y = (float) $v;
-                    $x = $xFor((float) ($ticks[$i] ?? 0));
-                }
-                $pts[] = round($x, 1) . ',' . round($yFor($y), 1);
-            }
-            return implode(' ', $pts);
-        };
-
-        $gridLines = '';
-        for ($g = 0; $g <= 4; $g++) {
-            $val = ($maxY / 4) * $g;
-            $y = $yFor($val);
-            $gridLines .= "<line x1='{$padLeft}' y1='{$y}' x2='" . ($width - $padRight) . "' y2='{$y}' stroke='#e2e8f0' stroke-width='1'/>";
-            $gridLines .= "<text x='" . ($padLeft - 8) . "' y='" . ($y + 4) . "' font-size='11' fill='#64748b' text-anchor='end'>" . round($val) . "%</text>";
-        }
-
-        $monthLabel = function (string $label) {
-            try {
-                $parsed = Carbon::createFromFormat('Y-m', $label);
-                return $parsed ? $parsed->format('F Y') : $label;
-            } catch (\Throwable $e) {
-                return $label;
-            }
-        };
-
-        // X labels sit at the baseline tick timestamps; if an actual record
-        // lands after the last baseline month, add its month as an extra label
-        // so the extended tail has a readable axis label (matches the tab's
-        // auto-generated ticks).
-        $labelTicks = [];
-        foreach ($labels as $i => $label) {
-            $labelTicks[] = [$label, isset($ticks[$i]) ? (float) $ticks[$i] : null];
-        }
-        $lastTickTs = !empty($ticks) ? (float) end($ticks) : null;
-        foreach (($chartData['actual_data'] ?? []) as $pt) {
-            if (!is_array($pt) || !isset($pt['x'], $pt['month_label']) || $lastTickTs === null) {
-                continue;
-            }
-            if ((float) $pt['x'] > $lastTickTs) {
-                $labelTicks[] = [$pt['month_label'], (float) $pt['x']];
-            }
-        }
-        // Also add any adjusted/frozen point that stretches past the last tick
-        // (extension months), keeping labels unique and chronological.
-        foreach (['adjusted_planned_data', 'frozen_planned_data'] as $seriesKey) {
-            foreach (($chartData[$seriesKey] ?? []) as $pt) {
-                if (!is_array($pt) || !isset($pt['x']) || $lastTickTs === null) {
-                    continue;
-                }
-                if ((float) $pt['x'] <= $lastTickTs) {
-                    continue;
-                }
-                $existingLabels = array_map(fn ($lt) => $lt[0], $labelTicks);
-                $labelForTs = Carbon::createFromTimestampMs((int) $pt['x'])->format('Y-m');
-                if (!in_array($labelForTs, $existingLabels, true)) {
-                    $labelTicks[] = [$labelForTs, (float) $pt['x']];
-                }
-            }
-        }
-        usort($labelTicks, fn ($a, $b) => ($a[1] ?? 0) <=> ($b[1] ?? 0));
-
-        $xLabels = '';
-        $labelCount = count($labelTicks);
-        $skipEvery = max(1, intdiv($labelCount, 6));
-        foreach ($labelTicks as $i => [$label, $ts]) {
-            if ($i % $skipEvery !== 0 && $i !== $labelCount - 1) {
-                continue;
-            }
-            $xPos = $ts !== null ? $xFor($ts) : $padLeft + ($i / max($labelCount - 1, 1)) * $plotW;
-            $xLabels .= "<text x='" . round($xPos, 1) . "' y='" . ($height - $padBottom + 18) . "' font-size='10' fill='#64748b' text-anchor='middle'>" . htmlspecialchars($monthLabel($label)) . "</text>";
-        }
-
-        // Legend mirrors the Progress tab exactly: Original Plan (blue), Actual
-        // Progress (green), Adjusted Plan (amber/yellow, only when extensions).
-        $hasExtension = (bool) ($chartData['has_extension'] ?? false);
-        $hasActual = !empty($chartData['actual_data']);
-        $legendItems = [$this->legendItem($padLeft, 18, '#3b82f6', false, 'Original Plan')];
-        $legendWidth = 160;
-        if ($hasActual) {
-            $legendItems[] = $this->legendItem($padLeft + $legendWidth, 18, '#10b981', false, 'Actual Progress');
-            $legendWidth += 160;
-        }
-        if ($hasExtension) {
-            $legendItems[] = $this->legendItem($padLeft + $legendWidth, 18, '#f59e0b', false, 'Adjusted Plan');
-            $legendWidth += 150;
-        }
-        $legend = implode('', [
-            "<rect x='" . ($padLeft - 6) . "' y='8' width='" . ($legendWidth + 10) . "' height='20' rx='4' fill='#f8fafc' stroke='#e2e8f0'/>",
-            implode('', $legendItems),
-        ]);
-
-        $polyline = function (array $values, string $stroke, float $strokeWidth) use ($points) {
-            $pts = $points($values);
-            if ($pts === '') {
-                return '';
-            }
-            return "<polyline points='{$pts}' fill='none' stroke='{$stroke}' stroke-width='{$strokeWidth}'/>";
-        };
-
-        $svg = "<svg xmlns='http://www.w3.org/2000/svg' width='{$width}' height='{$height}' viewBox='0 0 {$width} {$height}'>";
-        $svg .= $legend;
-        $svg .= $gridLines;
-        $svg .= $polyline($chartData['frozen_planned_data'] ?? [], '#3b82f6', 2);
-        if ($hasExtension) {
-            $svg .= $polyline($chartData['adjusted_planned_data'] ?? [], '#f59e0b', 2);
-        }
-        $svg .= $polyline($chartData['actual_data'] ?? [], '#10b981', 2);
-        $svg .= $xLabels;
-        $svg .= "</svg>";
-
-        // dompdf renders SVG only as an <img> (php-svg-lib), not as inline
-        // markup, so embed it as a base64 data URI sized to fit the A4 page.
-        $fitWidth = 680;
-        $fitHeight = (int) round($fitWidth * ($height / $width));
-
-        return "<img src='data:image/svg+xml;base64," . base64_encode($svg)
-            . "' style='width:{$fitWidth}px;height:{$fitHeight}px;' />";
-    }
-
-    /**
-     * A single legend entry: a short color swatch line + label text.
-     */
-    private function legendItem(float $x, float $y, string $color, bool $dashed, string $label): string
-    {
-        $dash = $dashed ? " stroke-dasharray='5,3'" : '';
-        $swatch = "<line x1='{$x}' y1='{$y}' x2='" . ($x + 16) . "' y2='{$y}' stroke='{$color}' stroke-width='3'{$dash}/>";
-        $text = "<text x='" . ($x + 22) . "' y='" . ($y + 4) . "' font-size='10' fill='#334155' font-family='DejaVu Sans'>" . htmlspecialchars($label) . "</text>";
-        return $swatch . $text;
+        return app(ScurveChartRenderer::class)->svgImgTag($chartData);
     }
 }
