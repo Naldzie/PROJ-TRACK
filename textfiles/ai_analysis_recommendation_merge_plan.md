@@ -332,3 +332,19 @@
       N/A; factors follow next-month; factors fall back to completion). Mutation: the old
       buildReliabilityText put back → 4 tests red.
     · PHP suite 1259 passed / 0 failed.
+  2026-09-21 — STEP 2 (D3 / F-2) ✅ BUILT.
+    · RecommendationEngine: generate() and the new generateRuleBased() share one private
+      build(project, prediction, ?aiSource). The AI source is a closure, so generate()
+      still calls Gemini only AFTER the guards (completed / 0 obs / few obs) — same order
+      as before; generate()'s AI-first contract is unchanged.
+    · AIPredictionPresenter (the "Recommendations (saved or fresh)" block) now calls
+      generateRuleBased() — a page view can no longer wait on Gemini. Stored recs are
+      still preferred exactly as before.
+    · Side effect worth knowing: ProjectController::regenerateAnalysis() falls back to
+      the presenter when the analysis call fails; that fallback used to make a SECOND
+      Gemini call (for recs) right after the first had failed. It no longer does.
+    · New tests/Feature/Services/AI/AIAnalysisSinglePromptTest.php (Http::fake +
+      preventStrayRequests): positive control (generate() does send 1 call), rules-only
+      sends nothing and equals the no-AI engine's output, container-built presenter
+      render sends nothing. Mutation: presenter back on generate() → render test red.
+    · PHP suite 1262 passed / 0 failed.
