@@ -8,6 +8,7 @@ use App\Models\ProjectProgressHistory;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ActivityLog;
 use App\Models\Setting;
+use App\Services\DashboardCalendarService;
 use App\Services\ProjectHealthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -208,6 +209,19 @@ class DashboardController extends Controller
             'end'   => $now->copy()->endOfYear()->toDateString(),
         ];
 
+        // ── CALENDAR FEED (real start / due / inspection dates) ──────────
+        // Replaces the widget's hardcoded demo array. Respects the same
+        // staff scoping as everything else on this page.
+        $calendarQuery = Project::where('is_archived', false)
+            ->whereNotIn('status', ['Cancelled'])
+            ->with(['contractor', 'baselineSchedules']);
+        $this->scopeToAssigned($calendarQuery);
+        $calendarSource = $calendarQuery->orderBy('planned_end_date', 'asc')->get();
+        $calendarProjects = DashboardCalendarService::forProjects(
+            $calendarSource,
+            Auth::user()->role === 'staff' ? 'staff' : 'admin'
+        );
+
         return view('admin.dashboard', compact(
             'ongoingProjects',
             'currentMonthProgress',
@@ -237,6 +251,7 @@ class DashboardController extends Controller
             'timelineProgress',
             'timelineQuarter',
             'timelineYear',
+            'calendarProjects',
         ));
     }
 

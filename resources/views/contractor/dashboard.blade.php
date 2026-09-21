@@ -16,6 +16,7 @@
 @endphp
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <link href="{{ asset('css/dashboard/dashboard.css') }}" rel="stylesheet">
+<link href="{{ asset('css/dashboard/dashboard-widgets.css') }}?v=20260921f" rel="stylesheet">
 
 <style>
   /* Contractor-only pieces (deadlines feed + budget bars).
@@ -144,6 +145,19 @@
     </div>
   </div>
   <style>@media(max-width:1200px){.db-stats{grid-template-columns:repeat(2,1fr)!important}}@media(max-width:480px){.db-stats{grid-template-columns:1fr 1fr!important}}</style>
+
+  {{-- ══ GOOGLE CALENDAR CONNECT BANNER ══ --}}
+  @if(!auth()->user()->hasGoogleCalendar())
+  <div class="db-panel" style="padding:12px 18px;border:1px dashed #93c5fd;background:#eff6ff;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:700;color:#1D4ED8;"><i class="bi bi-calendar-plus"></i> Google Calendar</span>
+      <span style="font-size:12px;color:#334155;">Project start, deadline &amp; inspection dates sync automatically once connected.</span>
+      <a href="{{ route('calendar.google.connect') }}" class="ct-pill ct-pill-blue" style="text-decoration:none;">
+        <i class="bi bi-google"></i> Connect my calendar
+      </a>
+    </div>
+  </div>
+  @endif
 
   {{-- ══ MAIN GRID ══ --}}
   <div class="db-main-grid">
@@ -440,6 +454,20 @@
 
     </div>{{-- end right stack --}}
   </div>{{-- end db-main-grid --}}
+
+  {{-- ══ PROJECT CALENDAR (real start / due / inspection dates) ══ --}}
+  <div class="db-panel" style="margin-top:16px;">
+    <div class="db-panel-hd">
+      <div>
+        <div class="db-panel-title"><i class="bi bi-calendar3"></i> Project Calendar</div>
+        <p class="db-panel-sub">Start dates, deadlines &amp; monthly inspections for my projects (auto-syncs to Google Calendar when connected)</p>
+      </div>
+      <a href="{{ route('calendar.google.connect') }}" class="db-view-all" @if(auth()->user()->hasGoogleCalendar()) style="display:none" @endif>
+        Connect calendar <i class="bi bi-arrow-right"></i>
+      </a>
+    </div>
+    @include('dashboard.partials.calendar-widget')
+  </div>
 
 </div>{{-- end db-page --}}
 

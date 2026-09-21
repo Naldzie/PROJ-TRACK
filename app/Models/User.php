@@ -16,11 +16,31 @@ class User extends Authenticatable
         'profile_photo',
         'name',
         'is_active',
+        'google_id',
+        'google_token',
+        'google_refresh_token',
+        'google_email',
+        'google_token_expires_at',
+        'google_calendar_enabled',
+        'google_calendar_connected_at',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'google_calendar_enabled' => 'boolean',
+        'google_token_expires_at' => 'datetime',
+        'google_calendar_connected_at' => 'datetime',
     ];
+
+    /**
+     * Whether this user can receive automatic Google Calendar pushes.
+     * Requires calendar consent (refresh token stored + flag enabled).
+     */
+    public function hasGoogleCalendar(): bool
+    {
+        return (bool) $this->google_calendar_enabled
+            && ! empty($this->google_refresh_token);
+    }
 
     /*
     |--------------------------------------------------------------------------

@@ -10,7 +10,10 @@ use App\Models\ActivityLog;
 use App\Models\Category;
 use App\Models\ParserKeywordProposal;
 use App\Models\Project;
+use App\Models\ProjectBaselineSchedule;
 use App\Models\ScurveHeaderProposal;
+use App\Observers\BaselineScheduleObserver;
+use App\Observers\ProjectObserver;
 use App\Policies\CategoryPolicy;
 use App\Policies\ParserKeywordProposalPolicy;
 use App\Policies\ProjectPolicy;
@@ -38,6 +41,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->registerPolicies();
+
+        // Google Calendar auto-sync: project dates + inspection months.
+        Project::observe(ProjectObserver::class);
+        ProjectBaselineSchedule::observe(BaselineScheduleObserver::class);
 
         Event::listen(Login::class, function ($event) {
             ActivityLog::create([

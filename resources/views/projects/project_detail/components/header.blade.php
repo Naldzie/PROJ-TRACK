@@ -190,7 +190,83 @@
                         Edit
                     </button>
                 @endcan
+
+                {{-- Calendar: auto-sync status + manual actions (sync, .ics) --}}
+                <div class="dropdown d-inline-block">
+                    <button type="button" class="header-badge-btn dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Project dates sync automatically to Google Calendar for connected users">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        Calendar
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><span class="dropdown-header">Start, deadline &amp; inspections auto-sync to Google Calendar</span></li>
+                        @if(in_array(auth()->user()->role, ['admin', 'staff']))
+                        <li>
+                            <button type="button" class="dropdown-item" onclick="syncProjectCalendar({{ $project->id }})">
+                                <i class="bi bi-arrow-repeat"></i> Sync to Google Calendar now
+                            </button>
+                        </li>
+                        @endif
+                        <li><a class="dropdown-item" href="{{ route('calendar.project.ics', $project->id) }}">
+                            <i class="bi bi-download"></i> Download .ics (no sign-in needed)</a></li>
+                        @if(!auth()->user()->hasGoogleCalendar())
+                        <li><a class="dropdown-item" href="{{ route('calendar.google.connect') }}">
+                            <i class="bi bi-calendar-plus"></i> Connect my Google Calendar</a></li>
+                        @else
+                        <li>
+                            <button type="button" class="dropdown-item" onclick="disconnectGoogleCalendar()">
+                                <i class="bi bi-calendar-x"></i> Disconnect my Google Calendar
+                            </button>
+                        </li>
+                        @endif
+                    </ul>
+                </div>
             </div>
         </div>
     </div>
 </div>
+<script>
+// Manual calendar re-sync (auto-sync already covers create/edit/extension/baseline changes).
+function syncProjectCalendar(projectId) {
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    fetch(`/calendar/projects/${projectId}/sync`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': token || '',
+            'Accept': 'application/json',
+        },
+    })
+        .then(async (res) => {
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success) {
+                const parts = [];
+                if (data.synced) parts.push(`${data.synced} event${data.synced !== 1 ? 's' : ''} synced`);
+                if (data.skipped) parts.push(`${data.skipped} skipped (not connected)`);
+                if (data.failed) parts.push(`${data.failed} failed`);
+                alert(parts.length ? 'Calendar: ' + parts.join(', ') + '.' : 'Calendar sync queued.');
+            } else {
+                alert(data.message || 'Calendar sync failed.');
+            }
+        })
+        .catch(() => alert('Calendar sync failed.'));
+}
+// Disconnect the user's own Google Calendar (e.g. to reconnect with new permissions).
+function disconnectGoogleCalendar() {
+    if (!confirm('Disconnect your Google Calendar? Auto-sync will stop until you connect again.')) return;
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    fetch(`{{ route('calendar.google.disconnect') }}`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-TOKEN': token || '',
+            'Accept': 'application/json',
+        },
+    })
+        .then(async (res) => {
+            const data = await res.json().catch(() => ({}));
+            alert(data.success ? 'Google Calendar disconnected.' : (data.message || 'Disconnect failed.'));
+            if (res.ok) window.location.reload();
+        })
+        .catch(() => alert('Disconnect failed.'));
+}
+</script>

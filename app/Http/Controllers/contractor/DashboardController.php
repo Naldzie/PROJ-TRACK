@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\ProjectProgressHistory;
+use App\Services\DashboardCalendarService;
 use App\Services\ProjectHealthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -210,6 +211,14 @@ class DashboardController extends Controller
             'total_days' => \App\Models\ProjectExtension::whereIn('project_id', $projectIds)->where('status', 'approved')->sum('duration_days'),
         ];
 
+        // ── CALENDAR FEED (real start / due / inspection dates) ──────────
+        // Same builder as the admin/staff dashboard so contractors see
+        // their own project dates in the dashboard calendar.
+        $calendarProjects = DashboardCalendarService::forProjects(
+            $projects->whereNotIn('status', ['Cancelled'])->values(),
+            'contractor'
+        );
+
         return view('contractor.dashboard', compact(
             'projects',
             'totalProjects',
@@ -232,6 +241,7 @@ class DashboardController extends Controller
             'cancelledCount',
             'budgetBySource',
             'extensionSummary',
+            'calendarProjects',
         ));
     }
 }
