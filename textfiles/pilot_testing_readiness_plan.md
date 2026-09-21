@@ -641,6 +641,42 @@
       The keyword desk work is CLOSED. Next is the user's call — P6 (the pilot
       package) remains "not yet"; F1/F2/F3 and the calendar consent (above) are
       still the open pilot blockers.
+    · 🔄 S-CURVE LAYOUTS MODAL — SAME OVERHAUL (user order, same day) on
+      `phase-34-scurve-layout-modal-ui` (off develop) — browser check OWED (user).
+      SCOPE: the Review S-Curve Layouts desk only (resources/views/admin/
+      _manage_scurve_headers_modal.blade.php, top modal + its list renderer). The
+      TEACH modal in the same file is untouched (its SCH_ROLE_BADGE is still used
+      there, so it stays). NEW public/css/admin/projects/scurve-layouts-modal.css,
+      its own file so the confirmed keyword modal is never touched by changes here;
+      linked mtime-versioned in both layouts.
+      WHAT CHANGED: fixed height (min(720px, viewport − 3.5rem)), only the list
+        scrolls, centred empty/loading/error states · one card per layout, headline =
+        the contractor ("Any contractor (global layout)" when blank), PDF/Excel +
+        status pills, seen/origin meta line · a READINESS line replaces the Mapped /
+        Needs teaching badges + the map summary: green "Column map ready · page 1:
+        M1–M12" / "DESC=B · M1=C…", or amber "Needs teaching" / "Months not
+        numbered" with the reason · the captured header block is COLLAPSED behind
+        "Show captured header block" and built on first open; restyled with own
+        classes (the app's global .badge styling had rendered R1/PDF/Mapped as big
+        grey buttons) · segmented tabs with counts, search by contractor, footer
+        count, one-line help + "How review works" · Reject is a labelled button.
+      BEHAVIOUR: the list is fetched ONCE (…/scurve-header-proposals/all) and filtered
+        in the browser; _schRowsCache now holds every row, which the Teach modal's
+        lookup-by-id needs anyway. Approve stays disabled on unreadable rows (no map,
+        or an unnumbered PDF map) exactly as before; the server still refuses them.
+        Reject semantics unchanged (soft delete; a later failed import may capture
+        the layout again). loadScurveHeadersForManagement keeps its name — the Teach
+        save path calls it.
+      FOUND AND FIXED WHILE CHECKING: at phone width an opened header block widened
+        the whole card past the screen (column-stacked flex item sized by the
+        table); the card body is now pinned to 100% there so the table scrolls.
+      VERIFIED: view:cache compiles; node --check on the scripts; JS 267/267/0 (incl.
+        the test that reads this Blade file); PHP 1246/0; headless Edge screenshots
+        against a local server with the real scurve-teach-core.js — Proposed with a
+        grid open (ready + not-numbered cards), Live (Excel map summary), phone width.
+      ⬜ BROWSER CHECK OWED (user): open the desk (admin and staff); open a header
+        block; Teach a row (the Teach modal opens as before and saving reloads the
+        desk); approve a ready row; reject one; search a contractor.
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
