@@ -809,6 +809,23 @@
           kept as the tooltip; notes, banner and scan strip get compact spacing.
         MEASURED at a 1100×620 window: steps 1, 2 (error strip + result banner), 4 (all
         eight parse notes showing), 5 and 6 fit with NO scroll. PHP 1256/0, JS 267/267.
+      THIRD PASS (user, same day, with screenshots of every step: three-to-a-row "looked
+        too empty … make it into two column layout again"):
+        - back to TWO columns; dialog narrowed to 960 px so the columns do not stretch;
+        - page 2: Title (full) · Code | Category · Location (full);
+        - page 4: ONE card — ABC | Contract Price · Budget Source | Status · Contractor
+          full width (its "not in the contractor list" warning is long);
+        - page 5: ONE card — Start | Duration · Planned End, then a thin "Actual dates
+          (optional)" divider (.cpm-card-divider) · Actual start | Actual end; the
+          baseline card below;
+        - header: title and subtitle share one line (a row saved on every page);
+        - description box height tracks the screen, clamp(170px, 100vh − 360px, 360px).
+        Kept from the second pass: compact header/step bar/footer, label notes, one-line
+        parse notes, one-row baseline block.
+        MEASURED at 1340×600 (the user's screen size): steps 2, 3, 4 (all parse notes +
+        the contractor warning) and 5 (no notes) fit with NO scroll; step 5 with all
+        parse notes needs ~25 px of scroll for the bottom of the baseline card; step 6
+        (four fields) has space left. PHP 1256/0.
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a

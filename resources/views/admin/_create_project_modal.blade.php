@@ -146,7 +146,7 @@
                                     <div id="projectTitleFeedback" class="field-feedback"></div>
                                     <div class="invalid-feedback" id="titleError"></div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectCode">Project Code <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <input type="text" id="projectCode" name="code" class="form-control" placeholder="e.g., 2026-00001"
@@ -160,7 +160,7 @@
                                     <div id="projectCodeFeedback" class="field-feedback"></div>
                                     <div class="invalid-feedback" id="codeError"></div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectCategory">Category <span class="text-danger">*</span></label>
                                     <div class="input-group">
                                         <select name="category_id" id="projectCategory" class="form-select" required>
@@ -175,7 +175,7 @@
                                     </div>
                                     <div class="invalid-feedback" id="categoryError"></div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-12">
                                     <label class="form-label" for="projectLocation">Location</label>
                                     <input type="text" name="location" id="projectLocation" class="form-control" placeholder="Project location">
                                 </div>
@@ -188,7 +188,7 @@
                         <div class="cpm-card">
                             <label class="form-label" for="projectDescription">Project Description <span class="cpm-label-note">the scope of work</span></label>
                             <textarea name="description" id="projectDescription" class="form-control cpm-description"
-                                      rows="9" placeholder="Project description..."></textarea>
+                                      rows="12" placeholder="Project description..."></textarea>
                             <div class="invalid-feedback"></div>
                         </div>
                     </div>
@@ -197,7 +197,7 @@
                     <div id="page4" class="form-page">
                         <div class="cpm-card">
                             <div class="row gx-3 gy-2">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectAbc">ABC <span class="text-danger">*</span> <span class="cpm-label-note">Approved Budget for the Contract</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
@@ -206,7 +206,7 @@
                                     </div>
                                     <div class="invalid-feedback"></div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectBudget">Contract Price <span class="text-danger">*</span> <span class="cpm-label-note">winning bid</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
@@ -215,7 +215,7 @@
                                     </div>
                                     <div class="invalid-feedback"></div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectBudgetSource">Budget Source</label>
                                     <div class="input-group">
                                         <select name="budget_source_id" id="projectBudgetSource" class="form-select">
@@ -229,16 +229,7 @@
                                         @endcan
                                     </div>
                                 </div>
-                                <div class="col-md-8">
-                                    <label class="form-label" for="contractorSelect">Contractor</label>
-                                    <select name="contractor_id" id="contractorSelect" class="form-select">
-                                        <option value="">-- Select Contractor --</option>
-                                        @foreach($contractors as $c)
-                                            <option value="{{ $c->id }}">{{ $c->company_name ?: ($c->contractor_name ?: ($c->user?->name ?? 'Unnamed')) }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectStatus">Project Status</label>
                                     <select name="status" id="projectStatus" class="form-select">
                                         <option value="Planned" selected>Planned</option>
@@ -249,6 +240,15 @@
                                     </select>
                                     <div class="invalid-feedback"></div>
                                 </div>
+                                <div class="col-md-12">
+                                    <label class="form-label" for="contractorSelect">Contractor</label>
+                                    <select name="contractor_id" id="contractorSelect" class="form-select">
+                                        <option value="">-- Select Contractor --</option>
+                                        @foreach($contractors as $c)
+                                            <option value="{{ $c->id }}">{{ $c->company_name ?: ($c->contractor_name ?: ($c->user?->name ?? 'Unnamed')) }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -257,31 +257,34 @@
                     <div id="page5" class="form-page">
                         <div class="cpm-card">
                             <div class="row gx-3 gy-2">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="plannedStartDate">Contract Start Date <span class="text-danger">*</span></label>
                                     <input type="date" id="plannedStartDate" name="planned_start_date" class="form-control" required>
                                     <div class="invalid-feedback" style="display: none;">Contract start date is required</div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="plannedDuration">Duration (days) <span class="cpm-label-note">or an end date</span></label>
                                     <input type="number" id="plannedDuration" name="planned_duration_days" class="form-control" min="1">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="plannedEndDate">Planned End Date <span class="text-danger">*</span> <span class="cpm-label-note">auto-calculated</span></label>
                                     <input type="date" id="plannedEndDate" name="planned_end_date" class="form-control" required>
                                     <div class="invalid-feedback" style="display: none;">Planned end date is required</div>
                                 </div>
-                                <div class="col-md-4">
+                            </div>
+                            {{-- One card, split by a thin divider (third pass) — a second card cost a row of height. --}}
+                            <div class="cpm-card-divider">Actual dates <span class="cpm-card-title-note">optional</span></div>
+                            <div class="row gx-3 gy-2">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectActualStartDate">Actual Start Date <span class="cpm-label-note" title="Only applicable for ongoing or completed projects">ongoing / completed</span></label>
                                     <input type="date" name="actual_start_date" id="projectActualStartDate" class="form-control">
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label" for="projectActualEndDate">Actual End Date <span class="cpm-label-note" title="Only applicable for completed projects">completed only</span></label>
                                     <input type="date" name="actual_end_date" id="projectActualEndDate" class="form-control">
                                 </div>
                             </div>
                         </div>
-
                         <!-- === PROJECT PROGRESS BASELINE SETUP === -->
                         {{-- Inline display styles below are toggled by _create_project_modal.js and
                              scurve-import-ui.js (style.display) — keep them inline. --}}
