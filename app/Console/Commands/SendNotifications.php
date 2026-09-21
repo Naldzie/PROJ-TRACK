@@ -28,10 +28,11 @@ use Illuminate\Console\Command;
  *
  * Safe to run repeatedly — NotificationService dedupes by tracking key.
  *
- * Emails are queued (ShouldQueue on all notification classes) and processed by
- * the queue:listen worker on the 'emails' queue. Database notifications are
- * written synchronously for instant in-app display. Per-project error handling
- * ensures one failure does not block the entire scan (Bug 7 fix).
+ * Notifications are sent INLINE: the in-app (database) notice and the email go
+ * out during the scan — no notification class implements ShouldQueue (the queued
+ * 'emails' experiment of Bug 7 was reverted; its 30 leftover jobs were cleared
+ * 2026-09-21, textfiles/notification_monitoring_restudy_plan.md). Per-project
+ * error handling ensures one failure does not block the entire scan (Bug 7 fix).
  */
 class SendNotifications extends Command
 {

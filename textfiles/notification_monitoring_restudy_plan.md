@@ -199,3 +199,34 @@
       ~1.5-5 s PER RECIPIENT inside the request (e.g. reporting an issue to 4 people ≈
       6-10 s). The user should check the inbox: layout, and the links / tracking
       image pointing at 127.0.0.1 (F-2).
+  2026-09-21 — USER: the 9 test emails arrived ("[TEST]" / "Dear Notification Test") —
+    ✅ N-D7 CONFIRMED. Decisions: bell auto-refresh YES (P-5), inbox filters YES
+    (P-6), APP_URL waits for the pilot set-up (server PC address unknown — pilot
+    checklist item), fix the AGENTS note YES (P-4), clear the stale queue YES (P-3).
+    N-D3 (queue the emails?) — user asked first whether queueing would bring back an
+    old issue.
+  2026-09-21 — THE OLD ISSUE (bugs_and_behavior_adjustments.md Bug 7 + Bug 8, Aug 28-29):
+    RiskLevelChanged emails delayed / missing; fixed by adding the missing
+    `use Queueable` import + trait. Traced in vendor/laravel/.../NotificationSender:
+    send() queues ONLY when the class implements ShouldQueue, and queueNotification()
+    then reads $notification->connection / queue / delay — properties the Queueable
+    trait provides. Bug 7's attempts had made every class ShouldQueue (Phase 1) and
+    then used an 'emails' queue + SendNotificationEmailJob (Phase 2). While queued,
+    RiskLevelChanged (the only class without the trait) broke; after the queued code
+    was reverted the trait no longer mattered (non-queued notifications are sent
+    with sendNow()). The 30 stale jobs were that experiment's leftovers.
+    ⇒ Queueing again would NOT bring the bug back if: (1) every class keeps
+    `use Queueable` (all 8 do today; a test can enforce it for new classes),
+    (2) ONLY the mail channel is queued — viaConnections(['database' => 'sync',
+    'mail' => 'database']) — so the in-app notice stays instant and dedupe keeps
+    working (Phase 1 had queued the database channel too), (3) jobs go to the
+    DEFAULT queue, which composer dev's `queue:listen` processes (Phase 2 used
+    'emails', which no worker listened to). Remaining trade-off: the worker must run
+    on the server PC, or emails wait (in-app is unaffected); failures land in
+    failed_jobs.
+  2026-09-21 — P-3 DONE: `php artisan queue:clear database --queue=emails --force` →
+    "Cleared 30 jobs from the [emails] queue"; jobs table empty afterwards (the
+    default queue had none).
+  2026-09-21 — P-4 DONE: AGENTS.md dev-stack note corrected (notifications + AI report
+    emails are inline; the worker is for the calendar sync; how to queue safely);
+    SendNotifications.php docblock no longer claims ShouldQueue / an 'emails' worker.
