@@ -2888,17 +2888,23 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
     try {
         const oldCopy = document.getElementById('autofillPreviewCopyWrap');
         if (oldCopy && oldCopy.remove) oldCopy.remove();
-        const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
-        // Debug-only since 2026-09-14 (see ocrDebugAffordances) — a raw-text dump is
-        // for diagnosing the parser, not for reviewing a project.
-        if (hasTexts && ocrDebugAffordances()) {
-            const copyWrap = document.createElement('div');
-            copyWrap.id = 'autofillPreviewCopyWrap';
-            copyWrap.className = 'd-flex justify-content-end mt-2';
-            copyWrap.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._copyExtractedText()" title="Copy exactly what the system read, to paste in chat for diagnosis">Copy read text</button>';
-            const container = modalEl.querySelector('.modal-body') || modalEl;
-            container.appendChild(copyWrap);
-        }
+        // ── DEBUG BUTTON COMMENTED OUT (user order, 2026-09-21) ────────────────
+        // "Copy read text" is a parser-diagnosis tool, not part of reviewing a
+        // project, and it still showed for anyone whose browser had debug mode
+        // persisted (window._parserDebug via localStorage). Kept here, commented,
+        // so it can be restored for a debugging session by un-commenting the block.
+        // window._copyExtractedText itself is untouched.
+        // const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
+        // // Debug-only since 2026-09-14 (see ocrDebugAffordances) — a raw-text dump is
+        // // for diagnosing the parser, not for reviewing a project.
+        // if (hasTexts && ocrDebugAffordances()) {
+        //     const copyWrap = document.createElement('div');
+        //     copyWrap.id = 'autofillPreviewCopyWrap';
+        //     copyWrap.className = 'd-flex justify-content-end mt-2';
+        //     copyWrap.innerHTML = '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._copyExtractedText()" title="Copy exactly what the system read, to paste in chat for diagnosis">Copy read text</button>';
+        //     const container = modalEl.querySelector('.modal-body') || modalEl;
+        //     container.appendChild(copyWrap);
+        // }
     } catch (e) { /* copy button is best-effort */ }
 
     // O2/N3/N4 gray scan note + page-count selector (replaces the fixed +15 stepping).
@@ -2972,12 +2978,16 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
             // (scannedPageNums ledger — approved scope; rotated-but-yielding soup must stay
             // visible). Index-indirect like rotate; handler re-renders at ~1.5 scale PNG.
             let snapBtns = '';
-            try {
-                snapBtns = (ocrDebugAffordances() ? ocrListedPagesOf(r) : []).map((pn) => {
-                    return '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' as a PNG image to paste in chat">⤓ p.' + pn + '</button>';
-                }).join(' ');
-                if (snapBtns) snapBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Save page image:</span>' + snapBtns + '</div>';
-            } catch (e) { snapBtns = ''; /* buttons are best-effort */ }
+            // ── DEBUG BUTTONS COMMENTED OUT (user order, 2026-09-21) ───────────
+            // "Save page image: ⤓ p.1 …" exports page PNGs for diagnosis in chat —
+            // a debugging tool, not a review control. Kept, commented; un-comment
+            // the block to restore. window._saveOcrPageImage itself is untouched.
+            // try {
+            //     snapBtns = (ocrDebugAffordances() ? ocrListedPagesOf(r) : []).map((pn) => {
+            //         return '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' as a PNG image to paste in chat">⤓ p.' + pn + '</button>';
+            //     }).join(' ');
+            //     if (snapBtns) snapBtns = '<div class="d-flex gap-1 flex-wrap mt-1"><span style="font-size:0.85em;" class="text-muted">Save page image:</span>' + snapBtns + '</div>';
+            // } catch (e) { snapBtns = ''; /* buttons are best-effort */ }
             return base + rotBtns + snapBtns;
         });
         if (lines.length === 0 && (truncated && truncated.length > 0)) {
@@ -3966,17 +3976,20 @@ function showAutofillWarning(message, opts) {
     // F-COPY on empty runs: failures must stay diagnosable — offer the read text for chat
     // when any file yielded text (even unparsable). Engine-failure runs pass copy:false.
     let copyBtn = '';
-    try {
-        const wantCopy = !opts || opts.copy !== false;
-        const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
-        // DEBUG-ONLY since 2026-09-14. This dumps the raw read text for pasting into
-        // a chat — a diagnostic, not something a reviewer creating a project needs,
-        // and it crowded out the controls that do the actual job. Still one flag
-        // away: window._parserDebug = true, then re-run.
-        if (ocrDebugAffordances() && wantCopy && hasTexts && typeof window._copyExtractedText === 'function') {
-            copyBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._copyExtractedText()">Copy what was read</button>';
-        }
-    } catch (e) { /* copy affordance is best-effort */ }
+    // ── DEBUG BUTTON COMMENTED OUT (user order, 2026-09-21) ────────────────────
+    // The same raw-text dump as the preview modal's "Copy read text", on the
+    // create modal's result banner. Kept, commented; un-comment to restore.
+    // try {
+    //     const wantCopy = !opts || opts.copy !== false;
+    //     const hasTexts = (window._autofillDocTexts || []).some(t => t && String(t).trim().length > 0);
+    //     // DEBUG-ONLY since 2026-09-14. This dumps the raw read text for pasting into
+    //     // a chat — a diagnostic, not something a reviewer creating a project needs,
+    //     // and it crowded out the controls that do the actual job. Still one flag
+    //     // away: window._parserDebug = true, then re-run.
+    //     if (ocrDebugAffordances() && wantCopy && hasTexts && typeof window._copyExtractedText === 'function') {
+    //         copyBtn = '<button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="window._copyExtractedText()">Copy what was read</button>';
+    //     }
+    // } catch (e) { /* copy affordance is best-effort */ }
     // R-reach: when every scanned page of a file is wider-than-tall (the sideways-scan
     // shape), offer a one-click straighten-all rescue — these files never reach the preview,
     // so without this button they have NO manual path at all (test4 class).
@@ -3990,15 +4003,19 @@ function showAutofillWarning(message, opts) {
         // Done unconditionally: the handlers are index-indirect whether or not the
         // debug buttons render, and the preview's rotate path relies on the same map.
         stashOcrRotateTargets(reports);
-        const btns = [];
-        (ocrDebugAffordances() ? reports : []).forEach((r, ri) => {
-            if (!r) return;
-            const pages = ocrListedPagesOf(r);
-            pages.forEach((pn) => {
-                btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' of ' + escapeHtml(r.fileName) + ' as PNG to paste in chat">⤓ ' + escapeHtml(r.fileName) + ' p.' + pn + '</button>');
-            });
-        });
-        if (btns.length) snapBtns = '<div>' + btns.join('') + '</div>';
+        // ── DEBUG BUTTONS COMMENTED OUT (user order, 2026-09-21) ────────────────
+        // Per-page "⤓ file p.N" save-image buttons on the result banner — the same
+        // diagnosis tool as the preview modal's. Kept, commented; un-comment to
+        // restore. The stash above still runs: the rotate path relies on it.
+        // const btns = [];
+        // (ocrDebugAffordances() ? reports : []).forEach((r, ri) => {
+        //     if (!r) return;
+        //     const pages = ocrListedPagesOf(r);
+        //     pages.forEach((pn) => {
+        //         btns.push('<button type="button" class="btn btn-sm btn-outline-secondary mt-2 me-1" onclick="window._saveOcrPageImage(' + ri + ',' + pn + ')" title="Save page ' + pn + ' of ' + escapeHtml(r.fileName) + ' as PNG to paste in chat">⤓ ' + escapeHtml(r.fileName) + ' p.' + pn + '</button>');
+        //     });
+        // });
+        // if (btns.length) snapBtns = '<div>' + btns.join('') + '</div>';
     } catch (e) { snapBtns = ''; /* snapshot affordance is best-effort */ }
     try {
         const wantStraighten = !opts || opts.straighten !== false;

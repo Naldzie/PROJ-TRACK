@@ -59,7 +59,13 @@ class ProjectController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        
+
+        // ?create=1 is a one-shot UI flag from the dashboard's "New Project" button:
+        // the page opens the Create Project modal on arrival (2026-09-21). It is not a
+        // filter, so drop it before the paginator's withQueryString() and the filter
+        // links copy it — otherwise the next page/filter click would reopen the modal.
+        $request->query->remove('create');
+
         // Build query
         $query = Project::with('contractor')
             ->where('is_archived', false);

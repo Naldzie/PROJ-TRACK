@@ -221,7 +221,9 @@ function showDocumentError(message) {
     if (errorDiv) {
         document.getElementById('createProjectErrorMessage').textContent = message;
         errorDiv.classList.remove('utility-none');
-        errorDiv.className = 'alert alert-danger utility-none'; // Set to danger
+        // Set to danger. cpm-error is the create-project modal's own strip styling
+        // (2026-09-21 redesign) and must survive this reset.
+        errorDiv.className = 'alert alert-danger cpm-error utility-none';
         errorDiv.classList.remove('utility-none');
         
         // Auto hide after 5 seconds

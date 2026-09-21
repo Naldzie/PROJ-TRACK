@@ -426,7 +426,11 @@ function showError(message) {
     const errorDiv = document.getElementById('createProjectError');
     const errorMsg = document.getElementById('createProjectErrorMessage');
     errorMsg.textContent = message;
-    errorDiv.classList.remove('d-none');
+    // Two hiding classes are in play: hideError() adds d-none, while the markup and
+    // document-manager.js hide with utility-none. Removing only d-none (as this did
+    // until 2026-09-21) left utility-none on, so a validation message such as "Please
+    // fill in all required fields on this page" was set but never shown.
+    errorDiv.classList.remove('d-none', 'utility-none');
     errorDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
