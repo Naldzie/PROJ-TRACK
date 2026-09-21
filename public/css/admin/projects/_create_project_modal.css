@@ -953,6 +953,35 @@
     background: var(--bg, #F8FAFC);
 }
 
+/* Edit-mode loading overlay: covers the page area (and so the previous project's
+   stale values) while the project is fetched. The page is scrolled to the top when
+   a step shows, so inset:0 of the scroll box covers what is on screen. */
+#addProjectModal .cpm-body {
+    position: relative;
+}
+
+#addProjectModal .cpm-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: rgba(248, 250, 252, 0.92);
+}
+
+#addProjectModal .cpm-loading[hidden] {
+    display: none;
+}
+
+#addProjectModal .cpm-loading-text {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--gray-700, #374151);
+}
+
 /* Field groups sit on white cards over the soft page background. */
 #addProjectModal .cpm-card {
     background: #fff;

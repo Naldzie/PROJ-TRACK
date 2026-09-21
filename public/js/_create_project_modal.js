@@ -155,6 +155,11 @@ let titleValidator;
 function resetModalToCreateMode() {
     window._projectModalMode = 'create';
     window._editingProjectId = null;
+
+    // Abandon any edit load still in flight and clear its loading state — Create
+    // must never open locked, or be filled later by a late edit response.
+    _editLoadTicket++;
+    setEditProjectLoading(false);
     
     // Reset the autofill "already applied" flag so a new modal session
     // starts fresh (Next will re-run the document scan again).
@@ -254,6 +259,28 @@ function resetModalToCreateMode() {
 }
 
 // ===================================================
+// EDIT-MODE LOADING STATE (2026-09-21)
+// While openEditProjectModal() fetches a project the page shows an overlay and
+// the footer buttons are disabled — otherwise the reviewer sees the previous
+// project's values (or empty fields) and could press Next / Save on them.
+// _editLoadTicket numbers each load: only the LATEST load may fill the form or
+// clear the overlay, so a slow response for a project whose modal was closed
+// (or replaced by another Edit) is ignored instead of overwriting the new one.
+// ===================================================
+let _editLoadTicket = 0;
+
+// Show or hide the loading overlay and lock/unlock the footer buttons.
+// Called by: openEditProjectModal(), resetModalToCreateMode(), the hidden handler.
+function setEditProjectLoading(isLoading) {
+    const overlay = document.getElementById('cpmEditLoading');
+    if (overlay) overlay.hidden = !isLoading;
+    ['prevPageBtn', 'nextPageBtn', 'submitBtn'].forEach(function (id) {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = !!isLoading;
+    });
+}
+
+// ===================================================
 // OPEN MODAL FOR EDITING A PROJECT
 // ===================================================
 async function openEditProjectModal(projectId, showModal = false) {
@@ -273,6 +300,10 @@ async function openEditProjectModal(projectId, showModal = false) {
     const currentPageInput = document.getElementById('currentPage');
     if (currentPageInput) currentPageInput.value = 1;
     if (typeof updatePageDisplay === 'function') updatePageDisplay();
+
+    // Loading state until the project arrives (see setEditProjectLoading above).
+    const loadTicket = ++_editLoadTicket;
+    setEditProjectLoading(true);
 
     // Only show modal if explicitly requested (e.g., from URL parameter)
     // When triggered by button click, modal is already shown via data-bs-toggle
@@ -322,15 +353,25 @@ async function openEditProjectModal(projectId, showModal = false) {
         }
         
         const result = await response.json();
-        
+
+        // A newer load (another Edit, or a switch to Create) has taken over — this
+        // answer belongs to a modal session that no longer exists. Drop it.
+        if (loadTicket !== _editLoadTicket) return;
+
         if (result.success) {
             populateFormWithProjectData(result.project);
         } else {
             showError('Failed to load project data: ' + (result.message || 'Unknown error'));
         }
     } catch (error) {
+        if (loadTicket !== _editLoadTicket) return;
         console.error('Error loading project:', error);
         showError('Error loading project data: ' + error.message);
+    } finally {
+        // Only the latest load clears the overlay (a stale one must not hide the
+        // spinner of the load that replaced it). On a failed load the buttons are
+        // unlocked too, so the reviewer can still Cancel or retry.
+        if (loadTicket === _editLoadTicket) setEditProjectLoading(false);
     }
 }
 
@@ -588,6 +629,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof cancelDocumentAutofill === 'function') {
                 cancelDocumentAutofill();
             }
+            // Closing mid-load abandons that edit load: a late answer must not fill
+            // the closed form, and the next open must not start locked.
+            _editLoadTicket++;
+            setEditProjectLoading(false);
             // Small delay to allow any redirects to happen first
             setTimeout(() => {
                 // Reset form page to 1

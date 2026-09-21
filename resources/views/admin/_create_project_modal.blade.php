@@ -72,6 +72,13 @@
 
             <!-- Page area: the ONLY scrolling region (form-navigation.js scrolls it to the top per step) -->
             <div class="modal-body cpm-body">
+                {{-- Edit-mode loading overlay (2026-09-21): covers the page while
+                     openEditProjectModal() fetches the project. Toggled by
+                     setEditProjectLoading() in _create_project_modal.js. --}}
+                <div class="cpm-loading" id="cpmEditLoading" hidden role="status" aria-live="polite">
+                    <div class="spinner-border text-primary" aria-hidden="true"></div>
+                    <div class="cpm-loading-text">Loading project details…</div>
+                </div>
                 <form id="createProjectForm" method="POST" action="{{ route($routePrefix . '.store') }}" enctype="multipart/form-data">
                     @csrf
                     <!-- Method field for PUT when editing -->

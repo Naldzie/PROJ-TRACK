@@ -837,6 +837,20 @@
         The later call after the fetch is unchanged. ALSO: the header subtitle now has
         an id (#projectModalSubtitle) and switches with the mode — edit mode no longer
         says "Add the project documents first".
+      EDIT LOADING STATE (user order, same day): while openEditProjectModal() loads
+        the categories and the project, an overlay (#cpmEditLoading — spinner +
+        "Loading project details…") covers the page area and Previous / Next / Save
+        are disabled (Cancel stays live); setEditProjectLoading(). It hides the
+        previous project's stale values too. RACE GUARD: _editLoadTicket numbers each
+        load; only the latest may fill the form or clear the overlay, and switching to
+        Create or closing the modal abandons the load in flight (ticket bump + unlock),
+        so a slow answer can never fill the wrong session or leave Create locked.
+        A failed load unlocks the buttons and shows the error strip as before.
+        VERIFIED offline: the real _create_project_modal.js in a node vm with a stub DOM
+        and hand-released fetches — locked while pending / unlocked + filled after; a
+        late answer for project A ignored while B is still loading, B then fills; a
+        Create reset mid-load unlocks at once and the late answer is ignored. Headless
+        screenshot of the overlay; PHP 1256/0.
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a
