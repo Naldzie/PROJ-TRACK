@@ -1,4 +1,4 @@
-# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (STEPS 1-4 BUILT; BROWSER CHECK OWED)
+# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (✅ DONE — MERGED TO develop 2026-09-21)
 # Parent refs: textfiles/ai_recommendation_plan.md (Phase 10 — why the recommendation
 #                prompt was added as a SEPARATE Gemini call; its Decision Log 1-10)
 #              textfiles/active_reference/AI_MODULE_HANDOVER.md (the AI module map)
@@ -518,3 +518,7 @@
     instead of the tier label "Above 75th percentile") — deterministic, but it also
     changes the standalone recommendation prompt, so decide that knowingly.
     User order: merge phase-37 into develop.
+  2026-09-21 — ✅ MERGED phase-37 into develop (6e3ba20, --no-ff, no conflicts). On
+    develop: PHP 1280 passed / 0 failed, JS 267 / 267 / 0. NOT pushed. Plan CLOSED.
+    Open items carried elsewhere (AGENTS.md Known Issues): the "75th percentile"
+    residual (left as is) and the two summary-PDF defects (parked for the PDF pass).
