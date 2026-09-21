@@ -4,10 +4,75 @@
 #              textfiles/active_reference/AI_MODULE_HANDOVER.md (the AI module map)
 #              textfiles/pilot_testing_readiness_plan.md (the active pilot queue)
 # Date: September 21, 2026
-# Status: ⬜ PLAN ONLY — studied at the user's request ("study … and make a plan. no
-#         implementation for now"). Nothing below is built. Every step needs an order
-#         (Rule 10), and §6 lists the decisions that are the user's to make first.
-# Branch on build: phase-<n>-ai-analysis-recs-single-prompt (Rule 12).
+# Status: ⬜ PLANNED, DECISIONS MADE, NOTHING BUILT. The user answered D1-D5 on
+#         2026-09-21 (§6 — all five as recommended) and asked for the docs to be made
+#         handoff-ready BEFORE any build. The build needs its own "go" (Rule 10).
+#         START AT §0 BELOW IF THE SESSION IS COLD.
+# Branch on build: phase-37-ai-analysis-recs-single-prompt (Rule 12) — cut from the
+#         branch the user names (see §0 "WHERE TO BRANCH FROM").
+
+===============================================================================
+  0. HANDOFF — READ THIS FIRST (cold session)
+===============================================================================
+
+  WHAT THIS IS, IN ONE PARAGRAPH
+    "Regenerate Analysis" makes TWO Gemini calls: one for the 5-section analysis
+    (AIExplanationService) and one for the recommendations (AIRecommendationService,
+    reached through RecommendationEngine). They never see each other, so the analysis'
+    Mitigation bullets and the "Recommended Actions" can repeat or contradict each
+    other (visible side by side in the contractor email, sections 02 and 03). The plan
+    merges them into ONE call whose prompt is the analysis prompt KEPT VERBATIM plus
+    appended recommendation context and a JSON recommendations block; the answer is
+    SPLIT before saving so every screen, the email and the PDF keep working unchanged.
+
+  THE USER'S DECISIONS (2026-09-21 — do not re-litigate)
+    D1 UI stays SPLIT (Option B): analysis card and Recommendations card stay separate.
+    D2 No usable recs in the combined answer → RULE-BASED engine. No second AI call.
+    D3 Page views NEVER call Gemini: the presenter uses rule-based recs until an
+       analysis has been generated (fixes finding F-2).
+    D4 FIX F-1 (the analysis prompt's always-empty FORECAST RELIABILITY block) — as its
+       OWN FIRST COMMIT, so its effect on the analysis can be judged on its own.
+    D5 Mitigation section stays exactly as it is; the new consistency rule ties the
+       recommendations to Possible Risk + Mitigation.
+
+  BUILD ORDER (each a separate commit; run the PHP suite after each; log in §8)
+    1. D4 — fix AIExplanationService::buildReliabilityText to read the REAL shape
+       (reliability['next_prediction'|'completion'] → level / score / factors keyed
+       backtest|data|horizon|agreement — AIRecommendationService::buildReliabilityText
+       already does it right; share one implementation) AND fix the test fixture in
+       tests/Unit/Services/AI/AIExplanationServiceTest.php (:103 uses the wrong shape
+       — that is why the bug never failed a test). §3 F-1.
+    2. D3 — AIPredictionPresenter (:694-697): on render, when the latest ai_solutions
+       row has no recommendations, use the RULE-BASED path only (no Gemini). Needs a
+       rules-only entry on RecommendationEngine (e.g. generateRuleBased()), NOT a
+       change to generate()'s AI-first contract used elsewhere.
+    3. The combined prompt + one call + split-before-save (§4 steps 1-4), with D2 as
+       the fallback and D5's consistency rule.
+    4. Tests (§4 step 5) — including a guard that the ORIGINAL analysis prompt text is
+       still present verbatim.
+    5. Browser check (§4 step 6), log, then ask the user about merging.
+
+  FACTS TO CARRY (verified in source 2026-09-21)
+    · AiReportParser (PHP) and parseAnalysisText (JS, ai-analysis.blade.php) read only
+      [SECTION:<known key>]…[/SECTION] in a FIXED order and drop everything else.
+    · reports/project-summary.blade.php prints analysis_text RAW (nl2br) and the email
+      draft falls back to it — so the recommendations block must be CUT OUT of the
+      text before saving, never stored inside analysis_text.
+    · Use a marker that does NOT start with "[SECTION:" — [RECOMMENDATIONS_JSON] …
+      [/RECOMMENDATIONS_JSON] — so neither parser can ever render it.
+    · Both calls use the MAIN Gemini key/model (services.gemini.key / .model) with a
+      30 s timeout; the combined answer is longer — re-measure before shipping, and
+      stay under PHP's 60 s for the regenerate request.
+    · The monthly job (GenerateMonthlyAiReports) also goes through
+      AIExplanationService::generate() — it inherits the change automatically.
+
+  WHERE TO BRANCH FROM (state at 2026-09-21 close)
+    · Working branch: phase-36-create-project-modal-ui (contains phase-34 and phase-35).
+    · phase-34 / 35 / 36 are BROWSER-CONFIRMED but NOT MERGED to develop and NOT
+      PUSHED — the user has not given the merge order yet.
+    · develop is 8 commits ahead of origin/develop (the 31-33 merges) — NOT PUSHED.
+    · ASK the user before building: merge 34-36 into develop first and branch
+      phase-37 from develop (cleanest), or branch from phase-36.
 
 ===============================================================================
   1. THE ASK (user, 2026-09-21)
@@ -203,7 +268,9 @@
     Can be done LATER on top of B without redoing anything — B is a strict subset.
 
 ===============================================================================
-  6. DECISIONS FOR THE USER (before any build)
+  6. DECISIONS FOR THE USER (before any build) — ✅ ALL ANSWERED 2026-09-21
+     User: "d1 split as recommended · d2 go with the recommendation · d3 yes ·
+     d4 yes · d5 yes". Final build order is in §0.
 ===============================================================================
 
   D1  Option B (UI stays split) or Option A (recs inside the analysis)?
@@ -238,3 +305,7 @@
 ===============================================================================
 
   2026-09-21 — Study done read-only; this plan written. No code changed.
+  2026-09-21 — User answered D1-D5, all as recommended (§6). Plan turned into a build
+    order with a cold-session handoff (§0). Docs updated for handoff: AGENTS.md,
+    ai_recommendation_plan.md, AI_MODULE_HANDOVER.md, pilot_testing_readiness_plan.md.
+    STILL NO CODE CHANGED — the build waits for the user's "go".

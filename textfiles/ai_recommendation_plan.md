@@ -7,6 +7,16 @@ Branch: `ai/phase10-plan-updates` (from develop)
 Date: August 25, 2026
 Plan file: textfiles/ai_recommendation_plan.md
 
+> ⚠ **SUPERSEDED IN PART — 2026-09-21 (planned, not built).** The separate Gemini call
+> this phase added is planned to be FOLDED INTO the analysis prompt: one call returns the
+> 5-section analysis AND the recommendations, split before saving; the UI stays split;
+> the rule-based fallback (Decision 1 below) is kept exactly. Read
+> **`textfiles/ai_analysis_recommendation_merge_plan.md` §0** before changing anything
+> here. `AIRecommendationService` stays in the codebase (its context builders and its
+> JSON parse/validate code are reused, not copied). Also found in that study: the
+> ANALYSIS prompt's reliability block is always empty (this service reads the real
+> reliability shape correctly; `AIExplanationService` does not) — see that plan's F-1.
+
 Reference:
 - textfiles/active_reference/ai_module_ver2_master_plan.txt §Phase 10
 - textfiles/active_reference/AI_MODULE_HANDOVER.md §4
@@ -298,6 +308,7 @@ more contextual recommendations within the same data structure.
 | 8 | R² presented as "Curve Fit Quality (matches past data only)" | Prevents AI from using R² as forecast accuracy (user-identified issue) |
 | 9 | TextQualityFilter added for open-text fields | Gibberish dev data would waste tokens and confuse AI; 4-heuristic filter |
 | 10 | Prompt includes reliability score instead of R² | ForecastReliabilityService weighted score is the honest trust indicator |
+| 11 | (2026-09-21, planned) Fold this prompt into the analysis prompt — ONE Gemini call | The two calls never saw each other, so Mitigation and Recommended Actions could repeat/contradict; halves Gemini calls. UI stays split, rule fallback kept, no Gemini on page render. See `ai_analysis_recommendation_merge_plan.md` (user decisions D1-D5). |
 
 ---
 

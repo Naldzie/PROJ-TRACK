@@ -5,6 +5,13 @@
 **Status:** ACTIVE / REFERENCE — this is the single entry point for the AI/regression module
 **Why this file exists:** responsibility transfer. The original author is moving to a different problem; a teammate (human or AI agent) will continue this module. Read this file BEFORE reading any other AI doc — it tells you what exists, what is done, what is next, and which files hold the details.
 
+> 🟢 **LATEST (2026-09-21) — read before touching the analysis or recommendation code.**
+> The next planned change to this module is **`textfiles/ai_analysis_recommendation_merge_plan.md`** (start at its §0): the Gemini **analysis** prompt (`AIExplanationService`) and the Gemini **recommendation** prompt (`AIRecommendationService`) become ONE call — the analysis prompt kept verbatim, recommendations appended as a JSON block and split out before saving; the UI stays split; rule-based fallback kept; no Gemini call on page render. Decisions D1-D5 are made; **nothing is built yet**.
+> Two defects found in that study (both scheduled as the plan's first steps):
+> 1. **The analysis prompt's FORECAST RELIABILITY block is always empty** — `AIExplanationService::buildReliabilityText()` reads a shape `ForecastReliabilityService` never returns (details in AGENTS.md → Known Issues). Its unit-test fixture uses the same wrong shape, so no test catches it.
+> 2. **The AI Prediction tab can call Gemini on page load** (`AIPredictionPresenter` :694-697 → AI-first `RecommendationEngine::generate()`) when no stored recommendations exist.
+> Note also: §1 item 6 below says recommendations are "rule-based" — since Phase 10 they are **AI-first with rule-based fallback** (`AIRecommendationService` → `RecommendationEngine`), and "Regenerate analysis" currently makes **two** Gemini calls.
+
 ---
 
 ## 1. What this module is (30-second summary, no code)

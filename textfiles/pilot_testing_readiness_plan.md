@@ -855,7 +855,18 @@
     · NEXT ASK (study only, no build): combine the AI analysis and recommendation
       prompts — plan written to textfiles/ai_analysis_recommendation_merge_plan.md
       (two Gemini calls today; the analysis prompt's reliability block is silently
-      empty — finding F-1; decisions D1-D5 await the user).
+      empty — finding F-1).
+      ✅ DECISIONS MADE by the user, same day, all as recommended: D1 UI stays split ·
+      D2 rule-based fallback · D3 no Gemini on page render · D4 fix F-1 first · D5 keep
+      Mitigation. The user then asked for the docs to be made handoff-ready (AGENTS.md
+      "START HERE" box, the plan's §0, ai_recommendation_plan.md, AI_MODULE_HANDOVER.md)
+      — done. NOTHING BUILT; the build waits for the user's "go", and the user should
+      be asked where to branch from (merge phase-34/35/36 into develop first, or branch
+      from phase-36).
+    · STATE AT SESSION CLOSE (2026-09-21): branch phase-36-create-project-modal-ui,
+      clean tree. phase-34/35/36 browser-confirmed, NOT merged, NOT pushed. develop is
+      8 commits ahead of origin (phase 31-33 merges) — NOT pushed. PHP 1256/0 on
+      phase-36; JS 267/267/0.
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a
