@@ -69,7 +69,12 @@ class ParserKeywordProposalController extends Controller
                 $label = null;
             }
 
-            $query = ParserKeywordProposal::where('field', $item['field']);
+            // withTrashed (2026-09-21): a reviewer may DELETE a rejected row to tidy the
+            // desk. That hides it, but the refusal must still hold — without this the
+            // trashed row is invisible here, a NEW proposed row is created, and the
+            // verdict is lost (the exact 2026-09-20 defect, reintroduced by tidying).
+            // Only a permanent delete (admin) makes the loop forget a phrase.
+            $query = ParserKeywordProposal::withTrashed()->where('field', $item['field']);
             if ($label === null) {
                 $query->whereNull('label_phrase');
             } else {
@@ -84,7 +89,9 @@ class ParserKeywordProposalController extends Controller
                 // live on its own: a reviewer decided, and three more sightings is not a
                 // rebuttal. Only the desk can undo a rejection.
                 $row->increment('occurrences');
-                if ($row->status === 'rejected') {
+                // A trashed row is always a deleted REJECTION (only rejected rows can
+                // be deleted), so it is refused whatever its status column says.
+                if ($row->status === 'rejected' || $row->trashed()) {
                     $refusedRejected++;
                     $stored++;
                     continue;
@@ -227,6 +234,129 @@ class ParserKeywordProposalController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Keyword rejected successfully',
+        ]);
+    }
+
+    /* ─── Deleting rejected wording (2026-09-21) ─────────────────────────────
+     * Delete (admin + staff) SOFT-deletes a REJECTED row: it leaves the desk,
+     * but collect() still sees it (withTrashed) and keeps refusing the phrase.
+     * The Deleted tab, Restore and Permanent delete are ADMIN-only. Permanent
+     * delete is the one action that makes the loop forget a phrase was refused.
+     * ────────────────────────────────────────────────────────────────────── */
+
+    // Admin-only gate for the Deleted tab's endpoints (staff get 403, not a redirect,
+    // so the desk can say why).
+    protected function ensureAdmin()
+    {
+        if (auth()->user()->role !== 'admin') {
+            abort(response()->json(['message' => 'Only an admin can manage deleted keywords.'], 403));
+        }
+    }
+
+    /**
+     * Soft-delete a rejected proposal (tidies the desk; the refusal still holds).
+     * Called by: the Delete button on a Rejected row in the review modal.
+     */
+    public function trash(ParserKeywordProposal $proposal)
+    {
+        $this->ensureReviewer();
+
+        // Only a decided refusal may be tidied away. Deleting a proposed row would
+        // skip review; deleting a live one would silently drop vocabulary the reader
+        // uses — both belong to Reject first.
+        if ($proposal->status !== 'rejected') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Only rejected wording can be deleted. Reject it first.',
+            ], 422);
+        }
+
+        $proposal->delete();
+
+        $this->logActivity('Delete Parser Keyword', "Deleted rejected parser keyword '{$proposal->label_phrase}' for field {$proposal->field}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rejected keyword deleted',
+        ]);
+    }
+
+    /**
+     * List soft-deleted proposals for the admin's Deleted tab (newest deletion first).
+     * Called by: loadParserKeywordsForManagement() when the viewer is an admin.
+     */
+    public function getDeleted()
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        $rows = ParserKeywordProposal::onlyTrashed()
+            ->orderByDesc('deleted_at')
+            ->get()
+            ->map(function ($row) {
+                return [
+                    'id' => $row->id,
+                    'field' => $row->field,
+                    'label_phrase' => $row->label_phrase ?? '',
+                    'excerpt' => $row->excerpt ?? '',
+                    'occurrences' => $row->occurrences,
+                    'status' => $row->status,
+                    'source' => $row->source ?? 'correction',
+                    'deleted_at' => $row->deleted_at,
+                ];
+            });
+
+        return response()->json($rows);
+    }
+
+    /**
+     * Restore a deleted proposal back to the desk (it returns as Rejected).
+     * Called by: the Restore button on the admin's Deleted tab.
+     */
+    public function restore(ParserKeywordProposal $proposal)
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        if (!$proposal->trashed()) {
+            return response()->json(['success' => false, 'message' => 'This keyword is not deleted.'], 422);
+        }
+
+        $proposal->restore();
+
+        $this->logActivity('Restore Parser Keyword', "Restored parser keyword '{$proposal->label_phrase}' for field {$proposal->field}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Keyword restored to Rejected',
+        ]);
+    }
+
+    /**
+     * Permanently delete a soft-deleted proposal. The loop forgets the phrase
+     * entirely, so a future correction may propose it again from scratch.
+     * Called by: the Delete permanently button on the admin's Deleted tab.
+     */
+    public function forceDestroy(ParserKeywordProposal $proposal)
+    {
+        $this->ensureReviewer();
+        $this->ensureAdmin();
+
+        // Two-step on purpose: only something already in the Deleted tab can be
+        // destroyed, so no single click erases a row still on the desk.
+        if (!$proposal->trashed()) {
+            return response()->json(['success' => false, 'message' => 'Delete the keyword first; only deleted keywords can be removed permanently.'], 422);
+        }
+
+        $label = $proposal->label_phrase;
+        $field = $proposal->field;
+        $proposal->forceDelete();
+
+        $this->logActivity('Permanently Delete Parser Keyword', "Permanently deleted parser keyword '{$label}' for field {$field}");
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Keyword permanently deleted',
         ]);
     }
 }

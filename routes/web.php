@@ -290,6 +290,11 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
         ->name('staff.parser-keywords.destroy');
 
+    // Soft-delete a REJECTED row (2026-09-21). The Deleted tab, restore and
+    // permanent delete are admin-only and are registered in the admin group only.
+    Route::delete('/parser-keyword-proposals/{proposal}/trash', [ParserKeywordProposalController::class, 'trash'])
+        ->name('staff.parser-keywords.trash');
+
     // === S-CURVE HEADER LEARNING (E1-1 silent capture; staff + admin, contractors excluded) ===
     Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])
         ->name('staff.scurve-headers.collect');
@@ -777,6 +782,23 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::delete('/parser-keyword-proposals/{proposal}', [ParserKeywordProposalController::class, 'destroy'])
         ->name('admin.parser-keywords.destroy');
+
+    // Deleted rejected wording (2026-09-21): soft-delete (admin + staff), then the
+    // admin-only Deleted tab with restore / permanent delete. withTrashed() lets the
+    // binding find a soft-deleted row; the controller checks it really is trashed.
+    Route::delete('/parser-keyword-proposals/{proposal}/trash', [ParserKeywordProposalController::class, 'trash'])
+        ->name('admin.parser-keywords.trash');
+
+    Route::get('/parser-keyword-proposals/deleted', [ParserKeywordProposalController::class, 'getDeleted'])
+        ->name('admin.parser-keywords.deleted');
+
+    Route::patch('/parser-keyword-proposals/{proposal}/restore', [ParserKeywordProposalController::class, 'restore'])
+        ->withTrashed()
+        ->name('admin.parser-keywords.restore');
+
+    Route::delete('/parser-keyword-proposals/{proposal}/force', [ParserKeywordProposalController::class, 'forceDestroy'])
+        ->withTrashed()
+        ->name('admin.parser-keywords.force-destroy');
 
     // === S-CURVE HEADER LEARNING (E1-1 silent capture; staff + admin, contractors excluded) ===
     Route::post('/scurve-header-proposals/collect', [SCurveHeaderProposalController::class, 'collect'])

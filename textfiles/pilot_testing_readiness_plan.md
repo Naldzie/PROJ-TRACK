@@ -596,6 +596,41 @@
         empty Rejected tab (same modal size in all three), and phone width.
       ⬜ BROWSER CHECK OWED (user): open it from admin AND staff; approve one, reject
         one (the counts move and the row changes tab); open an excerpt; search.
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("confirmed").
+    · 🔄 DELETING REJECTED WORDING BUILT (user order, same day) on
+      `phase-33-keyword-soft-delete` (off phase-32) — browser check OWED (user).
+      THE ASK: let users delete rejected keywords (soft delete), plus an admin tab
+      for deleted keywords with restore / permanent delete.
+      ⚠ THE TRAP, and how it is avoided: collect() looked rows up WITHOUT trashed
+        ones, so a soft-deleted rejection would be invisible and the next correction
+        would create a NEW proposed row — the 2026-09-20 "no memory of the verdict"
+        defect, reintroduced by tidying. collect() now uses withTrashed() and treats
+        a trashed row as refused. SEMANTICS:
+          Delete (admin + staff) — REJECTED rows only (422 otherwise); leaves the
+            desk, STAYS refused.
+          Restore (admin) — back to the desk as Rejected; only trashed rows (422).
+          Delete permanently (admin) — only trashed rows (422, so no one click
+            erases a row still on the desk); the loop FORGETS the phrase, and a
+            future correction may propose it again.
+      SERVER: ParserKeywordProposalController trash / getDeleted / restore /
+        forceDestroy + ensureAdmin(); routes — staff: DELETE …/{id}/trash; admin:
+        …/{id}/trash, GET …/deleted, PATCH …/{id}/restore and DELETE …/{id}/force
+        (both ->withTrashed()). Staff on the admin URLs are turned away by the role
+        middleware; ensureAdmin() is the second gate. Each action writes an
+        activity-log entry.
+      UI: Rejected rows get "Delete"; an admin-only "Deleted" tab (rendered by Blade
+        from the user's role, fetched from /admin/…/deleted) shows deleted rows with
+        "Restore" and "Delete permanently", the deletion date, a dashed red card.
+        "All" still means everything ON THE DESK — deleted rows only in their tab.
+        Confirm dialogs say what each delete keeps and what it loses.
+      VERIFIED: ParserKeywordProposalTest +6 (19/19); three mutations (collect
+        without withTrashed, the rejected-only guard, the trashed-only force guard)
+        each turn a test red; route:list shows the 5 routes; node --check; headless
+        Edge screenshots of the Rejected tab, the Deleted tab and phone width.
+        PHP 1244 passed / 0 failed.
+      ⬜ BROWSER CHECK OWED (user): as STAFF — delete a rejected row (no Deleted tab
+        visible). As ADMIN — the row is in Deleted; restore it (back in Rejected);
+        delete it again, then delete permanently (gone from every tab).
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The

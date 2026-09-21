@@ -48,6 +48,14 @@
                         <button type="button" class="pkp-segment" data-pkp-filter="all" onclick="pkpSetFilter('all')">
                             All <span class="pkp-count" data-pkp-count="all">0</span>
                         </button>
+                        {{-- Admin-only: deleted rejected wording (restore / permanent delete).
+                             The endpoints are admin-only on the server too; this only hides the tab. --}}
+                        @if(auth()->check() && auth()->user()->role === 'admin')
+                            <span class="pkp-segment-sep" aria-hidden="true"></span>
+                            <button type="button" class="pkp-segment pkp-segment-deleted" data-pkp-filter="deleted" onclick="pkpSetFilter('deleted')">
+                                <i class="bi bi-trash3"></i> Deleted <span class="pkp-count" data-pkp-count="deleted">0</span>
+                            </button>
+                        @endif
                     </div>
 
                     <div class="pkp-search">
@@ -82,7 +90,10 @@
 let _pkpFilter = 'proposed';
 let _pkpSearch = '';
 let _pkpRows = [];
+let _pkpDeleted = [];
 let _pkpCore = null;
+// Admin sees the Deleted tab (2026-09-21). Display only — the server enforces it.
+const PKP_IS_ADMIN = @json(auth()->check() && auth()->user()->role === 'admin');
 
 // Base path for the review endpoints, role-aware (/admin or /staff).
 function pkpBase() {
@@ -213,12 +224,19 @@ async function loadParserKeywordsForManagement() {
         list.innerHTML = pkpEmptyState('bi-hourglass-split', 'Loading suggestions…', '');
     }
     try {
-        const [response] = await Promise.all([
+        const [response, deletedResponse] = await Promise.all([
             fetch(pkpBase() + '/parser-keyword-proposals/all', { headers: { 'Accept': 'application/json' } }),
+            // Deleted rows are an admin-only list, always under /admin.
+            PKP_IS_ADMIN ? fetch('/admin/parser-keyword-proposals/deleted', { headers: { 'Accept': 'application/json' } }) : null,
             pkpLoadCore(),
         ]);
         const rows = await response.json();
         _pkpRows = Array.isArray(rows) ? rows : [];
+        let deleted = [];
+        if (deletedResponse && deletedResponse.ok) {
+            try { deleted = await deletedResponse.json(); } catch (e) { deleted = []; }
+        }
+        _pkpDeleted = Array.isArray(deleted) ? deleted : [];
         pkpRender();
     } catch (error) {
         console.error('Error loading keyword proposals:', error);
@@ -245,13 +263,16 @@ function pkpRender() {
     if (!list) return;
 
     // Segment counts always describe the whole set, not the search result.
-    const counts = { proposed: 0, live: 0, rejected: 0, all: _pkpRows.length };
+    // "All" means everything ON THE DESK — deleted rows live only in their own tab.
+    const counts = { proposed: 0, live: 0, rejected: 0, all: _pkpRows.length, deleted: _pkpDeleted.length };
     _pkpRows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
     document.querySelectorAll('#manageParserKeywordsModal [data-pkp-count]').forEach(el => {
         el.textContent = counts[el.getAttribute('data-pkp-count')] || 0;
     });
 
-    const inStatus = _pkpFilter === 'all' ? _pkpRows : _pkpRows.filter(r => r.status === _pkpFilter);
+    const inStatus = _pkpFilter === 'deleted'
+        ? _pkpDeleted.map(r => Object.assign({}, r, { _deleted: true }))
+        : (_pkpFilter === 'all' ? _pkpRows : _pkpRows.filter(r => r.status === _pkpFilter));
     const shown = !_pkpSearch ? inStatus : inStatus.filter(r =>
         String(r.label_phrase || '').toLowerCase().includes(_pkpSearch)
         || pkpFieldLabel(r.field).toLowerCase().includes(_pkpSearch));
@@ -267,6 +288,7 @@ function pkpRender() {
             proposed: ['bi-inbox', 'Nothing waiting for review', 'Corrections made while creating projects will appear here as suggestions.'],
             live: ['bi-check2-circle', 'No approved wording yet', 'Approved suggestions move here and are used by the document reader.'],
             rejected: ['bi-x-circle', 'Nothing rejected', 'Rejected suggestions are kept here so they are not suggested again.'],
+            deleted: ['bi-trash3', 'Nothing deleted', 'Rejected wording that someone deleted appears here. Restore it, or delete it permanently.'],
             all: ['bi-inbox', 'No suggestions yet', 'Corrections made while creating projects will appear here as suggestions.'],
         }[_pkpFilter] || ['bi-inbox', 'No suggestions', ''];
         list.innerHTML = pkpEmptyState(empty[0], empty[1], empty[2]);
@@ -283,8 +305,10 @@ function pkpRender() {
 // One suggestion card. The WORDING is the headline; the box is a chip beside the
 // status; the source excerpt stays hidden until "Show where it was found".
 function pkpRowHtml(row) {
-    const status = ['live', 'rejected'].includes(row.status) ? row.status : 'proposed';
-    const statusLabel = { proposed: 'Proposed', live: 'Live', rejected: 'Rejected' }[status];
+    // A deleted row is shown as its own state (admin's Deleted tab only).
+    const status = row._deleted ? 'deleted'
+        : (['live', 'rejected'].includes(row.status) ? row.status : 'proposed');
+    const statusLabel = { proposed: 'Proposed', live: 'Live', rejected: 'Rejected', deleted: 'Deleted' }[status];
 
     // AI-4 origin: AI-assisted rows carry AI-taught wording (Decision A3).
     const origin = row.source === 'AI-assisted'
@@ -304,12 +328,34 @@ function pkpRowHtml(row) {
     // L-2: a row with no wording has nothing to approve — it is kept only as a
     // count. Hiding the button says so before the server has to. Reject is hidden
     // on rejected rows: it only sets status='rejected', so there it would do nothing.
-    const approveBtn = (status === 'live' || !row.label_phrase) ? '' :
+    // Deleted rows get only Restore / Delete permanently (admin).
+    const approveBtn = (status === 'live' || status === 'deleted' || !row.label_phrase) ? '' :
         '<button class="btn btn-sm btn-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording">'
         + '<i class="bi bi-check-lg"></i> ' + (status === 'rejected' ? 'Approve instead' : 'Approve') + '</button>';
-    const rejectBtn = status === 'rejected' ? '' :
+    const rejectBtn = (status === 'rejected' || status === 'deleted') ? '' :
         '<button class="btn btn-sm btn-outline-danger" data-pkp-reject="' + row.id + '" title="Stop suggesting this wording">'
         + '<i class="bi bi-x-lg"></i> Reject</button>';
+    // Rejected rows can be tidied off the desk; the refusal still holds (server: withTrashed).
+    const trashBtn = status !== 'rejected' ? '' :
+        '<button class="btn btn-sm btn-outline-secondary" data-pkp-trash="' + row.id + '" title="Remove from the desk — it stays rejected">'
+        + '<i class="bi bi-trash3"></i> Delete</button>';
+    const restoreBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-primary" data-pkp-restore="' + row.id + '" title="Put it back in the Rejected tab">'
+        + '<i class="bi bi-arrow-counterclockwise"></i> Restore</button>';
+    const forceBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-danger" data-pkp-force="' + row.id + '" title="Erase it for good">'
+        + '<i class="bi bi-trash3-fill"></i> Delete permanently</button>';
+    const buttons = approveBtn + rejectBtn + trashBtn + restoreBtn + forceBtn;
+
+    // When it was deleted, for the Deleted tab's meta line.
+    let deletedOn = '';
+    if (status === 'deleted' && row.deleted_at) {
+        const d = new Date(row.deleted_at);
+        if (!isNaN(d)) {
+            deletedOn = '<span title="When it was deleted"><i class="bi bi-clock-history"></i> Deleted '
+                + pkpEscapeHtml(d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })) + '</span>';
+        }
+    }
 
     const seen = parseInt(row.occurrences, 10) || 0;
 
@@ -323,11 +369,12 @@ function pkpRowHtml(row) {
         +   '<div class="pkp-meta">'
         +     '<span title="How many corrections produced this wording"><i class="bi bi-arrow-repeat"></i> Seen ' + seen + (seen === 1 ? ' time' : ' times') + '</span>'
         +     origin
+        +     deletedOn
         +   '</div>'
-        +   pkpWorth(row.field, row.label_phrase)
+        +   (status === 'deleted' ? '' : pkpWorth(row.field, row.label_phrase))
         +   (context ? '<div>' + context + '</div>' : '')
         + '</div>'
-        + ((approveBtn || rejectBtn) ? '<div class="pkp-actions">' + approveBtn + rejectBtn + '</div>' : '')
+        + (buttons ? '<div class="pkp-actions">' + buttons + '</div>' : '')
         + '</div>';
 }
 
@@ -343,6 +390,22 @@ document.addEventListener('click', function (e) {
     const rejectBtn = e.target.closest ? e.target.closest('[data-pkp-reject]') : null;
     if (rejectBtn) {
         pkpRejectProposal(rejectBtn.getAttribute('data-pkp-reject'));
+        return;
+    }
+    // Deleted-wording actions (2026-09-21).
+    const trashBtn = e.target.closest ? e.target.closest('[data-pkp-trash]') : null;
+    if (trashBtn) {
+        pkpTrashProposal(trashBtn.getAttribute('data-pkp-trash'));
+        return;
+    }
+    const restoreBtn = e.target.closest ? e.target.closest('[data-pkp-restore]') : null;
+    if (restoreBtn) {
+        pkpRestoreProposal(restoreBtn.getAttribute('data-pkp-restore'));
+        return;
+    }
+    const forceBtn = e.target.closest ? e.target.closest('[data-pkp-force]') : null;
+    if (forceBtn) {
+        pkpForceDeleteProposal(forceBtn.getAttribute('data-pkp-force'));
         return;
     }
     // Show/hide the source excerpt for one suggestion.
@@ -424,6 +487,58 @@ function pkpRejectProposal(id) {
                 showToast('Network error — failed to reject suggestion', 'error');
             }
         }
+    );
+}
+
+// ===================================================
+// DELETE / RESTORE / PERMANENT DELETE (2026-09-21)
+// Delete: admin + staff, rejected rows only; the wording STAYS refused.
+// Restore + permanent delete: admin only (server-enforced; /admin URLs).
+// ===================================================
+
+// Shared request for the three actions: toast the outcome, then reload the desk.
+// None of them changes the LIVE word set (only rejected rows are involved), so
+// unlike approve/reject there is no learned-keyword cache to bust.
+async function pkpSend(method, url, okMessage, failMessage) {
+    try {
+        const response = await fetch(url, { method: method, headers: pkpHeaders() });
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) {
+            showToast(pkpExtractErrorMessage(data, failMessage), 'error');
+            return;
+        }
+        showToast(okMessage, 'success');
+        loadParserKeywordsForManagement();
+    } catch (error) {
+        console.error(failMessage, error);
+        showToast('Network error — ' + failMessage.toLowerCase(), 'error');
+    }
+}
+
+// Soft-delete a rejected row after confirmation.
+function pkpTrashProposal(id) {
+    showDeleteConfirmation(
+        'Delete Rejected Wording',
+        'Remove this rejected wording from the list?<br><small style="color:#6b7280;">It stays rejected and will not be suggested again. An admin can restore it.</small>',
+        () => pkpSend('DELETE', pkpBase() + '/parser-keyword-proposals/' + encodeURIComponent(id) + '/trash',
+            'Rejected wording deleted', 'Failed to delete wording')
+    );
+}
+
+// Put a deleted row back on the desk (it returns to Rejected). No confirm: it is undoable.
+function pkpRestoreProposal(id) {
+    pkpSend('PATCH', '/admin/parser-keyword-proposals/' + encodeURIComponent(id) + '/restore',
+        'Restored to Rejected', 'Failed to restore wording');
+}
+
+// Erase a deleted row for good, after a confirmation that says what is lost.
+function pkpForceDeleteProposal(id) {
+    showDeleteConfirmation(
+        'Delete Permanently',
+        'Permanently delete this wording?<br><small style="color:#6b7280;">This cannot be undone. The system forgets it was ever rejected, so a future correction may suggest it again.</small>',
+        () => pkpSend('DELETE', '/admin/parser-keyword-proposals/' + encodeURIComponent(id) + '/force',
+            'Wording permanently deleted', 'Failed to delete wording permanently')
     );
 }
 
