@@ -1,4 +1,4 @@
-﻿/* Larger dialogs: modal-xl (1140px) for both issue modals */
+/* Larger dialogs: modal-xl (1140px) for both issue modals */
 #issuesModal .modal-dialog,
 #editIssueModal .modal-dialog {
     max-width: 1140px;
