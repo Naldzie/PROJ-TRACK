@@ -313,6 +313,11 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
     Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
         ->name('staff.scurve-headers.destroy');
 
+    // Soft-delete a REJECTED layout (2026-09-21). The Deleted tab, restore and
+    // permanent delete are admin-only and are registered in the admin group only.
+    Route::delete('/scurve-header-proposals/{proposal}/trash', [SCurveHeaderProposalController::class, 'trash'])
+        ->name('staff.scurve-headers.trash');
+
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])
         ->name('staff.documents.upload');
@@ -817,6 +822,23 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
 
     Route::delete('/scurve-header-proposals/{proposal}', [SCurveHeaderProposalController::class, 'destroy'])
         ->name('admin.scurve-headers.destroy');
+
+    // Deleted rejected layouts (2026-09-21, parity with the keyword desk):
+    // soft-delete (admin + staff), then the admin-only Deleted tab with restore /
+    // permanent delete. withTrashed() lets the binding find a soft-deleted row.
+    Route::delete('/scurve-header-proposals/{proposal}/trash', [SCurveHeaderProposalController::class, 'trash'])
+        ->name('admin.scurve-headers.trash');
+
+    Route::get('/scurve-header-proposals/deleted', [SCurveHeaderProposalController::class, 'getDeleted'])
+        ->name('admin.scurve-headers.deleted');
+
+    Route::patch('/scurve-header-proposals/{proposal}/restore', [SCurveHeaderProposalController::class, 'restore'])
+        ->withTrashed()
+        ->name('admin.scurve-headers.restore');
+
+    Route::delete('/scurve-header-proposals/{proposal}/force', [SCurveHeaderProposalController::class, 'forceDestroy'])
+        ->withTrashed()
+        ->name('admin.scurve-headers.force-destroy');
 
     // === DOCUMENT ROUTES ===
     Route::post('/documents/upload', [DocumentController::class, 'upload'])

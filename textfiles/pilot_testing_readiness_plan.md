@@ -677,6 +677,63 @@
       ⬜ BROWSER CHECK OWED (user): open the desk (admin and staff); open a header
         block; Teach a row (the Teach modal opens as before and saving reloads the
         desk); approve a ready row; reject one; search a contractor.
+    · 🔄 S-CURVE LAYOUTS: REJECTED TAB + DELETE / RESTORE / PERMANENT DELETE (user
+      order, same day: "add the tab for reject and have the same soft delete and hard
+      delete like in the keyword management") on `phase-35-scurve-layout-reject-delete`
+      (off phase-34) — browser check OWED (user).
+      ⚠ A BEHAVIOUR CHANGE, NOT ONLY A TAB. Reject used to SOFT-DELETE the row, and
+        collect() could not see deleted rows — so the next failed import of the same
+        file re-captured the layout as a fresh Proposed row (the confirm even said
+        "Future failed imports can capture it again"). That is the defect the keyword
+        desk fixed on 2026-09-20, and a Rejected tab is meaningless without the fix.
+        NOW: Reject sets status 'rejected' and KEEPS the row (Rejected tab); a repeat
+        capture only raises its count (response carries refused:true) — never
+        re-proposed, never auto-lived. A rejected LIVE layout stops being read (the
+        reader consults status 'live' only).
+      SEMANTICS (mirror of the keyword desk):
+        Delete (admin + staff) — REJECTED rows only (422 otherwise); leaves the desk,
+          STAYS refused.
+        Restore (admin) — only trashed rows (422); returns ALWAYS as Rejected. This
+          matters for LEGACY rows: rejects made before today are soft-deleted rows
+          whose status still reads proposed or live — they now appear in the admin's
+          Deleted tab, and restoring one must not put a layout back before the reader.
+        Delete permanently (admin) — only trashed rows (422); the loop forgets it and
+          the next failed import captures it again as Proposed.
+        Teach stays on Rejected cards (teaching is how a rejected capture becomes
+          useful): a variant is a new Proposed sibling; "replace" drops the row to
+          Proposed — an explicit reviewer action, so that un-rejecting is intended.
+      TWO TRAPS THIS TABLE HAS THAT THE KEYWORD TABLE DID NOT:
+        (1) a legacy soft-deleted reject may already have a second, ACTIVE twin with
+            the same hash (captured by a later import). ScurveHeaderProposal::
+            findForCapture() prefers the ACTIVE row and falls back to a deleted one
+            only when none exists — a plain withTrashed()->first() would bump the dead
+            row and orphan the live one. Used by collect() AND storeAiDerived().
+        (2) storeAiDerived() backfills a map-less / unnumbered row and drops it to
+            proposed — on a rejected row that would UN-REJECT it with nobody deciding.
+            It now returns a refused row untouched (isRefused(): rejected or trashed).
+      SERVER: SCurveHeaderProposalController destroy (now status), trash / getDeleted /
+        restore / forceDestroy + ensureAdmin(); getAllForManagement accepts
+        ?status=rejected; model findForCapture() + isRefused(). Routes — staff: DELETE
+        …/{id}/trash; admin: …/{id}/trash, GET …/deleted, PATCH …/{id}/restore and
+        DELETE …/{id}/force (both ->withTrashed()). Activity-log entry per action.
+      UI: Proposed · Live · Rejected · All | Deleted (admin, Blade-rendered from the
+        role). Rejected cards: "Approve instead" (still disabled when unreadable),
+        Teach, Delete. Deleted cards: Restore, Delete permanently, the deletion date,
+        dashed red card, no readiness line. Confirm texts say what each keeps/loses.
+      VERIFIED: ScurveHeaderProposalTest — the old soft-delete reject test REWRITTEN to
+        the new verdict, +7 new (95/95); SIX mutations each turn a test red (collect
+        refusal, no trashed fallback, trashed not deprioritised, storeAiDerived guard,
+        restore keeping the old status, the rejected-only trash guard); route:list
+        shows the 5 routes; node --check; headless screenshots (Rejected, Deleted,
+        phone). PHP 1254 passed / 0 failed · JS 267/267/0.
+      ⬜ BROWSER CHECK OWED (user): reject a layout (it moves to Rejected); re-import
+        the same file (it does NOT reappear in Proposed); Delete it as staff (no
+        Deleted tab); as admin, restore it (back in Rejected), delete again, delete
+        permanently (gone; a re-import then captures it fresh). Also: older rejected
+        layouts should now be visible in the admin's Deleted tab.
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("all browser checks confirmed") —
+        covers BOTH phase-34 (the layouts desk overhaul) and phase-35 (this entry).
+        Neither is merged to develop yet (no merge order given).
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
