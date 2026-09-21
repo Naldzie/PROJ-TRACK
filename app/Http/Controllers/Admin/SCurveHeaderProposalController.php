@@ -1021,7 +1021,8 @@ class SCurveHeaderProposalController extends Controller
         }
 
         $document = Document::find($documentId);
-        if (!$document || !$document->fileExists()) {
+        // F-3 (2026-09-21): only a document of a project the caller may view
+        if (!$document || !$document->isViewableBy($request->user()) || !$document->fileExists()) {
             throw new RuntimeException('The selected document could not be found.');
         }
 
@@ -1053,6 +1054,10 @@ class SCurveHeaderProposalController extends Controller
 
         if (!empty($documentId)) {
             $document = Document::find($documentId);
+            // F-3: a document the caller may not view scopes nothing
+            if ($document && !$document->isViewableBy(auth()->user())) {
+                return null;
+            }
 
             return $document?->project?->contractor_id;
         }

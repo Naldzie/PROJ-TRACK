@@ -2,8 +2,8 @@
 # Parent refs: textfiles/document_parser_and_scurve_import_plan.md (the import feature)
 #              AGENTS.md → Document Parser Libraries (S-curve Excel/PDF readers)
 # Date: September 21, 2026
-# Status: ⬜ RESTUDY DONE, ALL DECISIONS ANSWERED (§5, 2026-09-21) — NOTHING BUILT.
-#         Build waits for the user's "go".
+# Status: 🔄 BUILT (2026-09-21) on phase-41 — browser check owed by the user.
+#         Decisions S-D1..S-D6 answered (§5). Build log: §6.
 # Branch: phase-41-scurve-import-original-baseline (from develop 7470c9e, after the
 #         phase-40 merge).
 
@@ -153,3 +153,73 @@
   2026-09-21 — User answered S-D1..S-D6 (all as recommended) and ordered phase-40
     merged into develop (done: 7470c9e; PHP 1301 / 0, JS 267 / 0). phase-41 recut
     from develop 7470c9e. Build not started — waits for "go".
+  2026-09-21 — ✅ BUILT on phase-41 (user: "yes start").
+    BACKEND
+    · NEW app/Services/SCurveSourceFinder.php — candidatesFor(Project): every
+      .xls/.xlsx/.pdf of the project, ranked +4 Schedule type, +2 S-curve-looking
+      name, +1 spreadsheet, ties newest first; each with type, upload date and the
+      role's download URL (PDFs are read in the browser). The type never gates.
+    · F-3: Document::isViewableBy(User) (ProjectPolicy::view). Enforced in
+      SCurveImportController::resolveSource (refused with the same "could not be
+      found" message, so other projects' ids are not revealed), in both of its
+      document_id → contractor lookups (an unviewable doc scopes nothing), and in
+      Admin\SCurveHeaderProposalController (resolveSource + resolveContractor).
+      Today admin/staff may view every project and contractors cannot reach these
+      routes, so nothing changes in practice — the check is future-proofing.
+    FRONT END
+    · scurve-import-core.js (pure, node-tested): rankSCurveCandidates (same scores
+      as the PHP finder), splitSCurveMonthsAtEnd (S-D2 — refuse months past the end
+      BEFORE normalizeSCurveMonths, which clamps them onto the end month as
+      duplicates), mergeImportIntoOriginal (S-D1 inspected months kept + reported;
+      same month → file %, row id and planned date kept, description from the file
+      when it has one; activities matched by name keep their id → done flag
+      survives; months only in the file added; open months missing from it
+      removed).
+    · scurve-import-ui.js: scurvePickFile() — one picker (stacked modal, backdrop
+      lifted over the setup modal, textContent only) used by all three entry points
+      and shown even for one file (S-D4/S-D5); project-page setup flow and create
+      wizard now read the CHOSEN file (the wizard button shows for any pending
+      Excel/PDF); new scurveImportIntoOriginal() → picker → read (Excel via the
+      server, PDF in the browser) → split at the ORIGINAL end date → normalize →
+      applyImportToOriginalBaseline().
+    · baseline-schedule-setup-modal.js: the rows as loaded are snapshotted when
+      Edit Original opens; applyImportToOriginalBaseline merges into THAT snapshot
+      (so a second import or an earlier edit never compounds; it confirms first if
+      the user already changed rows), replaces the list, sets removed_ids, and shows
+      a summary box — updated / added / removed / kept-as-recorded (with file vs
+      kept %) / refused past the original completion / import notes / "nothing is
+      saved yet". Saving uses the existing endpoint and its guards.
+    · _setup_baseline_modal.blade.php: "Received a revised S-curve?" row with the
+      Import from S-curve button — shown only in Edit Original mode when the page
+      supplied candidates; hidden on every reset.
+    · baseline-schedule.blade.php: window.__scurveSources (candidates, parse URL,
+      start date = original start, end date, originalEndDate) for admin/staff only
+      (the parse routes do not exist for contractors); the setup import button now
+      shows for ANY candidate (was: newest "Schedule"-typed document only).
+    · Design note: Edit Original bounds months by the ORIGINAL completion date, not
+      planned_end_date — after an extension, months past the original end are
+      separate extension rows that this mode does not show; importing into them
+      would have created duplicate months.
+    · Not in this flow (kept simple): the AI assist / cross-check offers of the
+      setup import; a read failure shows a toast. The setup and wizard flows keep
+      them.
+    TESTS: new tests/Feature/SCurveSourcePickerTest.php (10) — ranking, newest-first
+      ties, renamed type, isViewableBy per role, parse refusal for another project's
+      contractor, page wiring (sources JSON, button for any candidate incl. a
+      Supporting-Document S-curve, no button without candidates, Edit Original after a
+      baseline, no sources for contractors). New tests/js/scurve-original-import.test.mjs
+      (12). Mutations (restored): access check removed → 1 red; type gates again →
+      3 red; merge overwrites inspected months → 2 red.
+    SUITES: PHP 1311 passed / 0 failed; JS 279 / 279 / 0; views compile.
+    LIVE: project 142 (S-curve filed as Supporting Document) now offers it
+      preselected; project 155 lists both Schedule files (xlsx preselected, PDF next).
+    ⬜ BROWSER CHECK OWED (user):
+      1. A project with no baseline and 2+ Excel/PDF files: Import from S-curve →
+         the picker lists them, suggested one preselected → reads the chosen file.
+      2. Create-project wizard with two uploads: the picker appears; the chosen one is read.
+      3. A project with a baseline and some inspections: Edit Original Baseline →
+         "Import from S-curve" → pick the revised file → the list updates, inspected
+         months stay, the summary box lists the changes → Save Original Baseline →
+         the Baseline tab shows the new plan; activity done-ticks survive.
+      4. A revised file running past the original completion: those months are
+         listed as not imported.

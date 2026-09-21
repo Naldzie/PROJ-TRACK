@@ -52,6 +52,26 @@
                     </div>
                 </div>
 
+                <!-- ── IMPORT REVISED S-CURVE (edit-original mode only) ──
+                     Shown by baseline-schedule-setup-modal.js setSetupImportScurveVisible()
+                     when the project page supplied candidate files; click →
+                     scurve-import-ui.js scurveImportIntoOriginal() (file picker → read →
+                     merged into the rows for review). Plan:
+                     textfiles/scurve_import_original_baseline_plan.md -->
+                <div id="setupImportScurveWrap" style="display: none; margin-bottom: 14px; padding: 10px 16px; background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; border-radius: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                        <div style="font-size: 11px; color: #4c1d95; line-height: 1.4;">
+                            <div style="font-weight: 700; font-size: 12px; margin-bottom: 2px;">Received a revised S-curve?</div>
+                            Read it from an uploaded Excel / PDF file. Months that already have a recorded
+                            inspection keep their values; you review every change before saving.
+                        </div>
+                        <button type="button" id="setupImportScurveBtn" onclick="scurveImportIntoOriginal(this)"
+                                style="background: #7c3aed; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+                            <i class="bi bi-cloud-arrow-up-fill"></i> Import from S-curve
+                        </button>
+                    </div>
+                </div>
+
                 <!-- ── ADDITIONAL WORK % (adjust mode only) ──────────── -->
                 <div id="setupRemainingWorkWrapper" style="display: none; margin-bottom: 14px; padding: 12px 16px; background: #fef3c7; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; border-radius: 8px;">
                     <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">

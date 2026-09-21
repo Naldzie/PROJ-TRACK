@@ -18,7 +18,8 @@ use RuntimeException;
  * Parses a contractor S-curve Excel workbook into baseline months for the
  * Set Up Baseline modal. Accepts either:
  *   - a multipart `file` (create-project wizard, in-memory File), or
- *   - a `document_id` (project detail, reads the stored Schedule-type file).
+ *   - a `document_id` (project detail, reads the stored document the user
+ *     picked — any type; the caller must be allowed to view its project).
  *
  * The server returns cumulative planned % per month_index (1..12). The CLIENT
  * derives the real planned_date from the project's planned start date — dates
@@ -292,6 +293,10 @@ class SCurveImportController extends Controller
             }
             if ($contractorId === null && $request->filled('document_id')) {
                 $doc = Document::find($request->input('document_id'));
+                // F-3: a document the caller may not view scopes nothing (global maps only)
+                if ($doc && !$doc->isViewableBy($request->user())) {
+                    $doc = null;
+                }
                 $contractorId = $doc?->project?->contractor_id;
             }
 
@@ -680,6 +685,10 @@ class SCurveImportController extends Controller
             }
             if ($contractorId === null && $request->filled('document_id')) {
                 $doc = Document::find($request->input('document_id'));
+                // F-3: a document the caller may not view scopes nothing (global maps only)
+                if ($doc && !$doc->isViewableBy($request->user())) {
+                    $doc = null;
+                }
                 $contractorId = $doc?->project?->contractor_id;
             }
 
@@ -764,7 +773,9 @@ class SCurveImportController extends Controller
 
         if ($documentId) {
             $document = Document::find($documentId);
-            if (!$document || !$document->fileExists()) {
+            // F-3 (2026-09-21): only a document of a project the caller may view.
+            // Same message as "not found", so ids of other projects are not revealed.
+            if (!$document || !$document->isViewableBy($request->user()) || !$document->fileExists()) {
                 throw new RuntimeException('The selected document could not be found.');
             }
 

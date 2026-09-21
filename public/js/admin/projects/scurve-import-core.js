@@ -213,6 +213,165 @@ export function generateAutoSCurve(startDate, endDate, options) {
     return result;
 }
 
+/* ─── Choosing the file (S-curve picker) ──────────────────────────────────── */
+
+/**
+ * Rank candidate files for the S-curve picker, best first. SAME scores as the
+ * server's App\Services\SCurveSourceFinder (keep them in step):
+ *   +4 type named "Schedule", +2 name looks like an S-curve, +1 spreadsheet;
+ *   ties keep the given order. Only .xls/.xlsx/.pdf are candidates — the type
+ *   ranks a file, it never hides one (plan scurve_import_original_baseline P2).
+ * Input items: { fileName, typeName, … } (the wizard's pending documents).
+ * Returns new objects with { score, isScheduleType, nameHint } added.
+ * Called by: scurve-import-ui.js (create-wizard picker).
+ */
+export function rankSCurveCandidates(docs) {
+    if (!Array.isArray(docs)) return [];
+    return docs
+        .map(function (doc, i) {
+            var name = String((doc && doc.fileName) || '');
+            var ext = (name.split('.').pop() || '').toLowerCase();
+            if (['xlsx', 'xls', 'pdf'].indexOf(ext) === -1) return null;
+            var isScheduleType = String((doc && doc.typeName) || '').toLowerCase() === 'schedule';
+            var nameHint = /s[-_\s]?curve|scurve|schedule/i.test(name);
+            var score = (isScheduleType ? 4 : 0) + (nameHint ? 2 : 0) + (ext === 'pdf' ? 0 : 1);
+            return Object.assign({}, doc, { ext: ext, score: score, isScheduleType: isScheduleType, nameHint: nameHint, _order: i });
+        })
+        .filter(function (d) { return d !== null; })
+        .sort(function (a, b) { return (b.score - a.score) || (a._order - b._order); })
+        .map(function (d) { delete d._order; return d; });
+}
+
+/* ─── Import into the ORIGINAL baseline (Edit Original Baseline mode) ─────── */
+
+/**
+ * Split raw server months (month_index based) into those inside the project's
+ * planned end month and those past it — BEFORE normalizeSCurveMonths, which
+ * would clamp every late month onto the end month (duplicate labels).
+ * Decision S-D2: months past the end are REFUSED (moving the end date is the
+ * extension flow's job), so they are returned separately for a note.
+ * Returns { inRange: [raw months], refused: [{ month_index, month_label,
+ * planned_progress_percent }] }. Without a start or end date nothing is refused.
+ */
+export function splitSCurveMonthsAtEnd(months, startDate, endDate) {
+    var out = { inRange: [], refused: [] };
+    if (!Array.isArray(months)) return out;
+    var start = /^\d{4}-\d{2}-\d{2}$/.test(startDate || '') ? new Date(startDate) : null;
+    var endMonth = /^\d{4}-\d{2}-\d{2}$/.test(endDate || '') ? endDate.slice(0, 7) : null;
+    months.forEach(function (m) {
+        if (!start || !endMonth) { out.inRange.push(m); return; }
+        var label = formatDateInput(addCalendarMonths(start, (m.month_index || 1) - 1)).slice(0, 7);
+        if (label > endMonth) {
+            out.refused.push({ month_index: m.month_index, month_label: label, planned_progress_percent: m.planned_progress_percent });
+        } else {
+            out.inRange.push(m);
+        }
+    });
+    return out;
+}
+
+/**
+ * Merge a (revised) S-curve into the rows of the Edit Original Baseline modal.
+ * Nothing is saved here — the result is shown for review and saved with the
+ * existing "Save Original Baseline" endpoint and its guards.
+ *
+ * existing: the modal's rows { scheduleId, month_label, planned_date,
+ *   planned_progress_percent, description, has_actual_progress,
+ *   activities: [{ id, activity_name, description }], … }
+ * imported: normalizeSCurveMonths() output (already inside the end month)
+ *
+ * Rules (decisions S-D1 and S-D3, 2026-09-21):
+ *   · a month with recorded progress (has_actual_progress) is KEPT exactly as
+ *     recorded; a differing file value is reported in summary.keptInspected;
+ *   · same month, not inspected → planned % from the file; the row keeps its id
+ *     and planned date; description from the file when it has one; activities
+ *     matched by NAME (case/space-insensitive) keep their id — so their done
+ *     flag survives on the server — new names are added, missing ones dropped;
+ *   · a month only in the file → added as a new row;
+ *   · a non-inspected month missing from the file → removed (its id returned
+ *     in removedIds for the save payload).
+ * Returns { rows (sorted by month), removedIds, summary: { updated, added,
+ *   removed, unchanged, keptInspected: [{ month_label, kept, file }] } }.
+ */
+export function mergeImportIntoOriginal(existing, imported) {
+    var byLabel = {};
+    (imported || []).forEach(function (m) { if (m && m.month_label) byLabel[m.month_label] = m; });
+
+    var norm = function (s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); };
+    var num = function (v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+    var rows = [];
+    var removedIds = [];
+    var summary = { updated: [], added: [], removed: [], unchanged: [], keptInspected: [] };
+    var seen = {};
+
+    (existing || []).forEach(function (row) {
+        var label = row.month_label;
+        var fileMonth = byLabel[label];
+        seen[label] = true;
+
+        if (row.has_actual_progress) {
+            rows.push(row);
+            if (fileMonth && num(fileMonth.planned_progress_percent) !== num(row.planned_progress_percent)) {
+                summary.keptInspected.push({ month_label: label, kept: num(row.planned_progress_percent), file: num(fileMonth.planned_progress_percent) });
+            }
+            return;
+        }
+
+        if (!fileMonth) {
+            if (row.scheduleId) removedIds.push(row.scheduleId);
+            summary.removed.push(label);
+            return;
+        }
+
+        // Activities: reuse the existing row's id for every name that reappears
+        var oldByName = {};
+        (row.activities || []).forEach(function (a) { if (a && a.activity_name) oldByName[norm(a.activity_name)] = a; });
+        var activities = (fileMonth.activities || [])
+            .filter(function (a) { return a && a.activity_name; })
+            .map(function (a) {
+                var old = oldByName[norm(a.activity_name)];
+                return { id: old ? old.id : null, activity_name: a.activity_name, description: a.description || (old ? old.description || '' : '') };
+            });
+
+        var merged = Object.assign({}, row, {
+            planned_progress_percent: num(fileMonth.planned_progress_percent),
+            description: fileMonth.description ? fileMonth.description : (row.description || ''),
+            activities: activities,
+        });
+
+        var changed = num(row.planned_progress_percent) !== merged.planned_progress_percent
+            || (row.description || '') !== merged.description
+            || JSON.stringify((row.activities || []).map(function (a) { return norm(a.activity_name); }))
+               !== JSON.stringify(activities.map(function (a) { return norm(a.activity_name); }));
+        (changed ? summary.updated : summary.unchanged).push(label);
+        rows.push(merged);
+    });
+
+    (imported || []).forEach(function (m) {
+        if (!m || !m.month_label || seen[m.month_label]) return;
+        seen[m.month_label] = true;
+        rows.push({
+            scheduleId: null,
+            month_label: m.month_label,
+            planned_date: m.planned_date,
+            planned_progress_percent: num(m.planned_progress_percent),
+            original_planned_progress_percent: null,
+            original_planned_date: null,
+            description: m.description || '',
+            has_actual_progress: false,
+            activities: (m.activities || []).filter(function (a) { return a && a.activity_name; })
+                .map(function (a) { return { id: null, activity_name: a.activity_name, description: a.description || '' }; }),
+            isNew: true,
+        });
+        summary.added.push(m.month_label);
+    });
+
+    rows.sort(function (a, b) { return a.month_label < b.month_label ? -1 : (a.month_label > b.month_label ? 1 : 0); });
+
+    return { rows: rows, removedIds: removedIds, summary: summary };
+}
+
 /* ─── Attach to window for the classic consumer script ───────────────────── */
 
 if (typeof window !== 'undefined') {
@@ -225,5 +384,8 @@ if (typeof window !== 'undefined') {
         generateAutoSCurve,
         isDurationShapedLabel,
         duplicateMonthLabels,
+        rankSCurveCandidates,
+        splitSCurveMonthsAtEnd,
+        mergeImportIntoOriginal,
     };
 }

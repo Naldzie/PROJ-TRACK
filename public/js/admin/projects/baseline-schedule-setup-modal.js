@@ -74,6 +74,10 @@ var setupAdjustMode = false;
 /** True when the modal is in edit-original mode (admin correcting the locked original plan). */
 var setupEditOriginalMode = false;
 
+/** Edit-original mode: the original rows exactly as loaded from the server
+ *  (snapshot the S-curve import merges into). Null outside that mode. */
+var setupOriginalLoadedRows = null;
+
 /** Tracks IDs of months removed by the user in adjust mode, sent as removed_ids. */
 var setupRemovedIds = [];
 
@@ -132,7 +136,7 @@ function getSetupDateBounds() {
 // Stash is set by scurve-import-ui at import time; cleared on modal hide (below).
 // Called by: openSetupBaselineModal() for import-preloaded months. Best-effort, textContent
 // only (server strings never become HTML).
-function renderSetupImportNotes(warnings) {
+function renderSetupImportNotes(warnings, titleText) {
     try {
         var old = document.getElementById('setupImportNotes');
         if (old && old.remove) old.remove();
@@ -145,7 +149,7 @@ function renderSetupImportNotes(warnings) {
         box.style.cssText = 'background:#fffbeb;border:1px solid #fcd34d;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;';
         var title = document.createElement('div');
         title.style.cssText = 'font-weight:700;color:#92400e;font-size:12px;margin-bottom:4px;';
-        title.textContent = 'Import notes — read before locking the baseline';
+        title.textContent = titleText || 'Import notes — read before locking the baseline';
         box.appendChild(title);
         warnings.forEach(function (w) {
             var line = document.createElement('div');
@@ -358,6 +362,87 @@ function openAdjustBaselineModal() {
 }
 
 /**
+ * Show / hide the "Import revised S-curve" row of the setup modal. Shown only in
+ * Edit Original Baseline mode and only when the project page supplied candidate
+ * files (window.__scurveSources — the create wizard's copy of this modal has none).
+ */
+function setSetupImportScurveVisible(show) {
+    var wrap = document.getElementById('setupImportScurveWrap');
+    if (!wrap) return;
+    var sources = window.__scurveSources || null;
+    var hasFiles = !!(sources && sources.candidates && sources.candidates.length);
+    wrap.style.display = (show && hasFiles && typeof window.scurveImportIntoOriginal === 'function') ? '' : 'none';
+}
+
+/**
+ * Apply an imported (revised) S-curve to the Edit Original Baseline modal.
+ *
+ * Called by: scurve-import-ui.js scurveImportIntoOriginal(), after the chosen
+ *   file was read, months past the ORIGINAL end refused and the rest normalized.
+ * Uses:      scurveImportCore.mergeImportIntoOriginal (pure, unit-tested) on the
+ *   rows AS LOADED (setupOriginalLoadedRows), so a second import or an earlier
+ *   manual edit never compounds.
+ * Nothing is saved: the merged rows replace the modal's list for review and the
+ *   existing "Save Original Baseline" path (and its server guards) saves them.
+ *
+ * info: { sourceName, refused: [{ month_label, planned_progress_percent }], warnings: [] }
+ */
+function applyImportToOriginalBaseline(months, info) {
+    if (!setupEditOriginalMode || !setupOriginalLoadedRows) return;
+    var core = window.scurveImportCore;
+    if (!core || typeof core.mergeImportIntoOriginal !== 'function') return;
+    info = info || {};
+
+    // Local edits made before the import are replaced — confirm first
+    var edited = JSON.stringify(setupLocalMonths) !== JSON.stringify(setupOriginalLoadedRows) || setupRemovedIds.length > 0;
+    if (edited && !window.confirm('Importing replaces the changes you made in this window with the file\'s plan. Continue?')) {
+        return;
+    }
+
+    var loaded = JSON.parse(JSON.stringify(setupOriginalLoadedRows));
+    var result = core.mergeImportIntoOriginal(loaded, months);
+
+    setupLocalMonths = result.rows;
+    setupRemovedIds = result.removedIds.slice();
+    setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
+        return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+    }, 0);
+
+    setupEditingIndex = null;
+    resetSetupForm();
+    renderSetupMonthList(setupLocalMonths);
+    updateSetupProgress(setupLocalMonths);
+    updateSetupSCurvePreview();
+
+    // What changed — shown above the list, read before saving
+    var s = result.summary;
+    var list = function (labels) { return labels.map(formatMonthLabel).join(', '); };
+    var lines = [];
+    lines.push(s.updated.length ? 'Updated from the file: ' + list(s.updated) + '.' : 'No existing month changed.');
+    if (s.added.length) lines.push('Added: ' + list(s.added) + '.');
+    if (s.removed.length) lines.push('Removed (not in the file): ' + list(s.removed) + '.');
+    if (s.keptInspected.length) {
+        lines.push('Kept as recorded (already inspected): ' + s.keptInspected.map(function (k) {
+            return formatMonthLabel(k.month_label) + ' stays ' + k.kept + '% (file: ' + k.file + '%)';
+        }).join('; ') + '.');
+    }
+    if (info.refused && info.refused.length) {
+        lines.push('Not imported — past the original completion date: ' + info.refused.map(function (r) {
+            return formatMonthLabel(r.month_label);
+        }).join(', ') + '. Use Generate Adjusted Baseline for time extensions.');
+    }
+    (info.warnings || []).forEach(function (w) { lines.push(w); });
+    lines.push('Nothing is saved yet — review the months, then click "Save Original Baseline".');
+
+    renderSetupImportNotes(lines, 'Imported from ' + (info.sourceName || 'the S-curve file') + ' — review before saving');
+
+    if (typeof showToast === 'function') {
+        try { showToast('S-curve read — review the changes, then save.', 'success'); } catch (e) {}
+    }
+}
+window.applyImportToOriginalBaseline = applyImportToOriginalBaseline;
+
+/**
  * Open the Set Up Baseline modal in EDIT-ORIGINAL mode (admin only).
  *
  * Pre-populates ONLY the original-baseline months (rows that were part of
@@ -458,6 +543,11 @@ function openEditOriginalBaselineModal() {
         // Hide remaining work wrapper (only shown in adjust mode)
         var rwWrapper = document.getElementById('setupRemainingWorkWrapper');
         if (rwWrapper) rwWrapper.style.display = 'none';
+
+        // The rows as loaded — an S-curve import always merges into THESE, so
+        // importing twice (or after a manual edit) is predictable.
+        setupOriginalLoadedRows = JSON.parse(JSON.stringify(setupLocalMonths));
+        setSetupImportScurveVisible(true);
 
         setupModalInstance.show();
     })
@@ -824,6 +914,8 @@ function onSetupBaselineCancel() {
             setupEditOriginalMode = false;
             setupRemovedIds = [];
             setupProjectEndDate = null;
+            setupOriginalLoadedRows = null;
+            setSetupImportScurveVisible(false);
             setupOriginalDeadlineLabel = null;
             setupOriginalMonthsForAdjust = [];
             // Hide remaining work wrapper
@@ -2205,6 +2297,8 @@ document.addEventListener('DOMContentLoaded', function () {
             setupEditOriginalMode = false;
             setupRemovedIds = [];
             setupProjectEndDate = null;
+            setupOriginalLoadedRows = null;
+            setSetupImportScurveVisible(false);
             // Clear caller context to prevent stale state on re-open
             window.__setupModalContext = null;
             // S-curve import notes: clear the stash + node so a later manual open
