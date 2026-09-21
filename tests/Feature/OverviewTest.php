@@ -418,7 +418,9 @@ class OverviewTest extends TestCase
         ])->render();
 
         $this->assertStringNotContainsString('Mockup', $html);
-        $this->assertStringContainsString('Issues & Risks', $html);
+        // Card is "Issues" since the risk register was hidden (2026-09-21)
+        $this->assertStringContainsString('<span class="card-title">Issues</span>', $html);
+        $this->assertStringNotContainsString('Issues & Risks', $html);
         $this->assertStringContainsString('Notifications & Alerts', $html);
         $this->assertStringContainsString('Recent Activity', $html);
     }

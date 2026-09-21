@@ -1,4 +1,15 @@
-<!-- ISSUES & RISKS TAB -->
+<!-- ISSUES TAB -->
+{{--
+    RISK REGISTER HIDDEN (2026-09-21, textfiles/risk_register_hide_plan.md).
+    The client records only current / encountered issues and problems — not
+    prospective risks — so the tab is "Issues" again and every risk-register
+    piece below is inside a Blade comment (stripped server-side, never sent to
+    the browser). Nothing was deleted: RiskController, its routes, the Risk
+    model and RiskRegisterTest are unchanged. To bring the register back,
+    remove the Blade-comment wrappers marked "RISK REGISTER HIDDEN" in this
+    file (and restore the tab label in project_detail.blade.php and the
+    Overview card title).
+--}}
 <div id="issues" class="tab-content">
     <div style="margin-top: 30px; padding: 20px; background: white; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
         
@@ -6,9 +17,9 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e5e7eb;">
             <div>
                 <h4 style="margin: 0 0 6px 0; font-size: 16px; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 10px;">
-                    <i class="bi bi-exclamation-circle" style="color: #ef4444; font-size: 20px;"></i> Issues & Risks
+                    <i class="bi bi-exclamation-circle" style="color: #ef4444; font-size: 20px;"></i> Issues
                 </h4>
-                <p style="margin: 0; font-size: 12px; color: #6b7280;">Track project issues and forward-looking risks</p>
+                <p style="margin: 0; font-size: 12px; color: #6b7280;">Track issues and problems encountered on the project</p>
             </div>
             @if(auth()->user()->role === 'admin' || $isAssignedStaff)
             <button class="btn" data-bs-toggle="modal" data-bs-target="#issuesModal"
@@ -25,12 +36,13 @@
             @endif
         </div>
 
-        <!-- All / Issues / Risks Toggle -->
+        {{-- RISK REGISTER HIDDEN — All / Issues / Risks toggle
         <div class="risk-toggle-bar">
             <button type="button" class="risk-toggle-btn active" data-risk-view="all">All</button>
             <button type="button" class="risk-toggle-btn" data-risk-view="issues">Issues</button>
             <button type="button" class="risk-toggle-btn" data-risk-view="risks">Risks</button>
         </div>
+        --}}
 
         <!-- Issues Section -->
         <div id="issuesSection">
@@ -70,8 +82,9 @@
         </div>
         </div>
 
-        <!-- Risk Register Section -->
+        {{-- RISK REGISTER HIDDEN — the register section, its two modals, its CSS and risk-register.js
         @include('projects.project_detail.components.tabs.partials.risk-register', ['project' => $project, 'isAssignedStaff' => $isAssignedStaff])
+        --}}
     </div>
 </div>
 
@@ -101,7 +114,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// All / Issues / Risks toggle behavior
+{{-- RISK REGISTER HIDDEN — All / Issues / Risks toggle behaviour
 document.querySelectorAll('.risk-toggle-btn').forEach(btn => {
     btn.addEventListener('click', function() {
         const view = this.dataset.riskView;
@@ -124,6 +137,7 @@ document.querySelectorAll('.risk-toggle-btn').forEach(btn => {
         }
     });
 });
+--}}
 
 function loadTabIssues() {
     const apiUrl = getIssuesApiUrl();
@@ -197,6 +211,7 @@ function displayTabIssues(issues) {
                     <tr style="border-bottom: 1px solid #e5e7eb; ${index % 2 === 0 ? 'background: #f9fafb;' : 'background: white;'} transition: background 0.2s;">
                         <td style="padding: 12px 16px; font-weight: 600; color: #111827; font-size: 13px;">
                             ${escapeHtml(issue.issue_name)}
+                            {{-- RISK REGISTER HIDDEN — "from Risk" link (it opened the hidden register via switchToRisksTab, defined in risk-register.js)
                             ${issue.source_risk_id ? `
                             <div style="margin-top: 4px;">
                                 <a href="#" onclick="event.preventDefault(); switchToRisksTab();" title="Converted from a risk — view the source risk"
@@ -205,6 +220,7 @@ function displayTabIssues(issues) {
                                 </a>
                             </div>
                             ` : ''}
+                            --}}
                         </td>
                         <td style="padding: 12px 16px; color: #6b7280; font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(issue.description)}</td>
                         <td style="padding: 12px 16px; text-align: center;">

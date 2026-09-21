@@ -155,8 +155,36 @@ class ProjectsRenderTest extends TestCase
             ->assertSee('Detail Project Alpha')
             ->assertSee('Overview')
             ->assertSee('Progress Tracking')
-            ->assertSee('Issues & Risks', false)
+            ->assertSee('Issues', false)
+            ->assertDontSee('Issues & Risks', false)
             ->assertSee('Back to Projects');
+    }
+
+    /**
+     * The risk register is hidden (2026-09-21, textfiles/risk_register_hide_plan.md):
+     * the client records current issues and problems only, not prospective
+     * risks. The Issues tab still renders; nothing of the register reaches the
+     * page — its section, toggle, modals, CSS and script are Blade-commented.
+     */
+    public function test_project_detail_hides_the_risk_register(): void
+    {
+        $project = Project::factory()->create(['status' => 'Ongoing']);
+
+        $html = $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->getContent();
+
+        // The Issues tab is still there
+        $this->assertStringContainsString('id="issuesSection"', $html);
+        $this->assertStringContainsString('Track issues and problems encountered on the project', $html);
+
+        // …and no part of the register is sent to the browser
+        foreach (['id="risksSection"', 'Risk Register', 'risk-toggle-btn', 'id="riskModal"',
+                  'id="riskToIssueModal"', 'risk-register.js', 'risk-register.css', 'switchToRisksTab()',
+                  'RISK REGISTER HIDDEN'] as $needle) {
+            $this->assertStringNotContainsString($needle, $html, "Hidden risk-register markup leaked: {$needle}");
+        }
     }
 
     public function test_project_detail_header_shows_project_manager_meta_when_assigned(): void

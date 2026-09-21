@@ -260,7 +260,7 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header"><span class="card-title">Issues & Risks</span><span class="card-action">{{ $openIssues['total_open'] }} open</span></div>
+                    <div class="card-header"><span class="card-title">Issues</span>{{-- was "Issues & Risks" (risk register hidden) --}}<span class="card-action">{{ $openIssues['total_open'] }} open</span></div>
                     <div style="padding: 16px; display: grid; gap: 10px;">
                         @forelse($openIssues['items'] as $issue)
                         <div style="display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafafa;">
