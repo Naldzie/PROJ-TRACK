@@ -1,4 +1,4 @@
-# PROJECT REPORT OVERHAUL — PER-PROJECT REPORT AS AN EDITABLE WORD DOCUMENT
+# PROJECT REPORT OVERHAUL — PER-PROJECT REPORT AS AN EDITABLE WORD DOCUMENT (✅ DONE — MERGED TO develop 2026-09-21)
 # Parent refs: textfiles/report_generation_plan.md (the Aug 2026 R1-R3 build: what the
 #                current PDF is, why dompdf, the Excel "corruption" freeze §6.4, FE-1..FE-3)
 #              textfiles/ai_analysis_recommendation_merge_plan.md §8 (the two parked PDF
@@ -405,3 +405,7 @@
     S-curve), the full issue history (the report lists issues open at the period end
     and those resolved within it), and admin columns (recorded by, evidence count,
     extension reviewer / rejection reason). Suites unchanged (report tests 44/44).
+  2026-09-21 — ✅ MERGED into develop: phase-38-remove-utf8-bom (ece118b), then
+    phase-39-project-report-overhaul (78a4e33), --no-ff, no conflicts. On develop:
+    PHP 1300 passed / 0 failed, JS 267 / 267 / 0. NOT pushed. Plan CLOSED; parked
+    possible features listed above (R-D3 C, R-D7 photos, R-D8 PMU form, Excel re-enable).
