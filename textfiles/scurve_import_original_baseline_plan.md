@@ -1,8 +1,8 @@
-# S-CURVE IMPORT INTO "EDIT ORIGINAL BASELINE" + CHOOSING THE FILE (BUILT — BROWSER CHECK OWED)
+# S-CURVE IMPORT INTO "EDIT ORIGINAL BASELINE" + CHOOSING THE FILE (BUILT + BROWSER-CONFIRMED)
 # Parent refs: textfiles/document_parser_and_scurve_import_plan.md (the import feature)
 #              AGENTS.md → Document Parser Libraries (S-curve Excel/PDF readers)
 # Date: September 21, 2026
-# Status: 🔄 BUILT (2026-09-21) on phase-41 — browser check owed by the user.
+# Status: ✅ BUILT + BROWSER-CONFIRMED (2026-09-21) on phase-41 — not merged yet.
 #         Decisions S-D1..S-D6 answered (§5). Build log: §6.
 # Branch: phase-41-scurve-import-original-baseline (from develop 7470c9e, after the
 #         phase-40 merge).
@@ -245,3 +245,8 @@
     ⬜ Browser check owed: the wizard replace question shows the amber warning modal
       (Cancel keeps the old baseline); Edit Original → import → Restore saved baseline
       → the list returns to the saved months and the summary disappears.
+  2026-09-21 — ✅ BROWSER-CONFIRMED by the user: "phase 41 and additional adjustment
+    all confirmed" — the file picker (setup, wizard, Edit Original), the Edit Original
+    import with its review summary and save, months past the original completion
+    refused, the warning modal replacing the browser confirm, and Restore saved
+    baseline. Awaiting the merge order.
