@@ -786,16 +786,26 @@
 /* FIXED SIZE. The dialog has one height whatever the step or state; header, step
    bar, error strip and footer are fixed and only .cpm-body (the page area) scrolls.
    The parser inserts its scan strip, result banner and per-field notes INTO the
-   active page, so they now scroll inside it instead of growing the dialog.
+   active page, so they scroll inside it instead of growing the dialog.
+   SECOND PASS (user: "not make the user scroll as much as possible"): the dialog is
+   extra-large and uses nearly the whole screen height, header and step bar are
+   compact, there is no per-page heading (the step bar names the page), fields sit
+   three to a row, and short help sits beside the label (.cpm-label-note).
    Everything is scoped under #addProjectModal. Colours reuse dashboard.css tokens
    (with fallbacks). The .step-* classes keep their names — form-navigation.js
    toggles current / done / upcoming on them. */
 #addProjectModal .cpm-dialog {
-    max-width: 880px;
+    max-width: min(1140px, calc(100vw - 2rem));
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+#addProjectModal .modal-dialog-centered.cpm-dialog {
+    min-height: calc(100% - 2rem);
 }
 
 #addProjectModal .cpm-content {
-    height: min(760px, calc(100vh - 3.5rem));
+    height: min(900px, calc(100vh - 2rem));
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -810,28 +820,28 @@
     }
 }
 
-/* ---------- Header ---------- */
+/* ---------- Header (compact) ---------- */
 #addProjectModal .cpm-header {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 16px 20px;
+    gap: 10px;
+    padding: 10px 18px;
     border-bottom: 1px solid var(--line, #E2E8F0);
     background: #fff;
 }
 
 #addProjectModal .cpm-header-icon {
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--blue-50, #eff6ff);
     color: var(--brand, #2563EB);
-    font-size: 1.15rem;
+    font-size: 1.05rem;
 }
 
 #addProjectModal .cpm-header-text {
@@ -840,26 +850,28 @@
 
 #addProjectModal .cpm-title {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1.02rem;
     font-weight: 600;
     color: var(--ink, #0F172A);
 }
 
 #addProjectModal .cpm-subtitle {
-    margin: 2px 0 0;
-    font-size: 0.8rem;
+    margin: 0;
+    font-size: 0.76rem;
     color: var(--gray-500, #6b7280);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #addProjectModal .cpm-header .btn-close {
     margin-left: auto;
-    align-self: flex-start;
 }
 
-/* ---------- Step bar ---------- */
+/* ---------- Step bar (compact) ---------- */
 #addProjectModal .cpm-steps {
     flex: 0 0 auto;
-    padding: 14px 24px 12px;
+    padding: 8px 24px 7px;
     background: var(--bg, #F8FAFC);
     border-bottom: 1px solid var(--line, #E2E8F0);
     overflow-x: auto;
@@ -869,26 +881,34 @@
     min-width: 520px;
 }
 
+#addProjectModal .step-item {
+    gap: 3px;
+}
+
 #addProjectModal .step-dot {
-    width: 28px;
-    height: 28px;
-    font-size: 12px;
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
     border-width: 2px;
 }
 
+#addProjectModal .step-dot i {
+    font-size: 12px;
+}
+
 #addProjectModal .step-label {
-    font-size: 11.5px;
+    font-size: 11px;
 }
 
 #addProjectModal .step-connector {
-    margin-top: 13px;
+    margin-top: 11px;
     border-radius: 2px;
 }
 
 #addProjectModal .step-item.current .step-dot {
     border-color: var(--brand, #2563EB);
     background: var(--brand, #2563EB);
-    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 #addProjectModal .step-item.current .step-label {
@@ -909,11 +929,11 @@
 #addProjectModal .cpm-error {
     flex: 0 0 auto;
     margin: 0;
-    padding: 9px 20px;
+    padding: 7px 18px;
     border: none;
     border-bottom: 1px solid var(--red-200, #fecaca);
     border-radius: 0;
-    font-size: 0.85rem;
+    font-size: 0.83rem;
 }
 
 /* ---------- Page area: the ONLY scrolling region ---------- */
@@ -922,42 +942,8 @@
     min-height: 0;
     max-height: none;
     overflow-y: auto;
-    padding: 18px 24px 20px;
+    padding: 14px 20px 14px;
     background: var(--bg, #F8FAFC);
-}
-
-/* Section heading at the top of each page. */
-#addProjectModal .cpm-section-head {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 14px;
-}
-
-#addProjectModal .cpm-section-icon {
-    flex: 0 0 34px;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #fff;
-    border: 1px solid var(--line, #E2E8F0);
-    color: var(--brand, #2563EB);
-}
-
-#addProjectModal .cpm-section-title {
-    margin: 0;
-    font-size: 0.98rem;
-    font-weight: 600;
-    color: var(--ink, #0F172A);
-}
-
-#addProjectModal .cpm-section-hint {
-    margin: 2px 0 0;
-    font-size: 0.8rem;
-    color: var(--gray-500, #6b7280);
 }
 
 /* Field groups sit on white cards over the soft page background. */
@@ -965,15 +951,21 @@
     background: #fff;
     border: 1px solid var(--line, #E2E8F0);
     border-radius: 12px;
-    padding: 16px 18px;
-    margin-bottom: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+
+#addProjectModal .cpm-card-hint {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
 }
 
 #addProjectModal .cpm-card-title {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-bottom: 12px;
+    margin-bottom: 4px;
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.05em;
@@ -981,29 +973,35 @@
     color: var(--gray-500, #6b7280);
 }
 
-#addProjectModal .cpm-card-title-note {
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
+#addProjectModal .form-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--gray-700, #374151);
+    margin-bottom: 4px;
+}
+
+/* Short help beside the label instead of a line under the field — saves one line
+   per field. Kept on the label's line; ellipsis if a column is too narrow. */
+#addProjectModal .cpm-label-note {
+    margin-left: 4px;
+    font-weight: 400;
+    font-size: 0.72rem;
     color: var(--gray-400, #9ca3af);
 }
 
-#addProjectModal .form-label {
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--gray-700, #374151);
-    margin-bottom: 5px;
+#addProjectModal .cpm-help {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.72rem;
 }
 
-#addProjectModal .cpm-card small.text-muted {
-    display: block;
-    margin-top: 4px;
-    font-size: 0.74rem;
+#addProjectModal .cpm-description {
+    min-height: 180px;
 }
 
 #addProjectModal .cpm-doc-list {
-    margin-top: 14px;
-    padding-top: 12px;
+    margin-top: 12px;
+    padding-top: 10px;
     border-top: 1px dashed var(--line, #E2E8F0);
 }
 
@@ -1014,13 +1012,45 @@
     gap: 8px;
 }
 
-/* The parser's inserted elements, spaced to sit well inside a page. */
+/* The parser's inserted elements, compact so they cost as little height as possible.
+   The per-field notes come from showParseIndicator() (id parse-indicator-<field>). */
 #addProjectModal .cpm-body #autofillBanner {
     border-radius: 10px;
-    font-size: 0.85rem;
+    font-size: 0.83rem;
+    padding: 8px 12px;
+    margin-bottom: 12px !important;
 }
 
-/* Monthly progress targets (was all inline styles). */
+#addProjectModal [id^="parse-indicator-"] {
+    margin-top: 3px !important;
+    font-size: 0.72rem;
+    line-height: 1.3;
+}
+
+#addProjectModal .afp-scan-status {
+    margin: 10px 0 0;
+    padding: 6px 10px;
+}
+
+/* Monthly progress targets: text left, buttons right, one row. */
+#addProjectModal .cpm-baseline {
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+#addProjectModal .cpm-baseline-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+}
+
+#addProjectModal .cpm-baseline-text {
+    min-width: 0;
+    flex: 1 1 320px;
+}
+
 #addProjectModal .cpm-baseline .cpm-card-title i {
     color: #0d9488;
     font-size: 0.9rem;
@@ -1029,21 +1059,21 @@
 #addProjectModal .cpm-baseline-note {
     align-items: center;
     gap: 6px;
-    margin-bottom: 12px;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--gray-500, #6b7280);
 }
 
 #addProjectModal .cpm-baseline-done {
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-bottom: 12px;
-    padding: 8px 12px;
+    margin-top: 2px;
+    padding: 4px 10px;
     border-radius: 8px;
     border: 1px solid #bbf7d0;
     background: var(--green-50, #f0fdf4);
     color: #166534;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     font-weight: 600;
 }
 
@@ -1071,13 +1101,13 @@
     border-color: #0f766e;
 }
 
-/* ---------- Footer ---------- */
+/* ---------- Footer (compact) ---------- */
 #addProjectModal .cpm-footer {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 20px;
+    padding: 9px 18px;
     border-top: 1px solid var(--line, #E2E8F0);
     background: #fff;
 }
@@ -1095,14 +1125,15 @@
 
 @media (max-width: 575.98px) {
     #addProjectModal .cpm-body {
-        padding: 14px 14px 16px;
+        padding: 12px 12px 14px;
     }
 
     #addProjectModal .cpm-card {
-        padding: 14px;
+        padding: 12px;
     }
 
-    #addProjectModal .cpm-step-count {
+    #addProjectModal .cpm-step-count,
+    #addProjectModal .cpm-subtitle {
         display: none;
     }
 }

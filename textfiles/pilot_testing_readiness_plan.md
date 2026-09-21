@@ -786,6 +786,29 @@
         carry the flag; no link on the projects page carries it onward; removing the
         controller's drop turns it red); JS 267/267/0; PHP 1254/0 before the new file
         (1256 with it); headless screenshots of the modal in six states.
+      SECOND PASS (user, same day, after a screenshot of step 4 scrolling on a short
+        screen: "the goal is to not make the user scroll as much as possible … increase
+        the size of the modal and try fitting the input fields"):
+        - modal-xl (up to 1140 px) and nearly full height: min(900px, viewport − 2rem),
+          1rem top/bottom margin instead of Bootstrap's 1.75rem;
+        - compact header (one-line subtitle, smaller icon), compact step bar (24 px
+          dots), tighter body/card/footer padding, gy-2 row spacing;
+        - the per-page section head (icon + title + hint) is GONE — the step bar
+          already names the page; page 1 keeps its instructions as the card hint
+          (ProjectsRenderTest pins "Choose the document type first");
+        - fields three to a row: Code | Category | Location; ABC | Contract Price |
+          Budget Source; Contractor (wide) | Status; Start | Duration | End; Actual
+          start | Actual end; the two budget/contractor cards merged into one;
+        - short help moved BESIDE the label (.cpm-label-note: "winning bid",
+          "or an end date", "auto-calculated", …) instead of a line under the field;
+          #projectCodeHelp stays under its field because the scripts rewrite it with a
+          longer sentence per mode;
+        - Monthly Progress Targets is one row (text left, buttons right);
+        - showParseIndicator() notes SHORTENED to fit one line ("Auto-filled — please
+          review." / "Not found in the document — fill in manually."), full sentence
+          kept as the tooltip; notes, banner and scan strip get compact spacing.
+        MEASURED at a 1100×620 window: steps 1, 2 (error strip + result banner), 4 (all
+        eight parse notes showing), 5 and 6 fit with NO scroll. PHP 1256/0, JS 267/267.
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a

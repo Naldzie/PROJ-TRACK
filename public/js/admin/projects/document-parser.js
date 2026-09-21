@@ -3589,12 +3589,17 @@ function showParseIndicator(fieldId, success) {
         insertAfter.insertAdjacentElement('afterend', indicator);
     }
 
+    // Wording shortened 2026-09-21 so each note fits ONE line in the create modal's
+    // three-to-a-row layout (the longer text wrapped to two and made the page scroll).
+    // The full sentence stays available as the note's tooltip.
     if (success) {
         indicator.className = 'text-primary d-block mt-1';
-        indicator.innerHTML = '<i class="bi bi-magic"></i> Auto-filled from document — please review.';
+        indicator.title = 'Auto-filled from the document — please review it.';
+        indicator.innerHTML = '<i class="bi bi-magic"></i> Auto-filled — please review.';
     } else {
         indicator.className = 'text-primary d-block mt-1';
-        indicator.innerHTML = '<i class="bi bi-info-circle"></i> Could not extract this field from the document — please fill in manually.';
+        indicator.title = 'Could not extract this field from the document — please fill it in manually.';
+        indicator.innerHTML = '<i class="bi bi-info-circle"></i> Not found in the document — fill in manually.';
     }
 }
 
