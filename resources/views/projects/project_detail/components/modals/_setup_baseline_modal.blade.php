@@ -65,10 +65,18 @@
                             Read it from an uploaded Excel / PDF file. Months that already have a recorded
                             inspection keep their values; you review every change before saving.
                         </div>
-                        <button type="button" id="setupImportScurveBtn" onclick="scurveImportIntoOriginal(this)"
-                                style="background: #7c3aed; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
-                            <i class="bi bi-cloud-arrow-up-fill"></i> Import from S-curve
-                        </button>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            {{-- One-click undo of an import: back to the baseline as saved
+                                 (restoreSavedOriginalBaseline; shown only after an import) --}}
+                            <button type="button" id="setupRestoreSavedBtn" onclick="restoreSavedOriginalBaseline()"
+                                    style="display: none; background: white; color: #5b21b6; border: 1px solid #c4b5fd; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; align-items: center; gap: 6px; white-space: nowrap;">
+                                <i class="bi bi-arrow-counterclockwise"></i> Restore saved baseline
+                            </button>
+                            <button type="button" id="setupImportScurveBtn" onclick="scurveImportIntoOriginal(this)"
+                                    style="background: #7c3aed; color: white; border: none; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Import from S-curve
+                            </button>
+                        </div>
                     </div>
                 </div>
 

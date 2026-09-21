@@ -223,3 +223,25 @@
          the Baseline tab shows the new plan; activity done-ticks survive.
       4. A revised file running past the original completion: those months are
          listed as not imported.
+  2026-09-21 — USER FOLLOW-UP (from a browser run of the create wizard):
+    1. "Use the reusable warning confirm modal" instead of the browser's confirm()
+       dialog ("This replaces the current in-memory baseline (12 months). Continue?").
+       · scurve-import-ui.js: new scurveConfirm(title, html) — a Promise around
+         showWarningConfirm (components/warning-confirm-modal, included on all three
+         pages that import; z-index 1080, above the setup modal); resolves false when
+         the modal is closed/cancelled; window.confirm only if the component is missing.
+         The wizard's replace-baseline question now uses it ("Replace the baseline?").
+       · baseline-schedule-setup-modal.js: the Edit Original "replace your changes?"
+         confirm (added earlier in this phase) uses showWarningConfirm too.
+       · No window.confirm is left in either file except that fallback.
+    2. "One-click restore — back to the current saved baseline after importing an
+       S-curve." Built for Edit Original Baseline (the only mode with a SAVED
+       baseline; the wizard and first-time setup have nothing saved to go back to):
+       · "Restore saved baseline" button beside "Import from S-curve", shown only after
+         an import (hidden on every open/reset); restoreSavedOriginalBaseline() puts
+         the rows loaded from the server back, clears removed_ids and the import
+         summary. No confirm (it only discards unsaved changes; nothing is written).
+    Tests: page test asserts the restore button; PHP 1311 / 0, JS 279 / 0.
+    ⬜ Browser check owed: the wizard replace question shows the amber warning modal
+      (Cancel keeps the old baseline); Edit Original → import → Restore saved baseline
+      → the list returns to the saved months and the summary disappears.

@@ -909,6 +909,30 @@ function scurveCaptureHeaders(kind, source, extra) {
     } catch (e) { /* capture is best-effort */ }
 }
 
+/* ─── Confirm (the app's warning modal, not the browser dialog) ────────────── */
+// Promise wrapper around showWarningConfirm (components/warning-confirm-modal,
+// included on every page that imports an S-curve; z-index 1080, so it sits above
+// the setup modal). Resolves true on Confirm, false when closed/cancelled. Falls
+// back to window.confirm only if that component is missing on a page.
+// messageHtml is HTML — callers pass only their own text plus numbers.
+function scurveConfirm(title, messageHtml) {
+    return new Promise(function (resolve) {
+        var modalEl = document.getElementById('warningConfirmModal');
+        if (typeof showWarningConfirm !== 'function' || !modalEl) {
+            resolve(window.confirm(String(messageHtml).replace(/<[^>]+>/g, '')));
+            return;
+        }
+        var settled = false;
+        modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+            modalEl.removeEventListener('hidden.bs.modal', onHidden);
+            if (!settled) { settled = true; resolve(false); }
+        });
+        showWarningConfirm(title, messageHtml, function () {
+            if (!settled) { settled = true; resolve(true); }
+        });
+    });
+}
+
 /* ─── File picker (every "Import from S-curve") ───────────────────────────── */
 // Decisions S-D4 / S-D5 (2026-09-21, textfiles/scurve_import_original_baseline_plan.md):
 // every import asks WHICH file to read — the project may hold a preliminary AND a
@@ -1236,9 +1260,11 @@ function initCreateWizardSCurveImport() {
             }
 
             if (window._baselineSetupMonths && window._baselineSetupMonths.length > 0) {
-                var ok = window.confirm(
-                    'This replaces the current in-memory baseline (' +
-                    window._baselineSetupMonths.length + ' months). Continue?'
+                // The app's warning modal (was the browser's confirm dialog)
+                var ok = await scurveConfirm(
+                    'Replace the baseline?',
+                    'This replaces the baseline you already set up (<strong>' +
+                    window._baselineSetupMonths.length + ' months</strong>) with the months read from the S-curve file. Continue?'
                 );
                 if (!ok) return;
             }

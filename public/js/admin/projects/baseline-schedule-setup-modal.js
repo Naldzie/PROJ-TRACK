@@ -372,6 +372,8 @@ function setSetupImportScurveVisible(show) {
     var sources = window.__scurveSources || null;
     var hasFiles = !!(sources && sources.candidates && sources.candidates.length);
     wrap.style.display = (show && hasFiles && typeof window.scurveImportIntoOriginal === 'function') ? '' : 'none';
+    // Runs on every open/reset: "Restore saved baseline" appears only after an import
+    setSetupRestoreSavedVisible(false);
 }
 
 /**
@@ -391,13 +393,72 @@ function applyImportToOriginalBaseline(months, info) {
     if (!setupEditOriginalMode || !setupOriginalLoadedRows) return;
     var core = window.scurveImportCore;
     if (!core || typeof core.mergeImportIntoOriginal !== 'function') return;
-    info = info || {};
 
-    // Local edits made before the import are replaced — confirm first
-    var edited = JSON.stringify(setupLocalMonths) !== JSON.stringify(setupOriginalLoadedRows) || setupRemovedIds.length > 0;
-    if (edited && !window.confirm('Importing replaces the changes you made in this window with the file\'s plan. Continue?')) {
+    // Local edits made before the import are replaced — confirm first, with the
+    // app's warning modal (not the browser dialog; it sits above this modal)
+    if (setupOriginalRowsChanged() && typeof showWarningConfirm === 'function') {
+        showWarningConfirm(
+            'Replace your changes?',
+            'Importing replaces the changes you made in this window with the file\'s plan. ' +
+            'You can still go back to the saved baseline with <strong>Restore saved baseline</strong>.',
+            function () { doApplyImportToOriginalBaseline(months, info); }
+        );
         return;
     }
+    doApplyImportToOriginalBaseline(months, info);
+}
+
+/** True when the Edit Original rows differ from the saved rows (edits or an import). */
+function setupOriginalRowsChanged() {
+    return !!setupOriginalLoadedRows && (
+        JSON.stringify(setupLocalMonths) !== JSON.stringify(setupOriginalLoadedRows) || setupRemovedIds.length > 0
+    );
+}
+
+/**
+ * One-click restore (user ask 2026-09-21): put the Edit Original Baseline modal
+ * back to the baseline AS SAVED (the rows loaded from the server), undoing an
+ * S-curve import and any edits made in this window. No confirm — it only
+ * discards unsaved changes, and nothing is written to the server.
+ * Called by: the "Restore saved baseline" button in #setupImportScurveWrap.
+ */
+function restoreSavedOriginalBaseline() {
+    if (!setupEditOriginalMode || !setupOriginalLoadedRows) return;
+
+    setupLocalMonths = JSON.parse(JSON.stringify(setupOriginalLoadedRows));
+    setupRemovedIds = [];
+    setupCurrentMaxPercent = setupLocalMonths.reduce(function (max, m) {
+        return Math.max(max, parseFloat(m.planned_progress_percent) || 0);
+    }, 0);
+
+    setupEditingIndex = null;
+    resetSetupForm();
+    renderSetupMonthList(setupLocalMonths);
+    updateSetupProgress(setupLocalMonths);
+    updateSetupSCurvePreview();
+
+    try {
+        var notes = document.getElementById('setupImportNotes');
+        if (notes && notes.remove) notes.remove();
+    } catch (e) { /* best-effort */ }
+    setSetupRestoreSavedVisible(false);
+
+    if (typeof showToast === 'function') {
+        try { showToast('Restored the saved original baseline.', 'success'); } catch (e) {}
+    }
+}
+window.restoreSavedOriginalBaseline = restoreSavedOriginalBaseline;
+
+/** Show / hide the "Restore saved baseline" button (after an import only). */
+function setSetupRestoreSavedVisible(show) {
+    var btn = document.getElementById('setupRestoreSavedBtn');
+    if (btn) btn.style.display = show ? 'inline-flex' : 'none';
+}
+
+/** The merge itself — see applyImportToOriginalBaseline(). */
+function doApplyImportToOriginalBaseline(months, info) {
+    var core = window.scurveImportCore;
+    info = info || {};
 
     var loaded = JSON.parse(JSON.stringify(setupOriginalLoadedRows));
     var result = core.mergeImportIntoOriginal(loaded, months);
@@ -435,6 +496,7 @@ function applyImportToOriginalBaseline(months, info) {
     lines.push('Nothing is saved yet — review the months, then click "Save Original Baseline".');
 
     renderSetupImportNotes(lines, 'Imported from ' + (info.sourceName || 'the S-curve file') + ' — review before saving');
+    setSetupRestoreSavedVisible(true);
 
     if (typeof showToast === 'function') {
         try { showToast('S-curve read — review the changes, then save.', 'success'); } catch (e) {}

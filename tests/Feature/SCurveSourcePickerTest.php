@@ -191,6 +191,7 @@ class SCurveSourcePickerTest extends TestCase
         $this->assertStringContainsString('revised.xlsx', $html);
         $this->assertStringContainsString('id="scurveImportBtnDetail"', $html, 'No baseline yet → the setup import button shows');
         $this->assertStringContainsString('id="setupImportScurveWrap"', $html, 'The Edit Original import row is in the setup modal');
+        $this->assertStringContainsString('id="setupRestoreSavedBtn"', $html, 'One-click restore sits beside the import button');
         $this->assertStringContainsString('"originalEndDate":"2027-03-31"', $html);
     }
 
