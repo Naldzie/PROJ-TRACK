@@ -851,6 +851,11 @@
         late answer for project A ignored while B is still loading, B then fills; a
         Create reset mid-load unlocks at once and the late answer is ignored. Headless
         screenshot of the overlay; PHP 1256/0.
+        ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("the loading state is confirmed").
+    · NEXT ASK (study only, no build): combine the AI analysis and recommendation
+      prompts — plan written to textfiles/ai_analysis_recommendation_merge_plan.md
+      (two Gemini calls today; the analysis prompt's reliability block is silently
+      empty — finding F-1; decisions D1-D5 await the user).
       ⬜ BROWSER CHECK OWED (user): dashboard → New Project (both buttons) opens the
         modal on the projects page, and page 2 / a filter does not reopen it; walk all
         six steps (Next/Previous, the step count, the modal never changes size); run a
