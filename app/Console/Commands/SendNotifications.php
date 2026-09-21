@@ -22,16 +22,19 @@ use Illuminate\Console\Command;
  *  - Deadline reminders: Ongoing projects whose planned_end_date falls within
  *    the configured buckets (default 30,14,7 days) or is already overdue.
  *    Escalates naturally because each bucket is a distinct dedupe key.
- *  - Overdue inspection alerts: every baseline month whose planned_date is past
- *    the grace window with no recorded progress for that month_label (one notice
- *    per uninspected month).
+ *  - Overdue inspection alerts: baseline months whose planned_date has passed with
+ *    no recorded progress — ONE notice per project listing all of them (was one
+ *    per uninspected month per person until 2026-09-21).
+ *  - Monitoring (in-app only, admins + assigned staff; added 2026-09-21):
+ *    warranties expiring / inspection due, Planned projects past their start
+ *    date, extensions pending 30+ days, issues open 30+ days.
  *
  * Safe to run repeatedly — NotificationService dedupes by tracking key.
  *
- * Emails are queued (ShouldQueue on all notification classes) and processed by
- * the queue:listen worker on the 'emails' queue. Database notifications are
- * written synchronously for instant in-app display. Per-project error handling
- * ensures one failure does not block the entire scan (Bug 7 fix).
+ * In-app notices are written immediately; EMAILS ARE QUEUED on the default
+ * queue (Concerns\QueuesMailOnly, 2026-09-21), so the queue worker must run for
+ * them to leave. Per-project error handling ensures one failure does not block
+ * the entire scan (Bug 7 fix). Plan: textfiles/notification_monitoring_restudy_plan.md
  */
 class SendNotifications extends Command
 {
@@ -124,10 +127,165 @@ class SendNotifications extends Command
             }
         }
 
+        // Monitoring checks added 2026-09-21 (restudy P-7..P-10) — IN-APP ONLY,
+        // to admins + the assigned staff. Each in its own guard so one failure
+        // never stops the rest.
+        $monitoring = [];
+        foreach ([
+            'Warranty'          => fn () => $this->sendWarrantyReminders($service),
+            'Not started'       => fn () => $this->sendNotStartedReminders($service),
+            'Pending extension' => fn () => $this->sendPendingExtensionReminders($service),
+            'Issue aging'       => fn () => $this->sendIssueAgingReminders($service),
+        ] as $label => $check) {
+            try {
+                $monitoring[$label] = $check();
+            } catch (\Throwable $e) {
+                $monitoring[$label] = 0;
+                $this->error("  [ERROR] {$label}: {$e->getMessage()}");
+            }
+        }
+
         $this->info("Scope: Ongoing w/ end date: {$projectsChecked} | Planned excluded: {$plannedExcluded} | all w/o end date: {$noEndDate}");
         $this->info("Done. Projects checked: {$projectsChecked}, Deadline: {$deadlineSent}, Planned inspection: {$plannedSent}, Month-end inspection: {$monthEndSent}, Overdue inspection: {$inspectionSent}, Risk-level: {$riskLevelSent}");
+        $this->info('Monitoring: ' . collect($monitoring)->map(fn ($n, $k) => "{$k}: {$n}")->implode(', '));
 
         return 0;
+    }
+
+    /**
+     * Warranties needing attention (App\Services\WarrantyMonitor — the SAME rules
+     * the warranty record page shows): expiring within 30 days, expired, or a
+     * warranty inspection within 14 days. A passed inspection date sends nothing.
+     */
+    private function sendWarrantyReminders(NotificationService $service): int
+    {
+        $monitor = app(\App\Services\WarrantyMonitor::class);
+        $sent = 0;
+
+        foreach (\App\Models\Warranty::with('project')->get() as $warranty) {
+            if (!$warranty->project) {
+                continue;
+            }
+            $status = $monitor->statusFor($warranty);
+            $alerts = [];
+            if ($status['expiry'] && in_array($status['expiry']['state'], ['expiring', 'expired'], true)) {
+                $alerts[] = [$status['expiry']['state'], $status['expiry']];
+            }
+            foreach (['mid_year', 'final'] as $kind) {
+                if ($status[$kind] && $status[$kind]['state'] === 'due') {
+                    $alerts[] = [$kind, $status[$kind]];
+                }
+            }
+
+            foreach ($alerts as [$kind, $check]) {
+                $n = $service->notifyMany(
+                    $service->internalRecipientsFor($warranty->project),
+                    new \App\Notifications\WarrantyReminder(
+                        $warranty->id, $warranty->project->id, $warranty->project->title,
+                        $kind, $check['date'], $check['days']
+                    )
+                );
+                $sent += $n;
+                $this->line("  [Warranty] #{$warranty->id} '{$warranty->project->title}' {$kind} {$check['date']} ({$n} sent)");
+            }
+        }
+
+        return $sent;
+    }
+
+    /**
+     * "Planned" projects whose planned start date has passed — the loop above
+     * only scans Ongoing projects, so these were never flagged.
+     */
+    private function sendNotStartedReminders(NotificationService $service): int
+    {
+        $today = \App\Support\DateHelper::now()->copy()->startOfDay();
+        $sent = 0;
+
+        $projects = Project::where('status', 'Planned')
+            ->where('is_archived', false)
+            ->whereNotNull('planned_start_date')
+            ->whereDate('planned_start_date', '<', $today->toDateString())
+            ->get();
+
+        foreach ($projects as $project) {
+            $daysLate = (int) $project->planned_start_date->copy()->startOfDay()->diffInDays($today);
+            $n = $service->notifyMany(
+                $service->internalRecipientsFor($project),
+                new \App\Notifications\ProjectNotStartedReminder(
+                    $project->id, $project->title, $project->planned_start_date->format('Y-m-d'), $daysLate
+                )
+            );
+            $sent += $n;
+            $this->line("  [Not started] #{$project->id} '{$project->title}' start {$project->planned_start_date->format('Y-m-d')} ({$daysLate} days ago, {$n} sent)");
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Extension requests pending review for 30+ days — reminded at 30, 60, …
+     * days (the submit-time notice is unchanged; user decision 2026-09-21).
+     */
+    private function sendPendingExtensionReminders(NotificationService $service): int
+    {
+        $now = \App\Support\DateHelper::now();
+        $sent = 0;
+
+        $extensions = \App\Models\ProjectExtension::with('project')
+            ->where('status', 'pending')
+            ->where('created_at', '<=', $now->copy()->subDays(30))
+            ->get();
+
+        foreach ($extensions as $ext) {
+            if (!$ext->project || $ext->project->is_archived) {
+                continue;
+            }
+            $days = (int) $ext->created_at->diffInDays($now);
+            $n = $service->notifyMany(
+                $service->internalRecipientsFor($ext->project),
+                new \App\Notifications\PendingExtensionReminder(
+                    $ext->project->id, $ext->project->title, $ext->id, (int) $ext->extension_number,
+                    $days, $ext->created_at->format('Y-m-d')
+                )
+            );
+            $sent += $n;
+            $this->line("  [Pending extension] #{$ext->id} on '{$ext->project->title}' pending {$days} days ({$n} sent)");
+        }
+
+        return $sent;
+    }
+
+    /**
+     * Issues still Open / In Progress 30+ days after they were reported.
+     */
+    private function sendIssueAgingReminders(NotificationService $service): int
+    {
+        $now = \App\Support\DateHelper::now();
+        $sent = 0;
+
+        $issues = \App\Models\Issue::with('project')
+            ->whereIn('status', ['Open', 'In Progress'])
+            ->where('created_at', '<=', $now->copy()->subDays(30))
+            ->get();
+
+        foreach ($issues as $issue) {
+            if (!$issue->project || $issue->project->is_archived || $issue->project->status === 'Completed') {
+                continue;
+            }
+            $days = (int) $issue->created_at->diffInDays($now);
+            $n = $service->notifyMany(
+                $service->internalRecipientsFor($issue->project),
+                new \App\Notifications\IssueAgingReminder(
+                    $issue->project->id, $issue->project->title, $issue->id,
+                    (string) $issue->issue_name, (string) ($issue->severity ?? ''), $days
+                )
+            );
+            $sent += $n;
+            $this->line("  [Issue aging] #{$issue->id} '{$issue->issue_name}' open {$days} days ({$n} sent)");
+        }
+
+        return $sent;
     }
 
     /**
@@ -297,8 +455,8 @@ class SendNotifications extends Command
     }
 
     /**
-     * Send overdue-inspection alerts for every baseline month whose planned_date
-     * has passed with no recorded progress (one per uninspected month).
+     * Send ONE overdue-inspection alert per project covering every baseline month
+     * whose planned_date has passed with no recorded progress.
      * No grace period — fires immediately when planned_date is past.
      * Returns the number of notifications actually delivered.
      */
@@ -335,20 +493,26 @@ class SendNotifications extends Command
             return 0;
         }
 
-        $totalSent = 0;
         $overdueMonths = $overdueBaselines->pluck('month_label')->all();
 
-        foreach ($overdueBaselines as $overdueBaseline) {
-            $notification = new OverdueInspectionReminder(
-                $project->id,
-                $project->title,
-                $overdueBaseline->month_label,
-                $overdueBaseline->month_display,
-                $overdueBaseline->planned_date->format('Y-m-d')
-            );
+        // ONE notice per project listing every uninspected month (restudy P-1,
+        // 2026-09-21) — it used to be one per month per person. Identified by the
+        // LATEST month, so a newly overdue month re-alerts once with the full list.
+        $latest = $overdueBaselines->last();
+        $notification = new OverdueInspectionReminder(
+            $project->id,
+            $project->title,
+            $latest->month_label,
+            $latest->month_display,
+            $latest->planned_date->format('Y-m-d'),
+            $overdueBaselines->map(fn ($b) => [
+                'label'        => $b->month_label,
+                'display'      => $b->month_display,
+                'planned_date' => $b->planned_date->format('Y-m-d'),
+            ])->all()
+        );
 
-            $totalSent += $service->notifyMany($recipients, $notification);
-        }
+        $totalSent = $service->notifyMany($recipients, $notification);
 
         $this->line("  [Overdue Inspection] #{$project->id} '{$project->title}' → overdue months " . implode(', ', $overdueMonths) . " ({$totalSent} sent)");
 

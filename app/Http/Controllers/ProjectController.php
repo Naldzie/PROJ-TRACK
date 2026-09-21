@@ -809,6 +809,9 @@ class ProjectController extends Controller
             return Project::create($projectData);
         });
 
+        // New project: any staff / contractor on it counts as a new assignment
+        $this->notifyAssignmentChanges($project, null, null);
+
         // === CREATE BASELINE SCHEDULES IF PROVIDED ===
         // First try to get baseline_schedule_targets from the create modal (new way)
         $baselineScheduleTargets = $request->input('baseline_schedule_targets');
@@ -1068,6 +1071,10 @@ class ProjectController extends Controller
             $data['supporting_documents'] = $supporting;
         }
 
+        // Remember who was assigned before the save (assignment notice below)
+        $previousStaffId = $project->assigned_project_manager;
+        $previousContractorId = $project->contractor_id;
+
         // Use a transaction for atomicity with proposal
         $project = DB::transaction(function () use ($data, $request, $project) {
 
@@ -1137,6 +1144,8 @@ class ProjectController extends Controller
             return $project;
         });
 
+        $this->notifyAssignmentChanges($project, $previousStaffId, $previousContractorId);
+
         if ($request->ajax() || $request->wantsJson()) {
             // Determine redirect route based on user role
             $redirectRoute = match(Auth::user()->role) {
@@ -1166,6 +1175,58 @@ class ProjectController extends Controller
         };
         
         return redirect()->to($redirectRoute)->with('success', 'Project updated successfully.');
+    }
+
+    /**
+     * In-app notice when a staff member or a contractor is (re)assigned to a
+     * project — admins + the assigned staff, never the person who saved it
+     * (restudy F-11, user decision 2026-09-21). Compares the saved project with
+     * the ids it had before; nothing is sent when neither changed.
+     * Called by: store(), update(). Failures are logged and never block the save.
+     */
+    private function notifyAssignmentChanges(Project $project, $previousStaffId, $previousContractorId): void
+    {
+        try {
+            $service = app(\App\Services\NotificationService::class);
+            $actor = Auth::user();
+            $recipients = $service->internalRecipientsFor($project, $actor);
+
+            // Staff (project manager) changed → the newly assigned staff is among
+            // the recipients, so they learn about it too
+            $staffId = $project->assigned_project_manager;
+            if ($staffId && (string) $staffId !== (string) $previousStaffId) {
+                $staff = \App\Models\User::find((int) $staffId);
+                $name = $staff?->display_name ?? $staff?->name ?? 'A staff member';
+                $service->notifyMany($recipients, new \App\Notifications\ProjectUpdateNotice(
+                    $project->id,
+                    $project->title,
+                    \App\Notifications\ProjectUpdateNotice::PROJECT_ASSIGNED,
+                    $name . ' assigned as project staff',
+                    'staff:' . $project->id . ':' . $staffId . ':' . now()->timestamp,
+                    null,
+                    $actor?->name
+                ));
+            }
+
+            // Contractor changed
+            if ($project->contractor_id && (int) $project->contractor_id !== (int) $previousContractorId) {
+                $company = optional($project->contractor()->first())->company_name ?? 'A contractor';
+                $service->notifyMany($recipients, new \App\Notifications\ProjectUpdateNotice(
+                    $project->id,
+                    $project->title,
+                    \App\Notifications\ProjectUpdateNotice::PROJECT_ASSIGNED,
+                    $company . ' assigned as contractor',
+                    'contractor:' . $project->id . ':' . $project->contractor_id . ':' . now()->timestamp,
+                    null,
+                    $actor?->name
+                ));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Assignment notice failed', [
+                'project_id' => $project->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

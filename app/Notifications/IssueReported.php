@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -12,9 +14,10 @@ use Illuminate\Notifications\Notification;
  *
  * Dedupe key: issue:{project_id}:{issue_id} — fires exactly once per issue.
  */
-class IssueReported extends Notification
+class IssueReported extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,

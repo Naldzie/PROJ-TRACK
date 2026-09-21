@@ -11,6 +11,11 @@ use App\Notifications\IssueReported;
 use App\Notifications\OverdueInspectionReminder;
 use App\Notifications\RiskLevelChanged;
 use App\Notifications\RiskReported;
+use App\Notifications\IssueAgingReminder;
+use App\Notifications\PendingExtensionReminder;
+use App\Notifications\ProjectNotStartedReminder;
+use App\Notifications\ProjectUpdateNotice;
+use App\Notifications\WarrantyReminder;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
 
@@ -26,8 +31,10 @@ use Illuminate\Support\Collection;
  *    ActivityLog entry (admin active logs) whenever an admin was notified.
  *  - admins() / allStaff() / contractorUserFor() resolve notification audiences.
  *
- * Notification classes route via ['database', 'mail'], so every recipient also
- * receives an email; admins additionally see the event in the Activity Logs.
+ * The original eight classes route via ['database', 'mail'] (the email is QUEUED —
+ * Concerns\QueuesMailOnly, 2026-09-21); the monitoring notices (InAppNotice
+ * subclasses) are in-app only. Admins additionally see the event in the
+ * Activity Logs.
  *
  * Decision 16: the ExtensionStatusChanged ActivityLog description omits the
  * rejection reason — the requester receives it via the notification + email +
@@ -142,7 +149,31 @@ class NotificationService
             ],
             OverdueInspectionReminder::class => [
                 'Overdue Inspection',
-                'System: Overdue inspection for "' . $project . '" — ' . ($data['month_display'] ?? $data['month_label'] ?? '') . '.',
+                ($data['month_count'] ?? 1) > 1
+                    ? 'System: ' . $data['month_count'] . ' overdue inspections for "' . $project . '" — '
+                        . implode(', ', array_map(fn ($m) => ($m['display'] ?? '') ?: ($m['label'] ?? ''), $data['months'] ?? [])) . '.'
+                    : 'System: Overdue inspection for "' . $project . '" — ' . ($data['month_display'] ?? $data['month_label'] ?? '') . '.',
+            ],
+            // In-app monitoring notices (2026-09-21, restudy P-7..P-10)
+            WarrantyReminder::class => [
+                'Warranty Reminder',
+                'System: Warranty for "' . $project . '" — ' . ($data['kind'] ?? '') . ' (' . ($data['date'] ?? '') . ').',
+            ],
+            ProjectNotStartedReminder::class => [
+                'Not Yet Started',
+                'System: Planned project "' . $project . '" has not started (planned start ' . ($data['planned_start_date'] ?? '') . ').',
+            ],
+            PendingExtensionReminder::class => [
+                'Extension Pending',
+                'System: Extension #' . ($data['extension_number'] ?? '') . ' for "' . $project . '" pending ' . ($data['days_pending'] ?? 0) . ' days.',
+            ],
+            IssueAgingReminder::class => [
+                'Issue Aging',
+                'System: Issue "' . ($data['issue_name'] ?? '') . '" on "' . $project . '" open ' . ($data['days_open'] ?? 0) . ' days.',
+            ],
+            ProjectUpdateNotice::class => [
+                'Project Update',
+                'System: ' . ($data['message'] ?? 'Project update') . ' — "' . $project . '".',
             ],
             ExtensionStatusChanged::class => [
                 'Extension Update',
@@ -206,6 +237,27 @@ class NotificationService
             ->first();
 
         return $user;
+    }
+
+    /**
+     * Admins + the project's assigned staff — never the contractor. The audience
+     * of every in-app-only monitoring / project-update notice (user decision
+     * 2026-09-21, restudy N-D4). $except drops the person who caused the event
+     * (nobody is told about their own action).
+     * Called by: SendNotifications (scan) and the controllers that send
+     * ProjectUpdateNotice.
+     */
+    public function internalRecipientsFor(?Project $project, ?User $except = null): Collection
+    {
+        $recipients = $this->admins();
+        if ($project && ($staff = $this->staffForProject($project))) {
+            $recipients->push($staff);
+        }
+
+        return $recipients
+            ->unique('id')
+            ->reject(fn (User $u) => $except && $u->id === $except->id)
+            ->values();
     }
 
     /**

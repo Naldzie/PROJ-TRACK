@@ -214,6 +214,15 @@
                                 @endif
                             </span>
 
+                            {{-- Planned but its start date has passed (restudy F-9, 2026-09-21; same
+                                 condition as the daily ProjectNotStartedReminder) --}}
+                            @if($project->status === 'Planned' && $project->planned_start_date
+                                && $project->planned_start_date->copy()->startOfDay()->lt(\App\Support\DateHelper::now()->copy()->startOfDay()))
+                                <span class="health-badge at-risk" title="Planned start {{ $project->planned_start_date->format('M d, Y') }} has passed — status is still Planned">
+                                    <i class="bi bi-hourglass-top"></i> Not yet started
+                                </span>
+                            @endif
+
                             @if($isCompleted)
                                 <span class="health-badge {{ $completionDelay === 0 ? 'on-schedule' : ($completionDelay > 0 ? 'late' : 'early') }}">
                                     @if($completionDelay === 0)
@@ -576,6 +585,17 @@
                         </span>
                     </td>
                     <td data-col="health">
+                        @php
+                            // Planned but its start date has passed (restudy F-9, 2026-09-21; same
+                            // condition as the card view badge and the daily ProjectNotStartedReminder)
+                            $tableNotStarted = $project->status === 'Planned' && $project->planned_start_date
+                                && $project->planned_start_date->copy()->startOfDay()->lt(\App\Support\DateHelper::now()->copy()->startOfDay());
+                        @endphp
+                        @if($tableNotStarted)
+                        <span class="table-health-badge at-risk" title="Planned start {{ $project->planned_start_date->format('M d, Y') }} has passed — status is still Planned">
+                            <i class="bi bi-hourglass-top"></i> Not yet started
+                        </span>
+                        @else
                         <span class="table-health-badge {{ $isOverdue ? 'overdue' : ($isAtRisk ? 'at-risk' : ($healthLevel === 'no_data' || $healthLevel === 'neutral' ? 'no-data' : 'on-track')) }}"
                               @if(!empty($health['tooltip'])) title="{{ $health['tooltip'] }}" @endif>
                             @if($isOverdue)
@@ -590,6 +610,7 @@
                                 <i class="bi bi-check-circle-fill"></i> On Track
                             @endif
                         </span>
+                        @endif
                         @if($health['escalated'] ?? false)
                         <span style="margin-left: 4px; color: #d97706; cursor: help;" title="{{ $health['escalation_reason'] }}">
                             <i class="bi bi-info-circle" style="font-size: 12px;"></i>

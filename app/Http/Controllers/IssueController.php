@@ -9,6 +9,7 @@ use App\Models\Issue;
 use App\Models\ProjectBaselineSchedule;
 use App\Models\Risk;
 use App\Notifications\IssueReported;
+use App\Notifications\ProjectUpdateNotice;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -269,6 +270,33 @@ class IssueController extends Controller
                 'description' => $user->name . ' updated issue "' . $issue->issue_name . '" for project "' . $project->title . '".',
                 'ip_address'  => $request->ip(),
             ]);
+
+            // Issue just resolved / closed → in-app notice to admins + assigned staff
+            // (not the person who resolved it). Restudy F-11, 2026-09-21. The ref
+            // carries the resolution time, so a reopened-then-resolved issue
+            // notifies again.
+            if (in_array($newStatus, ['Resolved', 'Closed']) && !in_array($oldStatus, ['Resolved', 'Closed'])) {
+                try {
+                    $service = app(NotificationService::class);
+                    $service->notifyMany(
+                        $service->internalRecipientsFor($project, $user),
+                        new ProjectUpdateNotice(
+                            $project->id,
+                            $project->title,
+                            ProjectUpdateNotice::ISSUE_RESOLVED,
+                            'Issue ' . strtolower($newStatus) . ': ' . $issue->issue_name,
+                            $issue->id . ':' . optional($issue->resolved_at)->timestamp,
+                            $issue->resolution_notes ? \Illuminate\Support\Str::limit($issue->resolution_notes, 160) : null,
+                            $user->name
+                        )
+                    );
+                } catch (\Throwable $e) {
+                    Log::warning('Issue resolved notification failed', [
+                        'issue_id' => $issue->id,
+                        'error'    => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return response()->json([
                 'success' => true,

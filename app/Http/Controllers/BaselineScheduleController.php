@@ -1596,6 +1596,30 @@ class BaselineScheduleController extends Controller
             // later revert restores the state the admin built.
             \App\Http\Controllers\Admin\ProjectExtensionController::captureBaselineSnapshot($project);
 
+            // In-app notice: the planned S-curve every comparison uses has changed
+            // (admins + assigned staff, not the editor; restudy F-11, 2026-09-21).
+            // Sent after COMMIT so a rolled-back save never announces itself.
+            try {
+                $service = app(\App\Services\NotificationService::class);
+                $service->notifyMany(
+                    $service->internalRecipientsFor($project, auth()->user()),
+                    new \App\Notifications\ProjectUpdateNotice(
+                        $project->id,
+                        $project->title,
+                        \App\Notifications\ProjectUpdateNotice::BASELINE_REVISED,
+                        'Original baseline revised',
+                        $project->id . ':' . now()->timestamp,
+                        'The planned S-curve changed — variance and forecasts now compare against the revised plan.',
+                        auth()->user()->name
+                    )
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Baseline revised notice failed', [
+                    'project_id' => $project->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Original baseline updated successfully!',

@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -16,9 +18,10 @@ use Illuminate\Notifications\Notification;
  * Dedupe key: risk_level_change:{project_id}:{new_level}:{month_label}
  * — fires once per risk-level transition per month.
  */
-class RiskLevelChanged extends Notification
+class RiskLevelChanged extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,

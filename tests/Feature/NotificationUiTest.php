@@ -230,4 +230,107 @@ class NotificationUiTest extends TestCase
             ->assertSee('Issue reported')
             ->assertSee('Water leakage in Block A');
     }
+
+    // === Presenter / bell / inbox filters / clear read (restudy P-5/P-6, 2026-09-21) ===
+
+    public function test_recent_json_carries_bell_label_link_and_read_url(): void
+    {
+        $this->createNotification($this->admin);
+
+        $json = $this->actingAs($this->admin)->getJson(route('admin.notifications.recent'))->assertOk()->json();
+
+        $item = $json['notifications'][0];
+        $this->assertSame('Deadline in 7 days', $item['label']);
+        $this->assertStringContainsString('/projects/' . $this->project->id, $item['url']);
+        $this->assertSame(route('admin.notifications.read', $item['id']), $item['read_url']);
+    }
+
+    public function test_bell_labels_a_risk_notice_correctly_not_as_an_issue(): void
+    {
+        $this->admin->notify(new \App\Notifications\RiskReported($this->project->id, 'UI Project', 5, 'Slope failure'));
+
+        $json = $this->actingAs($this->admin)->getJson(route('admin.notifications.recent'))->json();
+
+        $this->assertSame('High risk reported', $json['notifications'][0]['label']);
+    }
+
+    public function test_inbox_shows_a_monitoring_notice_with_its_detail(): void
+    {
+        $this->admin->notify(new \App\Notifications\ProjectNotStartedReminder($this->project->id, 'Late Start Hall', '2026-09-01', 20));
+
+        $this->actingAs($this->admin)->get(route('admin.notifications'))
+            ->assertOk()
+            ->assertSee('Not yet started — Late Start Hall', false)
+            ->assertSee('Planned start: Sep 01, 2026');
+    }
+
+    public function test_inbox_filters_by_unread_type_and_project(): void
+    {
+        $other = Project::factory()->create(['title' => 'Other Hall']);
+        $this->createNotification($this->admin, ['project_title' => 'First Hall']);
+        $this->createNotification($this->admin, ['project_title' => 'First Hall', 'bucket' => '14', 'days_remaining' => 14]);
+        // createNotification() returns latest('id') — a random row with UUID keys; pick by data
+        $this->admin->notifications()->where('data->days_remaining', 14)->firstOrFail()->markAsRead();
+        $this->admin->notify(new IssueReported($other->id, 'Other Hall', 3, 'Crack', 'Low'));
+
+        $this->actingAs($this->admin);
+
+        $this->get(route('admin.notifications', ['status' => 'unread']))
+            ->assertOk()->assertSee('Deadline in 7 days — First Hall')->assertDontSee('Deadline in 14 days');
+
+        $this->get(route('admin.notifications', ['type' => 'issue']))
+            ->assertOk()->assertSee('Crack on Other Hall')->assertDontSee('Deadline in 7 days — First Hall');
+
+        $this->get(route('admin.notifications', ['project' => $other->id]))
+            ->assertOk()->assertSee('Crack on Other Hall')->assertDontSee('Deadline in 7 days — First Hall');
+    }
+
+    public function test_clear_read_hides_read_notices_but_keeps_unread(): void
+    {
+        $this->createNotification($this->admin);
+        $this->createNotification($this->admin, ['bucket' => '14', 'days_remaining' => 14]);
+        $this->admin->notifications()->where('data->days_remaining', 14)->firstOrFail()->markAsRead();
+
+        $this->actingAs($this->admin)->postJson(route('admin.notifications.clearRead'))
+            ->assertOk()->assertJson(['success' => true, 'cleared' => 1]);
+
+        $this->get(route('admin.notifications'))->assertSee('Deadline in 7 days')->assertDontSee('Deadline in 14 days');
+        $this->assertSame(2, $this->admin->notifications()->count(), 'rows are kept, only hidden');
+    }
+
+    public function test_a_cleared_notice_is_not_resent_by_the_next_scan(): void
+    {
+        \Illuminate\Support\Carbon::setTestNow(\Illuminate\Support\Carbon::parse('2026-09-21 07:00:00'));
+        Project::factory()->create(['status' => 'Planned', 'planned_start_date' => '2026-09-01']);
+
+        // Count only this type — setUp's factory project has random dates and may
+        // draw its own deadline / inspection notices
+        $notStarted = fn () => $this->admin->notifications()
+            ->where('type', \App\Notifications\ProjectNotStartedReminder::class)->count();
+
+        $this->artisan('notifications:scan')->run();
+        $this->assertSame(1, $notStarted());
+
+        $this->admin->unreadNotifications()->update(['read_at' => now()]);
+        $this->actingAs($this->admin)->postJson(route('admin.notifications.clearRead'))->assertOk();
+        $this->artisan('notifications:scan')->run();
+
+        $this->assertSame(1, $notStarted(), 'dedupe still sees the cleared row');
+        $this->assertSame(0, $this->admin->notifications()->whereNull('cleared_at')
+            ->where('type', \App\Notifications\ProjectNotStartedReminder::class)->count(), 'and it stays hidden');
+        \Illuminate\Support\Carbon::setTestNow();
+    }
+
+    public function test_clear_read_only_touches_the_current_user(): void
+    {
+        $mine = $this->createNotification($this->admin);
+        $theirs = $this->createNotification($this->staff);
+        $mine->markAsRead();
+        $theirs->markAsRead();
+
+        $this->actingAs($this->admin)->postJson(route('admin.notifications.clearRead'))->assertOk();
+
+        $this->assertNull($theirs->fresh()->cleared_at);
+        $this->assertNotNull($mine->fresh()->cleared_at);
+    }
 }

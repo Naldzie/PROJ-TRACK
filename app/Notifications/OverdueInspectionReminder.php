@@ -4,18 +4,27 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
- * Overdue inspection alert for a baseline month whose planned_date has passed
+ * Overdue inspection alert: baseline month(s) whose planned_date has passed
  * with no recorded progress.
  *
- * Dedupe key: overdue_inspection:{project_id}:{month_label} — fires once per
- * (project, month) no matter how many daily scans run.
+ * ONE notice per project (2026-09-21, restudy P-1): $months lists every
+ * uninspected month; monthLabel / monthDisplay / plannedDate describe the
+ * LATEST of them. Before, the scan sent one notice per month per person — a
+ * project with 11 uninspected months sent 33 notices + 33 emails in one run.
+ *
+ * Dedupe key: overdue_inspection:{project_id}:{latest month_label} — once per
+ * project until ANOTHER month becomes overdue, which re-alerts once with the
+ * full list. (Older rows without 'months' still render as a single month.)
  */
-class OverdueInspectionReminder extends Notification
+class OverdueInspectionReminder extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,
@@ -23,7 +32,16 @@ class OverdueInspectionReminder extends Notification
         public string $monthLabel,
         public string $monthDisplay = '',
         public string $plannedDate = '',
+        public array $months = [],
     ) {
+    }
+
+    /** Human list of the overdue months (latest last); falls back to monthDisplay. */
+    public function monthList(): string
+    {
+        $names = array_map(fn ($m) => $m['display'] ?: $m['label'], $this->months);
+
+        return $names ? implode(', ', $names) : ($this->monthDisplay ?: $this->monthLabel);
     }
 
     public function via($notifiable): array
@@ -33,20 +51,22 @@ class OverdueInspectionReminder extends Notification
 
     public function toMail($notifiable): MailMessage
     {
-        $month = $this->monthDisplay ?: $this->monthLabel;
-        $title = 'Overdue Inspection — ' . $this->projectTitle;
+        $count = max(count($this->months), 1);
+        $title = ($count > 1 ? 'Overdue Inspections (' . $count . ' months) — ' : 'Overdue Inspection — ') . $this->projectTitle;
 
         return (new MailMessage)
             ->subject($title)
             ->view('emails.notification', [
                 'notifTitle'    => $title,
                 'recipientName' => $notifiable->display_name ?? $notifiable->name ?? $notifiable->email,
-                'intro'         => 'A scheduled inspection month has passed without recorded progress for this project.',
+                'intro'         => $count > 1
+                    ? $count . ' scheduled inspection months have passed without recorded progress for this project.'
+                    : 'A scheduled inspection month has passed without recorded progress for this project.',
                 'lines'         => [
-                    'Project'          => $this->projectTitle,
-                    'Inspection month' => $month,
-                    'Planned date'     => $this->plannedDate,
-                    'Status'           => 'Overdue',
+                    'Project'                                     => $this->projectTitle,
+                    ($count > 1 ? 'Inspection months' : 'Inspection month') => $this->monthList(),
+                    ($count > 1 ? 'Latest planned date' : 'Planned date') => $this->plannedDate,
+                    'Status'                                      => 'Overdue',
                 ],
             ]);
     }
@@ -60,6 +80,8 @@ class OverdueInspectionReminder extends Notification
             'month_label'   => $this->monthLabel,
             'month_display' => $this->monthDisplay,
             'planned_date'  => $this->plannedDate,
+            'months'        => $this->months,
+            'month_count'   => max(count($this->months), 1),
         ];
     }
 

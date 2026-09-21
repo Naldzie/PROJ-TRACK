@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -13,9 +15,10 @@ use Illuminate\Notifications\Notification;
  * to dedupe daily scans. `bucket` is one of '30' | '14' | '7' | 'overdue',
  * so each escalation step fires exactly once per project.
  */
-class DeadlineReminder extends Notification
+class DeadlineReminder extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,

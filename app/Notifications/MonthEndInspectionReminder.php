@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
+use App\Notifications\Concerns\QueuesMailOnly;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Notification;
 
 /**
@@ -16,9 +18,10 @@ use Illuminate\Notifications\Notification;
  *
  * Dedupe key: month_end_inspection:{project_id}:{month_label}
  */
-class MonthEndInspectionReminder extends Notification
+class MonthEndInspectionReminder extends Notification implements ShouldQueue
 {
-    use Queueable;
+    // Email queued, in-app notice immediate — see Concerns\QueuesMailOnly
+    use Queueable, QueuesMailOnly;
 
     public function __construct(
         public int $projectId,
