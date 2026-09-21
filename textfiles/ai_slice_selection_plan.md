@@ -605,7 +605,25 @@
       These are NOT comparable to the 549/134 figures, which were filtered to
       `local.` over a seven-day window. Quoted only to show the shape of the bias.
 
-  10.4 WHAT FOLLOWS, IN THE ORDER IT SHOULD BE DONE — ⬜ NONE ORDERED
+  10.4 WHAT FOLLOWS, IN THE ORDER IT SHOULD BE DONE — (i)+(ii) ✅ BUILT 2026-09-21
+
+      ✅ (i)+(ii) BUILT 2026-09-21 on `phase-31-parser-ai-log-tagging` (user order).
+        · callGeminiWithImages() takes a `$where` tag; parseProjectSlice passes
+          'images-normal', parseSCurvePdfSlice 'images-scurve'. Fallback rungs log
+          '<tag>-fallback'. Both keep the 'images' prefix, so requestTimeout() still
+          gives them the IMAGE timeout — asserted for all four tags.
+        · parseProjectSlice logs 'N-A normal slice response' {images, model,
+          fields} once per answered call (fields = non-null values; 0 if validation
+          declined the answer). Transport failures still log only 'E3 ... failed'.
+        · HOW TO COUNT AFTER THE PILOT: normal-doc answered calls = 'N-A normal
+          slice response' lines; normal-doc failures = 'E3 gemini parser call
+          failed' with where 'images-normal' / 'images-normal-fallback' (log LINES,
+          not presses — postGemini retries twice and rungs add more, see (iii)).
+          ⚠ Lines logged BEFORE 2026-09-21 are still the unsplittable 'images'.
+        · Tests: +2 in GeminiDocumentParserServiceTest (per-path tags, success line)
+          + 4 timeout asserts. Mutations: tag reverted to 'images', S-curve tag
+          dropped, success line renamed — each turns a test red. PHP 1240 / 0.
+        · No user-visible change; no browser check needed (service + log only).
 
       (i)  ⚠ TAG THE TWO IMAGE PATHS DIFFERENTLY. One-line-ish: pass
            'images-normal' from parseProjectSlice's sender and 'images-scurve' from

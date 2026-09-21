@@ -492,7 +492,8 @@ class GeminiDocumentParserService
         $raw = $this->callGeminiWithImages(
             $this->buildPrompt($need),
             $images,
-            [...$this->parserFallbackModels(), $this->backupModel()]
+            [...$this->parserFallbackModels(), $this->backupModel()],
+            'images-normal'
         );
 
         if ($raw === '') {
@@ -505,7 +506,24 @@ class GeminiDocumentParserService
             return null;
         }
 
-        return $this->validateParsed($decoded);
+        $validated = $this->validateParsed($decoded);
+
+        // Success breadcrumb (2026-09-21, ai_slice_selection_plan.md §10.4(ii)):
+        // this path logged NOTHING on success, so its rate could not be computed
+        // while the S-curve path left thousands of lines. One line per answered
+        // call; 'fields' counts non-null values (0 when validation declined the
+        // answer), so an answered-but-empty call is visible too.
+        try {
+            Log::debug('N-A normal slice response', [
+                'images' => count($images),
+                'model' => $this->lastFallbackModel ?? $this->parserModel(),
+                'fields' => is_array($validated) ? count(array_filter($validated, fn ($v) => $v !== null)) : 0,
+            ]);
+        } catch (\Throwable $e) {
+            // Logging never breaks imports.
+        }
+
+        return $validated;
     }
 
     /**
@@ -637,7 +655,7 @@ class GeminiDocumentParserService
         // printed whole-number percentages) is caught and corrected by the
         // AI-vs-file cross-check. Empty unless configured, so the default is still
         // Flash-or-nothing; a ladder that also fails surfaces the real error.
-        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images, $this->parserFallbackModels());
+        $raw = $this->callGeminiWithImages($this->buildSCurvePdfPrompt($pageWords), $images, $this->parserFallbackModels(), 'images-scurve');
 
         if ($raw === '') {
             return null;
@@ -1893,11 +1911,18 @@ class GeminiDocumentParserService
      *
      * lastFallbackModel records WHICH rung answered, for the provenance note.
      *
+     * $where TAGS THE CALLER in every log line this call emits (2026-09-21,
+     * ai_slice_selection_plan.md §10.4(i)). Both image paths share this sender,
+     * and a single 'images' tag made normal-doc and S-curve failures impossible
+     * to tell apart in the log. Callers pass 'images-normal' / 'images-scurve'.
+     * ⚠ The tag MUST start with 'images' — requestTimeout() selects the image
+     * timeout by that prefix, and anything else silently gets the text timeout.
+     *
      * Called by: parseProjectSlice(), parseSCurvePdfSlice()
      * Uses: config/services.php (gemini parser key/model, parser fallback list,
      *       and the main model when a caller asks for the Lite rescue)
      */
-    private function callGeminiWithImages(string $prompt, array $images, array $fallbackModels = []): string
+    private function callGeminiWithImages(string $prompt, array $images, array $fallbackModels = [], string $where = 'images'): string
     {
         $this->lastFallbackModel = null;
         $this->startTimeBudget();
@@ -1930,9 +1955,9 @@ class GeminiDocumentParserService
         ];
 
         try {
-            $result = $this->postGemini($url, $payload, $model, 'images');
+            $result = $this->postGemini($url, $payload, $model, $where);
         } catch (GeminiTransportException $e) {
-            return $this->climbFallbackLadder($payload, $apiKey, $fallbackModels, $e, $model, 'images');
+            return $this->climbFallbackLadder($payload, $apiKey, $fallbackModels, $e, $model, $where);
         }
 
         $data = $result['payload'];
