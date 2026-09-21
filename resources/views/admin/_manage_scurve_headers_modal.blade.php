@@ -1,63 +1,75 @@
 <!-- === S-CURVE HEADER PROPOSALS MANAGEMENT MODAL (E1-2 review) === -->
-<div class="modal fade" id="manageScurveHeadersModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-light">
-                <h5 class="modal-title">
-                    <i class="bi bi-table"></i> Review S-Curve Layouts
-                </h5>
+{{-- Styles: public/css/admin/projects/scurve-layouts-modal.css (linked by both layouts).
+     2026-09-21 redesign, same as the Review Learned Keywords modal: fixed-size dialog
+     (only the list scrolls), one card per layout led by its contractor, a readiness line
+     saying whether approval would work, and the captured header block collapsed behind a
+     toggle. The Teach modal below is unchanged. --}}
+<div class="modal fade" id="manageScurveHeadersModal" tabindex="-1" aria-labelledby="schTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered sch-dialog">
+        <div class="modal-content sch-content">
+
+            <!-- Header -->
+            <div class="sch-header">
+                <div class="sch-header-icon"><i class="bi bi-table"></i></div>
+                <div>
+                    <h5 class="sch-title" id="schTitle">Review S-Curve Layouts</h5>
+                    <p class="sch-subtitle">Column layouts captured from S-curve files the built-in rules could not read.</p>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p class="text-muted small">
-                    Header blocks captured from failed S-curve imports.
-                    <strong>Approve</strong> to trust a layout for its contractor,
-                    <strong>Teach</strong> to point at its columns yourself (saves a variant —
-                    alternating formats both keep working),
-                    <strong>Reject</strong> to discard it. Approved layouts only ever fill in
-                    when the built-in rules miss — nothing approved here can override them.
-                </p>
 
-                <!-- Status filter tabs -->
-                <ul class="nav nav-pills gap-2 mb-3" id="schFilterTabs">
-                    <li class="nav-item">
-                        <button class="nav-link active btn-sm" data-sch-filter="proposed" onclick="schSetFilter('proposed')">Proposed</button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link btn-sm" data-sch-filter="live" onclick="schSetFilter('live')">Live</button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link btn-sm" data-sch-filter="all" onclick="schSetFilter('all')">All</button>
-                    </li>
-                </ul>
+            <!-- Body: help line, toolbar, then the scrolling list -->
+            <div class="sch-body">
+                <details class="sch-help">
+                    <summary>
+                        <i class="bi bi-info-circle"></i>
+                        <span>Approve a layout to trust it, or teach its columns yourself.</span>
+                        <span class="sch-help-link">How review works</span>
+                    </summary>
+                    <div class="sch-help-text">
+                        Each card is the header block of an S-curve file (Excel or PDF) whose columns
+                        the built-in rules could not find. <strong>Approve</strong> trusts the layout for
+                        its contractor. <strong>Teach</strong> lets you point at its columns yourself — it
+                        saves a variant, so alternating formats both keep working.
+                        <strong>Reject</strong> discards the capture; a future failed import can capture it
+                        again. Approved layouts only ever fill in when the built-in rules miss — nothing
+                        approved here can override them.
+                    </div>
+                </details>
 
-                <!-- Captures table -->
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Header block</th>
-                                <th>Contractor</th>
-                                <th title="How many failed imports produced these headers">Seen</th>
-                                <th title="Where this capture was learned">Origin</th>
-                                <th>Status</th>
-                                <th class="text-end">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="scurveHeadersList">
-                            <!-- Captures loaded here -->
-                        </tbody>
-                    </table>
+                <div class="sch-toolbar">
+                    <!-- Status filter segments (counts filled by schRender) -->
+                    <div class="sch-segments" id="schFilterTabs" role="tablist">
+                        <button type="button" class="sch-segment active" data-sch-filter="proposed" onclick="schSetFilter('proposed')">
+                            Proposed <span class="sch-count" data-sch-count="proposed">0</span>
+                        </button>
+                        <button type="button" class="sch-segment" data-sch-filter="live" onclick="schSetFilter('live')">
+                            Live <span class="sch-count" data-sch-count="live">0</span>
+                        </button>
+                        <button type="button" class="sch-segment" data-sch-filter="all" onclick="schSetFilter('all')">
+                            All <span class="sch-count" data-sch-count="all">0</span>
+                        </button>
+                    </div>
+
+                    <div class="sch-search">
+                        <i class="bi bi-search"></i>
+                        <input type="search" id="schSearch" placeholder="Search contractor" autocomplete="off"
+                               oninput="schSetSearch(this.value)">
+                    </div>
                 </div>
 
+                <!-- The only scrolling region: layout cards render here -->
+                <div class="sch-list" id="scurveHeadersList"></div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+
+            <!-- Footer -->
+            <div class="sch-footer">
+                <span class="sch-footer-note" id="schFooterNote"></span>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
-
 <!-- === TEACH S-CURVE COLUMNS MODAL (Phase-A point-and-teach) === -->
 <!-- Standalone (never stacked on the review desk): opened from a Teach button,
      closed back to the reloaded desk. Click-to-assign on a rendered grid —
@@ -211,209 +223,279 @@ function schParseHeaderBlock(text) { return schCore().parseHeaderBlock(text); }
 // a baseline is adopted from. They looked identical in the grid.
 const SCH_ROLE_BADGE = { META: 'secondary', HEADER: 'primary', DATA: 'light text-dark border', SUMMARY: 'warning text-dark', CUMULATIVE: 'success' };
 
-// Compact grid for the list cell (first 8 rows × 16 cols, scrollable).
+// Compact grid for the list card (first 8 rows × 16 cols, scrollable). 2026-09-21:
+// own classes (.sch-grid / .sch-role) instead of Bootstrap badges — the app's global
+// .badge styling rendered the R-numbers as large grey buttons that crowded the cells.
 function schMiniGrid(text) {
     const parsed = schParseHeaderBlock(text);
     if (!parsed) {
-        return '<span class="text-muted">'
+        return '<div class="sch-grid-note">'
             + (text ? schEscapeHtml(String(text).substring(0, 120)) + '…' : '(empty header block)')
-            + '</span>';
+            + '</div>';
     }
     const maxCols = 16, maxRows = 8;
     const letters = parsed.letters.slice(0, maxCols);
-    let html = '<div style="max-height:150px;overflow:auto;max-width:520px;">'
-        + '<table class="table table-sm table-bordered mb-0" style="font-size:10px;">'
-        + '<thead class="table-light"><tr><th style="position:sticky;top:0;"></th>';
-    letters.forEach(l => { html += '<th style="position:sticky;top:0;">' + schEscapeHtml(l) + '</th>'; });
+    let html = '<div class="sch-grid"><table><thead><tr><th></th>';
+    letters.forEach(l => { html += '<th>' + schEscapeHtml(l) + '</th>'; });
     html += '</tr></thead><tbody>';
     parsed.rows.slice(0, maxRows).forEach(r => {
-        const badge = SCH_ROLE_BADGE[r.role] || 'secondary';
-        html += '<tr><td><span class="badge bg-' + badge + '" style="font-size:9px;">R' + r.n + '</span></td>';
+        const role = String(r.role || '').replace(/[^A-Z]/g, '');
+        html += '<tr><th><span class="sch-role role-' + role + '" title="' + schEscapeHtml(role || 'row') + '">R' + r.n + '</span></th>';
         for (let c = 0; c < letters.length; c++) {
             const v = (r.cells[c] !== undefined ? String(r.cells[c]).trim() : '');
-            html += v === ''
-                ? '<td style="background:#f8f9fa;"></td>'
-                : '<td>' + schEscapeHtml(v) + '</td>';
+            html += v === '' ? '<td class="is-empty"></td>' : '<td>' + schEscapeHtml(v) + '</td>';
         }
         html += '</tr>';
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     if (parsed.rows.length > maxRows || parsed.letters.length > maxCols) {
-        html += '<div class="text-muted" style="font-size:10px;">Showing first ' + Math.min(maxRows, parsed.rows.length)
-            + ' rows × ' + letters.length + ' columns — open Teach columns for the full grid.</div>';
+        html += '<div class="sch-grid-note">Showing the first ' + Math.min(maxRows, parsed.rows.length)
+            + ' rows × ' + letters.length + ' columns — open Teach for the full grid.</div>';
     }
     if (String(text).length >= 4000) {
-        html += '<div class="text-warning" style="font-size:10px;">Stored block hit the 4000-char cap — tail may be cut.</div>';
+        html += '<div class="sch-grid-note is-warn">Stored block hit the 4000-character cap — its tail may be cut.</div>';
     }
-    return html + '</div>';
+    return html;
 }
 
 // ===================================================
-// FILTER TABS
+// FILTER SEGMENTS + SEARCH (client-side over _schRowsCache)
+// 2026-09-21: the desk fetches ALL layouts once and filters in the browser, so tab
+// switches are instant and every tab shows a count. _schRowsCache therefore holds
+// every row, which is also what the Teach modal's lookup-by-id needs.
 // ===================================================
+let _schSearch = '';
+
 function schSetFilter(status) {
     _schFilter = status;
-    document.querySelectorAll('#schFilterTabs .nav-link').forEach(el => {
-        el.classList.toggle('active', el.getAttribute('data-sch-filter') === status);
+    document.querySelectorAll('#schFilterTabs .sch-segment').forEach(el => {
+        const on = el.getAttribute('data-sch-filter') === status;
+        el.classList.toggle('active', on);
+        el.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    loadScurveHeadersForManagement();
+    schRender();
+}
+
+// Search box handler: filters by contractor name ("any contractor" matches global rows).
+function schSetSearch(value) {
+    _schSearch = String(value || '').trim().toLowerCase();
+    schRender();
+}
+
+// Centred placeholder used for loading, empty and error states.
+function schEmptyState(icon, title, text) {
+    return '<div class="sch-empty">'
+        + '<div class="sch-empty-icon"><i class="bi ' + icon + '"></i></div>'
+        + '<div class="sch-empty-title">' + schEscapeHtml(title) + '</div>'
+        + (text ? '<div class="sch-empty-text">' + schEscapeHtml(text) + '</div>' : '')
+        + '</div>';
 }
 
 // ===================================================
-// LOAD CAPTURES FOR REVIEW
+// LOAD CAPTURES FOR REVIEW (all statuses, once; schRender filters)
+// Called by: the modal's show event, approve/reject, and the Teach save path.
 // ===================================================
 async function loadScurveHeadersForManagement() {
+    const list = document.getElementById('scurveHeadersList');
+    if (list && (!_schRowsCache || _schRowsCache.length === 0)) {
+        list.innerHTML = schEmptyState('bi-hourglass-split', 'Loading layouts…', '');
+    }
     try {
-        const url = _schFilter === 'all'
-            ? schBase() + '/scurve-header-proposals/all'
-            : schBase() + '/scurve-header-proposals/all?status=' + encodeURIComponent(_schFilter);
-        const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const response = await fetch(schBase() + '/scurve-header-proposals/all', { headers: { 'Accept': 'application/json' } });
         const rows = await response.json();
-
-        const tbody = document.getElementById('scurveHeadersList');
-        tbody.innerHTML = '';
-
         // Cache rows for the teach modal (lookup by id, no extra endpoint).
         _schRowsCache = Array.isArray(rows) ? rows : [];
-
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No ' + schEscapeHtml(_schFilter) + ' layouts yet. Failed S-curve imports will appear here.</td></tr>';
-            return;
-        }
-
-        let html = '';
-        rows.forEach((row) => {
-            const badge = row.status === 'live'
-                ? '<span class="badge bg-success">Live</span>'
-                : '<span class="badge bg-warning text-dark">Proposed</span>';
-            const header = row.header_rows_text
-                ? schMiniGrid(row.header_rows_text)
-                : '<span class="text-muted">(empty header block)</span>';
-            const headerTip = '';
-            const contractor = row.contractor
-                ? schEscapeHtml(row.contractor)
-                : '<span class="text-muted">Global</span>';
-            const origin = row.source === 'AI-assisted'
-                ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'
-                : (row.source === 'manual-teach'
-                    ? '<span class="badge bg-dark" title="Taught by a reviewer">Taught</span>'
-                    : (row.source === 'ai-derived'
-                        ? '<span class="badge bg-info text-dark" title="Learned from a successful AI read — needs review">AI-derived</span>'
-                        : '<span class="badge bg-secondary" title="Captured from a failed import">Auto-capture</span>'));
-            // A row with NO map is not merely "not Mapped" — the reader has nothing
-            // to read it with, so approving it changes nothing and the next import
-            // still fails. That happens whenever the rules could not find the header
-            // (every row tags [DATA]), which is exactly the layout most in need of
-            // teaching. Say so where the badge would have been (2026-09-14).
-            const mapMark = row.has_map
-                ? ' <span class="badge bg-primary" title="A column map is attached">Mapped</span>'
-                : ' <span class="badge bg-warning text-dark" title="No column map was derived from this capture,'
-                    + ' so the reader cannot use it. Teach its columns — approving alone will not make the file'
-                    + ' readable.">Needs teaching</span>';
-            // E1-PDF: PDF captures land in this same desk, so say which file kind a
-            // row came from — the two are read by different engines and a reviewer
-            // approving columns should know which one they are teaching.
-            const kindMark = row.source_type === 'pdf'
-                ? ' <span class="badge bg-danger" title="Captured from a PDF schedule">PDF</span>'
-                : ' <span class="badge bg-success" title="Captured from an Excel workbook">Excel</span>';
-            // Inline map summary (2026-09-10 reversal companion): reviewers approve
-            // AI-sourced columns, so show WHAT they'd approve (DESC=C · M1=I+J…).
-            let mapSummary = '';
-            try {
-                const cm = row.column_map || null;
-                if (row.has_map && cm && cm.kind === 'pdf') {
-                    // PDF-4 (2026-09-13): a PDF map is GEOMETRY (page-width fractions),
-                    // not column letters, so the Excel reader below finds none of its
-                    // keys and PDF rows showed no summary at all. Describe what a PDF
-                    // map actually says: how many printed pages it covers and which
-                    // months each one carries.
-                    const pages = Array.isArray(cm.pages) ? cm.pages : [];
-                    const bits = pages.map((p, i) => {
-                        const months = (p.monthCols || []).map(mc => mc.index).filter(n => n >= 1);
-                        if (!months.length) return 'page ' + (i + 1) + ': no months';
-                        return 'page ' + (i + 1) + ': M' + months[0]
-                            + (months.length > 1 ? '–M' + months[months.length - 1] : '');
-                    });
-                    // An AMBIGUOUS capture (positional wording — the roof prints "30
-                    // days" six times, so nothing in the bytes says which month a
-                    // column is) keeps its geometry with the months left UNNUMBERED.
-                    // The reader refuses a month-less page, so APPROVING such a row
-                    // changes nothing: the next import still answers "could not read
-                    // the S-curve". That is correct, and until now it was also
-                    // SILENT — the desk offered Approve like any other row and never
-                    // said the click was a no-op (2026-09-14 acceptance run).
-                    const unnumbered = pages.length > 0 && pages.every(
-                        (p) => p.unnumbered === true || !(p.monthCols || []).some(mc => mc.index >= 1)
-                    );
-                    if (unnumbered) {
-                        mapSummary = '<div style="font-size:10px;color:#b45309;font-weight:600;"'
-                            + ' title="This layout records where the columns sit but not which month each one is,'
-                            + ' because the page labels them all the same way. Approving it will not make the file'
-                            + ' readable — teach the months first, then approve.">'
-                            + '⚠ Months not numbered — approving alone will not read this file. Teach it first.'
-                            + '</div>';
-                    } else if (bits.length) {
-                        const title = pages.length > 1
-                            ? 'Printed across ' + pages.length + ' pages, shown here as one grid'
-                            : 'Learned column bands — what approval would trust';
-                        mapSummary = '<div class="text-muted" style="font-size:10px;" title="' + schEscapeHtml(title) + '">'
-                            + schEscapeHtml(bits.join(' · ')) + '</div>';
-                    }
-                } else if (row.has_map && cm && typeof cm === 'object') {
-                    const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
-                    const bits = [];
-                    const dc = L(cm.descCol);
-                    if (dc) bits.push('DESC=' + dc);
-                    const cc = L(cm.contractCol);
-                    if (cc) bits.push('AMT=' + cc);
-                    const wc = L(cm.weightCol);
-                    if (wc) bits.push('WT=' + wc);
-                    const spans = cm.monthSpans || {};
-                    Object.keys(spans).map(Number).filter(n => n >= 1).sort((x, y) => x - y).forEach(m => {
-                        const cols = (spans[m] || []).map(L).filter(Boolean);
-                        if (cols.length) bits.push('M' + m + '=' + cols.join('+'));
-                    });
-                    if (bits.length) {
-                        mapSummary = '<div class="text-muted" style="font-size:10px;" title="Taught/learned column positions — what approval would trust">'
-                            + schEscapeHtml(bits.join(' · ')) + '</div>';
-                    }
-                }
-            } catch (e) { /* summary is best-effort */ }
-            // A row the reader cannot use must not offer Approve as if it would do
-            // something (2026-09-14). Approving one used to flip it to live and
-            // change nothing — the next import still failed. The server refuses
-            // these independently; this only stops the wasted click.
-            const cmForApprove = row.column_map || null;
-            const unreadable = !row.has_map
-                || (cmForApprove && cmForApprove.kind === 'pdf'
-                    && Array.isArray(cmForApprove.pages) && cmForApprove.pages.length > 0
-                    && cmForApprove.pages.every(p => !(p.monthCols || []).some(mc => mc.index >= 1)));
-            const approveBtn = row.status === 'live' ? ''
-                : (unreadable
-                    ? '<button class="btn btn-sm btn-outline-secondary" disabled'
-                        + ' title="There is nothing here the reader can use yet — teach this layout\'s columns first,'
-                        + ' then approve."><i class="bi bi-check-lg"></i> Approve</button>'
-                    : '<button class="btn btn-sm btn-outline-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>');
-            const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
-            html += '<tr>' +
-                '<td><span' + headerTip + '>' + header + '</span>' + kindMark + mapMark + mapSummary + '</td>' +
-                '<td>' + contractor + '</td>' +
-                '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
-                '<td>' + origin + '</td>' +
-                '<td>' + badge + '</td>' +
-                '<td class="text-end"><div class="d-flex gap-2 justify-content-end">' + approveBtn + teachBtn +
-                '<button class="btn btn-sm btn-outline-danger" data-sch-reject="' + row.id + '" title="Discard this capture"><i class="bi bi-trash"></i></button>' +
-                '</div></td>' +
-                '</tr>';
-        });
-
-        tbody.innerHTML = html;
+        schRender();
     } catch (error) {
         console.error('Error loading S-curve layouts:', error);
+        if (list) list.innerHTML = schEmptyState('bi-exclamation-triangle', 'Could not load layouts', 'Close and reopen this window to try again.');
         showToast('Failed to load S-curve layouts', 'error');
     }
 }
 
+// ===================================================
+// RENDER — counts on every segment, then the filtered card list.
+// Called by: loadScurveHeadersForManagement(), schSetFilter(), schSetSearch().
+// ===================================================
+function schRender() {
+    const list = document.getElementById('scurveHeadersList');
+    if (!list) return;
+    const rows = _schRowsCache || [];
+
+    const counts = { proposed: 0, live: 0, all: rows.length };
+    rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    document.querySelectorAll('#manageScurveHeadersModal [data-sch-count]').forEach(el => {
+        el.textContent = counts[el.getAttribute('data-sch-count')] || 0;
+    });
+
+    const inStatus = _schFilter === 'all' ? rows : rows.filter(r => r.status === _schFilter);
+    const shown = !_schSearch ? inStatus : inStatus.filter(r =>
+        (r.contractor ? String(r.contractor) : 'any contractor global').toLowerCase().includes(_schSearch));
+
+    const note = document.getElementById('schFooterNote');
+    if (note) {
+        note.textContent = inStatus.length === 0 ? ''
+            : (_schSearch ? shown.length + ' of ' + inStatus.length + ' shown' : inStatus.length + (inStatus.length === 1 ? ' layout' : ' layouts'));
+    }
+
+    if (inStatus.length === 0) {
+        const empty = {
+            proposed: ['bi-inbox', 'Nothing waiting for review', 'S-curve files the built-in rules cannot read will have their layout captured here.'],
+            live: ['bi-check2-circle', 'No approved layouts yet', 'Approved and taught layouts move here and are used when the built-in rules miss.'],
+            all: ['bi-inbox', 'No layouts yet', 'S-curve files the built-in rules cannot read will have their layout captured here.'],
+        }[_schFilter] || ['bi-inbox', 'No layouts', ''];
+        list.innerHTML = schEmptyState(empty[0], empty[1], empty[2]);
+        return;
+    }
+    if (shown.length === 0) {
+        list.innerHTML = schEmptyState('bi-search', 'No matches', 'No layout in this tab matches “' + _schSearch + '”.');
+        return;
+    }
+
+    list.innerHTML = shown.map(schRowHtml).join('');
+}
+
+// What the attached column map says, as plain text (or '' when nothing to say).
+// Excel: DESC=C · AMT=F · M1=I+J …   PDF: page 1: M1–M12 · page 2: M13–M20.
+function schMapSummary(row) {
+    try {
+        const cm = row.column_map || null;
+        if (!row.has_map || !cm || typeof cm !== 'object') return '';
+        if (cm.kind === 'pdf') {
+            // PDF-4 (2026-09-13): a PDF map is GEOMETRY (page-width fractions), not
+            // column letters — describe how many printed pages it covers and which
+            // months each one carries.
+            const pages = Array.isArray(cm.pages) ? cm.pages : [];
+            return pages.map((p, i) => {
+                const months = (p.monthCols || []).map(mc => mc.index).filter(n => n >= 1);
+                if (!months.length) return 'page ' + (i + 1) + ': no months';
+                return 'page ' + (i + 1) + ': M' + months[0]
+                    + (months.length > 1 ? '–M' + months[months.length - 1] : '');
+            }).join(' · ');
+        }
+        const L = (v) => (v === null || v === undefined) ? null : schIndexToLetter(v);
+        const bits = [];
+        const dc = L(cm.descCol);
+        if (dc) bits.push('DESC=' + dc);
+        const cc = L(cm.contractCol);
+        if (cc) bits.push('AMT=' + cc);
+        const wc = L(cm.weightCol);
+        if (wc) bits.push('WT=' + wc);
+        const spans = cm.monthSpans || {};
+        Object.keys(spans).map(Number).filter(n => n >= 1).sort((x, y) => x - y).forEach(m => {
+            const cols = (spans[m] || []).map(L).filter(Boolean);
+            if (cols.length) bits.push('M' + m + '=' + cols.join('+'));
+        });
+        return bits.join(' · ');
+    } catch (e) { return ''; /* summary is best-effort */ }
+}
+
+// One layout card. Headline = whose layout it is; the READINESS line says whether
+// approving it would let the reader use it; the header block stays collapsed.
+function schRowHtml(row) {
+    const status = row.status === 'live' ? 'live' : 'proposed';
+
+    // E1-PDF: PDF captures land in this same desk; the two file kinds are read by
+    // different engines, so a reviewer should know which one they are teaching.
+    const kind = row.source_type === 'pdf'
+        ? '<span class="sch-pill kind-pdf" title="Captured from a PDF schedule"><i class="bi bi-file-earmark-pdf"></i> PDF</span>'
+        : '<span class="sch-pill kind-excel" title="Captured from an Excel workbook"><i class="bi bi-file-earmark-spreadsheet"></i> Excel</span>';
+    const statusPill = '<span class="sch-pill is-' + status + '">' + (status === 'live' ? 'Live' : 'Proposed') + '</span>';
+
+    const contractor = row.contractor
+        ? '<div class="sch-contractor">' + schEscapeHtml(row.contractor) + '</div>'
+        : '<div class="sch-contractor is-global">Any contractor <small>(global layout)</small></div>';
+
+    const origin = row.source === 'AI-assisted'
+        ? '<span class="sch-origin-ai" title="Kept from an AI-assisted read"><i class="bi bi-robot"></i> From an AI-assisted read</span>'
+        : (row.source === 'manual-teach'
+            ? '<span title="Taught by a reviewer"><i class="bi bi-hand-index"></i> Taught by a reviewer</span>'
+            : (row.source === 'ai-derived'
+                ? '<span class="sch-origin-ai" title="Learned from a successful AI read — needs review"><i class="bi bi-robot"></i> Learned from an AI read</span>'
+                : '<span title="Captured from a failed import"><i class="bi bi-camera"></i> Auto-captured</span>'));
+    const seen = parseInt(row.occurrences, 10) || 0;
+
+    // READINESS. A row with NO map is not merely "not Mapped" — the reader has
+    // nothing to read it with, so approving it changes nothing (2026-09-14). An
+    // UNNUMBERED PDF capture (positional wording — the roof prints "30 days" six
+    // times) keeps its geometry with no month numbers, and the reader refuses a
+    // month-less page, so approving it is a no-op too (2026-09-14 acceptance run).
+    const cm = row.column_map || null;
+    const pdfPages = (cm && cm.kind === 'pdf' && Array.isArray(cm.pages)) ? cm.pages : [];
+    const unnumbered = pdfPages.length > 0 && pdfPages.every(
+        (p) => p.unnumbered === true || !(p.monthCols || []).some(mc => mc.index >= 1)
+    );
+    const summary = schMapSummary(row);
+    let ready;
+    if (!row.has_map) {
+        ready = '<div class="sch-ready is-warn"><i class="bi bi-exclamation-triangle"></i><span>'
+            + '<strong>Needs teaching.</strong> No column map could be worked out from this file, so approving it'
+            + ' alone will not make it readable. Use Teach to point at its columns.</span></div>';
+    } else if (unnumbered) {
+        ready = '<div class="sch-ready is-warn"><i class="bi bi-exclamation-triangle"></i><span>'
+            + '<strong>Months not numbered.</strong> This layout records where the columns sit but not which month'
+            + ' each one is, because the page labels them all the same way. Teach the months first, then approve.</span></div>';
+    } else {
+        ready = '<div class="sch-ready is-ok"><i class="bi bi-check-circle"></i><span>'
+            + '<strong>Column map ready</strong>' + (summary ? ' · <code>' + schEscapeHtml(summary) + '</code>' : '')
+            + '</span></div>';
+    }
+
+    const grid = row.header_rows_text
+        ? '<button type="button" class="sch-grid-toggle" data-sch-grid="' + row.id + '" aria-expanded="false">'
+            + '<i class="bi bi-chevron-right"></i> <span>Show captured header block</span></button>'
+          + '<div class="sch-grid-wrap" id="schGrid' + row.id + '" hidden></div>'
+        : '<div class="sch-grid-note">(empty header block)</div>';
+
+    // A row the reader cannot use must not offer Approve as if it would do
+    // something (2026-09-14). The server refuses these independently; this only
+    // stops the wasted click.
+    const unreadable = !row.has_map || unnumbered;
+    const approveBtn = status === 'live' ? ''
+        : (unreadable
+            ? '<button class="btn btn-sm btn-outline-secondary" disabled'
+                + ' title="There is nothing here the reader can use yet — teach this layout\'s columns first,'
+                + ' then approve."><i class="bi bi-check-lg"></i> Approve</button>'
+            : '<button class="btn btn-sm btn-success" data-sch-approve="' + row.id + '" title="Trust this layout"><i class="bi bi-check-lg"></i> Approve</button>');
+    const teachBtn = '<button class="btn btn-sm btn-outline-primary" data-sch-teach="' + row.id + '" title="Teach column positions for this layout"><i class="bi bi-table"></i> Teach</button>';
+    const rejectBtn = '<button class="btn btn-sm btn-outline-danger" data-sch-reject="' + row.id + '" title="Discard this capture"><i class="bi bi-x-lg"></i> Reject</button>';
+
+    return '<div class="sch-item is-' + status + '">'
+        + '<div class="sch-item-main">'
+        +   '<div class="sch-item-top">' + kind + statusPill + '</div>'
+        +   contractor
+        +   '<div class="sch-meta">'
+        +     '<span title="How many failed imports produced these headers"><i class="bi bi-arrow-repeat"></i> Seen ' + seen + (seen === 1 ? ' time' : ' times') + '</span>'
+        +     origin
+        +   '</div>'
+        +   ready
+        +   grid
+        + '</div>'
+        + '<div class="sch-actions">' + approveBtn + teachBtn + rejectBtn + '</div>'
+        + '</div>';
+}
+
+// Show/hide one card's header block. The grid is built on first open only — a
+// desk of wide captures no longer renders every table up front.
+function schToggleGrid(btn) {
+    const id = btn.getAttribute('data-sch-grid');
+    const box = document.getElementById('schGrid' + id);
+    if (!box) return;
+    const open = box.hasAttribute('hidden');
+    if (open && !box.hasChildNodes()) {
+        const row = (_schRowsCache || []).find(r => String(r.id) === String(id));
+        try {
+            box.innerHTML = row ? schMiniGrid(row.header_rows_text) : '';
+        } catch (e) {
+            // schCore() throws with a hard-refresh hint when the teach core is not loaded.
+            box.innerHTML = '<div class="sch-grid-note is-warn">' + schEscapeHtml(e.message) + '</div>';
+        }
+    }
+    box.toggleAttribute('hidden', !open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.querySelector('i').className = 'bi ' + (open ? 'bi-chevron-down' : 'bi-chevron-right');
+    btn.querySelector('span').textContent = open ? 'Hide captured header block' : 'Show captured header block';
+}
 // ===================================================
 // APPROVE / REJECT (delegated — IDs travel via data-*, never string args)
 // ===================================================
@@ -431,6 +513,12 @@ document.addEventListener('click', function (e) {
     const teachBtn = e.target.closest ? e.target.closest('[data-sch-teach]') : null;
     if (teachBtn) {
         schTeachColumns(teachBtn.getAttribute('data-sch-teach'));
+        return;
+    }
+    // Show/hide a card's captured header block (2026-09-21).
+    const gridBtn = e.target.closest ? e.target.closest('[data-sch-grid]') : null;
+    if (gridBtn) {
+        schToggleGrid(gridBtn);
     }
 });
 

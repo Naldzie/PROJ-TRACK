@@ -1,0 +1,522 @@
+/* ==========================================================================
+   REVIEW S-CURVE LAYOUTS MODAL (S-curve header proposals — E1-2 review desk)
+   View: resources/views/admin/_manage_scurve_headers_modal.blade.php
+   Same design as the Review Learned Keywords modal (parser-keywords-modal.css,
+   2026-09-21) — kept as its own file so that confirmed modal is never touched by
+   changes here. Everything is scoped under #manageScurveHeadersModal; the Teach
+   modal in the same Blade file is NOT restyled. Colours reuse dashboard.css tokens.
+   ========================================================================== */
+
+/* FIXED SIZE: one height whatever the row count; only the list scrolls. */
+#manageScurveHeadersModal .sch-dialog {
+    max-width: 920px;
+}
+
+#manageScurveHeadersModal .sch-content {
+    height: min(720px, calc(100vh - 3.5rem));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+
+@media (max-width: 575.98px) {
+    #manageScurveHeadersModal .sch-content {
+        height: calc(100vh - 1rem);
+    }
+}
+
+/* ---------- Header ---------- */
+#manageScurveHeadersModal .sch-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageScurveHeadersModal .sch-header-icon {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue-50, #eff6ff);
+    color: var(--brand, #2563EB);
+    font-size: 1.15rem;
+}
+
+#manageScurveHeadersModal .sch-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--ink, #0F172A);
+}
+
+#manageScurveHeadersModal .sch-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageScurveHeadersModal .sch-header .btn-close {
+    margin-left: auto;
+}
+
+/* ---------- Body ---------- */
+#manageScurveHeadersModal .sch-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 20px 0;
+    background: var(--bg, #F8FAFC);
+}
+
+#manageScurveHeadersModal .sch-help {
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+    margin-bottom: 12px;
+}
+
+#manageScurveHeadersModal .sch-help summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#manageScurveHeadersModal .sch-help summary::-webkit-details-marker {
+    display: none;
+}
+
+#manageScurveHeadersModal .sch-help-link {
+    color: var(--brand, #2563EB);
+    font-weight: 500;
+}
+
+#manageScurveHeadersModal .sch-help[open] .sch-help-link {
+    text-decoration: underline;
+}
+
+#manageScurveHeadersModal .sch-help-text {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid var(--line, #E2E8F0);
+    line-height: 1.5;
+}
+
+/* ---------- Toolbar ---------- */
+#manageScurveHeadersModal .sch-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#manageScurveHeadersModal .sch-segments {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 10px;
+    background: var(--bg-2, #F1F5F9);
+    border: 1px solid var(--line, #E2E8F0);
+}
+
+#manageScurveHeadersModal .sch-segment {
+    border: none;
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-700, #374151);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#manageScurveHeadersModal .sch-segment:hover {
+    color: var(--ink, #0F172A);
+}
+
+#manageScurveHeadersModal .sch-segment.active {
+    background: #fff;
+    color: var(--brand, #2563EB);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+#manageScurveHeadersModal .sch-count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    line-height: 18px;
+    text-align: center;
+    background: var(--gray-200, #e5e7eb);
+    color: var(--gray-700, #374151);
+}
+
+#manageScurveHeadersModal .sch-segment.active .sch-count {
+    background: var(--blue-100, #dbeafe);
+    color: var(--blue-700, #1d4ed8);
+}
+
+#manageScurveHeadersModal .sch-search {
+    position: relative;
+    flex: 0 1 240px;
+}
+
+#manageScurveHeadersModal .sch-search i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--gray-400, #9ca3af);
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+
+#manageScurveHeadersModal .sch-search input {
+    width: 100%;
+    padding: 6px 10px 6px 30px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageScurveHeadersModal .sch-search input:focus {
+    outline: none;
+    border-color: var(--blue-200, #bfdbfe);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* ---------- The list (the only scrolling region) ---------- */
+#manageScurveHeadersModal .sch-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 2px 2px 14px;
+}
+
+#manageScurveHeadersModal .sch-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid var(--line, #E2E8F0);
+    border-left: 4px solid var(--warning, #F59E0B);
+    border-radius: 10px;
+}
+
+#manageScurveHeadersModal .sch-item.is-live {
+    border-left-color: var(--success, #16A34A);
+}
+
+#manageScurveHeadersModal .sch-item-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+#manageScurveHeadersModal .sch-item-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+/* Small pills: file kind, status, origin. Own classes on purpose — the app's
+   global .badge styling rendered the old badges as large grey buttons. */
+#manageScurveHeadersModal .sch-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+#manageScurveHeadersModal .sch-pill.kind-pdf   { background: var(--red-100, #fee2e2);   color: var(--red-800, #991b1b); }
+#manageScurveHeadersModal .sch-pill.kind-excel { background: var(--green-100, #d1fae5); color: var(--green-700, #065f46); }
+#manageScurveHeadersModal .sch-pill.is-proposed { background: var(--amber-100, #fef3c7); color: var(--amber-800, #92400e); }
+#manageScurveHeadersModal .sch-pill.is-live     { background: var(--green-100, #d1fae5); color: var(--green-700, #065f46); }
+
+/* THE HEADLINE — whose layout this is. */
+#manageScurveHeadersModal .sch-contractor {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ink, #0F172A);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+#manageScurveHeadersModal .sch-contractor.is-global {
+    color: var(--gray-700, #374151);
+}
+
+#manageScurveHeadersModal .sch-contractor small {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageScurveHeadersModal .sch-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageScurveHeadersModal .sch-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#manageScurveHeadersModal .sch-meta .sch-origin-ai {
+    color: var(--violet-600, #7c3aed);
+}
+
+/* READINESS LINE — can the reader use this layout if it is approved? */
+#manageScurveHeadersModal .sch-ready {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+#manageScurveHeadersModal .sch-ready i {
+    margin-top: 1px;
+}
+
+#manageScurveHeadersModal .sch-ready.is-ok {
+    background: var(--green-50, #f0fdf4);
+    color: var(--green-700, #065f46);
+}
+
+#manageScurveHeadersModal .sch-ready.is-warn {
+    background: var(--amber-50, #fffbeb);
+    color: var(--amber-800, #92400e);
+}
+
+#manageScurveHeadersModal .sch-ready code {
+    font-size: 0.76rem;
+    color: inherit;
+    background: none;
+    padding: 0;
+}
+
+/* The captured header block — collapsed until asked for. */
+#manageScurveHeadersModal .sch-grid-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 0.76rem;
+    color: var(--brand, #2563EB);
+}
+
+#manageScurveHeadersModal .sch-grid-toggle:hover {
+    text-decoration: underline;
+}
+
+#manageScurveHeadersModal .sch-grid-wrap {
+    margin-top: 6px;
+}
+
+#manageScurveHeadersModal .sch-grid {
+    max-height: 200px;
+    overflow: auto;
+    border: 1px solid var(--line, #E2E8F0);
+    border-radius: 6px;
+    background: #fff;
+}
+
+#manageScurveHeadersModal .sch-grid table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.72rem;
+    width: max-content;
+    min-width: 100%;
+}
+
+#manageScurveHeadersModal .sch-grid th,
+#manageScurveHeadersModal .sch-grid td {
+    padding: 3px 6px;
+    border-right: 1px solid var(--gray-100, #f3f4f6);
+    border-bottom: 1px solid var(--gray-100, #f3f4f6);
+    vertical-align: top;
+    max-width: 180px;
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+#manageScurveHeadersModal .sch-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg-2, #F1F5F9);
+    color: var(--gray-500, #6b7280);
+    font-weight: 600;
+    text-align: center;
+}
+
+#manageScurveHeadersModal .sch-grid tbody th {
+    position: sticky;
+    left: 0;
+    background: #fff;
+}
+
+#manageScurveHeadersModal .sch-grid td.is-empty {
+    background: var(--gray-50, #f8fafc);
+}
+
+/* Row-number pill coloured by the row's role tag (HEADER, SUMMARY, ...). */
+#manageScurveHeadersModal .sch-role {
+    display: inline-block;
+    min-width: 28px;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-align: center;
+    background: var(--gray-200, #e5e7eb);
+    color: var(--gray-700, #374151);
+}
+
+#manageScurveHeadersModal .sch-role.role-HEADER     { background: var(--blue-100, #dbeafe);   color: var(--blue-800, #1e40af); }
+#manageScurveHeadersModal .sch-role.role-SUMMARY    { background: var(--amber-100, #fef3c7);  color: var(--amber-800, #92400e); }
+#manageScurveHeadersModal .sch-role.role-CUMULATIVE { background: var(--green-100, #d1fae5);  color: var(--green-700, #065f46); }
+#manageScurveHeadersModal .sch-role.role-DATA       { background: #fff; border: 1px solid var(--gray-200, #e5e7eb); }
+
+#manageScurveHeadersModal .sch-grid-note {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageScurveHeadersModal .sch-grid-note.is-warn {
+    color: var(--amber-600, #d97706);
+}
+
+/* ---------- Actions ---------- */
+#manageScurveHeadersModal .sch-actions {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 112px;
+}
+
+#manageScurveHeadersModal .sch-actions .btn {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* ---------- Empty / loading state ---------- */
+#manageScurveHeadersModal .sch-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageScurveHeadersModal .sch-empty-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    background: var(--bg-2, #F1F5F9);
+    color: var(--gray-400, #9ca3af);
+    font-size: 1.5rem;
+}
+
+#manageScurveHeadersModal .sch-empty-title {
+    font-weight: 600;
+    color: var(--gray-700, #374151);
+    margin-bottom: 4px;
+}
+
+#manageScurveHeadersModal .sch-empty-text {
+    font-size: 0.85rem;
+    max-width: 380px;
+}
+
+/* ---------- Footer ---------- */
+#manageScurveHeadersModal .sch-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageScurveHeadersModal .sch-footer-note {
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+}
+
+/* Phone widths: actions go under the card body. */
+@media (max-width: 575.98px) {
+    #manageScurveHeadersModal .sch-item {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    /* Stacked, the card body must be pinned to the card's width — otherwise a
+       wide header-block table sizes it and the whole card overflows the screen
+       instead of the table scrolling inside it. */
+    #manageScurveHeadersModal .sch-item-main {
+        width: 100%;
+    }
+
+    #manageScurveHeadersModal .sch-actions {
+        flex-direction: row;
+        width: 100%;
+    }
+
+    #manageScurveHeadersModal .sch-actions .btn {
+        flex: 1 1 0;
+    }
+
+    #manageScurveHeadersModal .sch-search {
+        flex: 1 1 100%;
+    }
+}

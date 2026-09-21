@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}?v={{ filemtime(public_path('css/admin/projects/_create_project_modal.css')) }}">
     {{-- Review Learned Keywords modal (included by this layout); mtime-versioned like the line above. --}}
     <link rel="stylesheet" href="{{ asset('css/admin/projects/parser-keywords-modal.css') }}?v={{ filemtime(public_path('css/admin/projects/parser-keywords-modal.css')) }}">
+    {{-- Review S-Curve Layouts modal (included by this layout); mtime-versioned like the lines above. --}}
+    <link rel="stylesheet" href="{{ asset('css/admin/projects/scurve-layouts-modal.css') }}?v={{ filemtime(public_path('css/admin/projects/scurve-layouts-modal.css')) }}">
     {{-- PRELOADER --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
