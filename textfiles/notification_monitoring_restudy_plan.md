@@ -78,7 +78,7 @@
       at the RECIPIENT's own computer. Explains "15 sent, 0 opened". (For the LAN
       pilot APP_URL must be the server PC's LAN address; contractors outside the LAN
       still cannot open links, so emails must make sense without them.)
-  F-3 STALE QUEUE JOBS — 30 jobs wait in `jobs`: 26 × App\Jobs\SendNotificationEmailJob
+  F-3 (DOWNGRADED 2026-09-21 — see §6) STALE QUEUE JOBS — 30 jobs wait in `jobs`: 26 × App\Jobs\SendNotificationEmailJob
       (class no longer exists → they fail the moment a worker starts) and 4 old queued
       reminders dated Sep–Nov 2026 (simulated dates) that WOULD be emailed. `composer
       dev` starts a worker, so the first pilot run triggers them.
@@ -169,3 +169,33 @@
   2026-09-21 — phase-41 merged into develop (be09bf7; PHP 1311 / 0, JS 279 / 0).
     Restudy done: code traced, 98 notification/email tests run, today's scan dry-run
     on live data (rolled back, faked), live stats read. No code changed.
+  2026-09-21 — USER ANSWERS + FOLLOW-UP CHECKS
+    · N-D1 / N-D2: P-1 YES — one overdue-inspection notice PER PROJECT listing all its
+      missing months (applies when a project has more than one uninspected month).
+    · N-D4 (user):
+        – Warranty: show the due / expiring state ON THE WARRANTY RECORD (preview)
+          page, plus at least an IN-APP notice to admins + assigned staff.
+        – Planned project past its start date: same — in-app notice to admins +
+          assigned staff (+ an indicator where it is seen).
+        – Pending extension: leave the submit notice as is (it may be in process at
+          another office); add a reminder only for an extension pending ONE MONTH+.
+        – The other "silent" events (F-11): IN-APP ONLY, recipients admins + assigned
+          staff.
+    · N-D3 / N-D5 / N-D6: user asked for explanation first (answered in the session).
+    · N-D6 FACT CHECK: the 30 jobs are TESTING RESIDUE — queued on a queue named
+      "emails" by an earlier, never-committed version of the notification code (no
+      commit in this repo ever had App\Jobs\SendNotificationEmailJob or queued
+      notifications); created at simulated dates (2026-09-15 / 09-25 00:00, project
+      142). `composer dev` runs `queue:listen` on the DEFAULT queue only, so they would
+      NOT fire on the pilot — F-3 is downgraded from pilot-critical to housekeeping.
+      Also stale: the SendNotifications.php docblock (line ~32) still says emails go
+      through the 'emails' queue worker.
+    · N-D7 LIVE GMAIL TEST (user-approved, to neinocencio@my.cspc.edu.ph): one real
+      email of each kind, MAIL CHANNEL ONLY (unsaved User / EmailTracking — nothing
+      written to the DB): DeadlineReminder 3555 ms, OverdueInspectionReminder 1635,
+      PlannedInspectionReminder 1729, MonthEndInspectionReminder 1464, RiskLevelChanged
+      1491, ExtensionStatusChanged 5053, IssueReported 1830, RiskReported 1578,
+      AiAnalysisMail ("[TEST]" subject) 1640 — all 9 SENT. ⇒ inline sending costs
+      ~1.5-5 s PER RECIPIENT inside the request (e.g. reporting an issue to 4 people ≈
+      6-10 s). The user should check the inbox: layout, and the links / tracking
+      image pointing at 127.0.0.1 (F-2).
