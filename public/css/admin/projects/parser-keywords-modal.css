@@ -1,0 +1,490 @@
+/* ==========================================================================
+   REVIEW LEARNED KEYWORDS MODAL (parser keyword proposals — L2 review desk)
+   View: resources/views/admin/_manage_parser_keywords_modal.blade.php
+   Everything is scoped under #manageParserKeywordsModal so nothing leaks into
+   the other modals that share the layouts. Colours reuse dashboard.css tokens
+   (with fallbacks, in case a page ever loads this without dashboard.css).
+   ========================================================================== */
+
+/* FIXED SIZE (2026-09-21): the modal no longer grows or shrinks with the number
+   of rows. The content box has one height; only the list area scrolls. */
+#manageParserKeywordsModal .pkp-dialog {
+    max-width: 860px;
+}
+
+#manageParserKeywordsModal .pkp-content {
+    height: min(680px, calc(100vh - 3.5rem));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+}
+
+@media (max-width: 575.98px) {
+    #manageParserKeywordsModal .pkp-content {
+        height: calc(100vh - 1rem);
+    }
+}
+
+/* ---------- Header ---------- */
+#manageParserKeywordsModal .pkp-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageParserKeywordsModal .pkp-header-icon {
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blue-50, #eff6ff);
+    color: var(--brand, #2563EB);
+    font-size: 1.15rem;
+}
+
+#manageParserKeywordsModal .pkp-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--ink, #0F172A);
+}
+
+#manageParserKeywordsModal .pkp-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageParserKeywordsModal .pkp-header .btn-close {
+    margin-left: auto;
+}
+
+/* ---------- Body: a column whose list part takes the leftover height ---------- */
+#manageParserKeywordsModal .pkp-body {
+    flex: 1 1 auto;
+    min-height: 0;              /* lets the list shrink and scroll inside a flex column */
+    display: flex;
+    flex-direction: column;
+    padding: 14px 20px 0;
+    background: var(--bg, #F8FAFC);
+}
+
+/* One-line explanation; the full text sits behind "How review works". */
+#manageParserKeywordsModal .pkp-help {
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+    margin-bottom: 12px;
+}
+
+#manageParserKeywordsModal .pkp-help summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#manageParserKeywordsModal .pkp-help summary::-webkit-details-marker {
+    display: none;
+}
+
+#manageParserKeywordsModal .pkp-help summary .pkp-help-link {
+    color: var(--brand, #2563EB);
+    font-weight: 500;
+}
+
+#manageParserKeywordsModal .pkp-help[open] summary .pkp-help-link {
+    text-decoration: underline;
+}
+
+#manageParserKeywordsModal .pkp-help-text {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid var(--line, #E2E8F0);
+    line-height: 1.5;
+}
+
+/* ---------- Toolbar: status segments + search ---------- */
+#manageParserKeywordsModal .pkp-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+#manageParserKeywordsModal .pkp-segments {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 10px;
+    background: var(--bg-2, #F1F5F9);
+    border: 1px solid var(--line, #E2E8F0);
+}
+
+#manageParserKeywordsModal .pkp-segment {
+    border: none;
+    background: transparent;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-700, #374151);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+#manageParserKeywordsModal .pkp-segment:hover {
+    color: var(--ink, #0F172A);
+}
+
+#manageParserKeywordsModal .pkp-segment.active {
+    background: #fff;
+    color: var(--brand, #2563EB);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+#manageParserKeywordsModal .pkp-count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    line-height: 18px;
+    text-align: center;
+    background: var(--gray-200, #e5e7eb);
+    color: var(--gray-700, #374151);
+}
+
+#manageParserKeywordsModal .pkp-segment.active .pkp-count {
+    background: var(--blue-100, #dbeafe);
+    color: var(--blue-700, #1d4ed8);
+}
+
+/* Admin-only Deleted tab, set apart from the desk's own statuses. */
+#manageParserKeywordsModal .pkp-segment-sep {
+    width: 1px;
+    margin: 6px 4px;
+    background: var(--gray-300, #d1d5db);
+}
+
+#manageParserKeywordsModal .pkp-segment-deleted.active {
+    color: var(--red-600, #dc2626);
+}
+
+#manageParserKeywordsModal .pkp-segment-deleted.active .pkp-count {
+    background: var(--red-100, #fee2e2);
+    color: var(--red-800, #991b1b);
+}
+
+#manageParserKeywordsModal .pkp-search {
+    position: relative;
+    flex: 0 1 240px;
+}
+
+#manageParserKeywordsModal .pkp-search i {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--gray-400, #9ca3af);
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+
+#manageParserKeywordsModal .pkp-search input {
+    width: 100%;
+    padding: 6px 10px 6px 30px;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    border: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageParserKeywordsModal .pkp-search input:focus {
+    outline: none;
+    border-color: var(--blue-200, #bfdbfe);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+/* ---------- The list: the ONLY scrolling part ---------- */
+#manageParserKeywordsModal .pkp-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 2px 2px 14px;
+}
+
+#manageParserKeywordsModal .pkp-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid var(--line, #E2E8F0);
+    border-left: 4px solid var(--gray-300, #d1d5db);
+    border-radius: 10px;
+}
+
+/* Left rule colour = status, so a mixed "All" list scans at a glance. */
+#manageParserKeywordsModal .pkp-item.is-proposed { border-left-color: var(--warning, #F59E0B); }
+#manageParserKeywordsModal .pkp-item.is-live     { border-left-color: var(--success, #16A34A); }
+#manageParserKeywordsModal .pkp-item.is-rejected { border-left-color: var(--gray-400, #9ca3af); background: var(--gray-50, #f8fafc); }
+#manageParserKeywordsModal .pkp-item.is-deleted  { border-left-color: var(--red-200, #fecaca); background: var(--gray-50, #f8fafc); border-style: dashed; border-left-style: solid; }
+#manageParserKeywordsModal .pkp-item.is-deleted .pkp-phrase { color: var(--gray-700, #374151); }
+
+#manageParserKeywordsModal .pkp-item-main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+#manageParserKeywordsModal .pkp-item-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+/* The box the wording fills (Contract Price, ABC, ...). */
+#manageParserKeywordsModal .pkp-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--blue-50, #eff6ff);
+    color: var(--blue-800, #1e40af);
+    border: 1px solid var(--blue-100, #dbeafe);
+}
+
+#manageParserKeywordsModal .pkp-field-lead {
+    font-weight: 400;
+    color: var(--blue-600, #2563eb);
+}
+
+#manageParserKeywordsModal .pkp-status {
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+#manageParserKeywordsModal .pkp-status.is-proposed { background: var(--amber-100, #fef3c7); color: var(--amber-800, #92400e); }
+#manageParserKeywordsModal .pkp-status.is-live     { background: var(--green-100, #d1fae5); color: var(--green-700, #065f46); }
+#manageParserKeywordsModal .pkp-status.is-rejected { background: var(--gray-200, #e5e7eb); color: var(--gray-700, #374151); }
+#manageParserKeywordsModal .pkp-status.is-deleted  { background: var(--red-100, #fee2e2); color: var(--red-800, #991b1b); }
+
+/* THE KEYWORD — the one thing on the row the reviewer is judging. */
+#manageParserKeywordsModal .pkp-phrase {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ink, #0F172A);
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+#manageParserKeywordsModal .pkp-phrase .pkp-q {
+    color: var(--gray-400, #9ca3af);
+    font-weight: 400;
+}
+
+#manageParserKeywordsModal .pkp-phrase.is-empty {
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-style: italic;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageParserKeywordsModal .pkp-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageParserKeywordsModal .pkp-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+#manageParserKeywordsModal .pkp-meta .pkp-origin-ai {
+    color: var(--violet-600, #7c3aed);
+}
+
+/* Worth-approving verdict from the core's builtInCoversPhrase(). */
+#manageParserKeywordsModal .pkp-worth {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 0.76rem;
+}
+
+#manageParserKeywordsModal .pkp-worth.is-covered {
+    background: var(--gray-100, #f3f4f6);
+    color: var(--gray-500, #6b7280);
+}
+
+#manageParserKeywordsModal .pkp-worth.is-new {
+    background: var(--green-50, #f0fdf4);
+    color: var(--green-700, #065f46);
+}
+
+/* The source excerpt — hidden until asked for, keyword highlighted inside. */
+#manageParserKeywordsModal .pkp-context-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 0.76rem;
+    color: var(--brand, #2563EB);
+}
+
+#manageParserKeywordsModal .pkp-context-toggle:hover {
+    text-decoration: underline;
+}
+
+#manageParserKeywordsModal .pkp-context {
+    margin-top: 6px;
+    padding: 8px 10px;
+    max-height: 110px;
+    overflow-y: auto;
+    border-radius: 6px;
+    background: var(--bg-2, #F1F5F9);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--gray-700, #374151);
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+#manageParserKeywordsModal .pkp-context mark {
+    padding: 0 2px;
+    border-radius: 3px;
+    background: var(--amber-200, #fde68a);
+    color: inherit;
+}
+
+/* ---------- Actions ---------- */
+#manageParserKeywordsModal .pkp-actions {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    min-width: 108px;
+}
+
+#manageParserKeywordsModal .pkp-actions .btn {
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+/* ---------- Empty / loading state, centred in the fixed list area ---------- */
+#manageParserKeywordsModal .pkp-empty {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    color: var(--gray-500, #6b7280);
+}
+
+#manageParserKeywordsModal .pkp-empty-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+    background: var(--bg-2, #F1F5F9);
+    color: var(--gray-400, #9ca3af);
+    font-size: 1.5rem;
+}
+
+#manageParserKeywordsModal .pkp-empty-title {
+    font-weight: 600;
+    color: var(--gray-700, #374151);
+    margin-bottom: 4px;
+}
+
+#manageParserKeywordsModal .pkp-empty-text {
+    font-size: 0.85rem;
+    max-width: 360px;
+}
+
+/* ---------- Footer ---------- */
+#manageParserKeywordsModal .pkp-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--line, #E2E8F0);
+    background: #fff;
+}
+
+#manageParserKeywordsModal .pkp-footer-note {
+    font-size: 0.8rem;
+    color: var(--gray-500, #6b7280);
+}
+
+/* Phone widths: actions go under the wording instead of beside it. */
+@media (max-width: 575.98px) {
+    #manageParserKeywordsModal .pkp-item {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    #manageParserKeywordsModal .pkp-actions {
+        flex-direction: row;
+        width: 100%;
+    }
+
+    #manageParserKeywordsModal .pkp-actions .btn {
+        flex: 1 1 0;
+    }
+
+    #manageParserKeywordsModal .pkp-search {
+        flex: 1 1 100%;
+    }
+
+    /* Five tabs (with the admin's Deleted) do not fit one phone line. */
+    #manageParserKeywordsModal .pkp-segments {
+        flex-wrap: wrap;
+    }
+
+    #manageParserKeywordsModal .pkp-segment-sep {
+        display: none;
+    }
+}

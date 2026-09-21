@@ -340,4 +340,124 @@ class ParserKeywordProposalTest extends TestCase
             ->assertOk()
             ->assertJsonPath('0.source', 'AI-assisted');
     }
+
+    /* ─── Deleting rejected wording (2026-09-21) ─────────────────────────── */
+
+    // One user of the given role for the delete/restore tests.
+    private function pkpUser(string $role): User
+    {
+        return User::create([
+            'name' => 'Loop ' . ucfirst($role),
+            'email' => fake()->unique()->safeEmail(),
+            'role' => $role,
+            'is_active' => true,
+        ]);
+    }
+
+    // Staff may delete a REJECTED row; it leaves the desk list but stays in the table.
+    // Called by: DELETE /staff/parser-keyword-proposals/{id}/trash (Delete on a Rejected row).
+    public function test_staff_can_delete_a_rejected_row_and_it_leaves_the_desk(): void
+    {
+        $staff = $this->pkpUser('staff');
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Bad Label', 'status' => 'rejected']);
+
+        $this->actingAs($staff)->deleteJson("/staff/parser-keyword-proposals/{$row->id}/trash")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+        $this->actingAs($staff)->getJson('/staff/parser-keyword-proposals/all')
+            ->assertOk()->assertJsonCount(0);
+    }
+
+    // Only a decided refusal can be tidied away — proposed and live rows are refused.
+    public function test_only_rejected_rows_can_be_deleted(): void
+    {
+        $admin = $this->pkpUser('admin');
+        foreach (['proposed', 'live'] as $status) {
+            $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => "Row {$status}", 'status' => $status]);
+            $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$row->id}/trash")
+                ->assertStatus(422);
+            $this->assertNotSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+        }
+    }
+
+    // THE KEY INVARIANT: deleting a rejection must not forget it. Without withTrashed()
+    // in collect(), the next correction would create a NEW proposed row.
+    // Called by: collect() after a reviewer deleted the rejected row.
+    public function test_a_deleted_rejection_is_still_refused_by_collect(): void
+    {
+        $admin = $this->pkpUser('admin');
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Bad Label', 'status' => 'rejected', 'occurrences' => 1]);
+        $row->delete();
+
+        $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [['field' => 'budget', 'label' => 'Bad Label']],
+        ])->assertCreated()->assertJson(['refusedRejected' => 1]);
+
+        $this->assertSame(1, ParserKeywordProposal::withTrashed()->where('label_phrase', 'Bad Label')->count(), 'no second row');
+        $this->assertSame(0, ParserKeywordProposal::where('label_phrase', 'Bad Label')->count(), 'still off the desk');
+        $this->assertSame(2, ParserKeywordProposal::withTrashed()->find($row->id)->occurrences, 'the count still rises');
+    }
+
+    // The Deleted tab, restore and permanent delete are admin-only.
+    public function test_staff_cannot_see_restore_or_destroy_deleted_rows(): void
+    {
+        $staff = $this->pkpUser('staff');
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Bad Label', 'status' => 'rejected']);
+        $row->delete();
+
+        // Not registered under /staff at all ...
+        $this->actingAs($staff)->getJson('/staff/parser-keyword-proposals/deleted')->assertStatus(404);
+        // ... and the admin URLs turn staff away at the role middleware (the controller's
+        // ensureAdmin() is a second gate behind it).
+        $this->actingAs($staff)->getJson('/admin/parser-keyword-proposals/deleted')->assertRedirect(route('unauthorized'));
+        $this->actingAs($staff)->patchJson("/admin/parser-keyword-proposals/{$row->id}/restore")->assertRedirect(route('unauthorized'));
+        $this->actingAs($staff)->deleteJson("/admin/parser-keyword-proposals/{$row->id}/force")->assertRedirect(route('unauthorized'));
+
+        $this->assertSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+    }
+
+    // Admin lists deleted rows and restores one — it returns to the desk as Rejected.
+    // Called by: the admin's Deleted tab (GET deleted, PATCH restore).
+    public function test_admin_can_list_and_restore_deleted_rows(): void
+    {
+        $admin = $this->pkpUser('admin');
+        $row = ParserKeywordProposal::create(['field' => 'abc', 'label_phrase' => 'Old Label', 'status' => 'rejected']);
+        ParserKeywordProposal::create(['field' => 'abc', 'label_phrase' => 'Kept Label', 'status' => 'rejected']);
+        $row->delete();
+
+        $this->actingAs($admin)->getJson('/admin/parser-keyword-proposals/deleted')
+            ->assertOk()->assertJsonCount(1)->assertJsonPath('0.label_phrase', 'Old Label');
+
+        $this->actingAs($admin)->patchJson("/admin/parser-keyword-proposals/{$row->id}/restore")
+            ->assertOk()->assertJson(['success' => true]);
+
+        $this->assertNotSoftDeleted('parser_keyword_proposals', ['id' => $row->id]);
+        $this->assertSame('rejected', $row->fresh()->status);
+        // Restoring something that is not deleted is refused, not a silent no-op.
+        $this->actingAs($admin)->patchJson("/admin/parser-keyword-proposals/{$row->id}/restore")->assertStatus(422);
+    }
+
+    // Permanent delete is two-step (only trashed rows) and makes the loop forget the
+    // phrase: the next correction proposes it again from scratch.
+    // Called by: DELETE /admin/parser-keyword-proposals/{id}/force.
+    public function test_admin_permanent_delete_forgets_the_phrase(): void
+    {
+        $admin = $this->pkpUser('admin');
+        $live = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'On Desk', 'status' => 'rejected']);
+        $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$live->id}/force")->assertStatus(422);
+        $this->assertNotNull(ParserKeywordProposal::find($live->id), 'a row still on the desk cannot be destroyed in one click');
+
+        $row = ParserKeywordProposal::create(['field' => 'budget', 'label_phrase' => 'Bad Label', 'status' => 'rejected']);
+        $row->delete();
+
+        $this->actingAs($admin)->deleteJson("/admin/parser-keyword-proposals/{$row->id}/force")
+            ->assertOk()->assertJson(['success' => true]);
+        $this->assertDatabaseMissing('parser_keyword_proposals', ['id' => $row->id]);
+
+        $this->actingAs($admin)->postJson('/admin/parser-keyword-proposals/collect', [
+            'proposals' => [['field' => 'budget', 'label' => 'Bad Label']],
+        ])->assertCreated()->assertJson(['refusedRejected' => 0]);
+        $this->assertSame('proposed', ParserKeywordProposal::where('label_phrase', 'Bad Label')->first()->status);
+    }
 }

@@ -1,59 +1,78 @@
 <!-- === PARSER KEYWORD PROPOSALS MANAGEMENT MODAL (L2 review) === -->
-<div class="modal fade" id="manageParserKeywordsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header bg-light">
-                <h5 class="modal-title">
-                    <i class="bi bi-magic"></i> Review Learned Keywords
-                </h5>
+{{-- Styles: public/css/admin/projects/parser-keywords-modal.css (linked by both layouts).
+     2026-09-21 redesign: fixed-size dialog (only the list scrolls), the learned wording is
+     the headline of each row, and the source excerpt is hidden behind a toggle. --}}
+<div class="modal fade" id="manageParserKeywordsModal" tabindex="-1" aria-labelledby="pkpTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered pkp-dialog">
+        <div class="modal-content pkp-content">
+
+            <!-- Header -->
+            <div class="pkp-header">
+                <div class="pkp-header-icon"><i class="bi bi-magic"></i></div>
+                <div>
+                    <h5 class="pkp-title" id="pkpTitle">Review Learned Keywords</h5>
+                    <p class="pkp-subtitle">Wording the document reader picked up from your corrections and AI-assisted reads.</p>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p class="text-muted small">
-                    Wording suggestions harvested from project-form corrections and AI-assisted reads.
-                    <strong>Approve</strong> to let the reader use a wording,
-                    <strong>Reject</strong> to discard it. Learned wording only ever fills a box
-                    when the built-in labels miss — nothing approved here can override them.
-                </p>
 
-                <!-- Status filter tabs -->
-                <ul class="nav nav-pills gap-2 mb-3" id="pkpFilterTabs">
-                    <li class="nav-item">
-                        <button class="nav-link active btn-sm" data-pkp-filter="proposed" onclick="pkpSetFilter('proposed')">Proposed</button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link btn-sm" data-pkp-filter="live" onclick="pkpSetFilter('live')">Live</button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link btn-sm" data-pkp-filter="rejected" onclick="pkpSetFilter('rejected')">Rejected</button>
-                    </li>
-                    <li class="nav-item">
-                        <button class="nav-link btn-sm" data-pkp-filter="all" onclick="pkpSetFilter('all')">All</button>
-                    </li>
-                </ul>
+            <!-- Body: help line, toolbar, then the scrolling list -->
+            <div class="pkp-body">
+                <details class="pkp-help">
+                    <summary>
+                        <i class="bi bi-info-circle"></i>
+                        <span>Approve wording you want the reader to use.</span>
+                        <span class="pkp-help-link">How review works</span>
+                    </summary>
+                    <div class="pkp-help-text">
+                        Each suggestion is a <strong>wording</strong> (the label printed next to a value in a
+                        document) and the <strong>box</strong> it should fill on the project form.
+                        <strong>Approve</strong> lets the reader use that wording; <strong>Reject</strong>
+                        records that it should not be suggested again. Learned wording only ever fills a
+                        box when the built-in labels miss — nothing approved here can override them.
+                    </div>
+                </details>
 
-                <!-- Proposals table -->
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Suggested wording</th>
-                                <th>Box</th>
-                                <th title="How many corrections produced this wording">Seen</th>
-                                <th title="Where this wording was learned">Origin</th>
-                                <th>Status</th>
-                                <th class="text-end">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="parserKeywordsList">
-                            <!-- Proposals loaded here -->
-                        </tbody>
-                    </table>
+                <div class="pkp-toolbar">
+                    <!-- Status filter segments (counts filled by pkpRender) -->
+                    <div class="pkp-segments" id="pkpFilterTabs" role="tablist">
+                        <button type="button" class="pkp-segment active" data-pkp-filter="proposed" onclick="pkpSetFilter('proposed')">
+                            Proposed <span class="pkp-count" data-pkp-count="proposed">0</span>
+                        </button>
+                        <button type="button" class="pkp-segment" data-pkp-filter="live" onclick="pkpSetFilter('live')">
+                            Live <span class="pkp-count" data-pkp-count="live">0</span>
+                        </button>
+                        <button type="button" class="pkp-segment" data-pkp-filter="rejected" onclick="pkpSetFilter('rejected')">
+                            Rejected <span class="pkp-count" data-pkp-count="rejected">0</span>
+                        </button>
+                        <button type="button" class="pkp-segment" data-pkp-filter="all" onclick="pkpSetFilter('all')">
+                            All <span class="pkp-count" data-pkp-count="all">0</span>
+                        </button>
+                        {{-- Admin-only: deleted rejected wording (restore / permanent delete).
+                             The endpoints are admin-only on the server too; this only hides the tab. --}}
+                        @if(auth()->check() && auth()->user()->role === 'admin')
+                            <span class="pkp-segment-sep" aria-hidden="true"></span>
+                            <button type="button" class="pkp-segment pkp-segment-deleted" data-pkp-filter="deleted" onclick="pkpSetFilter('deleted')">
+                                <i class="bi bi-trash3"></i> Deleted <span class="pkp-count" data-pkp-count="deleted">0</span>
+                            </button>
+                        @endif
+                    </div>
+
+                    <div class="pkp-search">
+                        <i class="bi bi-search"></i>
+                        <input type="search" id="pkpSearch" placeholder="Search wording or box" autocomplete="off"
+                               oninput="pkpSetSearch(this.value)">
+                    </div>
                 </div>
 
+                <!-- The only scrolling region: suggestions render here -->
+                <div class="pkp-list" id="parserKeywordsList"></div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+
+            <!-- Footer -->
+            <div class="pkp-footer">
+                <span class="pkp-footer-note" id="pkpFooterNote"></span>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-3" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -62,11 +81,19 @@
 <script>
 // ===================================================
 // L2 REVIEW — PARSER KEYWORD PROPOSALS
-// Cloned from the budget-source manage modal. Differences: table (not list-group),
-// status filter tabs, approve/reject instead of add/edit, data-* delegation (no
-// inline string args, so quotes in wording cannot break buttons), staff+admin gates.
+// Cloned from the budget-source manage modal. Differences: card list, status filter
+// segments, approve/reject instead of add/edit, data-* delegation (no inline string
+// args, so quotes in wording cannot break buttons), staff+admin gates.
+// 2026-09-21: the list is fetched ONCE per open/refresh and the segments + search
+// filter it in the browser, so switching tabs is instant and every tab shows a count.
 // ===================================================
 let _pkpFilter = 'proposed';
+let _pkpSearch = '';
+let _pkpRows = [];
+let _pkpDeleted = [];
+let _pkpCore = null;
+// Admin sees the Deleted tab (2026-09-21). Display only — the server enforces it.
+const PKP_IS_ADMIN = @json(auth()->check() && auth()->user()->role === 'admin');
 
 // Base path for the review endpoints, role-aware (/admin or /staff).
 function pkpBase() {
@@ -119,108 +146,240 @@ function pkpFieldLabel(field) {
 }
 
 // ===================================================
-// FILTER TABS
+// FILTER SEGMENTS + SEARCH (client-side over _pkpRows)
 // ===================================================
 function pkpSetFilter(status) {
     _pkpFilter = status;
-    document.querySelectorAll('#pkpFilterTabs .nav-link').forEach(el => {
-        el.classList.toggle('active', el.getAttribute('data-pkp-filter') === status);
+    document.querySelectorAll('#pkpFilterTabs .pkp-segment').forEach(el => {
+        const on = el.getAttribute('data-pkp-filter') === status;
+        el.classList.toggle('active', on);
+        el.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    loadParserKeywordsForManagement();
+    pkpRender();
+}
+
+// Search box handler: filters by wording or box name as the reviewer types.
+function pkpSetSearch(value) {
+    _pkpSearch = String(value || '').trim().toLowerCase();
+    pkpRender();
 }
 
 // ===================================================
-// LOAD PROPOSALS FOR REVIEW
+// WORTH-APPROVING INDICATOR (2026-09-20). The desk showed a reviewer the phrase
+// and asked them to judge it, without telling them the one thing that decides
+// its worth: whether a BUILT-IN rule already covers that wording. On the test
+// document one approved phrase restated a hardcoded rule and changed nothing,
+// while the other found the only correct value — and they looked identical here.
+// The core is lazily imported because this desk lives in the LAYOUTS (every
+// page) while document-parser-core.js is only loaded by the create-project
+// modal. Best-effort: if it cannot load, the indicator simply stays quiet.
+// ===================================================
+async function pkpLoadCore() {
+    if (_pkpCore) return _pkpCore;
+    try {
+        if (window.documentParserCore) {
+            _pkpCore = window.documentParserCore;
+        } else {
+            const mod = await import('{{ asset('js/admin/projects/document-parser-core.js') }}');
+            _pkpCore = (mod && mod.default) ? mod.default : null;
+        }
+    } catch (e) { _pkpCore = null; }
+    return _pkpCore;
+}
+
+// Returns the worth chip HTML for one row, or '' when the core cannot tell.
+function pkpWorth(field, phrase) {
+    if (!_pkpCore || typeof _pkpCore.builtInCoversPhrase !== 'function' || !phrase) return '';
+    let covered = null;
+    try { covered = _pkpCore.builtInCoversPhrase(field, phrase); } catch (e) { return ''; }
+    if (covered === true) {
+        return '<div class="pkp-worth is-covered"><i class="bi bi-dash-circle"></i> '
+            + 'A built-in rule already reads this wording — approving it adds nothing.</div>';
+    }
+    if (covered === false) {
+        return '<div class="pkp-worth is-new"><i class="bi bi-stars"></i> '
+            + 'Finds a value no built-in rule does.</div>';
+    }
+    return ''; // null = cannot tell; say nothing rather than guess
+}
+
+// Excerpt with the learned wording highlighted (case-insensitive, escaped piecewise
+// so the <mark> is the only markup that ever reaches the DOM).
+function pkpHighlight(excerpt, phrase) {
+    const text = String(excerpt || '');
+    const needle = String(phrase || '');
+    const at = needle ? text.toLowerCase().indexOf(needle.toLowerCase()) : -1;
+    if (at === -1) return pkpEscapeHtml(text);
+    return pkpEscapeHtml(text.slice(0, at))
+        + '<mark>' + pkpEscapeHtml(text.slice(at, at + needle.length)) + '</mark>'
+        + pkpEscapeHtml(text.slice(at + needle.length));
+}
+
+// ===================================================
+// LOAD PROPOSALS FOR REVIEW (all statuses, once; pkpRender filters)
 // ===================================================
 async function loadParserKeywordsForManagement() {
+    const list = document.getElementById('parserKeywordsList');
+    if (list && _pkpRows.length === 0) {
+        list.innerHTML = pkpEmptyState('bi-hourglass-split', 'Loading suggestions…', '');
+    }
     try {
-        const url = _pkpFilter === 'all'
-            ? pkpBase() + '/parser-keyword-proposals/all'
-            : pkpBase() + '/parser-keyword-proposals/all?status=' + encodeURIComponent(_pkpFilter);
-        const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const [response, deletedResponse] = await Promise.all([
+            fetch(pkpBase() + '/parser-keyword-proposals/all', { headers: { 'Accept': 'application/json' } }),
+            // Deleted rows are an admin-only list, always under /admin.
+            PKP_IS_ADMIN ? fetch('/admin/parser-keyword-proposals/deleted', { headers: { 'Accept': 'application/json' } }) : null,
+            pkpLoadCore(),
+        ]);
         const rows = await response.json();
-
-        // WORTH-APPROVING INDICATOR (2026-09-20). The desk showed a reviewer the phrase
-        // and asked them to judge it, without telling them the one thing that decides
-        // its worth: whether a BUILT-IN rule already covers that wording. On the test
-        // document one approved phrase restated a hardcoded rule and changed nothing,
-        // while the other found the only correct value — and they looked identical here.
-        // The core is lazily imported because this desk lives in the LAYOUTS (every
-        // page) while document-parser-core.js is only loaded by the create-project
-        // modal. Best-effort: if it cannot load, the column simply stays quiet.
-        let pkpCore = null;
-        try {
-            if (window.documentParserCore) {
-                pkpCore = window.documentParserCore;
-            } else {
-                const mod = await import('{{ asset('js/admin/projects/document-parser-core.js') }}');
-                pkpCore = (mod && mod.default) ? mod.default : null;
-            }
-        } catch (e) { pkpCore = null; }
-        const pkpWorth = (field, phrase) => {
-            if (!pkpCore || typeof pkpCore.builtInCoversPhrase !== 'function' || !phrase) return '';
-            let covered = null;
-            try { covered = pkpCore.builtInCoversPhrase(field, phrase); } catch (e) { return ''; }
-            if (covered === true) {
-                return '<br><small class="text-muted"><i class="bi bi-dash-circle"></i> '
-                    + 'A built-in rule already reads this wording — approving it adds nothing.</small>';
-            }
-            if (covered === false) {
-                return '<br><small class="text-success"><i class="bi bi-stars"></i> '
-                    + 'Finds a value no built-in rule does.</small>';
-            }
-            return ''; // null = cannot tell; say nothing rather than guess
-        };
-
-        const tbody = document.getElementById('parserKeywordsList');
-        tbody.innerHTML = '';
-
-        if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-muted">No ' + pkpEscapeHtml(_pkpFilter) + ' suggestions yet. Corrections made while creating projects will appear here.</td></tr>';
-            return;
+        _pkpRows = Array.isArray(rows) ? rows : [];
+        let deleted = [];
+        if (deletedResponse && deletedResponse.ok) {
+            try { deleted = await deletedResponse.json(); } catch (e) { deleted = []; }
         }
-
-        let html = '';
-        rows.forEach((row) => {
-            const badge = row.status === 'live'
-                ? '<span class="badge bg-success">Live</span>'
-                : (row.status === 'rejected'
-                    // A rejection is a decision on the record, not an absence.
-                    ? '<span class="badge bg-secondary">Rejected</span>'
-                    : '<span class="badge bg-warning text-dark">Proposed</span>');
-            // AI-4 origin badge: AI-assisted rows carry AI-taught wording (Decision A3).
-            const origin = row.source === 'AI-assisted'
-                ? '<span class="badge bg-info text-dark" title="Kept from an AI-assisted read">AI-assisted</span>'
-                : '<span class="badge bg-secondary" title="Learned from a human correction">Correction</span>';
-            const label = row.label_phrase ? pkpEscapeHtml(row.label_phrase) : '<span class="text-muted">(field count only — no wording found)</span>';
-            const excerpt = row.excerpt
-                ? '<br><small class="text-muted" title="' + pkpEscapeHtml(row.excerpt) + '">' + pkpEscapeHtml(row.excerpt.substring(0, 90)) + (row.excerpt.length > 90 ? '…' : '') + '</small>'
-                : '';
-            // L-2: a row with no wording has nothing to approve — it is kept only as a
-            // count. Hiding the button says so before the server has to.
-            const approveBtn = (row.status === 'live' || !row.label_phrase) ? '' :
-                '<button class="btn btn-sm btn-outline-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording"><i class="bi bi-check-lg"></i> Approve</button>';
-            html += '<tr>' +
-                '<td>' + label + excerpt + pkpWorth(row.field, row.label_phrase) + '</td>' +
-                '<td>' + pkpEscapeHtml(pkpFieldLabel(row.field)) + '</td>' +
-                '<td><span class="badge bg-secondary">' + row.occurrences + '×</span></td>' +
-                '<td>' + origin + '</td>' +
-                '<td>' + badge + '</td>' +
-                '<td class="text-end"><div class="d-flex gap-2 justify-content-end">' + approveBtn +
-                '<button class="btn btn-sm btn-outline-danger" data-pkp-reject="' + row.id + '" title="Discard this suggestion"><i class="bi bi-trash"></i></button>' +
-                '</div></td>' +
-                '</tr>';
-        });
-
-        tbody.innerHTML = html;
+        _pkpDeleted = Array.isArray(deleted) ? deleted : [];
+        pkpRender();
     } catch (error) {
         console.error('Error loading keyword proposals:', error);
+        if (list) list.innerHTML = pkpEmptyState('bi-exclamation-triangle', 'Could not load suggestions', 'Close and reopen this window to try again.');
         showToast('Failed to load keyword suggestions', 'error');
     }
 }
 
+// Centred placeholder used for loading, empty and error states.
+function pkpEmptyState(icon, title, text) {
+    return '<div class="pkp-empty">'
+        + '<div class="pkp-empty-icon"><i class="bi ' + icon + '"></i></div>'
+        + '<div class="pkp-empty-title">' + pkpEscapeHtml(title) + '</div>'
+        + (text ? '<div class="pkp-empty-text">' + pkpEscapeHtml(text) + '</div>' : '')
+        + '</div>';
+}
+
 // ===================================================
-// APPROVE / REJECT (delegated — IDs travel via data-*, never string args)
+// RENDER — counts on every segment, then the filtered card list.
+// Called by: loadParserKeywordsForManagement(), pkpSetFilter(), pkpSetSearch().
+// ===================================================
+function pkpRender() {
+    const list = document.getElementById('parserKeywordsList');
+    if (!list) return;
+
+    // Segment counts always describe the whole set, not the search result.
+    // "All" means everything ON THE DESK — deleted rows live only in their own tab.
+    const counts = { proposed: 0, live: 0, rejected: 0, all: _pkpRows.length, deleted: _pkpDeleted.length };
+    _pkpRows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    document.querySelectorAll('#manageParserKeywordsModal [data-pkp-count]').forEach(el => {
+        el.textContent = counts[el.getAttribute('data-pkp-count')] || 0;
+    });
+
+    const inStatus = _pkpFilter === 'deleted'
+        ? _pkpDeleted.map(r => Object.assign({}, r, { _deleted: true }))
+        : (_pkpFilter === 'all' ? _pkpRows : _pkpRows.filter(r => r.status === _pkpFilter));
+    const shown = !_pkpSearch ? inStatus : inStatus.filter(r =>
+        String(r.label_phrase || '').toLowerCase().includes(_pkpSearch)
+        || pkpFieldLabel(r.field).toLowerCase().includes(_pkpSearch));
+
+    const note = document.getElementById('pkpFooterNote');
+    if (note) {
+        note.textContent = inStatus.length === 0 ? ''
+            : (_pkpSearch ? shown.length + ' of ' + inStatus.length + ' shown' : inStatus.length + (inStatus.length === 1 ? ' suggestion' : ' suggestions'));
+    }
+
+    if (inStatus.length === 0) {
+        const empty = {
+            proposed: ['bi-inbox', 'Nothing waiting for review', 'Corrections made while creating projects will appear here as suggestions.'],
+            live: ['bi-check2-circle', 'No approved wording yet', 'Approved suggestions move here and are used by the document reader.'],
+            rejected: ['bi-x-circle', 'Nothing rejected', 'Rejected suggestions are kept here so they are not suggested again.'],
+            deleted: ['bi-trash3', 'Nothing deleted', 'Rejected wording that someone deleted appears here. Restore it, or delete it permanently.'],
+            all: ['bi-inbox', 'No suggestions yet', 'Corrections made while creating projects will appear here as suggestions.'],
+        }[_pkpFilter] || ['bi-inbox', 'No suggestions', ''];
+        list.innerHTML = pkpEmptyState(empty[0], empty[1], empty[2]);
+        return;
+    }
+    if (shown.length === 0) {
+        list.innerHTML = pkpEmptyState('bi-search', 'No matches', 'No suggestion in this tab matches “' + _pkpSearch + '”.');
+        return;
+    }
+
+    list.innerHTML = shown.map(pkpRowHtml).join('');
+}
+
+// One suggestion card. The WORDING is the headline; the box is a chip beside the
+// status; the source excerpt stays hidden until "Show where it was found".
+function pkpRowHtml(row) {
+    // A deleted row is shown as its own state (admin's Deleted tab only).
+    const status = row._deleted ? 'deleted'
+        : (['live', 'rejected'].includes(row.status) ? row.status : 'proposed');
+    const statusLabel = { proposed: 'Proposed', live: 'Live', rejected: 'Rejected', deleted: 'Deleted' }[status];
+
+    // AI-4 origin: AI-assisted rows carry AI-taught wording (Decision A3).
+    const origin = row.source === 'AI-assisted'
+        ? '<span class="pkp-origin-ai" title="Kept from an AI-assisted read"><i class="bi bi-robot"></i> From an AI-assisted read</span>'
+        : '<span title="Learned from a human correction"><i class="bi bi-pencil"></i> From a correction</span>';
+
+    const phrase = row.label_phrase
+        ? '<div class="pkp-phrase"><span class="pkp-q">“</span>' + pkpEscapeHtml(row.label_phrase) + '<span class="pkp-q">”</span></div>'
+        : '<div class="pkp-phrase is-empty">No wording found — kept as a count only</div>';
+
+    const context = row.excerpt
+        ? '<button type="button" class="pkp-context-toggle" data-pkp-context="' + row.id + '" aria-expanded="false">'
+            + '<i class="bi bi-chevron-right"></i> <span>Show where it was found</span></button>'
+          + '<div class="pkp-context" id="pkpContext' + row.id + '" hidden>' + pkpHighlight(row.excerpt, row.label_phrase) + '</div>'
+        : '';
+
+    // L-2: a row with no wording has nothing to approve — it is kept only as a
+    // count. Hiding the button says so before the server has to. Reject is hidden
+    // on rejected rows: it only sets status='rejected', so there it would do nothing.
+    // Deleted rows get only Restore / Delete permanently (admin).
+    const approveBtn = (status === 'live' || status === 'deleted' || !row.label_phrase) ? '' :
+        '<button class="btn btn-sm btn-success" data-pkp-approve="' + row.id + '" title="Let the reader use this wording">'
+        + '<i class="bi bi-check-lg"></i> ' + (status === 'rejected' ? 'Approve instead' : 'Approve') + '</button>';
+    const rejectBtn = (status === 'rejected' || status === 'deleted') ? '' :
+        '<button class="btn btn-sm btn-outline-danger" data-pkp-reject="' + row.id + '" title="Stop suggesting this wording">'
+        + '<i class="bi bi-x-lg"></i> Reject</button>';
+    // Rejected rows can be tidied off the desk; the refusal still holds (server: withTrashed).
+    const trashBtn = status !== 'rejected' ? '' :
+        '<button class="btn btn-sm btn-outline-secondary" data-pkp-trash="' + row.id + '" title="Remove from the desk — it stays rejected">'
+        + '<i class="bi bi-trash3"></i> Delete</button>';
+    const restoreBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-primary" data-pkp-restore="' + row.id + '" title="Put it back in the Rejected tab">'
+        + '<i class="bi bi-arrow-counterclockwise"></i> Restore</button>';
+    const forceBtn = status !== 'deleted' ? '' :
+        '<button class="btn btn-sm btn-outline-danger" data-pkp-force="' + row.id + '" title="Erase it for good">'
+        + '<i class="bi bi-trash3-fill"></i> Delete permanently</button>';
+    const buttons = approveBtn + rejectBtn + trashBtn + restoreBtn + forceBtn;
+
+    // When it was deleted, for the Deleted tab's meta line.
+    let deletedOn = '';
+    if (status === 'deleted' && row.deleted_at) {
+        const d = new Date(row.deleted_at);
+        if (!isNaN(d)) {
+            deletedOn = '<span title="When it was deleted"><i class="bi bi-clock-history"></i> Deleted '
+                + pkpEscapeHtml(d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })) + '</span>';
+        }
+    }
+
+    const seen = parseInt(row.occurrences, 10) || 0;
+
+    return '<div class="pkp-item is-' + status + '">'
+        + '<div class="pkp-item-main">'
+        +   '<div class="pkp-item-top">'
+        +     '<span class="pkp-field" title="The project-form box this wording fills"><span class="pkp-field-lead">Fills</span> ' + pkpEscapeHtml(pkpFieldLabel(row.field)) + '</span>'
+        +     '<span class="pkp-status is-' + status + '">' + statusLabel + '</span>'
+        +   '</div>'
+        +   phrase
+        +   '<div class="pkp-meta">'
+        +     '<span title="How many corrections produced this wording"><i class="bi bi-arrow-repeat"></i> Seen ' + seen + (seen === 1 ? ' time' : ' times') + '</span>'
+        +     origin
+        +     deletedOn
+        +   '</div>'
+        +   (status === 'deleted' ? '' : pkpWorth(row.field, row.label_phrase))
+        +   (context ? '<div>' + context + '</div>' : '')
+        + '</div>'
+        + (buttons ? '<div class="pkp-actions">' + buttons + '</div>' : '')
+        + '</div>';
+}
+
+// ===================================================
+// APPROVE / REJECT / CONTEXT TOGGLE (delegated — IDs travel via data-*, never string args)
 // ===================================================
 document.addEventListener('click', function (e) {
     const approveBtn = e.target.closest ? e.target.closest('[data-pkp-approve]') : null;
@@ -231,6 +390,34 @@ document.addEventListener('click', function (e) {
     const rejectBtn = e.target.closest ? e.target.closest('[data-pkp-reject]') : null;
     if (rejectBtn) {
         pkpRejectProposal(rejectBtn.getAttribute('data-pkp-reject'));
+        return;
+    }
+    // Deleted-wording actions (2026-09-21).
+    const trashBtn = e.target.closest ? e.target.closest('[data-pkp-trash]') : null;
+    if (trashBtn) {
+        pkpTrashProposal(trashBtn.getAttribute('data-pkp-trash'));
+        return;
+    }
+    const restoreBtn = e.target.closest ? e.target.closest('[data-pkp-restore]') : null;
+    if (restoreBtn) {
+        pkpRestoreProposal(restoreBtn.getAttribute('data-pkp-restore'));
+        return;
+    }
+    const forceBtn = e.target.closest ? e.target.closest('[data-pkp-force]') : null;
+    if (forceBtn) {
+        pkpForceDeleteProposal(forceBtn.getAttribute('data-pkp-force'));
+        return;
+    }
+    // Show/hide the source excerpt for one suggestion.
+    const ctxBtn = e.target.closest ? e.target.closest('[data-pkp-context]') : null;
+    if (ctxBtn) {
+        const box = document.getElementById('pkpContext' + ctxBtn.getAttribute('data-pkp-context'));
+        if (!box) return;
+        const open = box.hasAttribute('hidden');
+        box.toggleAttribute('hidden', !open);
+        ctxBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        ctxBtn.querySelector('i').className = 'bi ' + (open ? 'bi-chevron-down' : 'bi-chevron-right');
+        ctxBtn.querySelector('span').textContent = open ? 'Hide where it was found' : 'Show where it was found';
     }
 });
 
@@ -269,7 +456,7 @@ async function pkpApproveProposal(id) {
 function pkpRejectProposal(id) {
     showDeleteConfirmation(
         'Reject Suggestion',
-        'Discard this learned wording suggestion?<br><small style="color:#6b7280;">Future corrections can suggest it again.</small>',
+        'Reject this learned wording?<br><small style="color:#6b7280;">It moves to the Rejected tab and will not be suggested again. You can still approve it from there.</small>',
         async () => {
             try {
                 const response = await fetch(pkpBase() + '/parser-keyword-proposals/' + encodeURIComponent(id), {
@@ -300,6 +487,58 @@ function pkpRejectProposal(id) {
                 showToast('Network error — failed to reject suggestion', 'error');
             }
         }
+    );
+}
+
+// ===================================================
+// DELETE / RESTORE / PERMANENT DELETE (2026-09-21)
+// Delete: admin + staff, rejected rows only; the wording STAYS refused.
+// Restore + permanent delete: admin only (server-enforced; /admin URLs).
+// ===================================================
+
+// Shared request for the three actions: toast the outcome, then reload the desk.
+// None of them changes the LIVE word set (only rejected rows are involved), so
+// unlike approve/reject there is no learned-keyword cache to bust.
+async function pkpSend(method, url, okMessage, failMessage) {
+    try {
+        const response = await fetch(url, { method: method, headers: pkpHeaders() });
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) {
+            showToast(pkpExtractErrorMessage(data, failMessage), 'error');
+            return;
+        }
+        showToast(okMessage, 'success');
+        loadParserKeywordsForManagement();
+    } catch (error) {
+        console.error(failMessage, error);
+        showToast('Network error — ' + failMessage.toLowerCase(), 'error');
+    }
+}
+
+// Soft-delete a rejected row after confirmation.
+function pkpTrashProposal(id) {
+    showDeleteConfirmation(
+        'Delete Rejected Wording',
+        'Remove this rejected wording from the list?<br><small style="color:#6b7280;">It stays rejected and will not be suggested again. An admin can restore it.</small>',
+        () => pkpSend('DELETE', pkpBase() + '/parser-keyword-proposals/' + encodeURIComponent(id) + '/trash',
+            'Rejected wording deleted', 'Failed to delete wording')
+    );
+}
+
+// Put a deleted row back on the desk (it returns to Rejected). No confirm: it is undoable.
+function pkpRestoreProposal(id) {
+    pkpSend('PATCH', '/admin/parser-keyword-proposals/' + encodeURIComponent(id) + '/restore',
+        'Restored to Rejected', 'Failed to restore wording');
+}
+
+// Erase a deleted row for good, after a confirmation that says what is lost.
+function pkpForceDeleteProposal(id) {
+    showDeleteConfirmation(
+        'Delete Permanently',
+        'Permanently delete this wording?<br><small style="color:#6b7280;">This cannot be undone. The system forgets it was ever rejected, so a future correction may suggest it again.</small>',
+        () => pkpSend('DELETE', '/admin/parser-keyword-proposals/' + encodeURIComponent(id) + '/force',
+            'Wording permanently deleted', 'Failed to delete wording permanently')
     );
 }
 

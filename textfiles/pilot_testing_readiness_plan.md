@@ -566,6 +566,81 @@
       Branch phase-31-parser-ai-log-tagging; detail in ai_slice_selection_plan §10.4.
     · User's stated next order of work: UI improvements (front-end design) of the
       parser keyword management modal. P6 (the pilot package) is "not yet".
+    · 🔄 KEYWORD MODAL REDESIGN BUILT (user order, same day) on
+      `phase-32-keyword-modal-ui` — browser check OWED (user).
+      THE ASK: fixed size (it grew/shrank with the row count), a better overall
+      layout, and make the actual keyword clear or hide the excerpt.
+      WHAT CHANGED (resources/views/admin/_manage_parser_keywords_modal.blade.php +
+      NEW public/css/admin/projects/parser-keywords-modal.css, linked mtime-versioned
+      in app.blade.php and stafflayouts.blade.php):
+        - FIXED HEIGHT: the dialog is min(680px, viewport − 3.5rem), centred; only the
+          list scrolls; empty/loading/error states sit centred in the same space.
+        - Table → card list. The learned WORDING is each card's headline (large,
+          quoted); the box is a "Fills <Box>" chip beside the status pill; seen-count
+          and origin on one quiet meta line; the worth-approving verdict is a chip.
+        - THE EXCERPT IS HIDDEN by default behind "Show where it was found"; opened,
+          it shows the full excerpt with the wording highlighted (<mark>, escaped
+          piecewise — the only markup that reaches the DOM).
+        - Tabs → segmented control WITH COUNTS; a search box (wording or box name);
+          footer says "N suggestions" / "x of N shown". The long explanation is one
+          line + an expandable "How review works".
+      BEHAVIOUR CHANGES (small, deliberate):
+        - The list is fetched ONCE (GET …/parser-keyword-proposals/all, unfiltered)
+          and the tabs filter it in the browser — instant tab switches, and counts
+          for every tab. The endpoint and its ?status= support are unchanged.
+        - Reject is a labelled button (was a trash icon — it has not deleted since
+          2026-09-20) and is HIDDEN on rejected rows, where it was a no-op (destroy()
+          only sets status='rejected'). Approve on a rejected row reads "Approve
+          instead". The confirm text now says the row moves to Rejected.
+        - Approve/reject/cache-busting logic is byte-for-byte the old code.
+      VERIFIED: node --check on the script; view:cache compiles; ParserKeywordProposal
+        + UiPolishLayout + FactoryVerification tests 41/41; a static harness (real
+        markup/CSS/JS, stubbed fetch, Bootstrap 5.3.0 as the layouts load it)
+        screenshotted in headless Edge — Proposed with an open excerpt, Live, an
+        empty Rejected tab (same modal size in all three), and phone width.
+      ⬜ BROWSER CHECK OWED (user): open it from admin AND staff; approve one, reject
+        one (the counts move and the row changes tab); open an excerpt; search.
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("confirmed").
+    · 🔄 DELETING REJECTED WORDING BUILT (user order, same day) on
+      `phase-33-keyword-soft-delete` (off phase-32) — browser check OWED (user).
+      THE ASK: let users delete rejected keywords (soft delete), plus an admin tab
+      for deleted keywords with restore / permanent delete.
+      ⚠ THE TRAP, and how it is avoided: collect() looked rows up WITHOUT trashed
+        ones, so a soft-deleted rejection would be invisible and the next correction
+        would create a NEW proposed row — the 2026-09-20 "no memory of the verdict"
+        defect, reintroduced by tidying. collect() now uses withTrashed() and treats
+        a trashed row as refused. SEMANTICS:
+          Delete (admin + staff) — REJECTED rows only (422 otherwise); leaves the
+            desk, STAYS refused.
+          Restore (admin) — back to the desk as Rejected; only trashed rows (422).
+          Delete permanently (admin) — only trashed rows (422, so no one click
+            erases a row still on the desk); the loop FORGETS the phrase, and a
+            future correction may propose it again.
+      SERVER: ParserKeywordProposalController trash / getDeleted / restore /
+        forceDestroy + ensureAdmin(); routes — staff: DELETE …/{id}/trash; admin:
+        …/{id}/trash, GET …/deleted, PATCH …/{id}/restore and DELETE …/{id}/force
+        (both ->withTrashed()). Staff on the admin URLs are turned away by the role
+        middleware; ensureAdmin() is the second gate. Each action writes an
+        activity-log entry.
+      UI: Rejected rows get "Delete"; an admin-only "Deleted" tab (rendered by Blade
+        from the user's role, fetched from /admin/…/deleted) shows deleted rows with
+        "Restore" and "Delete permanently", the deletion date, a dashed red card.
+        "All" still means everything ON THE DESK — deleted rows only in their tab.
+        Confirm dialogs say what each delete keeps and what it loses.
+      VERIFIED: ParserKeywordProposalTest +6 (19/19); three mutations (collect
+        without withTrashed, the rejected-only guard, the trashed-only force guard)
+        each turn a test red; route:list shows the 5 routes; node --check; headless
+        Edge screenshots of the Rejected tab, the Deleted tab and phone width.
+        PHP 1244 passed / 0 failed.
+      ⬜ BROWSER CHECK OWED (user): as STAFF — delete a rejected row (no Deleted tab
+        visible). As ADMIN — the row is in Deleted; restore it (back in Rejected);
+        delete it again, then delete permanently (gone from every tab).
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("confirmed the browser check").
+    · MERGED 2026-09-21 on the user's order: phase-31-parser-ai-log-tagging,
+      phase-32-keyword-modal-ui and phase-33-keyword-soft-delete → develop.
+      The keyword desk work is CLOSED. Next is the user's call — P6 (the pilot
+      package) remains "not yet"; F1/F2/F3 and the calendar consent (above) are
+      still the open pilot blockers.
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
