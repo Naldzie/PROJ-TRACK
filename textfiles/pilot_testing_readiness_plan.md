@@ -631,6 +631,12 @@
       ⬜ BROWSER CHECK OWED (user): as STAFF — delete a rejected row (no Deleted tab
         visible). As ADMIN — the row is in Deleted; restore it (back in Rejected);
         delete it again, then delete permanently (gone from every tab).
+      ✅ BROWSER-CONFIRMED by the user 2026-09-21 ("confirmed the browser check").
+    · MERGED 2026-09-21 on the user's order: phase-31-parser-ai-log-tagging,
+      phase-32-keyword-modal-ui and phase-33-keyword-soft-delete → develop.
+      The keyword desk work is CLOSED. Next is the user's call — P6 (the pilot
+      package) remains "not yet"; F1/F2/F3 and the calendar consent (above) are
+      still the open pilot blockers.
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The
