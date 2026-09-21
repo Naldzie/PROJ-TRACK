@@ -562,6 +562,40 @@
             admin desktop" is no longer optional for calendar correctness.
     · User's stated next order of work: UI improvements (front-end design) of the
       parser keyword management modal. P6 (the pilot package) is "not yet".
+    · 🔄 KEYWORD MODAL REDESIGN BUILT (user order, same day) on
+      `phase-32-keyword-modal-ui` — browser check OWED (user).
+      THE ASK: fixed size (it grew/shrank with the row count), a better overall
+      layout, and make the actual keyword clear or hide the excerpt.
+      WHAT CHANGED (resources/views/admin/_manage_parser_keywords_modal.blade.php +
+      NEW public/css/admin/projects/parser-keywords-modal.css, linked mtime-versioned
+      in app.blade.php and stafflayouts.blade.php):
+        - FIXED HEIGHT: the dialog is min(680px, viewport − 3.5rem), centred; only the
+          list scrolls; empty/loading/error states sit centred in the same space.
+        - Table → card list. The learned WORDING is each card's headline (large,
+          quoted); the box is a "Fills <Box>" chip beside the status pill; seen-count
+          and origin on one quiet meta line; the worth-approving verdict is a chip.
+        - THE EXCERPT IS HIDDEN by default behind "Show where it was found"; opened,
+          it shows the full excerpt with the wording highlighted (<mark>, escaped
+          piecewise — the only markup that reaches the DOM).
+        - Tabs → segmented control WITH COUNTS; a search box (wording or box name);
+          footer says "N suggestions" / "x of N shown". The long explanation is one
+          line + an expandable "How review works".
+      BEHAVIOUR CHANGES (small, deliberate):
+        - The list is fetched ONCE (GET …/parser-keyword-proposals/all, unfiltered)
+          and the tabs filter it in the browser — instant tab switches, and counts
+          for every tab. The endpoint and its ?status= support are unchanged.
+        - Reject is a labelled button (was a trash icon — it has not deleted since
+          2026-09-20) and is HIDDEN on rejected rows, where it was a no-op (destroy()
+          only sets status='rejected'). Approve on a rejected row reads "Approve
+          instead". The confirm text now says the row moves to Rejected.
+        - Approve/reject/cache-busting logic is byte-for-byte the old code.
+      VERIFIED: node --check on the script; view:cache compiles; ParserKeywordProposal
+        + UiPolishLayout + FactoryVerification tests 41/41; a static harness (real
+        markup/CSS/JS, stubbed fetch, Bootstrap 5.3.0 as the layouts load it)
+        screenshotted in headless Edge — Proposed with an open excerpt, Live, an
+        empty Rejected tab (same modal size in all three), and phone width.
+      ⬜ BROWSER CHECK OWED (user): open it from admin AND staff; approve one, reject
+        one (the counts move and the row changes tab); open an excerpt; search.
 
   2026-09-20 — THE PARSER SIDE ADVANCED A LONG WAY; THE ENVIRONMENT SIDE DID NOT MOVE.
     Everything this session happened in the normal-doc parser (restudy §§12-24). The

@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="{{ asset('css/admin/projects/projects.css') }}">
     {{-- Versioned by mtime: this file changes with the auto-fill preview layout, and an unversioned stylesheet is the documented "browser serves a ghost" incident. --}}
     <link rel="stylesheet" href="{{ asset('css/admin/projects/_create_project_modal.css') }}?v={{ filemtime(public_path('css/admin/projects/_create_project_modal.css')) }}">
+    {{-- Review Learned Keywords modal (included by this layout); mtime-versioned like the line above. --}}
+    <link rel="stylesheet" href="{{ asset('css/admin/projects/parser-keywords-modal.css') }}?v={{ filemtime(public_path('css/admin/projects/parser-keywords-modal.css')) }}">
 
     {{-- PRELOADER --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
