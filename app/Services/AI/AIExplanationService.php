@@ -6,6 +6,7 @@ use App\Models\PredictionHistory;
 use App\Models\Project;
 use App\Models\AiSolution;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 /**
  * ============================================================================
@@ -36,18 +37,43 @@ use Illuminate\Support\Facades\Http;
  * -------
  * ProjectController::regenerateAnalysis() (Phase 6.3)
  *
+ * One Call, Two Outputs (2026-09-21)
+ * ----------------------------------
+ * The same Gemini call also writes the recommendations, as a JSON block
+ * between [RECOMMENDATIONS_JSON] markers appended after the 5 sections.
+ * The block is cut out before saving: analysis_text keeps its old format,
+ * recommendations go to their own column. No usable block → rule-based
+ * recommendations. Plan: textfiles/ai_analysis_recommendation_merge_plan.md
+ *
  * Depends On
  * ----------
- * AIPredictionService — provides the regression prediction data used to
- *                       build the AI prompt
- * AiSolution model    — persists generated analyses
- * config/services.php — Gemini API key and model name
+ * AIPredictionService     — provides the regression prediction data used to
+ *                           build the AI prompt
+ * AIRecommendationService — recommendation context, JSON shape/rules, and
+ *                           the parse/validate step for the block
+ * RecommendationEngine    — guards + rule-based fallback recommendations
+ * AiSolution model        — persists generated analyses
+ * config/services.php     — Gemini API key and model name
  */
 class AIExplanationService
 {
     private AIPredictionService $aiPredictionService;
 
-    private ?RecommendationEngine $recommendationEngine;
+    private RecommendationEngine $recommendationEngine;
+
+    private AIRecommendationService $aiRecommendationService;
+
+    /**
+     * Opening marker of the recommendations block in the combined answer.
+     * Deliberately NOT "[SECTION:…" — AiReportParser and the tab's JS twin
+     * read only [SECTION:<known key>], so even a leaked block never renders.
+     */
+    public const RECS_OPEN = '[RECOMMENDATIONS_JSON]';
+
+    /**
+     * Closing marker of the recommendations block.
+     */
+    public const RECS_CLOSE = '[/RECOMMENDATIONS_JSON]';
 
     /**
      * ------------------------------------------------------------------------
@@ -55,16 +81,21 @@ class AIExplanationService
      * ------------------------------------------------------------------------
      *
      * Inject AIPredictionService to retrieve regression data for the prompt.
-     * Inject RecommendationEngine to generate and persist recommendations.
+     * Inject RecommendationEngine for the guards + rule-based fallback.
+     * Inject AIRecommendationService for the recommendation context blocks
+     * and the JSON parse/validate step of the combined answer.
      *
-     * @param  RecommendationEngine|null  $recommendationEngine  Optional; auto-resolved by container
+     * @param  RecommendationEngine|null     $recommendationEngine     Optional; auto-resolved by container
+     * @param  AIRecommendationService|null  $aiRecommendationService  Optional; auto-resolved by container
      */
     public function __construct(
         AIPredictionService $aiPredictionService,
-        ?RecommendationEngine $recommendationEngine = null
+        ?RecommendationEngine $recommendationEngine = null,
+        ?AIRecommendationService $aiRecommendationService = null
     ) {
         $this->aiPredictionService = $aiPredictionService;
         $this->recommendationEngine = $recommendationEngine ?? new RecommendationEngine();
+        $this->aiRecommendationService = $aiRecommendationService ?? new AIRecommendationService();
     }
 
     /**
@@ -93,13 +124,23 @@ class AIExplanationService
      * Workflow
      * --------
      * 1. Run the prediction pipeline via AIPredictionService
-     * 2. Build a structured prompt with project context + regression data
-     * 3. Call the Gemini API
-     * 4. On success → save to ai_solutions table, return the text
-     * 5. On failure → return empty string (triggers static fallback)
+     * 2. Build the prompt: the analysis prompt (verbatim) plus, when the
+     *    engine would use them, an appended recommendations request
+     * 3. Call the Gemini API ONCE
+     * 4. Split the answer: analysis text + [RECOMMENDATIONS_JSON] block
+     * 5. Recommendations: the block's validated recs, else rule-based
+     * 6. On success → save to ai_solutions table, return the analysis text
+     * 7. On failure → return empty string (triggers static fallback)
      *
-     * Called by: ProjectController::regenerateAnalysis() (Phase 6.3)
-     * Uses: AIPredictionService, buildPrompt(), callGemini(), saveAnalysis()
+     * Until 2026-09-21 this made TWO Gemini calls (analysis, then
+     * RecommendationEngine::generate() for recs) that never saw each other's
+     * answer, so Mitigation and the recommendations could repeat or
+     * contradict each other. See ai_analysis_recommendation_merge_plan.md.
+     *
+     * Called by: ProjectController::regenerateAnalysis() (Phase 6.3),
+     *            GenerateMonthlyAiReports
+     * Uses: AIPredictionService, RecommendationEngine, AIRecommendationService,
+     *       buildPrompt(), callGemini(), splitCombinedAnswer(), saveAnalysis()
      */
     public function generate(Project $project): string
     {
@@ -110,15 +151,43 @@ class AIExplanationService
             return '';
         }
 
-        $prompt = $this->buildPrompt($project, $prediction);
-        $text = $this->callGemini($prompt);
+        // Ask for recommendations in the same call only when the engine would
+        // actually use them (not Completed, enough observations). Otherwise
+        // the prompt is exactly the original analysis prompt.
+        $withRecommendations = $this->recommendationEngine->acceptsAiRecommendations($project, $prediction);
 
-        if (empty($text)) {
+        $prompt = $this->buildPrompt($project, $prediction, $withRecommendations);
+        $raw = $this->callGemini($prompt, $project->id);
+
+        if (empty($raw)) {
             return '';
         }
 
-        // Generate recommendations alongside analysis (Phase 10 enhancement)
-        $recommendations = $this->recommendationEngine->generate($project, $prediction);
+        // ONE answer, TWO outputs: cut the recommendations block out so
+        // analysis_text is stored in exactly the format it always was.
+        $split = $this->splitCombinedAnswer($raw);
+        $text = $split['analysis'];
+
+        if ($text === '') {
+            return '';
+        }
+
+        // Recommendations from the same answer; none usable → rule-based
+        // engine, never a second Gemini call (decision D2).
+        $aiRecs = ($withRecommendations && $split['recommendations'] !== null)
+            ? $this->aiRecommendationService->parseRecommendations($split['recommendations'])
+            : [];
+
+        $recommendations = $this->recommendationEngine->generateFromAiCandidates($project, $prediction, $aiRecs);
+
+        Log::info('AI analysis: recommendations resolved', [
+            'project_id'    => $project->id,
+            'asked'         => $withRecommendations,
+            'block_found'   => $split['recommendations'] !== null,
+            'ai_recs'       => count($aiRecs),
+            'source'        => !empty($aiRecs) ? 'ai' : 'rules',
+            'saved_count'   => count($recommendations),
+        ]);
 
         $this->saveAnalysis($project, $text, $prediction, $recommendations);
 
@@ -133,9 +202,15 @@ class AIExplanationService
      * Constructs a structured prompt with project context and regression data
      * for the AI to analyze.
      *
+     * The analysis prompt below is kept VERBATIM (user rule, 2026-09-21: "do
+     * not change or remove the original prompt"). With $withRecommendations
+     * the recommendations request is APPENDED after it — see
+     * buildRecommendationsAppendix(). A test pins that the prompt without the
+     * appendix is a byte-exact prefix of the prompt with it.
+     *
      * Uses: Project model, AIPredictionService output
      */
-    private function buildPrompt(Project $project, array $prediction): string
+    private function buildPrompt(Project $project, array $prediction, bool $withRecommendations = false): string
     {
         $currentState   = $prediction['current_state'];
         $nextPrediction = $prediction['next_prediction'];
@@ -226,7 +301,7 @@ class AIExplanationService
             $issuesText = "\nRECENT ISSUES:\n{$issueLines}";
         }
 
-        return "You are a project management analyst. Given the following project data, write a structured analysis in exactly 5 sections. Use professional, neutral tone suitable for a contractor audience. Cover factual observations from the data.
+        $prompt = "You are a project management analyst. Given the following project data, write a structured analysis in exactly 5 sections. Use professional, neutral tone suitable for a contractor audience. Cover factual observations from the data.
 
 PROJECT OVERVIEW:
 - Title: {$project->title}
@@ -263,6 +338,118 @@ OUTPUT FORMAT — Use exactly these 5 section markers (wrap each section title i
 [1 paragraph: Clear bottom-line assessment of project health and outlook for the contractor]
 
 Do NOT mention that you are an AI or that this is an AI-generated analysis. Write as a human project analyst reporting to the contractor. Avoid management jargon - write directly for the contractor who is executing the work.";
+
+        if (!$withRecommendations) {
+            return $prompt;
+        }
+
+        return $prompt . $this->buildRecommendationsAppendix($project, $prediction);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Build Recommendations Appendix (combined prompt)
+     * ------------------------------------------------------------------------
+     *
+     * Appended AFTER the unchanged analysis prompt so one Gemini call also
+     * writes the recommendations (merge plan step 3):
+     *   · the data only the recommendation prompt had (F-3), from
+     *     AIRecommendationService::buildRecommendationContext()
+     *   · the recommendation JSON shape + RULES, shared constants of
+     *     AIRecommendationService (copied by reference, not by hand)
+     *   · the one rule that is the point of combining: the recommendations
+     *     follow from this answer's own Possible Risk + Mitigation (D5)
+     *   · where the block goes: between RECS_OPEN / RECS_CLOSE, after the
+     *     5 sections — cut out again by splitCombinedAnswer() before saving
+     *
+     * Called by: buildPrompt()
+     */
+    private function buildRecommendationsAppendix(Project $project, array $prediction): string
+    {
+        $context = $this->aiRecommendationService->buildRecommendationContext($project, $prediction);
+        $jsonShape = AIRecommendationService::RECOMMENDATION_JSON_SHAPE;
+        $rules = AIRecommendationService::RECOMMENDATION_RULES;
+        $open = self::RECS_OPEN;
+        $close = self::RECS_CLOSE;
+
+        return "
+
+RECOMMENDATIONS — After the 5 sections, also generate 3-6 prioritized, actionable recommendations. Each recommendation MUST reference specific data from the project. Do NOT generate generic advice.
+
+{$context}
+
+RECOMMENDATIONS OUTPUT FORMAT — After the [/SECTION] that closes AI Comment, write {$open} on its own line, then ONLY a valid JSON array (no markdown, no explanation), then {$close} on its own line:
+{$open}
+{$jsonShape}
+{$close}
+
+RECOMMENDATIONS RULES:
+{$rules}
+- The recommendations must be consistent with your Possible Risk and Mitigation sections — each should turn a risk or mitigation point into a concrete action. Do not contradict or merely repeat those sections.
+- Put nothing but the JSON array between {$open} and {$close}, and write nothing after {$close}";
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Split Combined Answer
+     * ------------------------------------------------------------------------
+     *
+     * Separates the one Gemini answer into the analysis text and the raw
+     * recommendations block.
+     *
+     * analysis        — the answer with the block (and any code fence the
+     *                   model wrapped it in) CUT OUT, trimmed. This is what is
+     *                   stored as analysis_text, so it must never carry the
+     *                   block: the Project Summary PDF prints analysis_text
+     *                   RAW and the email draft copies it.
+     * recommendations — the text between the markers, or null when there is
+     *                   no block. An opening marker with no closing one (a
+     *                   cut-off answer) takes everything after it.
+     *
+     * No marker at all: if what follows the last [/SECTION] looks like JSON
+     * (the model forgot the markers but wrote the array), that tail is
+     * treated as the block too, so it cannot leak into analysis_text.
+     *
+     * Called by: generate()
+     *
+     * @return array{analysis: string, recommendations: ?string}
+     */
+    private function splitCombinedAnswer(string $raw): array
+    {
+        $open = preg_quote(self::RECS_OPEN, '/');
+        $close = preg_quote(self::RECS_CLOSE, '/');
+
+        // Optional fence before the marker, body, closing marker (or end of
+        // answer), optional fence after it.
+        $pattern = '/(?:```[a-zA-Z]*[ \t]*\R?[ \t]*)?' . $open . '(.*?)(?:' . $close . '|\z)(?:[ \t]*\R?[ \t]*```)?/s';
+
+        $blocks = [];
+        $analysis = preg_replace_callback($pattern, function ($m) use (&$blocks) {
+            $blocks[] = trim($m[1]);
+            return '';
+        }, $raw);
+
+        if (!empty($blocks)) {
+            return [
+                'analysis'        => trim($analysis),
+                'recommendations' => $blocks[0],
+            ];
+        }
+
+        // Fallback: markers missing, but a JSON array follows the sections
+        $lastSectionEnd = strrpos($raw, '[/SECTION]');
+        if ($lastSectionEnd !== false) {
+            $cut = $lastSectionEnd + strlen('[/SECTION]');
+            $tail = trim(substr($raw, $cut));
+            if ($tail !== '' && preg_match('/^(?:```[a-zA-Z]*\s*)?\[\s*\{/', $tail)) {
+                return [
+                    'analysis'        => trim(substr($raw, 0, $cut)),
+                    'recommendations' => $tail,
+                ];
+            }
+        }
+
+        return ['analysis' => trim($raw), 'recommendations' => null];
     }
 
     /**
@@ -334,10 +521,15 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
      * - Timeouts (30s) → return empty
      * - Malformed response → return empty
      *
+     * Logs one line per call (duration, HTTP status, prompt/answer length —
+     * never the key or the URL) so the combined analysis+recommendations
+     * answer can be measured against the 30 s timeout (merge plan step 2:
+     * "re-measure before shipping").
+     *
      * Uses: config/services.php (gemini key & model)
      *       Http facade for HTTP POST
      */
-    private function callGemini(string $prompt): string
+    private function callGemini(string $prompt, ?int $projectId = null): string
     {
         $apiKey = config('services.gemini.key');
         $model  = config('services.gemini.model', 'gemini-1.5-flash');
@@ -347,6 +539,7 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
         }
 
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
+        $started = microtime(true);
 
         try {
             $response = Http::timeout(30)->post($url, [
@@ -359,14 +552,31 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
                 ],
             ]);
 
-            if (!$response->successful()) {
-                return '';
-            }
+            $text = $response->successful()
+                ? ($response->json()['candidates'][0]['content']['parts'][0]['text'] ?? '')
+                : '';
 
-            $data = $response->json();
+            Log::info('AI analysis: Gemini call', [
+                'project_id'   => $projectId,
+                'model'        => $model,
+                'status'       => $response->status(),
+                'ms'           => (int) round((microtime(true) - $started) * 1000),
+                'prompt_chars' => mb_strlen($prompt),
+                'answer_chars' => mb_strlen($text),
+            ]);
 
-            return $data['candidates'][0]['content']['parts'][0]['text'] ?? '';
+            return $text;
         } catch (\Exception $e) {
+            // Timeouts / connection errors land here — log the class only
+            // (a Guzzle message can echo the URL, and the URL holds the key)
+            Log::warning('AI analysis: Gemini call failed', [
+                'project_id'   => $projectId,
+                'model'        => $model,
+                'error'        => get_class($e),
+                'ms'           => (int) round((microtime(true) - $started) * 1000),
+                'prompt_chars' => mb_strlen($prompt),
+            ]);
+
             return '';
         }
     }

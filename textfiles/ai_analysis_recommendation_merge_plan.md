@@ -1,13 +1,13 @@
-# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (PLAN, NOT BUILT)
+# AI ANALYSIS + RECOMMENDATIONS — ONE PROMPT (STEPS 1-4 BUILT; BROWSER CHECK OWED)
 # Parent refs: textfiles/ai_recommendation_plan.md (Phase 10 — why the recommendation
 #                prompt was added as a SEPARATE Gemini call; its Decision Log 1-10)
 #              textfiles/active_reference/AI_MODULE_HANDOVER.md (the AI module map)
 #              textfiles/pilot_testing_readiness_plan.md (the active pilot queue)
 # Date: September 21, 2026
-# Status: ⬜ PLANNED, DECISIONS MADE, NOTHING BUILT. The user answered D1-D5 on
-#         2026-09-21 (§6 — all five as recommended) and asked for the docs to be made
-#         handoff-ready BEFORE any build. The build needs its own "go" (Rule 10).
-#         START AT §0 BELOW IF THE SESSION IS COLD.
+# Status: 🔄 STEPS 1-4 BUILT + TESTED (2026-09-21) on phase-37-ai-analysis-recs-single-prompt;
+#         step 5 (browser check) owed by the user, then the merge question. §8 has the
+#         build log. (Was: planned, D1-D5 answered — all five as recommended.)
+#         START AT §0 BELOW IF THE SESSION IS COLD, then read the LAST §8 entries.
 # Branch on build: phase-37-ai-analysis-recs-single-prompt (Rule 12) — cut from the
 #         branch the user names (see §0 "WHERE TO BRANCH FROM").
 
@@ -66,6 +66,8 @@
     · The monthly job (GenerateMonthlyAiReports) also goes through
       AIExplanationService::generate() — it inherits the change automatically.
 
+  ✅ RESOLVED 2026-09-21: the user chose "merge 34-36 into develop first". Done; phase-37
+     was cut from develop 433a6c5. The block below is the pre-decision record.
   WHERE TO BRANCH FROM (state at 2026-09-21 close)
     · Working branch: phase-36-create-project-modal-ui (contains phase-34 and phase-35).
     · phase-34 / 35 / 36 are BROWSER-CONFIRMED but NOT MERGED to develop and NOT
@@ -348,3 +350,57 @@
       sends nothing and equals the no-AI engine's output, container-built presenter
       render sends nothing. Mutation: presenter back on generate() → render test red.
     · PHP suite 1262 passed / 0 failed.
+  2026-09-21 — STEPS 3 + 4 (combined prompt, one call, split, tests) ✅ BUILT.
+    Committed together — the tests are the proof of the code, not a later phase.
+    · AIRecommendationService: context computation moved to private contextParts();
+      new PUBLIC buildRecommendationContext() (the F-3 data blocks), public constants
+      RECOMMENDATION_JSON_SHAPE + RECOMMENDATION_RULES (shared by both prompts), new
+      PUBLIC parseRecommendations() (parse + validate + clamp + tag + sort + cap, lifted
+      out of generate()). The standalone prompt is BYTE-IDENTICAL on 8 live projects.
+    · RecommendationEngine: + generateFromAiCandidates() (guards, then the caller's AI
+      recs, else rules — never a second call, D2) and + acceptsAiRecommendations() (true
+      when not Completed and obs > ai.recommendations.min_observations — exactly when
+      build() reaches the AI step).
+    · AIExplanationService: ONE call. buildPrompt(…, $withRecommendations) returns the
+      original prompt unchanged and, when the engine would use AI recs, APPENDS
+      buildRecommendationsAppendix(): the extra data, the shared JSON shape + rules, the
+      D5 consistency rule, and the markers [RECOMMENDATIONS_JSON] … [/RECOMMENDATIONS_JSON]
+      (constants RECS_OPEN / RECS_CLOSE). The standalone rule "Return ONLY the JSON array,
+      no other text" is NOT carried over (it contradicts the 5 sections); replaced by
+      "nothing but the JSON array between the markers, nothing after the close".
+      When the engine would not use AI recs (Completed / too few observations) the prompt
+      is exactly the original analysis prompt.
+    · splitCombinedAnswer(): cuts every block (plus a code fence wrapped around it) out of
+      the answer; an unclosed block takes the rest of the answer; with NO markers, a JSON
+      array after the last [/SECTION] is treated as the block (so raw JSON can never reach
+      analysis_text, which the PDF prints raw); prose after the sections is left alone.
+      An answer with nothing but a block → '' → the controller's static fallback.
+    · callGemini() now logs one line per call ("AI analysis: Gemini call": ms, status,
+      model, prompt/answer chars — never the URL, which carries the key); generate() logs
+      "AI analysis: recommendations resolved" (asked / block_found / ai_recs / source).
+    · Tests: AIAnalysisSinglePromptTest now 20 tests — verbatim-prefix guard + the four
+      original instruction passages; appendix contents; 8 splitter cases; one-call end-to-
+      end (row has no marker, recs ai_generated); no block → rules; malformed JSON and
+      zero-valid recs → rules; young project → no appendix in the sent prompt and the
+      data-focused recs saved; 503 → nothing saved, 1 call; block-only answer → nothing
+      saved; POST admin.projects.regenerate-analysis → exactly 1 Gemini call.
+    · Mutations (each restored): ignore the block → 2 red; do not cut → 10 red; never
+      append → 3 red; second AI call for recs → 3 red; drop the consistency rule → 1 red;
+      drop the unmarked-JSON fallback → 1 red.
+    · PHP suite 1279 passed / 0 failed. JS untouched (no JS changed).
+    · LIVE MEASUREMENT (one call, project 7, no DB write): model gemini-flash-lite-latest,
+      6.6 s, prompt 5 681 chars, answer 6 145 chars; block found, 4 valid recs, analysis
+      clean. Well inside the 30 s timeout — left at 30 s. The recommendations turned the
+      Mitigation bullets into concrete prioritized actions (supplier sourcing, re-
+      sequencing, weekly review, extension paperwork) — consistent, not duplicated.
+    · ⚠ SIDE EFFECT TO RAISE WITH THE USER: the analysis half now SEES the appended data
+      too, so its Possible Risk section cited the contractor's rating (1.00/5), on-time
+      20%, avg delay and the 4 extensions. The analysis is written for the CONTRACTOR
+      (email section 02), so this is new contractor-visible content. The prompt text is
+      unchanged; it is the data that is new.
+    · Known data gap carried over unchanged: EXTENSIONS "Reasons: : 4" when
+      reason_category is empty (was already in the standalone recommendation prompt).
+    · ⬜ STEP 5 — browser check owed (user): Regenerate on a real project; tab analysis
+      card + green Recommendations card (purple AI badges); email draft and Project
+      Summary PDF show no JSON / no marker; laravel.log shows ONE "AI analysis: Gemini
+      call" line per Regenerate.

@@ -76,6 +76,8 @@ Document parsers (normal PDF autofill + S-curve) are vendored in `public/js` per
 
 ## Session Handoff (rewritten 2026-09-18 at session close — read this first in a new session)
 
+> 🟢 **NEWEST (2026-09-21, later): phases 34-36 are MERGED into `develop`** (three `--no-ff` merges, clean; `develop` is now 11 commits ahead of `origin/develop` — NOT pushed). **The AI prompt merge is BUILT on `phase-37-ai-analysis-recs-single-prompt`** (cut from `develop` 433a6c5), steps 1-4 of `textfiles/ai_analysis_recommendation_merge_plan.md`: reliability block fixed, no Gemini call on page render, ONE Gemini call writes the analysis + a `[RECOMMENDATIONS_JSON]` block that is cut out before saving (rule-based fallback). PHP **1279 passed / 0 failed**; JS untouched. Live measurement: 6.6 s per combined call. **Owed: the user's browser check (plan §8 last entry, step 5), then the merge question.** ⚠ Raise with the user: the analysis now also sees contractor rating / extensions and may cite them in the contractor-facing text. The box below is the pre-merge state.
+>
 > 🟢 **START HERE — STATE AT 2026-09-21 SESSION CLOSE** (everything below this box is older context)
 >
 > **Where the code is.** Folder `for merging\merge ver19.5\PMU_System`. Current branch **`phase-36-create-project-modal-ui`**, working tree clean.

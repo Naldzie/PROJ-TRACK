@@ -147,6 +147,57 @@ class RecommendationEngine
 
     /**
      * ------------------------------------------------------------------------
+     * Generate From AI Candidates
+     * ------------------------------------------------------------------------
+     *
+     * Same guards as generate(), but the AI recommendations are supplied by
+     * the caller instead of fetched. Used by the combined analysis prompt,
+     * which already has the model's recommendations in its one answer. An
+     * empty candidate list falls back to the rule-based engine — never to a
+     * second Gemini call (merge plan decision D2).
+     *
+     * Used By
+     * -------
+     * AIExplanationService::generate()
+     *
+     * @param  array  $aiRecs  Validated recs (AIRecommendationService::parseRecommendations()), or []
+     */
+    public function generateFromAiCandidates(Project $project, array $prediction, array $aiRecs): array
+    {
+        return $this->build($project, $prediction, fn () => $aiRecs);
+    }
+
+    /**
+     * ------------------------------------------------------------------------
+     * Accepts AI Recommendations
+     * ------------------------------------------------------------------------
+     *
+     * True when build() would reach the AI step for this project — i.e. it is
+     * not Completed and has more than the minimum observations. Otherwise the
+     * guards answer on their own (nothing, or the data-focused pair) and any
+     * AI recommendations would be discarded.
+     *
+     * Lets AIExplanationService leave the recommendations request out of the
+     * combined prompt when it could never be used.
+     *
+     * Used By
+     * -------
+     * AIExplanationService::generate()
+     */
+    public function acceptsAiRecommendations(Project $project, array $prediction): bool
+    {
+        if ($project->status === 'Completed') {
+            return false;
+        }
+
+        // Same observation count build() reads via extractFactors()
+        $observationCount = (int) (($prediction['regression'] ?? [])['observation_count'] ?? 0);
+
+        return $observationCount > config('ai.recommendations.min_observations');
+    }
+
+    /**
+     * ------------------------------------------------------------------------
      * Build Recommendations
      * ------------------------------------------------------------------------
      *
