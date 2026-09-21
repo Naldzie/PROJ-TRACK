@@ -470,3 +470,45 @@
     · Test: test_plain_language_block_is_appended_in_both_modes (closing paragraph
       immediately followed by the block, both modes; block before RECS_OPEN). Mutation:
       block removed → 1 red. PHP suite 1280 passed / 0 failed.
+  2026-09-21 — USER: contractor stats in the analysis → "leave it as is" (decided).
+    User browser-tested the plain-language version (row #36). USER CONCERN: before the
+    merge the recommendations covered every category; after it they are mostly
+    corrective / monitoring. Is that expected?
+    · MEASURED on project 142, every ai_solutions row: #30-#34 (old, two calls) — ALL
+      FOUR categories in every row; #35 corr/moni only; #36 corr/moni only and just 3
+      recs, with the contractor's record listed in Possible Risk but no rec acting on it
+      and "Increase weekly output" labelled monitoring.
+    · CAUSE (mine, not the merge as such): the consistency rule said "each should turn a
+      risk or mitigation point into a concrete action", and the ORIGINAL prompt defines
+      Mitigation as "closer monitoring or preventive measures" — so every rec inherited
+      that scope. Escalation (a PMU decision / formal notice) and administrative
+      (records, extensions) are PMU-side actions with no Mitigation bullet to hang on.
+      Neither prompt, old or new, ever DEFINED the four categories. Shows most on
+      low-risk projects (project 7, Critical, still got all four).
+    · TRIAL (in-memory rule swap, no code change): candidate wording gave all four
+      categories on p142 × 2 and p7 × 2.
+  2026-09-21 — CATEGORY RULE ✅ BUILT (user: "yes lets try it").
+    · Recommendations appendix only (original analysis prompt and standalone
+      recommendation prompt untouched): the consistency rule is now "the recs are for
+      the PMU; consistent with Possible Risk + Mitigation — never contradict or merely
+      repeat — and every Possible Risk point gets at least one rec"; + one-line
+      definitions of escalation / corrective / monitoring / administrative; + "include
+      escalation or administrative actions whenever the data warrants them; do not add a
+      category just to fill it"; + "write numbers as digits" (one plain-language run had
+      spelled out "one hundred ninety days").
+    · Plain-language block: + "call the model simply 'the forecast' — not 'the regression
+      model' or its method name" (two runs had said "the regression model"; the ORIGINAL
+      Performance instruction asks about "regression model reliability", which stays).
+    · LIVE (real code, no DB write), 9 runs: categories p142 esca1 corr2 moni3 ·
+      esca1 moni2 admi2 corr2 · esca2 moni2 admi3 · esca1 corr2 moni2 admi3; p7 esca1 moni1
+      corr2 admi3 · esca1 corr1 moni2 admi3 — escalation in every run, administrative in
+      most, contractor record now ACTED ON (formal reminder / recovery schedule), labels fit.
+      Numbers as digits in every run. 5.0-6.7 s per call.
+    · Residual: "75th percentile" still appeared in the analysis in 1 of the last 4 runs —
+      the model copies the class-standing DATA line ("Above 75th percentile …"). A
+      deterministic fix would reword that data line; not done (it is shared with the
+      standalone prompt) — raised with the user.
+    · Tests: appendix test now pins the risk-coverage rule, the four definitions, the
+      "whenever the data warrants / not to fill" line, the digits rule, and that the old
+      narrowing wording is gone. Mutation: old wording restored → 1 red.
+      PHP suite 1280 passed / 0 failed.

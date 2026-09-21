@@ -377,7 +377,7 @@ Do NOT mention that you are an AI or that this is an AI-generated analysis. Writ
 WRITING STYLE FOR THE 5 SECTIONS — keep them non-technical:
 - Write in plain language that a contractor or site engineer understands without any statistics background.
 - Use the technical data above (forecast reliability and its factor scores, curve fit / R², regression method and equation, method agreement, forecast horizon, prediction-accuracy percentages, class standing) only to decide what to say and how confident to sound. Do NOT quote those scores, percentiles or terms in the text.
-- Say what they mean in everyday words instead, for example: \"the forecast for next month is fairly dependable\", \"the finish-date estimates disagree by about three months, so the end date is still uncertain\", \"past forecasts have usually been close to what was actually achieved\", \"progress is ahead of most similar projects\" (never write the word percentile or a percentile number).
+- Say what they mean in everyday words instead, for example: \"the forecast for next month is fairly dependable\", \"the finish-date estimates disagree by about three months, so the end date is still uncertain\", \"past forecasts have usually been close to what was actually achieved\", \"progress is ahead of most similar projects\" (never write the word percentile or a percentile number). Call the model simply \"the forecast\" — not \"the regression model\" or its method name — including when the Performance section discusses how reliable it is.
 - Keep the concrete project facts: progress percentages (actual, planned, next month's expected), dates, days remaining, issue names and counts, extension days.
 - Prefer short sentences and bullet points over long statistical explanations.";
     }
@@ -393,8 +393,16 @@ WRITING STYLE FOR THE 5 SECTIONS — keep them non-technical:
      *     AIRecommendationService::buildRecommendationContext()
      *   · the recommendation JSON shape + RULES, shared constants of
      *     AIRecommendationService (copied by reference, not by hand)
-     *   · the one rule that is the point of combining: the recommendations
-     *     follow from this answer's own Possible Risk + Mitigation (D5)
+     *   · the rule that is the point of combining: the recommendations stay
+     *     consistent with this answer's own Possible Risk + Mitigation (D5),
+     *     and every risk point gets at least one recommendation
+     *   · category definitions + "escalation / administrative when the data
+     *     warrants" (2026-09-21: the first wording — "turn each risk or
+     *     mitigation point into an action" — narrowed every recommendation
+     *     to corrective/monitoring, because Mitigation is by definition
+     *     monitoring and prevention; the old separate call spread across all
+     *     four categories), and "numbers as digits" (the plain-language style
+     *     block made one run spell them out)
      *   · where the block goes: between RECS_OPEN / RECS_CLOSE, after the
      *     5 sections — cut out again by splitCombinedAnswer() before saving
      *
@@ -421,7 +429,14 @@ RECOMMENDATIONS OUTPUT FORMAT — After the [/SECTION] that closes AI Comment, w
 
 RECOMMENDATIONS RULES:
 {$rules}
-- The recommendations must be consistent with your Possible Risk and Mitigation sections — each should turn a risk or mitigation point into a concrete action. Do not contradict or merely repeat those sections.
+- The recommendations are for the PMU (the project management office overseeing this contractor). They must be consistent with your Possible Risk and Mitigation sections — never contradict them or merely repeat them — and every Possible Risk point should be addressed by at least one recommendation.
+- Categories — pick the one that fits each action:
+  escalation = needs a PMU management decision or a formal notice to the contractor (e.g. a poor contractor track record, a critical delay, an issue left unresolved too long);
+  corrective = the contractor must change something on site (resources, sequencing, supply, workmanship);
+  monitoring = the PMU should watch or inspect something more closely;
+  administrative = records, documents, extensions, reporting or data upkeep.
+- Beyond the mitigation points, include escalation or administrative actions whenever the data warrants them. Do not add a category just to fill it.
+- Write numbers as digits (e.g. 190 days, 38%), not in words.
 - Put nothing but the JSON array between {$open} and {$close}, and write nothing after {$close}";
     }
 

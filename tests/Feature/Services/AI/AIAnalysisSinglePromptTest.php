@@ -281,6 +281,19 @@ class AIAnalysisSinglePromptTest extends TestCase
 
         // The rule that is the point of combining (D5)
         $this->assertStringContainsString('consistent with your Possible Risk and Mitigation sections', $appendix);
+        $this->assertStringContainsString('every Possible Risk point should be addressed by at least one recommendation', $appendix);
+
+        // Category definitions — without them every recommendation came out
+        // corrective/monitoring (2026-09-21, rows #35/#36 of project 142)
+        foreach (['escalation = ', 'corrective = ', 'monitoring = ', 'administrative = '] as $definition) {
+            $this->assertStringContainsString($definition, $appendix);
+        }
+        $this->assertStringContainsString('include escalation or administrative actions whenever the data warrants them', $appendix);
+        $this->assertStringContainsString('Do not add a category just to fill it.', $appendix);
+        $this->assertStringContainsString('Write numbers as digits', $appendix);
+
+        // The narrowing wording must not come back
+        $this->assertStringNotContainsString('each should turn a risk or mitigation point into a concrete action', $appendix);
 
         // The standalone "ONLY the JSON array, no other text" rule would
         // contradict the 5 sections — it must not be carried over
