@@ -122,3 +122,5 @@
     · node --check OK; ProjectsRenderTest 17/17. DOM behaviour — not covered by the
       JS suite; ⬜ browser check owed: create an issue → the modal closes and the
       list refreshes; submit an invalid one → it stays open with the input kept.
+  2026-09-21 — ✅ BROWSER-CONFIRMED by the user: the create-issue modal closes after a
+    successful save, and stays open with the input kept on a validation error.
