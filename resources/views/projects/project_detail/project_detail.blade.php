@@ -53,7 +53,8 @@
 
     <button class="tab-btn" data-tab="issues" onclick="switchMainTab('issues', event)">
         <i class="bi bi-exclamation-circle" style="margin-right: 6px; font-size: 14px;"></i>
-        Issues & Risks
+        {{-- Was "Issues & Risks" — the risk register is hidden (textfiles/risk_register_hide_plan.md) --}}
+        Issues
     </button>
 </div>
 
@@ -121,12 +122,14 @@ function getIssuesApiUrl(action = '') {
     return action ? `${baseUrl}/${action}` : baseUrl;
 }
 
+{{-- RISK REGISTER HIDDEN (textfiles/risk_register_hide_plan.md) — API URL helper used only by risk-register.js
 // Build the correct Risk Register API base URL based on user role
 function getRisksApiUrl(action = '') {
     const role = window.userRole;
     const baseUrl = `/${role}/projects/${projectId}/risks`;
     return action ? `${baseUrl}/${action}` : baseUrl;
 }
+--}}
 
 let updateProgressModal;
 
@@ -229,9 +232,11 @@ function switchMainTab(tabName, event) {
         if (typeof loadTabIssues === 'function') {
             loadTabIssues();
         }
+        {{-- RISK REGISTER HIDDEN — risk list loader (defined in risk-register.js)
         if (typeof loadTabRisks === 'function') {
             loadTabRisks();
         }
+        --}}
     }
 }
 

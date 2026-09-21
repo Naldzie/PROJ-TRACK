@@ -289,6 +289,7 @@
     </div>
 </div>
 
-<link rel="stylesheet" href="{{ asset('css/admin/projects/issues-modal.css') }}">
+{{-- Versioned by file time so a changed file is never served from the browser cache --}}
+<link rel="stylesheet" href="{{ asset('css/admin/projects/issues-modal.css') . '?v=' . filemtime(public_path('css/admin/projects/issues-modal.css')) }}">
 
-<script src="{{ asset('js/admin/projects/issues-modal.js') }}"></script>
+<script src="{{ asset('js/admin/projects/issues-modal.js') . '?v=' . filemtime(public_path('js/admin/projects/issues-modal.js')) }}"></script>
