@@ -565,26 +565,81 @@
                 </div>
                 @endif
 
-                @if (!$_noData)
-                <!-- Progress Comparison (Early vs Recent) -->
+                @if (!$_noData && !empty($prediction['pace']))
+                @php
+                    // Progress pace (phase-43, ProgressPaceService): points of actual
+                    // progress gained per month, early vs recent, and the pace needed
+                    // to finish by the planned end date. The old card averaged
+                    // cumulative % per half and labelled it "%/week".
+                    $pace = $prediction['pace'];
+                    $fmtPace = fn ($v) => ($v >= 0 ? '+' : '') . number_format((float) $v, 1) . '%';
+                    [$dirText, $dirColor, $dirIcon] = match ($pace['direction']) {
+                        'speeding_up'  => ['Speeding up', '#059669', 'bi-arrow-up-right'],
+                        'slowing_down' => ['Slowing down', '#dc2626', 'bi-arrow-down-right'],
+                        'steady'       => ['Steady', '#475569', 'bi-arrow-right'],
+                        default        => [null, null, null],
+                    };
+                    [$finishText, $finishColor] = match ($pace['finish_status']) {
+                        'on_pace'       => ['The recent pace is enough to finish by the planned end date.', '#059669'],
+                        'behind_pace'   => ['The recent pace is not enough to finish by the planned end date.', '#dc2626'],
+                        'past_deadline' => ['The planned end date has passed — every remaining point is late.', '#dc2626'],
+                        'complete'      => ['The work has reached 100%.', '#059669'],
+                        default         => [null, null],
+                    };
+                @endphp
                 <div style="background: #f3f4f6; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-                    <div style="font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">
-                        <i class="bi bi-graph-up" style="margin-right: 6px;"></i>Progress Speed Comparison
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <div style="font-size: 13px; font-weight: 600; color: #1f2937;">
+                            <i class="bi bi-speedometer2" style="margin-right: 6px;"></i>Progress Pace
+                            <span style="font-weight: 400; color: #6b7280; font-size: 12px;">— actual progress gained per month</span>
+                        </div>
+                        @if ($dirText)
+                            <span style="font-size: 12px; font-weight: 700; color: {{ $dirColor }};">
+                                <i class="bi {{ $dirIcon }}"></i> {{ $dirText }}
+                            </span>
+                        @endif
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;">
                         <div style="background: white; padding: 12px; border-radius: 6px; border-left: 3px solid #667eea;">
-                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600;">EARLY PHASE SPEED</div>
-                            <div style="font-size: 20px; color: #667eea; font-weight: 700;">
-                                {{ $prediction['early_speed'] ?? 0 }}%/week
-                            </div>
+                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600;">EARLY PACE</div>
+                            @if ($pace['has_pace'])
+                                <div style="font-size: 20px; color: #667eea; font-weight: 700;">{{ $fmtPace($pace['early_pace']) }} <span style="font-size: 12px; font-weight: 600;">/ month</span></div>
+                                <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">{{ $pace['early_window'] }}</div>
+                            @else
+                                <div style="font-size: 14px; color: #9ca3af; font-weight: 600;">—</div>
+                            @endif
                         </div>
                         <div style="background: white; padding: 12px; border-radius: 6px; border-left: 3px solid #f59e0b;">
-                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600;">RECENT PHASE SPEED</div>
-                            <div style="font-size: 20px; color: #f59e0b; font-weight: 700;">
-                                {{ $prediction['recent_speed'] ?? 0 }}%/week
-                            </div>
+                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600;">RECENT PACE</div>
+                            @if ($pace['has_pace'])
+                                <div style="font-size: 20px; color: #f59e0b; font-weight: 700;">{{ $fmtPace($pace['recent_pace']) }} <span style="font-size: 12px; font-weight: 600;">/ month</span></div>
+                                <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">{{ $pace['recent_window'] }}</div>
+                            @else
+                                <div style="font-size: 14px; color: #9ca3af; font-weight: 600;">—</div>
+                            @endif
+                        </div>
+                        <div style="background: white; padding: 12px; border-radius: 6px; border-left: 3px solid #10b981;">
+                            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600;">NEEDED TO FINISH ON TIME</div>
+                            @if ($pace['required_pace'] !== null)
+                                <div style="font-size: 20px; color: #059669; font-weight: 700;">{{ $fmtPace($pace['required_pace']) }} <span style="font-size: 12px; font-weight: 600;">/ month</span></div>
+                                <div style="font-size: 11px; color: #9ca3af; margin-top: 2px;">{{ number_format($pace['months_remaining'], 1) }} months to the planned end date</div>
+                            @else
+                                <div style="font-size: 14px; color: #9ca3af; font-weight: 600;">—</div>
+                            @endif
                         </div>
                     </div>
+
+                    @if (!$pace['has_pace'])
+                        <div style="font-size: 12px; color: #6b7280; margin-top: 10px;">
+                            <i class="bi bi-info-circle"></i> Early and recent pace appear after {{ \App\Services\AI\ProgressPaceService::MIN_INSPECTIONS }} monthly inspections ({{ $pace['inspections'] }} so far).
+                        </div>
+                    @endif
+                    @if ($finishText)
+                        <div style="font-size: 12px; font-weight: 600; color: {{ $finishColor }}; margin-top: 10px;">
+                            <i class="bi bi-flag"></i> {{ $finishText }}
+                        </div>
+                    @endif
                 </div>
                 @endif
 

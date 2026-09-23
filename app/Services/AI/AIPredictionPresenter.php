@@ -313,6 +313,7 @@ class AIPredictionPresenter
 
             'early_speed'            => 0,
             'recent_speed'           => 0,
+            'pace'                   => null,
 
             /*
             |------------------------------------------------------------------
@@ -596,9 +597,11 @@ class AIPredictionPresenter
         |
         */
 
-        $speedResult  = $this->calculateSpeedComparison($project, $observationCount);
-        $earlySpeed   = $speedResult['early_speed'];
-        $recentSpeed  = $speedResult['recent_speed'];
+        // Real pace (points gained per month) + pace needed to finish on time —
+        // ProgressPaceService (phase-43; the old code averaged cumulative %)
+        $pace = $this->progressPace($project, (float) $currentProgress);
+        $earlySpeed   = $pace['early_pace'] ?? 0;
+        $recentSpeed  = $pace['recent_pace'] ?? 0;
 
         /*
         |--------------------------------------------------------------------------
@@ -624,6 +627,7 @@ class AIPredictionPresenter
             $trendLabel      = 'Not enough data to determine a trend';
             $earlySpeed      = 0;
             $recentSpeed     = 0;
+            $pace            = null; // no real inspections → no pace to show
             $healthConfidence = 'Low';
 
             // Certainty "Good data, strong fit" would be misleading — the R²
@@ -826,8 +830,10 @@ class AIPredictionPresenter
             |------------------------------------------------------------------
             */
 
+            // early_speed / recent_speed kept for compatibility: now points/month
             'early_speed'            => $earlySpeed,
             'recent_speed'           => $recentSpeed,
+            'pace'                   => $pace,
 
             /*
             |------------------------------------------------------------------
@@ -1180,52 +1186,31 @@ class AIPredictionPresenter
 
     /**
      * ------------------------------------------------------------------------
-     * Calculate Speed Comparison
+     * Progress Pace
      * ------------------------------------------------------------------------
      *
-     * Splits the project history in half and compares the average
-     * cumulative progress of the early phase against the recent phase.
+     * Early vs recent pace (points gained per month) and the pace needed to
+     * finish by the planned end date — see ProgressPaceService. Replaces
+     * calculateSpeedComparison(), which averaged cumulative progress per half
+     * and labelled it "%/week" (phase-43, 2026-09-22).
      *
      * Used By
      * -------
      * presentNormal()
      */
-    private function calculateSpeedComparison(
-        Project $project,
-        int $observationCount
-    ): array {
-        /*
-        |----------------------------------------------------------------------
-        | Fetch Progress History
-        |----------------------------------------------------------------------
-        |
-        | Uses actual_progress_percent from the progress history.
-        |
-        */
-
-        $progressHistory = $project->progressHistory()
+    private function progressPace(Project $project, float $currentProgress): array
+    {
+        $history = $project->progressHistory()
             ->orderBy('month_label', 'asc')
-            ->get();
+            ->orderBy('inspection_date', 'asc')
+            ->get(['month_label', 'actual_progress_percent']);
 
-        if ($progressHistory->isEmpty()) {
-            return [
-                'early_speed'  => 0,
-                'recent_speed' => 0,
-            ];
-        }
-
-        $half = max(1, (int) ceil($observationCount / 2));
-
-        $earlyAvg = $progressHistory->slice(0, $half)
-            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
-
-        $recentAvg = $progressHistory->slice(-$half)
-            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
-
-        return [
-            'early_speed'  => round($earlyAvg, 1),
-            'recent_speed' => round($recentAvg, 1),
-        ];
+        return app(ProgressPaceService::class)->compare(
+            $history,
+            $currentProgress,
+            $project->planned_end_date ? Carbon::parse($project->planned_end_date) : null,
+            DateHelper::now()
+        );
     }
 
     /**
