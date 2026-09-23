@@ -355,6 +355,35 @@
     color: var(--green-700, #065f46);
 }
 
+/* What the phrase would actually READ (core previewLearnedExtraction).
+   Deliberately a different shape from .pkp-worth beside it: worth says whether the
+   wording is new, this says whether it is right, and a reviewer must not read one
+   as a restatement of the other. */
+#manageParserKeywordsModal .pkp-consequence {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    margin-top: 6px;
+    padding: 4px 9px;
+    border-left: 3px solid var(--blue-300, #93c5fd);
+    background: var(--blue-50, #eff6ff);
+    color: var(--gray-700, #374151);
+    font-size: 0.76rem;
+    border-radius: 0 6px 6px 0;
+    word-break: break-word;
+}
+
+#manageParserKeywordsModal .pkp-consequence strong {
+    font-variant-numeric: tabular-nums;
+    color: var(--gray-900, #111827);
+}
+
+#manageParserKeywordsModal .pkp-consequence.is-refused {
+    border-left-color: var(--amber-400, #fbbf24);
+    background: var(--amber-50, #fffbeb);
+    color: var(--amber-800, #92400e);
+}
+
 /* The source excerpt — hidden until asked for, keyword highlighted inside. */
 #manageParserKeywordsModal .pkp-context-toggle {
     display: inline-flex;

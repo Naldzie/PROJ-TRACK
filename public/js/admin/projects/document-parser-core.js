@@ -1920,6 +1920,59 @@ const DocumentParserCore = (function () {
         return out;
     }
 
+    // ─── WHAT WOULD THIS TAUGHT PHRASE ACTUALLY PULL OUT? (2026-09-23) ──────────
+    //
+    // The desk already answers "is this wording NEW?" (builtInCoversPhrase below). That
+    // turned out to be the wrong question on its own, and measurably so. On
+    // pdfdocstest5 the five AI-proposed rows read:
+    //    "| TOTAL ESTIMATED PROJECT COST P"      -> NEW   (and correct)
+    //    "Implementing Office"                   -> NEW   (and wrong)
+    //    "LOCATION"                              -> NEW   (and wrong)
+    //    "Name of Procuring Entity"              -> NEW   (and wrong)
+    // ⚠ NOVELTY IS EXACTLY WHAT A WRONG LABEL HAS MOST OF, so the desk's only quality
+    // signal was endorsing three rows that would each teach the parser something false.
+    //
+    // This answers the other half: run the phrase against the excerpt it was mined
+    // from and report the value it would produce. On the same five rows that separates
+    //    "Approved Budget for the Contract; PB"  -> 4834297.00   (OCR lost the decimal)
+    //    "| TOTAL ESTIMATED PROJECT COST P"      -> 4834297.59   (the true ABC)
+    // — two rows that are indistinguishable by wording alone — and it makes the three
+    // budgetSource rows obvious too, because all three produce the SAME organisation
+    // name, which is what a value anchoring to three unrelated labels looks like.
+    //
+    // ⚠ IT USES THE REAL EXTRACTION PATH, not a description of it: the same
+    // learnedLabelPattern, the same cleanValue, the same field normalizer, and the same
+    // first-match-wins rule as collectLearnedCandidates. A preview that could disagree
+    // with what approval actually does would be worse than showing nothing.
+    //
+    // The excerpt is stored as lines joined with ' | ' (see excerptOf in the collectors),
+    // so it is split back on that separator before matching — learnedLabelPattern is
+    // anchored at ^, and a joined excerpt would only ever match its first line.
+    //
+    // Returns { ok:true, value, line }            — this is what approving it would read
+    //         { ok:false, reason:'refused', line } — the phrase matches, but the field's
+    //                                                own validator rejects what follows
+    //         null                                 — the phrase does not match its own
+    //                                                excerpt; nothing honest to show
+    // Called by: the parser-keyword desk, via the same lazy import as builtInCoversPhrase.
+    function previewLearnedExtraction(field, phrase, excerpt) {
+        const norm = learnedNormalizerFor(field);
+        if (!norm || !phrase) return null;
+        let pattern;
+        try { pattern = learnedLabelPattern(phrase); } catch (e) { return null; }
+        const rows = String(excerpt || '').split(' | ').map(r => String(r).trim()).filter(Boolean);
+        for (const row of rows) {
+            const m = row.match(pattern);
+            if (!m) continue;
+            // First match wins, exactly as collectLearnedCandidates breaks after one
+            // find per phrase per file.
+            const v = norm(cleanValue(m[1] || ''));
+            if (v === null || v === undefined || v === '') return { ok: false, reason: 'refused', line: row };
+            return { ok: true, value: v, line: row };
+        }
+        return null;
+    }
+
     // ─── DOES A TAUGHT PHRASE ADD ANYTHING? (2026-09-20) ────────────────────────
     // The approval desk shows a reviewer the phrase and asks them to judge it, without
     // telling them the one thing that decides its worth: whether a BUILT-IN rule
@@ -2295,6 +2348,7 @@ const DocumentParserCore = (function () {
         editDistance,
         nearestName,
         builtInCoversPhrase,
+        previewLearnedExtraction,
         extractCategory,
         extractStartDate,
         extractEndDate,
