@@ -26,7 +26,24 @@
   0. READ THIS FIRST
 ===============================================================================
 
-  ➜ HANDOFF (2026-09-18) — START HERE. THIS FILE IS PARKED.
+  🔴 NEWEST (2026-09-24) — READ §7 FIRST. A REAL DAILY-FORMAT CONTRACTOR WORKBOOK
+    FINALLY ARRIVED (sampledocs/CONSTRUCTION SCHEDULE.xlsx) and was measured through
+    the live reader.
+      ✅ The date-row rule (option A, phase-21) WORKS on it — first proof on a real
+         file rather than a rebuild. Layout, month spans and meta all correct.
+      ❌ The CURVE reads 0 / 0 / 0 / 100 against a true 3.04 / 10.10 / 33.75 / 100,
+         because the day cells hold FRACTIONS OF THE CONTRACT (TOTAL% / DURATION),
+         not pesos, and buildMonths divides them by the contract total again.
+         This is the known "fraction scale" defect and THIS IS ITS FIRST REAL
+         SPECIMEN — the condition AGENTS.md parked it under is now met.
+      ⚠ Worse than the number: the existing summary rescue does not fire (it needs
+         activity math ABSENT, not WRONG), so the user is handed a flat curve with
+         "no action needed" printed beside the correct one.
+      ⚠ §7 DOES NOT UN-PARK STEPS 4/5 — different problem, see §7.5.
+    Nothing is built and nothing is ordered. Details, arithmetic and the shape of a
+    fix are in §7.
+
+  ➜ HANDOFF (2026-09-18) — STEPS 4/5 OF THIS FILE ARE PARKED.
     WHY IT IS PARKED (user, 2026-09-18): the client confirmed they mainly have the
     ORIGINAL EXCEL files for S-curves. Everything this file exists for — reading a
     contractor's exotic printed layout — matters much less once the source workbook is
@@ -507,3 +524,121 @@
     file in hand rather than a rebuilt fixture.
 
     NEXT ACTIVE FILE: textfiles/pilot_testing_readiness_plan.md.
+
+
+===============================================================================
+  7. THE FIRST REAL DAILY-FORMAT WORKBOOK — MEASURED 2026-09-24
+     ⚠ A REAL DEFECT. READ THIS BEFORE §0's PARK NOTE, WHICH IT DOES NOT CANCEL.
+===============================================================================
+
+  THE FILE: sampledocs/CONSTRUCTION SCHEDULE.xlsx (JVM Ceguera Construction,
+  "ANALYSIS DESIGN AND RETROFITTING WORKS FOR THE 2ND FLOOR STRUCTURAL MEMBERS OF
+  SUPPLY AND PROPERTY BUILDING", CSPC). 1 sheet, A1:DD204, 108 columns.
+  Supplied by the user 2026-09-24. ⚠ THIS IS THE REAL THING, not a rebuild — every
+  earlier daily-format measurement in this file was made against Excel
+  RECONSTRUCTIONS of CONSCHEDSAVINGS.pdf, because no genuine workbook existed.
+
+  7.1 LAYOUT (read, not assumed)
+      R11  M = "YEAR 2026"
+      R12  A=ITEM #  B=DESCRIPTION  C=UNIT  D=QTY.  E=UNIT PRICE  F=Amount
+           G=TOTAL %  H=DAILY ACCOMP.  I=DURATION (DAYS)
+           month names on the SAME row: M=JANUARY  AD=FEBRUARY  BF=MARCH  CG=APRIL
+      R13  THE DATE ROW — M=2026-01-15 … CX=2026-04-14, one column per calendar day
+      R16  activity 1  DESIGN AND ANALYSIS   F=42,000.00      G=0.0536  H=0.0018  I=30
+      R18  activity 2  Retrofitting Works    F=741,033.51     G=0.9464  H=0.0158  I=60
+      R19  CONTRACT COST F=783,033.51  G=1   I="DAILY ACCOMPLISHMENT"
+      R20  "% OF ACCOMPLISHMENT"            M=0.0304  AD=0.0706
+      R21  "COMMULATIVE % OF ACCOMPLISHMENT" M=0.0304  AD=0.1010   <- THE TRUE CURVE
+
+  7.2 ✅ WHAT WORKS — AND IT IS THE PART THAT WAS NEVER PROVEN
+      The date-row rule (option A, phase-21, 31e6b10) FIRES CORRECTLY ON A REAL FILE.
+      deriveAutoColumnMap returns rowHint=12, descCol=1, contractCol=5 and month
+      spans grouped by calendar month exactly as printed:
+          month 1 = cols 12-28  (M..AC  = Jan 15-31, 17 days)
+          month 2 = cols 29-56  (AD..BE = Feb 1-28,  28 days)
+          month 3 = cols 57-..  (BF..   = Mar)
+          month 4 = ..          (CG..   = Apr)
+      Meta is right too: project name, location and contractAmount 783,033.51.
+      ⚠ WORTH STATING PLAINLY: phase-21 was built and browser-proven against two
+      REBUILDS and nothing else. A real contractor file has now exercised it and the
+      layout half holds up. That is a genuine result, not a formality.
+
+  7.3 ❌ THE DEFECT — THE CURVE READS 0 / 0 / 0 / 100
+      parse() returns planned_progress_percent 0, 0, 0, 100 against a true curve of
+      3.04 / 10.10 / 33.75 / 100. weightSum=0, activityCount=2, cumulativeRow=null,
+      curveSource='activities'.
+
+      ROOT CAUSE, ARITHMETIC, NOT INFERRED: the day cells do NOT hold pesos. They
+      hold a FRACTION OF THE WHOLE CONTRACT PER DAY, i.e. TOTAL% / DURATION:
+          activity 1:  G 0.0536 / I 30 = 0.001787  = H 0.0018  ✓
+          activity 2:  G 0.9464 / I 60 = 0.015773  = H 0.0158  ✓
+      And that reproduces the author's own figure exactly:
+          month 1 = 17 days x 0.001787 = 0.03038 = 3.04%  = R21's M cell  ✓
+      But buildMonths (:2035) computes
+          planned % = (monthPesoTotal / contractTotal) * 100
+      treating those fractions as PESOS. So month 1 becomes
+          0.0306 / 783,033.51 * 100 = 0.0000039%  ->  rounds to 0.00.
+      ⚠ THIS IS THE KNOWN, KNOWINGLY-CARRIED "FRACTION SCALE" DEFECT, and this file
+      is ITS FIRST REAL SPECIMEN. AGENTS.md carried it as "untriggered … fixing it
+      would move summaryReference on files there is no specimen for". THE SPECIMEN
+      NOW EXISTS. That condition is met; the reasoning that parked it is spent.
+
+      ⚠ NOTE THE ASYMMETRY — HALF THE READER ALREADY KNOWS ABOUT FRACTIONS:
+      readSummaryReference (:2282) does
+          $pct = ($v > 0 && $v < 1.5) ? round($v * 100, 2) : round($v, 2);
+      which is why summaryReference reports the TRUE 3.04 / 10.10 / 33.75 / 100.
+      The summary path scales; the activity path does not. One reader, two opinions
+      about what a number under 1.5 means.
+
+  7.4 ⚠ WHY THE EXISTING RESCUE DID NOT FIRE (this is the part that bites)
+      The summary fallback at :2086 adopts the author's curve — but only when
+          $lastNonZero === 0 && count($summaryReference) >= 2
+      Activity math here is not ABSENT, it is WRONG BY A FACTOR OF ~783,000. It
+      produces tiny non-zero values, and :2065 then forces the final month to 100.0.
+      So $lastNonZero is not 0, the gate stays shut, and the rescue built for exactly
+      this shape of problem is stepped over.
+
+      ⚠ AND THE USER IS TOLD NOTHING IS WRONG. The three warnings emitted read:
+        "Heads-up (Month 1): the file's own summary says 3.04%, but its activity rows
+         add up to 0%. The summary was likely computed against a different total.
+         Your baseline below uses the activity math — NO ACTION NEEDED."
+      The correct curve is printed inside a warning that recommends ignoring it, and
+      the baseline handed over is flat zero. A reviewer who trusts that line locks a
+      worthless baseline. THE WRONG ADVICE IS WORSE THAN THE WRONG NUMBER: a blank
+      curve invites scrutiny, "no action needed" disarms it.
+
+  7.5 WHAT THIS DOES *NOT* CHANGE
+      ⚠ STEPS 4 AND 5 STAY PARKED. Their un-park condition is a real S-curve that
+      arrives WITHOUT its workbook and defeats the date-row rule, the calendar-name
+      rule and hand-teaching. This file arrived WITH its workbook and its layout read
+      correctly, so it satisfies none of that. This is a separate defect in cell
+      SEMANTICS, not a gap in layout teaching. Do not use §7 to reopen §4's options.
+
+  7.6 PROBES (C:\temp\opencode, outside the repo per convention — NOT pushed)
+      probe_consched_real.php    sheet inventory
+      probe_consched_head.php    <file> <fromRow> <toRow> — header/date-row dump
+      probe_consched_rows.php    <base> <file> <from> <to> — activity rows + day cells
+      probe_consched_parse.php   <base> <file> — deriveAutoColumnMap + parse summary
+      probe_consched_months.php  <base> <file> — full months/meta JSON
+      ⚠ The PHP probes take the PROJECT BASE as argv[1] and boot the real Laravel
+      container, so they read through the live service, not a copy of it.
+      ⚠ phpspreadsheet 4.x: getCellByColumnAndRow() is GONE — use getCell([$col,$row]).
+
+  7.7 ⬜ NOT BUILT, NOT ORDERED — the shape a fix would take
+      (a) Detect the scale of activity/day cells instead of assuming pesos. The file
+          states its own units: G=TOTAL % per activity, F=Amount, and a CONTRACT COST
+          row whose G is exactly 1. When the activity cells are fractions of 1 rather
+          than money, percent = sum(cells) * 100 and no division by the contract
+          happens at all.
+      (b) OR widen the summary-fallback gate so "activity math is implausible"
+          counts, not only "activity math is absent" — e.g. when the activity curve
+          disagrees with a present summary column by orders of magnitude.
+      ⚠ (a) is the honest fix and (b) is a safety net; they are not alternatives and
+      (b) without (a) still silently prefers a summary over a curve it could have
+      read correctly.
+      ⚠ EITHER WAY, RE-MEASURE THE WHOLE CORPUS. The scale rule touches every Excel
+      S-curve, and the existing gate is what currently silences BUHI's fraction
+      notes — moving it moves summaryReference, and summaryReference is what drives
+      the AI-assist offer. Before/after gate: snapshot_excel_reads.php against
+      excel_reads_after.json, all 10+ sampledocs workbooks byte-identical except the
+      one under test.
