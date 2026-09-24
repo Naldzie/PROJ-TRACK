@@ -85,7 +85,7 @@
   │ 1        │ develop      │ 2026-09-21 │ IN USE — the copy the PMU has      │
   │          │ dd91e53      │            │                                    │
   ├──────────┼──────────────┼────────────┼────────────────────────────────────┤
-  │ 2        │ (not cut)    │ —          │ 3 adjustments staged — see §3      │
+  │ 2        │ (not cut)    │ —          │ 5 staged: 4 code + 1 docs — see §3 │
   └──────────┴──────────────┴────────────┴────────────────────────────────────┘
 
 
@@ -349,27 +349,108 @@
                          that machine (a Blade view changed).
 
 
+  -----------------------------------------------------------------------------
+  A-5  ✅  S-curve import reads activity cells whose unit is not pesos
+  -----------------------------------------------------------------------------
+    Date:    2026-09-24
+    Branch:  phase-45-scurve-fraction-scale   Commit: (see git log)
+    Merged:  NO — built and browser-confirmed, merge not yet ordered (Rule 12)
+    Plan:    textfiles/document_parser_day_column_layout_plan.md §7 (measurement)
+             and §7.8 (build log)
+
+    THE DEFECT: the Excel S-curve reader assumed every activity/month cell holds
+    PESOS and divided it by the contract total. The first real daily-format
+    contractor workbook to reach the project (sampledocs/CONSTRUCTION SCHEDULE.xlsx,
+    supplied 2026-09-24) writes each day cell as a SHARE OF THE WHOLE CONTRACT
+    instead — literally TOTAL% / DURATION, e.g. 0.0536 / 30 = 0.0018 — so the cells
+    add up to 1.0, not to the contract. Dividing that by the contract a second time
+    produced 0.0000039% for month 1.
+
+      curve read:  0 / 0 / 0 / 100       true curve:  3.04 / 10.10 / 33.75 / 100
+
+    ⚠ AND THE WRONG ADVICE WAS WORSE THAN THE WRONG NUMBER. The rescue built for
+    this shape stepped over it: the summary fallback required activity math to be
+    ABSENT, and here it was present and wrong by a factor of ~783,000, with
+    force-last-100 already putting 100 in the final month. So the PMU was handed a
+    flat baseline with three warnings that PRINTED the correct curve and then said
+    "Your baseline below uses the activity math — no action needed". A blank curve
+    invites scrutiny; "no action needed" disarms it.
+
+    THE FIX, two parts, both needed:
+      (a) detectMonthCellScale() decides whether the cells are pesos, shares of 1,
+          or percentages BEFORE any division, and always names a non-peso verdict in
+          a warning. It defaults to pesos on anything unrecognised, so an unknown
+          shape keeps the old behaviour rather than being guessed at.
+      (b) The summary fallback now also fires when activity math is present but the
+          author's own summary contradicts it by more than 20x, with wording that
+          says so instead of claiming no activity values were found.
+
+    ⚠ LAYOUT-AGNOSTIC BY CONSTRUCTION. parse() has exactly one buildMonths() call
+    and parseWithAiLayout() routes through parse(), so the scale detector sits
+    downstream of every layout path — numbered months, calendar names, the date-row
+    (daily) rule, taught layouts and AI-derived layouts alike. 1 column, 2 columns
+    (15-day pairing) and 28 columns per month are the same code at different span
+    widths, so this is not three separate fixes.
+
+    Files:  app/Services/SCurveImportService.php
+            tests/Feature/SCurveImportTest.php (+7)
+            .env.example  (AI_MODEL -> gemini-flash-lite-latest — a docs-only
+                           correction aligning the sample with the model the live
+                           .env already uses; unrelated to the parser)
+
+    Tests:  PHP 1365 / 0 / 5276 assertions (was 1358) — develop's total plus exactly
+            these 7. JS untouched and not implicated: no JS file changed.
+            ⚠ CORPUS GATE, the one that matters for a scale rule: all 13 sampledocs
+            workbooks re-read before and after — 12 BYTE-IDENTICAL, and the only one
+            that changed is the specimen, which changed to the truth. Its
+            summaryReference gaps went from 3.04 / 10.1 / 33.75 to ALL ZERO: the
+            reader and the author's own cumulative row now agree on every month.
+            Mutations M1-M4 all red — but M4 (the implausibility ratio) SURVIVED the
+            first run because the test written to guard it compared 100 < 100, true
+            at no ratio at all. A 7th test whose activity curve legitimately falls
+            short of its summary is what kills it. Detail: plan §7.8.
+    Browser check:      ✅ CONFIRMED by the user 2026-09-24 — Set Up Baseline
+                        Schedule reads 3.04 / 10.10 / 33.75 / 100.00 with the right
+                        activities per month and "Plan Progress 100%".
+    ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm
+                         dependency, and NO vite build. ONE PHP service file is the
+                         whole application change — nothing under public/ or
+                         resources/, so no cache clear of any kind is required.
+                         .env.example is a sample file the running app never reads;
+                         do NOT copy it over a pilot machine's real .env.
+                         ⓘ Unrelated but worth knowing while here: if a pilot
+                         machine's own .env still names an older AI model, the AI
+                         features there will fail on their own account. That is a
+                         pre-existing condition, not something A-5 introduces.
+
+
 ===============================================================================
   §4 — UPGRADING A PILOT MACHINE FROM VERSION 1
 ===============================================================================
 
-  ⚠ NO UPGRADE IS ORDERED YET — but the blockers are gone. As of 2026-09-24 all
-  four adjustments are browser-confirmed and merged into develop, so an upgrade is
-  now a decision rather than a wait. Version 1 remains what the PMU is running
+  ⚠ NO UPGRADE IS ORDERED YET — but the blockers are gone. As of 2026-09-24 the
+  first four adjustments are browser-confirmed and merged into develop, so an upgrade
+  is now a decision rather than a wait. Version 1 remains what the PMU is running
   until someone says otherwise. This section describes what the upgrade costs.
 
-  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4
-  -----------------------------------------
+  ⚠ A-5 IS BROWSER-CONFIRMED BUT NOT MERGED. It sits on phase-45-scurve-fraction-scale
+  awaiting the merge order (Rule 12). The costs below INCLUDE it, because its cost is
+  one PHP file and stating it now is cheaper than remembering to later — but an
+  upgrade cut before that merge simply leaves it out, with no other consequence.
+
+  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5
+  ----------------------------------------------
     Database migrations      NONE
     New .env keys            NONE
     composer dependencies    NONE
     npm dependencies         NONE
     vite rebuild             NOT NEEDED
-    Files to replace         8 application files + docs:
+    Files to replace         9 application files + docs:
                                A-2  3 PHP + 1 Blade
                                A-3  1 JS  (document-parser.js)
                                A-4  1 JS  (document-parser-core.js)
                                     + 1 Blade + 1 CSS
+                               A-5  1 PHP (SCurveImportService.php)
 
   That is the whole cost. No adjustment since version 1 touches the schema, the
   configuration or the dependency set, which is why an upgrade is a file copy.
@@ -384,19 +465,21 @@
     3. php artisan view:clear     (only if view:cache was ever run there — A-2
                                    and A-4 each change a Blade view)
        php artisan route:clear    (harmless; required whenever routes change —
-                                   none of A-1..A-4 change routes)
+                                   none of A-1..A-5 change routes)
     4. Restart the queue worker and the scheduler.
     5. Verify: open a project's AI Prediction tab and confirm the pace figures
        read as points per month (A-2); upload a scanned document and confirm
        the preview's seven behaviours in restudy §54.5 (A-3); open Review
        Learned Keywords and confirm each row shows the VALUE its phrase would
-       read, not only whether the wording is new (A-4).
+       read, not only whether the wording is new (A-4); import an S-curve whose
+       day cells are fractions of the contract and confirm the baseline reads the
+       real curve rather than 0 / 0 / 0 / 100 (A-5).
 
   ROLLING BACK
   ------------
   Keep the version 1 zip. Since no adjustment since v1 touches the database,
   restoring the older files is a complete rollback — the schema stays valid
-  either way. Still true through A-4. That property is worth preserving deliberately: once an
+  either way. Still true through A-5. That property is worth preserving deliberately: once an
   adjustment carries a migration, this stops being true, and the entry for it
   must say so in its DEPLOYMENT IMPACT line.
 
