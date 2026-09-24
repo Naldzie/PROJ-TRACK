@@ -1,7 +1,8 @@
 # BUDGET PRECEDENCE (58.3) AND AI SOURCE VALIDATION (58.4)
 # Parent ref: textfiles/normal_doc_parser_restudy_plan.md §58.3, §58.3-V, §58.4
 # Date: September 24, 2026
-# Status: ⬜ PLANNED, NOTHING BUILT. Five decisions are owed from the user (§4).
+# Status: ⬜ PLANNED, NOTHING BUILT — but ALL DECISIONS ARE ANSWERED (user, 2026-09-24).
+#         §4 is now a DECISION LOG, not an open list. The build still needs an order.
 # Branch: not cut yet. Suggested phase-47-budget-precedence (item A) and
 #         phase-48-ai-source-shape (item B) — see §5 for why they are separate.
 
@@ -248,10 +249,43 @@
   · The slice-cap question (§45.4) — user-owned, unrelated.
 
 ===============================================================================
-  §4 — DECISIONS OWED FROM THE USER (nothing is built until these are answered)
+  §4 — DECISION LOG — ALL ANSWERED BY THE USER 2026-09-24
 ===============================================================================
 
-  D-A1  PRECEDENCE ORDER for the budget pool. REVISED, highest first (see the
+  D-A0  ✅ DECIDED — DO NOT ADD A REVISED CONTRACT AMOUNT FIELD. NOT NOW.
+        The question arose because the user's own reading of the domain is correct and
+        matches the UI: ABC ("Approved Budget for the Contract") is the ceiling set
+        BEFORE bidding; approved_budget, labelled "Contract Price / winning bid", is
+        the awarded amount AFTER any voluntary discount; and a REVISED amount is what a
+        variation / change order produces when work exceeds the original bid (GPPB
+        allows up to 10% of the original contract price).
+        The system has no place for that third figure, so the user asked whether to add
+        one. DECISION: no, not for now.
+        WHY:
+          1. THE CLIENT HAS NOT ASKED. Live precedent — the Risk Register was built and
+             then hidden because the client records only current issues. Building
+             unasked has already cost this project real work once.
+          2. IT WOULD BE THE FIRST SCHEMA CHANGE SINCE PILOT VERSION 1. The changelog
+             states that rollback is complete precisely BECAUSE nothing since v1 touches
+             the database. A migration ends that property permanently and the entry must
+             say so — a real cost paid at pilot time for a field nobody requested.
+          3. IT RIPPLES: create and edit forms, project detail, the six exports, the
+             Word/PDF monitoring report, and the parser.
+        ⚠ IF IT IS EVER BUILT, DO NOT MIRROR THE ORIGINAL INTO IT. The user's first
+        sketch was "revised starts equal to original, decouples once edited". That makes
+        every project carry a revised amount, so "never revised" and "revised to the
+        same number" become indistinguishable — destroying the one fact the field exists
+        to record. Use instead: revised_contract_amount NULL until a real revision, one
+        accessor effectiveContractAmount() = revised ?? approved_budget used everywhere,
+        and a visible "Revised from PhpX" marker when it is set. On screen that behaves
+        exactly as the sketch wanted; in the data the distinction survives.
+        ⚠ CONSEQUENCE FOR ITEM A, AND IT IS WHY THIS DECISION HAD TO COME FIRST: with a
+        second field, decision 11 stops being a PRECEDENCE question and becomes a
+        ROUTING one (revised to its own box, generic to the original box), so item A
+        would have been built and then rebuilt. Because the answer is "no field", item A
+        proceeds exactly as §1 describes.
+
+  D-A1  ✅ DECIDED — PRECEDENCE ORDER for the budget pool. REVISED, highest first (see the
         correction in §1.3 — the anchors carry an AWARD-TIME figure, not a later one):
           1. revised                         (a later fact than any award-time price)
           2. final-anchor, discount-anchor   (the signed price, after a bid discount)
@@ -269,22 +303,51 @@
         ➡ So the trigger is "a revision exists", not "the project is finished", and
           nothing in this item should key on project status. (The parser fills the
           create-project form and has no project status to key on anyway.)
-        ⓘ NOTED, OUT OF SCOPE: Project has ONE money field per concept
-          (approved_budget, abc) — no original/revised pair — so the system cannot
-          record both even if the document states both. Picking one is forced. Whether
-          a contract-revision history is worth having is a separate product question.
+        ⓘ Project has ONE money field per concept (approved_budget, abc) — no
+          original/revised pair — so the system cannot record both even if the document
+          states both, and picking one is FORCED. That is what makes this a precedence
+          question at all. Whether to add the missing field was asked and ANSWERED: see
+          D-A0 above, decided NO for now.
 
-  D-A2  THE CENTS TIE-BREAK. Same pesos, one ends .00, the other .77 — prefer the
-        non-zero cents? (§1.4)
+  D-A2  ✅ DECIDED — PREFER NON-ZERO CENTS. OCR truncation LOSES digits, it does not
+        invent them: ".77" is positive evidence of a real reading, ".00" is what a
+        lost-cents read produces. Scoped narrowly to candidates whose INTEGER PESO PARTS
+        ARE IDENTICAL, so an honestly round amount anywhere else is untouched.
+        ⚠ It is a heuristic, so it gets its own fixture and its own mutation (M-A3) and
+        must never become a silent rule nobody can see fail.
 
-  D-A3  HOW ITEM A GETS REAL-DOCUMENT PROOF: browser runs by you on each multi-amount
-        document, or build a line-capture harness first? (§1.6)
+  D-A3  ✅ DECIDED — BOTH, HARNESS FIRST, THEN THE BROWSER PASS.
+        One browser pass captures each document's read lines; those become stored
+        fixtures; every future budget or ABC change is then measurable OFFLINE forever.
+        Browser runs alone produce a snapshot that cannot be re-run after a code change
+        without redoing it all by hand — which is exactly the position item A is in now,
+        and the reason §1.6 flagged this as a decision rather than a step.
 
-  D-B1  WHERE the shape check goes — client merge via core (recommended), or a PHP
-        port in validateParsed? (§2.3)
+  D-B1  ✅ DECIDED — OPTION 2, THE CLIENT MERGE THROUGH CORE. One implementation of
+        asSourceName, already written and already exported, already reached by the JS
+        suite. Both the rule reader and the AI then pass through the IDENTICAL function,
+        which is the actual goal since the item is about those two disagreeing. A PHP
+        port would put the same seven rules in two languages permanently.
+        Rejected: Option 1 (PHP). Its only gain is a server-side guarantee, worth little
+        here — the server stores nothing, the value goes to a human-reviewed preview,
+        and the permanent junk record the code warns about is created at Apply, which is
+        client-side.
 
-  D-B2  WHAT HAPPENS to a refused AI source — silent drop, or drop with a note naming
-        what the AI read (recommended)? (§2.4)
+  D-B2  ✅ DECIDED — DROP THE REFUSED VALUE FROM THE FIELD, BUT NOTE WHAT THE AI READ
+        (option ii, the Q3 contractor pattern). Not a silent drop, and NOT shown in the
+        field flagged — see §2.4 on why D-44-2 does not cover a shape failure.
+
+  ---------------------------------------------------------------------------
+  NOTED IN PASSING 2026-09-24, NOT ORDERED, NOT PART OF EITHER ITEM
+  ---------------------------------------------------------------------------
+    · The column is named approved_budget but the field is labelled "Contract Price".
+      "Approved budget" also reads as ABC, so the name invites exactly the confusion
+      this plan spent a section untangling. A rename is a migration; not worth one on
+      its own, but worth folding into any future migration that touches projects.
+    · ABC is marked REQUIRED in the create modal (a red *) and is nullable in the
+      controller's validation rules (ProjectController :615 and :1012). One of the two
+      is wrong. Harmless today because the UI enforces it, but a non-browser caller can
+      omit it.
 
 ===============================================================================
   §5 — SUGGESTED BUILD ORDER
