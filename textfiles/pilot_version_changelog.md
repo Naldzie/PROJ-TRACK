@@ -428,7 +428,7 @@
   A-6  ⬜  AI assist keeps its button after a successful answer
   -----------------------------------------------------------------------------
     Date:    2026-09-24
-    Branch:  phase-46-ai-assist-retry   Commit: (see git log)
+    Branch:  phase-46-ai-assist-retry   Commit: 5aebe82
     Merged:  NO — built, browser check owed
     Plan:    textfiles/normal_doc_parser_restudy_plan.md §59
 
