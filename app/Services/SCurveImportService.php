@@ -2030,10 +2030,35 @@ class SCurveImportService
             if ($monthPesoTotal[$monthIndex] > 0) $lastNonZero = $monthIndex;
         }
 
+        // Decide what unit the month cells are actually in before dividing by anything.
+        // Contractors do not agree: most put PESOS in them, but a real file puts a
+        // FRACTION OF THE CONTRACT per day. See detectMonthCellScale().
+        $cellScale = $this->detectMonthCellScale(array_sum($monthPesoTotal), $contractTotal);
+        if ($cellScale !== 'pesos') {
+            // Never silent: a unit decision rewrites the whole curve, so it is stated.
+            $warnings[] = $cellScale === 'fraction'
+                ? 'This file states progress as a share of the whole contract (its activity'
+                    . ' cells add up to 1), not as peso amounts, so the baseline below was read'
+                    . ' on that scale. Please confirm the monthly percentages look right.'
+                : 'This file states progress as percentages (its activity cells add up to ~100),'
+                    . ' not as peso amounts, so the baseline below was read on that scale.'
+                    . ' Please confirm the monthly percentages look right.';
+        }
+
+        // The pre-force cumulative, kept so the summary fallback can judge whether the
+        // activity math is merely small or actually implausible (see the fallback below).
+        $rawCumulative = [];
+
         foreach ($monthSpans as $monthIndex => $cols) {
-            $monthPct = $contractTotal > 0
-                ? ($monthPesoTotal[$monthIndex] / $contractTotal) * 100
-                : 0.0;
+            // Convert this month's activity total to a percentage of the contract, on
+            // whatever scale the cells turned out to be written in.
+            $monthPct = match ($cellScale) {
+                'fraction' => $monthPesoTotal[$monthIndex] * 100,
+                'percent' => $monthPesoTotal[$monthIndex],
+                default => $contractTotal > 0
+                    ? ($monthPesoTotal[$monthIndex] / $contractTotal) * 100
+                    : 0.0,
+            };
 
             $running += $monthPct;
             $cumulative = $running;
@@ -2046,6 +2071,7 @@ class SCurveImportService
             $cumulative = min($cumulative, 100.0);
             $running = $cumulative;
             $prevCumulative = $cumulative;
+            $rawCumulative[$monthIndex] = $cumulative;
 
             $names = array_map(fn ($a) => $a['activity_name'], $activitiesByMonth[$monthIndex]);
             $description = count($names) > 0 ? implode(', ', $names) : '';
@@ -2082,8 +2108,24 @@ class SCurveImportService
         // it fires only when activity math is absent ($lastNonZero === 0) with at least 2
         // reference points (a single point is not a curve). Sanitized like any plan curve
         // (monotonic clamp + force-last-100) because the controller rejects anything else.
+        // (b) The net. The gate used to require activity math to be ABSENT. It is not
+        // always absent - it can be present and WRONG BY ORDERS OF MAGNITUDE, which is
+        // what a mis-read cell unit does, and that case walked straight past the gate
+        // because force-last-100 above had already put 100 in the final month. So a
+        // curve the author's own summary contradicts by more than 20x now counts as
+        // absent too. The band is deliberately far beyond divisor noise: a summary
+        // computed on another base (BUHI's pre-discount bid) differs by a few percent,
+        // never by a factor of twenty.
+        $summaryMax = 0.0;
+        foreach ($summaryReference as $ref) {
+            $summaryMax = max($summaryMax, (float) $ref['summary_percent']);
+        }
+        $activityMax = $rawCumulative ? max($rawCumulative) : 0.0;
+        $activityImplausible = $summaryMax > 0
+            && $activityMax < $summaryMax * self::SUMMARY_IMPLAUSIBLE_RATIO;
+
         $curveSource = 'activities';
-        if ($lastNonZero === 0 && count($summaryReference) >= 2) {
+        if (($lastNonZero === 0 || $activityImplausible) && count($summaryReference) >= 2) {
             $curveSource = 'summary';
             $adopted = [];
             foreach ($months as $m => $mo) {
@@ -2122,9 +2164,15 @@ class SCurveImportService
                 $summaryReference[$i]['activity_percent'] = null;
                 $summaryReference[$i]['gap'] = null;
             }
-            $warnings[] = 'Heads-up: no usable activity values were found, so the baseline below'
-                . ' is built from the file\u2019s own summary column (source: summary).'
-                . ' Please verify carefully before locking.';
+            $warnings[] = $lastNonZero === 0
+                ? 'Heads-up: no usable activity values were found, so the baseline below'
+                    . ' is built from the file’s own summary column (source: summary).'
+                    . ' Please verify carefully before locking.'
+                : 'Heads-up: the activity rows add up to far less than this file’s own summary'
+                    . ' says (' . round($activityMax, 2) . '% against ' . round($summaryMax, 2) . '%),'
+                    . ' so the baseline below is built from the summary column instead'
+                    . ' (source: summary). This usually means the activity cells are in a unit'
+                    . ' the reader did not recognise. Please verify carefully before locking.';
             if ($jumbled) {
                 $warnings[] = 'Heads-up: the summary values were not in cumulative order — review carefully.';
             }
@@ -2285,6 +2333,73 @@ class SCurveImportService
         }
 
         return $out;
+    }
+
+    /**
+     * Cell-scale detection bands (see detectMonthCellScale()). Deliberately wide: the
+     * corpus separates these cases by six orders of magnitude, so width costs nothing
+     * and protects against a file whose rows do not quite add up to a round total.
+     */
+    private const SCALE_MIN_CONTRACT = 1000.0;
+    private const SCALE_FRACTION_LO = 0.5;
+    private const SCALE_FRACTION_HI = 1.5;
+    private const SCALE_PERCENT_LO = 50.0;
+    private const SCALE_PERCENT_HI = 150.0;
+
+    /**
+     * Below this share of the author's own summary, activity math is treated as absent
+     * rather than merely low (see the summary fallback in buildMonths()). 0.05 means the
+     * activity curve reached under a twentieth of what the file itself claims.
+     */
+    private const SUMMARY_IMPLAUSIBLE_RATIO = 0.05;
+
+    /**
+     * Decide what unit the activity month cells are written in.
+     * Called by: buildMonths(), before converting month totals to percentages.
+     * Returns: 'pesos' (the default) | 'fraction' (cells are shares of 1) | 'percent'.
+     *
+     * WHY THIS EXISTS. Contractors do not agree on what belongs in a day/month cell.
+     * Most workbooks put PESOS there, so every cell in the grid adds up to the contract
+     * amount. But a real contractor file (sampledocs/CONSTRUCTION SCHEDULE.xlsx, measured
+     * 2026-09-24) puts a FRACTION OF THE WHOLE CONTRACT per day - literally TOTAL% /
+     * DURATION, e.g. 0.0536 / 30 = 0.0018 - so its cells add up to 1.0. Dividing THAT by
+     * the contract a second time produced 0.0000039% for month 1 and a curve that read
+     * 0 / 0 / 0 / 100 against a true 3.04 / 10.10 / 33.75 / 100.
+     *
+     * WHY THE THRESHOLDS ARE SAFE. Measured across every workbook in sampledocs, the two
+     * cases sit six orders of magnitude apart: eight files land on ratio exactly 1.000
+     * (grand total == contract, to the cent) and the fraction file on 1.28e-6. There is
+     * no grey zone to tune, which is why the bands below are wide rather than delicate.
+     *
+     * WHY IT DEFAULTS TO PESOS. Choosing a unit rewrites the entire curve and leaves no
+     * visible trace - the result still looks like a plausible S-curve either way. So
+     * another unit is adopted ONLY on positive evidence, and anything unrecognised keeps
+     * today's behaviour and falls to the summary-fallback net in buildMonths().
+     */
+    private function detectMonthCellScale(float $grandTotal, float $contractTotal): string
+    {
+        // No contract figure to compare against: nothing can be concluded, so change nothing.
+        if ($contractTotal <= 0 || $grandTotal <= 0) {
+            return 'pesos';
+        }
+
+        // Guard the comparison itself. A contract small enough to be confused with 1 or 100
+        // is not a construction contract, and without this a toy fixture could flip scale.
+        if ($contractTotal < self::SCALE_MIN_CONTRACT) {
+            return 'pesos';
+        }
+
+        // Cells that add up to ~1 are shares of the whole contract.
+        if ($grandTotal >= self::SCALE_FRACTION_LO && $grandTotal <= self::SCALE_FRACTION_HI) {
+            return 'fraction';
+        }
+
+        // Cells that add up to ~100 are already percentages.
+        if ($grandTotal >= self::SCALE_PERCENT_LO && $grandTotal <= self::SCALE_PERCENT_HI) {
+            return 'percent';
+        }
+
+        return 'pesos';
     }
 
     // ─── HELPERS ──────────────────────────────────────────────────────────────

@@ -1760,4 +1760,244 @@ class SCurveImportTest extends TestCase
 
         $this->assertNull($method->invoke($controller, '/nonexistent/path.xlsx'));
     }
+    // ─────────────────────────────────────────────────────────────────────────
+    // CELL SCALE (2026-09-24, phase-45). A real contractor workbook
+    // (CONSTRUCTION SCHEDULE.xlsx) writes each day cell as a SHARE OF THE WHOLE
+    // CONTRACT (TOTAL% / DURATION), not as pesos. Dividing that by the contract a
+    // second time read its curve as 0 / 0 / 0 / 100 instead of 3.04 / 10.10 /
+    // 33.75 / 100. These fixtures pose the same schedule in three different units
+    // and require one answer.
+    // @see textfiles/document_parser_day_column_layout_plan.md section 7
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * A 3-month workbook whose MONTH cells are written in a unit the test chooses.
+     * Called by: the cell-scale and summary-fallback tests below.
+     *
+     * Column F (the contract amount per activity) is always pesos, because every real
+     * file writes it that way; the only question these fixtures pose is what the MONTH
+     * cells mean. $cumulative, when given, adds an author summary row — the reader finds
+     * it by the word "cumulative", which is also why the real file's misspelled
+     * "COMMULATIVE" is matched by the same regex.
+     */
+    protected function makeUnitWorkbook(
+        string $path,
+        array $monthCells,
+        float $c1,
+        float $c2,
+        ?array $cumulative = null
+    ): void {
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('S-CURVE');
+
+        $sheet->setCellValue('A1', 'CONSTRUCTION SCHEDULE AND S-CURVE');
+        $sheet->setCellValue('A2', 'CONTRACT NAME:');
+        $sheet->setCellValue('B2', 'A UNIT-SCALE TEST BUILDING');
+        $sheet->setCellValue('A3', 'LOCATION:');
+        $sheet->setCellValue('B3', 'Somewhere in the Philippines');
+
+        $sheet->setCellValue('A10', 'ITEM');
+        $sheet->setCellValue('C10', 'DESCRIPTION');
+        $sheet->setCellValue('F10', 'CONTRACT');
+        $sheet->setCellValue('G10', '% WEIGHT');
+        $sheet->setCellValue('I10', 'Month 1');
+        $sheet->setCellValue('K10', 'Month 2');
+        $sheet->setCellValue('M10', 'Month 3');
+
+        $total = $c1 + $c2;
+
+        // Activity 1 carries month 1; activity 2 carries months 2 and 3 — the same
+        // shape as the real file, where one short activity precedes a long one.
+        $sheet->setCellValue('B12', '1');
+        $sheet->setCellValue('C12', 'Design and Analysis');
+        $sheet->setCellValue('F12', $c1);
+        $sheet->setCellValue('G12', round($c1 / $total * 100, 2));
+        $sheet->setCellValue('I12', $monthCells['I']);
+
+        $sheet->setCellValue('B13', '2');
+        $sheet->setCellValue('C13', 'Retrofitting Works');
+        $sheet->setCellValue('F13', $c2);
+        $sheet->setCellValue('G13', round($c2 / $total * 100, 2));
+        $sheet->setCellValue('K13', $monthCells['K']);
+        $sheet->setCellValue('M13', $monthCells['M']);
+
+        // TOTAL row — skipped as data. It repeats the month cells exactly as the real
+        // file's CONTRACT COST row does, which is what proves it is excluded: if it
+        // were counted, the grand total would double and the unit would be misread.
+        $sheet->setCellValue('C14', 'TOTAL');
+        $sheet->setCellValue('F14', $total);
+        $sheet->setCellValue('G14', 100);
+        $sheet->setCellValue('I14', $monthCells['I']);
+        $sheet->setCellValue('K14', $monthCells['K']);
+        $sheet->setCellValue('M14', $monthCells['M']);
+
+        if ($cumulative !== null) {
+            $sheet->setCellValue('C15', 'CUMULATIVE % OF ACCOMPLISHMENT');
+            $sheet->setCellValue('I15', $cumulative['I']);
+            $sheet->setCellValue('K15', $cumulative['K']);
+            $sheet->setCellValue('M15', $cumulative['M']);
+        }
+
+        (new Xlsx($spreadsheet))->save($path);
+    }
+
+    /** Collapse the warning list to one string so a test can ask what the reader said. */
+    protected function warningText(array $result): string
+    {
+        return implode(' | ', $result['meta']['warnings'] ?? []);
+    }
+
+    public function test_month_cells_written_as_pesos_are_read_unchanged(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // 100000 + 140000 + 160000 = 400000 = the contract, so these are pesos.
+        $this->makeUnitWorkbook($path, ['I' => 100000, 'K' => 140000, 'M' => 160000], 100000, 300000);
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        // The peso path must stay silent — a scale note here would mean the detector
+        // is second-guessing the format every other workbook in the corpus uses.
+        $this->assertStringNotContainsString('share of the whole contract', $this->warningText($result));
+        $this->assertStringNotContainsString('states progress as percentages', $this->warningText($result));
+
+        unlink($path);
+    }
+
+    public function test_month_cells_written_as_shares_of_the_contract_read_the_same_curve(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // The SAME schedule as the peso test, written as shares of 1 — the real file's
+        // convention. 0.25 + 0.35 + 0.40 = 1.00.
+        $this->makeUnitWorkbook($path, ['I' => 0.25, 'K' => 0.35, 'M' => 0.40], 100000, 300000);
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        // Identical to the peso reading. Before this fix it was 0.0 / 0.0 / 100.0.
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        $this->assertStringContainsString('share of the whole contract', $this->warningText($result));
+
+        unlink($path);
+    }
+
+    public function test_month_cells_written_as_percentages_read_the_same_curve(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // The same schedule again, as percentages: 25 + 35 + 40 = 100.
+        $this->makeUnitWorkbook($path, ['I' => 25, 'K' => 35, 'M' => 40], 100000, 300000);
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        $this->assertStringContainsString('states progress as percentages', $this->warningText($result));
+
+        unlink($path);
+    }
+
+    public function test_a_contract_too_small_to_compare_cannot_flip_the_cell_scale(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // Contract 800 — small enough to be confused with the 1-and-100 bands the
+        // detector keys on. Without the minimum-contract guard these cells would be
+        // read as shares and the curve would become 25 / 60 / 100 on no evidence.
+        $this->makeUnitWorkbook($path, ['I' => 0.25, 'K' => 0.35, 'M' => 0.40], 200, 600);
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertStringNotContainsString('share of the whole contract', $this->warningText($result));
+        $this->assertNotSame(25.0, $curve[0], 'a sub-1000 contract must not be reinterpreted as shares');
+
+        unlink($path);
+    }
+
+    public function test_summary_is_adopted_when_activity_math_is_wildly_below_it(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // Cells in a unit the detector does NOT recognise (they add to 10 — neither
+        // pesos, nor shares of 1, nor percentages), so scale detection declines and the
+        // activity curve comes out near zero. The author's own cumulative row says
+        // 25 / 60 / 100, which is more than 20x what the activities produced.
+        $this->makeUnitWorkbook(
+            $path,
+            ['I' => 2.5, 'K' => 3.5, 'M' => 4.0],
+            100000,
+            300000,
+            ['I' => 0.25, 'K' => 0.60, 'M' => 1.00]
+        );
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertSame('summary', $result['meta']['curveSource']);
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        // The reviewer is told WHY, and that the likely cause is an unrecognised unit —
+        // the old wording claimed no activity values were found, which was not true.
+        $this->assertStringContainsString('add up to far less', $this->warningText($result));
+        $this->assertStringContainsString('unit the reader did not recognise', $this->warningText($result));
+
+        unlink($path);
+    }
+
+    public function test_summary_is_not_adopted_for_an_ordinary_disagreement(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // Readable peso activity math, with a summary row computed on a slightly
+        // different base (30 / 65 / 100 against 25 / 60 / 100). This is the BUHI
+        // pre-discount-bid case: it must stay a reference, never replace the curve.
+        $this->makeUnitWorkbook(
+            $path,
+            ['I' => 100000, 'K' => 140000, 'M' => 160000],
+            100000,
+            300000,
+            ['I' => 0.30, 'K' => 0.65, 'M' => 1.00]
+        );
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        $this->assertStringNotContainsString('add up to far less', $this->warningText($result));
+
+        unlink($path);
+    }
+
+    public function test_summary_is_not_adopted_when_activity_math_merely_falls_short(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'scurve_') . '.xlsx';
+        // Readable peso activity math that does NOT quite reach the contract — the month
+        // cells add to 360,000 of a 400,000 contract, so the pre-force curve tops out at
+        // 90% while the author's summary says 100%. This is the ordinary case (rounding,
+        // an omitted item, a retention line) and it must stay on the activity curve.
+        //
+        // WHY THIS TEST EXISTS SEPARATELY from the ordinary-disagreement test above:
+        // that one cannot pin the implausibility ratio. Its activity math reaches exactly
+        // 100 and so does its summary, so the comparison is 100 < 100 — false at ANY
+        // ratio, including 1.0. Raising SUMMARY_IMPLAUSIBLE_RATIO to 1.0 left the whole
+        // class green (mutation M4, 2026-09-24). This fixture is the one that dies.
+        $this->makeUnitWorkbook(
+            $path,
+            ['I' => 100000, 'K' => 140000, 'M' => 120000],
+            100000,
+            300000,
+            ['I' => 0.30, 'K' => 0.65, 'M' => 1.00]
+        );
+
+        $result = app(SCurveImportService::class)->parse($path);
+        $curve = array_column($result['months'], 'planned_progress_percent');
+
+        $this->assertSame('activities', $result['meta']['curveSource']);
+        $this->assertSame([25.0, 60.0, 100.0], $curve);
+        $this->assertStringNotContainsString('add up to far less', $this->warningText($result));
+
+        unlink($path);
+    }
 }

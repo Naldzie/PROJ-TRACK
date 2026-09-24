@@ -2,7 +2,7 @@
 # Parent refs: textfiles/document_parser_excel_learning_loop_plan.md (E1 — maps, teaching, learn-from-AI)
 #              textfiles/document_parser_pdf_teach_grid_plan.md (the teach desk)
 #              textfiles/local_llm_parser_plan.md (why the AI tier cannot carry this alone)
-# Date: September 16, 2026 (last updated September 18, 2026)
+# Date: September 16, 2026 (last updated September 24, 2026)
 # Status: ⏸ PARKED 2026-09-18 — the remaining steps are parked by the user's order, on a
 #         CLIENT FACT: the PMU confirmed they mainly receive the ORIGINAL EXCEL files for
 #         S-curves, so the exotic-layout work this file opened for is no longer the thing
@@ -19,8 +19,11 @@
 #         ⏸ PDF counterpart restudy — parked with them (same reason: the S-curve arrives
 #            as Excel; the PDF path is the fallback, not the main road).
 #         ⏸ option E deferred (unchanged).
-# Branch: phase-22-scurve-month-headers (off develop c081c39; Rule 12) — steps 1-3
-#         committed as 9545cc1; nothing from this file is uncommitted.
+#         ✅ §7 CELL-SCALE FIX (the first real daily-format workbook) — BUILT and
+#            BROWSER-PROVEN 2026-09-24 on phase-45-scurve-fraction-scale. It does NOT
+#            un-park steps 4/5: cell semantics, not layout teaching (§7.5). Log: §7.8.
+# Branch: phase-45-scurve-fraction-scale (off develop c2eaada; Rule 12) — §7.8 is the
+#         live work. Earlier: phase-22-scurve-month-headers, steps 1-3 as 9545cc1.
 
 ===============================================================================
   0. READ THIS FIRST
@@ -31,17 +34,19 @@
     the live reader.
       ✅ The date-row rule (option A, phase-21) WORKS on it — first proof on a real
          file rather than a rebuild. Layout, month spans and meta all correct.
-      ❌ The CURVE reads 0 / 0 / 0 / 100 against a true 3.04 / 10.10 / 33.75 / 100,
+      ❌ The CURVE read 0 / 0 / 0 / 100 against a true 3.04 / 10.10 / 33.75 / 100,
          because the day cells hold FRACTIONS OF THE CONTRACT (TOTAL% / DURATION),
-         not pesos, and buildMonths divides them by the contract total again.
-         This is the known "fraction scale" defect and THIS IS ITS FIRST REAL
-         SPECIMEN — the condition AGENTS.md parked it under is now met.
-      ⚠ Worse than the number: the existing summary rescue does not fire (it needs
-         activity math ABSENT, not WRONG), so the user is handed a flat curve with
+         not pesos, and buildMonths divided them by the contract total again.
+         This is the known "fraction scale" defect and THIS WAS ITS FIRST REAL
+         SPECIMEN — the condition AGENTS.md parked it under was met.
+      ⚠ Worse than the number: the existing summary rescue did not fire (it needed
+         activity math ABSENT, not WRONG), so the user was handed a flat curve with
          "no action needed" printed beside the correct one.
       ⚠ §7 DOES NOT UN-PARK STEPS 4/5 — different problem, see §7.5.
-    Nothing is built and nothing is ordered. Details, arithmetic and the shape of a
-    fix are in §7.
+    ✅ FIXED 2026-09-24 on phase-45-scurve-fraction-scale — BOTH (a) the cell-scale
+    detector and (b) the widened summary net. The file now reads its true curve and
+    the three misleading warnings are gone. Corpus: 12 of 13 workbooks byte-identical.
+    PHP 1365 / 0. Browser-proven. BUILD LOG: §7.8. The measurement is §7.1-§7.6.
 
   ➜ HANDOFF (2026-09-18) — STEPS 4/5 OF THIS FILE ARE PARKED.
     WHY IT IS PARKED (user, 2026-09-18): the client confirmed they mainly have the
@@ -624,7 +629,9 @@
       container, so they read through the live service, not a copy of it.
       ⚠ phpspreadsheet 4.x: getCellByColumnAndRow() is GONE — use getCell([$col,$row]).
 
-  7.7 ⬜ NOT BUILT, NOT ORDERED — the shape a fix would take
+  7.7 ✅ BUILT 2026-09-24 (was: ⬜ NOT BUILT, NOT ORDERED) — the shape a fix would take
+      Kept verbatim as the pre-build specification. What shipped is in §7.8, and it
+      took BOTH (a) and (b), exactly as the warning at the end of this section said.
       (a) Detect the scale of activity/day cells instead of assuming pesos. The file
           states its own units: G=TOTAL % per activity, F=Amount, and a CONTRACT COST
           row whose G is exactly 1. When the activity cells are fractions of 1 rather
@@ -642,3 +649,158 @@
       the AI-assist offer. Before/after gate: snapshot_excel_reads.php against
       excel_reads_after.json, all 10+ sampledocs workbooks byte-identical except the
       one under test.
+
+  7.8 ✅ BUILT 2026-09-24 — phase-45-scurve-fraction-scale (BOTH (a) AND (b))
+      User order: fix it, after the measurement in §7.1-§7.7 was reviewed.
+      Branch off develop c2eaada (Rule 12). ONE file of application code.
+
+    WHY BOTH, NOT ONE
+      §7.7 warned that (b) without (a) "still silently prefers a summary over a curve
+      it could have read correctly". That held. (a) is the honest read; (b) is the net
+      for the NEXT unit nobody has seen yet. Built together, they are not alternatives.
+
+    (a) detectMonthCellScale(float $grandTotal, float $contractTotal): string
+        SCurveImportService, called from buildMonths() BEFORE any division.
+        Returns 'pesos' (default) | 'fraction' (cells are shares of 1) | 'percent'.
+        buildMonths then converts with a match(): fraction => cells * 100,
+        percent => cells as-is, pesos => (cells / contract) * 100 as before.
+        A non-peso verdict ALWAYS adds a warning naming the scale — a unit decision
+        rewrites the entire curve and leaves no other visible trace.
+
+        BANDS (deliberately wide, not tuned — the corpus separates these cases by six
+        orders of magnitude, so there is no grey zone to be delicate about):
+          SCALE_MIN_CONTRACT   1000.0   below this, conclude nothing
+          fraction             0.5  .. 1.5
+          percent             50.0  .. 150.0
+        Measured: eight corpus workbooks land on ratio exactly 1.000 (grand total ==
+        contract, to the cent); the fraction file lands on 1.28e-6.
+
+        ⚠ IT DEFAULTS TO PESOS ON ANYTHING UNRECOGNISED. Another unit is adopted only
+        on positive evidence, so an unknown shape keeps today's behaviour and falls to
+        (b) rather than being guessed at.
+
+    (b) The summary-fallback net widened.
+        The gate required activity math to be ABSENT (lastNonZero === 0). It can also
+        be PRESENT AND WRONG BY ORDERS OF MAGNITUDE, and that case walked straight past
+        the gate because force-last-100 had already put 100 in the final month.
+        Now a curve the author's own summary contradicts by more than 20x counts as
+        absent too (SUMMARY_IMPLAUSIBLE_RATIO = 0.05), and the warning says so instead
+        of claiming no activity values were found — which was not true.
+
+        ⚠ IT COMPARES THE PRE-FORCE CUMULATIVE (rawCumulative, captured inside the
+        month loop), not the published curve. Comparing the published curve is
+        meaningless: force-last-100 makes its maximum exactly 100 by construction.
+
+    CORPUS MEASUREMENT (the constraint §7.7 set — the scale rule touches every Excel
+    S-curve, and summaryReference drives the AI-assist offer)
+      13 workbooks read before and after: 12 BYTE-IDENTICAL, 1 changed.
+      The one that changed is the specimen, and it changed to the truth:
+        curve  before: 0 0 0 100        after: 3.04 10.1 33.75 100
+        summaryReference gaps  before: 3.04 / 10.1 / 33.75 / 0   after: ALL ZERO
+        warnings  before: 3 notes printing the correct curve and then saying
+                          "Your baseline below uses the activity math — no action
+                          needed"   after: 1 note naming the scale
+      The gap collapsing to zero is the strongest evidence in this entry: the reader
+      and the author's own cumulative row now agree on all four months.
+
+    FALSIFICATION (mutations applied to a pristine copy, suite re-run each time)
+      M1  kill detectMonthCellScale (always 'pesos')      2 failed  ✅ red
+      M2  kill the implausibility net (always false)      1 failed  ✅ red
+      M3  drop the SCALE_MIN_CONTRACT guard               1 failed  ✅ red
+      M4  SUMMARY_IMPLAUSIBLE_RATIO 0.05 -> 1.0           GREEN     ❌ SURVIVED
+      Corpus-level: with (a) and (b) both disabled, all 13 reads are byte-identical
+      to the before snapshot — the change does nothing except where it is meant to.
+
+      ⚠ M4 SURVIVED THE FIRST RUN, AND THE REASON IS WORTH KEEPING.
+      test_summary_is_not_adopted_for_an_ordinary_disagreement was written to guard
+      exactly this over-fire, and it CANNOT. Its activity math reaches exactly 100
+      and its summary also reaches 100, so the comparison is 100 < 100 — false at ANY
+      ratio, 1.0 included. The test asserts the right outcome and cannot discriminate
+      the threshold. This is the "vacuous fixture" pattern this project has now hit
+      three times (see the teach-grid plan's lessons): an assertion that passes for a
+      reason unrelated to the rule it is supposed to pin.
+      FIX: a 7th test whose activity curve legitimately falls SHORT of its summary —
+      month cells summing to 360,000 of a 400,000 contract, so the pre-force curve
+      tops out at 90 against a summary of 100 (ordinary rounding / an omitted item).
+      At 0.05 the net stays shut; at 1.0 it fires and replaces a readable curve.
+      M4 now fails. The two net tests BRACKET the constant rather than pin it: fires
+      on a 20x-plus disagreement, stays shut on a 10% shortfall. That suits a band
+      chosen to be wide.
+
+    TESTS  tests/Feature/SCurveImportTest.php +7, via one helper makeUnitWorkbook()
+      that poses the SAME 3-month schedule in three different units and requires one
+      answer (25 / 60 / 100 every time):
+        1  pesos read unchanged, and SILENT — a scale note here would mean the
+           detector is second-guessing the format every other workbook uses
+        2  shares of 1 read the same curve  (was 0.0 / 0.0 / 100.0)
+        3  percentages read the same curve
+        4  a sub-1000 contract cannot flip the scale (the min-contract guard)
+        5  summary adopted when activity math is wildly below it, with the new wording
+        6  summary NOT adopted for an ordinary disagreement (30/65/100 vs 25/60/100)
+        7  summary NOT adopted when activity math merely falls short — the M4 killer
+      The fixtures' TOTAL row repeats the month cells exactly as the real file's
+      CONTRACT COST row does, which is what proves it is excluded from the grand
+      total: were it counted, the sum would double and the unit would be misread.
+
+    SUITES   PHP 1365 passed / 0 failed / 5276 assertions / 144.93s.
+             That is develop's 1358 plus exactly these 7 — no regressions, no
+             collateral. JS NOT RUN and not implicated: no JS file is touched.
+
+    BROWSER-PROVEN 2026-09-24 by the user, Set Up Baseline Schedule modal:
+      #1 July 2025 3.04% DESIGN AND ANALYSIS (1 activity)
+      #2 August 2025 10.10% DESIGN AND ANALYSIS, Retrofitting Works (2 activities)
+      #3 September 2025 33.75% Retrofitting Works (1 activity)
+      #4 October 2025 100.00% Retrofitting Works
+      "Plan Progress 100% — Baseline plan is complete and ready to save!"
+
+    WHICH LAYOUTS THIS COVERS (asked by the user, answered from the code 2026-09-24)
+      There is ONE span model: monthSpans is month -> [columns], and buildMonths sums
+      whatever the span holds. 1 column, 2 columns (the 15-day pairing) and 28 columns
+      (daily) are the SAME path at different widths, discovered along two independent
+      axes — the LABEL (numbered / calendar name / date row) and the WIDTH (merged
+      header cell / uniform pairing / date groups) — plus taught and AI-derived maps
+      in pass 2. parse() has exactly ONE buildMonths call and parseWithAiLayout()
+      routes through parse(), so the scale detector sits downstream of every one of
+      them and is layout-agnostic BY CONSTRUCTION, not by coincidence.
+
+      Proven from the corpus:
+        1 col/month   + pesos     ✅ roof (7mo), Calendar-14Month, Buhi difformattest
+        2 col/month   + pesos     ✅ 5Month-Lone-Body, Calendar-DecStart, Buhi (12mo)
+        daily 17-28   + pesos     ✅ both CONSCHED-Daily rebuilds
+        daily 17-28   + FRACTION  ✅ CONSTRUCTION SCHEDULE.xlsx (the real specimen)
+        2 col/month   + fraction  ✅ test fixtures 2 and 5
+        2 col/month   + percent   ✅ test fixture 3
+      ⚠ NOT SPECIMEN-BACKED: no real workbook in the corpus is a PERCENT file. That
+        branch exists only under synthetic fixtures. Same three lines as the fraction
+        branch, but say so rather than claim coverage.
+
+    ⬜ KNOWN AND LEFT AS IS (neither is ordered; both want a specimen first)
+      1. THE SCALE IS DECIDED ONCE FOR THE WHOLE WORKBOOK, not per row or per column.
+         A file mixing units across activity rows would be misread with no warning.
+         No specimen exists.
+      2. readSummaryReference still has its OWN separate rule — it scales any summary
+         value under 1.5 by 100 (:2282). The asymmetry AGENTS.md named ("one reader
+         holds two opinions about what a number below 1.5 means") is NOT removed: the
+         activity side now has an explicit detector instead of an assumption, so the
+         two agree in outcome on this specimen, but they remain two rules in two
+         places. Unifying them moves summaryReference on files there is no specimen
+         for, which is the same reason it was parked before.
+
+    FILES
+      app/Services/SCurveImportService.php    (a) + (b) + 5 new constants
+      tests/Feature/SCurveImportTest.php      +7 tests, +1 helper, +1 assertion helper
+      .env.example                            AI_MODEL -> gemini-flash-lite-latest,
+                                              aligning the sample with the model the
+                                              live .env actually uses (user's own fix,
+                                              unrelated to the parser)
+
+    PROBES (C:\temp\opencode, outside the repo per convention — NOT pushed)
+      snapshot via the §7.6 probes; excel_reads_p45_{before,after,mut}.json
+      diffsnap.mjs        before/after corpus comparison, per-file curve + meta diff
+      mutate.mjs          corpus-level mutation (kill-a / kill-b / kill-both)
+      mutate2.mjs         M1-M4, each rebuilt from the pristine copy
+      SCurveImportService.php.p45   pristine copy the mutations are rebuilt from
+      ⚠ phpspreadsheet 4.x: getCellByColumnAndRow() is GONE — use getCell([$col,$row]).
+
+    NEXT  Merge question is the user's (Rule 12). Nothing else from this file is
+          ordered; steps 4/5 remain parked on their own un-park condition (§7.5).
