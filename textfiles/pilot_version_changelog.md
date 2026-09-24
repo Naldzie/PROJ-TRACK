@@ -353,7 +353,7 @@
   A-5  ✅  S-curve import reads activity cells whose unit is not pesos
   -----------------------------------------------------------------------------
     Date:    2026-09-24
-    Branch:  phase-45-scurve-fraction-scale   Commit: (see git log)
+    Branch:  phase-45-scurve-fraction-scale   Commit: 7e64799
     Merged:  NO — built and browser-confirmed, merge not yet ordered (Rule 12)
     Plan:    textfiles/document_parser_day_column_layout_plan.md §7 (measurement)
              and §7.8 (build log)
