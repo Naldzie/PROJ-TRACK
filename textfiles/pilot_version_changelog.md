@@ -425,11 +425,11 @@
 
 
   -----------------------------------------------------------------------------
-  A-6  ⬜  AI assist keeps its button after a successful answer
+  A-6  ✅  AI assist keeps its button after a successful answer
   -----------------------------------------------------------------------------
     Date:    2026-09-24
     Branch:  phase-46-ai-assist-retry   Commit: 5aebe82
-    Merged:  NO — built, browser check owed
+    Merged:  YES — into develop 2026-09-24 (1614ab2, --no-ff, clean)
     Plan:    textfiles/normal_doc_parser_restudy_plan.md §59
 
     THE DEFECT (user report, 2026-09-24): after a SUCCESSFUL AI assist the "Try AI
@@ -462,7 +462,7 @@
     Tests:  JS 286 / 286 / 0 — UNCHANGED, and that is the honest statement rather than
             a pass: the suite reaches document-parser-core.js only and every line of
             this change is in document-parser.js, the DOM half. PHP untouched.
-    Browser check:      ⬜ OWED — the four steps in restudy §59.3.
+    Browser check:      ✅ CONFIRMED by the user 2026-09-24.
     ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm dependency,
                          and NO vite build. ONE JS file under public/, cache-busted by
                          filemtime ($jsv), so copying it is enough. No cache clear
@@ -478,25 +478,23 @@
   decision rather than a wait. Version 1 remains what the PMU is running
   until someone says otherwise. This section describes what the upgrade costs.
 
-  ⚠ A-1..A-5 ARE ALL MERGED INTO develop AND BROWSER-CONFIRMED as of 2026-09-24, so a
-  version 2 cut from that point is ready whenever it is wanted. A-6 came later the same
-  day and is NOT merged and NOT browser-checked yet — a cut made now simply excludes it,
-  which costs nothing but the one JS file it changes.
+  ⚠ ALL SIX ADJUSTMENTS ARE MERGED INTO develop AND BROWSER-CONFIRMED as of 2026-09-24.
+  There is nothing left to wait for: cutting pilot version 2 is purely a decision.
 
-  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5
-  ----------------------------------------------
+  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5 + A-6
+  ----------------------------------------------------
     Database migrations      NONE
     New .env keys            NONE
     composer dependencies    NONE
     npm dependencies         NONE
     vite rebuild             NOT NEEDED
-    Files to replace         10 application files + docs (9 without A-6):
+    Files to replace         10 application files + docs:
                                A-2  3 PHP + 1 Blade
                                A-3  1 JS  (document-parser.js)
                                A-4  1 JS  (document-parser-core.js)
                                     + 1 Blade + 1 CSS
                                A-5  1 PHP (SCurveImportService.php)
-                               A-6  1 JS  (document-parser.js) — NOT MERGED YET
+                               A-6  1 JS  (document-parser.js)
 
   That is the whole cost. No adjustment since version 1 touches the schema, the
   configuration or the dependency set, which is why an upgrade is a file copy.
