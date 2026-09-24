@@ -138,6 +138,8 @@ function cancelDocumentAutofill() {
         window._autofillAiConflicts = {};
         window._autofillAiBusy = false;
         window._autofillAiMerged = false;
+        // 2026-09-24: the outcome line the banner keeps showing beside the retry button.
+        window._autofillAiOutcome = '';
         // Snapshots: original Files are per-session too (object URLs / buffers must not leak).
         window._autofillPdfFiles = [];
     }
@@ -383,6 +385,7 @@ async function runDocumentAutofill() {
         window._autofillAiConflicts = {};
         window._autofillAiBusy = false;
         window._autofillAiMerged = false;
+        window._autofillAiOutcome = '';
         var aiOffer = false;
         try {
             var aiCore = (typeof getCore === 'function') ? getCore() : null;
@@ -2040,9 +2043,23 @@ function autofillAiBannerHtml() {
     // button in the banner — so "Asking AI…" and the disabled state were written onto
     // the wrong control while the button actually pressed stayed live and re-pressable.
     // The named page list above STAYS: that is what makes the consent informed (S-1).
-    return '<i class="bi bi-magic"></i><span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> '
-        + named + '</span>'
-        + ' <button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">Try AI assist</button>';
+    // 2026-09-24 (user report): AFTER A SUCCESSFUL ASSIST THE BUTTON MUST STILL BE THERE.
+    // The success path used to overwrite this whole banner with a plain outcome sentence,
+    // which left no control to press — so a reviewer who then went and CHOSE the pages by
+    // hand (the exact workflow S-1/S-2 built) had no way to send them. The outcome is now
+    // a line ABOVE an unchanged offer, not a replacement for it.
+    // ⚠ EXACTLY ONE <button> MAY EXIST IN THIS BANNER. _tryAiAssist() finds its own
+    // control with aiEl.querySelector('button'), which takes the FIRST one — the 2026-09-23
+    // note above records what a second button did the last time there were two.
+    const done = (typeof window !== 'undefined' && window._autofillAiOutcome) ? window._autofillAiOutcome : '';
+    const lead = done
+        ? '<div style="font-size:0.9em;margin-bottom:0.35rem;">' + done + '</div>'
+            + '<span style="font-size:0.9em;">Send again? ' + named + '</span>'
+        : '<span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> '
+            + named + '</span>';
+    return '<i class="bi bi-magic"></i>' + lead
+        + ' <button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">'
+        + (done ? 'Try AI assist again' : 'Try AI assist') + '</button>';
 }
 
 // Repaint the banner in place after the selection changes — excluding a page or
@@ -2985,7 +3002,17 @@ window._tryAiAssist = async function () {
             const conflictNote = merged.conflicts
                 ? ' It read <strong>' + merged.conflicts + '</strong> filled box(es) differently — each one now offers both values; nothing was overwritten.'
                 : ' Boxes with local values were left alone.';
-            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + merged.filled + '</strong> empty box(es) — review, edit freely, then Apply.' + conflictNote + fallbackNote + '</span>';
+            // The outcome is REMEMBERED, not painted over the offer. refreshAutofillAiBanner
+            // then renders both, and keeps the named page list honest when the reviewer
+            // changes the selection before pressing again (S-4).
+            window._autofillAiOutcome = 'AI assist filled <strong>' + merged.filled
+                + '</strong> empty box(es) — review, edit freely, then Apply.' + conflictNote + fallbackNote;
+            // A stale error from an earlier attempt would otherwise block the repaint,
+            // and the reviewer would be left reading a failure that has since succeeded.
+            try {
+                if (aiEl) aiEl.querySelectorAll('[data-ai-error]').forEach((n) => n.remove());
+            } catch (e) {}
+            refreshAutofillAiBanner();
         } catch (e) {}
         window._autofillAiMerged = true;
     } catch (e) {

@@ -6230,13 +6230,105 @@
   ---------------------------------------------------------------------------
   58.5  ⬜ Older items still open, unchanged
   ---------------------------------------------------------------------------
-        · §45.4 / §48.3 — whether a never-scanned page should be the AI's FIRST
-          pick, and the slice-cap justification. User-owned.
+        · §45.4 / §48.3 — ✅ THE FIRST-PICK HALF IS DECIDED (D-46-1, 2026-09-24, §59.4):
+          an unread page SHOULD be the first pick, with the user able to override —
+          which ratifies the shipped behaviour, so no work follows. ⬜ STILL OPEN and
+          still user-owned: the slice-CAP justification (server hard cap 3, client
+          sends 2, the 2 justified nowhere). Different question — how many, not which.
         · ai_slice_selection_plan.md §11 — per-file counts, whole-file sending.
           PARKED 2026-09-21 behind pilot readiness.
         · The PDF S-curve reader keys calendar month names by calendar NUMBER and
           caps labels at 12 (scurve-pdf-parser-core.js:77,:79). A PDF S-curve
           starting in any month but January is misread. Known, carried knowingly.
+
+
+===============================================================================
+  §59 — AI ASSIST: THE OFFER SURVIVES A SUCCESSFUL ANSWER (2026-09-24)
+        phase-46-ai-assist-retry. Built on a user report.
+===============================================================================
+
+  59.1  THE DEFECT — a successful assist removed its own button
+
+        USER, 2026-09-24: "after using the ai assist and succeed, the try ai assist
+        button is hidden. do not hide this as the user might want to retry
+        (especially after manually select what page to send)."
+
+        Confirmed in the code. On success _tryAiAssist() did:
+
+            aiEl.innerHTML = '<...>AI assist filled N empty box(es) — review...'
+
+        which REPLACED the whole banner, button included. The offer and the outcome
+        were competing for one element, and the outcome won.
+
+        ⚠ WHY THIS IS WORSE THAN A COSMETIC LOSS. Choosing the pages by hand is the
+        workflow S-1 (name the pages), S-2 (refuse a page or a file) and S-4 (choose
+        the count) were built to support. The natural order of that workflow is: try
+        it, see a thin result, go pick better pages, send again. The button vanished
+        at exactly step 4. So the feature the consent surface exists to serve could
+        not be reached a second time.
+
+        ⚠ AND IT HAD ALREADY CAUSED ONE CONFUSING HALF-FIX. The 2026-09-23 note inside
+        _tryAiAssist's finally block records a user report that "the button seems to
+        not be working" after one successful assist. That was a stuck _autofillAiBusy
+        flag and it was fixed correctly — but the report was only POSSIBLE because
+        refreshAutofillAiBanner() silently restored a button the success path had
+        destroyed, whenever the reviewer changed the page selection. The stale flag
+        then made the restored button dead. Fixing the flag left the underlying
+        oddity in place: a control that disappears on success and reappears if you
+        happen to touch the page list.
+
+  59.2  THE FIX — the outcome is a LINE, not a REPLACEMENT
+
+        window._autofillAiOutcome remembers what the last assist did. The banner
+        renders it ABOVE an otherwise unchanged offer, whose wording switches from
+        "Parsing looks uncertain — Try AI assist?" to "Send again?" and whose button
+        reads "Try AI assist again".
+
+        Three properties worth keeping:
+          · THE NAMED PAGE LIST STAYS HONEST. The retry offer is built by the same
+            autofillAiBannerHtml(), so refreshAutofillAiBanner() keeps naming the
+            pages that would actually be sent when the reviewer changes the selection
+            between attempts (S-4's promise-matches-payload rule).
+          · EXACTLY ONE <button> REMAINS IN THE BANNER. _tryAiAssist() locates its own
+            control with aiEl.querySelector('button'), which takes the FIRST one. The
+            2026-09-23 comment above the return records what a second button did last
+            time; the invariant is now stated there in the code.
+          · A STALE ERROR CANNOT BLOCK THE REPAINT. refreshAutofillAiBanner() bails out
+            when the banner holds a [data-ai-error] node, so a failed attempt followed
+            by a successful one would have left the failure on screen. The success path
+            removes those nodes before repainting.
+
+        The outcome resets with the rest of the per-run AI state at both reset sites.
+
+  59.3  PROOF
+
+        JS 286 / 286 / 0 — UNCHANGED, and that is the honest statement: the suite
+        reaches document-parser-core.js only, and every line of this change is in
+        document-parser.js, the DOM half. ⬜ BROWSER CHECK OWED. What to look at:
+          1. Run an autofill that offers AI assist; press it; on success the outcome
+             line appears AND a "Try AI assist again" button is still there.
+          2. Change the page selection after that success — the named page list in the
+             retry offer must follow it, and the outcome line must survive.
+          3. Press again — it must actually send (this is the path the 2026-09-23 busy
+             flag broke).
+          4. Force a failure, then succeed — the failure text must not survive.
+
+  59.4  USER DECISION D-46-1 — THE AI'S FIRST PICK (settles §45.4 / §48.3)
+
+        USER, 2026-09-24: "yes first pick of ai sending is if the page is not read by
+        the system's ocr. but can still be overidden by the users as there might be
+        cases where the unread page do not contain extractable details."
+
+        ✅ THIS RATIFIES WHAT IS ALREADY BUILT — no code change follows from it.
+          · ocrAiCandidates' first sort key is exactly this: "a page the reader got
+            NOTHING from is still the best thing to send" (read[a] ? 1 : 0).
+          · The override exists in three forms already: per-page refusal and whole-file
+            refusal (S-2, enforced in two places, fail-closed) and the reviewer-chosen
+            count (S-4).
+        So the item leaves the open list. What it does NOT settle is the separate
+        sub-question in §45.4: the slice CAP itself (server hard cap 3, client sends 2,
+        the 2 justified nowhere). That remains user-owned and is unaffected by this
+        decision, since it is about how many pages go, not which ones.
 
 ===============================================================================
   END OF RESTUDY
