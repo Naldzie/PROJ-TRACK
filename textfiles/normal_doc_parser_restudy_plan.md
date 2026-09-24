@@ -5,26 +5,19 @@
         A cold session should be able to continue from this block alone.
 ===============================================================================
 
-  WHERE THE WORK IS
-    Branch `phase-44-parser-preview-ui-fixes`, cut from `develop` d705b2d.
-    ⚠ WORKING TREE IS DIRTY — NOTHING IS COMMITTED. Do not stash, reset or switch
-    branches without asking; the whole of §50-§57 lives in uncommitted files.
-    Modified: public/js/admin/projects/document-parser.js
-              public/js/admin/projects/document-parser-core.js
-              public/css/admin/projects/parser-keywords-modal.css
-              resources/views/admin/_manage_parser_keywords_modal.blade.php
-              tests/js/document-parser-core.test.mjs
-              textfiles/normal_doc_parser_restudy_plan.md
-              AGENTS.md
-              .env.example  <- THE USER'S OWN EDIT, not part of this work
-    New:      textfiles/pilot_version_changelog.md
+  WHERE THE WORK IS  — ✅ ALL OF IT IS MERGED INTO `develop` AS OF 2026-09-24
+    Branch `phase-44-parser-preview-ui-fixes`, cut from `develop` d705b2d, then
+    merged into `develop` after the user's browser confirmation.
+    Commits: 9300e61 (§50-§54)  9caa4f1 (§56)  8857b77 (docs)  62feebf (merge of 43)
 
-  ⚠ BRANCH TOPOLOGY — phase-43 AND phase-44 ARE SIBLINGS, NOT STACKED.
-    Both were cut from `develop` d705b2d. phase-44 does NOT contain phase-43.
-        develop d705b2d ─┬─ phase-43-progress-pace-fix  c02de5f (committed, pushed)
-                         └─ phase-44-parser-preview-ui-fixes (uncommitted)
-    Merging one does not bring the other. The merge order is the user's call and
-    has not been given.
+  ⚠ CORRECTION — THIS BLOCK PREVIOUSLY CALLED THE TWO BRANCHES "SIBLINGS".
+    It was written before commit 62feebf and was wrong by the time it was read.
+    phase-43 IS CONTAINED IN phase-44 (git merge-base --is-ancestor confirms it):
+        develop d705b2d ── phase-44 ── 9300e61 ─ 9caa4f1 ─ 8857b77 ─┐
+                        └─ phase-43 ─ c02de5f ──────────────────────┴─ 62feebf (merge)
+    So ONE merge of phase-44 into develop brought BOTH, and that is what happened.
+    ⚠ THE LESSON: a handoff block that states branch topology from memory can be
+    falsified by a commit made minutes later. Verify topology with git, not prose.
 
   SUITES / PROBES, last measured
     JS 286 / 286 / 0 (279 before this session's +7 core tests).
@@ -42,7 +35,7 @@
     §53  every chosen AI page has an × ; the cap displaces nothing silently
     §54  one note per field listing EVERY distinct reading, labelled by reader
     §56  the keyword desk now shows what a phrase WOULD READ, not just whether
-         the wording is new   ⬜ BROWSER CHECK OWED — this one only
+         the wording is new   ✅ BROWSER-CONFIRMED 2026-09-24 — the last one owed
     §55  (read-only) why the ABC read wrong, traced to the character
     §57  ⏸ the OCR-pipe fix is ON HOLD — a correct fix deliberately withheld
 
@@ -79,7 +72,16 @@
     tests/js/document-parser-core.test.mjs and run with `npm run test:js`. The DOM
     half (§50-§54) has no permanent coverage and is browser-proven only.
 
-  ➡ NEXT WORK — see §58. Nothing there is ordered; ask before building.
+  ✅ CLOSED 2026-09-24 — EVERYTHING ON THIS BRANCH IS BROWSER-CONFIRMED AND MERGED.
+    The user confirmed the §56 consequence chip and the phase-43 pace card, then
+    ordered the merge into `develop`. §58.0(a) and §58.0(b) are both discharged.
+    Logged in textfiles/pilot_version_changelog.md as A-2, A-3 and A-4 — A-4 (the
+    §56 chip) had NO changelog entry until 2026-09-24 and was added then; the
+    mandatory pilot log had a real gap, which is worth noticing because the chip is
+    the one piece of phase-44 the JS suite actually covers.
+
+  ➡ NEXT WORK — see §58.1-§58.5. Nothing there is ordered; ask before building.
+    ⚠ §58.1 IS ON HOLD BY USER DECISION D-44-5 — read §57 before touching it.
 
 
 
@@ -6104,9 +6106,12 @@
 ===============================================================================
 
   58.0 OWED FROM THE USER BEFORE ANY OF THIS
-       (a) the browser check on the §56 consequence chip — the last unproven build;
-       (b) the MERGE ORDER for phase-43 and phase-44 (siblings, see §0-A);
-       (c) which of 58.1-58.4 to build, if any.
+       (a) ✅ DISCHARGED 2026-09-24 — the §56 consequence chip is browser-confirmed.
+       (b) ✅ DISCHARGED 2026-09-24 — the merge order was given: phase-44 into
+           `develop`, which carried phase-43 with it (they are NOT siblings; see
+           the correction in §0-A). Both are now in `develop`.
+       (c) ⬜ STILL OWED — which of 58.2-58.4 to build, if any. 58.1 is ON HOLD by
+           decision D-44-5 and is not a candidate.
 
   ---------------------------------------------------------------------------
   58.1  ⏸ ON HOLD — the ABC caps-run cannot cross an OCR pipe

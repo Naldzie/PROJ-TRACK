@@ -187,11 +187,12 @@
 
 
   -----------------------------------------------------------------------------
-  A-2  🔄  Progress pace — real points per month, not averaged cumulative %
+  A-2  ✅  Progress pace — real points per month, not averaged cumulative %
   -----------------------------------------------------------------------------
     Date:    2026-09-22
     Branch:  phase-43-progress-pace-fix   Commit: c02de5f
-    Merged:  NO — pushed to origin, not merged into develop
+    Merged:  YES — into develop 2026-09-24, inside the phase-44 merge (phase-44
+             carries a --no-ff merge of phase-43, so one merge brought both)
     Plan:    textfiles/progress_pace_fix_plan.md
 
     THE DEFECT: the AI panel's "Progress Speed Comparison" averaged the
@@ -215,7 +216,8 @@
             + 4 test files, the plan file, AGENTS.md
 
     Tests:              PHP 1358 / 0    JS 279 / 0
-    Browser check:      ⬜ OWED
+    Browser check:      ✅ CONFIRMED by the user 2026-09-24 — the AI panel's pace
+                        figures read as points per month.
     ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm
                          dependency. PHP + one Blade view. A file copy is
                          enough — Blade recompiles on mtime. Run
@@ -224,11 +226,11 @@
 
 
   -----------------------------------------------------------------------------
-  A-3  🔄  Document-parser preview — seven fixes from pilot-style use
+  A-3  ✅  Document-parser preview — seven fixes from pilot-style use
   -----------------------------------------------------------------------------
     Date:    2026-09-23
     Branch:  phase-44-parser-preview-ui-fixes   (cut from develop d705b2d)
-    Commit:  UNCOMMITTED at the time of writing
+    Commit:  9300e61    Merged: YES — into develop 2026-09-24
     Plan:    textfiles/normal_doc_parser_restudy_plan.md §§50-54
 
     All seven are in the auto-fill preview that opens after the parser reads an
@@ -277,8 +279,9 @@
             NOT the DOM half these fixes live in). Proven instead by two offline
             probes, 32 + 15 checks, with 8 mutations all confirmed red. No PHP
             changed, so the PHP suite was not re-run.
-    Browser check:      ⬜ OWED — seven items listed in restudy §54.5. For this
-                        entry that is the ONLY thing that can close it.
+    Browser check:      ✅ CONFIRMED by the user 2026-09-24 — all seven items in
+                        restudy §54.5. For this entry that was the ONLY thing that
+                        could close it, since the JS suite does not reach the DOM half.
     ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm
                          dependency, and NO vite build — the file is under
                          public/js per the no-vite convention and is cache-busted
@@ -286,47 +289,114 @@
                          browsers pick it up on the next load.
 
 
+  -----------------------------------------------------------------------------
+  A-4  ✅  Keyword desk shows what a phrase would READ, not just whether it is new
+  -----------------------------------------------------------------------------
+    Date:    2026-09-23
+    Branch:  phase-44-parser-preview-ui-fixes   Commit: 9caa4f1
+    Merged:  YES — into develop 2026-09-24
+    Plan:    textfiles/normal_doc_parser_restudy_plan.md §56
+
+    THE DEFECT: the Review Learned Keywords desk had exactly one quality signal,
+    builtInCoversPhrase, which answers "is this wording NEW?". On the 2026-09-23
+    pdfdocstest5 batch that question endorsed four wrong rows and dismissed the
+    one correct one:
+
+      "Approved Budget for the Contract; PB"   desk: adds nothing   WRONG (.00)
+      "| TOTAL ESTIMATED PROJECT COST P"       desk: NEW            CORRECT
+      "Implementing Office"                    desk: NEW            WRONG
+      "LOCATION"                               desk: NEW            WRONG
+      "Name of Procuring Entity"               desk: NEW            WRONG
+
+    ⚠ NOVELTY IS EXACTLY WHAT A WRONG LABEL HAS MOST OF. "Finds a value no
+    built-in rule does" reads as praise. Coverage cannot answer "is this RIGHT?",
+    and on this batch the two answers were uncorrelated — so a reviewer approving
+    on the desk's own signal would have taught the parser four false labels.
+
+    THE FIX: core previewLearnedExtraction(field, phrase, excerpt) runs the phrase
+    against the excerpt it was mined from and reports the VALUE it would produce.
+    The desk renders it as a second chip beside the worth chip. The three wrong
+    budgetSource labels then visibly produce one identical organisation name —
+    which is what a generic value anchoring unrelated labels looks like, readable
+    at a glance with no new machinery.
+
+    ⚠ IT USES THE REAL EXTRACTION PATH (same learnedLabelPattern, cleanValue,
+    field normalizer and first-match-wins as collectLearnedCandidates). A preview
+    that could disagree with what approval actually does would be worse than
+    showing nothing. It returns null and stays silent when it cannot tell.
+
+    Files:  public/js/admin/projects/document-parser-core.js
+            resources/views/admin/_manage_parser_keywords_modal.blade.php
+            public/css/admin/projects/parser-keywords-modal.css
+            tests/js/document-parser-core.test.mjs (+7)
+
+    Tests:  JS 286 / 286 / 0 (was 279). ✅ Unlike A-3, this one IS suite-covered —
+            it lives in document-parser-core.js, which the JS suite reaches. Every
+            fixture is a VERBATIM row from parser_keyword_proposals with its stored
+            excerpt. Mutations M9/M10/M11 all red; M10 (skip the field normalizer)
+            also breaks pre-existing learned-label tests, which is the property
+            worth having: the preview shares the real extraction path. No PHP
+            changed.
+    Browser check:      ✅ CONFIRMED by the user 2026-09-24 — the consequence chip
+                        renders on the desk. This was the last unproven build on
+                        phase-44 (restudy §58.0(a)).
+    ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm
+                         dependency, and NO vite build. One JS file, one Blade view
+                         and one CSS file, all under public/ or resources/views per
+                         the no-vite convention and cache-busted by filemtime
+                         ($jsv), so copying them is enough. Run
+                         `php artisan view:clear` ONLY if `view:cache` was run on
+                         that machine (a Blade view changed).
+
+
 ===============================================================================
   §4 — UPGRADING A PILOT MACHINE FROM VERSION 1
 ===============================================================================
 
-  ⚠ NOTHING HERE IS ORDERED YET. Two of the three adjustments still owe a
-  browser check and neither is merged into develop, so version 1 remains the
-  correct thing for the PMU to be using. This section describes what an upgrade
-  WOULD cost, so the decision can be made on facts.
+  ⚠ NO UPGRADE IS ORDERED YET — but the blockers are gone. As of 2026-09-24 all
+  four adjustments are browser-confirmed and merged into develop, so an upgrade is
+  now a decision rather than a wait. Version 1 remains what the PMU is running
+  until someone says otherwise. This section describes what the upgrade costs.
 
-  COMBINED IMPACT OF A-1 + A-2 + A-3
-  -----------------------------------
+  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4
+  -----------------------------------------
     Database migrations      NONE
     New .env keys            NONE
     composer dependencies    NONE
     npm dependencies         NONE
     vite rebuild             NOT NEEDED
-    Files to replace         4 PHP/Blade (A-2) + 1 JS (A-3) + docs
+    Files to replace         8 application files + docs:
+                               A-2  3 PHP + 1 Blade
+                               A-3  1 JS  (document-parser.js)
+                               A-4  1 JS  (document-parser-core.js)
+                                    + 1 Blade + 1 CSS
 
   That is the whole cost. No adjustment since version 1 touches the schema, the
   configuration or the dependency set, which is why an upgrade is a file copy.
 
-  PROCEDURE (once the work is merged and browser-confirmed)
-  ----------------------------------------------------------
+  PROCEDURE (the work is merged and browser-confirmed as of 2026-09-24)
+  ----------------------------------------------------------------------
     1. Stop the queue worker and the scheduler on the server machine.
     2. Copy the files listed in each §3 entry into the pilot tree.
        Do NOT copy .env — the pilot machine's APP_URL, GOOGLE_REDIRECT_URI,
        DB_* and mail settings are machine-specific and overwriting them breaks
        Google login. This is the single most likely way to break the upgrade.
-    3. php artisan view:clear     (only if view:cache was ever run there)
+    3. php artisan view:clear     (only if view:cache was ever run there — A-2
+                                   and A-4 each change a Blade view)
        php artisan route:clear    (harmless; required whenever routes change —
-                                   none of A-1..A-3 change routes)
+                                   none of A-1..A-4 change routes)
     4. Restart the queue worker and the scheduler.
     5. Verify: open a project's AI Prediction tab and confirm the pace figures
        read as points per month (A-2); upload a scanned document and confirm
-       the preview's seven behaviours in restudy §54.5 (A-3).
+       the preview's seven behaviours in restudy §54.5 (A-3); open Review
+       Learned Keywords and confirm each row shows the VALUE its phrase would
+       read, not only whether the wording is new (A-4).
 
   ROLLING BACK
   ------------
   Keep the version 1 zip. Since no adjustment since v1 touches the database,
   restoring the older files is a complete rollback — the schema stays valid
-  either way. That property is worth preserving deliberately: once an
+  either way. Still true through A-4. That property is worth preserving deliberately: once an
   adjustment carries a migration, this stops being true, and the entry for it
   must say so in its DEPLOYMENT IMPACT line.
 

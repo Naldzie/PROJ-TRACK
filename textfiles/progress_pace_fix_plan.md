@@ -81,8 +81,10 @@
   · Full suites: PHP 1358 passed / 0 failed; JS 279 / 0.
 
 ===============================================================================
-  5. BROWSER CHECK OWED
+  5. BROWSER CHECK — ✅ DONE 2026-09-24
 ===============================================================================
+
+  Confirmed working by the user on 2026-09-24. The three things checked:
 
   1. Project #142 → AI prediction panel: EARLY PACE +2.5% / month (Apr–Jun 2026),
      RECENT PACE +11.5% / month (Jul–Sep 2026), "Speeding up", the needed pace
@@ -90,8 +92,21 @@
   2. A project with fewer than 3 inspections: the note instead of paces.
   3. Narrow window (phone width): the three tiles wrap, nothing overflows.
 
+  ⚠ THIS WAS THE ONLY THING THAT COULD CLOSE THIS WORK. The suites were green
+  before the check and said nothing about whether the card reads correctly on a
+  real project — a pace service can be arithmetically right and still render a
+  card nobody can act on.
+
 ===============================================================================
   6. SESSION LOG
 ===============================================================================
 
   2026-09-22 — investigated, fixed and tested on phase-43 (this file).
+
+  2026-09-24 — BROWSER-CONFIRMED by the user, then MERGED into develop. phase-43
+    was merged into phase-44 (--no-ff, 62feebf) before phase-44 went to develop,
+    so ONE merge carried both. ⚠ The restudy plan's §0-A called the two branches
+    "siblings, not stacked"; that was written before 62feebf and is now corrected
+    there. Logged in textfiles/pilot_version_changelog.md as A-2 (✅).
+    Deployment impact unchanged: no migration, no .env key, no dependency —
+    3 PHP + 1 Blade, a file copy.
