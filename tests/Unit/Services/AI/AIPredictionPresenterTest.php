@@ -257,6 +257,26 @@ class AIPredictionPresenterTest extends TestCase
     }
 
     /**
+     * Progress pace (phase-43): points gained per month, not the average of
+     * cumulative %. 3,5,7,9,11 gains 2 points every month → 2 / month both
+     * windows. The old code returned 5 and 9 ("%/week").
+     */
+    public function test_pace_is_points_per_month_not_cumulative_averages(): void
+    {
+        $project = $this->createProjectWithHistory(
+            months: 5,
+            actualProgress: [3, 5, 7, 9, 11]
+        );
+
+        $result = $this->presenter->present($project);
+
+        $this->assertSame(2.0, $result['early_speed']);
+        $this->assertSame(2.0, $result['recent_speed']);
+        $this->assertTrue($result['pace']['has_pace']);
+        $this->assertSame('steady', $result['pace']['direction']);
+    }
+
+    /**
      * ------------------------------------------------------------------------
      * Normal prediction has correct flags
      * ------------------------------------------------------------------------

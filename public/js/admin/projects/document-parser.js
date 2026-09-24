@@ -134,6 +134,8 @@ function cancelDocumentAutofill() {
         window._autofillOriginal = null;
         // AI-3/AI-4 stashes: provenance stamps + busy/merged flags belong to the preview run.
         window._autofillAiAssisted = {};
+        // 2026-09-23: AI-vs-local disagreements are per run too (mergeAiParsedIntoPreview).
+        window._autofillAiConflicts = {};
         window._autofillAiBusy = false;
         window._autofillAiMerged = false;
         // Snapshots: original Files are per-session too (object URLs / buffers must not leak).
@@ -378,6 +380,7 @@ async function runDocumentAutofill() {
         // including blinded-clean files whose only miss is the blinded ABC (Decision A2:
         // high fill count + confidence with no disagree never offers). Stamps reset per run.
         window._autofillAiAssisted = {};
+        window._autofillAiConflicts = {};
         window._autofillAiBusy = false;
         window._autofillAiMerged = false;
         var aiOffer = false;
@@ -1868,6 +1871,30 @@ function ocrAiSelection(maxN) {
 // Add or remove the shown page from the AI selection. The first toggle seeds the
 // list from the current ranking, so choosing one page does not silently discard
 // the other — the reviewer is adjusting a selection, not starting from nothing.
+// Drop ONE named page from the send list, from the list itself (2026-09-23).
+//
+// It materialises the ranking into an explicit pick list first, exactly as
+// _ocrAiTogglePage does: while _ocrAiPick is null the shown pages are the RANKING's
+// output, and removing one has to turn that suggestion into a choice or the ranking
+// would simply put it back on the next render.
+// Removing the last page leaves _ocrAiPick null, which means "use the suggestion" —
+// the same state the reset button produces, so there is no unreachable empty list.
+// Called by: the × on each badge in the "AI assist would read" row.
+window._ocrAiDropPage = function (reportIdx, pageNum) {
+    try {
+        const reports = window._autofillScanReports || [];
+        const r = reports[reportIdx];
+        if (!r) return;
+        const list = (Array.isArray(window._ocrAiPick) && window._ocrAiPick.length
+            ? window._ocrAiPick.slice()
+            : ocrAiSelection(aiSliceCount()).map((c) => ({ fileName: c.fileName, pageNum: c.pageNum })))
+            .filter((x) => !(x && x.fileName === r.fileName && x.pageNum === pageNum));
+        window._ocrAiPick = list.length ? list : null;
+    } catch (e) { /* best-effort */ }
+    renderOcrPagePreview();
+    try { refreshAutofillAiBanner(); } catch (e) { /* best-effort */ }
+};
+
 window._ocrAiTogglePage = function () {
     try {
         if (!_ocrPreview) return;
@@ -1886,12 +1913,19 @@ window._ocrAiTogglePage = function () {
         const at2 = list.findIndex((p) => p && p.fileName === r.fileName && p.pageNum === pn);
         if (at2 !== -1) list.splice(at2, 1);
         else {
+            // 2026-09-23: AT THE CAP, ADD NOTHING RATHER THAN DISPLACE SOMETHING.
+            // This used to shift the OLDEST pick out, so a reviewer who chose three
+            // pages deliberately and then pressed "+" on a fourth lost their first
+            // choice with no notice and no say in which one went. The button above is
+            // disabled in that state, so this is the belt to its braces — reachable
+            // only if the cap dropped (a lower Send) between render and click.
+            if (list.length >= aiSliceCount()) {
+                if (typeof showToast === 'function') {
+                    showToast(aiSliceCount() + ' pages are already chosen — remove one with its × first.', 'info');
+                }
+                return;
+            }
             list.push({ fileName: r.fileName, pageNum: pn });
-            // Oldest choice makes way — the cap is what keeps this slice-only.
-            // S-4: the cap is the reviewer's CHOSEN count now, not the constant, so
-            // picking a third page at a setting of 3 no longer silently drops the
-            // first one (plan §2 finding A4).
-            while (list.length > aiSliceCount()) list.shift();
         }
         window._ocrAiPick = list.length ? list : null;
     } catch (e) { /* best-effort */ }
@@ -1984,21 +2018,12 @@ window._ocrAiToggleExcludeFile = function (reportIdx) {
 // Called by: showAutofillPreview (first render) and refreshAutofillAiBanner().
 function autofillAiBannerHtml() {
     let named = '';
-    let openBtn = '';
     try {
         const sel = ocrAiSelection(aiSliceCount());
         if (sel.length) {
             named = 'Would send ' + sel.length + ' page' + (sel.length === 1 ? '' : 's') + ': '
                 + sel.map((c) => '<strong>' + escapeHtml(c.fileName) + ' p.' + c.pageNum + '</strong>').join(', ')
                 + '. Nothing else leaves this computer.';
-            // The panel is rendered by the gray scan note above this banner, so it
-            // exists whenever there were scanned pages. When there were none (a weak
-            // text-layer read), there is nothing to open and no button is offered.
-            if (document.getElementById('ocrPagePreview')) {
-                openBtn = ' <button type="button" class="btn btn-sm btn-outline-secondary"'
-                    + ' onclick="window._ocrPreviewShow(' + sel[0].reportIdx + ',' + sel[0].pageNum + ')"'
-                    + ' title="See these pages, change which ones go, or mark any of them never-send">See or change these</button>';
-            }
         } else {
             named = 'No pages are selected to send.';
         }
@@ -2006,9 +2031,17 @@ function autofillAiBannerHtml() {
         // Never let the naming break the offer itself — fall back to the old wording.
         named = 'Sends at most ' + aiSliceCount() + ' confusing pages (never the whole file).';
     }
+    // 2026-09-23 (user report) — THE "See or change these" BUTTON THAT SAT HERE IS GONE.
+    // It opened the page-preview panel, but that panel is rendered by the gray scan note
+    // directly ABOVE this banner and already carries its own "See & straighten" button
+    // plus the whole "AI assist would read" row, so the reviewer saw the same control
+    // twice a few lines apart. Removing it also fixes a second defect: _tryAiAssist()
+    // finds its own button with aiEl.querySelector('button'), which returned the FIRST
+    // button in the banner — so "Asking AI…" and the disabled state were written onto
+    // the wrong control while the button actually pressed stayed live and re-pressable.
+    // The named page list above STAYS: that is what makes the consent informed (S-1).
     return '<i class="bi bi-magic"></i><span style="font-size:0.9em;">Parsing looks uncertain — the local reader could not fill much. <strong>Try AI assist?</strong> '
         + named + '</span>'
-        + openBtn
         + ' <button type="button" class="btn btn-sm btn-warning" onclick="window._tryAiAssist()">Try AI assist</button>';
 }
 
@@ -2103,7 +2136,16 @@ async function renderOcrPagePreview() {
             + (deg ? '<span class="badge bg-secondary">turned ' + deg + '°</span>' : '')
             + (unread
                 ? '<span class="badge bg-warning text-dark">' + escapeHtml(fact ? fact.why : 'no text read yet') + '</span>'
-                : '<span class="badge bg-success">' + escapeHtml(fact ? fact.why : 'text read') + '</span>');
+                : '<span class="badge bg-success">' + escapeHtml(fact ? fact.why : 'text read') + '</span>')
+            // 2026-09-23 (user request): a way OUT of the viewer. The panel used to be
+            // openable and never closable — once opened it ate the height of the preview
+            // modal for the rest of the session, pushing the field grid and the Apply
+            // button off screen. Closing only forgets WHICH page was on show; rotations,
+            // pending re-reads and every AI page choice live in their own ledgers and
+            // are untouched, so "👁 See & straighten" reopens exactly this state.
+            + '<button type="button" class="btn btn-sm btn-outline-secondary ms-auto"'
+            + ' style="padding:1px 8px;font-size:0.8em;" onclick="window._ocrPreviewHide()"'
+            + ' title="Hide this page viewer. Nothing is lost — reopen it with See &amp; straighten.">✕ close</button>';
     }
 
     // Controls. Rotate is INSTANT here — it turns the picture and nothing else.
@@ -2161,15 +2203,33 @@ async function renderOcrPagePreview() {
             countOpts.push('<option value="' + n + '"' + (n === count ? ' selected' : '') + '>' + n + ' page' + (n === 1 ? '' : 's') + '</option>');
         }
         aiRow.innerHTML = '<span class="text-muted" style="font-size:0.8em;">✦ AI assist would read:</span> '
+            // 2026-09-23 (user request): EVERY CHOSEN PAGE CAN NOW BE REMOVED WHERE IT
+            // IS LISTED. Until now the only control was "− this page", which acts on the
+            // page currently ON SCREEN — so dropping p.1 meant navigating to p.1 first,
+            // and at the cap a fourth pick silently shifted the OLDEST page out with no
+            // say in which. The × makes the list itself the control.
+            // reportIdx and pageNum are numbers from our own ledger, so they are safe to
+            // interpolate; the file NAME is never put in an attribute.
             + (sel.length
                 ? sel.map((c) => '<span class="badge bg-light text-dark border" title="' + escapeHtml(c.reason) + '">'
-                    + escapeHtml(c.fileName) + ' p.' + c.pageNum + '</span>').join(' ')
+                    + escapeHtml(c.fileName) + ' p.' + c.pageNum
+                    + ' <a href="#" class="text-danger text-decoration-none ms-1"'
+                    + ' title="Do not send this page" onclick="window._ocrAiDropPage(' + c.reportIdx + ',' + c.pageNum + ');return false;">×</a>'
+                    + '</span>').join(' ')
                 : '<span class="text-muted" style="font-size:0.8em;">nothing yet</span>')
             + (refused
                 ? ' <span class="badge bg-danger" title="' + (fileRefused ? 'The whole of this file is marked never-send.' : 'This page is marked never-send.') + '">⃠ never sent</span>'
+                // At the cap, adding used to shift the oldest pick out unannounced. The
+                // control now states the limit and names the remedy instead — the × on
+                // each badge above, or a higher Send count.
                 : ' <button type="button" class="btn btn-sm ' + (chosen ? 'btn-outline-danger' : 'btn-outline-secondary') + '"'
+                    + ((!chosen && sel.length >= count) ? ' disabled' : '')
                     + ' style="padding:1px 8px;font-size:0.75em;" onclick="window._ocrAiTogglePage()"'
-                    + ' title="' + (chosen ? 'Do not send this page' : 'Send this page instead — at most ' + count + ' are ever sent') + '">'
+                    + ' title="' + (chosen
+                        ? 'Do not send this page'
+                        : (sel.length >= count
+                            ? count + ' of ' + count + ' pages already chosen — remove one with its × above, or raise Send.'
+                            : 'Send this page instead — at most ' + count + ' are ever sent')) + '">'
                     + (chosen ? '− this page' : '+ this page') + '</button>')
             // S-2: the refusal control itself. Hidden when the WHOLE FILE is refused,
             // because un-refusing one page of a refused file would say nothing true.
@@ -2227,6 +2287,19 @@ async function renderOcrPagePreview() {
 // Show a page. Called by: the "see pages" button and every strip chip.
 window._ocrPreviewShow = function (reportIdx, pageNum) {
     _ocrPreview = { reportIdx: reportIdx, pageNum: pageNum };
+    renderOcrPagePreview();
+};
+
+// Hide the page viewer without losing any work (2026-09-23, user request).
+// Clearing _ocrPreview is the SAME state the panel starts a run in, and
+// renderOcrPagePreview() hides the host whenever it is null — so this reuses the
+// existing hide path instead of adding a second one that could drift from it.
+// Deliberately forgets ONLY the current page: rotations (_ocrRotations), pending
+// re-reads, AI page picks (_ocrAiPick) and refusals (_ocrAiExclude) all live
+// elsewhere and survive, so reopening restores what the reviewer had set up.
+// Called by: the ✕ close button in the viewer caption.
+window._ocrPreviewHide = function () {
+    _ocrPreview = null;
     renderOcrPagePreview();
 };
 
@@ -2422,11 +2495,234 @@ function checkAiSlicePayload(slices, asked) {
     return { ok: true, message: '' };
 }
 
-// Merge AI values into EMPTY preview boxes + stamp provenance (Decision A3).
-// Returns the filled count. Non-empty boxes keep rule values in v1 (user edits freely).
+// Write a value into a preview box and say whether the box ACCEPTED it.
+//
+// This exists because assignment is not acceptance. Category / Budget Source /
+// Contractor render as real <select>s (Stage 1b), and a <select> SILENTLY DROPS a
+// value it has no matching <option> for — .value simply stays empty. An
+// <input type="date"> does the same with a string it cannot parse. The AI merge used
+// to assign and then badge/count unconditionally, so a dropped value was reported to
+// the reviewer as a successful fill (user report 2026-09-23, restudy §50.3).
+//
+// Choice fields are therefore written through data-extracted — the SAME mechanism the
+// rule path uses to keep an unlisted value visible as "… — from document (not in
+// list)" — and syncAutofillChoiceFields() rebuilds the option list around it. That is
+// the one assignment a <select> cannot refuse, and it hands the value to the Q3
+// create-in-place offer as well (user decision 2026-09-23: show unmatched, flagged).
+// Called by: mergeAiParsedIntoPreview(), _pickFieldReading().
+function setPreviewFieldValue(el, shown) {
+    if (!el) return false;
+    try {
+        if (el.tagName === 'SELECT') {
+            el.setAttribute('data-extracted', shown);
+            try { syncAutofillChoiceFields(); } catch (e) { /* dropdowns are best-effort */ }
+        } else {
+            el.value = shown;
+        }
+    } catch (e) { return false; }
+    return String(el.value || '').trim() !== '';
+}
+
+// Hang the per-field "AI-assisted" marker off a box's grid cell, once.
+// Split out of the merge so the take-the-AI-value path badges identically.
+// ⚠ .afp-cell FIRST: the preview was a TABLE until Stage 1b made it a responsive grid,
+// so the original el.closest('td') matched nothing and the badge never appeared
+// (restudy §28.5). The old parentNode fallback was dead code too — the ternary asked
+// whether el.closest EXISTS, not whether it MATCHED.
+function stampAiFieldBadge(el) {
+    try {
+        const cell = (el.closest && (el.closest('.afp-cell') || el.closest('td'))) || el.parentNode || null;
+        if (!cell || cell.querySelector('[data-ai-marker]')) return;
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-info text-dark';
+        badge.setAttribute('data-ai-marker', '1');
+        badge.title = 'Filled by the AI-assisted read — please verify';
+        badge.textContent = 'AI-assisted';
+        cell.appendChild(document.createTextNode(' '));
+        cell.appendChild(badge);
+    } catch (e) { /* marker is best-effort */ }
+}
+
+// Fields whose two readings must be compared as NUMBERS or DATES, not as strings.
+// "4,834,297.59" and "4834297.59" are the same amount; "2025-03-01" and "March 1,
+// 2025" are the same day. Comparing raw text would raise a disagreement on every
+// well-read document, which is exactly the false alarm that makes reviewers stop
+// reading warnings.
+const AI_COMPARE_MONEY = ['budget', 'abc', 'duration'];
+const AI_COMPARE_DATE = ['startDate', 'endDate'];
+
+// Reduce a field value to the form two readings must match on to be "the same".
+// Called by: mergeAiParsedIntoPreview() when deciding whether to raise a conflict.
+function aiComparableValue(coreField, raw) {
+    const s = String(raw === null || raw === undefined ? '' : raw).trim();
+    if (s === '') return '';
+    try {
+        if (AI_COMPARE_DATE.indexOf(coreField) !== -1) {
+            const core = (typeof getCore === 'function') ? getCore() : null;
+            const iso = core ? core.parseToInputDate(s) : null;
+            if (iso) return iso;
+        }
+        if (AI_COMPARE_MONEY.indexOf(coreField) !== -1) {
+            const digits = s.replace(/[^0-9]/g, '');
+            const n = Number(s.replace(/[^0-9.\-]/g, ''));
+            if (digits !== '' && isFinite(n)) return String(n);
+        }
+    } catch (e) { /* fall through to the text form */ }
+    return s.replace(/\s+/g, ' ').toLowerCase();
+}
+
+// Short label for a value on a pick-one button; the full text goes in the tooltip.
+function aiShortLabel(v) {
+    const s = String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim();
+    return s.length > 60 ? s.slice(0, 57) + '…' : s;
+}
+
+// Collect every DISTINCT reading a field has, labelled by who read it.
+//
+// USER DECISION D-44-3 (2026-09-23), from the ABC on pdfdocstest5: the local reader
+// pooled 4834297.00 and 834297.59 while the AI read 4834297.59 — and the AI's was the
+// correct one. 4834297.00 is an OCR misread and 834297.59 is the same figure with its
+// leading digit cut off, so the right answer was present in NEITHER local candidate.
+// A rule that discarded the AI whenever a local disagreement already existed would
+// have thrown away the only correct reading on screen.
+//
+// So the rule is not "discard the AI" and not "stack two notes": it is ONE note per
+// field listing every distinct value, each tagged with who read it. A value two
+// readers agree on collapses into a single entry marked "both" — which is what makes
+// the Contract Price case (where the AI repeated a local candidate) stop looking
+// redundant without losing the fact that a second, independent reader backed it.
+// Called by: renderAiConflictNotes().
+function mergeFieldReadings(coreField, inputId, localValue, aiValue) {
+    const out = [];
+    const add = (value, source) => {
+        const v = String(value === null || value === undefined ? '' : value).trim();
+        if (v === '') return;
+        const key = aiComparableValue(coreField, v);
+        const hit = out.filter((c) => c.key === key)[0];
+        if (hit) {
+            if (hit.sources.indexOf(source) === -1) hit.sources.push(source);
+            return;
+        }
+        out.push({ value: v, key: key, sources: [source] });
+    };
+    // Order matters on screen: what the box holds now comes first, then the local
+    // reader's other candidate, then anything only the AI saw.
+    add(localValue, 'local');
+    try {
+        const d = (window._autofillDisagree || {})[coreField];
+        if (d) {
+            if (d.winner) add(d.winner.value, 'local');
+            if (d.runnerUp) add(d.runnerUp.value, 'local');
+        }
+    } catch (e) { /* the pooled pair is a bonus, not a requirement */ }
+    add(aiValue, 'AI');
+    return out;
+}
+
+// Draw ONE pick-the-right-one note under each field whose readings disagree.
+//
+// USER DECISION D-44-1 (2026-09-23): the AI NEVER overwrites a box the local reader
+// filled. It offers, and the reviewer picks. A wrong AI read therefore cannot silently
+// destroy a correct extraction, and the AI-assisted badge appears only on values the
+// reviewer actually accepted — and only when the AI was the ONLY reader that saw it.
+//
+// ⚠ ONLY THE CORE FIELD NAME AND AN INDEX ARE QUOTED INTO onclick — never the values.
+// They come from a document (and from a model) and can contain quotes; the existing
+// _pickDisagreeValue notes get away with raw interpolation only because their five
+// fields are all numeric or date strings. Values live in _autofillAiConflicts and are
+// looked up by key, so nothing document-controlled reaches an attribute.
+// Called by: mergeAiParsedIntoPreview().
+function renderAiConflictNotes(conflicts) {
+    window._autofillAiConflicts = {};
+    for (const c of conflicts) {
+        try {
+            const choices = mergeFieldReadings(c.coreField, c.inputId, c.local, c.ai);
+            if (choices.length < 2) continue;
+            window._autofillAiConflicts[c.coreField] = { inputId: c.inputId, choices: choices };
+            const cell = (c.el.closest && c.el.closest('.afp-cell')) || c.el.parentNode || null;
+            if (!cell) continue;
+            // One note per field: drop the previous AI note AND the local pooled-value
+            // note, whose two buttons are already carried in choices above.
+            const prev = cell.querySelector('[data-ai-conflict]');
+            if (prev && prev.remove) prev.remove();
+            const localNote = cell.querySelector('[data-local-disagree="' + c.coreField + '"]');
+            if (localNote && localNote.remove) localNote.remove();
+
+            const label = (sources) => {
+                if (sources.length > 1) return 'both agree';
+                return sources[0] === 'AI' ? 'AI' : 'read here';
+            };
+            const box = document.createElement('div');
+            box.className = 'alert alert-warning py-1 px-2 mt-1 mb-0';
+            box.setAttribute('data-ai-conflict', c.coreField);
+            box.style.fontSize = '0.85em';
+            box.innerHTML = '<i class="bi bi-robot"></i> '
+                + (choices.length > 2
+                    ? choices.length + ' different readings — pick the right one:'
+                    : 'The AI read this differently — pick one:')
+                + '<br>'
+                + choices.map((ch, idx) =>
+                    '<button type="button" class="btn btn-sm '
+                    + (ch.sources.length > 1 ? 'btn-outline-success' : (ch.sources[0] === 'AI' ? 'btn-outline-info' : 'btn-outline-secondary'))
+                    + ' me-1 mt-1" title="' + escapeHtml(ch.value) + '"'
+                    + ' onclick="window._pickFieldReading(\'' + c.coreField + '\',' + idx + ')">'
+                    + escapeHtml(aiShortLabel(ch.value))
+                    + ' <span class="text-muted">(' + label(ch.sources) + ')</span></button>'
+                ).join('');
+            cell.appendChild(box);
+        } catch (e) { /* one bad note must not cost the others */ }
+    }
+}
+
+// Accept one of a field's readings. Called by: inline onclick on the note above.
+//
+// The AI-assisted badge is stamped ONLY when the chosen value is one the AI ALONE
+// saw. A value both readers found is not the AI's contribution, and badging it would
+// inflate what the provenance record (and the learning loop's 'AI-assisted' source)
+// actually means.
+window._pickFieldReading = function (coreField, idx) {
+    const rec = (window._autofillAiConflicts || {})[coreField];
+    if (!rec || !rec.choices || !rec.choices[idx]) return;
+    const choice = rec.choices[idx];
+    const el = document.getElementById('previewInput-' + rec.inputId);
+    if (!el) return;
+    if (!setPreviewFieldValue(el, choice.value)) {
+        if (typeof showToast === 'function') showToast('That value does not fit this field — please type it in.', 'error');
+        return;
+    }
+    if (choice.sources.length === 1 && choice.sources[0] === 'AI') {
+        window._autofillAiAssisted = window._autofillAiAssisted || {};
+        window._autofillAiAssisted[coreField] = true;
+        stampAiFieldBadge(el);
+    }
+    clearAiConflictNote(coreField);
+};
+
+// Remove one pick-one note and forget the readings it recorded.
+function clearAiConflictNote(coreField) {
+    try {
+        const notes = document.querySelectorAll('[data-ai-conflict="' + coreField + '"]');
+        notes.forEach((n) => { if (n && n.remove) n.remove(); });
+    } catch (e) { /* removal is best-effort */ }
+    try { if (window._autofillAiConflicts) delete window._autofillAiConflicts[coreField]; } catch (e) { /* best-effort */ }
+}
+
+// Merge AI values into EMPTY preview boxes, stamp provenance (Decision A3), and
+// OFFER the AI reading wherever it disagrees with a box the local reader filled.
+// Returns { filled, conflicts } — filled counts boxes that VISIBLY took a value.
+//
+// WHY THE DISAGREEMENTS COST NOTHING EXTRA: the prompt already ends "still return
+// every key", so the model's answer for an already-filled box was in the response all
+// along and was simply dropped at the old "box is not empty -> continue" line.
+// Surfacing it needs no prompt change, no second call and no extra pages sent.
+//
+// ⚠ THE COMPARISON IS NORMALISED (aiComparableValue) — amounts as numbers, dates as
+// ISO days, text case- and space-folded. Comparing raw strings would raise a
+// disagreement on almost every document and train reviewers to click past the note.
 // Called by: _tryAiAssist().
 function mergeAiParsedIntoPreview(aiParsed) {
     let filled = 0;
+    const conflicts = [];
     try {
         const core = (typeof getCore === 'function') ? getCore() : null;
         const toInput = {};
@@ -2434,40 +2730,39 @@ function mergeAiParsedIntoPreview(aiParsed) {
             for (const inputId of Object.keys(AUTOFILL_CORE_FIELDS)) {
                 toInput[AUTOFILL_CORE_FIELDS[inputId]] = inputId;
             }
-        } catch (e) { return 0; }
+        } catch (e) { return { filled: 0, conflicts: 0 }; }
         window._autofillAiAssisted = window._autofillAiAssisted || {};
         for (const coreField of Object.keys(toInput)) {
             const val = aiParsed ? aiParsed[coreField] : null;
             if (val === null || val === undefined || String(val).trim() === '') continue;
-            const el = document.getElementById('previewInput-' + toInput[coreField]);
-            if (!el || String(el.value || '').trim() !== '') continue;
+            const inputId = toInput[coreField];
+            const el = document.getElementById('previewInput-' + inputId);
+            if (!el) continue;
             let shown = String(val);
             try {
                 if (el.type === 'date' && core) shown = core.parseToInputDate(val) || shown;
             } catch (e) { /* keep raw on normalizer failure */ }
-            el.value = shown;
-            window._autofillAiAssisted[coreField] = true;
-            try {
-                // The preview was a TABLE until Stage 1b turned it into a responsive
-                // grid; there are no <td> elements left, so this hunted for a cell that
-                // cannot exist and the badge silently never appeared (restudy §28.5).
-                // The old parentNode fallback was dead code too — the ternary asked
-                // whether el.closest EXISTS, not whether it MATCHED.
-                const td = (el.closest && (el.closest('.afp-cell') || el.closest('td'))) || el.parentNode || null;
-                if (td && !td.querySelector('[data-ai-marker]')) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge bg-info text-dark';
-                    badge.setAttribute('data-ai-marker', '1');
-                    badge.title = 'Filled by the AI-assisted read — please verify';
-                    badge.textContent = 'AI-assisted';
-                    td.appendChild(document.createTextNode(' '));
-                    td.appendChild(badge);
+
+            // A box the local reader already filled is NEVER overwritten (Decision A3,
+            // reaffirmed by the user 2026-09-23). When the two readings differ, the
+            // reviewer is offered both and decides.
+            const local = String(el.value || '').trim();
+            if (local !== '') {
+                if (aiComparableValue(coreField, local) !== aiComparableValue(coreField, shown)) {
+                    conflicts.push({ coreField: coreField, inputId: inputId, el: el, local: local, ai: shown });
                 }
-            } catch (e) { /* marker is best-effort */ }
+                continue;
+            }
+
+            // Empty box: fill it — but badge and count it only if the control took it.
+            if (!setPreviewFieldValue(el, shown)) continue;
+            window._autofillAiAssisted[coreField] = true;
+            stampAiFieldBadge(el);
             filled++;
         }
+        renderAiConflictNotes(conflicts);
     } catch (e) { /* merge is best-effort */ }
-    return filled;
+    return { filled: filled, conflicts: conflicts.length };
 }
 
 // Which preview boxes are still EMPTY — the fields the AI is actually being asked for.
@@ -2653,16 +2948,12 @@ window._tryAiAssist = async function () {
         if (runAtClick !== null && runAtClick !== _autofillRunId) return;
         if (!slices.length) {
             if (typeof showToast === 'function') showToast('No page images available — re-upload to retry', 'error');
-            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
-            window._autofillAiBusy = false;
             return;
         }
         // S-4: the promise on the banner has to match the payload (A8/A9).
         const guard = checkAiSlicePayload(slices, asked);
         if (!guard.ok || (guard.message && !window.confirm(guard.message))) {
             if (!guard.ok && guard.message && typeof showToast === 'function') showToast(guard.message, 'error');
-            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
-            window._autofillAiBusy = false;
             return;
         }
         const parsed = await postAiSlices(slices, emptyPreviewFields());
@@ -2677,11 +2968,9 @@ window._tryAiAssist = async function () {
                     aiEl.appendChild(err);
                 }
             } catch (e) {}
-            if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
-            window._autofillAiBusy = false;
             return;
         }
-        const n = mergeAiParsedIntoPreview(parsed);
+        const merged = mergeAiParsedIntoPreview(parsed);
         try {
             let fallbackNote = '';
             try {
@@ -2689,13 +2978,37 @@ window._tryAiAssist = async function () {
                     fallbackNote = ' Answered by backup model — verify carefully.';
                 }
             } catch (e) {}
-            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + n + '</strong> empty box(es) — review, edit freely, then Apply. Boxes with local values were left alone.' + fallbackNote + '</span>';
+            // The summary now reports BOTH outcomes. "Filled" counts only boxes that
+            // visibly took a value (a control that refuses one is no longer counted —
+            // restudy §50.3), and "read differently" points at the pick-one notes the
+            // merge just drew, so a reviewer who scrolled past them is still told.
+            const conflictNote = merged.conflicts
+                ? ' It read <strong>' + merged.conflicts + '</strong> filled box(es) differently — each one now offers both values; nothing was overwritten.'
+                : ' Boxes with local values were left alone.';
+            if (aiEl) aiEl.innerHTML = '<i class="bi bi-magic"></i><span style="font-size:0.9em;">AI assist filled <strong>' + merged.filled + '</strong> empty box(es) — review, edit freely, then Apply.' + conflictNote + fallbackNote + '</span>';
         } catch (e) {}
         window._autofillAiMerged = true;
     } catch (e) {
         if (typeof showToast === 'function') showToast(aiFailureMessage('AI assist failed — please fill in the fields manually'), 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Try AI assist'; }
+    } finally {
+        // ⚠ 2026-09-23 (user report: "the button seems to not be working" after one
+        // successful assist). EVERY FAILURE PATH cleared this flag and THE SUCCESS
+        // PATH DID NOT, so one good answer left _autofillAiBusy stuck true and every
+        // later press died at the guard on line 1 of this function — silently, with no
+        // toast and no disabled button to explain it. The two stale-run `return`s
+        // leaked it the same way.
+        //
+        // It stayed invisible until S-1 (2026-09-20): the success summary REPLACES the
+        // banner, so there was no button left to press. refreshAutofillAiBanner() then
+        // repaints the banner whenever the page selection changes — which is exactly
+        // what the user did — restoring a button that could no longer do anything.
+        //
+        // A finally clause is the fix rather than a fourth copy of the reset: the bug
+        // was one missing copy among three, and that shape recurs.
         window._autofillAiBusy = false;
+        // Only worth restoring if the banner still holds this button; on the success
+        // path the summary has already replaced it and btn is detached.
+        try { if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = 'Try AI assist'; } } catch (e) { /* best-effort */ }
     }
 };
 
@@ -2814,7 +3127,10 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
                 // Parser outputs are numeric/date strings (no quotes) — safe for onclick.
                 const wBtn = '<button type="button" class="btn btn-sm btn-outline-warning me-1" onclick="window._pickDisagreeValue(\'previewInput-' + inputId + '\',\'' + escapeHtml(d.winner.value) + '\')">' + escapeHtml(d.winner.value) + '</button>';
                 const rBtn = '<button type="button" class="btn btn-sm btn-outline-warning" onclick="window._pickDisagreeValue(\'previewInput-' + inputId + '\',\'' + escapeHtml(d.runnerUp.value) + '\')">' + escapeHtml(d.runnerUp.value) + '</button>';
-                return '<div class="alert alert-warning py-1 px-2 mt-1 mb-0" style="font-size:0.85em;">' +
+                // data-local-disagree lets renderAiConflictNotes FIND this note and fold
+                // the AI's reading into it, so a field never shows two competing notes
+                // (user decision 2026-09-23 — see mergeFieldReadings).
+                return '<div class="alert alert-warning py-1 px-2 mt-1 mb-0" data-local-disagree="' + coreField + '" style="font-size:0.85em;">' +
                     '<i class="bi bi-question-circle"></i> I found two different values — please pick the right one:<br>' + wBtn + rBtn + '</div>';
             }
             return '';

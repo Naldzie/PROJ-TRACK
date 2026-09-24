@@ -1380,3 +1380,69 @@ test('money and durations still anchor by their digits', () => {
     // A location with a numeral in it is TEXT, not a number hunt.
     assert.equal(core.mineCorrectionLabels('Site: Brgy. 3 Nabua\nPage 3 of 9', 'Brgy. 3 Nabua', 1, 'location')[0].label, 'Site');
 });
+
+
+// ─── previewLearnedExtraction: what a taught phrase would actually READ ───────
+// Every fixture below is a VERBATIM row from parser_keyword_proposals after the
+// 2026-09-23 pdfdocstest5 run, with its stored excerpt. These are not invented
+// strings: the whole point of the chip is the pair of ABC rows that a reviewer
+// cannot tell apart by wording, and only the real OCR text reproduces that.
+
+const PKP_ABC_BAD = 'Approved Budget for the Contract; PB';
+const PKP_ABC_BAD_EX = 'Implementing Office: Camarines Sur Polytechnic Colleges | Approved Budget for the Contract; PB 4,834,297 5g | DONBER CONSTRUCTION';
+const PKP_ABC_GOOD = '| TOTAL ESTIMATED PROJECT COST P';
+const PKP_ABC_GOOD_EX = '] TOTAL oF Il ] P 2 | | TOTAL ESTIMATED PROJECT COST P 4,834, 297.59 | prepared by:';
+
+test('the two ABC phrases read DIFFERENT values from their own excerpts', () => {
+    // The whole reason the chip exists. Identical-looking rows on the desk; one
+    // carries the OCR damage that dropped the decimal point, the other is correct.
+    assert.equal(core.previewLearnedExtraction('abc', PKP_ABC_BAD, PKP_ABC_BAD_EX).value, '4834297.00');
+    assert.equal(core.previewLearnedExtraction('abc', PKP_ABC_GOOD, PKP_ABC_GOOD_EX).value, '4834297.59');
+});
+
+test('coverage and consequence answer DIFFERENT questions', () => {
+    // "New" and "right" are independent, which is why one chip could not replace
+    // the other: the wrong ABC phrase is old, and three wrong budgetSource phrases
+    // are all new.
+    assert.equal(core.builtInCoversPhrase('abc', PKP_ABC_BAD), true);
+    assert.equal(core.builtInCoversPhrase('abc', PKP_ABC_GOOD), false);
+    assert.equal(core.builtInCoversPhrase('budgetSource', 'LOCATION'), false);
+});
+
+test('three wrong budgetSource phrases all read the SAME value', () => {
+    // One generic value anchoring three unrelated labels. Each row looks plausible
+    // alone; side by side the repetition is the tell.
+    const seen = [
+        core.previewLearnedExtraction('budgetSource', 'Implementing Office',
+            'Implementing Office: Camarines Sur Polytechnic Colleges'),
+        core.previewLearnedExtraction('budgetSource', 'LOCATION',
+            'LOCATION: Camarines Sur Polytechnic Colleges'),
+    ].map(r => r.value);
+    assert.deepEqual(seen, ['Camarines Sur Polytechnic Colleges', 'Camarines Sur Polytechnic Colleges']);
+});
+
+test('the excerpt is split on its stored separator, not matched whole', () => {
+    // excerptOf joins lines with ' | ' and learnedLabelPattern is anchored at ^, so a
+    // phrase on the excerpt's SECOND line can only be found if the join is undone.
+    // Without the split this returns null and the chip silently never appears.
+    const r = core.previewLearnedExtraction('budget', 'Revised Contract Amount Php',
+        '3. Original Contract Amount Php4,204,128.84 | Revised Contract Amount Php4,323,196.77 | 5. Original Expiry date');
+    assert.equal(r.value, '4323196.77');
+});
+
+test('a phrase that does not match its own excerpt shows nothing', () => {
+    // null, never a guess — the same discipline builtInCoversPhrase uses for
+    // "cannot tell". A confident wrong preview is worse than no preview.
+    assert.equal(core.previewLearnedExtraction('abc', 'Total Something Else', PKP_ABC_GOOD_EX), null);
+});
+
+test('a match whose value the field validator refuses is reported as refused', () => {
+    // budgetSource runs asSourceName, which rejects a clause. The reviewer is told
+    // the phrase anchors but reads nothing usable, rather than being shown a value.
+    const r = core.previewLearnedExtraction('budgetSource', 'Source', 'Source: =|=|=');
+    assert.ok(r === null || r.ok === false);
+});
+
+test('an unknown field cannot produce a preview', () => {
+    assert.equal(core.previewLearnedExtraction('notAField', 'Whatever', 'Whatever: 12'), null);
+});

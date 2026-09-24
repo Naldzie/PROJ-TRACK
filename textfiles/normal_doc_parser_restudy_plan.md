@@ -1,6 +1,91 @@
 # NORMAL-DOC PARSER RESTUDY (SCANNED DOCUMENTS, UI FIRST)
 
 ===============================================================================
+  §0-A. CURRENT HANDOFF — 2026-09-23 (SUPERSEDES §0 BELOW, which is 2026-09-20)
+        A cold session should be able to continue from this block alone.
+===============================================================================
+
+  WHERE THE WORK IS  — ✅ ALL OF IT IS MERGED INTO `develop` AS OF 2026-09-24
+    Branch `phase-44-parser-preview-ui-fixes`, cut from `develop` d705b2d, then
+    merged into `develop` after the user's browser confirmation.
+    Commits: 9300e61 (§50-§54)  9caa4f1 (§56)  8857b77 (docs)  62feebf (merge of 43)
+
+  ⚠ CORRECTION — THIS BLOCK PREVIOUSLY CALLED THE TWO BRANCHES "SIBLINGS".
+    It was written before commit 62feebf and was wrong by the time it was read.
+    phase-43 IS CONTAINED IN phase-44 (git merge-base --is-ancestor confirms it):
+        develop d705b2d ── phase-44 ── 9300e61 ─ 9caa4f1 ─ 8857b77 ─┐
+                        └─ phase-43 ─ c02de5f ──────────────────────┴─ 62feebf (merge)
+    So ONE merge of phase-44 into develop brought BOTH, and that is what happened.
+    ⚠ THE LESSON: a handoff block that states branch topology from memory can be
+    falsified by a commit made minutes later. Verify topology with git, not prose.
+
+  SUITES / PROBES, last measured
+    JS 286 / 286 / 0 (279 before this session's +7 core tests).
+    PHP not re-run — no PHP file changed in phase-44.
+    Offline probes (session scratchpad, never in the repo):
+      probe_phase44.mjs   32/32   — §50-§54, the preview modal
+      probe_phase44b.mjs  15/15   — §52 busy flag, §53 send list
+    11 mutations were run across the session; every one went red and was restored.
+
+  WHAT WAS BUILT THIS SESSION (all browser-confirmed EXCEPT the last)
+    §50  duplicate banner button removed · page viewer got a ✕ close · the
+         "AI-assisted" badge no longer appears over a box the control refused
+    §51  the AI may now CORRECT a filled box by OFFERING, never overwriting
+    §52  a successful AI assist no longer jams the Try AI assist button
+    §53  every chosen AI page has an × ; the cap displaces nothing silently
+    §54  one note per field listing EVERY distinct reading, labelled by reader
+    §56  the keyword desk now shows what a phrase WOULD READ, not just whether
+         the wording is new   ✅ BROWSER-CONFIRMED 2026-09-24 — the last one owed
+    §55  (read-only) why the ABC read wrong, traced to the character
+    §57  ⏸ the OCR-pipe fix is ON HOLD — a correct fix deliberately withheld
+
+  DECISIONS MADE THIS SESSION (do not re-litigate — §51.2, §55.5, §57)
+    D-44-1  the AI offers, never overwrites a box the local reader filled
+    D-44-2  an unmatched Category / Budget Source is SHOWN, flagged, not dropped
+    D-44-3  every distinct reading appears in ONE note; agreed values collapse
+    D-44-4  `project cost` / `total cost` stay OUT of the hardcoded ABC list, so
+            the learning loop has a real before/after to demonstrate
+    D-44-5  the OCR-pipe fix is HELD until after that demonstration — §57 carries
+            the un-hold condition. ⚠ READ §57 BEFORE "FIXING" §55.2(b).
+
+  THIS SESSION'S PROBES — C:\temp\opencode  (project convention: outside the repo,
+  listed in the plan's close entry, the same place the P5/P6 probes live)
+    probe_phase44.mjs    32 checks — §50-§54 + §56. document-parser.js in a node:vm
+                         sandbox with a DOM stub whose <select>.value setter REFUSES
+                         an unmatched option, exactly as a browser does. Without that
+                         one behaviour the probe passes against the broken code.
+    probe_phase44b.mjs   15 checks — §52 busy flag, §53 send list. Drives the REAL
+                         _tryAiAssist through a faked success twice; only
+                         buildAiSlices is stubbed (it needs pdf.js + a canvas).
+    preview_check.mjs    the §56 consequence chip against the five real
+                         parser_keyword_proposals rows and their stored excerpts.
+    cover.mjs            builtInCoversPhrase over the same five rows — the table in
+                         §56.1 showing novelty endorsing three wrong rows.
+    pipe_check.mjs       §55.2(b) / §57 — proves the caps-run reads 834297.59 with
+                         the OCR pipe and 4834297.59 without, and asserts the fix is
+                         still UNBUILT.
+    ⚠ ALL FIVE TAKE THE REPO PATH AS argv[2]:
+        node C:\temp\opencode\probe_phase44.mjs "<path to PMU_System>"
+    ⚠ THEY ARE NOT IN THE REPO AND WILL NOT BE PUSHED. That is the standing
+    convention, not an oversight — but it means a teammate or a fresh machine does
+    NOT get them. What IS permanent: §56.4's fixtures now live in
+    tests/js/document-parser-core.test.mjs and run with `npm run test:js`. The DOM
+    half (§50-§54) has no permanent coverage and is browser-proven only.
+
+  ✅ CLOSED 2026-09-24 — EVERYTHING ON THIS BRANCH IS BROWSER-CONFIRMED AND MERGED.
+    The user confirmed the §56 consequence chip and the phase-43 pace card, then
+    ordered the merge into `develop`. §58.0(a) and §58.0(b) are both discharged.
+    Logged in textfiles/pilot_version_changelog.md as A-2, A-3 and A-4 — A-4 (the
+    §56 chip) had NO changelog entry until 2026-09-24 and was added then; the
+    mandatory pilot log had a real gap, which is worth noticing because the chip is
+    the one piece of phase-44 the JS suite actually covers.
+
+  ➡ NEXT WORK — see §58.1-§58.5. Nothing there is ordered; ask before building.
+    ⚠ §58.1 IS ON HOLD BY USER DECISION D-44-5 — read §57 before touching it.
+
+
+
+===============================================================================
   §0. HANDOFF — READ THIS FIRST (written 2026-09-20 at the user's request)
      A fresh session should be able to continue from this block alone.
 ===============================================================================
@@ -5373,6 +5458,722 @@
     The client question about whether notarial pages may go to a third-party model
     at all is the user's to ask on pilot day, and NOTHING in that plan depends on
     the answer.
+
+===============================================================================
+  §50 — THREE PREVIEW-MODAL DEFECTS FROM A USER SCREENSHOT (2026-09-23)
+        Branch: phase-44-parser-preview-ui-fixes (off develop). BUILT.
+        ⬜ BROWSER CHECK OWED — all three are DOM, which the JS suite does not
+        cover. JS 279/279/0 here means "nothing else broke", not "this works".
+===============================================================================
+
+  Reported from one screenshot of the auto-fill preview on pdfdocstest5.pdf,
+  plus one question (answered separately in §51). All three are in
+  public/js/admin/projects/document-parser.js; no PHP changed.
+
+
+  50.1 THE "See or change these" BUTTON WAS A DUPLICATE — REMOVED.
+       (autofillAiBannerHtml)
+
+       S-1 (§ai_slice_selection_plan §2) put the named page list in the amber
+       banner and, beside it, a button opening the page-preview panel. What the
+       screenshot shows is that by the time the banner is on screen THE PANEL IS
+       ALREADY OPEN a few lines above it, carrying its own "👁 See & straighten"
+       button, the page strip AND the whole "✦ AI assist would read" row. So the
+       banner button opened a panel the reviewer was already looking at.
+
+       ⚠ IT WAS ALSO BREAKING THE BUSY STATE, and that had not been noticed.
+       _tryAiAssist() finds its own button with aiEl.querySelector('button') —
+       the FIRST button in the banner. That was "See or change these", so on
+       press it was "See or change these" that went disabled and read "Asking
+       AI…", while the "Try AI assist" button stayed enabled and re-pressable
+       for the whole call. Removing the duplicate makes the query correct by
+       construction rather than by a selector that has to be kept in step.
+
+       The NAMED PAGE LIST STAYS. That is the part S-1 exists for — it is what
+       makes the consent informed — and it is not what was duplicated.
+
+  50.2 THE PAGE VIEWER COULD BE OPENED AND NEVER CLOSED — ✕ close ADDED.
+       (renderOcrPagePreview caption + new window._ocrPreviewHide)
+
+       The panel had exactly one state transition available to a reviewer: open.
+       Once open it held the height of the preview modal for the rest of the
+       session, pushing the field grid and Apply down.
+
+       The close button clears _ocrPreview and re-renders. That is DELIBERATELY
+       the same state the panel starts a run in, and renderOcrPagePreview()
+       already hides the host whenever _ocrPreview is null — so this reuses the
+       existing hide path instead of adding a second one that could drift from
+       it. It forgets ONLY which page was on show: rotations, pending re-reads,
+       AI page picks and never-send refusals all live in their own ledgers, so
+       "👁 See & straighten" reopens the reviewer's setup intact.
+
+  50.3 ⚠ THE DEFECT WORTH READING — "AI-assisted" BADGES ON EMPTY BOXES.
+       (mergeAiParsedIntoPreview, now two passes)
+
+       SYMPTOM (user): Category and Budget Source carried an "AI-assisted" badge
+       with nothing in the box, and the reviewer's reading was "the AI found
+       nothing, so why is it badged".
+
+       ROOT CAUSE: A <select> SILENTLY REJECTS A VALUE IT HAS NO <option> FOR.
+       Stage 1b made Category, Budget Source and Contractor real <select>s
+       (:2786/:2787/:2790). The merge did:
+
+           el.value = shown;                       // rejected — .value stays ''
+           window._autofillAiAssisted[f] = true;   // stamped anyway
+           …append badge…                          // badged anyway
+           filled++;                               // counted anyway
+
+       so a value the control had thrown away was reported to the reviewer as a
+       successful AI fill, AND counted in "AI assist filled N empty box(es)".
+       The same shape bites <input type="date"> when parseToInputDate() cannot
+       normalise the string — a rarer path, fixed by the same change.
+
+       ⚠ THE USER'S READING WAS HALF RIGHT AND THE HALF THAT IS WRONG MATTERS.
+       The badge is wrong, yes — but the AI did NOT return nothing. The merge
+       skips null/blank before it ever reaches a box, so a badge proves the model
+       answered. The value was produced and then dropped on the floor between the
+       model and the screen. Anyone diagnosing this from the symptom alone would
+       have gone looking in the prompt or the validator, where nothing is wrong.
+
+       FIX — TWO PASSES, and the split is the whole point:
+         PASS 1 offers each value to its box. Choice fields are written to
+           data-extracted, NOT to .value. data-extracted is the mechanism the
+           rule path already uses to show an unlisted value as
+           "… — from document (not in list)", so this is the one assignment a
+           <select> cannot drop. syncAutofillChoiceFields() is then re-run once.
+         PASS 2 stamps, badges and counts ONLY boxes that now hold something.
+       A refused value leaves the field reading "Not found — fill manually" with
+       no badge, which is what the reviewer was owed in the first place.
+
+       SIDE EFFECT, AND IT IS A QUESTION FOR THE USER (see §51): an unlisted AI
+       Category or Budget Source now DISPLAYS as "X — from document (not in
+       list)" and reaches the Q3 create-in-place offer, exactly as a rule-read
+       unlisted value does. That is consistent, and it is also the first time an
+       AI GUESS at a closed PMU taxonomy becomes visible. Category is four seeded
+       rows (New Construction / Renovation / Repair / Maintenance) that a contract
+       will not state verbatim, so an unmatched AI category is close to
+       definitionally inferred; Budget Source is open text documents really do
+       carry ("GAA 2024", "STF"). Whether to show or drop the unmatched case is
+       asked, not decided here.
+
+  50.4 WHAT WAS AND WAS NOT PROVEN
+
+       node --check on document-parser.js: clean.
+       npm run test:js: 279 tests / 279 pass / 0 fail (unchanged).
+       ⚠ THE SUITE PROVES NOTHING ABOUT ANY OF THE THREE. It covers
+       document-parser-core.js; all three fixes are in the DOM half. The browser
+       check is owed and is the only thing that can close them:
+         (a) the banner shows ONE button, and pressing it disables THAT button
+             and reads "Asking AI…";
+         (b) ✕ close hides the viewer; "👁 See & straighten" reopens it with any
+             rotation, ✦ pick and ⃠ refusal still set;
+         (c) on a document where the AI answers Category/Budget Source: either
+             the box shows the value AND the badge, or it shows neither — never
+             a badge over an empty box. Check the "filled N" count matches the
+             number of boxes that visibly changed.
+
+===============================================================================
+  §51 — THE AI MAY NOW CORRECT A FILLED BOX, BY OFFERING (2026-09-23)
+        Branch: phase-44-parser-preview-ui-fixes. BUILT. ⬜ BROWSER CHECK OWED.
+===============================================================================
+
+  51.1 THE QUESTION, AND THE CORRECTION TO IT
+
+       User: "is the ai assist only look at the empty input fields? i like to make
+       the ai also correct the extraction if the extracted data look off".
+
+       HALF RIGHT, AND THE OTHER HALF IS THE USEFUL PART. Only the CLIENT was
+       looking at empty fields:
+         · emptyPreviewFields() collects the empty boxes and sends them as 'need';
+         · buildPrompt() turns that into "the reviewer … still needs these: X.
+           Give those your closest attention, BUT STILL RETURN EVERY KEY";
+         · so the model's answer for an ALREADY-FILLED box was in every response;
+         · and mergeAiParsedIntoPreview threw it away at
+               if (!el || String(el.value).trim() !== '') continue;
+       The AI's second opinion has been arriving and being discarded since AI-3.
+
+       CONSEQUENCE, and it is why this was cheap: surfacing disagreements needs NO
+       prompt change, NO second call, NO extra pages sent to Google, and no change
+       to what the reviewer consented to in the banner. It is the same one call.
+
+  51.2 USER DECISION D-44-1 (2026-09-23) — OFFER, NEVER OVERWRITE.
+
+       Asked: show both and let the reviewer pick / let the AI overwrite and badge
+       it / flag only, without showing the AI value.
+       CHOSEN: show both, reviewer picks.
+       Rationale (theirs, by choosing it): a wrong AI read must not be able to
+       silently destroy a correct local extraction. Decision A3's "non-empty boxes
+       keep rule values" therefore STANDS — this adds a door, it does not remove
+       the wall. The AI-assisted badge now means "a human accepted this from the
+       AI", which is a stronger claim than it used to make.
+
+       USER DECISION D-44-2 (2026-09-23) — unmatched Category / Budget Source are
+       SHOWN, flagged "— from document (not in list)", same as a rule-read
+       unmatched value. Considered and rejected: dropping unmatched Category on the
+       argument that it is a closed 4-row PMU taxonomy no contract states verbatim,
+       so an unmatched AI answer is inference rather than extraction. The user
+       preferred seeing the claim to having it silently discarded.
+
+  51.3 WHAT WAS BUILT (all in document-parser.js)
+
+       setPreviewFieldValue(el, shown)   writes a value and reports whether the
+                                         control ACCEPTED it (§50.3).
+       stampAiFieldBadge(el)             the badge, split out so the merge and the
+                                         accept-this-value path badge identically.
+       aiComparableValue(field, raw)     the normalised comparison — see 51.4.
+       renderAiConflictNotes(list)       draws one amber pick-one note per
+                                         disagreement, under the field it concerns.
+       window._takeAiValue(field)        accept the AI reading; badges ONLY if the
+                                         control takes it.
+       window._keepLocalAiValue(field)   dismiss; changes nothing, stamps nothing.
+       mergeAiParsedIntoPreview()        now returns { filled, conflicts } and the
+                                         banner summary reports both.
+
+       ⚠ ONLY THE CORE FIELD NAME IS INTERPOLATED INTO onclick. Values live in
+       window._autofillAiConflicts and are fetched by key. The existing
+       _pickDisagreeValue notes interpolate values directly and get away with it
+       only because their five fields are numeric or date strings; an AI title or
+       description is free text from a document and can carry quotes.
+
+  51.4 ⚠ THE PART THAT DECIDES WHETHER ANYONE READS THE NOTES
+
+       The comparison is NORMALISED before a disagreement is raised:
+         budget / abc / duration  -> compared as NUMBERS  ("4,834,297.59" and
+                                     "4834297.59" are the same amount)
+         startDate / endDate      -> compared as ISO DAYS via the core's real
+                                     parseToInputDate ("March 1, 2025" = 2025-03-01)
+         everything else          -> trimmed, whitespace-collapsed, case-folded
+       Comparing raw strings raises a note on nearly every well-read document.
+       That is not a cosmetic difference: a warning that fires when nothing is
+       wrong trains reviewers to click past the one time something is. Mutation M3
+       (below) is exactly this, and it turns a clean read into 2 false alarms.
+
+  51.5 PROVEN OFFLINE — probe_phase44.mjs, 24 checks, 24 pass
+
+       Harness: document-parser.js in a node:vm sandbox with a DOM stub, plus the
+       REAL document-parser-core.js imported for parseToInputDate (a stubbed date
+       parser would have made 51.4 vacuous). Probe lives in the session scratchpad,
+       never in the repo.
+       ⚠ THE STUB MODELS THE ONE BEHAVIOUR THE BUG TURNS ON: its <select>.value
+       setter ignores a value with no matching <option>, exactly as a browser does.
+       Without that the probe would pass against the broken code.
+
+       MUTATIONS — all three red, restored green:
+         M1  select branch of setPreviewFieldValue disabled
+             -> 5 fail. filled drops to 0: the §50.3 guard correctly refuses to
+                badge a value the control dropped.
+         M2  M1 PLUS badge unconditionally (i.e. the code as reported)
+             -> 3 fail, and it REPRODUCES THE USER'S SCREENSHOT: the badge
+                assertion PASSES while Category and Budget Source are empty.
+                That is the bug, reproduced from the outside.
+         M3  aiComparableValue replaced with a raw String !== String
+             -> 2 fail: conflicts 1 -> 2, the budget false alarm appears.
+
+       npm run test:js: 279 / 279 / 0 (unchanged — it does not reach this file).
+       No PHP changed, so the PHP suite was not re-run.
+
+  51.6 ⬜ BROWSER CHECK OWED (the only thing that can close §50 and §51)
+
+       On a document where the local reader fills some boxes and the AI answers:
+       (a) a field both read the SAME way shows no note — check a money field
+           especially, since that is where a raw comparison would false-alarm;
+       (b) a field they read differently shows the amber note with both values,
+           and the box still holds the LOCAL value until a button is pressed;
+       (c) pressing the AI button swaps the value in, adds the AI-assisted badge
+           and removes the note; pressing keep removes the note and changes nothing;
+       (d) the banner summary counts both ("filled N … read M filled box(es)
+           differently");
+       (e) Apply still saves the values shown, and the learning loop still harvests
+           an accepted AI value with source 'AI-assisted' (ParserKeywordProposal).
+
+===============================================================================
+  §52 — ONE SUCCESSFUL AI ASSIST JAMMED THE BUTTON FOR THE REST OF THE PREVIEW
+        Branch: phase-44-parser-preview-ui-fixes. BUILT. ⬜ BROWSER CHECK OWED.
+===============================================================================
+
+  REPORTED (user, 2026-09-23): "after rearranging which to send to ai, when i click
+  the try ai assist (after having the first one succeed) the button seems to not be
+  working."
+
+  ROOT CAUSE — A MISSING COPY, NOT A WRONG ONE. _tryAiAssist() sets
+  window._autofillAiBusy = true on entry and returns early on the next press while it
+  is set. EVERY FAILURE PATH cleared it. THE SUCCESS PATH NEVER DID, and neither did
+  the two stale-run `return`s. So one good answer left the flag stuck true and every
+  later press died silently at the guard — no toast, no disabled button, nothing to
+  read as an explanation. "Not working" is exactly how that presents.
+
+  ⚠ WHY IT HAD NEVER BEEN SEEN, and this is the part worth carrying: on success the
+  summary REPLACES the banner's innerHTML, so there was no button left to press. S-1
+  (2026-09-20) added refreshAutofillAiBanner(), which repaints the banner whenever the
+  page selection changes — which is precisely what the user did before pressing. S-1
+  handed the reviewer a button that the 3-year-old flag bug had already disabled.
+
+  FIX: a `finally` clause, and the three inner copies deleted. The bug was one missing
+  copy among three; a fourth copy would have been the same shape again. The button is
+  restored only when it is still in the DOM (btn.isConnected) — on the success path the
+  summary has already replaced it.
+
+===============================================================================
+  §53 — CHOOSING WHICH PAGE LEAVES THE AI SEND LIST
+        Branch: phase-44-parser-preview-ui-fixes. BUILT. ⬜ BROWSER CHECK OWED.
+===============================================================================
+
+  REPORTED (user, 2026-09-23): "the way to change which pages are going to be sent …
+  it currently only removes the first in list when clicking a 4th page to send."
+
+  CONFIRMED, exactly as remembered. _ocrAiTogglePage ended
+      while (list.length > aiSliceCount()) list.shift();
+  so a fourth pick at a cap of 3 dropped the OLDEST choice, unannounced. And the only
+  removal control was "− this page", which acts on the page currently ON SCREEN — so
+  dropping p.1 meant navigating to p.1 first. The badges naming the chosen pages were
+  inert text.
+
+  BUILT:
+  (a) EVERY BADGE IS NOW A CONTROL. Each page in the "✦ AI assist would read" row
+      carries an × that drops that page (window._ocrAiDropPage). It materialises the
+      ranking into an explicit pick list first, exactly as the toggle does — while
+      _ocrAiPick is null the shown pages are the RANKING's output, and removing one
+      has to become a CHOICE or the ranking simply puts it back on the next render.
+      Removing the last page leaves _ocrAiPick null, i.e. "use the suggestion" — the
+      same state the reset link produces, so there is no unreachable empty list.
+  (b) AT THE CAP, ADD NOTHING RATHER THAN DISPLACE SOMETHING. The check moved BEFORE
+      the push, "+ this page" is disabled in that state with the limit and the remedy
+      in its tooltip, and the guard behind it says so in a toast if it is ever reached
+      (possible only if Send is lowered between render and click).
+  ⚠ Only reportIdx and pageNum go into the onclick — both numbers from our own ledger.
+  The file NAME is never put in an attribute.
+
+===============================================================================
+  §54 — D-44-3: EVERY DISTINCT READING, IN ONE NOTE
+        Branch: phase-44-parser-preview-ui-fixes. BUILT. ⬜ BROWSER CHECK OWED.
+===============================================================================
+
+  54.1 THE CASE THAT SET THE RULE — AND IT NEARLY WENT THE OTHER WAY
+
+       The user first proposed discarding the AI's reading whenever the local reader
+       had already raised a two-value disagreement, because on CONTRACT PRICE the AI
+       simply repeated one of the local pair and the second note was pure duplication.
+
+       Then they looked at the ABC on the same document and retracted it:
+         local candidate 1 : 4834297.00   — an OCR misread of the last two digits
+         local candidate 2 :  834297.59   — the same figure with its leading 4 cut off
+         AI               : 4834297.59   — THE CORRECT VALUE
+       The right answer was in NEITHER local candidate. A "discard the AI when a local
+       disagreement exists" rule would have thrown away the only correct reading on
+       screen, on the field that decides the project's budget.
+
+       ⚠ THIS IS THE FINDING TO CARRY: a local disagreement is not evidence that the
+       local reader has the answer. It is evidence that it does NOT. Suppressing a
+       third opinion is most dangerous exactly where the first two already disagree.
+
+  54.2 THE RULE — ONE NOTE PER FIELD, EVERY DISTINCT VALUE, LABELLED BY READER
+
+       mergeFieldReadings() pools the box's current value, the local pooled pair (from
+       window._autofillDisagree) and the AI's value, de-duplicates them through
+       aiComparableValue (§51.4), and records WHO saw each one. renderAiConflictNotes
+       then draws a single note and REMOVES the static local note, which is tagged
+       data-local-disagree="<coreField>" for exactly this purpose.
+
+       ABC  → three buttons: 4834297.00 (read here) · 834297.59 (read here) ·
+              4834297.59 (AI)
+       CPRICE → two buttons: 4204128.84 (read here) · 4834297.59 (both agree)
+
+       The redundancy the user objected to disappears WITHOUT discarding anything: a
+       value two independent readers found collapses into one entry marked "both
+       agree", which is strictly more information than either the duplicate note or
+       the deletion would have left.
+
+  54.3 THE BADGE RULE TIGHTENED
+
+       window._pickFieldReading() stamps the AI-assisted badge ONLY when the accepted
+       value is one the AI ALONE saw. A value both readers found is not the AI's
+       contribution, and badging it would inflate what the provenance record — and the
+       learning loop's 'AI-assisted' source on ParserKeywordProposal — actually means.
+       _takeAiValue / _keepLocalAiValue are gone; there is one picker.
+
+  54.4 PROVEN OFFLINE — 32 + 15 checks, all passing, 6 mutations all red
+
+       probe_phase44.mjs (32) and probe_phase44b.mjs (15), both in the session
+       scratchpad. §52's check drives the REAL _tryAiAssist through a faked success
+       twice — only buildAiSlices is stubbed, because it needs pdf.js and a canvas;
+       the guard, the flag and the finally are the shipped code.
+
+       M1  select branch disabled                    → 5 fail
+       M2  M1 + badge unconditionally (as reported)  → 3 fail, reproduces the screenshot
+       M3  raw string compare instead of normalised  → 2 fail (budget false alarm)
+       M4  success-path reset removed                → 5 fail, fetchCalls stuck at 1 —
+                                                       reproduces "button not working"
+       M5  silent oldest-shift restored              → 4 fail, [5,1,6] becomes [1,6,9]
+       M6  discard the AI when a local pair exists   → 4 fail, and the ABC choices come
+                                                       back as ["4834297.00","834297.59"]
+                                                       — 54.1's loss, demonstrated
+       M7  stop collapsing equal readings            → 4 fail, the duplicate returns
+       M8  badge every accepted value                → 2 fail
+
+       npm run test:js: 279 / 279 / 0 (unchanged — it does not reach this file).
+       No PHP changed.
+
+       ⚠ TWO PROBE DEFECTS CAUGHT DURING THE BUILD, both worth remembering:
+       · A patch dropped `list.push(...)` from _ocrAiTogglePage, so adding a page did
+         nothing. The cap test still PASSED — it asserted the list was unchanged, which
+         a broken add satisfies. Only the paired "a pick below the cap is accepted"
+         check exposed it. Assert the positive case beside every negative one.
+       · `let _ocrPreview` is a LEXICAL binding inside the vm script, so a separate
+         vm.runInContext('_ocrPreview = …') sets a shadowed global the module never
+         reads, and two checks passed vacuously. Drive state through the real entry
+         point (window._ocrPreviewShow) instead.
+
+  54.5 ⬜ BROWSER CHECKS OWED (§50–§54 together; none of this is suite-covered)
+
+       (a) one button in the amber banner, and pressing it disables THAT button;
+       (b) ✕ close hides the viewer; See & straighten reopens with rotations, ✦ picks
+           and ⃠ refusals intact;
+       (c) a second Try AI assist after a successful one actually calls out (§52);
+       (d) × on the middle page badge removes THAT page; at 3/3 "+ this page" is
+           disabled and says why (§53);
+       (e) ABC shows ONE note with three buttons, the AI one labelled (AI); Contract
+           Price shows two, the shared one labelled (both agree) (§54);
+       (f) accepting a "both agree" value adds NO badge; accepting an (AI) one does;
+       (g) Apply still saves what is shown, and the harvest still tags an AI-only
+           accepted value 'AI-assisted'.
+
+===============================================================================
+  §55 — WHY THE ABC READ WRONG, TRACED TO THE CHARACTER (2026-09-23)
+        Read-only investigation, from the user's own vote table + OCR dump.
+        NOTHING HERE IS SPECULATION — every value below was reproduced offline.
+===============================================================================
+
+  55.1 THE VOTE TABLE, AND THE THING NOBODY EXPECTED
+
+       window._parserVoteTables('abc') on pdfdocstest5.pdf:
+
+         #  value         score  pattern
+         0  4834297.00    0.85   abc-line, f-b1-budget
+         1   834297.59    0.85   words-shape
+         2  4834297.59    0.68   abc-line, f-b1-budget   <-- CORRECT
+
+       ⚠ THE PARSER FOUND THE RIGHT ANSWER. It ranked third.
+       pooledDisagree() destructures `const [first, second] = debugRows` — the note
+       shows the top TWO and nothing else. The correct ABC was computed, scored,
+       ranked, and then discarded by the display layer.
+
+       Any future report of "the parser got it wrong" should check the vote table
+       before the extractors. It may have got it right and been overruled by a
+       two-slot UI.
+
+  55.2 EACH WRONG VALUE, TO THE CHARACTER
+
+       (a) 4834297.00 — excerpt: "Approved Budget for the Contract; PB 4,834,297 5g"
+           OCR read "Php 4,834,297.59" as "PB 4,834,297 5g": Php->PB, and THE DECIMAL
+           POINT VANISHED. asMoney then finds no money marker (\bP\s*[\d,]+\.\d{2}
+           cannot match "PB"), falls through to the first number run "4,834,297", and
+           toFixed(2) appends the cents.
+           ⚠ The ".00" is NOT a misread of ".59". The cents were lost entirely and the
+           formatter supplied two zeros. A reader diagnosing this from the value alone
+           would look for a digit error that is not there.
+
+       (b) 834297.59 — the Certificate of Availability of Funds reads:
+               "... of FOUR MILLION | EIGHT HUNDRED THIRTY FOUR THOUSAND ... PESOS & 59/100"
+                                    ^ an OCR pipe: the scanned page border
+           abcWordsAtWindow matches the caps run with
+               /([A-Z][A-Z\s\-]*\b(?:MILLION|THOUSAND)\b[A-Z\s\-]*PESOS)/
+           and the class [A-Z\s\-] DOES NOT INCLUDE '|', so the run cannot cross it.
+           The match starts after the pipe and reads EIGHT HUNDRED THIRTY FOUR
+           THOUSAND ... = 834,297.
+           ⚠ FOUR MILLION was severed by one scan artifact. One character in one
+           character class.
+
+       (c) 4834297.59 (correct, 3rd) — abc-line sliding TWO lines from
+           "...approved budget for the contract of FOUR MILLION" down to
+           "(Php 4,834,297.59) has been duly appropriated". ti=2 applies w *= 0.8
+           over getSectionWeight's 0.85 default. 0.85 x 0.8 = 0.68 EXACTLY.
+           It lost by precisely the slide penalty, nothing else.
+
+  55.3 WHY CONTRACT PRICE HELD THE ABC — TWO ROUTES, AND A CASCADE
+
+       (a) collectBudgetCandidates runs four UNLABELED fallbacks (paren-php,
+           net-total, p-prefix, bare-php) accepting any peso figure over 100,000
+           anywhere in the document. collectAbcCandidates has none — it is
+           LABELED-ONLY by design, and its own comment says so.
+       (b) The budget 'generic' pattern lists `project cost` and `total cost`.
+           "TOTAL ESTIMATED PROJECT COST P 4,834, 297.59" contains "PROJECT COST",
+           so the document's own statement of the ABC total is matched by the PRICE
+           field and by NOTHING in the ABC list.
+       (c) ⚠ THE CASCADE. disagreeFor('budget') exists precisely to strike the ABC
+           winner out of the price note. ABC's winner was the corrupted 4834297.00,
+           so the real 4834297.59 was never recognised as "claimed by ABC" and
+           stayed. The OCR damage to ABC's winner DEFEATED THE GUARD BUILT TO STOP
+           EXACTLY THIS.
+
+  55.4 THE REVISED CONTRACT AMOUNT — the keyword was never the problem
+
+       The OCR text contains "4 Revised Contract Amount Php4,323,196.77" cleanly, and
+       `revised` is both the FIRST lookup in extractBudget and a labelRes entry in the
+       collector. It is not missing and never was.
+       ⚠ BUT: extractBudget opens with "Step 1e: Revised Contract Amount wins over
+       Original (user decision 11)" — AND THE POOLED VOTE DOES NOT CARRY THAT
+       PREFERENCE. `revised` is one of six equal patterns, and 4,204,128.84 appears
+       3-4 times (contract words, "Original Contract Amount", the billing header) so
+       it wins on frequency. Decision 11 is implemented in the single-match track and
+       silently dropped in the track that actually fills the box. NOT FIXED.
+
+  55.5 USER DECISION D-44-4 (2026-09-23) — project cost / total cost STAY OUT OF ABC
+
+       Proposed: add `project cost` / `total cost` to the ABC label list when the file
+       also carries contract amounts, so the ABC can see the document's own total.
+       DECLINED BY THE USER, deliberately: leaving the gap is what lets the learning
+       loop demonstrate itself end to end — the AI reads the pixels, the harvest mines
+       "| TOTAL ESTIMATED PROJECT COST P", approval teaches it, and the offline reader
+       gets the value right from then on with no AI call. Closing the gap in code would
+       remove the demonstration.
+       ⚠ This is a demonstration decision, not an accuracy one. If the pilot shows PMU
+       staff hitting it on real documents, revisit — the fix is one alternative in one
+       regex.
+
+===============================================================================
+  §56 — THE KEYWORD DESK NOW SHOWS CONSEQUENCE, NOT JUST NOVELTY
+        Branch: phase-44-parser-preview-ui-fixes. BUILT. ⬜ BROWSER CHECK OWED.
+===============================================================================
+
+  56.1 ⚠ THE FINDING: THE DESK'S ONLY QUALITY SIGNAL WAS ENDORSING THE WRONG ROWS
+
+       The 2026-09-23 batch left five AI-proposed rows. Run through the desk's
+       existing builtInCoversPhrase() chip:
+
+         phrase                                   desk said        truth
+         "Approved Budget for the Contract; PB"   adds nothing     WRONG (.00)
+         "| TOTAL ESTIMATED PROJECT COST P"       NEW              CORRECT
+         "Implementing Office"                    NEW              WRONG
+         "LOCATION"                               NEW              WRONG
+         "Name of Procuring Entity"               NEW              WRONG
+
+       "Finds a value no built-in rule does" reads as praise, and it was being shown
+       on three rows that would each teach the parser something false.
+       ⚠ NOVELTY IS EXACTLY WHAT A WRONG LABEL HAS MOST OF. Coverage answers "is this
+       new?"; it cannot answer "is this right?", and on this batch the two answers are
+       uncorrelated — the one wrong ABC phrase is OLD and all three wrong
+       budgetSource phrases are NEW.
+
+  56.2 WHY THE THREE budgetSource ROWS EXIST (the miner is not at fault)
+
+       mineCorrectionLabels returns up to 3 labels per corrected box, gated by:
+           gated = !label
+                || /(amount|budget|price|cost|total|contract|abc|fee|sum|bill|charge|payment)/i.test(label)
+                || /[:\-\u2013\u2014]\s*$/.test(rawBefore)
+       ⚠ THE WORD LIST IS ENTIRELY MONEY VOCABULARY. For every non-money field the only
+       thing letting a label through is the COLON CLAUSE — so for budgetSource the gate
+       is effectively "any line shaped `X: <value>`". The AI answered the college's
+       name for budgetSource; that name follows "Implementing Office:", "LOCATION:" and
+       "Name of Procuring Entity:", so three labels anchored, all correctly.
+       ⚠ THE COLON CLAUSE IS LOAD-BEARING AND MUST NOT SIMPLY BE REMOVED: "Project:"
+       contains no money word, so title/location/contractor learning passes ONLY
+       through it. Any fix must ADD a per-field veto, never delete the colon pass.
+       The miner did its job. The VALUE was wrong, and no label-side gate can see that.
+
+  56.3 WHAT WAS BUILT — core previewLearnedExtraction(field, phrase, excerpt)
+
+       Runs the phrase against the excerpt it was mined from and reports the value it
+       would produce. The desk renders it as a second chip beside the worth chip:
+
+         "Approved Budget for the Contract; PB"  -> 4834297.00
+         "| TOTAL ESTIMATED PROJECT COST P"      -> 4834297.59
+         "Implementing Office" / "LOCATION" / "Name of Procuring Entity"
+                                                 -> all three the SAME organisation name
+
+       That last line is the answer to the budgetSource problem without any new
+       machinery: three different labels producing one identical value is what a
+       generic value anchoring unrelated labels LOOKS like, and a reviewer sees it at
+       a glance.
+
+       ⚠ IT USES THE REAL EXTRACTION PATH — same learnedLabelPattern, same cleanValue,
+       same field normalizer, same first-match-wins as collectLearnedCandidates. A
+       preview that could disagree with what approval actually does would be worse than
+       showing nothing. Returns null (and the chip stays silent) when the phrase does
+       not match its own excerpt, the same discipline builtInCoversPhrase uses for
+       "cannot tell".
+
+       ⚠ THE EXCERPT MUST BE SPLIT ON ' | ' FIRST. excerptOf joins lines with that
+       separator and learnedLabelPattern is anchored at ^, so without the split only an
+       excerpt's FIRST line could ever match and the chip would silently never appear
+       on most rows. Mutation M9 is exactly this.
+
+       Files: public/js/admin/projects/document-parser-core.js (+ export)
+              resources/views/admin/_manage_parser_keywords_modal.blade.php
+              public/css/admin/projects/parser-keywords-modal.css
+              tests/js/document-parser-core.test.mjs (+7)
+
+  56.4 PROVEN — and unusually, the SUITE covers this one
+
+       Unlike §50-§54 (all DOM), this lives in document-parser-core.js, which the JS
+       suite does reach. JS 286 / 286 / 0 (was 279). Every fixture is a VERBATIM row
+       from parser_keyword_proposals with its stored excerpt — invented strings could
+       not reproduce the ABC pair, which is the whole point.
+
+       MUTATIONS, all red:
+         M9   don't split the excerpt on ' | '   -> 2 fail (both ABC rows go silent)
+         M10  skip the field normalizer          -> 3 fail, INCLUDING PRE-EXISTING
+                                                    learned-label tests — the preview
+                                                    shares the real path, so breaking
+                                                    it breaks extraction too. That is
+                                                    the property worth having.
+         M11  guess instead of returning null    -> 1 fail
+       Probes unaffected: probe_phase44 32/32, probe_phase44b 15/15.
+
+  56.5 STILL OPEN (none ordered)
+
+       ⬜ Cross-field veto: "LOCATION" is the hardcoded label of the `location` field
+          and should not be learnable as budgetSource. Cheap, principled, kills one of
+          the three. Does nothing for "Implementing Office" / "Name of Procuring
+          Entity", which are nobody's hardcoded label.
+       ⬜ The AI's budgetSource answer never passes asSourceName, the shape validator
+          the RULE path must pass ("a misread accepted here becomes a permanent junk
+          record" — its own comment). The server only does normalizeText(2,100), a
+          length check. Worth closing on principle, though the college name passes the
+          shape test anyway and it would not have helped here.
+       ⬜ Decision 11 (revised beats original) missing from the pooled vote — §55.4.
+       ⏸ The ABC caps-run cannot cross an OCR pipe — §55.2(b). ON HOLD, see §57.
+          Highest leverage of the four: it turns 834297.59 into 4834297.59, which
+          MERGES with the 0.68 entry (scores are additive) for count 2 / score ~1.53,
+          beating 4834297.00 outright. ABC's winner then being correct also makes
+          disagreeFor strike the figure out of Contract Price. Two symptoms, one
+          character class. ⚠ DO NOT BUILD IT WITHOUT READING §57 FIRST.
+
+===============================================================================
+  §57 — USER DECISION D-44-5 (2026-09-23): THE OCR-PIPE FIX IS ON HOLD
+        ⏸ NOT A BUG THAT WAS MISSED. A FIX THAT IS BEING WITHHELD ON PURPOSE.
+===============================================================================
+
+  57.1 WHY A CORRECT FIX IS NOT BEING APPLIED
+
+       §55.2(b) found it and §56.5 ranked it first: abcWordsAtWindow's caps-run regex
+       uses the class [A-Z\s\-], which cannot cross the '|' that OCR produces from the
+       scanned page border, so "FOUR MILLION | EIGHT HUNDRED THIRTY FOUR THOUSAND ..."
+       reads as 834,297.59 — the millions severed by one character.
+
+       Measured directly, not inferred:
+           current code, real lines      : 834297.59
+           same lines without the pipe   : 4834297.59
+
+       ⚠ BUT THE FIX AND DECISION D-44-4 TARGET THE SAME BOX ON THE SAME DOCUMENT.
+       Applying it changes the ABC vote on pdfdocstest5 from
+
+           4834297.00   0.85   <- box                4834297.59   1.53   <- box
+            834297.59   0.85        becomes          4834297.00   0.85
+           4834297.59   0.68
+
+       because the corrected words-shape value MERGES with the existing 0.68 entry
+       (voteCandidatePoolDebug does g.score += weight, g.count += 1). The offline
+       reader would then get the ABC right with no learned keyword at all — and
+       approving "| TOTAL ESTIMATED PROJECT COST P" would change nothing visible.
+
+       D-44-4 kept the project-cost gap OUT of the hardcoded ABC list precisely so the
+       learning loop has a real before/after to show. This fix would close that same
+       demonstration from the other direction.
+
+  57.2 THE DECISION
+
+       USER, 2026-09-23: HOLD THE FIX UNTIL AFTER THE DEMONSTRATION.
+       Accepted cost, stated plainly: any scanned funds certificate whose page border
+       OCRs as a pipe inside the spelled-out amount keeps losing its leading unit. On
+       pdfdocstest5 that is the millions — a ~5.8x understatement of the ABC. This is a
+       known, measured, deliberately-carried defect, not an unknown one.
+
+  57.3 ⚠ UN-HOLD CONDITION — read before "fixing" this
+
+       A future session reading §55.2(b) will see an obvious one-character bug and be
+       tempted to close it. DO NOT, without checking here first.
+
+       Un-hold when EITHER:
+         (a) the learning-loop demonstration has been given (panel / client / pilot
+             walkthrough), or
+         (b) the pilot shows PMU staff hitting the wrong ABC on real documents — at
+             which point accuracy outranks the demo and both D-44-4 and D-44-5 should
+             be revisited together.
+
+       When it is un-held, the change is: widen the caps-run class in abcWordsAtWindow
+       to tolerate scan debris between words. Expect it to also clear the §55.3(c)
+       cascade for free, because disagreeFor strikes the ABC WINNER out of the Contract
+       Price note and that winner is currently the corrupted value.
+
+       Rejected alternatives, and why: building it behind a flag (a third switch beside
+       L3_TEST_BLIND_ABC for one character class is more carrying cost than the defect),
+       and building it now and demoing the loop on another document (the user has the
+       file and the proposals already in hand).
+
+===============================================================================
+  §58 — NEXT WORK (2026-09-23). NOTHING HERE IS ORDERED.
+        Each item states what it fixes, what it costs, and how to prove it.
+===============================================================================
+
+  58.0 OWED FROM THE USER BEFORE ANY OF THIS
+       (a) ✅ DISCHARGED 2026-09-24 — the §56 consequence chip is browser-confirmed.
+       (b) ✅ DISCHARGED 2026-09-24 — the merge order was given: phase-44 into
+           `develop`, which carried phase-43 with it (they are NOT siblings; see
+           the correction in §0-A). Both are now in `develop`.
+       (c) ⬜ STILL OWED — which of 58.2-58.4 to build, if any. 58.1 is ON HOLD by
+           decision D-44-5 and is not a candidate.
+
+  ---------------------------------------------------------------------------
+  58.1  ⏸ ON HOLD — the ABC caps-run cannot cross an OCR pipe
+  ---------------------------------------------------------------------------
+        DO NOT BUILD. §57 explains why a correct fix is being withheld and what
+        un-holds it. Listed here only so it is not re-discovered as new.
+
+  ---------------------------------------------------------------------------
+  58.2  ⬜ Cross-field veto for mined labels
+  ---------------------------------------------------------------------------
+        WHAT: a phrase that is a hardcoded label of ANOTHER field must not be
+        learnable as this one. "LOCATION" is the `location` field's own label and
+        was proposed for `budgetSource` (§56.1).
+        WHERE: the F-GATE in mineCorrectionLabels, document-parser-core.js.
+        ⚠ CONSTRAINT THAT DECIDES THE DESIGN: the gate's word list is entirely
+        MONEY vocabulary, so for every non-money field the only thing letting a
+        label through is the colon clause /[:\-–—]\s*$/. That clause is
+        LOAD-BEARING — "Project:" has no money word, so title / location /
+        contractor learning passes only through it. ADD A VETO; NEVER REMOVE THE
+        COLON PASS. §56.2 has the measurement.
+        COST: small. Kills 1 of the 3 bad rows. "Implementing Office" and "Name of
+        Procuring Entity" are nobody's hardcoded label and survive it.
+        PROOF: JS suite reaches this file — add fixtures beside the §56.4 ones.
+
+  ---------------------------------------------------------------------------
+  58.3  ⬜ Decision 11 is missing from the pooled vote
+  ---------------------------------------------------------------------------
+        WHAT: extractBudget opens "Revised Contract Amount wins over Original
+        (user decision 11)" and the POOLED track — the one that actually fills the
+        box — does not carry it. `revised` is one of six equal labelRes entries, so
+        4,204,128.84 wins on repetition over the revised 4,323,196.77 (§55.4).
+        WHERE: collectBudgetCandidates, document-parser-core.js.
+        ⚠ VERIFY FIRST: run window._parserVoteTables('budget') on pdfdocstest5 and
+        confirm 4323196.77 is IN the pool but outranked. If it is absent instead,
+        this is a different bug and this item is wrong.
+        COST: small, but it changes which value fills a money box on every
+        multi-amount document — re-measure the whole corpus, not just this file.
+        PROOF: JS suite.
+
+  ---------------------------------------------------------------------------
+  58.4  ⬜ The AI's budgetSource bypasses the shape validator
+  ---------------------------------------------------------------------------
+        WHAT: the RULE path runs asSourceName, whose own comment says "a misread
+        accepted here becomes a permanent junk record". The AI path has only the
+        server's normalizeText(2,100) — a LENGTH check. So the AI can put a value
+        into budgetSource that the rule reader would have refused.
+        WHERE: GeminiDocumentParserService::validate* (PHP), or the client merge.
+        ⚠ HONEST LIMIT: it would NOT have prevented §56.1 — "Camarines Sur
+        Polytechnic Colleges" passes asSourceName's shape test. Worth closing on
+        principle, not as a fix for the observed defect.
+        COST: small. PROOF: PHP suite (this one is server-side).
+
+  ---------------------------------------------------------------------------
+  58.5  ⬜ Older items still open, unchanged
+  ---------------------------------------------------------------------------
+        · §45.4 / §48.3 — whether a never-scanned page should be the AI's FIRST
+          pick, and the slice-cap justification. User-owned.
+        · ai_slice_selection_plan.md §11 — per-file counts, whole-file sending.
+          PARKED 2026-09-21 behind pilot readiness.
+        · The PDF S-curve reader keys calendar month names by calendar NUMBER and
+          caps labels at 12 (scurve-pdf-parser-core.js:77,:79). A PDF S-curve
+          starting in any month but January is misread. Known, carried knowingly.
 
 ===============================================================================
   END OF RESTUDY

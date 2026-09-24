@@ -331,7 +331,7 @@ class RecommendationEngine
      * -----
      * calculateDaysElapsed(), calculateDaysTotal(), calculateDaysRemaining(),
      * calculateExpectedProgress(), classifyRiskFromGap(), determineTrend(),
-     * calculateSpeedComparison()
+     * ProgressPaceService::compare()
      */
     private function extractFactors(Project $project, array $prediction): array
     {
@@ -359,7 +359,16 @@ class RecommendationEngine
         }
 
         $trendResult = $this->determineTrend($assessment);
-        $speedResult = $this->calculateSpeedComparison($project, $observationCount);
+        // Real pace (points/month) — ProgressPaceService (phase-43; the old
+        // calculateSpeedComparison averaged cumulative %, so "recent < early"
+        // could never be true and the slowing-pace rule never fired)
+        $pace = app(ProgressPaceService::class)->compare(
+            $project->progressHistory()->orderBy('month_label')->orderBy('inspection_date')
+                ->get(['month_label', 'actual_progress_percent']),
+            $currentProgress,
+            $project->planned_end_date ? \Carbon\Carbon::parse($project->planned_end_date) : null,
+            \App\Support\DateHelper::now()
+        );
 
         // Count only unresolved issues — resolved/closed issues do not affect recommendations
         $openIssueCount = $project->issues()
@@ -455,8 +464,10 @@ class RecommendationEngine
             'issues_resolved_30d'       => $resolvedLast30,
             'fit_quality'              => $fitQuality,
             'observation_count'        => $observationCount,
-            'early_speed'              => $speedResult['early_speed'],
-            'recent_speed'             => $speedResult['recent_speed'],
+            // Points gained per month (keys kept for compatibility) + the full pace
+            'early_speed'              => $pace['early_pace'] ?? 0,
+            'recent_speed'             => $pace['recent_pace'] ?? 0,
+            'pace'                     => $pace,
             'current_progress'         => round($currentProgress, 1),
             'expected_progress'        => round($expectedProgress, 1),
             'has_baselines'            => $hasBaselines,
@@ -584,6 +595,7 @@ class RecommendationEngine
      * --------
      * • High risk or Moderate risk with DECELERATING trend → schedule review
      * • Progress gap > 10% with past extensions → additional resources
+     * • Recent pace clearly below the pace needed to finish on time → catch-up plan
      * • 3+ open issues → resolve blockers
      *
      * Used By
@@ -611,6 +623,22 @@ class RecommendationEngine
                 'message'  => 'Consider additional resources on critical path items',
                 'category' => 'corrective',
                 'reason'   => 'Project has had ' . $factors['extension_count'] . ' extension(s) and is still behind schedule',
+                'priority' => 2,
+            ];
+        }
+
+        // The recent pace is clearly too slow to reach 100% by the planned end
+        // date (phase-43). Required = remaining points ÷ months left; "clearly" =
+        // at least 25% and 2 points/month short, so a near-miss is not flagged.
+        $pace = $factors['pace'] ?? null;
+        if ($pace && !empty($pace['has_pace']) && ($pace['finish_status'] ?? '') === 'behind_pace'
+            && $pace['required_pace'] - $pace['recent_pace'] >= 2
+            && $pace['recent_pace'] < $pace['required_pace'] * 0.75) {
+            $recommendations[] = [
+                'message'  => 'Ask the contractor for a catch-up plan — the recent pace will not finish the work on time',
+                'category' => 'corrective',
+                'reason'   => 'Needs +' . $pace['required_pace'] . '% per month to finish by the planned end date, but the recent pace is +'
+                    . $pace['recent_pace'] . '% per month',
                 'priority' => 2,
             ];
         }
@@ -727,7 +755,7 @@ class RecommendationEngine
      * Triggers
      * --------
      * • Moderate risk with STABLE trend → could go either way
-     * • DECELERATING trend with slowing velocity → verify data
+     * • Pace slowing down (points/month, recent vs early) → verify on site
      * • Low risk but DECELERATING → early warning
      *
      * Used By
@@ -749,12 +777,17 @@ class RecommendationEngine
             ];
         }
 
-        // Slowing velocity may indicate actual progress is lower than reported
-        if ($factors['trend'] === 'DECELERATING' && $factors['recent_speed'] < $factors['early_speed']) {
+        // Work has slowed down: fewer points per month recently than earlier
+        // (ProgressPaceService direction — needs a real drop, both in ratio and
+        // in points). Before phase-43 this compared cumulative averages and
+        // could never fire.
+        $pace = $factors['pace'] ?? null;
+        if ($pace && ($pace['direction'] ?? '') === 'slowing_down') {
             $recommendations[] = [
-                'message'  => 'Conduct additional site inspection to verify progress data',
+                'message'  => 'Progress has slowed — verify on site and ask the contractor what is holding the work back',
                 'category' => 'monitoring',
-                'reason'   => 'Recent progress velocity (' . $factors['recent_speed'] . '%) is below early phase (' . $factors['early_speed'] . '%)',
+                'reason'   => 'Pace fell from +' . $pace['early_pace'] . '% per month (' . $pace['early_window'] . ') to +'
+                    . $pace['recent_pace'] . '% per month (' . $pace['recent_window'] . ')',
                 'priority' => 3,
             ];
         }
@@ -1025,48 +1058,6 @@ class RecommendationEngine
         }
 
         return 0;
-    }
-
-    /**
-     * ------------------------------------------------------------------------
-     * Calculate Speed Comparison
-     * ------------------------------------------------------------------------
-     *
-     * Splits the project history in half and compares the average
-     * cumulative progress of the early phase against the recent phase.
-     *
-     * Used By
-     * -------
-     * extractFactors()
-     */
-    private function calculateSpeedComparison(
-        Project $project,
-        int $observationCount
-    ): array {
-        $progressHistory = $project->progressHistory()
-            ->orderBy('month_label', 'asc')
-            ->get();
-
-        if ($progressHistory->isEmpty()) {
-            return [
-                'early_speed'  => 0,
-                'recent_speed' => 0,
-            ];
-        }
-
-        // Split observations into two halves for comparison
-        $half = max(1, (int) ceil($observationCount / 2));
-
-        $earlyAvg = $progressHistory->slice(0, $half)
-            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
-
-        $recentAvg = $progressHistory->slice(-$half)
-            ->avg(fn ($r) => (float) ($r->actual_progress_percent ?? 0));
-
-        return [
-            'early_speed'  => round($earlyAvg, 1),
-            'recent_speed' => round($recentAvg, 1),
-        ];
     }
 
     /**

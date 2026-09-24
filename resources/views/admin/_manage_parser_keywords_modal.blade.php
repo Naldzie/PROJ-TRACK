@@ -203,6 +203,34 @@ function pkpWorth(field, phrase) {
     return ''; // null = cannot tell; say nothing rather than guess
 }
 
+// Returns the consequence chip: what this phrase would actually READ from the
+// excerpt it was mined from, or '' when the core cannot say.
+//
+// ⚠ WHY THIS EXISTS BESIDE pkpWorth AND NOT INSTEAD OF IT. pkpWorth answers "is this
+// wording new?", and on the 2026-09-23 pdfdocstest5 batch that question endorsed three
+// rows that were each wrong — "Implementing Office", "LOCATION" and "Name of Procuring
+// Entity" were all reported as finding something no built-in rule does, because NOVELTY
+// IS EXACTLY WHAT A WRONG LABEL HAS MOST OF. The two chips answer different halves:
+// worth = is it new, consequence = is it right. Neither is sufficient alone.
+//
+// It also separates the pair a reviewer cannot otherwise tell apart:
+//   "Approved Budget for the Contract; PB"  ->  4834297.00   (OCR lost the decimal)
+//   "| TOTAL ESTIMATED PROJECT COST P"      ->  4834297.59   (the true ABC)
+function pkpConsequence(field, phrase, excerpt) {
+    if (!_pkpCore || typeof _pkpCore.previewLearnedExtraction !== 'function' || !phrase) return '';
+    let r = null;
+    try { r = _pkpCore.previewLearnedExtraction(field, phrase, excerpt); } catch (e) { return ''; }
+    // null = the phrase does not match its own excerpt. Say nothing rather than guess —
+    // same discipline as pkpWorth's "cannot tell".
+    if (!r) return '';
+    if (!r.ok) {
+        return '<div class="pkp-consequence is-refused"><i class="bi bi-exclamation-triangle"></i> '
+            + 'Matches here, but the value after it is refused — approving this would teach a phrase that reads nothing.</div>';
+    }
+    return '<div class="pkp-consequence"><i class="bi bi-arrow-return-right"></i> '
+        + 'From this excerpt it would read: <strong>' + pkpEscapeHtml(String(r.value)) + '</strong></div>';
+}
+
 // Excerpt with the learned wording highlighted (case-insensitive, escaped piecewise
 // so the <mark> is the only markup that ever reaches the DOM).
 function pkpHighlight(excerpt, phrase) {
@@ -372,6 +400,7 @@ function pkpRowHtml(row) {
         +     deletedOn
         +   '</div>'
         +   (status === 'deleted' ? '' : pkpWorth(row.field, row.label_phrase))
+        +   (status === 'deleted' ? '' : pkpConsequence(row.field, row.label_phrase, row.excerpt))
         +   (context ? '<div>' + context + '</div>' : '')
         + '</div>'
         + (buttons ? '<div class="pkp-actions">' + buttons + '</div>' : '')
