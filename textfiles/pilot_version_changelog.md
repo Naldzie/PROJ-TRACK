@@ -85,7 +85,7 @@
   │ 1        │ develop      │ 2026-09-21 │ IN USE — the copy the PMU has      │
   │          │ dd91e53      │            │                                    │
   ├──────────┼──────────────┼────────────┼────────────────────────────────────┤
-  │ 2        │ (not cut)    │ —          │ 5 staged: 4 code + 1 docs — see §3 │
+  │ 2        │ (not cut)    │ —          │ 6 staged: 5 code + 1 docs — see §3 │
   └──────────┴──────────────┴────────────┴────────────────────────────────────┘
 
 
@@ -424,6 +424,51 @@
                          pre-existing condition, not something A-5 introduces.
 
 
+  -----------------------------------------------------------------------------
+  A-6  ⬜  AI assist keeps its button after a successful answer
+  -----------------------------------------------------------------------------
+    Date:    2026-09-24
+    Branch:  phase-46-ai-assist-retry   Commit: (see git log)
+    Merged:  NO — built, browser check owed
+    Plan:    textfiles/normal_doc_parser_restudy_plan.md §59
+
+    THE DEFECT (user report, 2026-09-24): after a SUCCESSFUL AI assist the "Try AI
+    assist" button disappeared. The success path wrote its outcome sentence over the
+    whole banner with aiEl.innerHTML, so the offer and the outcome were competing for
+    one element and the outcome won.
+
+    ⚠ IT BLOCKED THE WORKFLOW THE CONSENT SURFACE EXISTS FOR. Naming the pages (S-1),
+    refusing a page or a file (S-2) and choosing the count (S-4) were all built so a
+    reviewer could steer what gets sent. The natural order is: try it, see a thin
+    result, go pick better pages, send again — and the button vanished at step 4.
+
+    ⚠ IT ALSO EXPLAINS AN EARLIER HALF-FIX. The 2026-09-23 "the button seems to not be
+    working" report was a stuck busy flag, correctly fixed — but that report was only
+    possible because refreshAutofillAiBanner() silently restored a button the success
+    path had destroyed whenever the page selection changed. Fixing the flag left the
+    oddity: a control that vanishes on success and returns if you happen to touch the
+    page list.
+
+    THE FIX: the outcome is remembered in window._autofillAiOutcome and rendered as a
+    LINE ABOVE an otherwise unchanged offer ("Send again?" / "Try AI assist again").
+    The retry offer is built by the same banner function, so the named page list stays
+    honest when the selection changes between attempts. Exactly one <button> remains in
+    the banner — _tryAiAssist() finds its control with querySelector('button') and takes
+    the first — and a stale [data-ai-error] node is cleared before the repaint so a
+    failure followed by a success cannot leave the failure on screen.
+
+    Files:  public/js/admin/projects/document-parser.js
+
+    Tests:  JS 286 / 286 / 0 — UNCHANGED, and that is the honest statement rather than
+            a pass: the suite reaches document-parser-core.js only and every line of
+            this change is in document-parser.js, the DOM half. PHP untouched.
+    Browser check:      ⬜ OWED — the four steps in restudy §59.3.
+    ⚠ DEPLOYMENT IMPACT: no migration, no new .env key, no composer or npm dependency,
+                         and NO vite build. ONE JS file under public/, cache-busted by
+                         filemtime ($jsv), so copying it is enough. No cache clear
+                         needed — no Blade view and no route changed.
+
+
 ===============================================================================
   §4 — UPGRADING A PILOT MACHINE FROM VERSION 1
 ===============================================================================
@@ -433,9 +478,10 @@
   decision rather than a wait. Version 1 remains what the PMU is running
   until someone says otherwise. This section describes what the upgrade costs.
 
-  ⚠ AS OF 2026-09-24 ALL FIVE ADJUSTMENTS ARE MERGED INTO develop AND BROWSER-
-  CONFIRMED. A-5 was the last one outstanding and went in as 9a9c287. So cutting
-  pilot version 2 is now purely a decision — there is nothing left to wait for.
+  ⚠ A-1..A-5 ARE ALL MERGED INTO develop AND BROWSER-CONFIRMED as of 2026-09-24, so a
+  version 2 cut from that point is ready whenever it is wanted. A-6 came later the same
+  day and is NOT merged and NOT browser-checked yet — a cut made now simply excludes it,
+  which costs nothing but the one JS file it changes.
 
   COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5
   ----------------------------------------------
@@ -444,12 +490,13 @@
     composer dependencies    NONE
     npm dependencies         NONE
     vite rebuild             NOT NEEDED
-    Files to replace         9 application files + docs:
+    Files to replace         10 application files + docs (9 without A-6):
                                A-2  3 PHP + 1 Blade
                                A-3  1 JS  (document-parser.js)
                                A-4  1 JS  (document-parser-core.js)
                                     + 1 Blade + 1 CSS
                                A-5  1 PHP (SCurveImportService.php)
+                               A-6  1 JS  (document-parser.js) — NOT MERGED YET
 
   That is the whole cost. No adjustment since version 1 touches the schema, the
   configuration or the dependency set, which is why an upgrade is a file copy.
@@ -472,13 +519,14 @@
        Learned Keywords and confirm each row shows the VALUE its phrase would
        read, not only whether the wording is new (A-4); import an S-curve whose
        day cells are fractions of the contract and confirm the baseline reads the
-       real curve rather than 0 / 0 / 0 / 100 (A-5).
+       real curve rather than 0 / 0 / 0 / 100 (A-5); run an AI assist to success and
+       confirm the "Try AI assist again" button is still there afterwards (A-6).
 
   ROLLING BACK
   ------------
   Keep the version 1 zip. Since no adjustment since v1 touches the database,
   restoring the older files is a complete rollback — the schema stays valid
-  either way. Still true through A-5. That property is worth preserving deliberately: once an
+  either way. Still true through A-6. That property is worth preserving deliberately: once an
   adjustment carries a migration, this stops being true, and the entry for it
   must say so in its DEPLOYMENT IMPACT line.
 
