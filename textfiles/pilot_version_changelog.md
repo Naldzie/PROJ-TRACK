@@ -473,7 +473,7 @@
   A-7  ⬜  Contract Price rename + Revised Contract Price field  ⚠ CARRIES A MIGRATION
   -----------------------------------------------------------------------------
     Date:    2026-09-24
-    Branch:  phase-47-contract-price-revised   Commit: (see git log)
+    Branch:  phase-47-contract-price-revised   Commit: 0950064 (P1)
     Merged:  NO — P1 built, P2 and P3 still to come
     Plan:    textfiles/contract_price_and_revised_amount_plan.md (§8 build log)
 
