@@ -482,7 +482,7 @@ class HistoricalSimilarityService
     {
         $available = config('ai.similarity.weights.category');
 
-        if ((float) ($target->approved_budget ?? 0) > 0 && (float) ($candidate->approved_budget ?? 0) > 0) {
+        if ((float) ($target->effectiveContractPrice() ?? 0) > 0 && (float) ($candidate->effectiveContractPrice() ?? 0) > 0) {
             $available += config('ai.similarity.weights.budget');
         }
 
@@ -511,8 +511,8 @@ class HistoricalSimilarityService
 
         // Budget proximity
         $budget = $this->proximityScore(
-            (float) ($target->approved_budget ?? 0),
-            (float) ($candidate->approved_budget ?? 0),
+            (float) ($target->effectiveContractPrice() ?? 0),
+            (float) ($candidate->effectiveContractPrice() ?? 0),
             config('ai.similarity.tolerances.budget'),
             config('ai.similarity.weights.budget')
         );

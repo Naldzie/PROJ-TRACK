@@ -104,14 +104,19 @@ class DashboardController extends Controller
         $totalProjects = (clone $baseQuery)->count();
         $ongoingCount = (clone $baseQuery)->where('status', 'Ongoing')->count();
         $completedCount = (clone $baseQuery)->where('status', 'Completed')->count();
-        $completedBudget = (clone $baseQuery)->where('status', 'Completed')->sum('approved_budget');
+        // Effective amount: a variation order changes what a completed project cost.
+        $completedBudget = (clone $baseQuery)->where('status', 'Completed')
+            ->selectRaw('SUM(COALESCE(revised_contract_price, contract_price)) as t')
+            ->value('t') ?? 0;
 
         // ── TOTAL SAVINGS (ABC - contract price) across all projects ─────
-        // Only counts projects where both abc and approved_budget are set.
+        // Only counts projects where both abc and a contract price are set.
+        // ⚠ EFFECTIVE, NOT ORIGINAL: a variation order EATS INTO the savings, so
+        // using the awarded price would overstate savings on every revised project.
         $totalSavings = (clone $baseQuery)
             ->whereNotNull('abc')
-            ->whereNotNull('approved_budget')
-            ->selectRaw('SUM(abc - approved_budget) as total_savings')
+            ->whereNotNull('contract_price')
+            ->selectRaw('SUM(abc - COALESCE(revised_contract_price, contract_price)) as total_savings')
             ->value('total_savings') ?? 0;
 
         // ── AT RISK COUNT (gap-based, ALL ongoing) ────────────────────────
@@ -169,7 +174,7 @@ class DashboardController extends Controller
         // Budget grouped by source for the horizontal bar chart.
         // LEFT JOIN ensures projects without a budget source appear as "Unspecified".
         $budgetBySource = Project::where('is_archived', false)
-            ->selectRaw("COALESCE(budget_sources.name, 'Unspecified') as source_name, SUM(approved_budget) as total_budget")
+            ->selectRaw("COALESCE(budget_sources.name, 'Unspecified') as source_name, SUM(COALESCE(revised_contract_price, contract_price)) as total_budget")
             ->leftJoin('budget_sources', 'projects.budget_source_id', '=', 'budget_sources.id')
             ->groupBy('source_name')
             ->pluck('total_budget', 'source_name');

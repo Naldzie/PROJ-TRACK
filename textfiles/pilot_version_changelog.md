@@ -85,7 +85,7 @@
   │ 1        │ develop      │ 2026-09-21 │ IN USE — the copy the PMU has      │
   │          │ dd91e53      │            │                                    │
   ├──────────┼──────────────┼────────────┼────────────────────────────────────┤
-  │ 2        │ (not cut)    │ —          │ 6 staged: 5 code + 1 docs — see §3 │
+  │ 2        │ (not cut)    │ —          │ 7 staged: 6 code + 1 docs — see §3 │
   └──────────┴──────────────┴────────────┴────────────────────────────────────┘
 
 
@@ -469,6 +469,75 @@
                          needed — no Blade view and no route changed.
 
 
+  -----------------------------------------------------------------------------
+  A-7  ⬜  Contract Price rename + Revised Contract Price field  ⚠ CARRIES A MIGRATION
+  -----------------------------------------------------------------------------
+    Date:    2026-09-24
+    Branch:  phase-47-contract-price-revised   Commit: (see git log)
+    Merged:  NO — P1 built, P2 and P3 still to come
+    Plan:    textfiles/contract_price_and_revised_amount_plan.md (§8 build log)
+
+    ⚠⚠ THIS IS THE ADJUSTMENT THAT ENDS THE CLEAN-ROLLBACK PROPERTY. §4 of this
+    changelog has said since version 1 that restoring the v1 files is a COMPLETE
+    rollback "because no adjustment since v1 touches the schema", and that the first
+    adjustment carrying a migration must revoke that in writing. THIS IS IT. See the
+    DEPLOYMENT IMPACT block below and the revised §4 rollback paragraph.
+
+    WHAT IT DOES
+      (a) Renames the column approved_budget -> contract_price. This is the SCHEMA
+          CATCHING UP WITH THE UI, not a change of meaning: all seven user-facing
+          labels already read "Contract Price". The old name also reads as ABC
+          ("Approved Budget for the Contract"), which is a different figure.
+      (b) Adds revised_contract_price, nullable. A variation / change order can revise
+          a contract after award (GPPB allows up to 10% of the original price). The
+          system had nowhere to put that, so a revision could only be recorded by
+          overwriting the award and losing it.
+
+    ⚠ THE REVISED COLUMN IS NEVER MIRRORED FROM THE ORIGINAL. If every project carried
+    a revised value, "never revised" and "revised to the same number" would be
+    indistinguishable — destroying the one fact the column exists to record. Read it
+    through Project::effectiveContractPrice() (= revised ?? contract_price), which is
+    what every total, comparison, export and report now uses.
+
+    ⓘ INERT ON DAY ONE. Because the new column is NULL for every existing row, the
+    effective amount equals the contract price everywhere until someone records an
+    actual revision. No existing number moves — including the AI's cross-project
+    similarity, which also reads this figure.
+
+    Files:  1 migration · app/Models/Project.php · 4 controllers · 4 services ·
+            factory · seeder · 10 Blade views · 3 JS files
+            (P1 also carried the mechanical view/JS rename, so the app never shows a
+            blank contract price between phases.)
+
+    Tests:  PHP 1373 / 0 / 5292 assertions (was 1365) — the rename was proven first at
+            1365 / 0, then the 8 new tests added, so the rename and the new behaviour
+            are proven separately. tests/Feature/ContractPriceRevisedTest.php.
+            ⚠ The tests that matter most are the two dashboard ones. Three selectRaw
+            strings compute savings and portfolio totals, and RAW SQL IS INVISIBLE TO A
+            COLUMN RENAME — without those tests, savings could have gone on measuring
+            against the award forever and nobody would have seen it.
+    Browser check:      ⬜ NOT APPLICABLE TO P1 — nothing user-visible changed by
+                        design. It belongs to P2, which adds the input and the marker.
+
+    ⚠⚠ DEPLOYMENT IMPACT — THE FIRST ENTRY THAT IS NOT "NONE"
+        Database migration    YES — 2026_09_24_000001. Run `php artisan migrate`
+                              AFTER copying the files. Already run on the development
+                              database pmu_system4 (49.91ms, 21 projects intact).
+        New .env keys         NONE
+        composer / npm        NONE
+        vite rebuild          NOT NEEDED
+        Cache clears          `php artisan view:clear` if view:cache was ever run on
+                              that machine (ten Blade views changed).
+        ROLLBACK              ⚠ NO LONGER A FILE COPY. Version 1 code selects
+                              approved_budget, which will not exist, so restoring the
+                              v1 files alone BREAKS THE APP COMPLETELY. The correct
+                              order is: run `php artisan migrate:rollback --step=1`
+                              FIRST, then restore the v1 files.
+                              ⚠ AND THAT ROLLBACK DISCARDS EVERY REVISED AMOUNT
+                              recorded since the upgrade — there is nowhere in the v1
+                              schema to keep them. Export them first if they matter.
+
+
 ===============================================================================
   §4 — UPGRADING A PILOT MACHINE FROM VERSION 1
 ===============================================================================
@@ -481,9 +550,10 @@
   ⚠ ALL SIX ADJUSTMENTS ARE MERGED INTO develop AND BROWSER-CONFIRMED as of 2026-09-24.
   There is nothing left to wait for: cutting pilot version 2 is purely a decision.
 
-  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5 + A-6
-  ----------------------------------------------------
-    Database migrations      NONE
+  COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5 + A-6 + A-7
+  ----------------------------------------------------------
+    Database migrations      ⚠ ONE — A-7 (2026_09_24_000001). Run `php artisan
+                             migrate` after copying. Read A-7's rollback note first.
     New .env keys            NONE
     composer dependencies    NONE
     npm dependencies         NONE
@@ -495,6 +565,9 @@
                                     + 1 Blade + 1 CSS
                                A-5  1 PHP (SCurveImportService.php)
                                A-6  1 JS  (document-parser.js)
+                               A-7  1 migration + 1 PHP model + 4 controllers
+                                    + 4 services + factory + seeder
+                                    + 10 Blade + 3 JS  ⚠ SCHEMA
 
   That is the whole cost. No adjustment since version 1 touches the schema, the
   configuration or the dependency set, which is why an upgrade is a file copy.
@@ -522,11 +595,24 @@
 
   ROLLING BACK
   ------------
-  Keep the version 1 zip. Since no adjustment since v1 touches the database,
-  restoring the older files is a complete rollback — the schema stays valid
-  either way. Still true through A-6. That property is worth preserving deliberately: once an
-  adjustment carries a migration, this stops being true, and the entry for it
-  must say so in its DEPLOYMENT IMPACT line.
+  Keep the version 1 zip.
+
+  ⚠⚠ REVOKED 2026-09-24 BY A-7 — THIS SECTION'S GUARANTEE NO LONGER HOLDS.
+  It read: "Since no adjustment since v1 touches the database, restoring the older
+  files is a complete rollback — the schema stays valid either way." That was true
+  through A-6. A-7 RENAMES A COLUMN, so version 1 code now selects a column that will
+  not exist, and a plain file restore breaks the app outright.
+
+  THE CORRECT ROLLBACK, once A-7 is deployed:
+      1. php artisan migrate:rollback --step=1     (renames the column back and DROPS
+                                                    revised_contract_price)
+      2. restore the version 1 files
+  ⚠ Step 1 DISCARDS every revised contract amount recorded since the upgrade. There is
+  nowhere in the v1 schema to keep them — export them first if they matter.
+
+  A rollback to any build BETWEEN v1 and A-7 is still a plain file copy. The property
+  was worth preserving deliberately and it survived six adjustments; A-7 is the one
+  that spent it, and its DEPLOYMENT IMPACT line says so.
 
 
 ===============================================================================

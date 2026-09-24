@@ -85,7 +85,7 @@
                         <td>
                             <span class="table-contractor-name">{{ $project->contractor?->company_name ?: ($project->contractor?->contractor_name ?: ($project->contractor?->user?->name ?? 'Unassigned')) }}</span>
                         </td>
-                        <td><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span></td>
+                        <td><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->effectiveContractPrice() ?? 0) }}</span></td>
                         <td>
                             <div class="table-actions">
                                 <a href="{{ route($showRoute, $project->id) }}" class="table-action-btn table-action-view" title="View">

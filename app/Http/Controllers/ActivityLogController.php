@@ -111,7 +111,7 @@ class ActivityLogController extends Controller
             'category' => $request->category,
             'location' => $request->location,
             'description' => $request->description,
-            'approved_budget' => $request->approved_budget,
+            'contract_price' => $request->contract_price,
             'planned_start_date' => $request->planned_start_date,
             'planned_end_date' => $request->planned_end_date,
         ]);

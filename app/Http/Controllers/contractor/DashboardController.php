@@ -170,8 +170,8 @@ class DashboardController extends Controller
         }
 
         // ── BUDGET ───────────────────────────────────────────────────────────
-        $totalBudget = $projects->sum('approved_budget');
-        $budgetProjects = $projects->sortByDesc('approved_budget');
+        $totalBudget = $projects->sum(fn ($p) => (float) $p->effectiveContractPrice());
+        $budgetProjects = $projects->sortByDesc(fn ($p) => (float) $p->effectiveContractPrice());
 
         // ── UPCOMING DEADLINES ───────────────────────────────────────────────
         // Non-completed/cancelled projects with a deadline, most urgent first.
@@ -202,7 +202,7 @@ class DashboardController extends Controller
         // Budget grouped by source for the horizontal bar chart.
         $budgetBySource = $projects
             ->groupBy(fn ($p) => $p->budgetSource?->name ?? 'Unspecified')
-            ->map(fn ($group) => $group->sum('approved_budget'));
+            ->map(fn ($group) => $group->sum(fn ($p) => (float) $p->effectiveContractPrice()));
 
         // Extension summary for mini stat cards + donut.
         $extensionSummary = [

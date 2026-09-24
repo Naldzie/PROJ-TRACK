@@ -216,7 +216,7 @@ class AIPredictionTabRenderTest extends TestCase
                 overrides: [
                     'status'                => 'Completed',
                     'category_id'           => $category->id,
-                    'approved_budget'       => 5000000.00,
+                    'contract_price'        => 5000000.00,
                     'planned_duration_days' => 730,
                 ]
             );
@@ -228,7 +228,7 @@ class AIPredictionTabRenderTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $category->id,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -264,7 +264,7 @@ class AIPredictionTabRenderTest extends TestCase
                 overrides: [
                     'status'                => 'Completed',
                     'category_id'           => $category->id,
-                    'approved_budget'       => 5000000.00,
+                    'contract_price'        => 5000000.00,
                     'planned_duration_days' => 730,
                 ]
             );
@@ -275,7 +275,7 @@ class AIPredictionTabRenderTest extends TestCase
         $target = Project::factory()->create([
             'status'                => 'Ongoing',
             'category_id'           => $category->id,
-            'approved_budget'       => 5000000.00,
+            'contract_price'        => 5000000.00,
             'planned_duration_days' => 730,
         ]);
 

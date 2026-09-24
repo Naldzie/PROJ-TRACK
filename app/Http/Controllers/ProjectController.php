@@ -143,7 +143,7 @@ class ProjectController extends Controller
             'code' => 'code', 'title' => 'title', 'status' => 'status',
             'planned_start_date' => 'planned_start_date',
             'planned_end_date' => 'planned_end_date',
-            'approved_budget' => 'approved_budget',
+            'contract_price' => 'contract_price',
             'category' => 'categories.name',
         ];
 
@@ -611,7 +611,11 @@ class ProjectController extends Controller
             'category' => ['nullable', 'string', 'max:100'],
             'location' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'approved_budget' => ['required', 'numeric', 'min:0'],
+            'contract_price' => ['required', 'numeric', 'min:0'],
+            // Nullable: a contract is only revised when a variation order says so.
+            // No cross-field rule against contract_price — a DEDUCTIVE change order
+            // can legitimately LOWER a contract, so 'must be greater' would be wrong.
+            'revised_contract_price' => ['nullable', 'numeric', 'min:0'],
             'abc' => ['nullable', 'numeric', 'min:0'],
             'budget_source_id' => ['nullable', 'integer', 'exists:budget_sources,id'],
             'planned_start_date' => ['nullable', 'date', 'before_or_equal:planned_end_date'],
@@ -936,7 +940,8 @@ class ProjectController extends Controller
                 'category_id' => $project->category_id,
                 'location' => $project->location,
                 'description' => $project->description,
-                'approved_budget' => $project->approved_budget,
+                'contract_price' => $project->contract_price,
+                'revised_contract_price' => $project->revised_contract_price,
                 'abc' => $project->abc,
                 'budget_source_id' => $project->budget_source_id,
                 'planned_start_date' => $project->planned_start_date?->format('Y-m-d'),
@@ -1008,7 +1013,11 @@ class ProjectController extends Controller
             'category' => ['nullable', 'string', 'max:100'],
             'location' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'approved_budget' => ['required', 'numeric', 'min:0'],
+            'contract_price' => ['required', 'numeric', 'min:0'],
+            // Nullable: a contract is only revised when a variation order says so.
+            // No cross-field rule against contract_price — a DEDUCTIVE change order
+            // can legitimately LOWER a contract, so 'must be greater' would be wrong.
+            'revised_contract_price' => ['nullable', 'numeric', 'min:0'],
             'abc' => ['nullable', 'numeric', 'min:0'],
             'budget_source_id' => ['nullable', 'integer', 'exists:budget_sources,id'],
             'planned_start_date' => ['nullable', 'date', 'before_or_equal:planned_end_date'],

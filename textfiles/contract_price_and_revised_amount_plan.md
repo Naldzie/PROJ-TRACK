@@ -1,8 +1,11 @@
 # CONTRACT PRICE RENAME + REVISED CONTRACT PRICE FIELD
 # Parent ref: textfiles/budget_precedence_and_source_validation_plan.md (D-A0, reversed)
 # Date: September 24, 2026
-# Status: ⬜ PLANNED, NOTHING BUILT. Two sub-decisions owed (§5). Needs a build order.
-# Branch: not cut. Suggested phase-47-contract-price-revised.
+# Status: ✅ P1 BUILT 2026-09-24 (migration + backend + the mechanical rename).
+#         ⬜ P2 (the revised input and the "Revised from" marker) and ⬜ P3 (parser
+#         routing = the rewritten 58.3) are not started. D-C1 is RESOLVED in §8.5;
+#         D-C2 stands, answered "yes, as P3".
+# Branch: phase-47-contract-price-revised. Build log: §8.
 
 ===============================================================================
   §0 — WHAT THIS IS, AND WHY IT REVERSES A DECISION MADE THE SAME DAY
@@ -216,3 +219,100 @@
 ===============================================================================
   END OF PLAN
 ===============================================================================
+
+===============================================================================
+  §8 — BUILD LOG
+===============================================================================
+
+  P1 ✅ BUILT 2026-09-24 — phase-47-contract-price-revised
+     Migration, model, accessor, backend, raw SQL, and the mechanical rename
+     everywhere else. NO NEW UI YET (that is P2).
+
+  8.1 ⚠ ONE DELIBERATE DEPARTURE FROM THE PLAN'S PHASING
+      §7 put views in P2 and backend in P1. Built that way, the app would have
+      rendered a BLANK contract price on every screen between the two phases,
+      because the Blade files would still be reading an attribute that no longer
+      exists. So P1 also carries the MECHANICAL rename in views and JS — the app
+      behaves exactly as before — and P2 keeps only the genuinely new UI: the
+      revised input, the "Revised from" marker, and the report label.
+
+  8.2 THE MIGRATION
+      database/migrations/2026_09_24_000001_rename_approved_budget_and_add_revised_contract_price.php
+        up()    rename approved_budget -> contract_price
+                add revised_contract_price decimal(15,2) NULL after it
+        down()  drop revised_contract_price, rename back
+      Two separate Schema::table calls: some drivers reject a rename and an add in
+      one ALTER, and SQLite rewrites the table per operation. Nullability is carried
+      over unchanged (the column was created nullable) so the rename cannot fail on
+      existing rows. Laravel 12 renames natively — no doctrine/dbal.
+      ✅ RUN ON THE LIVE DEV DATABASE pmu_system4, 49.91ms. Verified afterwards:
+         21 projects intact, contract_price populated, revised NULL, and
+         effectiveContractPrice() falling through to the award.
+
+  8.3 THE ACCESSOR — the whole point of the design
+      Project::effectiveContractPrice() = revised_contract_price ?? contract_price
+      Project::isContractRevised()      = revised_contract_price !== null
+      Plain methods, matching the model's existing getXxx() style rather than
+      introducing Eloquent attribute casts it does not otherwise use (Rule 7).
+      Every total, comparison, export and report goes through the accessor. A caller
+      reading contract_price directly now MEANS "the original award".
+
+  8.4 ⚠ THE RAW SQL, WHICH A RENAME CANNOT FIND FOR ITSELF
+      Three selectRaw sites in DashboardController were changed deliberately, not
+      mechanically. They are the reason D-C1 mattered:
+        :107 completed budget   SUM(COALESCE(revised_contract_price, contract_price))
+        :116 total savings      SUM(abc - COALESCE(revised_contract_price, contract_price))
+        :172 budget by source   SUM(COALESCE(revised_contract_price, contract_price))
+      A variation order EATS INTO the savings, so measuring against the award would
+      overstate savings on every revised project.
+
+  8.5 D-C1 RESOLVED — EFFECTIVE EVERYWHERE, AND IT IS INERT TODAY
+      The plan asked whether analytics should use the effective amount or the
+      original, and flagged the AI cross-project similarity as the risky one because
+      its tests pin known datasets. The question answers itself: revised_contract_price
+      is NULL for every existing row and every existing fixture, so
+      effective == contract_price throughout. The change is BEHAVIOURALLY INERT on day
+      one and correct from the first revision onward. HistoricalSimilarityService was
+      therefore moved to the accessor with the rest, and the AI suite is unaffected —
+      confirmed, not assumed: 1373 passed.
+
+  8.6 ALSO FIXED WHILE HERE
+      ProjectReportDataService printed the row as "Contract Amount" — a THIRD word for
+      this number, in a client-facing Word/PDF document. Now "Contract Price", and it
+      prints the effective amount.
+
+  8.7 VALIDATION
+      contract_price          required, numeric, min 0   (unchanged but renamed)
+      revised_contract_price  nullable, numeric, min 0
+      ⚠ NO CROSS-FIELD RULE. A DEDUCTIVE variation order legitimately LOWERS a
+      contract, so "revised must exceed the award" would be wrong. There is a test
+      whose only job is to stop someone adding one later.
+
+  8.8 PROOF
+      PHP 1373 passed / 0 failed / 5292 assertions — the previous 1365 plus exactly
+      the 8 new ones. The rename alone was run first and held at 1365 / 0, so the
+      rename and the new behaviour were proven separately.
+      tests/Feature/ContractPriceRevisedTest.php (+8):
+        · effective price falls back to the award when never revised
+        · effective price prefers the revision when one exists, award survives
+        · a revision EQUAL to the award still counts as revised — the case a
+          mirrored default would have made unreportable
+        · dashboard savings measures against the revised amount (600,000 not
+          1,000,000) — this is the raw-SQL guard
+        · savings unchanged for an unrevised project (COALESCE falls through)
+        · a project can be created with a revised amount
+        · a deductive revision BELOW the award is accepted
+        · a negative revised amount is rejected
+      ⓘ The negative-amount test asserts a JSON 422, not a session error bag:
+        postJson gets the validator's JSON response. An earlier draft asserted
+        session errors and failed while the validation was working correctly.
+      ⬜ NO BROWSER CHECK YET — nothing user-visible changed in P1 by design. The
+        browser check belongs to P2.
+
+  8.9 FILES (23 + 1 migration + 1 test)
+      migration 1 · app/Models/Project.php · 4 controllers · 4 services ·
+      factory · seeder · 10 blade views · 3 JS files · 8 existing test files
+      renamed · 1 new test file.
+
+  ➡ NEXT: P2 (the revised input, the "Revised from" marker, the report label
+    already done in 8.6), then P3 (parser routing = the rewritten 58.3).

@@ -343,12 +343,12 @@
 
         @forelse($budgetProjects as $project)
           @php
-            $budgetPct = $totalBudget ? round(($project->approved_budget / $totalBudget) * 100) : 0;
+            $budgetPct = $totalBudget ? round(($project->effectiveContractPrice() / $totalBudget) * 100) : 0;
           @endphp
           <div class="ct-bbar-row">
             <div class="ct-bbar-name" title="{{ $project->title }}">{{ $project->title }}</div>
             <div class="ct-bbar-track"><div class="ct-bbar-fill" style="width:{{ $budgetPct }}%;background:{{ $project->status === 'Completed' ? '#16A34A' : '#2563EB' }}"></div></div>
-            <div class="ct-bbar-amt">{{ \App\Helpers\FormatHelper::formatCurrencyShort($project->approved_budget) }}</div>
+            <div class="ct-bbar-amt">{{ \App\Helpers\FormatHelper::formatCurrencyShort($project->effectiveContractPrice()) }}</div>
           </div>
         @empty
           <div class="ct-empty">

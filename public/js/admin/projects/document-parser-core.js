@@ -860,7 +860,7 @@ const DocumentParserCore = (function () {
     const L3_TEST_BLIND_ABC = false;
 
     // Approved Budget / Contract Amount — Contract Price (winning bid after discount).
-    // NOTE: Phase 5 keeps this as Contract Price (approved_budget). Standalone ABC is separate.
+    // NOTE: Phase 5 keeps this as Contract Price (contract_price). Standalone ABC is separate.
     // Enhanced 2026-09-04: prioritize "final Contract Amount is … (Php X)" over generic budget,
     // and handle "WHEREAS, after applying 3% discount, the final Contract Amount is …".
     function extractBudget(lines) {

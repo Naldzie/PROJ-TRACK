@@ -26,7 +26,7 @@ class ProjectFactory extends Factory
             'title'                    => fake()->sentence(3),
             'location'                 => fake()->city() . ', ' . fake()->state(),
             'description'              => fake()->paragraph(),
-            'approved_budget'          => fake()->randomFloat(2, 100000, 10000000),
+            'contract_price'           => fake()->randomFloat(2, 100000, 10000000),
             'planned_start_date'       => $plannedStart,
             'planned_duration_days'    => (int) $plannedStart->diff($plannedEnd)->format('%a'),
             'planned_end_date'         => $plannedEnd,

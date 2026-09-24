@@ -225,7 +225,7 @@
                     <div class="budget-info">
                         <div class="budget-row">
                             <span class="budget-label"><i class="bi bi-cash-coin"></i>Contract Price:</span>
-                            <span class="budget-value">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span>
+                            <span class="budget-value">{{ \App\Helpers\FormatHelper::formatCurrency($project->effectiveContractPrice() ?? 0) }}</span>
                         </div>
                     </div>
 
@@ -487,7 +487,7 @@
                         @endif
                     </td>
                     <td>
-                        <span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span>
+                        <span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->effectiveContractPrice() ?? 0) }}</span>
                     </td>
                     <td>
                         <div class="table-actions">

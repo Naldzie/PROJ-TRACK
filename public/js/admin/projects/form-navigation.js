@@ -290,7 +290,7 @@ function validatePage(pageNum) {
         if (budgetField && budgetField.value) {
             const budget = parseFloat(budgetField.value);
             if (isNaN(budget) || budget < 0) {
-                showFieldError('approved_budget', 'Budget must be a positive number');
+                showFieldError('contract_price', 'Budget must be a positive number');
                 showError('Invalid budget amount. Please enter a positive number.');
                 return Promise.resolve(false);
             }

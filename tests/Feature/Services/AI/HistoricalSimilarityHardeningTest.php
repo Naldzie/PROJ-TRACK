@@ -111,7 +111,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
                 overrides: [
                     'status'                => 'Completed',
                     'category_id'           => $categoryId,
-                    'approved_budget'       => 5000000.00,
+                    'contract_price'        => 5000000.00,
                     'planned_duration_days' => 730,
                 ]
             );
@@ -134,7 +134,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -170,7 +170,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 // Large fixed planned duration → merged X spans ~24 months
                 // (monotonic 1..P, v2.6 §4.1) → regression has distinct
                 // month indexes (avoids the all-identical-X edge).
@@ -207,7 +207,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -241,7 +241,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $partial = Project::factory()->create([
             'status'                => 'Completed',
             'category_id'           => $categoryId,
-            'approved_budget'       => null,
+            'contract_price'        => null,
             'planned_duration_days' => 1000,
         ]);
 
@@ -249,14 +249,14 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $categoryOnly = Project::factory()->create([
             'status'                => 'Completed',
             'category_id'           => $categoryId,
-            'approved_budget'       => null,
+            'contract_price'        => null,
             'planned_duration_days' => 60,
         ]);
 
         $target = Project::factory()->create([
             'status'               => 'Ongoing',
             'category_id'          => $categoryId,
-            'approved_budget'      => null,
+            'contract_price'       => null,
             'planned_duration_days' => 730,
         ]);
 
@@ -292,7 +292,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -322,7 +322,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = Project::factory()->create([
             'status'               => 'Ongoing',
             'category_id'          => $categoryId,
-            'approved_budget'      => 5000000.00,
+            'contract_price'       => 5000000.00,
             'planned_duration_days' => 730,
         ]);
 
@@ -356,7 +356,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = Project::factory()->create([
             'status'                => 'Ongoing',
             'category_id'           => $categoryId,
-            'approved_budget'       => 5000000.00,
+            'contract_price'        => 5000000.00,
             'planned_duration_days' => 730,
         ]);
 
@@ -426,7 +426,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -509,7 +509,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         Project::factory()->create([
             'status'                => 'Completed',
             'category_id'           => $categoryId,
-            'approved_budget'       => 100000.00,
+            'contract_price'        => 100000.00,
             'planned_duration_days' => 220,
         ]);
 
@@ -517,7 +517,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $oldStrong = Project::factory()->create([
             'status'                => 'Completed',
             'category_id'           => $categoryId,
-            'approved_budget'       => 5000000.00,
+            'contract_price'        => 5000000.00,
             'planned_duration_days' => 730,
             'actual_end_date'       => now()->subYears(6),
         ]);
@@ -525,7 +525,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = Project::factory()->create([
             'status'               => 'Ongoing',
             'category_id'          => $categoryId,
-            'approved_budget'      => 5000000.00,
+            'contract_price'       => 5000000.00,
             'planned_duration_days' => 730,
         ]);
 
@@ -554,7 +554,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $recent = Project::factory()->create([
             'status'               => 'Completed',
             'category_id'          => $categoryId,
-            'approved_budget'      => 1000000.00,
+            'contract_price'       => 1000000.00,
             'planned_duration_days' => 365,
             'actual_end_date'      => now()->subMonths(6),
         ]);
@@ -562,7 +562,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         Project::factory()->create([
             'status'               => 'Completed',
             'category_id'          => $categoryId,
-            'approved_budget'      => 1000000.00,
+            'contract_price'       => 1000000.00,
             'planned_duration_days' => 365,
             'actual_end_date'      => now()->subYears(6),
         ]);
@@ -570,7 +570,7 @@ class HistoricalSimilarityHardeningTest extends TestCase
         $target = Project::factory()->create([
             'status'               => 'Ongoing',
             'category_id'          => $categoryId,
-            'approved_budget'      => 1000000.00,
+            'contract_price'       => 1000000.00,
             'planned_duration_days' => 365,
         ]);
 

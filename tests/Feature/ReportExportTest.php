@@ -372,7 +372,7 @@ class ReportExportTest extends TestCase
 
     public function test_summary_view_renders_peso_sign_with_unicode_font(): void
     {
-        $this->project->update(['approved_budget' => 10000000.00]);
+        $this->project->update(['contract_price'  => 10000000.00]);
 
         $html = $this->renderSummaryView();
 

@@ -321,8 +321,8 @@
                 'project' => $w->project->title,
                 'academic_year' => $academicYear,
                 'contractor' => $contractorName,
-                // Existing project data: budget from approved_budget, location defaults to CSPC
-                'budget' => $w->project->approved_budget !== null ? '₱ ' . number_format((float) $w->project->approved_budget, 2) : 'N/A',
+                // Existing project data: budget from the effective contract price, location defaults to CSPC
+                'budget' => $w->project->effectiveContractPrice() !== null ? '₱ ' . number_format((float) $w->project->effectiveContractPrice(), 2) : 'N/A',
                 'location' => $w->project->location ?: 'Camarines Sur Polytechnic Colleges',
                 'completion_date' => $completionDate ? $completionDate->format('F j, Y') : null,
                 'warranty_period' => $warrantyEnd ? $warrantyEnd->format('F j, Y') : null,

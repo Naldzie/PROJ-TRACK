@@ -47,7 +47,7 @@ use App\Support\DateHelper;
  *   • Forecast/prediction data is NOT mixed into health status.
  *
  * Cost/budget health is deliberately absent: the system stores only
- * approved_budget — there is no actual-spend tracking, so a real cost
+ * contract_price — there is no actual-spend tracking, so a real cost
  * variance (EVM CPI/CV) cannot be computed.
  */
 class ProjectHealthService

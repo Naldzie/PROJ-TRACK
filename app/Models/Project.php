@@ -18,7 +18,8 @@ class Project extends Model
         'category_id',
         'location',
         'description',
-        'approved_budget',
+        'contract_price',
+        'revised_contract_price',
         'abc',
         'budget_source_id',
         'proposal_id',
@@ -46,7 +47,8 @@ class Project extends Model
     ];
 
     protected $casts = [
-        'approved_budget' => 'decimal:2',
+        'contract_price' => 'decimal:2',
+        'revised_contract_price' => 'decimal:2',
         'abc' => 'decimal:2',
         'planned_start_date' => 'date:Y-m-d',
         'planned_end_date' => 'date:Y-m-d',
@@ -209,6 +211,26 @@ class Project extends Model
     /**
      * Get calculated progress from monthly progress history records
      */
+    /**
+     * The contract amount in force right now.
+     * Called by: every total, comparison, export and report that wants ONE figure.
+     * Returns the revised amount when a variation order has set one, else the
+     * awarded contract price.
+     *
+     * Read contract_price directly ONLY when you specifically mean the ORIGINAL
+     * award — doing so is then a deliberate choice, not an oversight.
+     */
+    public function effectiveContractPrice(): ?string
+    {
+        return $this->revised_contract_price ?? $this->contract_price;
+    }
+
+    /** Has a variation order revised this contract? */
+    public function isContractRevised(): bool
+    {
+        return $this->revised_contract_price !== null;
+    }
+
     public function getProgressPercentage()
     {
         return $this->calculateProgressFromHistory() ?? 0;

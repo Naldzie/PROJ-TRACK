@@ -347,7 +347,7 @@
                     <div class="budget-info">
                         <div class="budget-row">
                             <span class="budget-label"><i class="bi bi-cash-coin"></i>Contract Price:</span>
-                            <span class="budget-value">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span>
+                            <span class="budget-value">{{ \App\Helpers\FormatHelper::formatCurrency($project->effectiveContractPrice() ?? 0) }}</span>
                         </div>
                     </div>
 
@@ -532,7 +532,7 @@
             <th data-col="deadline"><a href="{{ $sortUrl('planned_end_date') }}" class="sortable-th">Deadline {!! $currentSort === 'planned_end_date' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th data-col="days">Days Left</th>
             <th data-col="manager">Manager</th>
-            <th data-col="cost"><a href="{{ $sortUrl('approved_budget') }}" class="sortable-th">Contract Price {!! $currentSort === 'approved_budget' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
+            <th data-col="cost"><a href="{{ $sortUrl('contract_price') }}" class="sortable-th">Contract Price {!! $currentSort === 'contract_price' ? ($currentSortDir === 'asc' ? '<span class="sort-arrow active">&#9650;</span>' : '<span class="sort-arrow active">&#9660;</span>') : '<span class="sort-arrow">&#9650;&#9660;</span>' !!}</a></th>
             <th data-col="actions" data-locked="1">Actions</th>
         </tr>
     </thead>
@@ -662,7 +662,7 @@
                             <span class="table-manager-empty">Unassigned</span>
                         @endif
                     </td>
-                    <td data-col="cost"><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->approved_budget ?? 0) }}</span></td>
+                    <td data-col="cost"><span class="table-budget">{{ \App\Helpers\FormatHelper::formatCurrency($project->effectiveContractPrice() ?? 0) }}</span></td>
                     <td data-col="actions">
                         <button type="button" class="pm-kebab" aria-haspopup="true" aria-expanded="false" title="Row actions"
                             data-view-url="{{ route($showRoute, $project->id) }}"

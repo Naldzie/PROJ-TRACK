@@ -273,7 +273,7 @@ class BaselineScheduleDateBoundsTest extends TestCase
     {
         $payload = [
             'title'                    => 'Out of bounds project ' . fake()->unique()->word(),
-            'approved_budget'          => 500000,
+            'contract_price'           => 500000,
             'planned_start_date'       => '2026-01-15',
             'planned_end_date'         => '2026-10-15',
             'status'                   => 'Planned',
@@ -297,7 +297,7 @@ class BaselineScheduleDateBoundsTest extends TestCase
     {
         $payload = [
             'title'                    => 'Before start project ' . fake()->unique()->word(),
-            'approved_budget'          => 500000,
+            'contract_price'           => 500000,
             'planned_start_date'       => '2026-01-15',
             'planned_end_date'         => '2026-10-15',
             'status'                   => 'Planned',
@@ -320,7 +320,7 @@ class BaselineScheduleDateBoundsTest extends TestCase
     {
         $payload = [
             'title'                    => 'In bounds project ' . fake()->unique()->word(),
-            'approved_budget'          => 500000,
+            'contract_price'           => 500000,
             'planned_start_date'       => '2026-01-15',
             'planned_end_date'         => '2026-10-15',
             'status'                   => 'Planned',
@@ -349,7 +349,7 @@ class BaselineScheduleDateBoundsTest extends TestCase
     {
         $payload = [
             'title'                    => 'No dates project ' . fake()->unique()->word(),
-            'approved_budget'          => 500000,
+            'contract_price'           => 500000,
             'status'                   => 'Planned',
             'baseline_schedule_targets' => json_encode([
                 ['month_label' => '2026-05', 'planned_date' => '2026-05-10', 'planned_progress_percent' => 100],

@@ -219,7 +219,7 @@ class ProjectReportDataService
             ['Contractor Contact', $contractor?->contact_number],
             ['Source of Funds', $project->budgetSource?->name],
             ['Approved Budget for the Contract (ABC)', $this->money($project->abc)],
-            ['Contract Amount', $this->money($project->approved_budget)],
+            ['Contract Price', $this->money($project->effectiveContractPrice())],
             ['Contract Duration', $duration ? number_format($duration) . ' calendar days' : null],
             ['Start Date', $this->date($project->planned_start_date)],
             ['Actual Start Date', $this->date($project->actual_start_date)],

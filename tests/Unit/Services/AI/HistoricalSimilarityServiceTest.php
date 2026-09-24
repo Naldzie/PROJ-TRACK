@@ -113,7 +113,7 @@ class HistoricalSimilarityServiceTest extends TestCase
             'category_id' => $category->id,
             'contractor_id' => $contractor->id,
             'planned_duration_days' => 180,
-            'approved_budget' => 5000000,
+            'contract_price'  => 5000000,
         ]);
 
         // Create a completed project in the same category with progress history
@@ -121,7 +121,7 @@ class HistoricalSimilarityServiceTest extends TestCase
             'category_id' => $category->id,
             'contractor_id' => $contractor->id,
             'planned_duration_days' => 180,
-            'approved_budget' => 5000000,
+            'contract_price'  => 5000000,
         ]);
 
         $this->createProgressHistory($completed, 6);

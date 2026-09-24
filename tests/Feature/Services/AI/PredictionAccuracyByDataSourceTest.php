@@ -96,7 +96,7 @@ class PredictionAccuracyByDataSourceTest extends TestCase
                 overrides: [
                     'status'                => 'Completed',
                     'category_id'           => $categoryId,
-                    'approved_budget'       => 5000000.00,
+                    'contract_price'        => 5000000.00,
                     'planned_duration_days' => 730,
                 ]
             );
@@ -118,7 +118,7 @@ class PredictionAccuracyByDataSourceTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -151,7 +151,7 @@ class PredictionAccuracyByDataSourceTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );

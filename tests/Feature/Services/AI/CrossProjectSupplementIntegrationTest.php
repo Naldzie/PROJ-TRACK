@@ -107,7 +107,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
                 overrides: [
                     'status'                => 'Completed',
                     'category_id'           => $categoryId,
-                    'approved_budget'       => 5000000.00,
+                    'contract_price'        => 5000000.00,
                     'planned_duration_days' => 730,
                 ]
             );
@@ -136,7 +136,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 // Large fixed planned duration → the merged X spans ~24
                 // months (1..P monotonic, v2.6 §4.1), so regression has
                 // plenty of distinct month indexes (no all-identical-X crash).
@@ -181,7 +181,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'               => 'Ongoing',
                 'category_id'          => $categoryId,
-                'approved_budget'      => 5000000.00,
+                'contract_price'       => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -283,7 +283,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
         $target = Project::factory()->create([
             'status'               => 'Ongoing',
             'category_id'          => $categoryId,
-            'approved_budget'      => 5000000.00,
+            'contract_price'       => 5000000.00,
             'planned_duration_days' => 730,
         ]);
 
@@ -360,7 +360,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
                 // budget intentionally far from the seeded class (5M) so the
                 // similarity gate deterministically fails (BUDGET_TOLERANCE
                 // 0.20) — this test guards the NO-class path.
-                'approved_budget'      => 9999999.99,
+                'contract_price'       => 9999999.99,
             ]
         );
 
@@ -394,7 +394,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 730,
             ]
         );
@@ -443,7 +443,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 360,
             ]
         );
@@ -508,7 +508,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 360,
             ]
         );
@@ -558,7 +558,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 180,
             ]
         );
@@ -604,7 +604,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 180,
             ]
         );
@@ -651,7 +651,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 180,
             ]
         );
@@ -708,7 +708,7 @@ class CrossProjectSupplementIntegrationTest extends TestCase
             overrides: [
                 'status'                => 'Ongoing',
                 'category_id'           => $categoryId,
-                'approved_budget'       => 5000000.00,
+                'contract_price'        => 5000000.00,
                 'planned_duration_days' => 180,
             ]
         );

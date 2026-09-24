@@ -218,7 +218,7 @@
                                     <label class="form-label" for="projectBudget">Contract Price <span class="text-danger">*</span> <span class="cpm-label-note">winning bid</span></label>
                                     <div class="input-group">
                                         <span class="input-group-text">₱</span>
-                                        <input type="number" step="0.01" name="approved_budget" id="projectBudget" class="form-control"
+                                        <input type="number" step="0.01" name="contract_price" id="projectBudget" class="form-control"
                                            placeholder="0.00" required>
                                     </div>
                                     <div class="invalid-feedback"></div>

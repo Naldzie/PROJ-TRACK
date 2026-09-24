@@ -61,8 +61,8 @@
         ? number_format((int) $project->estimated_workers) . ' estimated'
         : 'Not set';
 
-    $totalBudgetDisplay = $project->approved_budget !== null
-        ? ('PHP ' . number_format((float) $project->approved_budget, 2))
+    $totalBudgetDisplay = $project->effectiveContractPrice() !== null
+        ? ('PHP ' . number_format((float) $project->effectiveContractPrice(), 2))
         : 'Not set';
 
     $abcDisplay = $project->abc !== null
@@ -71,9 +71,10 @@
 
     $budgetSourceDisplay = $project->budgetSource?->name ?? 'Not set';
 
-    // Savings = ABC - Contract Price (approved_budget)
-    $savingsAmount = ($project->abc !== null && $project->approved_budget !== null)
-        ? (float) $project->abc - (float) $project->approved_budget
+    // Savings = ABC - the EFFECTIVE contract price. A variation order eats into
+    // the savings, so the revised amount is the truthful input when one exists.
+    $savingsAmount = ($project->abc !== null && $project->effectiveContractPrice() !== null)
+        ? (float) $project->abc - (float) $project->effectiveContractPrice()
         : null;
     $savingsDisplay = $savingsAmount !== null
         ? ('PHP ' . number_format(abs($savingsAmount), 2))

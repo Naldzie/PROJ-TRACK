@@ -64,7 +64,7 @@ class ProjectReportTest extends TestCase
             'planned_start_date' => '2026-04-01',
             'planned_end_date'   => '2027-03-31',
             'original_planned_end_date' => '2027-03-31',
-            'approved_budget'    => 10000000,
+            'contract_price'     => 10000000,
         ]);
     }
 
