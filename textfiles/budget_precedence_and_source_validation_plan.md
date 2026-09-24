@@ -252,7 +252,24 @@
   §4 — DECISION LOG — ALL ANSWERED BY THE USER 2026-09-24
 ===============================================================================
 
-  D-A0  ✅ DECIDED — DO NOT ADD A REVISED CONTRACT AMOUNT FIELD. NOT NOW.
+  D-A0  ❌ REVERSED THE SAME DAY — THE FIELD IS BEING ADDED AFTER ALL.
+        ➡ SEE textfiles/contract_price_and_revised_amount_plan.md. The user also
+          chose to RENAME the column (approved_budget -> contract_price) and to add
+          revised_contract_price. The reversal is legitimate and not a whim: the
+          strongest objection below was that this would force the first schema change
+          since pilot v1 — and a pilot version 2 is being cut anyway, so the migration
+          rides along with a deployment that is happening regardless.
+        ⚠ CONSEQUENCES FOR THIS FILE, worked through in that plan's §6:
+          · D-A1 (precedence order) LAPSES. With a revised box, decision 11 becomes
+            ROUTING, not precedence, and the main budget vote is not reordered at all.
+          · D-A2 (the cents tie-break) SURVIVES UNCHANGED — the revised pool still
+            holds 4323196.00 and 4323196.77 and something must still choose.
+          · D-A3's corpus burden SHRINKS for the same reason.
+          · Item B (58.4) is untouched by any of this.
+        The original decision and its reasoning are kept verbatim below, because the
+        design warnings in it still apply to the build.
+
+  D-A0-ORIGINAL (2026-09-24, superseded)  DO NOT ADD A REVISED CONTRACT AMOUNT FIELD.
         The question arose because the user's own reading of the domain is correct and
         matches the UI: ABC ("Approved Budget for the Contract") is the ceiling set
         BEFORE bidding; approved_budget, labelled "Contract Price / winning bid", is
