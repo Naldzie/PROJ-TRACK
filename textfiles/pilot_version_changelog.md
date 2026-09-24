@@ -354,7 +354,7 @@
   -----------------------------------------------------------------------------
     Date:    2026-09-24
     Branch:  phase-45-scurve-fraction-scale   Commit: 7e64799
-    Merged:  NO — built and browser-confirmed, merge not yet ordered (Rule 12)
+    Merged:  YES — into develop 2026-09-24 (9a9c287, --no-ff, clean)
     Plan:    textfiles/document_parser_day_column_layout_plan.md §7 (measurement)
              and §7.8 (build log)
 
@@ -428,15 +428,14 @@
   §4 — UPGRADING A PILOT MACHINE FROM VERSION 1
 ===============================================================================
 
-  ⚠ NO UPGRADE IS ORDERED YET — but the blockers are gone. As of 2026-09-24 the
-  first four adjustments are browser-confirmed and merged into develop, so an upgrade
-  is now a decision rather than a wait. Version 1 remains what the PMU is running
+  ⚠ NO UPGRADE IS ORDERED YET — but the blockers are gone. As of 2026-09-24 all five
+  adjustments are browser-confirmed and merged into develop, so an upgrade is now a
+  decision rather than a wait. Version 1 remains what the PMU is running
   until someone says otherwise. This section describes what the upgrade costs.
 
-  ⚠ A-5 IS BROWSER-CONFIRMED BUT NOT MERGED. It sits on phase-45-scurve-fraction-scale
-  awaiting the merge order (Rule 12). The costs below INCLUDE it, because its cost is
-  one PHP file and stating it now is cheaper than remembering to later — but an
-  upgrade cut before that merge simply leaves it out, with no other consequence.
+  ⚠ AS OF 2026-09-24 ALL FIVE ADJUSTMENTS ARE MERGED INTO develop AND BROWSER-
+  CONFIRMED. A-5 was the last one outstanding and went in as 9a9c287. So cutting
+  pilot version 2 is now purely a decision — there is nothing left to wait for.
 
   COMBINED IMPACT OF A-1 + A-2 + A-3 + A-4 + A-5
   ----------------------------------------------
