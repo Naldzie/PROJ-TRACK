@@ -515,7 +515,7 @@
             RESTUDY ITEM 58.3 — implemented as routing rather than the planned
             precedence reorder, so the contract-price vote is not touched at all.
 
-    Tests:  PHP 1375 / 0 / 5299 assertions and JS 294 / 294 / 0 (were 1365 and 286).
+    Tests:  PHP 1377 / 0 / 5310 assertions and JS 294 / 294 / 0 (were 1365 and 286).
             The rename was proven first at
             1365 / 0, then the 8 new tests added, so the rename and the new behaviour
             are proven separately. tests/Feature/ContractPriceRevisedTest.php.

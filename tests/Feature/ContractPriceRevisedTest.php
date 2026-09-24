@@ -157,6 +157,54 @@ class ContractPriceRevisedTest extends TestCase
         $this->assertSame(4000000.00, (float) $stats['totalBudget']);
     }
 
+    // ─── The detail page actually RENDERS (regression, 2026-09-24) ───────────
+    // ⚠ WHY THESE EXIST. The "Revised · was ₱X" caption shipped with a broken class
+    // reference (AppHelpersFormatHelper, backslashes lost) and the whole project
+    // detail page 500'd. 1375 tests passed anyway, because NOTHING RENDERED THAT
+    // COMPONENT with a revised project. A Blade runtime error is exactly what a
+    // render test is for, so both branches of the caption are now exercised.
+
+    public function test_the_detail_page_renders_for_a_revised_project(): void
+    {
+        $project = Project::factory()->create([
+            'title'                  => 'Revised Detail Project',
+            'status'                 => 'Ongoing',
+            'abc'                    => 5000000.00,
+            'contract_price'         => 4000000.00,
+            'revised_contract_price' => 4400000.00,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->assertSee('Revised Detail Project')
+            // The caption names the revision and the figure it replaced.
+            ->assertSee('Revised', false)
+            // 'Revised Contract Price' alone is not enough: the edit modal on this
+            // page carries that label too. This caption belongs only to the row.
+            ->assertSee('Variation order', false);
+    }
+
+    public function test_the_detail_page_renders_for_an_unrevised_project(): void
+    {
+        $project = Project::factory()->create([
+            'title'                  => 'Plain Detail Project',
+            'status'                 => 'Ongoing',
+            'abc'                    => 5000000.00,
+            'contract_price'         => 4000000.00,
+            'revised_contract_price' => null,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.projects.detail', $project->id))
+            ->assertOk()
+            ->assertSee('Plain Detail Project')
+            ->assertSee('Winning Bid', false)
+            // An absent ROW is how this screen says "never revised" — the label itself
+            // still appears, because the edit modal is rendered on this page.
+            ->assertDontSee('Variation order', false);
+    }
+
     // ─── Validation ──────────────────────────────────────────────────────────
 
     public function test_a_project_can_be_created_with_a_revised_amount(): void

@@ -6,7 +6,7 @@
         {{-- A revised figure must not be captioned "Winning Bid" — that is the
              original award, and the number above is no longer it. --}}
         @if($data['overview']['isContractRevised'] ?? false)
-            <div class="stat-sub">Revised &middot; was {{ AppHelpersFormatHelper::formatCurrency($data['overview']['originalContractPrice'] ?? 0) }}</div>
+            <div class="stat-sub">Revised &middot; was {{ \App\Helpers\FormatHelper::formatCurrency($data['overview']['originalContractPrice'] ?? 0) }}</div>
         @else
             <div class="stat-sub">Winning Bid</div>
         @endif

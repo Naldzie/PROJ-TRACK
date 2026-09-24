@@ -410,3 +410,39 @@
           the preview offers a Revised Contract Price row, and the Contract Price box
           is unchanged from what it reads today.
        5. Dashboard savings reflects the revision.
+
+  ---------------------------------------------------------------------------
+  8.18 ❌→✅ DEFECT FOUND BY THE USER'S BROWSER CHECK, 2026-09-24 (step 2)
+  ---------------------------------------------------------------------------
+       SYMPTOM: editing an existing project to carry a revised contract price made
+       the whole project detail page 500 —
+         Class "AppHelpersFormatHelper" not found
+         stats-row.blade.php:9
+
+       CAUSE: THE SAME ESCAPING FAILURE AS 8.16, in a different file and on the same
+       day. The caption was written through a scripting layer that ate the
+       backslashes, so \App\Helpers\FormatHelper became AppHelpersFormatHelper. The
+       line directly above it, which predates this work, has the reference correct —
+       so the file itself shows the right spelling two lines apart.
+
+       ⚠ WHY 1375 GREEN TESTS DID NOT CATCH IT, which is the part worth keeping:
+       NOTHING IN THE SUITE RENDERED THAT COMPONENT WITH A REVISED PROJECT. The new
+       branch was only reachable when isContractRevised is true, and every fixture
+       until then had a NULL revision. The PHP suite was not weak here in general —
+       it simply had no test that visited the new state.
+
+       FIX: the reference, plus TWO RENDER TESTS that visit the project detail page —
+       one revised, one not — so both branches of the caption are exercised.
+       ⚠ The unrevised test cannot assert DontSee('Revised Contract Price'): the edit
+       modal is rendered on that page and carries the label. It asserts the absence of
+       "Variation order", which belongs only to the overview row.
+       FALSIFIED: re-introducing the exact broken reference turns
+       "the detail page renders for a revised project" red.
+
+       PHP 1377 / 0 / 5310 assertions.
+
+       LESSON, now twice in one session: A STRING WRITTEN THROUGH A SCRIPT CAN LOSE
+       ITS BACKSLASHES SILENTLY. Both times the result was syntactically valid and
+       semantically dead — a regex that matches nothing, a class that does not exist.
+       Grep changed files for AppHelpers / AppServices / AppModels and for regex
+       literals missing their escapes before believing a green suite.
