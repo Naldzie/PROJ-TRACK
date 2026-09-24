@@ -6112,6 +6112,8 @@
            the correction in §0-A). Both are now in `develop`.
        (c) ⬜ STILL OWED — which of 58.2-58.4 to build, if any. 58.1 is ON HOLD by
            decision D-44-5 and is not a candidate.
+           ✅ 58.3's ⚠ VERIFY FIRST gate was run 2026-09-24 and PASSED — see 58.3-V.
+           The item is real; its design changed from weight to precedence.
 
   ---------------------------------------------------------------------------
   58.1  ⏸ ON HOLD — the ABC caps-run cannot cross an OCR pipe
@@ -6138,18 +6140,79 @@
 
   ---------------------------------------------------------------------------
   58.3  ⬜ Decision 11 is missing from the pooled vote
+        ✅ VERIFIED 2026-09-24 — THE ITEM STANDS, AND THE FIX IS NOT WHAT IT LOOKED
+        LIKE. Read 58.3-V before designing anything.
   ---------------------------------------------------------------------------
         WHAT: extractBudget opens "Revised Contract Amount wins over Original
         (user decision 11)" and the POOLED track — the one that actually fills the
         box — does not carry it. `revised` is one of six equal labelRes entries, so
         4,204,128.84 wins on repetition over the revised 4,323,196.77 (§55.4).
         WHERE: collectBudgetCandidates, document-parser-core.js.
-        ⚠ VERIFY FIRST: run window._parserVoteTables('budget') on pdfdocstest5 and
-        confirm 4323196.77 is IN the pool but outranked. If it is absent instead,
-        this is a different bug and this item is wrong.
         COST: small, but it changes which value fills a money box on every
         multi-amount document — re-measure the whole corpus, not just this file.
         PROOF: JS suite.
+
+  ---------------------------------------------------------------------------
+  58.3-V  THE VERIFICATION RUN — user, browser, pdfdocstest5, 2026-09-24
+  ---------------------------------------------------------------------------
+        The ⚠ VERIFY FIRST gate has been executed. window._parserVoteTables('budget')
+        returned, in rank order:
+
+          #  value         count  score  patterns                       
+          0  4204128.84      4    2.35   generic, paren-php, bare-php   <- FILLS THE BOX
+          1  4834297.59      4    1.70   generic, paren-php, p-prefix
+          2  4204126.00      1    1.00   generic
+          3  4323196.00      1    1.00   revised, generic
+          4  4323196.77      1    1.00   revised, generic, bare-php
+          5  4834297.00      1    0.43   generic
+          6  59.00           1    0.34   generic
+        (all labeled=1, all from pdfdocstest5.pdf)
+
+        (a) ✅ THE GATE PASSES AND THE ITEM IS CORRECT AS WRITTEN. 4323196.77 is IN
+            the pool (row 4), carries the `revised` pattern, and is outranked — not
+            absent. The alternative reading the gate existed to catch ("if it is
+            absent instead, this item is wrong") is ruled out. 4204128.84 wins on
+            COUNT, exactly as §55.4 diagnosed: 4 sightings to 1.
+
+        (b) ⚠ NEW, AND NOT IN THE PLAN: THE REVISED AMOUNT IS SPLIT ACROSS TWO POOL
+            ENTRIES. Row 3 is 4323196.00 and row 4 is 4323196.77 — the same peso
+            figure with different cents, BOTH carrying `revised`, each at count 1 /
+            score 1.00. The pool is treating one document value as two candidates,
+            so the revised amount's own evidence is halved before it ever competes.
+
+        (c) ⚠ THE CONSEQUENCE THAT DECIDES THE DESIGN — A SCORE BUMP CANNOT WORK.
+            Merge the two revised rows and you get count 2 / score 2.00. That is
+            STILL BELOW 4204128.84's 2.35. So even a perfect de-duplication leaves
+            the wrong value in the box, and any weight-based fix would need to add
+            more than +1.35 to a base of 1.00 — a multiplier so large it would
+            distort every other document's vote.
+            ➡ DECISION 11 MUST BE IMPLEMENTED AS PRECEDENCE, NOT AS WEIGHT: if a
+            `revised` candidate exists, it wins over an `original`/generic one
+            outright. That is also literally what the decision says — "Revised
+            Contract Amount WINS OVER Original" — so the plan's own phrasing was
+            right and the "one of six equal entries" framing was what misled.
+
+        (d) ⚠ THE FIX MUST ALSO CHOOSE BETWEEN THE TWO REVISED ROWS. Precedence alone
+            promotes a tie. 4323196.77 carries `bare-php` and real cents; 4323196.00
+            is the cents-truncated twin. Promote the wrong one and the box fills with
+            a value that is wrong by 77 centavos while LOOKING authoritative — a
+            worse failure than today's, because today's wrong value at least differs
+            visibly. Whatever rule breaks this tie needs its own fixture.
+
+        (e) INCIDENTAL, NOT A DEFECT: 59.00 sits at row 6, score 0.34 — the
+            "PESOS & 59/100" cents artifact that isCentsFractionOnly() was written
+            for (Standing constraints, N1a). It is NOT excluded from the pool, only
+            ranked last. It never wins here, so this is a note, not an item — but if
+            a future change alters pool ranking, check that this row stays buried.
+
+        (f) INCIDENTAL: 4834297.59 — the value §55/§57 establish as the CORRECT ABC —
+            is row 1 of the BUDGET pool at count 4 / score 1.70. The two fields'
+            candidate pools overlap heavily on this document. Anyone changing budget
+            precedence should confirm they have not moved the ABC read as a side
+            effect, since §58.1's held fix targets the same document.
+
+        ⚠ STILL UNORDERED. This verification does not authorise the build; it only
+        proves the item is real and redirects its design from weight to precedence.
 
   ---------------------------------------------------------------------------
   58.4  ⬜ The AI's budgetSource bypasses the shape validator
