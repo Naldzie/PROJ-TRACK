@@ -67,6 +67,10 @@ class ProjectOverviewService
                 'latestProgressValue' => $latestProgressValue,
                 'latestProgressDate' => $latestProgressDate,
                 'totalBudget' => $project->effectiveContractPrice() ?? 0,
+                // So the stat can say "Winning Bid" or "Revised" truthfully instead of
+                // captioning a revised figure with the word for the original.
+                'isContractRevised' => $project->isContractRevised(),
+                'originalContractPrice' => $project->contract_price,
                 'isCompleted' => true,
                 'timeVariance' => $timeVariance,
                 'timeVarianceLabel' => $timeVarianceLabel,
@@ -87,6 +91,10 @@ class ProjectOverviewService
                 'latestProgressValue' => $latestProgressValue,
                 'latestProgressDate' => $latestProgressDate,
                 'totalBudget' => $project->effectiveContractPrice() ?? 0,
+                // So the stat can say "Winning Bid" or "Revised" truthfully instead of
+                // captioning a revised figure with the word for the original.
+                'isContractRevised' => $project->isContractRevised(),
+                'originalContractPrice' => $project->contract_price,
                 'isCompleted' => false,
                 'daysRemaining' => $daysRemaining,
                 'endDateFormatted' => $endDateFormatted,

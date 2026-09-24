@@ -125,6 +125,38 @@ class ContractPriceRevisedTest extends TestCase
         $this->assertSame(1000000.00, (float) $savings);
     }
 
+    // ─── What the detail screen is told (P2) ─────────────────────────────────
+
+    public function test_overview_stats_report_the_revision_and_the_original(): void
+    {
+        $project = Project::factory()->create([
+            'contract_price'         => 4000000.00,
+            'revised_contract_price' => 4400000.00,
+        ]);
+
+        $stats = app(\App\Services\ProjectOverviewService::class)->getOverviewStats($project);
+
+        // The headline figure is the one in force...
+        $this->assertSame(4400000.00, (float) $stats['totalBudget']);
+        // ...but the screen must be able to caption it correctly rather than calling a
+        // revised amount the "Winning Bid", and to say what it was before.
+        $this->assertTrue($stats['isContractRevised']);
+        $this->assertSame(4000000.00, (float) $stats['originalContractPrice']);
+    }
+
+    public function test_overview_stats_say_not_revised_when_there_is_no_variation_order(): void
+    {
+        $project = Project::factory()->create([
+            'contract_price'         => 4000000.00,
+            'revised_contract_price' => null,
+        ]);
+
+        $stats = app(\App\Services\ProjectOverviewService::class)->getOverviewStats($project);
+
+        $this->assertFalse($stats['isContractRevised']);
+        $this->assertSame(4000000.00, (float) $stats['totalBudget']);
+    }
+
     // ─── Validation ──────────────────────────────────────────────────────────
 
     public function test_a_project_can_be_created_with_a_revised_amount(): void

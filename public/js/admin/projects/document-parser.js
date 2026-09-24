@@ -308,7 +308,9 @@ async function runDocumentAutofill() {
                 const pooled = core.parseProjectInfoPooled(pooledDocs, { learned: learnedKeywords }) || {};
                 // Override only fields the pool resolved (budget/abc/duration/dates);
                 // keep voted title/contractor/location/etc. from per-file vote.
-                for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
+                // revisedBudget is POOL-ONLY: no single-file parse produces one, so the
+                // pool is not overriding anything here, it is the sole source.
+                for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate', 'revisedBudget']) {
                     // Remembered so the pick-one note can describe the track that
                     // actually produced the value in the box (see mergeDisagreements).
                     if (pooled[f]) { parsed[f] = pooled[f]; pooledResolvedFields[f] = true; }
@@ -321,7 +323,7 @@ async function runDocumentAutofill() {
                     pooledDisagreeInfo = pooled._disagree || null;
                     if (typeof window !== 'undefined' && window._parserDebug && pooled._debug) {
                         console.groupCollapsed('[Parser] pooled vote inspector (all finds → winner)');
-                        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
+                        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate', 'revisedBudget']) {
                             const rows = (pooled._debug && pooled._debug[f]) || [];
                             if (!rows.length) {
                                 // Empty pool is honest, not a miss: the wrapper keeps the
@@ -3068,7 +3070,7 @@ window._tryAiAssistFromWarning = async function () {
             return;
         }
         const core = (typeof getCore === 'function') ? getCore() : null;
-        const fields = ['title', 'location', 'description', 'budget', 'abc', 'budgetSource', 'category', 'startDate', 'endDate', 'duration', 'contractor'];
+        const fields = ['title', 'location', 'description', 'budget', 'abc', 'revisedBudget', 'budgetSource', 'category', 'startDate', 'endDate', 'duration', 'contractor'];
         const full = {};
         window._autofillAiAssisted = {};
         for (const f of fields) {
@@ -3126,6 +3128,9 @@ function showAutofillPreview(parsed, { ocrUsed = false } = {}) {
         { id: 'projectCategory', label: 'Category', value: parsed.category, w: 6, choices: 'projectCategory' },
         { id: 'contractorSelect', label: 'Contractor', value: parsed.contractor, w: 6, choices: 'contractorSelect' },
         { id: 'projectBudget', label: 'Contract Price', value: parsed.budget, w: 6 },
+        // Stays blank unless the document actually states a revised amount: an empty
+        // box is how the form says "this contract was never revised".
+        { id: 'projectRevisedPrice', label: 'Revised Contract Price', value: parsed.revisedBudget, w: 6 },
         { id: 'projectAbc', label: 'ABC (Approved Budget for Contract)', value: parsed.abc, w: 6 },
         { id: 'projectBudgetSource', label: 'Budget Source', value: parsed.budgetSource, w: 6, choices: 'projectBudgetSource' },
         { id: 'plannedDuration', label: 'Duration (days)', value: parsed.duration, w: 6 },

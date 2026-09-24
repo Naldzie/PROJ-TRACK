@@ -1446,3 +1446,85 @@ test('a match whose value the field validator refuses is reported as refused', (
 test('an unknown field cannot produce a preview', () => {
     assert.equal(core.previewLearnedExtraction('notAField', 'Whatever', 'Whatever: 12'), null);
 });
+
+// ─── Decision 11 as ROUTING, and the cents tie-break (phase-47 P3) ──────────
+// The form now has its own Revised Contract Price box, so a revised amount is a
+// DIFFERENT FACT rather than a rival reading of the contract price. Routing it
+// out leaves the contract-price vote completely untouched, which is why this
+// replaced the precedence reorder originally planned as restudy 58.3.
+
+test('a revised amount leaves the contract-price pool and fills its own box', () => {
+    const lines = [
+        'Original Contract Amount: Php 4,204,128.84',
+        'Revised Contract Amount: Php 4,323,196.77',
+    ];
+    const pooled = core.parseProjectInfoPooled([{ lines, fileName: 'award.pdf' }]);
+
+    assert.equal(pooled.revisedBudget, '4323196.77');
+    // The revised figure must not also be sitting in the contract-price box.
+    assert.notEqual(pooled.budget, '4323196.77');
+});
+
+test('a document with no revision leaves the revised box empty', () => {
+    const lines = ['Contract Amount: Php 4,204,128.84'];
+    const pooled = core.parseProjectInfoPooled([{ lines, fileName: 'award.pdf' }]);
+
+    // Absent, not zero: an empty box is how the form says "never revised".
+    assert.equal(pooled.revisedBudget, null);
+    assert.equal(pooled.budget, '4204128.84');
+});
+
+test('routing the revision out does not move the contract-price winner', () => {
+    // The shape measured on pdfdocstest5 (restudy 58.3-V): the original is stated
+    // repeatedly and wins on count, the revision once. Routing must not disturb it.
+    const lines = [
+        'Original Contract Amount: Php 4,204,128.84',
+        'Contract Amount: Php 4,204,128.84',
+        'Revised Contract Amount: Php 4,323,196.77',
+    ];
+    const pooled = core.parseProjectInfoPooled([{ lines, fileName: 'bundle.pdf' }]);
+
+    assert.equal(pooled.budget, '4204128.84');
+    assert.equal(pooled.revisedBudget, '4323196.77');
+});
+
+test('splitRevisedBudget moves only the revised-pattern candidates', () => {
+    const cands = [
+        { value: '1.00', pattern: 'revised' },
+        { value: '2.00', pattern: 'generic' },
+        { value: '3.00', pattern: 'bare-php' },
+        { value: '4.00', pattern: 'revised' },
+    ];
+    const { revised, rest } = core.splitRevisedBudget(cands);
+
+    assert.deepEqual(revised.map(c => c.value), ['1.00', '4.00']);
+    assert.deepEqual(rest.map(c => c.value), ['2.00', '3.00']);
+});
+
+test('same pesos, one with cents: the cents reading is preferred', () => {
+    // D-A2. Truncation loses digits, it does not invent them.
+    assert.ok(core.centsPreference('4323196.77', '4323196.00') < 0);
+    assert.ok(core.centsPreference('4323196.00', '4323196.77') > 0);
+});
+
+test('the cents rule stays out of it when the pesos differ', () => {
+    // An honestly round amount that is nobody's twin must never be demoted.
+    assert.equal(core.centsPreference('4323196.00', '9999999.77'), 0);
+    assert.equal(core.centsPreference('500000.00', '400000.50'), 0);
+});
+
+test('the cents rule is silent when both readings have real cents', () => {
+    assert.equal(core.centsPreference('4323196.77', '4323196.55'), 0);
+});
+
+test('the cents-truncated twin does not win the revised box', () => {
+    // Both readings of ONE revision reach the pool; the alphabetical fallback would
+    // have handed the box "…196.00" because "00" sorts before "77".
+    const lines = [
+        'Revised Contract Amount: Php 4,323,196.00',
+        'Revised Contract Amount: Php 4,323,196.77',
+    ];
+    const pooled = core.parseProjectInfoPooled([{ lines, fileName: 'twin.pdf' }]);
+
+    assert.equal(pooled.revisedBudget, '4323196.77');
+});

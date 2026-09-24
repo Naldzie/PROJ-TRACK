@@ -1610,6 +1610,50 @@ const DocumentParserCore = (function () {
     // Vote one pooled pile: weighted frequency first, tie-break labeled count,
     // then full-length money (digit-count) so tails like 5049.29 lose to full.
     // Called by: parseProjectInfoPooled() per field.
+    // Same pesos, different cents: prefer the reading that HAS cents.
+    // WHY (user decision D-A2, 2026-09-24): OCR truncation LOSES digits, it does not
+    // invent them, so ".77" is positive evidence of a real reading while ".00" is what
+    // a lost-cents read produces. On the measured document the revised amount appears
+    // as BOTH 4,323,196.00 and 4,323,196.77, and every earlier tie-break treats them as
+    // equal — score, labeled count and digit length are all identical — so the winner
+    // fell to a localeCompare that puts "00" first and picks the truncated twin.
+    // ⚠ NARROW ON PURPOSE: it fires only when the INTEGER PESO PARTS MATCH EXACTLY, so
+    // an honestly round amount that is nobody's twin is never touched.
+    // Returns <0 when a wins, >0 when b wins, 0 when the rule does not apply.
+    function centsPreference(aVal, bVal) {
+        const split = (v) => {
+            const m = /^(\d+)\.(\d{2})$/.exec(String(v || '').replace(/,/g, ''));
+            return m ? { pesos: m[1], cents: m[2] } : null;
+        };
+        const A = split(aVal), B = split(bVal);
+        if (!A || !B || A.pesos !== B.pesos) return 0;
+        const aZero = A.cents === '00', bZero = B.cents === '00';
+        if (aZero === bZero) return 0;
+        return aZero ? 1 : -1;
+    }
+
+    // Is this candidate a "Revised Contract Amount" reading?
+    // Called by: splitRevisedBudget(). One place, so the pattern name is not spread.
+    function isRevisedBudgetPattern(pattern) {
+        return String(pattern || '') === 'revised';
+    }
+
+    // Split budget candidates into the revised reading and everything else.
+    // WHY (user decision 11, implemented 2026-09-24 as ROUTING, not precedence):
+    // the form now has its own Revised Contract Price box, so a revised amount is no
+    // longer a rival reading of the contract price — it is a DIFFERENT FACT with its
+    // own home. Routing it out is strictly safer than the precedence reorder this was
+    // first designed as: the contract-price vote is not touched at all.
+    // ⚠ ONLY THE 'revised'-PATTERN CANDIDATES MOVE. A document that also states the
+    // same figure generically keeps that generic candidate in the contract-price pool,
+    // where it competes on its own merits. Measured on pdfdocstest5: the contract-price
+    // winner is unchanged at 4,204,128.84 after the split.
+    function splitRevisedBudget(cands) {
+        const revised = [], rest = [];
+        for (const c of (cands || [])) (isRevisedBudgetPattern(c && c.pattern) ? revised : rest).push(c);
+        return { revised, rest };
+    }
+
     function voteCandidatePool(cands) {
         if (!cands || cands.length === 0) return null;
         const groups = new Map(); // norm -> { original, score, labeledCount, len }
@@ -1623,7 +1667,7 @@ const DocumentParserCore = (function () {
         }
         let best = null;
         for (const g of groups.values()) {
-            if (!best || g.score > best.score || (g.score === best.score && (g.labeledCount > best.labeledCount || (g.labeledCount === best.labeledCount && g.len > best.len)))) best = g;
+            if (!best || g.score > best.score || (g.score === best.score && (g.labeledCount > best.labeledCount || (g.labeledCount === best.labeledCount && (g.len > best.len || (g.len === best.len && centsPreference(g.original, best.original) < 0)))))) best = g;
         }
         return best ? best.original : null;
     }
@@ -1686,7 +1730,10 @@ const DocumentParserCore = (function () {
         // is not a learned one, so corroboration between the two lifts the row into the
         // trusted group rather than dragging it down.
         const backed = (r) => (r.patterns || []).some(p => String(p).indexOf('learned:') !== 0) ? 1 : 0;
-        rows.sort((a, b) => backed(b) - backed(a) || b.score - a.score || b.labeledCount - a.labeledCount || a.value.localeCompare(b.value));
+        rows.sort((a, b) => backed(b) - backed(a) || b.score - a.score || b.labeledCount - a.labeledCount
+            // D-A2 before the alphabetical fallback: localeCompare puts "…196.00"
+            // ahead of "…196.77" and would hand the box the cents-truncated twin.
+            || centsPreference(a.value, b.value) || a.value.localeCompare(b.value));
         return { winner: rows.length ? rows[0].value : null, rows };
     }
 
@@ -2035,7 +2082,7 @@ const DocumentParserCore = (function () {
     }
 
     function parseProjectInfoPooled(docs, opts) {
-        const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [] };
+        const pile = { budget: [], abc: [], duration: [], startDate: [], endDate: [], revisedBudget: [] };
         // L-9: the same learned vocabulary the single parse consults, as pool candidates.
         const pooledLearnedLabels = ((opts && opts.learned && opts.learned.labels) || {});
         for (const d of (docs || [])) {
@@ -2059,12 +2106,19 @@ const DocumentParserCore = (function () {
         // _disagree powers Choice B notes (Step 1g-2): per-field winner/runnerUp or null.
         // _fileCounts powers the OCR-starvation check (O3): finds per file per field —
         // "bundle: 0" means that file went silent (unread), not outvoted.
+        // Decision 11 as ROUTING: the revised readings leave the contract-price pool
+        // and vote for their own box instead of competing for this one.
+        const budgetSplit = splitRevisedBudget(pile.budget);
+        pile.budget = budgetSplit.rest;
+        pile.revisedBudget = budgetSplit.revised;
+
         const bDbg = voteCandidatePoolDebug(pile.budget);
+        const rDbg = voteCandidatePoolDebug(pile.revisedBudget);
         const aDbg = voteCandidatePoolDebug(pile.abc);
         const dDbg = voteCandidatePoolDebug(pile.duration);
         const sDbg = voteCandidatePoolDebug(pile.startDate);
         const eDbg = voteCandidatePoolDebug(pile.endDate);
-        const dbgFor = (f) => f === 'budget' ? bDbg : f === 'abc' ? aDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : eDbg;
+        const dbgFor = (f) => f === 'budget' ? bDbg : f === 'abc' ? aDbg : f === 'duration' ? dDbg : f === 'startDate' ? sDbg : f === 'revisedBudget' ? rDbg : eDbg;
 
         // CROSS-FIELD EXCLUSION (2026-09-20) — A VALUE THAT HAS ALREADY WON ANOTHER
         // FIELD IS NOT THIS FIELD'S SECOND OPINION.
@@ -2110,7 +2164,7 @@ const DocumentParserCore = (function () {
             return pooledDisagree(kept);
         };
         const fileCounts = {};
-        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate']) {
+        for (const f of ['budget', 'abc', 'duration', 'startDate', 'endDate', 'revisedBudget']) {
             fileCounts[f] = {};
             for (const r of dbgFor(f).rows) {
                 for (const fn of r.files) fileCounts[f][fn] = (fileCounts[f][fn] || 0) + r.count;
@@ -2118,14 +2172,18 @@ const DocumentParserCore = (function () {
         }
         return {
             budget: bDbg.winner,
+            // Null unless the document actually states a revised amount — the same
+            // "absent means never revised" rule the column itself follows.
+            revisedBudget: rDbg.winner,
             abc: aDbg.winner,
             duration: dDbg.winner,
             startDate: sDbg.winner,
             endDate: eDbg.winner,
-            _debug: { budget: bDbg.rows, abc: aDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
+            _debug: { budget: bDbg.rows, revisedBudget: rDbg.rows, abc: aDbg.rows, duration: dDbg.rows, startDate: sDbg.rows, endDate: eDbg.rows },
             _fileCounts: fileCounts,
             _disagree: {
                 budget: disagreeFor('budget'),
+                revisedBudget: disagreeFor('revisedBudget'),
                 abc: disagreeFor('abc'),
                 duration: disagreeFor('duration'),
                 startDate: disagreeFor('startDate'),
@@ -2341,6 +2399,8 @@ const DocumentParserCore = (function () {
         L3_TEST_BLIND_ABC,
         extractBudgetSource,
         asSourceName,
+        centsPreference,
+        splitRevisedBudget,
         asCategoryName,
         asCompanyName,
         stripEdgeDebris,

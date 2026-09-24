@@ -402,6 +402,11 @@ function populateFormWithProjectData(project) {
     
     // Budget and Contractor
     document.getElementById('projectBudget').value = project.contract_price || '';
+    // Blank when never revised — an empty box IS the 'not revised' state, so ?? '' is
+    // wrong here only in that it would also blank a legitimate 0; || '' matches the
+    // other money fields in this function and 0 is not a valid contract revision.
+    const revisedEl = document.getElementById('projectRevisedPrice');
+    if (revisedEl) revisedEl.value = project.revised_contract_price || '';
     document.getElementById('projectAbc').value = project.abc || '';
     document.getElementById('projectBudgetSource').value = project.budget_source_id || '';
     document.getElementById('contractorSelect').value = project.contractor_id || '';

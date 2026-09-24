@@ -223,6 +223,19 @@
                                     </div>
                                     <div class="invalid-feedback"></div>
                                 </div>
+                                {{-- Revised Contract Price (2026-09-24). Left EMPTY unless a variation
+                                     order actually revised the contract: an empty box is what tells the
+                                     system this contract has never been revised. --}}
+                                <div class="col-md-6">
+                                    <label class="form-label" for="projectRevisedPrice">Revised Contract Price <span class="cpm-label-note">only if a variation order changed it</span></label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">₱</span>
+                                        <input type="number" step="0.01" name="revised_contract_price" id="projectRevisedPrice" class="form-control"
+                                           placeholder="Leave blank if not revised">
+                                    </div>
+                                    <div class="invalid-feedback"></div>
+                                    <div class="cpm-label-note">A change order may raise or lower the contract — both are allowed.</div>
+                                </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="projectBudgetSource">Budget Source</label>
                                     <div class="input-group">

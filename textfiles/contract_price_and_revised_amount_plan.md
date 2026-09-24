@@ -1,10 +1,10 @@
 # CONTRACT PRICE RENAME + REVISED CONTRACT PRICE FIELD
 # Parent ref: textfiles/budget_precedence_and_source_validation_plan.md (D-A0, reversed)
 # Date: September 24, 2026
-# Status: ✅ P1 BUILT 2026-09-24 (migration + backend + the mechanical rename).
-#         ⬜ P2 (the revised input and the "Revised from" marker) and ⬜ P3 (parser
-#         routing = the rewritten 58.3) are not started. D-C1 is RESOLVED in §8.5;
-#         D-C2 stands, answered "yes, as P3".
+# Status: ✅ ALL THREE PHASES BUILT 2026-09-24. P1 migration + backend, P2 the input
+#         and the display, P3 the parser routing (= the rewritten restudy 58.3).
+#         Suites: PHP 1375 / 0 · JS 294 / 294 / 0. D-C1 resolved in §8.5, D-C2 in P3.
+#         ⬜ ONE BROWSER CHECK IS OWED for P2 + P3 together — steps in §8.17.
 # Branch: phase-47-contract-price-revised. Build log: §8.
 
 ===============================================================================
@@ -316,3 +316,97 @@
 
   ➡ NEXT: P2 (the revised input, the "Revised from" marker, the report label
     already done in 8.6), then P3 (parser routing = the rewritten 58.3).
+
+  P2 ✅ BUILT 2026-09-24 — the revised amount becomes visible and editable
+
+  8.10 THE FORM
+       A "Revised Contract Price" input beside Contract Price on page 4 of the
+       create/edit modal, placeholder "Leave blank if not revised", with the note
+       "A change order may raise or lower the contract — both are allowed."
+       _create_project_modal.js prefills it on edit.
+       ⚠ THE PLACEHOLDER IS LOAD-BEARING WORDING, not decoration: an empty box is
+       how this form says "never revised". A reviewer who types the same figure in
+       to be tidy has recorded a revision that did not happen.
+
+  8.11 THE DISPLAY — and the caption bug it would have caused
+       ProjectOverviewService now also returns isContractRevised and
+       originalContractPrice. Without them the detail page's stat cell would have
+       shown the REVISED figure under the caption "Winning Bid" — which is the
+       original award and is precisely what that number is no longer. It now reads
+       "Revised · was ₱X".
+       The overview tab shows THE PAIR, because that is the one screen where both
+       matter: Contract Price keeps the award (noting it is "superseded by the
+       revision below"), and a Revised Contract Price row appears only when one
+       exists, captioned as the amount in force and the basis for Savings.
+       ⚠ Everywhere else deliberately shows the EFFECTIVE amount only — lists,
+       archived, contractor dashboard, warranty screens. A list is not the place to
+       explain a variation order.
+
+  8.12 P2 PROOF
+       PHP 1375 / 0 (was 1373) — +2 tests asserting the overview service reports the
+       revision and the original, and reports "not revised" when there is none.
+       The Blade rendering itself is browser work and is in the owed check.
+
+  ---------------------------------------------------------------------------
+
+  P3 ✅ BUILT 2026-09-24 — the parser routes a revised amount to its own box
+       This IS the rewritten restudy item 58.3. Decision 11 is implemented as
+       ROUTING, not as the precedence reorder originally specified.
+
+  8.13 WHAT CHANGED IN core
+       splitRevisedBudget(cands) pulls the 'revised'-pattern candidates out of the
+       budget pile before anything votes; they become their own pool, and its winner
+       is returned as `revisedBudget`.
+       ⚠ ONLY THE 'revised'-PATTERN CANDIDATES MOVE. A document that also states the
+       same figure generically keeps that generic candidate in the contract-price
+       pool, competing on its own merits. Verified on the measured shape: the
+       contract-price winner stays 4,204,128.84.
+       ⚠ THE CONTRACT-PRICE VOTE IS NOT REORDERED AT ALL. That is the whole reason
+       this replaced the precedence design — the corpus-wide risk that made 58.3 a
+       high-risk item simply does not arise.
+
+  8.14 D-A2 — AND THE TRAP WAS WORSE THAN THE PLAN SAID
+       The plan expected the two revised readings to tie and fall to Map insertion
+       order. They do not: the inspector sort ends in `a.value.localeCompare(b.value)`,
+       and "…196.00" sorts BEFORE "…196.77". So the cents-truncated twin was not
+       winning by accident — it was winning DETERMINISTICALLY, every time.
+       centsPreference(a, b) now runs before that fallback: same integer pesos, one
+       ending .00 and the other not, prefer the one WITH cents. Truncation loses
+       digits, it does not invent them.
+       ⚠ Narrow by construction — it returns 0 unless the peso parts match exactly,
+       so an honestly round amount that is nobody's twin is never touched.
+
+  8.15 WIRING
+       document-parser.js: revisedBudget joins the pooled-override list, the vote
+       inspector log, the empty-baseline rebuild, and the preview as a
+       "Revised Contract Price" row bound to #projectRevisedPrice.
+       ⓘ revisedBudget is POOL-ONLY. No single-file parse produces one, so the pool
+       is not overriding anything there — it is the sole source.
+
+  8.16 P3 PROOF
+       JS 294 / 294 / 0 (was 286) — +8 tests: routing out of the pool, an absent
+       revision leaving the box null, the contract-price winner not moving, the
+       split itself, the cents rule in three shapes, and the twin case end to end.
+       MUTATIONS, all red:
+         M1  drop centsPreference from the sort   1 failed
+         M2  split keeps everything in `rest`     4 failed
+         M3  isRevisedBudgetPattern always false  4 failed
+       ⚠ A DEFECT THIS ALMOST SHIPPED WITH: the first written form of
+       centsPreference had its regex backslashes eaten by the scripting layer
+       (`/^(d+).(d{2})$/`), so it silently matched nothing and returned 0 forever.
+       The suite caught it because the twin test asserts the OUTCOME end to end
+       rather than calling the helper alone. A unit test of centsPreference by
+       itself would also have caught it — but the lesson is that the end-to-end
+       assertion is what made the failure unmissable.
+
+  8.17 ⬜ BROWSER CHECK OWED — the whole of P2 and P3, in one pass
+       1. Create a project, leave Revised blank → detail shows Contract Price with
+          "Winning Bid", no Revised row.
+       2. Edit it, set a revised amount → stat cell reads "Revised · was ₱X", the
+          overview tab shows BOTH rows, and Savings moves to measure against the
+          revision.
+       3. Set a revised amount BELOW the contract price → accepted (deductive order).
+       4. Upload a document stating both an original and a revised contract amount →
+          the preview offers a Revised Contract Price row, and the Contract Price box
+          is unchanged from what it reads today.
+       5. Dashboard savings reflects the revision.

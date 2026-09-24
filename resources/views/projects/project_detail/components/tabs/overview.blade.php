@@ -61,9 +61,15 @@
         ? number_format((int) $project->estimated_workers) . ' estimated'
         : 'Not set';
 
-    $totalBudgetDisplay = $project->effectiveContractPrice() !== null
-        ? ('PHP ' . number_format((float) $project->effectiveContractPrice(), 2))
+    $totalBudgetDisplay = $project->contract_price !== null
+        ? ('PHP ' . number_format((float) $project->contract_price, 2))
         : 'Not set';
+
+    // Only rendered when a variation order actually set one — an absent row is how
+    // this screen says "never revised".
+    $revisedPriceDisplay = $project->isContractRevised()
+        ? ('PHP ' . number_format((float) $project->revised_contract_price, 2))
+        : null;
 
     $abcDisplay = $project->abc !== null
         ? ('PHP ' . number_format((float) $project->abc, 2))
@@ -160,9 +166,18 @@
                                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Contract Price</div>
                                     <div>
                                         <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $totalBudgetDisplay }}</div>
-                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">Winning bid amount</div>
+                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">Winning bid amount{{ $revisedPriceDisplay !== null ? ' — superseded by the revision below' : '' }}</div>
                                     </div>
                                 </div>
+                                @if($revisedPriceDisplay !== null)
+                                <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px dashed #e5e7eb;">
+                                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Revised Contract Price</div>
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 700; color: #111827; line-height: 1.35; word-break: break-word;">{{ $revisedPriceDisplay }}</div>
+                                        <div style="margin-top: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;">Variation order — this is the amount in force, and what Savings is measured against</div>
+                                    </div>
+                                </div>
+                                @endif
                                 @if($savingsAmount !== null)
                                 <div style="display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px dashed #e5e7eb;">
                                     <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; line-height: 1.4;">Savings</div>

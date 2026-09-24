@@ -505,19 +505,26 @@
     similarity, which also reads this figure.
 
     Files:  1 migration · app/Models/Project.php · 4 controllers · 4 services ·
-            factory · seeder · 10 Blade views · 3 JS files
+            factory · seeder · 10 Blade views · 4 JS files
             (P1 also carried the mechanical view/JS rename, so the app never shows a
             blank contract price between phases.)
+            P2 adds the Revised Contract Price input, the "Revised · was ₱X" stat
+            caption and the paired rows on the overview tab.
+            P3 adds parser routing: a document's revised amount fills the revised box
+            instead of competing for the contract price. THIS IS THE REWRITTEN
+            RESTUDY ITEM 58.3 — implemented as routing rather than the planned
+            precedence reorder, so the contract-price vote is not touched at all.
 
-    Tests:  PHP 1373 / 0 / 5292 assertions (was 1365) — the rename was proven first at
+    Tests:  PHP 1375 / 0 / 5299 assertions and JS 294 / 294 / 0 (were 1365 and 286).
+            The rename was proven first at
             1365 / 0, then the 8 new tests added, so the rename and the new behaviour
             are proven separately. tests/Feature/ContractPriceRevisedTest.php.
             ⚠ The tests that matter most are the two dashboard ones. Three selectRaw
             strings compute savings and portfolio totals, and RAW SQL IS INVISIBLE TO A
             COLUMN RENAME — without those tests, savings could have gone on measuring
             against the award forever and nobody would have seen it.
-    Browser check:      ⬜ NOT APPLICABLE TO P1 — nothing user-visible changed by
-                        design. It belongs to P2, which adds the input and the marker.
+    Browser check:      ⬜ OWED — P1 changed nothing user-visible by design, but P2 and
+                        P3 do. Five steps, listed in the plan's §8.17.
 
     ⚠⚠ DEPLOYMENT IMPACT — THE FIRST ENTRY THAT IS NOT "NONE"
         Database migration    YES — 2026_09_24_000001. Run `php artisan migrate`
