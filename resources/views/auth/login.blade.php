@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>Login | PROJ-TRACK SYSTEM</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=5">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('faviconpmu.png') }}?v=6">
+    <link rel="shortcut icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=6">
 
  
 
