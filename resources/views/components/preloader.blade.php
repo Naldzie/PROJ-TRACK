@@ -60,3 +60,42 @@
         <div class="pt-preloader__label">BUILDING YOUR DASHBOARD&hellip;</div>
     </div>
 </div>
+
+{{--
+    FAILSAFE (inline, 2026-09-27): this <script> is the reason the overlay can
+    never trap the user on a dark screen. The external preloader.js hides the
+    overlay on DOMContentLoaded — but if that file 404s (wrong APP_URL on a
+    deploy), a CDN script ahead of it hangs, or any listener throws first,
+    DOMContentLoaded is late or never fires for us. This inline block therefore
+    hides on DOMContentLoaded AND on window load AND on a hard 5 s timeout that
+    fires even while parsing is still blocked. It only adds the same
+    --hidden class the stylesheet already honours, so when preloader.js IS
+    healthy the two hides are idempotent no-ops of each other. Keep this
+    dependency-free (no jQuery, no fetch): it must run when everything else
+    is broken. Marker string `pt-preloader-failsafe` is asserted by
+    UiPolishLayoutTest — do not rename it without updating the test.
+--}}
+<script>
+(function () {
+    function ptFailsafeHide() {
+        var el = document.getElementById('pt-preloader');
+        if (!el || el.classList.contains('pt-preloader--hidden')) return;
+        el.classList.add('pt-preloader--hidden');
+        window.setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+        }, 600);
+    }
+    // pt-preloader-failsafe
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+            window.setTimeout(ptFailsafeHide, 600);
+        });
+    } else {
+        window.setTimeout(ptFailsafeHide, 600);
+    }
+    window.addEventListener('load', function () {
+        window.setTimeout(ptFailsafeHide, 0);
+    });
+    window.setTimeout(ptFailsafeHide, 5000);
+})();
+</script>
