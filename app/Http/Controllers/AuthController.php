@@ -299,9 +299,12 @@ class AuthController extends Controller
                         bc.close();
                     } catch (e) { /* BroadcastChannel unsupported */ }
 
-                    // Backup channel 3: sessionStorage (same-origin popup shares it).
+                    // Backup channel 3: localStorage (shared across tabs of this
+                    // origin — sessionStorage is per-tab, so the popup writing
+                    // there would never reach the opener). The login tab polls
+                    // this key (see login.blade.php).
                     try {
-                        sessionStorage.setItem('google-auth-result', JSON.stringify(result));
+                        localStorage.setItem('google-auth-result', JSON.stringify(result));
                     } catch (e) { /* storage unavailable */ }
 
                     if (!window.opener) {
@@ -320,7 +323,10 @@ class AuthController extends Controller
                         }
                     }
 
-                    closePopup();
+                    // Delayed close: the backup channels dispatch asynchronously,
+                    // so closing synchronously can destroy them before the login
+                    // tab receives anything.
+                    window.setTimeout(closePopup, 800);
                 })();
             </script>
         </body>
