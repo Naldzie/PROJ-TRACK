@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <title>Login | PROJ-TRACK SYSTEM</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('faviconpmu.png') }}?v=6">
-    <link rel="shortcut icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=6">
+    <link rel="icon" type="image/png" href="{{ asset('faviconpmu.png') }}?v=5">
 
  
 
@@ -1098,21 +1097,22 @@ try {
     bc.onmessage = (e) => handleAuthResult(e.data);
 } catch (e) { /* BroadcastChannel unsupported */ }
 
-/* Fallback channel: the popup writes the result into sessionStorage, which is
-   shared with this (opener) tab, so the main tab still redirects to the
-   dashboard even if postMessage or window.close() fails on mobile. */
+/* Fallback channel: the popup writes the result into localStorage, which is
+   shared across the tabs of this origin (sessionStorage is per-tab, so the
+   popup writing there would never reach this tab), so the main tab still
+   redirects to the dashboard even if postMessage or window.close() fails. */
 (function () {
     const KEY = 'google-auth-result';
-    try { sessionStorage.removeItem(KEY); } catch (e) { /* ignore */ }
+    try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
 
     const poll = setInterval(() => {
         let raw = null;
-        try { raw = sessionStorage.getItem(KEY); } catch (e) { /* ignore */ }
+        try { raw = localStorage.getItem(KEY); } catch (e) { /* ignore */ }
         if (!raw) return;
 
         let d = null;
         try {
-            sessionStorage.removeItem(KEY);
+            localStorage.removeItem(KEY);
             d = JSON.parse(raw);
         } catch (e) { return; }
 
