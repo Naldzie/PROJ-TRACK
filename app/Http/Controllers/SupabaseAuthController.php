@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Staff;
+use App\Models\Admin;
+use App\Models\Contractor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -187,11 +190,70 @@ class SupabaseAuthController extends Controller
         }
 
         /*
+         * Sync the Google profile data Supabase verified for us.
+         *
+         * Supabase's /user response carries the provider profile in
+         * user_metadata (Google maps to full_name + avatar_url). Without
+         * this, the seeded names ("System Administrator") and the default
+         * silhouette photo stay forever, because nothing else writes them:
+         * the old Socialite login synced the name, and the avatar only ever
+         * arrived via the calendar-connect flow.
+         */
+        $metadata = $supabaseUser['user_metadata'] ?? [];
+        $fullName = $metadata['full_name'] ?? $metadata['name'] ?? null;
+        $avatarUrl = $metadata['avatar_url'] ?? $metadata['picture'] ?? null;
+
+        $updates = [];
+        if (is_string($fullName) && trim($fullName) !== '') {
+            $updates['name'] = trim($fullName);
+        }
+        if (is_string($avatarUrl) && trim($avatarUrl) !== '') {
+            // Never clobber a manually uploaded photo (a storage path): only
+            // fill an empty slot or refresh a previous Google (http) avatar.
+            $current = $user->profile_photo;
+            if (!$current || str_starts_with($current, 'http')) {
+                $updates['profile_photo'] = trim($avatarUrl);
+            }
+        }
+        if ($updates !== []) {
+            $user->update($updates);
+        }
+
+        /*
          * Start the normal Laravel authenticated session.
          */
         Auth::login($user, true);
 
         $request->session()->regenerate();
+
+        // Keep the role tables in step with the Google name, mirroring the
+        // old Socialite login — the dashboard hero and the profile page read
+        // admin/staff/contractor names, not users.name.
+        if ($fullName && $user->role === 'admin') {
+            Admin::updateOrCreate(
+                ['user_id' => $user->id],
+                ['full_name' => $fullName]
+            );
+        }
+        if ($fullName && $user->role === 'staff') {
+            $nameParts = explode(' ', $fullName);
+            // firstOrCreate (not updateOrCreate): staff_id must stay stable —
+            // regenerating it on every login would rename the staffer's ID.
+            $staff = Staff::firstOrCreate(
+                ['user_id' => $user->id],
+                ['staff_id' => 'STAFF-' . rand(1000, 9999)]
+            );
+            $staff->update([
+                'first_name' => $nameParts[0] ?? null,
+                'last_name' => count($nameParts) > 1 ? end($nameParts) : null,
+            ]);
+        }
+        if ($fullName && $user->role === 'contractor') {
+            Contractor::updateOrCreate(
+                ['user_id' => $user->id],
+                ['contractor_name' => $fullName]
+            );
+        }
 
         /*
          * Redirect according to the existing PROJ-TRACK role.
