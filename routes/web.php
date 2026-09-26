@@ -40,6 +40,13 @@ use App\Http\Controllers\Admin\RatingController;
 use App\Http\Controllers\Staff\EmailController as StaffEmailController;
 use App\Http\Controllers\Contractor\EmailController as ContractorEmailController;
 use App\Http\Controllers\ReportExportController;
+use App\Http\Controllers\SupabaseAuthController;
+
+Route::get('/auth/google', [SupabaseAuthController::class, 'redirect'])
+    ->name('google.login');
+
+Route::get('/auth/supabase/callback', [SupabaseAuthController::class, 'callback'])
+    ->name('supabase.callback');
 /*
 |--------------------------------------------------------------------------
 | Public Routes
@@ -54,11 +61,6 @@ Route::get('/login', function () {
     return view('auth.login');
 })->name('login');
 
-// Google login redirect
-Route::get('/auth/google', [AuthController::class, 'redirectToGoogle'])->name('google.login');
-
-// Google callback
-Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('google.callback');
 
 // Public warranty overview — viewable without login (read-only table, no files/actions)
 Route::get('/warranty/preview', [WarrantyController::class, 'publicPreview'])->name('warranty.preview.public');
