@@ -43,9 +43,9 @@ class StaffController extends Controller
                 // ✅ Custom validation
                 function ($attribute, $value, $fail) {
 
-                    // 🔒 Only allow my.cspc.edu.ph
-                    if (!str_ends_with($value, '@my.cspc.edu.ph')) {
-                        $fail('Only @my.cspc.edu.ph emails are allowed.');
+                    // 🔒 Only allow my.cspc.edu.ph and cspc.edu.ph
+                    if (!str_ends_with($value, '@my.cspc.edu.ph') && !str_ends_with($value, '@cspc.edu.ph')) {
+                        $fail('Only @my.cspc.edu.ph or @cspc.edu.ph emails are allowed.');
                         return;
                     }
 
@@ -116,6 +116,14 @@ class StaffController extends Controller
         }
 
         $user = User::findOrFail($id);
+
+        // ❗ Disabled accounts keep their role — enable first before changing it
+        if (!$user->is_active) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot change role of a disabled account. Enable it first.'
+            ], 403);
+        }
 
         $user->update([
             'role' => $request->role,

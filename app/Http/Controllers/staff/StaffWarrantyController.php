@@ -54,10 +54,25 @@ class StaffWarrantyController extends Controller
         return back()->with('success', 'Warranty added successfully');
     }
 
-    public function preview()
+    public function preview(Request $request)
     {
+        // No server-side filtering: every row renders with a data-year and the
+        // board loops years client-side (no reload, Present never stops).
+        // Undated rows belong to every year so they are never hidden.
         $warranties = Warranty::with(['project', 'contractor'])->latest()->get();
 
-        return view('warranty.preview', compact('warranties'));
+        // Same side year list + ?year=YYYY filter as Admin\WarrantyController.
+        $years = $warranties->map(fn ($w) => $w->completion_date ? \Carbon\Carbon::parse($w->completion_date)->year : null)
+            ->filter()->unique()->sort()->values();
+
+        $selectedYear = is_numeric($request->query('year')) ? (int) $request->query('year') : null;
+        if ($selectedYear && !$years->contains($selectedYear)) {
+            $selectedYear = null;
+        }
+        if (!$selectedYear) {
+            $selectedYear = $years->first();
+        }
+
+        return view('warranty.preview', compact('warranties', 'years', 'selectedYear'));
     }
 }

@@ -116,6 +116,7 @@
 
         /* ---------- Header (centered institutional title) ---------- */
         .preview-title {
+            position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -126,6 +127,19 @@
             background: #fff;
             color: var(--text-main);
             border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Big year stamp at the side of the header (shown when a year is selected). */
+        .big-year {
+            position: absolute;
+            right: 22px;
+            top: 50%;
+            transform: translateY(-50%) rotate(-2deg);
+            font-size: 44px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            color: #c0392b;
         }
 
         .title-left { display: flex; align-items: center; justify-content: center; gap: 12px; }
@@ -228,7 +242,7 @@
         tbody { transition: opacity 0.3s ease; }
 
         tbody tr { transition: background 0.15s ease; }
-        tbody tr[data-page]:nth-of-type(even) { background: var(--zebra); }
+        tbody tr:nth-of-type(even) { background: var(--zebra); }
         tbody tr.row-hidden { display: none; }
 
         .project-name { font-weight: 700; line-height: 1.35; }
@@ -248,25 +262,6 @@
         }
 
         .cell-empty { color: var(--border-light); text-align: center; }
-
-        /* Warranty due / expiring indicator (WarrantyMonitor) */
-        .watch-pill {
-            display: block;
-            width: fit-content;
-            margin: 4px auto 0;
-            padding: 1px 8px;
-            border-radius: 999px;
-            font-size: 10.5px;
-            font-weight: 700;
-            white-space: nowrap;
-        }
-        .watch-pill.expired  { background: #fee2e2; color: #b91c1c; }
-        .watch-pill.expiring,
-        .watch-pill.due      { background: #fef3c7; color: #b45309; }
-        .watch-pill.passed   { background: #f1f5f9; color: #64748b; font-weight: 600; }
-        @media print {
-            .watch-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        }
 
         .empty-state {
             padding: 60px 24px;
@@ -288,6 +283,7 @@
             body { padding: 12px; }
             th, td { padding: 6px 8px; }
             .preview-title { padding: 14px; }
+            .big-year { position: static; transform: none; font-size: 30px; }
         }
     </style>
 </head>
@@ -308,10 +304,12 @@
     </div>
 
     @php
-        // Due / expiring indicators (restudy F-8 / P-7, 2026-09-21): the SAME rules
-        // as the daily WarrantyReminder, from App\Services\WarrantyMonitor
-        $warrantyMonitor = app(\App\Services\WarrantyMonitor::class);
-        $rows = $warranties->map(function ($w) use ($warrantyMonitor) {
+        // Year side filter defaults (controllers pass both; kept safe for any other caller).
+        $years = $years ?? collect();
+        $selectedYear = $selectedYear ?? null;
+
+        // Warranty rows for the board (status pills removed — dates only).
+        $rows = $warranties->map(function ($w) {
             $contractorName = $w->contractor ? $w->contractor->company_name : 'N/A';
             $completionDate = $w->completion_date ? \Carbon\Carbon::parse($w->completion_date) : null;
             $warrantyEnd = $w->end_date ? \Carbon\Carbon::parse($w->end_date) : null;
@@ -320,6 +318,7 @@
             return [
                 'project' => $w->project->title,
                 'academic_year' => $academicYear,
+                'year' => $completionDate ? $completionDate->year : null,
                 'contractor' => $contractorName,
                 // Existing project data: budget from the effective contract price, location defaults to CSPC
                 'budget' => $w->project->effectiveContractPrice() !== null ? '₱ ' . number_format((float) $w->project->effectiveContractPrice(), 2) : 'N/A',
@@ -329,33 +328,28 @@
                 'mid_year' => $w->mid_year_inspection ? \Carbon\Carbon::parse($w->mid_year_inspection)->format('F j, Y') : null,
                 'final' => $w->final_inspection ? \Carbon\Carbon::parse($w->final_inspection)->format('F j, Y') : null,
                 'remarks' => $w->remarks,
-                'watch' => $warrantyMonitor->statusFor($w),
             ];
         });
 
         $perPage = 10;
-        $totalPages = max(1, (int) ceil($rows->count() / $perPage));
     @endphp
 
     <div class="preview-container">
         <div class="preview-title">
+            @if($selectedYear)
+                <span class="big-year" id="big-year">{{ $selectedYear }}</span>
+            @endif
             <div class="title-left">
                 <div>
                     <h1>Camarines Sur Polytechnic Colleges Projects Ongoing Records</h1>
-                    <span class="meta">{{ $warranties->count() }} records &middot; Generated {{ now()->format('F d, Y g:i A') }}</span>
+                    <span class="meta" id="meta-line">{{ $warranties->count() }} records{{ $selectedYear ? ' · Year ' . $selectedYear : '' }} &middot; Generated {{ now()->format('F d, Y g:i A') }}</span>
                 </div>
             </div>
 
-            @if($totalPages > 1)
-                <div class="page-indicator">
-                    <span class="count-text" id="page-count-text">Showing 1&ndash;{{ min($perPage, $rows->count()) }} of {{ $rows->count() }}</span>
-                    <div class="page-dots" id="page-dots">
-                        @for($p = 1; $p <= $totalPages; $p++)
-                            <span class="page-dot {{ $p === 1 ? 'is-active' : '' }}" data-dot="{{ $p }}"></span>
-                        @endfor
-                    </div>
-                </div>
-            @endif
+            <div class="page-indicator" id="page-indicator" style="display:none">
+                <span class="count-text" id="page-count-text"></span>
+                <div class="page-dots" id="page-dots"></div>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -379,7 +373,7 @@
                 </thead>
                 <tbody id="warranty-tbody">
                     @forelse($rows as $r)
-                        <tr data-page="{{ intdiv($loop->index, $perPage) + 1 }}" class="{{ $loop->index < $perPage ? '' : 'row-hidden' }}">
+                        <tr data-year="{{ $r['year'] ?? '' }}">
                             <td class="col-num">{{ $loop->iteration }}</td>
                             <td class="project-cell">
                                 <div class="project-name">{{ $r['project'] }}</div>
@@ -393,12 +387,10 @@
                             <td class="date-cell">{{ $r['completion_date'] ?? '—' }}</td>
                             <td class="period-cell">
                                 {{ $r['warranty_period'] ?? '—' }}
-                                @include('warranty.partials.watch_pill', ['check' => $r['watch']['expiry']])
                             </td>
                             <td class="insp-cell">
                                 @if($r['mid_year'])
                                     {{ $r['mid_year'] }}
-                                    @include('warranty.partials.watch_pill', ['check' => $r['watch']['mid_year']])
                                 @else
                                     <span class="cell-empty">—</span>
                                 @endif
@@ -406,7 +398,6 @@
                             <td class="insp-cell">
                                 @if($r['final'])
                                     {{ $r['final'] }}
-                                    @include('warranty.partials.watch_pill', ['check' => $r['watch']['final']])
                                 @else
                                     <span class="cell-empty">—</span>
                                 @endif
@@ -416,7 +407,7 @@
                     @empty
                         <tr>
                             <td colspan="10">
-                                <div class="empty-state">No warranty records yet.</div>
+                                <div class="empty-state">{{ $selectedYear ? 'No warranty records for ' . $selectedYear . '.' : 'No warranty records yet.' }}</div>
                             </td>
                         </tr>
                     @endforelse
@@ -430,40 +421,121 @@
     </button>
 
     <script>
+        /* Seamless year loop: the board opens on the earliest year and cycles
+           2025 -> 2026 -> ... entirely client-side — no page reload, so Present
+           (fullscreen + auto-scroll) never stops. A year advances only after
+           ALL of its record pages have been shown (same 30s cadence). Pausing
+           Present stops the year loop too (pages wrap to page 1). Undated rows
+           (data-year="") belong to every year so they are never hidden. */
         (function () {
-            var perPage = {{ $perPage }};
-            var totalPages = {{ $totalPages }};
-            var totalRecords = {{ $rows->count() }};
-            if (totalPages <= 1) return;
+            var PER_PAGE = {{ $perPage }};
+            var ROTATE_MS = 30000;
+            var yearCycle = {!! json_encode($years->values()->all()) !!};
+            var selectedYear = {!! json_encode($selectedYear) !!};
+            var generatedStamp = {!! json_encode('Generated ' . now()->format('F d, Y g:i A')) !!};
 
             var tbody = document.getElementById('warranty-tbody');
-            var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-page]'));
+            var allRows = Array.prototype.slice.call(tbody.querySelectorAll('tr[data-year]'));
+            var stamp = document.getElementById('big-year');
+            var meta = document.getElementById('meta-line');
+            var indicator = document.getElementById('page-indicator');
             var countText = document.getElementById('page-count-text');
-            var dots = Array.prototype.slice.call(document.querySelectorAll('.page-dot'));
-            var currentPage = 1;
+            var dotsBox = document.getElementById('page-dots');
 
-            function showPage(page) {
-                tbody.style.opacity = 0;
-                setTimeout(function () {
-                    rows.forEach(function (row) {
-                        row.classList.toggle('row-hidden', parseInt(row.dataset.page, 10) !== page);
-                    });
-                    var start = (page - 1) * perPage + 1;
-                    var end = Math.min(page * perPage, totalRecords);
-                    countText.textContent = 'Showing ' + start + '\u2013' + end + ' of ' + totalRecords;
-                    dots.forEach(function (dot) {
-                        dot.classList.toggle('is-active', parseInt(dot.dataset.dot, 10) === page);
-                    });
-                    tbody.style.opacity = 1;
-                    // Each rotated page starts at the top for the auto-scroll reader.
-                    if (typeof window.__warrantyAutoScrollReset === 'function') window.__warrantyAutoScrollReset();
-                }, 250);
+            var visibleRows = [];
+            var currentPage = 1;
+            var yearIdx = 0;
+
+            // Present mode owns this flag (set by the presentation script below).
+            function presentOn() {
+                return window.__warrantyPresentOn !== false;
+            }
+            function totalPages() {
+                return Math.max(1, Math.ceil(visibleRows.length / PER_PAGE));
+            }
+            function rowsForYear(y) {
+                return allRows.filter(function (row) {
+                    return row.dataset.year === '' || parseInt(row.dataset.year, 10) === y;
+                });
             }
 
+            function paintMeta(y) {
+                if (!meta) return;
+                var n = visibleRows.length;
+                var label = n + (n === 1 ? ' record' : ' records');
+                if (y !== null && y !== undefined) label += ' \u00B7 Year ' + y;
+                meta.textContent = label + ' \u00B7 ' + generatedStamp;
+            }
+
+            function paintPage() {
+                var tp = totalPages();
+                var start = (currentPage - 1) * PER_PAGE;
+                allRows.forEach(function (row) { row.classList.add('row-hidden'); });
+                visibleRows.slice(start, start + PER_PAGE).forEach(function (row) {
+                    row.classList.remove('row-hidden');
+                });
+                if (tp > 1) {
+                    indicator.style.display = '';
+                    countText.textContent = 'Showing ' + (start + 1) + '\u2013' + Math.min(start + PER_PAGE, visibleRows.length) + ' of ' + visibleRows.length;
+                    dotsBox.innerHTML = '';
+                    for (var p = 1; p <= tp; p++) {
+                        var d = document.createElement('span');
+                        d.className = 'page-dot' + (p === currentPage ? ' is-active' : '');
+                        dotsBox.appendChild(d);
+                    }
+                } else {
+                    indicator.style.display = 'none';
+                }
+                tbody.style.opacity = 1;
+            }
+
+            function renderPage() {
+                tbody.style.opacity = 0;
+                setTimeout(paintPage, 250);
+            }
+
+            function showYear(i) {
+                if (!yearCycle.length) {
+                    // No dated years: one board with everything, no stamp, no loop.
+                    visibleRows = allRows.slice();
+                    currentPage = 1;
+                    if (stamp) stamp.style.display = 'none';
+                    paintMeta(null);
+                    renderPage();
+                    return;
+                }
+                yearIdx = ((i % yearCycle.length) + yearCycle.length) % yearCycle.length;
+                var y = yearCycle[yearIdx];
+                visibleRows = rowsForYear(y);
+                visibleRows.forEach(function (row, k) {
+                    var cell = row.querySelector('.col-num');
+                    if (cell) cell.textContent = k + 1;
+                });
+                currentPage = 1;
+                if (stamp) { stamp.textContent = y; stamp.style.display = ''; }
+                paintMeta(y);
+                renderPage();
+                // Each year starts at the top for the auto-scroll reader.
+                if (typeof window.__warrantyAutoScrollReset === 'function') window.__warrantyAutoScrollReset();
+            }
+
+            // Start on the requested year, else the earliest.
+            var startIdx = yearCycle.indexOf(selectedYear);
+            showYear(startIdx === -1 ? 0 : startIdx);
+
             setInterval(function () {
-                currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
-                showPage(currentPage);
-            }, 30000);
+                if (currentPage >= totalPages()) {
+                    // Whole year shown: loop to the next year while Present is on.
+                    if (presentOn() && yearCycle.length > 1) {
+                        showYear(yearIdx + 1);
+                        return;
+                    }
+                    currentPage = 1;
+                } else {
+                    currentPage++;
+                }
+                renderPage();
+            }, ROTATE_MS);
         })();
 
         /* Hands-free presentation mode: reads down the records, pans right
@@ -572,6 +644,8 @@
             }
             function paintToggle() {
                 var on = autoEnabled && !motionBlocked;
+                // Year rotation follows Present mode (read by the rotation script above).
+                window.__warrantyPresentOn = on;
                 var full = isFull();
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
                 btn.title = on

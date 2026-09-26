@@ -1092,16 +1092,19 @@ document.getElementById('addModal')?.addEventListener('shown.bs.modal', function
     // Auto-calculate when completion date changes
     completionInput.addEventListener('change', autoCalculateDates);
 
-    // Auto-populate contractor when project changes
+    // Auto-fill contractor from the selected project. Every project change
+    // overwrites the contractor, so switching projects never leaves a stale
+    // contractor behind; also runs on modal open for the initial selection.
     const projectSelect = document.getElementById('modalProjectId');
     const contractorSelect = document.getElementById('modalContractorId');
-    projectSelect.addEventListener('change', function() {
-        const selectedOption = this.options[this.selectedIndex];
-        const contractorId = selectedOption.dataset.contractor;
-        if (contractorId && !contractorSelect.value) {
-            contractorSelect.value = contractorId;
-        }
-    });
+    function syncContractorFromProject() {
+        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+        const contractorId = selectedOption ? selectedOption.dataset.contractor : '';
+        // Only set values present in the dropdown; otherwise clear the stale one.
+        contractorSelect.value = (contractorId && contractorSelect.querySelector(`option[value="${contractorId}"]`)) ? contractorId : '';
+    }
+    projectSelect.addEventListener('change', syncContractorFromProject);
+    syncContractorFromProject();
 });
 
 let currentWarrantyData = {};

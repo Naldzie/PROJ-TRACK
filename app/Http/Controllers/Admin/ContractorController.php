@@ -31,11 +31,12 @@ class ContractorController extends Controller
         return view('admin.contractormanagement', compact('contractors', 'recentActivity'));
     }
 
-    // ✅ Add contractor (email only)
+    // ✅ Add contractor (email + company name)
     public function store(Request $request)
     {
         $request->validate([
             'email' => 'required|email|unique:users,email',
+            'company_name' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
@@ -44,7 +45,7 @@ class ContractorController extends Controller
             $user = User::create([
                 'role' => 'contractor',
                 'email' => $request->email,
-                'name' => explode('@', $request->email)[0],
+                'name' => $request->company_name,
                 'is_active' => true,
             ]);
 
@@ -57,6 +58,8 @@ class ContractorController extends Controller
             Contractor::create([
                 'user_id' => $user->id,
                 'contractor_id' => $contractorId,
+                'company_name' => $request->company_name,
+                'contractor_name' => $request->company_name,
             ]);
 
             Mail::to($user->email)->send(new ContractorAccountMail($user->email));
@@ -66,7 +69,7 @@ class ContractorController extends Controller
             ActivityLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'contractor_created',
-                'description' => 'Added new contractor — ' . $user->email,
+                'description' => 'Added new contractor — ' . $request->company_name . ' (' . $user->email . ')',
                 'ip_address' => $request->ip(),
                 'visibility' => 'admin_only',
             ]);

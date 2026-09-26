@@ -26,6 +26,9 @@ Thumbs.db
 # Project-specific: old source code backups
 /backup
 
+# Mermaid documentation diagrams
+*.mmd
+
 # Temporary / generated artifacts
 /latesterd.json
 /runtimeerrorfixver1summary).txt

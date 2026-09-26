@@ -68,19 +68,41 @@ class WarrantyController extends Controller
         return back()->with('success', 'Warranty deleted successfully');
     }
 
-    public function preview()
+    public function preview(Request $request)
     {
-        $warranties = Warranty::with(['project', 'contractor'])->latest()->get();
+        [$warranties, $years, $selectedYear] = $this->previewData($request);
 
-        return view('warranty.preview', compact('warranties'));
+        return view('warranty.preview', compact('warranties', 'years', 'selectedYear'));
     }
 
     // Public warranty overview — no login required. Renders the same
     // read-only overview table (no file downloads, no write actions).
-    public function publicPreview()
+    public function publicPreview(Request $request)
+    {
+        [$warranties, $years, $selectedYear] = $this->previewData($request);
+
+        return view('warranty.preview', compact('warranties', 'years', 'selectedYear'));
+    }
+
+    // Shared year data for the preview board. The board opens on the earliest
+    // year (e.g. 2025) and loops years CLIENT-SIDE with no reload, so Present
+    // never stops. Every row renders with a data-year; undated rows belong to
+    // every year so they are never hidden.
+    private function previewData(Request $request): array
     {
         $warranties = Warranty::with(['project', 'contractor'])->latest()->get();
 
-        return view('warranty.preview', compact('warranties'));
+        $years = $warranties->map(fn ($w) => $w->completion_date ? \Carbon\Carbon::parse($w->completion_date)->year : null)
+            ->filter()->unique()->sort()->values();
+
+        $selectedYear = is_numeric($request->query('year')) ? (int) $request->query('year') : null;
+        if ($selectedYear && !$years->contains($selectedYear)) {
+            $selectedYear = null;
+        }
+        if (!$selectedYear) {
+            $selectedYear = $years->first();
+        }
+
+        return [$warranties, $years, $selectedYear];
     }
 }

@@ -152,7 +152,7 @@ class NotificationMonitoringTest extends TestCase
         $this->assertSame(['final'], $kinds, 'only the final inspection (9 days out); the passed mid-year date sends nothing');
     }
 
-    public function test_warranty_record_page_shows_the_due_and_expiring_pills(): void
+    public function test_warranty_record_page_shows_dates_without_status_pills(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-09-21 07:00:00'));
         $project = $this->project(['status' => 'Completed']);
@@ -162,11 +162,15 @@ class NotificationMonitoringTest extends TestCase
             'mid_year_inspection' => '2026-09-01', 'final_inspection' => '2026-09-30', 'status' => 'Active',
         ]);
 
+        // Status pills removed from the board (user decision): dates only.
         $this->actingAs($this->admin)->get(route('admin.warranty.preview'))
             ->assertOk()
-            ->assertSee('Warranty ends in 19 days')
-            ->assertSee('Inspection in 9 days')
-            ->assertSee('Date passed');
+            ->assertSee('October 10, 2026')
+            ->assertSee('September 1, 2026')
+            ->assertSee('September 30, 2026')
+            ->assertDontSee('Warranty ends in 19 days')
+            ->assertDontSee('Inspection in 9 days')
+            ->assertDontSee('Date passed');
     }
 
     // === NOT YET STARTED ===

@@ -93,7 +93,7 @@ class AuthController extends Controller
             // ── Domain check (admin/staff must use CSPC email) ──────────────
             $domain = substr(strrchr($email, "@"), 1);
 
-            if (in_array($user->role, ['admin', 'staff']) && $domain !== 'my.cspc.edu.ph') {
+            if (in_array($user->role, ['admin', 'staff']) && $domain !== 'my.cspc.edu.ph' && $domain !== 'cspc.edu.ph') {
                 return $this->failedAttempt('Only CSPC email allowed.');
             }
 

@@ -210,6 +210,9 @@ tr.row-disabled { opacity: 0.55; }
   height: 31px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--surface); color: var(--ink-soft); font-size: 11px; padding: 0 8px;
 }
+.role-select:disabled {
+  opacity: .5; cursor: not-allowed; background: var(--canvas);
+}
 
 .side-stack { display: grid; gap: 14px; }
 .side-section { padding: 18px; }
@@ -473,7 +476,7 @@ dialog::backdrop { background: oklch(24% .035 273 / .38); }
             <td><span class="email">{{ $user->email }}</span></td>
             <td><span class="status {{ $user->is_active ? 'active' : 'disabled' }}">{{ $user->is_active ? 'Active' : 'Disabled' }}</span></td>
             <td>
-              <select class="role-select changeRole" data-id="{{ $user->id }}" aria-label="Change role">
+              <select class="role-select changeRole" data-id="{{ $user->id }}" aria-label="Change role" {{ $user->is_active ? '' : 'disabled title=Disabled accounts keep their role — enable the account first.' }}>
                 <option value="admin" {{ $user->role == 'admin' ? 'selected' : '' }}>Admin</option>
                 <option value="staff" {{ $user->role == 'staff' ? 'selected' : '' }}>Staff</option>
               </select>
@@ -566,7 +569,7 @@ dialog::backdrop { background: oklch(24% .035 273 / .38); }
     <div class="dialog-body">
       <div class="field">
         <label for="emailInput">Work email</label>
-        <input id="emailInput" type="email" name="email" required placeholder="name@my.cspc.edu.ph" pattern="^[a-zA-Z0-9._%+-]+@my\.cspc\.edu\.ph$">
+        <input id="emailInput" type="email" name="email" required placeholder="name@my.cspc.edu.ph or name@cspc.edu.ph" pattern="^[a-zA-Z0-9._%+-]+@(my\.)?cspc\.edu\.ph$" title="Only @my.cspc.edu.ph or @cspc.edu.ph emails are allowed.">
       </div>
       <div class="field">
         <label for="roleInput">Workspace role</label>
@@ -793,10 +796,10 @@ document.addEventListener('change', function (e) {
         Swal.fire({ title: "Success", text: data.message, icon: "success", timer: 1500, showConfirmButton: false })
           .then(() => location.reload());
       } else {
-        Swal.fire("Error", "Role update failed", "error");
+        Swal.fire("Error", data.message || "Role update failed", "error").then(() => location.reload());
       }
     })
-    .catch(() => Swal.fire("Error", "Role update failed", "error"));
+    .catch(() => Swal.fire("Error", "Role update failed", "error").then(() => location.reload()));
   }
 });
 

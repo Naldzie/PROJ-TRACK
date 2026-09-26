@@ -551,6 +551,10 @@ dialog::backdrop { background: oklch(24% .035 273 / .38); }
     @csrf
     <div class="dialog-body">
       <div class="field">
+        <label for="companyInput">Company name</label>
+        <input id="companyInput" type="text" name="company_name" required maxlength="255" placeholder="ABC Construction Corp.">
+      </div>
+      <div class="field">
         <label for="emailInput">Email address</label>
         <input id="emailInput" type="email" name="email" required placeholder="email@example.com">
       </div>
