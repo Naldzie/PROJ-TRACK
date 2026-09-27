@@ -391,38 +391,58 @@ class Project extends Model
     /**
      * Generate a new unique project code with format PRJ-YYYY-XXX
      */
-    public static function generateCode()
-    {
-        $year = now()->year;
-        $prefix = "PRJ-{$year}-";
-        
-        // Get all existing codes for this year and find the highest number
-        $existingCodes = self::where('code', 'like', "{$prefix}%")->pluck('code');
-        $maxNumber = 0;
-        
-        foreach ($existingCodes as $code) {
-            if (preg_match('/PRJ-\d{4}-(\d+)/', $code, $matches)) {
-                $number = (int)$matches[1];
-                if ($number > $maxNumber) {
-                    $maxNumber = $number;
-                }
+public static function generateCode()
+{
+    $year = now()->year;
+    $prefix = "PRJ-{$year}-";
+
+    $existingCodes = self::where(
+        'code',
+        'like',
+        $prefix . '%'
+    )->pluck('code');
+
+    $maxNumber = 0;
+
+    foreach ($existingCodes as $existingCode) {
+
+        if (
+            preg_match(
+                '/^PRJ-\d{4}-(\d+)$/',
+                $existingCode,
+                $matches
+            )
+        ) {
+            $number = (int) $matches[1];
+
+            if ($number > $maxNumber) {
+                $maxNumber = $number;
             }
         }
-        
-        // Generate the next code (format: PRJ-YYYY-NNNNN with 5 digits)
-        $count = $maxNumber + 1;
-        
-        // Ensure it's unique (in case of concurrent requests)
-        do {
-            $code = sprintf('PRJ-%d-%05d', $year, $count);
-            $exists = self::where('code', $code)->exists();
-            if ($exists) {
-                $count++;
-            }
-        } while ($exists);
-        
-        return $code;
     }
+
+    $nextNumber = $maxNumber + 1;
+
+    do {
+        $code = sprintf(
+            'PRJ-%d-%05d',
+            $year,
+            $nextNumber
+        );
+
+        $exists = self::where(
+            'code',
+            $code
+        )->exists();
+
+        if ($exists) {
+            $nextNumber++;
+        }
+
+    } while ($exists);
+
+    return $code;
+}
     protected static function booted()
 {
     // CREATE
