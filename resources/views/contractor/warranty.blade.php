@@ -732,7 +732,7 @@
                             data-remarks="{{ addslashes($w->remarks ?? '') }}"
                             onclick="viewWarranty(
                                 this,
-                                '{{ asset('storage/'.$w->file_path) }}',
+                                '{{ route('contractor.warranty.file', $w->id) }}',
                                 '{{ addslashes($w->title ?? 'Warranty') }}',
                                 '{{ addslashes($w->project->title) }}',
                                 '{{ addslashes($contractorName) }}',

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Contractor;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use App\Models\Warranty;
 use App\Models\Project;
 
@@ -68,5 +69,28 @@ class ContractorWarrantyController extends Controller
         ]);
 
         return back()->with('success', 'Warranty added successfully');
+    }
+
+    // Stream the warranty file inline (iframe preview + "Open file").
+    // Served through the app via the public disk — NOT via asset('storage/...'),
+    // so it works even when the public/storage symlink is missing or broken.
+    // Contractors may only open files of their own projects (mirrors store()).
+    public function file($id)
+    {
+        $warranty = Warranty::findOrFail($id);
+
+        $contractor = Auth::user()->contractor;
+
+        if (!$contractor || !Project::where('id', $warranty->project_id)
+                ->where('contractor_id', $contractor->id)
+                ->exists()) {
+            abort(403, 'Unauthorized project access');
+        }
+
+        if (!$warranty->file_path || !Storage::disk('public')->exists($warranty->file_path)) {
+            abort(404, 'Warranty file not found. It may have been deleted or was never uploaded to this server.');
+        }
+
+        return Storage::disk('public')->response($warranty->file_path);
     }
 }

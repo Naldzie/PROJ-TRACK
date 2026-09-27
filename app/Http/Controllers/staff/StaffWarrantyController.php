@@ -4,6 +4,7 @@ namespace App\Http\Controllers\staff;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use App\Models\Warranty;
 use App\Models\Project;
 use App\Models\Contractor;
@@ -52,6 +53,22 @@ class StaffWarrantyController extends Controller
         ]);
 
         return back()->with('success', 'Warranty added successfully');
+    }
+
+    // Stream the warranty file inline (iframe preview + "Open file").
+    // Served through the app via the public disk — NOT via asset('storage/...'),
+    // so it works even when the public/storage symlink is missing or broken
+    // (e.g. a Windows-created symlink deployed to Azure's Linux container,
+    // where every /storage/... URL falls through to Laravel and 404s).
+    public function file($id)
+    {
+        $warranty = Warranty::findOrFail($id);
+
+        if (!$warranty->file_path || !Storage::disk('public')->exists($warranty->file_path)) {
+            abort(404, 'Warranty file not found. It may have been deleted or was never uploaded to this server.');
+        }
+
+        return Storage::disk('public')->response($warranty->file_path);
     }
 
     public function preview(Request $request)

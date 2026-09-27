@@ -40,13 +40,6 @@ use App\Http\Controllers\Admin\RatingController;
 use App\Http\Controllers\Staff\EmailController as StaffEmailController;
 use App\Http\Controllers\Contractor\EmailController as ContractorEmailController;
 use App\Http\Controllers\ReportExportController;
-use App\Http\Controllers\SupabaseAuthController;
-
-Route::get('/auth/google', [SupabaseAuthController::class, 'redirect'])
-    ->name('google.login');
-
-Route::get('/auth/supabase/callback', [SupabaseAuthController::class, 'callback'])
-    ->name('supabase.callback');
 /*
 |--------------------------------------------------------------------------
 | Public Routes
@@ -61,6 +54,11 @@ Route::get('/login', function () {
     return view('auth.login');
 })->name('login');
 
+// Google login redirect
+Route::get('/auth/google', [AuthController::class, 'redirectToGoogle'])->name('google.login');
+
+// Google callback
+Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('google.callback');
 
 // Public warranty overview — viewable without login (read-only table, no files/actions)
 Route::get('/warranty/preview', [WarrantyController::class, 'publicPreview'])->name('warranty.preview.public');
@@ -89,6 +87,9 @@ Route::prefix('staff')->middleware(['auth', 'active', 'role:staff'])->group(func
 
     Route::post('/warranty', [StaffWarrantyController::class, 'store'])
         ->name('staff.warranty.store');
+
+    Route::get('/warranty/{id}/file', [StaffWarrantyController::class, 'file'])
+        ->name('staff.warranty.file');
 
     Route::get('/email', [StaffEmailController::class, 'index'])->name('staff.email');
     Route::post('/emails', [StaffEmailController::class, 'store'])->name('staff.emails.store');
@@ -431,6 +432,9 @@ Route::prefix('contractor')->middleware(['auth', 'active', 'role:contractor'])->
     Route::post('/warranty/store', [ContractorWarrantyController::class, 'store'])
         ->name('contractor.warranty.store');
 
+    Route::get('/warranty/{id}/file', [ContractorWarrantyController::class, 'file'])
+        ->name('contractor.warranty.file');
+
     Route::post('/profile/update',
         [ProfileContractorController::class, 'update']
     )->name('contractor.profile.update');
@@ -567,6 +571,9 @@ Route::prefix('admin')->middleware(['auth', 'active', 'role:admin'])->group(func
         
     Route::delete('/warranty/{id}', [WarrantyController::class, 'destroy'])
         ->name('admin.warranty.delete');
+
+    Route::get('/warranty/{id}/file', [WarrantyController::class, 'file'])
+        ->name('admin.warranty.file');
 
     Route::get('/projects/generate-code', [ProjectController::class, 'generateCode'])
         ->name('admin.projects.generateCode');
