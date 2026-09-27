@@ -423,9 +423,28 @@
 <!-- Initialize global variables for the modal JS -->
 <script>
 // Set up global variables that the external JS will use
+@php
+    // Server upload ceiling in bytes, parsed from post_max_size ("8M", "100M",
+    // "1G", "-1" = unlimited). The modal reads this BEFORE submitting so a
+    // too-large batch of attached documents is refused with a precise message
+    // instead of dying as an HTML 413 the fetch cannot parse. 0/unlimited on
+    // the server is reported as 2GB (effectively "no pre-check").
+    $_postMax = trim((string) ini_get('post_max_size'));
+    $_postUnit = strtolower(substr($_postMax, -1));
+    $_postNum = (int) $_postMax;
+    $_postBytes = match ($_postUnit) {
+        'g' => $_postNum * 1073741824,
+        'm' => $_postNum * 1048576,
+        'k' => $_postNum * 1024,
+        default => $_postNum,
+    };
+    if ($_postBytes <= 0) { $_postBytes = 2147483648; }
+@endphp
 window._projectModalConfig = {
     routePrefix: '{{ $routePrefix }}',
     csrfToken: '{{ csrf_token() }}',
+    // Total POST ceiling in bytes (parsed from post_max_size just above).
+    maxPostBytes: {{ $_postBytes }},
     generateCodeRoute: '{{ route($routePrefix . '.generateCode') }}',
     validateCodeRoute: '{{ route($routePrefix . '.validateCode') }}',
     validateTitleRoute: '{{ route($routePrefix . '.validateTitle') }}',
