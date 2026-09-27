@@ -940,11 +940,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Name the cause instead of swallowing it: a non-JSON answer
                 // means the failure happened before validation could reply.
                 let unexpectedMessage = 'An unexpected error occurred. Please try again.';
+                // Attached total, for messages that blame upload size: proves
+                // whether the payload really was big or the limit is tiny.
+                let attachedMB = null;
+                if (typeof pendingDocuments !== 'undefined' && pendingDocuments.length > 0) {
+                    const attachedBytes = pendingDocuments.reduce(
+                        (sum, doc) => sum + (doc.file && doc.file.size ? doc.file.size : 0), 0);
+                    attachedMB = (attachedBytes / 1048576).toFixed(1);
+                }
                 if (createResponse) {
                     if (createResponse.status === 419) {
                         unexpectedMessage = 'Your session expired. Please refresh the page and try again.';
                     } else if (createResponse.status === 413) {
-                        unexpectedMessage = 'The attached files are too large. Please use smaller files and try again.';
+                        unexpectedMessage = 'The attached files are too large. Please use smaller files and try again.'
+                            + (attachedMB !== null ? ' (your attachments total ' + attachedMB + 'MB)' : '');
                     } else if (createResponse.status === 403) {
                         unexpectedMessage = 'You do not have permission to create projects.';
                     } else if (createResponse.status >= 500) {
