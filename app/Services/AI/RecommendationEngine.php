@@ -376,8 +376,12 @@ class RecommendationEngine
             ->count();
 
         // Per-type breakdown of open issues for type-aware recommendations
+        // NOTE: Project::issues() carries ->orderBy('created_at', 'desc'), which
+        // breaks under MySQL ONLY_FULL_GROUP_BY (Azure) when combined with
+        // GROUP BY — reorder() clears it; the grouping needs no ordering.
         $issuesByType = $project->issues()
             ->where('status', 'Open')
+            ->reorder()
             ->selectRaw('issue_type, COUNT(*) as count')
             ->groupBy('issue_type')
             ->pluck('count', 'issue_type')
