@@ -808,6 +808,32 @@ document.addEventListener('DOMContentLoaded', function() {
             let createResponse = null;
 
             try {
+                // === TOTAL-SIZE PRE-CHECK (create mode only) ===
+                // Per-file 20MB is already enforced when each document is
+                // attached (document-manager.js), but the SERVER rejects the
+                // whole POST when the batch exceeds post_max_size (Azure: 8M
+                // by default) — and that 413 HTML page is what used to surface
+                // as "An unexpected error occurred". Refuse early with the
+                // real numbers instead of paying for a doomed upload. The
+                // `return` below still runs the finally block, restoring the
+                // button. A 10% headroom covers form fields + multipart
+                // overhead around the raw file bytes.
+                if (window._projectModalMode !== 'edit' &&
+                    typeof pendingDocuments !== 'undefined' && pendingDocuments.length > 0) {
+                    const pendingBytes = pendingDocuments.reduce(
+                        (sum, doc) => sum + (doc.file && doc.file.size ? doc.file.size : 0), 0);
+                    const serverCeiling = window._projectModalConfig &&
+                        window._projectModalConfig.maxPostBytes > 0
+                        ? window._projectModalConfig.maxPostBytes
+                        : 8388608;
+                    if (pendingBytes > serverCeiling * 0.9) {
+                        const pendingMB = (pendingBytes / 1048576).toFixed(1);
+                        const ceilingMB = (serverCeiling / 1048576).toFixed(0);
+                        showError('The attached documents total ' + pendingMB + 'MB, which exceeds this server\u2019s ' + ceilingMB + 'MB upload limit. Please attach fewer files (or compress the scans) and try again \u2014 the rest can be added on the project detail page after creation.');
+                        return;
+                    }
+                }
+
                 const formData = new FormData(createProjectForm);
                 
                 // === APPEND PENDING DOCUMENTS ===
