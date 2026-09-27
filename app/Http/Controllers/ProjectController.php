@@ -714,26 +714,58 @@ class ProjectController extends Controller
                 $projectEnd   = !empty($data['planned_end_date']) ? \Carbon\Carbon::parse($data['planned_end_date']) : null;
 
                 if (!$projectStart || !$projectEnd) {
-                    return back()->withErrors([
+                    $errors = [
                         'planned_start_date' => 'Set the project planned start and end dates before adding baseline targets.'
-                    ])->withInput();
+                    ];
+                    if ($request->ajax() || $request->wantsJson()) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Set the project planned start and end dates before adding baseline targets.',
+                            'errors' => $errors,
+                        ], 422);
+                    }
+                    return back()->withErrors($errors)->withInput();
                 }
 
                 foreach ($baselineScheduleTargets as $target) {
                     $plannedDate = !empty($target['planned_date']) ? \Carbon\Carbon::parse($target['planned_date']) : null;
                     if (!$plannedDate) {
-                        return back()->withErrors([
+                        $errors = [
                             'baseline_schedule_targets' => 'Each baseline target requires a planned date.'
-                        ])->withInput();
+                        ];
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => 'Each baseline target requires a planned date.',
+                                'errors' => $errors,
+                            ], 422);
+                        }
+                        return back()->withErrors($errors)->withInput();
                     }
                     if ($plannedDate->lt($projectStart)) {
+                        $message = "Baseline target {$target['planned_date']} is before the project's planned start date ({$projectStart->format('Y-m-d')}).";
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => $message,
+                                'errors' => ['baseline_schedule_targets' => $message],
+                            ], 422);
+                        }
                         return back()->withErrors([
-                            'baseline_schedule_targets' => "Baseline target {$target['planned_date']} is before the project's planned start date ({$projectStart->format('Y-m-d')})."
+                            'baseline_schedule_targets' => $message
                         ])->withInput();
                     }
                     if ($plannedDate->gt($projectEnd)) {
+                        $message = "Baseline target {$target['planned_date']} is after the project's planned end date ({$projectEnd->format('Y-m-d')}).";
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => $message,
+                                'errors' => ['baseline_schedule_targets' => $message],
+                            ], 422);
+                        }
                         return back()->withErrors([
-                            'baseline_schedule_targets' => "Baseline target {$target['planned_date']} is after the project's planned end date ({$projectEnd->format('Y-m-d')})."
+                            'baseline_schedule_targets' => $message
                         ])->withInput();
                     }
                 }
@@ -873,8 +905,16 @@ class ProjectController extends Controller
 
                 if ($projectStart && $projectEnd) {
                     if ($plannedDate->lt($projectStart) || $plannedDate->gt($projectEnd)) {
+                        $message = "Baseline target {$plannedDate->format('Y-m-d')} is outside the project's planned timeline ({$projectStart->format('Y-m-d')} to {$projectEnd->format('Y-m-d')}).";
+                        if ($request->ajax() || $request->wantsJson()) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => $message,
+                                'errors' => ['baseline_schedule_month' => $message],
+                            ], 422);
+                        }
                         return back()->withErrors([
-                            'baseline_schedule_month' => "Baseline target {$plannedDate->format('Y-m-d')} is outside the project's planned timeline ({$projectStart->format('Y-m-d')} to {$projectEnd->format('Y-m-d')})."
+                            'baseline_schedule_month' => $message
                         ])->withInput();
                     }
                 }
