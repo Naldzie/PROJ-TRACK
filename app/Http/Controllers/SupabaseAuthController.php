@@ -288,6 +288,28 @@ class SupabaseAuthController extends Controller
         }
 
         /*
+         * Staff and admin may only sign in from a desktop or laptop.
+         * Contractors are the only role with mobile access. This runs
+         * before Auth::login so a blocked sign-in never creates a session.
+         * (Calendar-only reconnects are skipped: that user is already
+         * authenticated and is not gaining access here.)
+         */
+        if (
+            !$calendarOnly
+            && in_array(
+                strtolower((string) $user->role),
+                ['admin', 'staff'],
+                true
+            )
+            && self::isMobileDevice($request)
+        ) {
+            return $this->loginFailed(
+                $isPopup,
+                'Please use a desktop or laptop to access PROJ-TRACK. Mobile access is for contractors only.'
+            );
+        }
+
+        /*
          * If this is "Connect Calendar", make sure the Google account
          * belongs to the currently logged-in PROJ-TRACK account.
          */
@@ -482,6 +504,25 @@ class SupabaseAuthController extends Controller
         }
 
         return redirect($redirectUrl);
+    }
+
+    /**
+     * Whether the request comes from a mobile device (phone or tablet),
+     * judged from the User-Agent. Desktop browsers — including a phone's
+     * "desktop site" mode, which sends a desktop UA — are not mobile here.
+     */
+    private static function isMobileDevice(Request $request): bool
+    {
+        $userAgent = (string) $request->header('User-Agent', '');
+
+        if ($userAgent === '') {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/android|iphone|ipod|ipad|mobile|blackberry|iemobile|opera mini|windows phone/i',
+            $userAgent
+        );
     }
 
     /**
